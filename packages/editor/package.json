@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/editor",
-  "version": "0.50.0",
+  "version": "0.51.0",
   "description": "The Piwi editor service: a language server that shows a suite's history and the locators a change breaks in VS Code and the JetBrains IDEs",
   "private": true,
   "license": "FSL-1.1-MIT",

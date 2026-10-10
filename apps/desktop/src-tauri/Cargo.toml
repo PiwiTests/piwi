@@ -1,6 +1,6 @@
 [package]
 name = "piwi-desktop"
-version = "0.50.0" # x-release-please-version
+version = "0.51.0" # x-release-please-version
 description = "Piwi Dashboard desktop app"
 authors = ["piwitests"]
 license = "FSL-1.1-MIT"

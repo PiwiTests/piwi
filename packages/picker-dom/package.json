@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/picker-dom",
-  "version": "0.50.0",
+  "version": "0.51.0",
   "description": "Shared DOM element-picker overlay — probing, hover/highlight, anchor scoping and locator syntax highlighting shared by the reporter's live picker and the dashboard's snapshot picker",
   "private": true,
   "type": "module",
