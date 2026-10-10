@@ -226,6 +226,11 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
 - **Connection requests** — `ConnectRequestCard` (the logo-and-card page, with its loading and error states) and
   `ConnectRequestButtons` (Deny / Allow), driven by `useConnectRequest`: the page a signed-in user answers a client's
   request on, Piwi Picker's and the editors' (`/extension/connect`) and an MCP client's OAuth sign-in (`/oauth/consent`).
+- **Piwi Picker install hint** — `PickerInstallHint` (one line on what the extension does on that page, the store of
+  this browser and _Don't show again_), driven by `usePickerInstallHint`: shown only in a browser the extension exists
+  for (`pickerStoreFor`), never in the desktop window, and never once the extension marked the page
+  (`@piwitests/core/picker-marker`, which it does on its connected instance's pages). Placed where the extension is the
+  next step: an empty bug reports list, an empty test function catalog, the Locators page's empty check box.
 - **Filters** — `FiltersBlock` (the bordered _Filters_ block every page's filters sit in, folding to a summary on a
   phone), `FilterBar` (environment, branch, branch policy via `BranchPolicySelect`, full runs only) and
   `HiddenRunsNote` (what the filters hide, with the action that shows it).

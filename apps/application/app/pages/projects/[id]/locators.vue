@@ -152,6 +152,11 @@ function inspect(locator: string) {
           <LoadingState v-if="loading" text="Loading the locator index…" />
           <ErrorState v-else-if="error" text="Could not load the locator index." />
           <ProjectLocatorCheck v-else-if="index" v-model="pasted" :index="index" @inspect="inspect" />
+          <PickerInstallHint
+            v-if="index && !pasted.trim()"
+            class="mt-3"
+            text="Pick an element on your live page and it opens its ranked locators here, to check them against your tests."
+          />
         </SectionCard>
 
         <SectionCard

@@ -137,8 +137,8 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     id: 'extension',
     name: 'Browser extension (Piwi Picker)',
     summary:
-      'A Chrome and Edge extension. On any page it picks ranked, stable Playwright locators, flags poor locator targets, suggests assertions, records actions as a runnable spec, and turns a bug you reproduce into a failing test and a report; its DevTools panel adds a locator console, response mocks and viewports. It works on its own; connected to an instance, it also matches your test functions, shows which elements your tests reach, and sends bug reports to the project.',
-    get: 'The Piwi Picker listing on the Chrome Web Store, which covers Edge and other Chromium browsers.',
+      'A Chrome, Edge and Firefox extension. On any page it picks ranked, stable Playwright locators, flags poor locator targets, suggests assertions, records actions as a runnable spec, and turns a bug you reproduce into a failing test and a report; its DevTools panel adds a locator console, response mocks and viewports. It works on its own; connected to an instance, it also matches your test functions, shows which elements your tests reach, and sends bug reports to the project.',
+    get: 'The Piwi Picker listing on the Chrome Web Store (https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe), which covers Edge and other Chromium browsers, or on Firefox Add-ons (https://addons.mozilla.org/firefox/addon/piwi-picker/).',
     when: 'Writing or fixing locators against a live page, or reporting a bug as a failing test.',
     needs: ['extension'],
     doc: 'features/extension',

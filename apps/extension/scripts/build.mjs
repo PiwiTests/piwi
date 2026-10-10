@@ -71,6 +71,9 @@ const STANDALONE_ENTRIES = [
   ['request-conditions', 'src/content/request-conditions.ts'],
   // Injected into the inspected tab by the Elements sidebar, which calls it with DevTools' selection.
   ['devtools-rank', 'src/content/devtools-rank.ts'],
+  // Registered for the connected instance's origin while connected (`background/instance-marker.ts`): marks its
+  // pages so the dashboard leaves out its hint to install the extension.
+  ['instance-marker', 'src/content/instance-marker.ts'],
   ['background', 'src/background/index.ts'],
 ];
 

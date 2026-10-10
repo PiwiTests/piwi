@@ -3,7 +3,8 @@ import type { DropdownMenuItem } from '@nuxt/ui';
 import {
   DESKTOP_DOWNLOAD_URL,
   JETBRAINS_PLUGIN_URL,
-  PICKER_STORE_URL,
+  PICKER_CHROME_URL,
+  PICKER_FIREFOX_URL,
   REPORTER_NPM_URL,
 } from '#shared/companion-links';
 import { DOCS_BASE_URL } from '#shared/docs';
@@ -146,10 +147,17 @@ const items = computed<DropdownMenuItem[][]>(() => {
         children: [
           [
             {
-              label: 'Piwi Picker',
+              label: 'Piwi Picker for Chrome and Edge',
               description: 'Browser extension · Chrome Web Store',
               icon: 'i-lucide-mouse-pointer-click',
-              to: PICKER_STORE_URL,
+              to: PICKER_CHROME_URL,
+              target: '_blank',
+            },
+            {
+              label: 'Piwi Picker for Firefox',
+              description: 'Browser extension · Firefox Add-ons',
+              icon: 'i-lucide-mouse-pointer-click',
+              to: PICKER_FIREFOX_URL,
               target: '_blank',
             },
             {

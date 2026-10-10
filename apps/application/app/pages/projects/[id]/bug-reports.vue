@@ -90,7 +90,13 @@ useHead(
                   ? 'No bug report yet: report one from Piwi Picker’s Report a bug, then Send to Piwi.'
                   : 'No bug report with this status.'
               "
-            />
+            >
+              <PickerInstallHint
+                v-if="status === 'all'"
+                class="max-w-md"
+                text="Reproduce a bug on your page, and it sends the report here with its steps and evidence."
+              />
+            </EmptyState>
             <ul v-else class="divide-y divide-default -my-2">
               <li v-for="item in items" :key="item.id" class="flex items-start gap-3 py-2.5">
                 <div class="min-w-0 flex-1">

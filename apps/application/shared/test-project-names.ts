@@ -141,6 +141,7 @@ export const PROJECT = {
   PERMISSION_GRID: 'permission-grid-test',
   PG_CONCURRENT: 'pg-concurrent-project',
   PG_TEST: 'pg-test-project',
+  PICKER_HINT: 'picker-hint-test',
   PROJECT_MEMBERS: 'project-members-test',
   QUALITY_REPORT_SCHEDULES: 'quality-report-schedules-test',
   QUALITY_REPORT: 'quality-report-test',

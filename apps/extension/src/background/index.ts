@@ -71,6 +71,7 @@ import {
   prepareReplayViews,
 } from './step-views.js';
 import { handleRelayLeft } from './relay-left.js';
+import { connectionChanged, syncInstanceMarker } from './instance-marker.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -91,6 +92,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // A secret an older version kept where content scripts can read it moves to the secret area as the worker starts.
 void moveLegacySecrets();
+
+// The connected instance's pages carry the marker the dashboard looks for (`instance-marker.ts`).
+void syncInstanceMarker();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (connectionChanged(changes, area)) void syncInstanceMarker();
+});
+chrome.permissions.onRemoved.addListener(() => {
+  void syncInstanceMarker();
+});
 
 // An update ships new texts: the stored copy of the chosen catalog is read again.
 chrome.runtime.onInstalled.addListener(() => {
@@ -336,6 +346,7 @@ clearViewsWithRecording();
 
 chrome.permissions.onAdded.addListener((permissions) => {
   void handlePermissionAdded(permissions.origins ?? []);
+  void syncInstanceMarker();
 });
 
 /**

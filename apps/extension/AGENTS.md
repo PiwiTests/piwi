@@ -1,6 +1,6 @@
 # Piwi Picker — Agent Instructions
 
-Browser extension (Chrome/Edge, Manifest V3) that reuses the monorepo's locator engine
+Browser extension (Chrome/Edge/Firefox, Manifest V3) that reuses the monorepo's locator engine
 (`@piwitests/core`) and shared picker overlay (`@piwitests/picker-dom`) to pick ranked,
 stable Playwright locators from the live page. The picking/recording features are
 standalone (no server, no permissions beyond `activeTab`/`scripting`/`storage`, plus the
@@ -12,10 +12,11 @@ tests reach ("Tested elements"). See "Connected mode" and "Tested elements" belo
 
 Published on the Chrome Web Store as
 [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)
-(`pakhnokpjboejcghgcmkjlpnogfjihhe`) — that listing is how Chrome *and* Edge users install it.
+(`pakhnokpjboejcghgcmkjlpnogfjihhe`), the listing Chrome *and* Edge users install from, and on Firefox Add-ons
+(AMO) as [Piwi Picker](https://addons.mozilla.org/firefox/addon/piwi-picker/) (`picker@piwitests.dev`).
 Each release tag packages it in CI (`.github/workflows/reusable-publish-extension.yml`), keeps the store zips as the run's
 artifacts and submits them to every store whose secrets are configured; `PUBLISHING.md` has the loop, the secrets,
-and the Edge Add-ons and Firefox AMO listings that are still outstanding.
+and the Edge Add-ons listing that is still outstanding.
 
 ## What it is
 
@@ -36,7 +37,7 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
   nothing is saved once the tab shows another origin than the one the page was opened for.
   `save-login.spec.ts` loads the file into a new browser context and checks it logs in.
   `browser_specific_settings.gecko.id` is Firefox's required stable add-on ID (Chromium ignores
-  the key); don't change it once the add-on is published to AMO — a new ID creates a separate
+  the key); never change it: the add-on is published on AMO under it, and a new ID creates a separate
   add-on rather than an update, orphaning existing installs. `background` names `background.js`
   twice, as `service_worker` (Chrome) and `scripts` (Firefox, which has no extension service
   workers — AMO rejects the manifest without it); the build writes `dist/` for Chrome and Edge
@@ -224,6 +225,15 @@ after the permission request, until it ends (`whileRunning` in the settings). A 
 page makes once an answer arrives goes through `writeConnection`: dropped when **Disconnect** or another connection
 came meanwhile (`connectionEpoch`) or the stored instance is no longer the one it read, so a sync still in flight never
 brings back a connection Disconnect removed.
+
+**The instance's pages are marked** (`background/instance-marker.ts`, `content/instance-marker.ts`, the names in
+`@piwitests/core/picker-marker`): while an instance URL is set and its origin granted, the worker keeps
+`instance-marker.js` registered for that origin only and runs it in the instance's tabs already open, synced as the
+worker starts, when `piwiConnection` changes and when a grant is added or removed. The script checks the page is the
+instance's (`isInstancePage`, since Firefox's pattern covers every port of the host), sets `data-piwi-picker` on
+`<html>` to the extension's version and dispatches `piwi-picker-marked`; the dashboard leaves out its hint to install
+the extension when it sees either (`usePickerInstallHint`). It reads nothing from the page and sends nothing.
+`instance-marker.spec.ts` covers it with the real worker and grant.
 
 The instance's own URL patterns (`GET /api/extension/url-patterns`) are read by the settings
 page when it connects and each time it opens, and cached in `ConnectionSettings.serverMappings`

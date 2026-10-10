@@ -223,6 +223,7 @@ Everything below is built and published from this repository on each release.
 | [`PiwiTests.Instrumentation.Core`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Core) | NuGet | The capture buffer the two .NET packages above share — installed with them |
 | Desktop app (`.msi`/`.exe`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/platform/releases/latest) | The server bundled in a native window — no Docker or Node |
 | [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) | Chrome Web Store | The browser extension — ranked Playwright locators picked from the live page (Chrome, Edge, and other Chromium browsers) |
+| [Piwi Picker](https://addons.mozilla.org/firefox/addon/piwi-picker/) | Firefox Add-ons | The same browser extension, for Firefox |
 | [Piwi for JetBrains IDEs](https://plugins.jetbrains.com/plugin/34674-piwi) | JetBrains Marketplace | The IDE plugin — the latest CI failures at their lines with the locator heal as a quick fix, and the tests behind each line (WebStorm, IntelliJ IDEA Ultimate, Rider, from 2024.1) |
 
 The instrumentation packages are optional and only needed for
@@ -251,7 +252,7 @@ Full docs at **[piwitests.dev](https://piwitests.dev)**. The usual entry points:
 - [Deployment](https://piwitests.dev/operate/deployment) and [Configuration](https://piwitests.dev/reference/configuration) — running your instance
 - [Upgrading](https://piwitests.dev/operate/upgrading) — what a version bump does, and why downgrading isn't a thing
 - [Privacy & data flow](https://piwitests.dev/guide/privacy) — exactly what leaves your server (nothing you didn't configure)
-- [Browser extension](https://piwitests.dev/features/extension) — pick ranked locators from the live page, standalone ([install from the Chrome Web Store](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) — works in Edge too)
+- [Browser extension](https://piwitests.dev/features/extension) — pick ranked locators from the live page, standalone (install from the [Chrome Web Store](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe), which covers Edge too, or from [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/piwi-picker/))
 - [Editor extensions](https://piwitests.dev/features/editors) — CI failures at their lines, heals as quick fixes and the tests behind each locator, in your IDE ([install from the JetBrains Marketplace](https://plugins.jetbrains.com/plugin/34674-piwi) for WebStorm, IntelliJ IDEA Ultimate and Rider)
 
 A running dashboard also serves interactive API docs at `/docs`, rendered in-app from its own OpenAPI
