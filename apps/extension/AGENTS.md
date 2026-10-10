@@ -226,6 +226,15 @@ page makes once an answer arrives goes through `writeConnection`: dropped when *
 came meanwhile (`connectionEpoch`) or the stored instance is no longer the one it read, so a sync still in flight never
 brings back a connection Disconnect removed.
 
+**The instance's pages are marked** (`background/instance-marker.ts`, `content/instance-marker.ts`, the names in
+`@piwitests/core/picker-marker`): while an instance URL is set and its origin granted, the worker keeps
+`instance-marker.js` registered for that origin only and runs it in the instance's tabs already open, synced as the
+worker starts, when `piwiConnection` changes and when a grant is added or removed. The script checks the page is the
+instance's (`isInstancePage`, since Firefox's pattern covers every port of the host), sets `data-piwi-picker` on
+`<html>` to the extension's version and dispatches `piwi-picker-marked`; the dashboard leaves out its hint to install
+the extension when it sees either (`usePickerInstallHint`). It reads nothing from the page and sends nothing.
+`instance-marker.spec.ts` covers it with the real worker and grant.
+
 The instance's own URL patterns (`GET /api/extension/url-patterns`) are read by the settings
 page when it connects and each time it opens, and cached in `ConnectionSettings.serverMappings`
 (with `serverProjects`, whose `canEdit` gates **Add to Piwi**) by `applyServerSync`.

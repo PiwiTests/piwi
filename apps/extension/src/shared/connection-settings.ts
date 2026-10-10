@@ -66,7 +66,8 @@ export interface ConnectionSettings {
   connectedAs: string;
 }
 
-const CONNECTION_KEY = 'piwiConnection';
+/** The `chrome.storage.local` key of the connection settings. */
+export const CONNECTION_KEY = 'piwiConnection';
 
 const EMPTY: ConnectionSettings = {
   instanceUrl: '',

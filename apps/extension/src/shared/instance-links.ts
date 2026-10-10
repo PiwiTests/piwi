@@ -42,3 +42,23 @@ export function testCaseUrl(instanceUrl: string, testCaseId: number): string {
 export function bugReportUrl(instanceUrl: string, id: number): string {
   return `${normalizeBaseUrl(instanceUrl)}/bug-reports/${id}`;
 }
+
+/**
+ * Whether `pageUrl` is one of the instance's own pages: the same origin and,
+ * when the instance address has a path, under it (`https://tools.example/piwi`
+ * covers `/piwi` and `/piwi/projects`, never `/piwi-old`).
+ */
+export function isInstancePage(instanceUrl: string, pageUrl: string): boolean {
+  let instance: URL;
+  let page: URL;
+  try {
+    instance = new URL(normalizeBaseUrl(instanceUrl));
+    page = new URL(pageUrl);
+  } catch {
+    return false;
+  }
+  if (instance.protocol !== 'http:' && instance.protocol !== 'https:') return false;
+  if (instance.origin !== page.origin) return false;
+  const path = instance.pathname.replace(/\/+$/, '');
+  return path === '' || page.pathname === path || page.pathname.startsWith(`${path}/`);
+}
