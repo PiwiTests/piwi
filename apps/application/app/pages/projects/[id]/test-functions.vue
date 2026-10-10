@@ -8,7 +8,6 @@
  */
 import type { ProjectDetails, TestFunctionsResponse, TestFunctionInfo, TestFunctionStepAction } from '~~/types/api';
 import { buildExtractionPrompt, LOW_CONFIDENCE_THRESHOLD } from '#shared/test-function-extract-prompt';
-import { PICKER_CHROME_URL, PICKER_FIREFOX_URL } from '#shared/companion-links';
 
 const route = useRoute();
 const projectId = route.params.id as string;
@@ -429,18 +428,10 @@ function describeSteps(entry: TestFunctionInfo): string {
             icon="i-lucide-function-square"
             text="No functions registered yet — add one by hand, or paste a function's source to extract it."
           >
-            <p class="text-xs text-gray-400 max-w-sm">
-              The extension is a separate install: Piwi Picker on the
-              <a :href="PICKER_CHROME_URL" target="_blank" rel="noopener" class="text-primary hover:underline"
-                >Chrome Web Store</a
-              >
-              (Chrome and Edge) or
-              <a :href="PICKER_FIREFOX_URL" target="_blank" rel="noopener" class="text-primary hover:underline"
-                >Firefox Add-ons</a
-              >
-              — setup in the
-              <DocLink to="features/extension" no-icon class="text-primary hover:underline">extension docs</DocLink>.
-            </p>
+            <PickerInstallHint
+              class="max-w-md"
+              text="Record a flow on your page and it calls these functions instead of raw locators."
+            />
           </EmptyState>
           <div v-else class="divide-y divide-gray-200 dark:divide-gray-800">
             <div v-for="entry in entries" :key="entry.id" class="py-3 flex items-start justify-between gap-3">

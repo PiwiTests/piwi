@@ -100,6 +100,10 @@ on the same computer. A bug report is sent only from **Send to Piwi…**, after 
 [Bug reports](./bug-reports)). Only the settings page and the extension's background worker talk to the instance or
 the editor, never a script running in a page.
 
+While connected, Piwi Picker also marks your instance's pages in this browser: a script sets `data-piwi-picker`, with
+the extension's version, on each page. The dashboard then stops suggesting Piwi Picker, as it does once you click
+**Don't show again** on its hint. The script reads nothing from the page and sends nothing, and **Disconnect** stops it.
+
 ## Related
 
 - [Browser extension](./extension): everything Piwi Picker does, with or without a connection

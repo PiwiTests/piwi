@@ -120,7 +120,7 @@ written in the extension's language; page texts, locators, test ids, `steps.json
 |---|---|
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
 | `debugger` (Chrome and Edge) | trusted input for a [replay](./replay-a-bug-report), a bug report's console, requests and screenshots, and DevTools' [throttling](./devtools#slow-down-or-fail-a-request). Attached only while one of them runs, under Chrome's bar saying Piwi Picker started debugging the browser. Without it (Firefox, or **Cancel** there), they use the page's own events. Nothing leaves your machine |
-| `scripting` | injects the picker or the recorder into that tab on demand; no content script runs on pages you did not ask it to |
+| `scripting` | injects the picker or the recorder into that tab on demand, and marks your instance's pages once [connected](./extension-connection#what-is-sent); nothing else runs unasked |
 | `storage` | keeps your copy format and, only if you connect, the instance URL, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The API key and the desktop app's and editor's tokens are kept in the extension's own database, which scripts it runs in web pages cannot read. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
 | `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |
 | `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin. Never `<all_urls>` |

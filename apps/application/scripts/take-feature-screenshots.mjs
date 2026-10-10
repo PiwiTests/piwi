@@ -661,6 +661,9 @@ const READY_INSPECTION = {
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
+ *   pickerHint  — show the hint to install Piwi Picker (`PickerInstallHint`); every
+ *                 other scene captures as if Don't show again had been chosen,
+ *                 so the hint never lands in an illustration by chance
  */
 /**
  * Opens a cluster page's Diagnosis: it is the card under the situation block when
@@ -3951,6 +3954,15 @@ const SCENES = [
     of: '[data-shot="bug-report-list"]',
     pad: 12,
   },
+  {
+    name: 'picker-install-hint',
+    description: 'A project with no bug report yet: the hint to install Piwi Picker, with the store of this browser',
+    route: '/projects/2/bug-reports',
+    viewport: { width: 1280, height: 700 },
+    of: '[data-shot="bug-report-list"]',
+    pad: 12,
+    pickerHint: true,
+  },
 
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
@@ -4996,6 +5008,7 @@ async function captureScene(browser, scene, { base, outDir, freezeNow }) {
   });
   if (freezeNow) await context.clock.setFixedTime(freezeNow);
   if (sceneMode(scene) === 'desktop') await context.addInitScript(bridgeScript(scene));
+  if (!scene.pickerHint) await context.addInitScript(() => localStorage.setItem('piwi-picker-hint-dismissed', 'true'));
   const page = await context.newPage();
   // A dev server compiles routes on first hit — well past the 30s default.
   page.setDefaultNavigationTimeout(90_000);
