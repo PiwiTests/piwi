@@ -8,10 +8,10 @@ lang: en-US
 
 <Needs extension />
 
-Piwi Picker is a Chrome and Edge extension (Manifest V3) that picks ranked, stable Playwright locators from the page
-you are looking at, scored by the same engine the dashboard uses, and records a multi-page flow into a runnable
-TypeScript spec. It works standalone and sends nothing by default; connecting it to a Piwi instance adds what needs
-your project's history.
+Piwi Picker is a Chrome, Edge and Firefox extension (Manifest V3) that picks ranked, stable Playwright locators from
+the page you are looking at, scored by the same engine the dashboard uses, and records a multi-page flow into a
+runnable TypeScript spec. It works standalone and sends nothing by default; connecting it to a Piwi instance adds what
+needs your project's history.
 
 ## What it does
 
@@ -34,9 +34,11 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 
 ## Where it is
 
-Install **[Piwi Picker from the Chrome Web Store ↗](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)**.
-The listing covers Edge too: click **Allow** on its *Allow extensions from other stores* banner once, then **Get**.
-It needs Chrome or Edge 118 or later.
+Install Piwi Picker from the
+**[Chrome Web Store ↗](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)** for
+Chrome or Edge 118 or later (in Edge, click **Allow** on the *Allow extensions from other stores* banner once, then
+**Get**), or from **[Firefox Add-ons ↗](https://addons.mozilla.org/firefox/addon/piwi-picker/)** for Firefox 140 or
+later.
 
 Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements, `B`
 reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**. The developer
@@ -117,7 +119,7 @@ written in the extension's language; page texts, locators, test ids, `steps.json
 | Permission | Why |
 |---|---|
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
-| `debugger` (Chrome and Edge) | trusted input for a [replay](./replay-a-bug-report), a bug report's console, requests and screenshots, and DevTools' [throttling](./devtools#slow-down-or-fail-a-request). Attached only while one of them runs, under Chrome's bar saying Piwi Picker started debugging the browser; **Cancel** there falls back to the page's own events. Nothing leaves your machine |
+| `debugger` (Chrome and Edge) | trusted input for a [replay](./replay-a-bug-report), a bug report's console, requests and screenshots, and DevTools' [throttling](./devtools#slow-down-or-fail-a-request). Attached only while one of them runs, under Chrome's bar saying Piwi Picker started debugging the browser. Without it (Firefox, or **Cancel** there), they use the page's own events. Nothing leaves your machine |
 | `scripting` | injects the picker or the recorder into that tab on demand; no content script runs on pages you did not ask it to |
 | `storage` | keeps your copy format and, only if you connect, the instance URL, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The API key and the desktop app's and editor's tokens are kept in the extension's own database, which scripts it runs in web pages cannot read. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
 | `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |

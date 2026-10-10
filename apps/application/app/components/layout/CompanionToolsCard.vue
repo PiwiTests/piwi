@@ -5,7 +5,12 @@
  * editor extensions and the IDE hand-off. Unlike the capability ladder above it, none of these leave
  * evidence on the instance, so the card is informative rather than detected.
  */
-import { DESKTOP_DOWNLOAD_URL, JETBRAINS_PLUGIN_URL, PICKER_STORE_URL } from '#shared/companion-links';
+import {
+  DESKTOP_DOWNLOAD_URL,
+  JETBRAINS_PLUGIN_URL,
+  PICKER_CHROME_URL,
+  PICKER_FIREFOX_URL,
+} from '#shared/companion-links';
 
 const isDesktop = useIsDesktop();
 </script>
@@ -29,8 +34,11 @@ const isDesktop = useIsDesktop();
             is opt-in.
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
-            <UButton :to="PICKER_STORE_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+            <UButton :to="PICKER_CHROME_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
               Chrome Web Store
+            </UButton>
+            <UButton :to="PICKER_FIREFOX_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+              Firefox Add-ons
             </UButton>
             <DocLink to="features/extension" class="text-sm">Docs</DocLink>
           </div>

@@ -8,7 +8,7 @@
  */
 import type { ProjectDetails, TestFunctionsResponse, TestFunctionInfo, TestFunctionStepAction } from '~~/types/api';
 import { buildExtractionPrompt, LOW_CONFIDENCE_THRESHOLD } from '#shared/test-function-extract-prompt';
-import { PICKER_STORE_URL } from '#shared/companion-links';
+import { PICKER_CHROME_URL, PICKER_FIREFOX_URL } from '#shared/companion-links';
 
 const route = useRoute();
 const projectId = route.params.id as string;
@@ -430,11 +430,15 @@ function describeSteps(entry: TestFunctionInfo): string {
             text="No functions registered yet — add one by hand, or paste a function's source to extract it."
           >
             <p class="text-xs text-gray-400 max-w-sm">
-              The extension is a separate install:
-              <a :href="PICKER_STORE_URL" target="_blank" rel="noopener" class="text-primary hover:underline"
-                >Piwi Picker on the Chrome Web Store</a
+              The extension is a separate install: Piwi Picker on the
+              <a :href="PICKER_CHROME_URL" target="_blank" rel="noopener" class="text-primary hover:underline"
+                >Chrome Web Store</a
               >
-              (Chrome and Edge) — setup in the
+              (Chrome and Edge) or
+              <a :href="PICKER_FIREFOX_URL" target="_blank" rel="noopener" class="text-primary hover:underline"
+                >Firefox Add-ons</a
+              >
+              — setup in the
               <DocLink to="features/extension" no-icon class="text-primary hover:underline">extension docs</DocLink>.
             </p>
           </EmptyState>

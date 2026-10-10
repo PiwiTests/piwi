@@ -89,7 +89,7 @@ as it actually was.
 engine the dashboard uses, directly on the page you're looking at. Picking and recording are fully
 standalone — nothing is sent anywhere, and it works without a Piwi instance at all. The cost: one
 click from the [Chrome Web Store](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe),
-which is also how you install it in Edge.
+which is also how you install it in Edge, or from [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/piwi-picker/).
 
 **Read the failure evidence you already have.** Without fixtures you still get the trace, the
 screenshot, and the failing call stack. Playwright's trace viewer is bundled and served by your own
