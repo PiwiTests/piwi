@@ -38,7 +38,7 @@
     "prepack": "node scripts/copy-output.mjs"
   },
   "dependencies": {
-    "@libsql/client": "0.17.4",
-    "sharp": "0.35.3"
+    "@libsql/client": "0.18.0",
+    "sharp": "0.35.5"
   }
 }
