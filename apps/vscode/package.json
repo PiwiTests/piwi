@@ -2,7 +2,7 @@
   "name": "piwi",
   "displayName": "Piwi",
   "description": "Your Playwright suite's history in the editor: CI failures at their lines, healing in place, the tests behind each locator and file, and the locators a change breaks",
-  "version": "0.50.0",
+  "version": "0.51.0",
   "publisher": "piwitests",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",

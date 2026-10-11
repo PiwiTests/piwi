@@ -12,8 +12,8 @@
     "demo:functions": "node scripts/register-functions.mjs"
   },
   "devDependencies": {
-    "@piwitests/instrumentation-nitro": "0.50.0",
-    "@piwitests/reporter": "0.50.0",
+    "@piwitests/instrumentation-nitro": "0.51.0",
+    "@piwitests/reporter": "0.51.0",
     "@playwright/test": "^1.56.1",
     "consola": "^3.4.2",
     "h3": "^1.15.11",

@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
     <PackageId>PiwiTests.Instrumentation.AspNetCore</PackageId>
-    <Version>0.50.0</Version> <!-- x-release-please-version -->
+    <Version>0.51.0</Version> <!-- x-release-please-version -->
     <Description>ASP.NET Core integration for Piwi Dashboard — captures backend logs per HTTP request for Playwright test visibility</Description>
     <Authors>piwitests</Authors>
     <RepositoryUrl>https://github.com/PiwiTests/platform</RepositoryUrl>

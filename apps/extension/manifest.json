@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Piwi Picker",
   "short_name": "Piwi Picker",
-  "version": "0.50.0",
+  "version": "0.51.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "minimum_chrome_version": "118",
