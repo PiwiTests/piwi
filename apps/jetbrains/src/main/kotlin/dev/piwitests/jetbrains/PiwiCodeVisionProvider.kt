@@ -26,11 +26,13 @@ class PiwiCodeVisionProvider : DaemonBoundCodeVisionProvider {
         val project = editor.project ?: return emptyList()
         val virtualFile = file.virtualFile ?: return emptyList()
         if (!PiwiLspServerSupportProvider.isSupported(virtualFile)) return emptyList()
-        val server = project.service<PiwiProjectService>().server() ?: return emptyList()
-        // The daemon computes this in a read action: the wait gives way to a write action.
-        val summary = server.fileSummary(UriParams(virtualFile.toNioPath().toUri().toString())).awaitCancellably(3_000)
-            ?: return emptyList()
         val document = editor.document
+        // The daemon computes this in a read action: the wait gives way to a write action. The gutter's request for the
+        // same text answers it, whichever comes first.
+        val summary = project.service<PiwiProjectService>()
+            .fileSummary(virtualFile, document.modificationStamp)
+            ?.awaitCancellably(3_000)
+            ?: return emptyList()
         // A test's line is drawn in the gutter (PiwiTestAnnotator), not as text above it.
         return (listOfNotNull(summary.file) + summary.lines.orEmpty().filter { it.status == null }).mapNotNull { line ->
             if (line.line < 0 || line.line >= document.lineCount || line.title.isNullOrBlank()) return@mapNotNull null

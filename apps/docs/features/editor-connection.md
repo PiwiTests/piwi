@@ -85,4 +85,11 @@ tool window say the same, or why the editor is not connected. The plugin starts 
 open a file of a project that holds a Playwright config; until then, both say so, and Connect still finds the desktop
 app.
 
+## An unreachable instance
+
+When the instance does not answer, or answers with an error, the status bar reads **Piwi: unreachable** instead of
+**Piwi: connect**: the connection is kept, and the editor reads the instance again on its own, 15 seconds later, then
+twice as long each time, up to every five minutes. A click on the item, or **Piwi: Refresh**, reads it at once. A key
+the instance refuses still reads **Piwi: connect**, since only signing in again helps.
+
 **Piwi: Open settings** in VS Code opens the extension's settings.

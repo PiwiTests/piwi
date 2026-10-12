@@ -122,9 +122,11 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 ## JetBrains IDEs
 
 The [plugin](https://plugins.jetbrains.com/plugin/34674-piwi) starts the editor service with the project's Node.js
-interpreter (**Settings → Languages & Frameworks → Node.js**) once it finds a Playwright config within four folders of
-the project's (in Rider, the solution's) or of its Git root; **Tools → Piwi → Refresh** looks again. The IDE's LSP
-client shows warnings, quick fixes and hover in open files; the rest is native:
+interpreter, 20 or later (**Settings → Languages & Frameworks → Node.js**, which the status bar opens when it is
+missing or older), once it finds a Playwright config within four folders of
+the project's (in Rider, the solution's) or of its Git root; it looks again when one is added or removed, and on
+**Tools → Piwi → Refresh**. The IDE's LSP client shows warnings, quick fixes and hover in open files; the rest is
+native:
 
 - **The Piwi tool window** names the connection and holds the latest run's failures as a tree, since the IDE
   highlights open files only: [the failures view](./editor-runs#the-failures-view).
@@ -133,10 +135,9 @@ client shows warnings, quick fixes and hover in open files; the rest is native:
   ([the status bar](./editor-runs#the-status-bar)); the actions are under **Tools → Piwi**, and **Run the tests that
   reach this file** is also in the editor's context menu.
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
-  Assistant → Model Context Protocol**. It runs the server through `mcp-remote`, with the key in its
-  environment.
-- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard of the instance the project is connected to, or
-  in the desktop app, opens at its line.
+  Assistant → Model Context Protocol**. It runs `mcp-remote` with the key in its environment.
+- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard of the connected instance, or in the desktop app,
+  opens at its line.
 - **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert, and **File → New →
   Record a New Test File…**; the controls are in a banner above the editor.
 

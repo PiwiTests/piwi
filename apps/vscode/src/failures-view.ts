@@ -1,6 +1,7 @@
 /**
- * The Piwi view in the Panel: the latest run's failures as a tree (`failureTree` in `glue.ts`), read from
- * `piwi/failures` whenever the service says the run or its failures changed. A failure's click opens its line; its
+ * The Piwi view in the Panel: the latest run's failures as a tree (`failureTree` in `glue.ts`), as
+ * `piwi/failuresChanged` pushes them, read from `piwi/failures` when the extension starts and when the connection
+ * changes. A failure's click opens its line; its
  * inline actions and context menu run the commands `package.json` binds to its `contextValue`. The grouping and
  * whether the view follows the active editor are kept in `workspaceState`.
  */
@@ -94,18 +95,23 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
 
   /** Read the failures now and draw them. */
   async read(): Promise<FailuresResult | null> {
-    let state: ViewState;
     try {
-      this.result = await this.lc.sendRequest<FailuresResult>(FAILURES_REQUEST);
-      const connected = !!this.status()?.contexts.some((c) => c.connected);
-      state = this.result.items.length ? 'failures' : connected ? 'clear' : 'disconnected';
+      this.show(await this.lc.sendRequest<FailuresResult>(FAILURES_REQUEST));
     } catch {
       this.result = null;
-      state = 'unavailable';
+      this.render();
+      void vscode.commands.executeCommand('setContext', 'piwi.failuresView', 'unavailable' satisfies ViewState);
     }
+    return this.result;
+  }
+
+  /** Draw the failures as the service answered or pushed them (`piwi/failuresChanged`). */
+  show(result: FailuresResult): void {
+    this.result = result;
+    const connected = !!this.status()?.contexts.some((c) => c.connected);
+    const state: ViewState = result.items.length ? 'failures' : connected ? 'clear' : 'disconnected';
     this.render();
     void vscode.commands.executeCommand('setContext', 'piwi.failuresView', state);
-    return this.result;
   }
 
   /** Draw the failures as they were read last, for a new grouping or the run in progress. */

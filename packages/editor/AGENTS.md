@@ -20,8 +20,13 @@ clients stay thin and both editors give the same answers.
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
   owner, project, duration and whether it is new, and the answer the latest complete run of the first context that has
   one (`run`), the runs laid over it (`overlays`) and when they were read (`updatedAt`, which alone changing sends no
-  `piwi/failuresChanged`). `piwi/agentContext` answers the block **Copy context for agent** copies, for a failure the
-  view names.
+  `piwi/failuresChanged`). Each item names the folder of its Playwright config (`root`), which a run of its test takes
+  (`RunTestsArgs.root`), whatever file the failure shows in. `piwi/agentContext` answers the block **Copy context for
+  agent** copies, for a failure the view names or the quick fix (`piwi.copyAgentContext`) names once it is picked.
+- `piwi/status` says what keeps a context from the instance's data (`problemKind`: `not-configured`, `no-project`,
+  `refused`, `unreachable`), so a client tells an instance that did not answer apart from a missing connection. While
+  one does not answer, the contexts are read again 15 s later, then twice as long each time, up to the refresh's pace
+  (`retryUnreachable`, `UNREACHABLE_RETRY_MS`).
 - The latest run on the checked-out branch is read again whenever a run ends, and polled besides (below); while that
   branch has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in
   `piwi/runStatus`). That ladder is the default baseline; a client may choose another per context
@@ -72,10 +77,11 @@ clients stay thin and both editors give the same answers.
   credentials bring. Half a second after a run ends (runs that end together are read once), the context reads its
   latest run again; while its stream is connected, the poll reads it every five minutes, otherwise every minute, every
   15 seconds while a run is in progress, and every 15 seconds while a run is `live`, connected or not (`stream` and
-  `updatedAt` in `piwi/runStatus`). A run in progress on the context's branch, or the editor's own wherever it
+  `updatedAt` in `piwi/runStatus`). A read that finds the same runs and failures places no failure again: it moves
+  `updatedAt` alone. A run in progress on the context's branch, or the editor's own wherever it
   runs, is `live` in `piwi/runStatus`, counted through its own stream (`GET /api/test-runs/:id/stream`), with at most
-  one notification every 300 ms; it goes back to null in the notification that brings the failures read once it
-  ended. The tests its stream begins and ends (`test-begin`, named by its title and suite path in its spec through the
+  one notification every 300 ms, which places no failure again (`progressed` in `RunWatchOptions`); it goes back to
+  null in the notification that brings the failures read once it ended. The tests its stream begins and ends (`test-begin`, named by its title and suite path in its spec through the
   catalog, none when the catalog cannot tell them apart: `catalogCaseOf`, and
   `test-completed`, by its id) are `PiwiContext.liveTests` until then: `running`, then their result (a pass after a
   failed attempt is flaky; a test on several projects shows the first of running, failed, flaky, passed, skipped),
@@ -155,7 +161,7 @@ JetBrains plugin in its `server/`); the service finds the others next to its own
 
 | File                         | What                                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `piwi-language-server.cjs`   | The language server (`src/main.ts`).                                                                               |
+| `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.             |
 | `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
 | `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options (`src/recorder/use-reporter.ts`).                  |
 | `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
@@ -174,11 +180,31 @@ needs the extension's sources, and a change to the recorder there changes what t
   folder as the editor spelled it, which on Windows may carry a lower-case drive letter.
 - **Nothing blocks typing.** The project's indexes, failures, function catalog and vocabulary are fetched on the
   refresh timer, on `piwi/refresh` and after `piwi/setCredentials` (the failures also when a run ends, on the poll and
-  on `piwi/refreshRun`), and requests answer from them. What belongs to one
+  on `piwi/refreshRun`), and requests answer from them. Refreshes never overlap: one asked for while another runs
+  follows it (`refreshAll`). What an index gives every request (each file's call sites, a locator's stability) is
+  computed once per index (`callSitesOf`, `stabilityOf` in `src/analysis.ts`). What belongs to one
   file (a spec's cases, a file's stored alternatives) or one failure (its healing, fix plan, linked issues, evidence) is
-  fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it. A
-  failure's files at its run's commit are read once too, and its diagnostics wait for nothing: the files as saved stand
-  in until they are read.
+  fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it, a quick fix
+  or a hover for 1.5 s at most (`within`, `LOOKUP_WAIT_MS`), the fetch going on for the next ask; one that failed
+  without the instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again next time (`once` in
+  `src/context.ts`). A canceled quick fix or hover is not answered further. A stored file (a trace, a screenshot) is
+  written to `EVIDENCE_ROOT` as it arrives, never held in memory (`PiwiClient.download`), and the files not used for a
+  week are deleted when the service starts (`pruneEvidence`). A
+  failure's files at its run's commit are read once too, as many as the failures go through, and its diagnostics wait
+  for nothing: the files as saved stand in until they are read. The translation values of `HEAD` are read once per
+  `HEAD`, those of the working tree once per refresh, each once for every document that asks meanwhile.
+- **A change is pushed against what the client holds**: `piwi/statusChanged`, `piwi/runStatusChanged` and
+  `piwi/failuresChanged` are sent when the answer differs from the last one sent or answered to `piwi/status`,
+  `piwi/runStatus` or `piwi/failures`, so a client keeps the pushed answers and never reads one again on a push.
+- **An index the instance says did not change is not read again**: the locator and code indexes are asked with the
+  `ETag` they came with (`If-None-Match`), and a 304 keeps the same object, so what is computed once per index stays.
+  The contexts of one service share these answers (`ResponseCache`, created in `startServer`), the same request on its
+  way included: a repository with eight Playwright configs reading one project holds and downloads its index once, not
+  eight times.
+- **A failure shows once, from the config its spec belongs to**: the configs of a repository that read one project each
+  list all its failures, and each would find their files from the repository's root; a context places a failure only
+  when its config folder holds the failure's spec, or when no config folder does (`placedElsewhere`). So a failure's
+  files at its run's commit are read, and its diagnostics sent, once, not once per config.
 - **The failures come first on a refresh** (`PiwiContext.refresh`): the project and its locator index (the ladder
   needs the default branch), then the latest run, whose failures and status are published at once (`onRun`); only then
   the other indexes, side by side, each keeping what it held when its read fails. Their slow reads are one request

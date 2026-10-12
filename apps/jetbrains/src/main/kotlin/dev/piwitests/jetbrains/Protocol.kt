@@ -61,7 +61,13 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * action or assertion on their line, headed, with Piwi's pause bar, when their file is under the Playwright config's
  * folder.
  */
-data class RunTestsArgs(val uri: String, val testIds: List<Int>, val breakpoints: List<EditorBreakpoint>? = null)
+/** `root` names the Playwright config's folder to run them with; without it, the config of `uri`. */
+data class RunTestsArgs(
+    val uri: String,
+    val testIds: List<Int>,
+    val breakpoints: List<EditorBreakpoint>? = null,
+    val root: String? = null,
+)
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
 
@@ -109,6 +115,8 @@ data class ContextStatus(
     val locators: Int = 0,
     val reachedFiles: Int = 0,
     val problem: String? = null,
+    /** What `problem` is about: `not-configured`, `no-project`, `refused` or `unreachable`; null with no problem. */
+    val problemKind: String? = null,
     /** The instance the environment, the `.env` or the settings name, in use or not; Connect offers it beside the desktop app. */
     val instance: NamedInstance? = null,
 )
@@ -223,6 +231,8 @@ data class RunEnded(
  */
 data class WorkspaceFailure(
     val uri: String? = null,
+    /** The folder of the Playwright config the test belongs to, which runs it. */
+    val root: String? = null,
     val line: Int = 0,
     val title: String? = null,
     val headline: String? = null,

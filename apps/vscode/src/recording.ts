@@ -608,7 +608,11 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     if (file?.scheme === 'file' && TEST_FILE.test(file.fsPath)) {
       return { folder: vscode.Uri.file(path.dirname(file.fsPath)), sample: file.fsPath };
     }
-    const [config] = await vscode.workspace.findFiles('**/playwright.config.{ts,js,mjs,cjs}', '**/node_modules/**', 1);
+    const [config] = await vscode.workspace.findFiles(
+      '**/playwright.config.{ts,js,mjs,cjs,mts,cts}',
+      '**/node_modules/**',
+      1,
+    );
     if (config) {
       const text = Buffer.from(await vscode.workspace.fs.readFile(config)).toString('utf-8');
       const folder = path.resolve(path.dirname(config.fsPath), configTestDir(text) ?? '.');

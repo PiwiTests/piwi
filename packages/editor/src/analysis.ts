@@ -43,36 +43,89 @@ export interface LineLocator {
   stability: LocatorStability | null;
 }
 
-/** The locators the index knows at each line of a file, by its path relative to the Playwright config. */
-export function locatorsInFile(index: LocatorIndex, relativePath: string): LineLocator[] {
-  const byKey = new Map<string, LineLocator>();
-  for (const entry of index.locators) {
-    for (const use of entry.uses) {
-      for (const site of use.callSites) {
-        if (!sameFilePath(callSiteFile(site), relativePath)) continue;
-        const line = callSiteLine(site);
-        if (line === null) continue;
-        const key = `${line}\u0000${entry.locator}`;
-        let found = byKey.get(key);
-        if (!found) {
-          const chain = tryParseLocatorChain(entry.locator);
-          found = {
-            line,
-            entry,
-            uses: [],
-            tests: [],
-            actions: [],
-            stability: chain ? assessLocatorChain(chain) : null,
-          };
-          byKey.set(key, found);
-        }
-        if (!found.uses.includes(use)) {
-          found.uses.push(use);
-          const test = index.tests[use.test];
-          if (test && !found.tests.includes(test)) found.tests.push(test);
-          for (const a of use.actions) if (!found.actions.includes(a)) found.actions.push(a);
+/** Every call site of an index, in its order, and the positions of each file's call sites among them. */
+interface IndexCallSites {
+  sites: Array<{ entry: LocatorIndexEntry; use: LocatorIndexUse; site: string }>;
+  byFile: Map<string, number[]>;
+}
+
+const callSitesByIndex = new WeakMap<LocatorIndex, IndexCallSites>();
+
+/** The call sites of an index, grouped by file once per index: a request reads the groups of its file alone. */
+function callSitesOf(index: LocatorIndex): IndexCallSites {
+  let known = callSitesByIndex.get(index);
+  if (!known) {
+    known = { sites: [], byFile: new Map() };
+    for (const entry of index.locators) {
+      for (const use of entry.uses) {
+        for (const site of use.callSites) {
+          const file = callSiteFile(site);
+          const at = known.byFile.get(file) ?? known.byFile.set(file, []).get(file)!;
+          at.push(known.sites.length);
+          known.sites.push({ entry, use, site });
         }
       }
+    }
+    callSitesByIndex.set(index, known);
+  }
+  return known;
+}
+
+/** Whether the index's tests call locators from a file, by its path relative to the Playwright config. */
+export function callsLocatorsFrom(index: LocatorIndex, relativePath: string): boolean {
+  for (const file of callSitesOf(index).byFile.keys()) if (sameFilePath(file, relativePath)) return true;
+  return false;
+}
+
+const stabilityByIndex = new WeakMap<LocatorIndex, Map<string, LocatorStability | null>>();
+
+/** How stable an index's locator is, assessed once per index; null for a chain that does not parse. */
+function stabilityOf(index: LocatorIndex, locator: string): LocatorStability | null {
+  let known = stabilityByIndex.get(index);
+  if (!known) stabilityByIndex.set(index, (known = new Map()));
+  if (!known.has(locator)) {
+    const chain = tryParseLocatorChain(locator);
+    known.set(locator, chain ? assessLocatorChain(chain) : null);
+  }
+  return known.get(locator)!;
+}
+
+/** The tests of a file: those it defines, and those whose steps call locators from it. */
+function testsOfFile(index: LocatorIndex, relativePath: string): Set<number> {
+  const tests = new Set<number>();
+  index.tests.forEach((t, i) => {
+    if (sameFilePath(t.file, relativePath)) tests.add(i);
+  });
+  const { sites, byFile } = callSitesOf(index);
+  for (const [file, at] of byFile) {
+    if (sameFilePath(file, relativePath)) for (const position of at) tests.add(sites[position]!.use.test);
+  }
+  return tests;
+}
+
+/** The locators the index knows at each line of a file, by its path relative to the Playwright config. */
+export function locatorsInFile(index: LocatorIndex, relativePath: string): LineLocator[] {
+  const { sites, byFile } = callSitesOf(index);
+  // The file's call sites, in the index's order.
+  const positions: number[] = [];
+  for (const [file, at] of byFile) if (sameFilePath(file, relativePath)) positions.push(...at);
+  positions.sort((a, b) => a - b);
+  const byKey = new Map<string, LineLocator>();
+  for (const position of positions) {
+    const { entry, use, site } = sites[position]!;
+    const line = callSiteLine(site);
+    if (line === null) continue;
+    const key = `${line}\u0000${entry.locator}`;
+    let found = byKey.get(key);
+    if (!found) {
+      found = { line, entry, uses: [], tests: [], actions: [], stability: stabilityOf(index, entry.locator) };
+      byKey.set(key, found);
+    }
+    if (!found.uses.includes(use)) {
+      found.uses.push(use);
+      const test = index.tests[use.test];
+      if (test && !found.tests.includes(test)) found.tests.push(test);
+      for (const a of use.actions) if (!found.actions.includes(a)) found.actions.push(a);
     }
   }
   return [...byKey.values()].sort((a, b) => a.line - b.line || b.tests.length - a.tests.length);
@@ -437,30 +490,21 @@ export const MAX_SUGGESTIONS = 50;
  * first. Without a known page, the project's most used chains.
  */
 export function locatorSuggestions(index: LocatorIndex, relativePath: string): LocatorSuggestion[] {
-  const testsOfFile = new Set<number>();
-  index.tests.forEach((t, i) => {
-    if (sameFilePath(t.file, relativePath)) testsOfFile.add(i);
-  });
-  for (const entry of index.locators) {
-    for (const use of entry.uses) {
-      if (use.callSites.some((site) => sameFilePath(callSiteFile(site), relativePath))) testsOfFile.add(use.test);
-    }
-  }
+  const tests = testsOfFile(index, relativePath);
   const pages = new Set<number>();
   for (const entry of index.locators) {
-    for (const use of entry.uses) if (testsOfFile.has(use.test)) for (const p of use.pages ?? []) pages.add(p);
+    for (const use of entry.uses) if (tests.has(use.test)) for (const p of use.pages ?? []) pages.add(p);
   }
   const out: LocatorSuggestion[] = [];
   for (const entry of index.locators) {
     const uses = pages.size ? entry.uses.filter((u) => (u.pages ?? []).some((p) => pages.has(p))) : entry.uses;
     if (!uses.length) continue;
-    const chain = tryParseLocatorChain(entry.locator);
     const onPages = [...new Set(uses.flatMap((u) => (u.pages ?? []).filter((p) => pages.has(p))))];
     out.push({
       locator: entry.locator,
       tests: new Set(uses.map((u) => u.test)).size,
       pages: onPages.map((p) => index.pages?.[p]).filter((p): p is string => !!p),
-      stability: chain ? assessLocatorChain(chain) : null,
+      stability: stabilityOf(index, entry.locator),
     });
   }
   const rank = (s: LocatorSuggestion) =>
@@ -498,8 +542,7 @@ export function pageSummary(index: LocatorIndex, repoRelative: string): PageSumm
     if (!uses.length) continue;
     locators++;
     for (const u of uses) tests.add(u.test);
-    const chain = tryParseLocatorChain(entry.locator);
-    if (chain && assessLocatorChain(chain).level === 'brittle') brittle++;
+    if (stabilityOf(index, entry.locator)?.level === 'brittle') brittle++;
   }
   if (!tests.size) return null;
   return {
@@ -575,15 +618,7 @@ export function timeoutEdit(
 
 /** The page keys this file's tests visit: the tests it defines, or whose steps call locators from it. */
 export function filePages(index: LocatorIndex, relativePath: string): string[] {
-  const tests = new Set<number>();
-  index.tests.forEach((t, i) => {
-    if (sameFilePath(t.file, relativePath)) tests.add(i);
-  });
-  for (const entry of index.locators) {
-    for (const use of entry.uses) {
-      if (use.callSites.some((site) => sameFilePath(callSiteFile(site), relativePath))) tests.add(use.test);
-    }
-  }
+  const tests = testsOfFile(index, relativePath);
   const pages = new Set<number>();
   for (const entry of index.locators) {
     for (const use of entry.uses) if (tests.has(use.test)) for (const p of use.pages ?? []) pages.add(p);

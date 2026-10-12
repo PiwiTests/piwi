@@ -117,8 +117,10 @@ export interface EditorBreakpoint {
 
 /** `piwi/runArgs`: the command line that runs tests, as `piwi run` builds it. */
 export interface RunTestsArgs {
-  /** Any file of the workspace the tests belong to, to pick the Playwright config. */
+  /** Any file of the workspace the tests belong to, to pick the Playwright config when `root` does not name it. */
   uri: string;
+  /** The folder of the Playwright config to run them with, as `WorkspaceFailure.root` names it. */
+  root?: string;
   testIds: number[];
   /**
    * The editor's enabled line breakpoints. Those in files under the Playwright config's folder pause the run before a
@@ -160,6 +162,13 @@ export interface RunCommandArgs {
 
 export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';
 
+/**
+ * What keeps a context from the instance's data: no instance named (`not-configured`), no project chosen or found
+ * (`no-project`), a key missing or refused (`refused`), or an instance that did not answer, or answered with an error
+ * (`unreachable`).
+ */
+export type ProblemKind = 'not-configured' | 'no-project' | 'refused' | 'unreachable';
+
 /** `piwi/status`: what the service is connected to, per workspace context. */
 export interface StatusResult {
   contexts: Array<{
@@ -179,6 +188,8 @@ export interface StatusResult {
     reachedFiles: number;
     /** Why it is not connected, in one sentence. */
     problem: string | null;
+    /** What `problem` is about; null with no problem. */
+    problemKind?: ProblemKind | null;
     /**
      * The instance the environment, the workspace `.env` or the editor's
      * settings name, in use or not: Connect offers it beside the desktop app.
@@ -520,6 +531,8 @@ export const RUN_SELECTION_REQUEST = 'piwi/runSelection';
 export interface WorkspaceFailure {
   /** The file the failure shows in: its failing call, else its `test(…)` line. */
   uri: string;
+  /** The folder of the Playwright config the test belongs to, which runs it (`RunTestsArgs.root`). */
+  root?: string;
   /** 0-based, followed through the edits since the run. */
   line: number;
   title: string;

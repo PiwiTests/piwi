@@ -1,5 +1,8 @@
-<!-- Installed, updated and removed with a restart: the IDE never unloads it in place, with its service running. -->
-<idea-plugin require-restart="true">
+<!--
+  Installed, updated and removed without a restart: on unload the platform stops the editor service with the LSP
+  provider, the project services are disposed, and the work they queued expires with them.
+-->
+<idea-plugin>
     <id>dev.piwitests.piwi</id>
     <name>Piwi</name>
     <vendor url="https://piwitests.dev">Piwi</vendor>

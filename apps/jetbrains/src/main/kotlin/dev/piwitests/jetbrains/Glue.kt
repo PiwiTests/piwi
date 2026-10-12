@@ -9,6 +9,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * What the plugin shows, computed from the editor service's answers, where it
@@ -24,7 +26,28 @@ object Glue {
 
     val PLAYWRIGHT_CONFIGS = listOf(
         "playwright.config.ts", "playwright.config.js", "playwright.config.mjs", "playwright.config.cjs",
+        "playwright.config.mts", "playwright.config.cts",
     )
+
+    /** Whether a path, with either separator, names a Playwright config. */
+    fun isPlaywrightConfig(path: String?): Boolean =
+        path != null && path.substringAfterLast('/').substringAfterLast('\\') in PLAYWRIGHT_CONFIGS
+
+    /**
+     * Whether a folder created, removed, renamed or moved at `path` may hold a Playwright config the search finds: it is
+     * under one of `roots`, at most [CONFIG_DEPTH] levels down, and neither it nor a folder above it is skipped.
+     */
+    fun mayHoldConfigs(path: String?, roots: List<Path>): Boolean {
+        // Strings only: it runs for every folder a refresh of the file system reports, in a write action.
+        val dir = path?.replace('\\', '/')?.trimEnd('/') ?: return false
+        for (root in roots) {
+            val prefix = root.toString().replace('\\', '/').trimEnd('/') + "/"
+            if (!dir.startsWith(prefix, ignoreCase = true)) continue
+            val segments = dir.substring(prefix.length).split('/').filter { it.isNotEmpty() && it != "." }
+            return segments.size <= CONFIG_DEPTH && segments.none { it.startsWith(".") || it in SKIPPED_DIRS }
+        }
+        return false
+    }
 
     /** Directory levels searched below a folder for Playwright configs, as the editor service does. */
     const val CONFIG_DEPTH = 4
@@ -100,8 +123,11 @@ object Glue {
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
-    /** What a click on the status bar item does: `REFRESH` reads the latest run again (`piwi/refreshRun`). */
-    enum class StatusAction { REFRESH, CONNECT, SETTINGS, NONE }
+    /**
+     * What a click on the status bar item does: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY` reads
+     * the instance again (Refresh), `NODE_SETTINGS` opens the Node.js settings, then starts the service again.
+     */
+    enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, NONE }
 
     data class StatusView(val text: String, val tooltip: String, val url: String?, val action: StatusAction)
 
@@ -151,7 +177,7 @@ object Glue {
 
     /**
      * The status bar text: the latest run on the checked-out branch, with what the runs laid over it fixed or still
-     * fail, or what keeps the service from reading it. While a run is in progress, the editor's own or one on the
+     * fail, or what keeps the service from reading it, or from starting (`startProblem`, with no status). While a run is in progress, the editor's own or one on the
      * branch, the text counts it, and the tooltip has both, with the baseline chosen and when the latest run was read. A
      * click reads it again.
      * A null status means the service has not started: it starts with the first file of the project opened.
@@ -161,12 +187,22 @@ object Glue {
         runs: RunStatusResult?,
         desktopChosen: Boolean = false,
         now: Long = System.currentTimeMillis(),
+        startProblem: String? = null,
     ): StatusView {
+        if (status == null && startProblem != null) {
+            return StatusView("Piwi: Node.js", "$startProblem\nClick to open the Node.js settings.", null, StatusAction.NODE_SETTINGS)
+        }
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else "\n$it" }
         val connected = contexts.firstOrNull { it.connected }
+        val unreachable = contexts.firstOrNull { it.problemKind == "unreachable" }
+        if (connected == null && unreachable != null) {
+            val problem = unreachable.problem ?: "The instance did not answer"
+            return StatusView("Piwi: unreachable", "$problem\nPiwi reads it again on its own; click to read it now.$hint", null, StatusAction.RETRY)
+        }
+        connected
             ?: return StatusView("Piwi: connect", (contexts.first().problem ?: "Not connected") + hint, null, StatusAction.CONNECT)
         val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
@@ -213,6 +249,21 @@ object Glue {
     }
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
+
+    /** The oldest Node.js major version the editor service runs on. */
+    const val NODE_MAJOR = 20
+
+    /**
+     * Why the editor service cannot start with the Node.js interpreter `node`, from what `node --version` printed (null
+     * when it did not run); null when it can.
+     */
+    fun nodeProblem(node: String, version: String?): String? {
+        val where = "choose one in Settings → Languages & Frameworks → Node.js"
+        val printed = version?.trim().orEmpty()
+        val major = Regex("^v?(\\d+)\\.").find(printed)?.groupValues?.get(1)?.toIntOrNull()
+            ?: return "Piwi needs Node.js $NODE_MAJOR or later, and $node did not run: $where."
+        return if (major < NODE_MAJOR) "Piwi needs Node.js $NODE_MAJOR or later, and $node is $printed: $where." else null
+    }
 
     /** Whether a `piwi/failures` item is a failure of the latest run that a later run passed. */
     fun isFixedLocally(failure: WorkspaceFailure) = failure.state == "fixed-locally"
@@ -424,6 +475,13 @@ object Glue {
     }
 
     /**
+     * Whether two failure trees hold the same nodes in the same places, by key, all the way down: then only what the
+     * nodes say changed, such as a run in progress counting its tests, and the tree keeps its rows as they are.
+     */
+    fun sameShape(a: List<FailureNode>, b: List<FailureNode>): Boolean =
+        a.size == b.size && a.indices.all { a[it].key == b[it].key && sameShape(a[it].children, b[it].children) }
+
+    /**
      * The tool window's line on the run and the baseline: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min
      * ago · Baseline: CI run #120 on feature/x`; `Your local runs · 1 failing · Baseline: your local runs only` with a
      * developer's own runs alone; the baseline alone when it found no run.
@@ -507,14 +565,22 @@ object Glue {
     }
 
     /**
-     * What **Re-run the Failing Tests** runs: every test still failing or edited since its run, from the file of the
-     * first; null when none fails.
+     * What **Re-run the Failing Tests** runs: every test still failing or edited since its run, one run per Playwright
+     * config (`WorkspaceFailure.root`), in the order of their first failure; none when none fails.
      */
-    fun rerunFailingArgs(result: FailuresResult?): RunTestsArgs? {
-        val failing = result?.items.orEmpty().filterNot { isFixedLocally(it) }
-        val ids = failing.mapNotNull { it.testCaseId }.distinct()
-        val uri = failing.firstOrNull()?.uri ?: return null
-        return if (ids.isEmpty()) null else RunTestsArgs(uri, ids)
+    fun rerunFailingArgs(result: FailuresResult?): List<RunTestsArgs> =
+        result?.items.orEmpty()
+            .filter { !isFixedLocally(it) && it.testCaseId != null && it.uri != null }
+            .groupBy { it.root.orEmpty() }
+            .map { (_, failures) ->
+                RunTestsArgs(failures.first().uri!!, failures.mapNotNull { it.testCaseId }.distinct(), root = failures.first().root)
+            }
+
+    /** What **Run This Test** runs for a failure: its test, from the Playwright config it belongs to. */
+    fun failureRunArgs(failure: WorkspaceFailure): RunTestsArgs? {
+        val uri = failure.uri ?: return null
+        val id = failure.testCaseId ?: return null
+        return RunTestsArgs(uri, listOf(id), root = failure.root)
     }
 
     /**
@@ -534,6 +600,49 @@ object Glue {
      */
     fun runsInFiles(runs: RunStatusResult?): RunStatusResult? =
         runs?.copy(contexts = runs.contexts?.map { it.copy(live = null, stream = null, updatedAt = null) })
+
+    /**
+     * `piwi/fileSummary` answers by file URI, each for one state of the file's text (`stamp`) and one count of the changes
+     * the service pushed (`pushed`): the gutter and Code Vision of one highlighting pass share one request. An answer
+     * older than `ttlMillis`, or one that failed, is asked for again; past `max` files, all are.
+     */
+    class SummaryCache(private val ttlMillis: Long, private val max: Int) {
+        private class Entry(val stamp: Long, val pushed: Long, val at: Long, val answer: CompletableFuture<FileSummary?>)
+
+        private val entries = ConcurrentHashMap<String, Entry>()
+
+        fun get(uri: String, stamp: Long, pushed: Long, now: Long, ask: () -> CompletableFuture<FileSummary?>): CompletableFuture<FileSummary?> {
+            entries[uri]
+                ?.takeIf { it.stamp == stamp && it.pushed == pushed && now - it.at < ttlMillis && !it.answer.isCompletedExceptionally }
+                ?.let { return it.answer }
+            if (entries.size >= max) entries.clear()
+            return ask().also { entries[uri] = Entry(stamp, pushed, now, it) }
+        }
+
+        fun clear() = entries.clear()
+    }
+
+    /** Which open files a change of the runs draws again: none, those whose tests show a result, or every file Piwi reads. */
+    enum class Redraw { NONE, TESTS, ALL }
+
+    /**
+     * What a change of the runs from `before` to `after` draws again: nothing when only the run in progress moved
+     * ([runsInFiles]); the files whose tests show a result when only the tests of the run in progress began or ended
+     * (`liveTests`), which only a test's line shows; every file Piwi reads when anything else the files show changed,
+     * such as the latest run or its baseline.
+     */
+    fun redraw(before: RunStatusResult?, after: RunStatusResult?): Redraw {
+        val shownBefore = runsInFiles(before)
+        val shownAfter = runsInFiles(after)
+        return when {
+            shownBefore == shownAfter -> Redraw.NONE
+            withoutLiveTests(shownBefore) == withoutLiveTests(shownAfter) -> Redraw.TESTS
+            else -> Redraw.ALL
+        }
+    }
+
+    private fun withoutLiveTests(runs: RunStatusResult?): RunStatusResult? =
+        runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null) })
 
     /** On the ladder, when the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {
@@ -626,13 +735,18 @@ object Glue {
     }
 
     /** One sentence on the connection, for the tool window and the settings page. */
-    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false): String {
-        if (status == null) return NOT_STARTED
+    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null): String {
+        if (status == null) return startProblem ?: NOT_STARTED
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return "No Playwright config found in this project."
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else " $it" }
+        val unreachable = contexts.firstOrNull { it.problemKind == "unreachable" }
         val c = contexts.firstOrNull { it.connected }
-            ?: return "Not connected. " + (contexts.first().problem ?: "") + hint
+            ?: return if (unreachable != null) {
+                "Not connected. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
+            } else {
+                "Not connected. " + (contexts.first().problem ?: "") + hint
+            }
         val branch = c.branch?.let { " on $it" } ?: ""
         return "Connected to ${c.projectName ?: "Piwi"}$branch at ${c.serverUrl}, from ${sourceLabel(c.source)}.$hint"
     }
@@ -776,6 +890,40 @@ object Glue {
             "    ${jsonString(name)}: {\n      \"command\": \"npx\",\n      \"args\": [${args.joinToString(", ")}]$env\n    }"
         }
         return "{\n  \"mcpServers\": {\n${entries.joinToString(",\n")}\n  }\n}"
+    }
+
+    /**
+     * A script file named in a line of a run's output: the characters `[start, end)` that name it, its path as written,
+     * relative to the run's folder, and its 1-based line and column.
+     */
+    data class FileLink(val start: Int, val end: Int, val path: String, val line: Int, val column: Int?)
+
+    private val FILE_LINK = Regex("""(?<![\w./\\@~+:-])((?:[\w.@~+-]+[\\/])*[\w.@~+-]+\.[cm]?[jt]sx?):(\d+)(?::(\d+))?""")
+
+    /**
+     * The script files a line of a run's output names by a path relative to the run's folder, at a line, as Playwright's
+     * reporters print them (`[chromium] › tests/login.spec.ts:12:5 › signs in`). Absolute paths are left out: the IDE's
+     * console links them already.
+     */
+    fun fileLinks(line: String): List<FileLink> = FILE_LINK.findAll(line).mapNotNull { match ->
+        val number = match.groupValues[2].toIntOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+        FileLink(match.range.first, match.range.last + 1, match.groupValues[1], number, match.groupValues[3].toIntOrNull()?.takeIf { it > 0 })
+    }.toList()
+
+    /** A test file among a run's arguments, with its line and column: `tests/a.spec.ts:3`. */
+    private val TEST_FILE_ARG = Regex("[^-\\s][^\\s]*\\.[cm]?[jt]sx?(:\\d+){0,2}")
+
+    /** The arguments of an `npx playwright test …` command, for the IDE's Playwright runner; null for any other command. */
+    fun playwrightTestArgs(command: String): List<String>? {
+        val parts = splitCommand(command)
+        return if (parts.take(3) == listOf("npx", "playwright", "test")) parts.drop(3) else null
+    }
+
+    /** The name of the IDE's run configuration for a run: its first test file (with its line), and how many more. */
+    fun playwrightRunName(args: List<String>): String {
+        val targets = args.filter { TEST_FILE_ARG.matches(it) }
+        val first = targets.firstOrNull()?.substringAfterLast('/') ?: return "Piwi"
+        return if (targets.size > 1) "Piwi: $first and ${targets.size - 1} more" else "Piwi: $first"
     }
 
     /** The command line that runs a shell command string, split as a shell would for plain words and quotes. */

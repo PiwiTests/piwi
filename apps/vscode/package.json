@@ -29,7 +29,7 @@
   ],
   "main": "./dist/extension.cjs",
   "activationEvents": [
-    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs}"
+    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs,mts,cts}"
   ],
   "contributes": {
     "viewsContainers": {

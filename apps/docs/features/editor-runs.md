@@ -18,7 +18,8 @@ in the status bar while it executes, and its results over the latest CI run's fa
 - **Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
 
 The command is the one `piwi run` would build, run from the Playwright config's folder: in a terminal in VS Code, in
-the Run tool window in a JetBrains IDE, whose **Rerun** starts it again. It sets `PIWI_ORIGIN=editor` and a
+the Run tool window in a JetBrains IDE, whose **Rerun** starts it again, or in the IDE's Playwright runner (test tree,
+Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and a
 `PIWI_ORIGIN_REF` of its own ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run on
 the instance. The editor's breakpoints pause it in the browser, with Piwi's picker one click away:
 [Breakpoints in the browser](./editor-breakpoints).
@@ -33,9 +34,8 @@ started it.
 ## After a run
 
 The editor listens to the instance's event stream: within a second of a run of the project ending, it reads the
-branch's latest run and its failures again. While the stream is connected, it also reads them every five minutes, for
-an instance scaled out without sticky sessions; without the stream, such as behind a proxy that buffers it, every
-minute.
+branch's latest run and its failures again. It also reads them every five minutes with the stream, every minute
+without.
 
 A run started from the editor is its own wherever it runs: the status bar follows it as it runs, and its failures
 read *your run #124* once it ends. When the command ends and no run on the instance carries its ref, the editor says
@@ -85,10 +85,11 @@ the progress of the run you started (`running 4/9`). Under it:
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with the headline and its run (`your run #124`, `edited since run #120`).
 
-Click a failure (double-click or Enter in a JetBrains IDE) to open its line. **Run this test**, **Open the trace** and
-**Open in dashboard** sit on its row in VS Code; the context menu adds **Open the screenshot**, **Copy context for
-agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, **Reproduce in the
-desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the line.
+Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) to open its line. **Run this test**,
+**Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Open the screenshot**,
+**Copy context for agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs,
+**Reproduce in the desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the
+line.
 
 The title bar, or the toolbar, holds Refresh, **Re-run the failing tests**, **Open the run in the dashboard**,
 **Compare with…** and the grouping. In VS Code, **Follow the active editor** selects the first failure of the file you
@@ -107,7 +108,7 @@ kept on this machine, per Playwright config.
 ## Re-run the failing tests
 
 **Piwi: Re-run the failing tests** (**Tools → Piwi → Re-run the Failing Tests**) runs every test still failing, or
-edited since its run, in one command; when none fails, it says so. **Run this test** also sits above the reason line of
+edited since its run, one command per Playwright config; when none fails, it says so. **Run this test** also sits above the reason line of
 a failing test, beside **Screenshot** and **Trace**.
 
 ## The status bar
@@ -121,10 +122,11 @@ Refresh** fetches. The tooltip holds the run's counts, the baseline, your local 
 when the run was read (`Updated 12 s ago · live` while the event stream is connected, `· read every minute` without it).
 In VS Code it ends with **Open run #120**, **Open in dashboard**, **Compare with…** and **Connect**; in a JetBrains IDE,
 **Tools → Piwi → Open the Latest Run in the Dashboard**, also in the Piwi tool window's toolbar, opens the run. When the
-extension is not connected, the item says why, and a click runs **Piwi: Connect**.
+extension is not connected, the item says why, and a click runs **Piwi: Connect**, or retries an
+[unreachable instance](./editor-connection#an-unreachable-instance).
 
 ## Related
 
-- [Editor extensions](./editors): the failures, lenses and quick fixes the editor shows from your suite.
+- [Editor extensions](./editors): what the editor shows from your suite.
 - [Editor connection](./editor-connection): the instance the editor reads, and its key.
 - [Test selection](/features/test-selection): the saved selections **Run selection…** runs.

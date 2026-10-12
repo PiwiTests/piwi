@@ -3,9 +3,11 @@ package dev.piwitests.jetbrains
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CompletableFuture
 
 class GlueTest {
     private val connected = StatusResult(
@@ -38,6 +40,61 @@ class GlueTest {
     fun `when not connected, offers Connect with the reason`() {
         val view = Glue.statusView(StatusResult(listOf(ContextStatus(root = "/w", problem = "No project chosen."))), null)
         assertEquals(Glue.StatusView("Piwi: connect", "No project chosen.", null, Glue.StatusAction.CONNECT), view)
+    }
+
+    @Test
+    fun `a folder created under a searched root may hold a config, unless it is too deep, hidden or skipped`() {
+        val roots = listOf(java.nio.file.Path.of("/w/shop"))
+        assertEquals(true, Glue.mayHoldConfigs("/w/shop/apps/web", roots))
+        assertEquals(true, Glue.mayHoldConfigs("/w/shop/a/b/c/d", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shop/a/b/c/d/e", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shop/node_modules/pkg", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shop/apps/.cache", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shop", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shopping/apps", roots))
+        assertEquals(false, Glue.mayHoldConfigs(null, roots))
+        assertEquals(true, Glue.mayHoldConfigs("c:/w/shop/apps", listOf(java.nio.file.Path.of("C:\\w\\shop"))))
+    }
+
+    @Test
+    fun `the IDE's Playwright runner takes an npx playwright test command, named after what it runs`() {
+        assertEquals(listOf("tests/a.spec.ts:3", "--headed"), Glue.playwrightTestArgs("npx playwright test tests/a.spec.ts:3 --headed"))
+        assertEquals(emptyList<String>(), Glue.playwrightTestArgs("npx playwright test"))
+        assertEquals(null, Glue.playwrightTestArgs("npm run e2e -- tests/a.spec.ts"))
+        assertEquals("Piwi: a.spec.ts:3", Glue.playwrightRunName(listOf("tests/a.spec.ts:3", "--headed")))
+        assertEquals("Piwi: a.spec.ts and 1 more", Glue.playwrightRunName(listOf("tests/a.spec.ts", "b.spec.ts", "-g", "pays")))
+        assertEquals("Piwi", Glue.playwrightRunName(listOf("--grep=@smoke")))
+    }
+
+    @Test
+    fun `a Node_js missing or older than 20 is said, with its settings one click away`() {
+        assertEquals(null, Glue.nodeProblem("node", "v20.11.1\n"))
+        assertEquals(null, Glue.nodeProblem("/usr/bin/node", "v22.3.0"))
+        val old = "Piwi needs Node.js 20 or later, and /usr/bin/node is v18.19.0: choose one in Settings → Languages & Frameworks → Node.js."
+        assertEquals(old, Glue.nodeProblem("/usr/bin/node", "v18.19.0"))
+        assertEquals(
+            "Piwi needs Node.js 20 or later, and node did not run: choose one in Settings → Languages & Frameworks → Node.js.",
+            Glue.nodeProblem("node", null),
+        )
+        assertEquals(
+            Glue.StatusView("Piwi: Node.js", "$old\nClick to open the Node.js settings.", null, Glue.StatusAction.NODE_SETTINGS),
+            Glue.statusView(null, null, startProblem = old),
+        )
+        assertEquals(old, Glue.connectionSummary(null, startProblem = old))
+        assertEquals(Glue.NOT_STARTED, Glue.connectionSummary(null))
+    }
+
+    @Test
+    fun `when the instance does not answer, says so and reads it again on a click rather than Connect`() {
+        val problem = "Could not reach http://piwi: fetch failed"
+        val status = StatusResult(listOf(ContextStatus(root = "/w", problem = problem, problemKind = "unreachable")))
+        assertEquals(
+            Glue.StatusView("Piwi: unreachable", "$problem\nPiwi reads it again on its own; click to read it now.", null, Glue.StatusAction.RETRY),
+            Glue.statusView(status, null),
+        )
+        assertEquals("Not connected. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
+        val refused = StatusResult(listOf(ContextStatus(root = "/w", problem = "Refused.", problemKind = "refused")))
+        assertEquals(Glue.StatusAction.CONNECT, Glue.statusView(refused, null).action)
     }
 
     @Test
@@ -838,12 +895,31 @@ class GlueTest {
     }
 
     @Test
-    fun `the header names the run, the failing tests are counted and re-run from the file of the first`() {
+    fun `the header names the run, the failing tests are counted and re-run once per Playwright config`() {
         assertEquals("Run #120 · CI · feature/x · 2 failing · 1 fixed locally · 4 min ago", Glue.runHeader(treeFailures, treeNow))
         assertEquals(null, Glue.runHeader(FailuresResult(emptyList())))
         assertEquals(2, Glue.failingCount(treeFailures))
-        assertEquals(RunTestsArgs("file:///w/tests/login.spec.ts", listOf(7, 8)), Glue.rerunFailingArgs(treeFailures))
-        assertEquals(null, Glue.rerunFailingArgs(FailuresResult(listOf(treeFailures.items!![3]))))
+        assertEquals(listOf(RunTestsArgs("file:///w/tests/login.spec.ts", listOf(7, 8))), Glue.rerunFailingArgs(treeFailures))
+        assertEquals(emptyList<RunTestsArgs>(), Glue.rerunFailingArgs(FailuresResult(listOf(treeFailures.items!![3]))))
+        val (a, b) = treeFailures.items!!
+        val twoConfigs = FailuresResult(
+            listOf(
+                a.copy(root = "/w/apps/shop"),
+                b.copy(root = "/w/apps/admin", uri = "file:///w/shared/pages/admin.ts", testCaseId = 8),
+                a.copy(root = "/w/apps/shop", testCaseId = 9),
+            ),
+        )
+        assertEquals(
+            listOf(
+                RunTestsArgs(a.uri!!, listOf(7, 9), root = "/w/apps/shop"),
+                RunTestsArgs("file:///w/shared/pages/admin.ts", listOf(8), root = "/w/apps/admin"),
+            ),
+            Glue.rerunFailingArgs(twoConfigs),
+        )
+        assertEquals(
+            RunTestsArgs("file:///w/shared/pages/admin.ts", listOf(8), root = "/w/apps/admin"),
+            Glue.failureRunArgs(twoConfigs.items!![1]),
+        )
     }
 
     @Test
@@ -995,5 +1071,82 @@ class GlueTest {
         val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))
         assertEquals(Glue.runsInFiles(latest), Glue.runsInFiles(moving))
         assertEquals(false, Glue.runsInFiles(testing) == Glue.runsInFiles(latest))
+    }
+
+    @Test
+    fun `a run in progress draws only the files that show its tests again, a new run every file`() {
+        val latest = RunStatusResult(listOf(RunStatus(root = "/w", run = passed)))
+        val moving = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, live = LiveRun(runId = 124, done = 1), stream = "live")))
+        val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))
+        val ended = testing.copy(contexts = testing.contexts!!.map { it.copy(liveTests = listOf(LiveTest(1, "passed"))) })
+        val next = RunStatusResult(listOf(RunStatus(root = "/w", run = passed.copy(id = 42))))
+        assertEquals(Glue.Redraw.NONE, Glue.redraw(latest, moving))
+        assertEquals(Glue.Redraw.NONE, Glue.redraw(null, null))
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(latest, testing))
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(testing, ended))
+        assertEquals(Glue.Redraw.ALL, Glue.redraw(ended, next))
+        assertEquals(Glue.Redraw.ALL, Glue.redraw(null, latest))
+        // Another baseline is another run in the files.
+        val local = latest.copy(contexts = latest.contexts!!.map { it.copy(baseline = Baseline(BaselineChoice("local"), "your local runs only")) })
+        assertEquals(Glue.Redraw.ALL, Glue.redraw(latest, local))
+    }
+
+    @Test
+    fun `a tree whose nodes only say something else keeps its rows`() {
+        val result = FailuresResult(
+            items = listOf(WorkspaceFailure(uri = "file:///w/a.spec.ts", line = 3, title = "pays", executionId = 9, runId = 41, file = "a.spec.ts")),
+            run = FailuresRun(id = 41, startTime = "2026-09-27T10:00:00.000Z"),
+        )
+        val now = java.time.Instant.parse("2026-09-27T10:04:00.000Z").toEpochMilli()
+        val idle = Glue.failureTree(result, "file", now)
+        val running = Glue.failureTree(result, "file", now, LiveRun(runId = 124, done = 3, total = 9, own = true))
+        assertEquals(false, idle == running)
+        assertEquals(true, Glue.sameShape(idle, running))
+        assertEquals(false, Glue.sameShape(idle, Glue.failureTree(result, "flat", now)))
+        val another = result.copy(items = result.items!! + result.items!!.first().copy(executionId = 10, title = "refunds"))
+        assertEquals(false, Glue.sameShape(idle, Glue.failureTree(another, "file", now)))
+    }
+
+    @Test
+    fun `a file summary is asked once per text, until the service pushes a change or it gets old`() {
+        val cache = Glue.SummaryCache(ttlMillis = 5_000, max = 2)
+        var asked = 0
+        val ask = { asked++; CompletableFuture.completedFuture<FileSummary?>(FileSummary()) }
+        val first = cache.get("file:///a.ts", stamp = 1, pushed = 0, now = 0, ask = ask)
+        assertSame(first, cache.get("file:///a.ts", stamp = 1, pushed = 0, now = 4_999, ask = ask))
+        assertEquals(1, asked)
+        cache.get("file:///a.ts", stamp = 2, pushed = 0, now = 5, ask = ask)
+        cache.get("file:///a.ts", stamp = 2, pushed = 1, now = 6, ask = ask)
+        cache.get("file:///a.ts", stamp = 2, pushed = 1, now = 6_000, ask = ask)
+        assertEquals(4, asked)
+        // A failed request is not kept.
+        cache.get("file:///b.ts", stamp = 1, pushed = 1, now = 0) { asked++; CompletableFuture.failedFuture(IllegalStateException()) }
+        cache.get("file:///b.ts", stamp = 1, pushed = 1, now = 1, ask = ask)
+        assertEquals(6, asked)
+    }
+
+    @Test
+    fun `the paths of a run's output open their line, the absolute ones left to the IDE`() {
+        assertEquals(
+            listOf(Glue.FileLink(18, 43, "tests/example.spec.ts", 3, 5)),
+            Glue.fileLinks("  1) [chromium] › tests/example.spec.ts:3:5 › has title ───"),
+        )
+        assertEquals(listOf(Glue.FileLink(8, 38, "tests/pages/checkout.page.ts", 5, null)), Glue.fileLinks("    at (tests/pages/checkout.page.ts:5)"))
+        assertEquals(emptyList<Glue.FileLink>(), Glue.fileLinks("    at /home/ci/tests/example.spec.ts:7:22"))
+        assertEquals(emptyList<Glue.FileLink>(), Glue.fileLinks("    at C:\\work\\tests\\example.spec.ts:7:22"))
+        assertEquals(emptyList<Glue.FileLink>(), Glue.fileLinks("GET http://localhost:3000/app.js:10:5 failed"))
+        assertEquals(emptyList<Glue.FileLink>(), Glue.fileLinks("  7 |   await expect(page).toHaveTitle(/Playwright/);"))
+        assertEquals(listOf("a.spec.ts", "b.test.mjs"), Glue.fileLinks("a.spec.ts:1:2 and b.test.mjs:30").map { it.path })
+    }
+
+    @Test
+    fun `every name Playwright reads a config from is one`() {
+        for (name in listOf("ts", "js", "mjs", "cjs", "mts", "cts")) {
+            assertEquals(true, Glue.isPlaywrightConfig("/w/e2e/playwright.config.$name"))
+        }
+        assertEquals(true, Glue.isPlaywrightConfig("C:\\w\\playwright.config.ts"))
+        assertEquals(false, Glue.isPlaywrightConfig("/w/playwright.config.ts.bak"))
+        assertEquals(false, Glue.isPlaywrightConfig("/w/vitest.config.ts"))
+        assertEquals(false, Glue.isPlaywrightConfig(null))
     }
 }

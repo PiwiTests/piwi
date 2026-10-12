@@ -76,6 +76,26 @@ const tests = {
     assert.ok(titles.includes('1 test · click · 1 failing'), titles.join(' | '));
   },
 
+  async 'the gutter shows each test’s result with CodeLens turned off'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const editorSettings = vscode.workspace.getConfiguration('editor');
+    await editorSettings.update('codeLens', false, vscode.ConfigurationTarget.Workspace);
+    try {
+      const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+      await vscode.window.showTextDocument(spec);
+      const drawn = await waitFor(() => {
+        const tests = api.gutter(spec.toString());
+        return tests.length ? tests : null;
+      }, 'the gutter of checkout.spec.ts');
+      assert.deepEqual(
+        drawn.map((t) => [t.line, t.status]),
+        [[2, 'passed']],
+      );
+    } finally {
+      await editorSettings.update('codeLens', undefined, vscode.ConfigurationTarget.Workspace);
+    }
+  },
+
   async 'hover shows the failure'() {
     const hovers = await vscode.commands.executeCommand(
       'vscode.executeHoverProvider',

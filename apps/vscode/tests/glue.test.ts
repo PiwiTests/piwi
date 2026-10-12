@@ -30,8 +30,11 @@ import {
   refreshingText,
   relativeTime,
   rerunFailingArgs,
+  failureRunArgs,
   runIdOf,
   runsInFiles,
+  filesRedraw,
+  ownLiveRun,
   runVerdict,
   sourceLabel,
   statusBarView,
@@ -102,6 +105,26 @@ describe('statusBarView', () => {
       tooltip: 'No project chosen.\n\n[Connect](command:piwi.connect)',
       action: 'connect',
     });
+  });
+
+  test('when the instance does not answer, says so and offers to read it again rather than Connect', () => {
+    const problem = 'Could not reach http://piwi: fetch failed';
+    const view = statusBarView(
+      { contexts: [{ ...connected.contexts[0]!, connected: false, problem, problemKind: 'unreachable' }] },
+      null,
+    );
+    expect(view).toEqual({
+      text: '$(debug-disconnect) Piwi: unreachable',
+      tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Connect](command:piwi.connect)`,
+      action: 'retry',
+      url: null,
+      error: false,
+    });
+    const refused = statusBarView(
+      { contexts: [{ ...connected.contexts[0]!, connected: false, problem: 'Refused.', problemKind: 'refused' }] },
+      null,
+    );
+    expect(refused).toMatchObject({ text: '$(plug) Piwi: connect', action: 'connect' });
   });
 
   test('a passing run, with its flaky tests; a click reads it again', () => {
@@ -228,11 +251,25 @@ describe('statusBarView', () => {
     };
     expect(runsInFiles(moving)).toBe(runsInFiles(latest));
     expect(runsInFiles(run({}))).not.toBe(runsInFiles(latest));
-    // A test of the run in progress that begins or ends is drawn at once.
+    // A test of the run in progress that begins or ends draws the tests' lines again.
     const testing = {
       contexts: [{ ...moving.contexts[0]!, liveTests: [{ testCaseId: 1, status: 'running' as const }] }],
     };
     expect(runsInFiles(testing)).not.toBe(runsInFiles(moving));
+    expect(filesRedraw(latest, moving)).toBe('none');
+    expect(filesRedraw(moving, testing)).toBe('tests');
+    expect(
+      filesRedraw(testing, {
+        contexts: [{ ...testing.contexts[0]!, liveTests: [{ testCaseId: 1, status: 'passed' }] }],
+      }),
+    ).toBe('tests');
+    expect(filesRedraw(testing, run({}))).toBe('all');
+    expect(filesRedraw(null, latest)).toBe('all');
+    expect(filesRedraw(null, null)).toBe('none');
+    // The failures view's first node follows the editor's own run alone.
+    expect(ownLiveRun(moving)).not.toBe(ownLiveRun(latest));
+    const other = { contexts: [{ ...moving.contexts[0]!, live: { ...moving.contexts[0]!.live!, own: false } }] };
+    expect(ownLiveRun(other)).toBe(ownLiveRun(latest));
   });
 
   test('a running run shows its progress', () => {
@@ -451,6 +488,19 @@ describe('the tests of a file', () => {
       },
     ]);
     expect(failing!.hover).toBe('**Piwi**: failing · passed 1/4 · failed');
+  });
+
+  test('a test’s hover shows the instance’s text as written', () => {
+    const [test] = testDecorations([
+      {
+        line: 2,
+        title: 'passed 3/4 · flaky score 40 · [timing](command:piwi.openInDashboard) · in __smoke__',
+        status: 'flaky',
+      },
+    ]);
+    expect(test!.hover).toBe(
+      '**Piwi**: flaky · passed 3/4 · flaky score 40 · \\[timing\\](command:piwi.openInDashboard) · in \\_\\_smoke\\_\\_',
+    );
   });
 
   test('the status bar says when the checked-out branch has no run yet', () => {
@@ -1112,11 +1162,28 @@ describe('the failures view', () => {
     expect(older.map((n) => n.label)).toEqual(['login.spec.ts']);
   });
 
-  test('counts the failing tests, and re-runs them from the file of the first', () => {
+  test('counts the failing tests, and re-runs them once per Playwright config', () => {
     expect(failingCount(result)).toBe(2);
-    expect(rerunFailingArgs(result)).toEqual({ uri: 'file:///w/tests/login.spec.ts', testIds: [7, 8] });
-    expect(rerunFailingArgs({ items: [result.items[3]!] })).toBeNull();
-    expect(rerunFailingArgs(null)).toBeNull();
+    expect(rerunFailingArgs(result)).toEqual([{ uri: 'file:///w/tests/login.spec.ts', testIds: [7, 8] }]);
+    expect(rerunFailingArgs({ items: [result.items[3]!] })).toEqual([]);
+    expect(rerunFailingArgs(null)).toEqual([]);
+    const [a, b] = result.items;
+    const twoConfigs = {
+      items: [
+        { ...a!, root: '/w/apps/shop' },
+        { ...b!, root: '/w/apps/admin', uri: 'file:///w/shared/pages/admin.ts', testCaseId: 8 },
+        { ...a!, root: '/w/apps/shop', testCaseId: 9 },
+      ],
+    };
+    expect(rerunFailingArgs(twoConfigs)).toEqual([
+      { uri: a!.uri, root: '/w/apps/shop', testIds: [7, 9] },
+      { uri: 'file:///w/shared/pages/admin.ts', root: '/w/apps/admin', testIds: [8] },
+    ]);
+    expect(failureRunArgs(twoConfigs.items[1]!)).toEqual({
+      uri: 'file:///w/shared/pages/admin.ts',
+      root: '/w/apps/admin',
+      testIds: [8],
+    });
   });
 
   test('a failure names its run', () => {

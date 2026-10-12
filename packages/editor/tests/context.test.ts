@@ -1,10 +1,13 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import {
   linkedDesktopProject,
   namedInstance,
+  PiwiContext,
+  pruneEvidence,
   readDesktopDiscovery,
   resolveContextConnection,
   withServerUrl,
@@ -24,6 +27,78 @@ afterEach(() => {
 // No desktop discovery file: only the workspace and the editor's settings count.
 const env = { PIWI_DESKTOP_CONFIG: path.join(tmpdir(), 'piwi-editor-no-desktop.json') };
 const saved = { serverUrl: 'https://piwi.corp/', apiKey: 'pk_saved', project: 'shop' };
+
+describe('the files at the commit of a run', () => {
+  test('are each read once, however many files the failures go through', async () => {
+    const repo = workspace();
+    const files = Array.from({ length: 150 }, (_, i) => `tests/area${i % 10}/case${i}.spec.ts`);
+    for (const file of files) {
+      mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+      writeFileSync(path.join(repo, file), `test('case ${file}', async () => {});\n`);
+    }
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], {
+        cwd: repo,
+        encoding: 'utf-8',
+      });
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    const commit = git('rev-parse', 'HEAD').trim();
+    const context = new PiwiContext(repo);
+    const first = files.map((file) => context.textAtCommit(commit, file));
+    await Promise.all(first.map((entry) => entry.read));
+    // A pass placing the failures asks for every file again: none is read twice.
+    const again = files.map((file) => context.textAtCommit(commit, file));
+    expect(again.filter((entry, i) => entry !== first[i])).toEqual([]);
+    expect(again[0]!.text).toBe(`test('case ${files[0]}', async () => {});\n`);
+  });
+});
+
+describe('the downloaded files', () => {
+  test('are deleted once unused for a week, the others kept', async () => {
+    const root = workspace();
+    const day = 24 * 60 * 60_000;
+    const now = Date.now();
+    for (const [name, age] of [
+      ['old', 8 * day],
+      ['recent', day],
+    ] as const) {
+      mkdirSync(path.join(root, name));
+      writeFileSync(path.join(root, name, 'trace.zip'), 'zip');
+      const at = new Date(now - age);
+      utimesSync(path.join(root, name), at, at);
+    }
+    await pruneEvidence(root, now);
+    expect(existsSync(path.join(root, 'old'))).toBe(false);
+    expect(existsSync(path.join(root, 'recent', 'trace.zip'))).toBe(true);
+    await pruneEvidence(path.join(root, 'missing'), now);
+  });
+});
+
+describe('the translations', () => {
+  test('are read once for all the documents asking meanwhile', async () => {
+    const repo = workspace();
+    mkdirSync(path.join(repo, 'src/locales/en'), { recursive: true });
+    writeFileSync(
+      path.join(repo, 'src/locales/en/cart.json'),
+      JSON.stringify({ cart: { title: 'Your cart' } }, null, 2),
+    );
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], {
+        cwd: repo,
+        encoding: 'utf-8',
+      });
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    const context = new PiwiContext(repo);
+    const [first, second] = await Promise.all([context.translationMaps(), context.translationMaps()]);
+    expect(first.old.get('cart.title')).toBe('Your cart');
+    expect(second.old).toBe(first.old);
+    expect(second.new).toBe(first.new);
+  });
+});
 
 describe('resolveContextConnection', () => {
   test('the saved key goes with the server it was saved for', () => {

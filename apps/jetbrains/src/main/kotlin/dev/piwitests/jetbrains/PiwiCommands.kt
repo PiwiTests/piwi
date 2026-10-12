@@ -5,6 +5,8 @@ import com.google.gson.JsonElement
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.configurations.GeneralCommandLine
+import com.intellij.execution.filters.Filter
+import com.intellij.execution.filters.OpenFileHyperlinkInfo
 import com.intellij.execution.process.KillableColoredProcessHandler
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
@@ -19,6 +21,7 @@ import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -31,10 +34,15 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * The client commands the editor service names in summary lines and code
  * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`,
- * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`, `piwi.desktopJob`).
+ * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyAgentContext`, `piwi.copyText`, `piwi.desktopJob`).
  */
 object PiwiCommands {
     private val gson = Gson()
+
+    private const val NOT_RUNNING = "The editor service is not running."
+
+    /** How long a failure's trace or screenshot may take to download: a trace can weigh tens of megabytes. */
+    private const val DOWNLOAD_TIMEOUT_MILLIS = 5 * 60_000L
 
     private inline fun <reified T> arg(value: Any?): T? = when (value) {
         is JsonElement -> gson.fromJson(value, T::class.java)
@@ -49,6 +57,7 @@ object PiwiCommands {
             "piwi.openTrace" -> arg<TraceParams>(arguments.firstOrNull())?.let { openTrace(project, it) }
             "piwi.openScreenshot" -> arg<TraceParams>(arguments.firstOrNull())?.let { openScreenshot(project, it) }
             "piwi.runCommand" -> arg<RunCommandArgs>(arguments.firstOrNull())?.let { run(project, it.cwd, it.command, it.env) }
+            "piwi.copyAgentContext" -> arg<TraceParams>(arguments.firstOrNull())?.let { copyAgentContext(project, it) }
             "piwi.copyText" -> arg<String>(arguments.firstOrNull())?.let {
                 CopyPasteManager.getInstance().setContents(StringSelection(it))
                 notify(project, "Copied. Paste it to your agent.")
@@ -104,8 +113,8 @@ object PiwiCommands {
     fun rerunFailing(project: Project) {
         background(project, "Piwi: resolving the failing tests") {
             val failures = project.service<PiwiProjectService>().server()?.failures()?.orNull()
-            val args = Glue.rerunFailingArgs(failures)
-            if (args == null) notify(project, "No failing test to re-run.") else runTests(project, args)
+            val runs = Glue.rerunFailingArgs(failures)
+            if (runs.isEmpty()) notify(project, "No failing test to re-run.") else runs.forEach { runTests(project, it) }
         }
     }
 
@@ -182,16 +191,41 @@ object PiwiCommands {
             null
         }
         val env = if (base != null && address != null) base + ("PIWI_EDITOR_SEND" to address) else base
+        val args = Glue.playwrightTestArgs(line)
+        if (args != null && project.service<PiwiProjectService>().local().playwrightRunner && PlaywrightRunnerGate.available()) {
+            val ref = command.ref
+            ApplicationManager.getApplication().invokeLater({
+                // The console runs what the IDE's runner does not take.
+                val started = runCatching {
+                    PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty()) { exitCode ->
+                        if (ref != null) commandEnded(project, CommandEndedParams(ref, exitCode))
+                    }
+                }.getOrDefault(false)
+                if (!started) run(project, cwd, line, env, ref)
+            }, project.disposed)
+            return
+        }
         run(project, cwd, line, env, command.ref)
     }
 
+    /** Tell the service a command it gave ended (`piwi/commandEnded`), off the event thread. */
+    private fun commandEnded(project: Project, ended: CommandEndedParams) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            // The plugin may have been unloaded since the run started: its service is then gone.
+            if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(ended)
+        }
+    }
+
+    /** Download a failure's trace, for as long as [DOWNLOAD_TIMEOUT_MILLIS] or until Cancel, and open it in the trace viewer. */
     fun openTrace(project: Project, params: TraceParams) {
         background(project, "Piwi: downloading the trace") {
-            val trace = project.service<PiwiProjectService>().server()?.trace(params)?.orNull()
-            if (trace?.command == null || trace.cwd == null) {
-                notify(project, "This failure has no trace to open.", NotificationType.WARNING)
-            } else {
-                run(project, trace.cwd, trace.command)
+            val request = project.service<PiwiProjectService>().server()?.trace(params)
+            val trace = request?.awaitCancellably(DOWNLOAD_TIMEOUT_MILLIS)
+            when {
+                trace?.command != null && trace.cwd != null -> run(project, trace.cwd, trace.command)
+                request == null -> notify(project, NOT_RUNNING, NotificationType.WARNING)
+                !request.isDone -> notify(project, "The trace did not download within ${DOWNLOAD_TIMEOUT_MILLIS / 60_000} minutes.", NotificationType.WARNING)
+                else -> notify(project, "This failure has no trace to open.", NotificationType.WARNING)
             }
         }
     }
@@ -199,14 +233,16 @@ object PiwiCommands {
     /** Download a failure's screenshot and open it in an editor tab. */
     fun openScreenshot(project: Project, params: TraceParams) {
         background(project, "Piwi: downloading the screenshot") {
-            val path = project.service<PiwiProjectService>().server()?.screenshot(params)?.orNull()?.path
+            val request = project.service<PiwiProjectService>().server()?.screenshot(params)
+            val path = request?.awaitCancellably(DOWNLOAD_TIMEOUT_MILLIS)?.path
             val file = path?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(it)) }
-            if (file == null) {
-                notify(project, "This failure has no screenshot to open.", NotificationType.WARNING)
-            } else {
-                ApplicationManager.getApplication().invokeLater({
+            when {
+                file != null -> ApplicationManager.getApplication().invokeLater({
                     FileEditorManager.getInstance(project).openFile(file, true)
                 }, project.disposed)
+                request == null -> notify(project, NOT_RUNNING, NotificationType.WARNING)
+                !request.isDone -> notify(project, "The screenshot did not download within ${DOWNLOAD_TIMEOUT_MILLIS / 60_000} minutes.", NotificationType.WARNING)
+                else -> notify(project, "This failure has no screenshot to open.", NotificationType.WARNING)
             }
         }
     }
@@ -233,12 +269,7 @@ object PiwiCommands {
             }
             if (ref != null) {
                 handler.addProcessListener(object : ProcessListener {
-                    override fun processTerminated(event: ProcessEvent) {
-                        val ended = CommandEndedParams(ref, event.exitCode)
-                        ApplicationManager.getApplication().executeOnPooledThread {
-                            if (!project.isDisposed) project.service<PiwiProjectService>().server()?.commandEnded(ended)
-                        }
-                    }
+                    override fun processTerminated(event: ProcessEvent) = commandEnded(project, CommandEndedParams(ref, event.exitCode))
                 })
             }
             ApplicationManager.getApplication().invokeLater {
@@ -247,6 +278,7 @@ object PiwiCommands {
                 } else {
                     RunContentExecutor(project, handler)
                         .withTitle("Piwi")
+                        .withFilter(RunOutputLinks(project, cwd))
                         .withActivateToolWindow(true)
                         .withRerun {
                             handler.destroyProcess()
@@ -266,5 +298,23 @@ object PiwiCommands {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, true) {
             override fun run(indicator: ProgressIndicator) = body()
         })
+    }
+}
+
+/**
+ * Links the script files a run's output names relative to the run's folder (`[chromium] › tests/login.spec.ts:12:5`) to
+ * their line; the IDE's console links absolute paths already.
+ */
+private class RunOutputLinks(private val project: Project, private val cwd: String) : Filter, DumbAware {
+    override fun applyFilter(line: String, entireLength: Int): Filter.Result? {
+        val links = Glue.fileLinks(line)
+        if (links.isEmpty()) return null
+        val start = entireLength - line.length
+        val items = links.mapNotNull { link ->
+            val file = runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(cwd).resolve(link.path)) }.getOrNull()
+                ?: return@mapNotNull null
+            Filter.ResultItem(start + link.start, start + link.end, OpenFileHyperlinkInfo(project, file, link.line - 1, (link.column ?: 1) - 1))
+        }
+        return if (items.isEmpty()) null else Filter.Result(items)
     }
 }

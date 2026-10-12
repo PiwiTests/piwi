@@ -33,8 +33,11 @@ export interface StatusBarView {
   text: string;
   /** Markdown: what the item shows and when it was read, then links to the run, the dashboard and Connect. */
   tooltip: string;
-  /** `refresh` reads the latest run again (`piwi.refreshRun`); `connect` runs Piwi: Connect. */
-  action: 'refresh' | 'connect' | 'none';
+  /**
+   * `refresh` reads the latest run again (`piwi.refreshRun`); `retry` reads the instance again (`piwi.refresh`);
+   * `connect` runs Piwi: Connect.
+   */
+  action: 'refresh' | 'retry' | 'connect' | 'none';
   /** The latest run's page, which `piwi.openRun` opens. */
   url: string | null;
   /** Whether the item uses the editor's error background. */
@@ -44,7 +47,13 @@ export interface StatusBarView {
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
 
 /** The commands the status bar item's tooltip links to. */
-export const STATUS_TOOLTIP_COMMANDS = ['piwi.openRun', 'piwi.openInDashboard', 'piwi.compareWith', 'piwi.connect'];
+export const STATUS_TOOLTIP_COMMANDS = [
+  'piwi.openRun',
+  'piwi.openInDashboard',
+  'piwi.compareWith',
+  'piwi.connect',
+  'piwi.refresh',
+];
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -130,6 +139,21 @@ export function statusBarView(
   const hint = desktopHint(status, desktopChosen);
   const connect = '[Connect](command:piwi.connect)';
   const connected = contexts.find((c) => c.connected);
+  const unreachable = contexts.find((c) => c.problemKind === 'unreachable');
+  if (!connected && unreachable) {
+    return {
+      text: '$(debug-disconnect) Piwi: unreachable',
+      tooltip: lines(
+        md(unreachable.problem ?? 'The instance did not answer'),
+        'Piwi reads it again on its own.',
+        hint,
+        `[Retry](command:piwi.refresh) · ${connect}`,
+      ),
+      action: 'retry',
+      url: null,
+      error: false,
+    };
+  }
   if (!connected) {
     return {
       text: '$(plug) Piwi: connect',
@@ -236,6 +260,23 @@ export function runsInFiles(runs: RunStatusResult | null): string {
   return JSON.stringify(
     runs?.contexts.map((c) => ({ ...c, live: undefined, stream: undefined, updatedAt: undefined })) ?? null,
   );
+}
+
+/**
+ * What a change of the runs from `before` to `after` draws again in the files: `none` when only the run in progress
+ * moved ({@link runsInFiles}); `tests` when only the tests of the run in progress began or ended (`liveTests`), which
+ * only a test's line shows; `all` when anything else the files show changed, such as the latest run or its baseline.
+ */
+export function filesRedraw(before: RunStatusResult | null, after: RunStatusResult | null): 'none' | 'tests' | 'all' {
+  if (runsInFiles(before) === runsInFiles(after)) return 'none';
+  const withoutTests = (runs: RunStatusResult | null) =>
+    runsInFiles(runs && { ...runs, contexts: runs.contexts.map((c) => ({ ...c, liveTests: undefined })) });
+  return withoutTests(before) === withoutTests(after) ? 'tests' : 'all';
+}
+
+/** The editor's own run in progress, as the failures view's first node shows it, in one string. */
+export function ownLiveRun(runs: RunStatusResult | null): string {
+  return JSON.stringify(runs?.contexts.find((c) => c.live?.own)?.live ?? null);
 }
 
 /** How the failures view groups the failures under the run. */
@@ -570,13 +611,25 @@ export function withBaseline(
 }
 
 /**
- * What **Re-run the failing tests** runs: every test still failing or edited since its run, from the file of the first;
- * null when none fails.
+ * What **Re-run the failing tests** runs: every test still failing or edited since its run, one run per Playwright
+ * config (`WorkspaceFailure.root`), in the order of their first failure; none when none fails.
  */
-export function rerunFailingArgs(result: FailuresResult | null): RunTestsArgs | null {
-  const failing = (result?.items ?? []).filter(stillFails);
-  const testIds = [...new Set(failing.flatMap((f) => (f.testCaseId !== undefined ? [f.testCaseId] : [])))];
-  return failing.length && testIds.length ? { uri: failing[0]!.uri, testIds } : null;
+export function rerunFailingArgs(result: FailuresResult | null): RunTestsArgs[] {
+  const runs = new Map<string, RunTestsArgs>();
+  for (const f of (result?.items ?? []).filter(stillFails)) {
+    if (f.testCaseId === undefined) continue;
+    const key = f.root ?? '';
+    const run =
+      runs.get(key) ?? runs.set(key, { uri: f.uri, ...(f.root ? { root: f.root } : {}), testIds: [] }).get(key)!;
+    if (!run.testIds.includes(f.testCaseId)) run.testIds.push(f.testCaseId);
+  }
+  return [...runs.values()];
+}
+
+/** What **Run this test** runs for a failure: its test, from the Playwright config it belongs to. */
+export function failureRunArgs(failure: WorkspaceFailure): RunTestsArgs | null {
+  if (failure.testCaseId === undefined) return null;
+  return { uri: failure.uri, ...(failure.root ? { root: failure.root } : {}), testIds: [failure.testCaseId] };
 }
 
 /** A test's latest result, drawn on the test: a gutter icon, a hover, and a background while it fails. */
@@ -625,7 +678,7 @@ export function testResultHover(status: TestLineStatus, title: string, edited = 
     running: 'running',
     unknown: 'no recent result',
   }[status];
-  return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', title].filter(Boolean).join(' · ');
+  return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', md(title)].filter(Boolean).join(' · ');
 }
 
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */

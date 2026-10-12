@@ -18,6 +18,7 @@ import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
@@ -56,7 +57,7 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
 }
 
 /** Piwi: Record Here — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
-open class RecordHereAction : AnAction() {
+open class RecordHereAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) = e.appliesWhen(canRecord(e))
@@ -84,7 +85,7 @@ class RecordHereGenerateAction : RecordHereAction() {
 }
 
 /** Piwi: Record a New Test File… — a spec created in the folder at hand, then recorded into. */
-class RecordNewFileAction : AnAction() {
+class RecordNewFileAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -103,7 +104,7 @@ class RecordNewFileAction : AnAction() {
 }
 
 /** Piwi: Stop Recording — the browser closes; the recorded lines stay, one Undo away. */
-class StopRecordingAction : AnAction() {
+class StopRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -117,7 +118,7 @@ class StopRecordingAction : AnAction() {
 }
 
 /** Piwi: Pause Recording — what is done in the browser is not written until Resume. */
-class PauseRecordingAction : AnAction() {
+class PauseRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -132,7 +133,7 @@ class PauseRecordingAction : AnAction() {
 }
 
 /** Piwi: Resume Recording — writes again, over the recorded lines as the browser has them. */
-class ResumeRecordingAction : AnAction() {
+class ResumeRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {

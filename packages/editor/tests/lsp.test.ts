@@ -806,7 +806,7 @@ describe('the Piwi language server', () => {
     expect(actions[1]!.command).toEqual({
       title: 'Run this test',
       command: 'piwi.runTests',
-      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), testIds: [3] }],
+      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), root: dir, testIds: [3] }],
     });
     const apply = actions[3] as unknown as {
       edit: { changes: Record<string, Array<{ newText: string }>> };
@@ -822,7 +822,16 @@ describe('the Piwi language server', () => {
         { cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3', env: { PIWI_ORIGIN: 'editor' } },
       ],
     });
-    const context = (actions[4]!.command!.arguments[0] as string).split('\n');
+    // The context is gathered once the action is picked.
+    expect(actions[4]!.command).toEqual({
+      title: 'Copy context for agent',
+      command: 'piwi.copyAgentContext',
+      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
+    });
+    const gathered = (await client.sendRequest('piwi/agentContext', actions[4]!.command!.arguments[0])) as {
+      text: string;
+    };
+    const context = gathered.text.split('\n');
     expect(context.slice(0, 3)).toEqual([
       '# Failing test: removes a row',
       '',
@@ -893,6 +902,7 @@ describe('the Piwi language server', () => {
       items: [
         {
           uri: uri('tests/pages/checkout.page.ts'),
+          root: dir,
           line: 4,
           title: 'removes a row',
           headline: "locator('.cart-row').nth(2) was not found",
@@ -1303,6 +1313,17 @@ describe('breakpoints', () => {
     expect(outside.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: outside.ref });
   });
 
+  test('run from the Playwright config a failure names, whatever file it shows in', async () => {
+    const elsewhere = pathToFileURL(path.join(os.tmpdir(), 'shared', 'pages.ts')).href;
+    expect(await client.sendRequest('piwi/runArgs', { uri: elsewhere, testIds: [1] })).toBeNull();
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: elsewhere,
+      root: dir,
+      testIds: [1],
+    })) as RunCommand;
+    expect(command).toMatchObject({ cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3' });
+  });
+
   test('a pick replaces the locator its line holds, or says the line holds none', async () => {
     const replaced = (await client.sendRequest('piwi/applyPick', {
       file: 'tests/pages/checkout.page.ts',
@@ -1432,6 +1453,7 @@ describe('local runs over the latest CI run', () => {
         }),
         {
           uri: uri('tests/rows.spec.ts'),
+          root: dir,
           line: 3,
           title: 'removes a row',
           headline: null,
@@ -1621,7 +1643,10 @@ describe('failures follow the edits', () => {
     };
     try {
       await client.sendRequest('piwi/refreshRun');
-      const placed = await waitFor(() => onPage((d) => (d.data as { executionId: number }).executionId === 903));
+      // Placed from the file as saved until the commit's file is read, then from it.
+      const placed = await waitFor(() =>
+        onPage((d) => (d.data as { executionId: number }).executionId === 903 && lineOf(d) === 6),
+      );
       expect(placed).toMatchObject({
         severity: 1,
         message: "locator('.cart-row').nth(2) was not found (removes a row, run #41)",
@@ -2559,6 +2584,269 @@ describe('the desktop app chosen with Connect', () => {
       fs.rmSync(desktopFile, { force: true });
       stopChosen();
       chosenClient.dispose();
+    }
+  });
+});
+
+describe('what keeps a context from the instance’s data', () => {
+  /** An instance between the service and the stub: down, refusing every key, or the stub with an ETag on its index. */
+  let mode: 'down' | 'refused' | 'up' = 'refused';
+  /** The failures' healing: an error of the instance, held until released, or answered by the stub. */
+  let healing: 'down' | 'held' | 'up' = 'up';
+  let releaseHealing: (() => void) | null = null;
+  const asked: string[] = [];
+  let gate: http.Server;
+  let gateUrl = '';
+
+  beforeAll(async () => {
+    gate = http.createServer((req, res) => {
+      if (mode !== 'up') {
+        res.statusCode = mode === 'down' ? 503 : 401;
+        return res.end('{}');
+      }
+      if (/^\/api\/test-run-cases\/\d+\/locator-healing/.test(req.url ?? '') && healing !== 'up') {
+        if (healing === 'down') {
+          res.statusCode = 503;
+          return res.end('{}');
+        }
+        const held = new Promise<void>((resolve) => (releaseHealing = resolve));
+        void held.then(() => server.emit('request', req, res));
+        return;
+      }
+      if ((req.url ?? '').startsWith('/api/projects/7/locator-index')) {
+        const etag = req.headers['if-none-match'];
+        if (etag) asked.push(String(etag));
+        if (etag === '"index-1"') {
+          res.statusCode = 304;
+          return res.end();
+        }
+        res.setHeader('ETag', '"index-1"');
+      }
+      server.emit('request', req, res);
+    });
+    await new Promise<void>((resolve) => gate.listen(0, '127.0.0.1', resolve));
+    gateUrl = `http://127.0.0.1:${(gate.address() as AddressInfo).port}`;
+  });
+
+  afterAll(() => {
+    gate.close();
+  });
+
+  test('is told apart, an instance that does not answer is read again soon, and an unchanged index is not', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopGate = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: gateUrl, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+      unreachableRetryMs: 50,
+    });
+    const gateClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const notified: StatusResult[] = [];
+    gateClient.onNotification('piwi/statusChanged', (s: StatusResult) => {
+      notified.push(s);
+    });
+    gateClient.listen();
+    const last = () => notified[notified.length - 1]?.contexts[0];
+    try {
+      await gateClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await gateClient.sendNotification('initialized', {});
+      const refused = await waitFor(() => (last()?.problemKind === 'refused' ? last() : undefined));
+      expect(refused).toMatchObject({ connected: false, serverUrl: gateUrl });
+      expect(refused!.problem).toContain('needs an API key (401)');
+
+      mode = 'down';
+      await gateClient.sendRequest('piwi/refresh');
+      const down = await waitFor(() => (last()?.problemKind === 'unreachable' ? last() : undefined));
+      expect(down!.problem).toContain(`Could not reach ${gateUrl}`);
+
+      // No refresh asked: the service reads the instance again on its own, soon.
+      mode = 'up';
+      const up = await waitFor(() => (last()?.connected ? last() : undefined));
+      expect(up).toMatchObject({ projectName: 'Acme Mugs', problem: null, problemKind: null });
+      expect(asked).toEqual([]);
+
+      await gateClient.sendRequest('piwi/refresh');
+      expect(asked).toContain('"index-1"');
+      const status = (await gateClient.sendRequest('piwi/status')) as StatusResult;
+      expect(status.contexts[0]).toMatchObject({ connected: true, locators: up!.locators });
+      expect(up!.locators).toBeGreaterThan(0);
+    } finally {
+      stopGate();
+      gateClient.dispose();
+    }
+  });
+
+  test('a quick fix waits for the instance a while at most, and asks again what failed', async () => {
+    mode = 'up';
+    healing = 'down';
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopGate = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: gateUrl, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+      lookupWaitMs: 200,
+    });
+    const gateClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    type Published = { code?: string; range: unknown };
+    const published = new Map<string, Published[]>();
+    gateClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: Published[] }) => {
+      published.set(p.uri, p.diagnostics);
+    });
+    gateClient.listen();
+    try {
+      await gateClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await gateClient.sendNotification('initialized', {});
+      const page = uri('tests/pages/checkout.page.ts');
+      await gateClient.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: page, languageId: 'typescript', version: 1, text: PAGE_OBJECT },
+      });
+      const failure = await waitFor(() => published.get(page)?.find((d) => d.code === 'ci-failure'));
+      const titles = async () =>
+        (
+          (await gateClient.sendRequest('textDocument/codeAction', {
+            textDocument: { uri: page },
+            range: failure.range,
+            context: { diagnostics: [failure] },
+          })) as Array<{ title: string }>
+        ).map((a) => a.title);
+      const heal = "Heal: use getByRole('row', { name: /Mug/ })";
+
+      expect(await titles()).not.toContain(heal);
+      // What failed is asked again, and waited for a while at most.
+      healing = 'held';
+      const start = Date.now();
+      expect(await titles()).not.toContain(heal);
+      expect(Date.now() - start).toBeLessThan(2_000);
+      expect(releaseHealing).not.toBeNull();
+      healing = 'up';
+      releaseHealing!();
+      await waitFor(async () => ((await titles()).includes(heal) ? true : undefined));
+    } finally {
+      releaseHealing?.();
+      healing = 'up';
+      stopGate();
+      gateClient.dispose();
+    }
+  });
+});
+
+describe('the configs of one repository reading one project', () => {
+  test('download its locator index once, and show each failure once, from the config of its spec', async () => {
+    let downloads = 0;
+    const gate = http.createServer((req, res) => {
+      if ((req.url ?? '').startsWith('/api/projects/7/locator-index')) {
+        if (req.headers['if-none-match'] === '"shared-1"') {
+          res.statusCode = 304;
+          return res.end();
+        }
+        downloads++;
+        res.setHeader('ETag', '"shared-1"');
+      }
+      server.emit('request', req, res);
+    });
+    await new Promise<void>((resolve) => gate.listen(0, '127.0.0.1', resolve));
+    const gateUrl = `http://127.0.0.1:${(gate.address() as AddressInfo).port}`;
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-two-configs-'));
+    const files: Record<string, string> = {
+      'playwright.config.ts': 'export default {};\n',
+      'tests/rows.spec.ts': "import { test } from '@playwright/test';\n\ntest('removes a row', async () => {});\n",
+      'tests/pages/checkout.page.ts': PAGE_OBJECT,
+      'admin/playwright.config.ts': 'export default {};\n',
+    };
+    for (const [file, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+      fs.writeFileSync(path.join(repo, file), text);
+    }
+    // One repository: the admin config finds the failure's page object from the repository's root too.
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopTwo = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: gateUrl, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+    });
+    const twoClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    twoClient.listen();
+    try {
+      await twoClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(repo).href, name: 'two' }],
+      });
+      await twoClient.sendNotification('initialized', {});
+      const status = await waitFor(async () => {
+        const s = (await twoClient.sendRequest('piwi/status')) as StatusResult;
+        return s.contexts.length === 2 && s.contexts.every((c) => c.connected) ? s : undefined;
+      });
+      expect(status.contexts.map((c) => c.locators)).toEqual([2, 2]);
+      expect(downloads).toBe(1);
+      const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+      const shown = failures.items.filter((f) => f.title === 'removes a row');
+      expect(shown.map((f) => [f.root, f.uri])).toEqual([
+        [repo, pathToFileURL(path.join(repo, 'tests/pages/checkout.page.ts')).href],
+      ]);
+    } finally {
+      stopTwo();
+      twoClient.dispose();
+      gate.close();
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a change pushed to the client', () => {
+  test('is a change from what the client read: a desktop app a read saw, gone since, is said gone', async () => {
+    const desktopFile = path.join(dir, '.desktop-seen.json');
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopSeen = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: desktopFile },
+      debounceMs: 10,
+      // The discovery file is not watched here: only the read sees the app.
+      desktopWatchMs: 60_000,
+    });
+    const seen = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const notified: StatusResult[] = [];
+    seen.onNotification('piwi/statusChanged', (s: StatusResult) => {
+      notified.push(s);
+    });
+    seen.listen();
+    try {
+      await seen.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await seen.sendNotification('initialized', {});
+      await waitFor(() => notified.find((s) => s.contexts[0]?.connected));
+      fs.writeFileSync(desktopFile, JSON.stringify({ url: 'http://127.0.0.1:9', token: 'pd_desktop', projects: [] }));
+      const read = (await seen.sendRequest('piwi/status')) as StatusResult;
+      expect(read.desktopUrl).toBe('http://127.0.0.1:9');
+      fs.rmSync(desktopFile);
+      const before = notified.length;
+      // The same status as the last one pushed, but not as the last one read.
+      await seen.sendNotification('piwi/setCredentials', {});
+      const after = await waitFor(() => notified.slice(before).find((s) => s.desktopUrl === null));
+      expect(after.contexts[0]).toMatchObject({ connected: true, projectName: 'Acme Mugs' });
+    } finally {
+      fs.rmSync(desktopFile, { force: true });
+      stopSeen();
+      seen.dispose();
     }
   });
 });

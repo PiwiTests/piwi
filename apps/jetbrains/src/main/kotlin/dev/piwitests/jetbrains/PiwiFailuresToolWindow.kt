@@ -2,6 +2,9 @@ package dev.piwitests.jetbrains
 
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
+import com.intellij.ide.CommonActionsManager
+import com.intellij.ide.DefaultTreeExpander
+import com.intellij.ide.OccurenceNavigator
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -48,9 +51,10 @@ import javax.swing.tree.TreePath
  * local run says so, a failure whose line changed since its run is marked edited, and the failures a later run passed
  * follow, marked fixed. Each is at its line as the edits since the run left it, and the tree follows the edits
  * (`piwi/failuresChanged`), keeping the expanded and selected nodes. Double-click or Enter opens a failure's line, where
- * the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions. Above it,
- * the connection and the run, and Connect, Refresh, Re-run the Failing Tests, the dashboard links, the groupings and
- * the settings in the toolbar.
+ * the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions; Next and
+ * Previous Occurrence go from failure to failure. Above it, the connection and the run, and Connect, Refresh, Re-run
+ * the Failing Tests, the dashboard links, the previous and next failure, expand and collapse all, the groupings and the
+ * settings in the toolbar.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
@@ -89,7 +93,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             componentStyle = UIUtil.ComponentStyle.SMALL
             foreground = UIUtil.getContextHelpForeground()
         }
-        /** The keys of the nodes shown so far, and of those expanded: a refresh keeps both. */
+        /** The keys of the nodes shown last, and of those expanded: a refresh keeps both. */
         val known = mutableSetOf<String>()
         val expanded = mutableSetOf<String>()
         var shown: List<Glue.FailureNode>? = null
@@ -98,8 +102,23 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             val result = service.failuresResult
             val live = service.runs?.contexts.orEmpty().firstNotNullOfOrNull { it.live?.takeIf { live -> live.own } }
             val nodes = Glue.failureTree(result, local.failuresGrouping, live = live)
-            // A run in progress that changes nothing keeps the tree, its selection and its scroll.
-            if (nodes != shown) {
+            val before = shown
+            if (before != null && nodes != before && Glue.sameShape(before, nodes)) {
+                // Only what the nodes say changed, such as a run in progress counting its tests: each row is redrawn in
+                // place, and the tree keeps its expanded rows, its selection and its scroll.
+                shown = nodes
+                fun update(parent: DefaultMutableTreeNode, values: List<Glue.FailureNode>) {
+                    values.forEachIndexed { i, value ->
+                        val node = parent.getChildAt(i) as DefaultMutableTreeNode
+                        if (node.userObject != value) {
+                            node.userObject = value
+                            model.nodeChanged(node)
+                        }
+                        update(node, value.children)
+                    }
+                }
+                update(root, nodes)
+            } else if (nodes != before) {
                 shown = nodes
                 expanded.clear()
                 expanded += expandedKeys(tree)
@@ -124,6 +143,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                     }
                 }
                 restore(root)
+                // A node that leaves the tree and comes back later opens as a new one would.
+                known.clear()
                 fun remember(children: List<Glue.FailureNode>) {
                     for (child in children) {
                         known += child.key
@@ -134,7 +155,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             }
             val failing = Glue.failingCount(result)
             toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
-            val connection = Glue.connectionSummary(service.status, local.desktop)
+            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem)
             val run = Glue.runHeader(result)
             header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
             val connected = service.status?.contexts.orEmpty().any { it.connected }
@@ -142,7 +163,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
             when {
-                service.status == null -> tree.emptyText.appendText(Glue.NOT_STARTED)
+                service.status == null -> tree.emptyText.appendText(service.startProblem ?: Glue.NOT_STARTED)
                 !connected -> {
                     tree.emptyText.appendText("Not connected to a Piwi instance")
                     tree.emptyText.appendSecondaryText("Connect…", SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
@@ -155,6 +176,9 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             }
         }
         val actions = ActionManager.getInstance()
+        val panel = FailuresPanel(project, tree)
+        val common = CommonActionsManager.getInstance()
+        val expander = DefaultTreeExpander(tree)
         val group = DefaultActionGroup(
             listOfNotNull(
                 actions.getAction("Piwi.Connect"),
@@ -164,6 +188,11 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 actions.getAction("Piwi.OpenLatestRun"),
                 actions.getAction("Piwi.CompareWith"),
                 Separator.getInstance(),
+                common.createPrevOccurenceAction(panel),
+                common.createNextOccurenceAction(panel),
+                common.createExpandAllAction(expander, tree),
+                common.createCollapseAllAction(expander, tree),
+                Separator.getInstance(),
                 GroupFailuresAction(service, "file", "Group by File", AllIcons.Actions.GroupByFile, render),
                 GroupFailuresAction(service, "cluster", "Group by Cluster", AllIcons.Actions.GroupBy, render),
                 GroupFailuresAction(service, "owner", "Group by Owner", AllIcons.General.User, render),
@@ -172,7 +201,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 actions.getAction("Piwi.OpenSettings"),
             ),
         )
-        val panel = SimpleToolWindowPanel(true, true)
         val toolbar = actions.createActionToolbar("PiwiToolWindow", group, true)
         toolbar.targetComponent = panel
         panel.toolbar = toolbar.component
@@ -187,6 +215,51 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         service.onChange(content, render)
         render()
         service.refreshStatus()
+    }
+
+    /**
+     * The tool window's panel. Its failures are the occurrences of Next and Previous Occurrence, and of the toolbar's
+     * arrows, in the tree's order, collapsed groups included: each is selected and its line opened.
+     */
+    private class FailuresPanel(private val project: Project, private val tree: JTree) :
+        SimpleToolWindowPanel(true, true), OccurenceNavigator {
+        private fun failurePaths(): List<TreePath> {
+            val paths = mutableListOf<TreePath>()
+            fun walk(node: DefaultMutableTreeNode) {
+                for (child in node.children().toList().filterIsInstance<DefaultMutableTreeNode>()) {
+                    if (nodeOf(child)?.failure?.uri != null) paths += TreePath(child.path)
+                    walk(child)
+                }
+            }
+            (tree.model.root as? DefaultMutableTreeNode)?.let { walk(it) }
+            return paths
+        }
+
+        private fun go(step: Int): OccurenceNavigator.OccurenceInfo? {
+            val paths = failurePaths()
+            val at = paths.indexOf(tree.selectionPath)
+            val index = if (at < 0) (if (step > 0) 0 else paths.lastIndex) else at + step
+            val path = paths.getOrNull(index) ?: return null
+            tree.selectionPath = path
+            tree.scrollPathToVisible(path)
+            val failure = nodeOf(path.lastPathComponent)?.failure ?: return null
+            val file = failure.uri?.let { VirtualFileManager.getInstance().findFileByUrl(it) } ?: return null
+            return OccurenceNavigator.OccurenceInfo(OpenFileDescriptor(project, file, failure.line, 0), index + 1, paths.size)
+        }
+
+        override fun hasNextOccurence(): Boolean = failurePaths().let { it.isNotEmpty() && it.indexOf(tree.selectionPath) < it.lastIndex }
+
+        override fun hasPreviousOccurence(): Boolean = failurePaths().let { it.isNotEmpty() && it.indexOf(tree.selectionPath) != 0 }
+
+        override fun goNextOccurence(): OccurenceNavigator.OccurenceInfo? = go(1)
+
+        override fun goPreviousOccurence(): OccurenceNavigator.OccurenceInfo? = go(-1)
+
+        override fun getNextOccurenceActionName(): String = "Next Failure"
+
+        override fun getPreviousOccurenceActionName(): String = "Previous Failure"
+
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
     }
 
     /** One way to group the failures, among the toolbar's toggles: selecting it keeps it for this project. */
@@ -233,14 +306,14 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         val failing = { f: WorkspaceFailure -> !Glue.isFixedLocally(f) }
         val desktop = { f: WorkspaceFailure -> failing(f) && f.source == "ci" && service.status?.desktopUrl != null }
         val job = { f: WorkspaceFailure, kind: String ->
-            Glue.contextRootOf(service.status, f.uri)?.let {
+            (f.root ?: Glue.contextRootOf(service.status, f.uri))?.let {
                 PiwiCommands.desktopJob(project, DesktopJobParams(root = it, executionId = f.executionId, kind = kind))
             }
             Unit
         }
         return DefaultActionGroup(
-            FailureAction("Run This Test", AllIcons.Actions.Execute, selected, { it.testCaseId != null && it.uri != null }) {
-                PiwiCommands.runTests(project, RunTestsArgs(it.uri!!, listOf(it.testCaseId!!)))
+            FailureAction("Run This Test", AllIcons.Actions.Execute, selected, { Glue.failureRunArgs(it) != null }) {
+                Glue.failureRunArgs(it)?.let { args -> PiwiCommands.runTests(project, args) }
             },
             Separator.getInstance(),
             FailureAction("Open the Trace", null, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },

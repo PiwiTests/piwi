@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.configurations.GeneralCommandLine
+import com.intellij.execution.util.ExecUtil
 import com.intellij.javascript.nodejs.interpreter.NodeJsInterpreterManager
 import com.intellij.javascript.nodejs.interpreter.local.NodeJsLocalInterpreter
 import com.intellij.notification.NotificationType
@@ -53,6 +54,9 @@ class PiwiLspServerSupportProvider : LspServerSupportProvider {
     }
 }
 
+/** How long `node --version` may take before the interpreter counts as not running. */
+private const val NODE_VERSION_TIMEOUT_MILLIS = 10_000
+
 class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor(project, "Piwi") {
     override fun isSupportedFile(file: VirtualFile): Boolean = PiwiLspServerSupportProvider.isSupported(file)
 
@@ -61,11 +65,21 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         if (!Files.isRegularFile(server)) throw ExecutionException("The Piwi editor service is missing: $server")
         val interpreter = NodeJsInterpreterManager.getInstance(project).interpreter
         val node = (interpreter as? NodeJsLocalInterpreter)?.interpreterSystemDependentPath ?: "node"
+        val problem = Glue.nodeProblem(node, nodeVersion(node))
+        project.service<PiwiProjectService>().startFailed(problem)
+        if (problem != null) throw ExecutionException(problem)
         val folder = project.service<PiwiProjectService>().searchRoots().firstOrNull()?.toString() ?: project.basePath
-        return GeneralCommandLine(node, server.toString(), "--stdio")
+        // The service exits within seconds of the IDE's end, however it ends: the platform does not pass its process id.
+        return GeneralCommandLine(node, server.toString(), "--stdio", "--clientProcessId=${ProcessHandle.current().pid()}")
             .withWorkDirectory(folder)
             .withCharset(Charsets.UTF_8)
     }
+
+    /** What `node --version` prints, or null when it does not run, or not within 10 s. */
+    private fun nodeVersion(node: String): String? = runCatching {
+        val output = ExecUtil.execAndGetOutput(GeneralCommandLine(node, "--version"), NODE_VERSION_TIMEOUT_MILLIS)
+        output.stdout.takeIf { output.exitCode == 0 && !output.isTimeout }
+    }.getOrNull()
 
     /** The workspace is the folders the plugin searched for Playwright configs: the service searches them again. */
     override fun createInitializeParams(): InitializeParams = super.createInitializeParams().apply {
@@ -127,14 +141,16 @@ object Lsp4jAccess {
 
 /** Receives the service's notifications beside the protocol's. */
 class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val project: Project) : Lsp4jClient(handler) {
+    /** The latest run or the run in progress moved: the status bar, the tool window and, as far as they show it, the files. */
     @JsonNotification("piwi/runStatusChanged")
-    fun runStatusChanged(@Suppress("UNUSED_PARAMETER") status: RunStatusResult) {
-        project.service<PiwiProjectService>().refreshStatus()
+    fun runStatusChanged(status: RunStatusResult) {
+        project.service<PiwiProjectService>().runStatusChanged(status)
     }
 
+    /** A context connected or lost its connection, or the desktop app started or quit. */
     @JsonNotification("piwi/statusChanged")
-    fun statusChanged(@Suppress("UNUSED_PARAMETER") status: StatusResult) {
-        project.service<PiwiProjectService>().refreshStatus()
+    fun statusChanged(status: StatusResult) {
+        project.service<PiwiProjectService>().statusChanged(status)
     }
 
     /** A failure moved with an edit, or its line changed since the run: the tool window's list. */

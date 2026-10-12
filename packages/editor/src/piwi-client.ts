@@ -3,6 +3,10 @@
  * GET with the `pd_` key in `X-API-Key`; nothing from the workspace is sent
  * but file paths the index already holds.
  */
+import * as fs from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-index';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult, RankedLocator } from '@piwitests/core/locator-healing-types';
@@ -12,6 +16,8 @@ import type { DesktopJobRequest, DesktopJobVerdict, FlakeLabJobPlan } from '@piw
 import type { TimeoutAdvice } from './analysis.js';
 
 const TIMEOUT_MS = 15_000;
+/** How long a stored file may take to download: a trace can weigh tens of megabytes. */
+const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
 
 export class PiwiHttpError extends Error {
   constructor(
@@ -268,8 +274,25 @@ export interface DesktopJobState {
   jobVerdict: DesktopJobVerdict | null;
 }
 
+/**
+ * The answers of conditional requests, by instance, key and path: the `ETag` the instance gave and the value read with
+ * it, or the request on its way. The contexts of one service share it: the configs of a repository reading the same
+ * project share one index, read once.
+ */
+export type ResponseCache = Map<string, { etag?: string; value?: unknown; pending?: Promise<unknown> }>;
+
+/** The answers a `ResponseCache` keeps at most; the least recently used goes first. */
+const MAX_ANSWERS = 16;
+
 export class PiwiClient {
-  constructor(readonly connection: PiwiConnection) {}
+  /**
+   * `answers` keeps what an `ETag` came with: the instance answers 304 while it holds, and the same value is used; the
+   * same request on its way for another client is shared.
+   */
+  constructor(
+    readonly connection: PiwiConnection,
+    private readonly answers?: ResponseCache,
+  ) {}
 
   private async get<T>(path: string): Promise<T> {
     const response = await fetch(`${this.connection.serverUrl}${path}`, {
@@ -278,6 +301,50 @@ export class PiwiClient {
     });
     if (!response.ok) throw new PiwiHttpError(`${path} answered ${response.status}`, response.status);
     return (await response.json()) as T;
+  }
+
+  /** A GET answered from `answers` while the instance says it did not change; a plain GET without them. */
+  private async getConditional<T>(path: string): Promise<T> {
+    const answers = this.answers;
+    if (!answers) return this.get(path);
+    const key = `${this.connection.serverUrl}\n${this.connection.apiKey ?? ''}\n${path}`;
+    const known = answers.get(key);
+    if (known?.pending) return known.pending as Promise<T>;
+    const asked = this.askKnown<T>(path, known?.etag ? { etag: known.etag, value: known.value as T } : null);
+    const pending = asked.then((answer) => answer.value);
+    // Awaited by the clients that share it, if any.
+    pending.catch(() => {});
+    answers.delete(key);
+    answers.set(key, { ...known, pending });
+    try {
+      const answer = await asked;
+      if (answer.etag) answers.set(key, { etag: answer.etag, value: answer.value });
+      else answers.delete(key);
+      for (const oldest of [...answers.keys()].slice(0, Math.max(0, answers.size - MAX_ANSWERS)))
+        answers.delete(oldest);
+      return answer.value;
+    } catch (e) {
+      if (known?.etag) answers.set(key, { etag: known.etag, value: known.value });
+      else answers.delete(key);
+      throw e;
+    }
+  }
+
+  /** A GET with the `ETag` of what is known: what is known when the instance answers 304. */
+  private async askKnown<T>(
+    path: string,
+    known: { etag: string; value: T } | null,
+  ): Promise<{ value: T; etag: string | null }> {
+    const response = await fetch(`${this.connection.serverUrl}${path}`, {
+      headers: {
+        ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
+        ...(known ? { 'If-None-Match': known.etag } : {}),
+      },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (response.status === 304 && known) return known;
+    if (!response.ok) throw new PiwiHttpError(`${path} answered ${response.status}`, response.status);
+    return { value: (await response.json()) as T, etag: response.headers.get('etag') };
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
@@ -309,11 +376,15 @@ export class PiwiClient {
   }
 
   locatorIndex(projectId: number, branch: string | null): Promise<LocatorIndex> {
-    return this.get(`/api/projects/${projectId}/locator-index${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`);
+    return this.getConditional(
+      `/api/projects/${projectId}/locator-index${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
+    );
   }
 
   codeIndex(projectId: number, branch: string | null): Promise<CodeIndex> {
-    return this.get(`/api/projects/${projectId}/code-index${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`);
+    return this.getConditional(
+      `/api/projects/${projectId}/code-index${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
+    );
   }
 
   async testCases(projectId: number, file: string): Promise<CatalogCase[]> {
@@ -400,14 +471,24 @@ export class PiwiClient {
   }
 
   /** A stored file's bytes (`/api/files/<path>`). */
-  async file(storedPath: string): Promise<Uint8Array> {
+  /** A stored file written to `target` as it arrives, through a partial file beside it renamed once complete. */
+  async download(storedPath: string, target: string): Promise<void> {
     const encoded = storedPath.split('/').map(encodeURIComponent).join('/');
     const response = await fetch(`${this.connection.serverUrl}/api/files/${encoded}`, {
       headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},
-      signal: AbortSignal.timeout(TIMEOUT_MS * 4),
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
     });
-    if (!response.ok) throw new PiwiHttpError(`/api/files answered ${response.status}`, response.status);
-    return new Uint8Array(await response.arrayBuffer());
+    if (!response.ok || !response.body) {
+      throw new PiwiHttpError(`/api/files answered ${response.status}`, response.status);
+    }
+    const partial = `${target}.${process.pid}.part`;
+    try {
+      await pipeline(Readable.fromWeb(response.body as WebReadableStream), fs.createWriteStream(partial));
+      await fs.promises.rename(partial, target);
+    } catch (e) {
+      await fs.promises.rm(partial, { force: true });
+      throw e;
+    }
   }
 
   async flakyTests(projectId: number, branch: string | null): Promise<FlakyTest[]> {

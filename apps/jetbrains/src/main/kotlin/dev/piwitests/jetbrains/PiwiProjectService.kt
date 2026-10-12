@@ -14,24 +14,42 @@ import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.options.SearchableConfigurable
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.BaseProjectDirectories.Companion.getBaseDirectories
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.util.Condition
 import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileCopyEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
+import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import com.intellij.platform.lsp.api.LspServerManager
+import com.intellij.psi.PsiManager
+import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.breakpoints.XLineBreakpoint
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The instance and project this project reports to, when the environment and `.env` name
@@ -58,7 +76,7 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * a recording's choices: the Playwright project, the start page, and the last page
  * expression typed that was not among those offered; how the failures tool window groups
  * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
- * at the IDE's breakpoints; when a run started from the IDE says what it changed (`always`,
+ * at the IDE's breakpoints, and whether they run in the IDE's Playwright runner; when a run started from the IDE says what it changed (`always`,
  * `failures`, `never`); and the baseline chosen with **Compare With…** for each Playwright
  * config folder (`Glue.encodeBaseline`; the ladder is no entry).
  */
@@ -74,6 +92,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordPage: String = "",
         var failuresGrouping: String = "file",
         var breakpoints: Boolean = true,
+        var playwrightRunner: Boolean = false,
         var runNotifications: String = "always",
         var baselines: MutableMap<String, String> = mutableMapOf(),
     )
@@ -90,7 +109,10 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
 /**
  * The plugin's state for one project: the connection it hands the editor
  * service, and the service's last answers on the run, which the status bar
- * and the failures tool window render.
+ * and the failures tool window render. The service pushes each answer when it
+ * changes (`piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`):
+ * they are kept as they come, and read whole only when the plugin starts and
+ * when it asks the service for something new (Refresh, the credentials).
  */
 @Service(Service.Level.PROJECT)
 class PiwiProjectService(private val project: Project) : Disposable {
@@ -111,7 +133,49 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var refreshing = false
         private set
 
+    /** Whether the service was disposed: with its project, or with the plugin unloaded while the project stays open. */
+    @Volatile private var disposed = false
+
+    /** What ends the work queued for later: this service disposed, or its project. */
+    private val gone = Condition<Any?> { disposed || project.isDisposed }
+
+    /** Why the editor service could not start (`Glue.nodeProblem`); null once it starts. */
+    @Volatile var startProblem: String? = null
+        private set
+
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
+
+    /** Guards the answers and how many of each the service pushed: a read started before a push keeps the pushed one. */
+    private val lock = Any()
+    private var statusPushes = 0L
+    private var runsPushes = 0L
+    private var failuresPushes = 0L
+
+    /** Whether a whole read runs, and whether another was asked for meanwhile: it follows once the first ends. */
+    private val reading = AtomicBoolean()
+    private val readAgain = AtomicBoolean()
+
+    /** Whether the listeners are told already: once on the event thread for the changes made meanwhile. */
+    private val changeQueued = AtomicBoolean()
+
+    /** The runs the open files were last drawn with (`Glue.redraw`); on the event thread. */
+    private var drawn: RunStatusResult? = null
+
+    /** When the files were last drawn again for the tests of a run in progress, and whether a draw waits for its turn. */
+    private var testsDrawnAt = 0L
+    private val drawQueued = AtomicBoolean()
+
+    /** The URLs of the open files whose tests show a result in the gutter: a run in progress draws only them again. */
+    private val filesWithTests: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /** `piwi/fileSummary` by file, for one state of its text: the gutter and Code Vision share one request per pass. */
+    private val summaries = Glue.SummaryCache(SUMMARY_TTL_MILLIS, MAX_SUMMARIES)
+
+    /** Counts the changes the service pushed: a summary asked for before the latest one is asked for again. */
+    private val pushed = AtomicLong()
+
+    /** Whether a search for Playwright configs is due, after a config was created, removed or renamed. */
+    private val searchQueued = AtomicBoolean()
 
     /** The project's Playwright configs; null until the first search ends. */
     @Volatile private var playwright: Glue.PlaywrightSearch? = null
@@ -154,23 +218,98 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     fun findPlaywright() {
         ApplicationManager.getApplication().executeOnPooledThread {
-            if (project.isDisposed) return@executeOnPooledThread
+            if (gone.value(null)) return@executeOnPooledThread
             val before = playwright
             val found = searchPlaywright()
             if (found == before) return@executeOnPooledThread
             // Once the tool windows are registered.
             val tools = ToolWindowManager.getInstance(project)
             tools.invokeLater {
-                if (project.isDisposed) return@invokeLater
+                if (gone.value(null)) return@invokeLater
                 tools.getToolWindow(PiwiFailuresToolWindowFactory.ID)?.isAvailable = found.configDirs.isNotEmpty()
                 project.service<StatusBarWidgetsManager>().updateWidget(PiwiStatusBarWidgetFactory::class.java)
             }
-            val manager = LspServerManager.getInstance(project)
-            when {
-                manager.getServersForProvider(PiwiLspServerSupportProvider::class.java).isNotEmpty() ->
-                    manager.stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
-                found.configDirs.isNotEmpty() -> manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
+            restartServer(runningOnly = found.configDirs.isEmpty())
+        }
+    }
+
+    /** Start the editor service again, or, unless `runningOnly`, start it for the open files when it does not run. */
+    fun restartServer(runningOnly: Boolean = false) {
+        val manager = LspServerManager.getInstance(project)
+        when {
+            manager.getServersForProvider(PiwiLspServerSupportProvider::class.java).isNotEmpty() ->
+                manager.stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
+            !runningOnly -> manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
+        }
+    }
+
+    /**
+     * Keep why the service could not start, or that it started (null), and say a new reason once, with the Node.js
+     * settings one click away.
+     */
+    fun startFailed(problem: String?) {
+        val before = startProblem
+        startProblem = problem
+        if (problem == before) return
+        changed()
+        if (problem == null) return
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(problem, NotificationType.WARNING)
+            .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
+            .notify(project)
+    }
+
+    /** The Node.js settings, then the service started again with the interpreter chosen there. */
+    fun openNodeSettings() {
+        ShowSettingsUtil.getInstance().showSettingsDialog(
+            project,
+            { (it as? SearchableConfigurable)?.id == NODE_SETTINGS_ID },
+            null,
+        )
+        ApplicationManager.getApplication().executeOnPooledThread { restartServer() }
+    }
+
+    /**
+     * Search for Playwright configs again a second after one is created, removed, renamed or moved, or a folder that may
+     * hold one (a branch checked out): a project gains or loses the tool window, the status bar item and the service
+     * without **Refresh**.
+     */
+    fun watchConfigs() {
+        project.messageBus.connect(this).subscribe(
+            VirtualFileManager.VFS_CHANGES,
+            object : BulkFileListener {
+                override fun after(events: List<VFileEvent>) {
+                    if (events.none { touchesConfig(it) } || !searchQueued.compareAndSet(false, true)) return
+                    AppExecutorUtil.getAppScheduledExecutorService().schedule(
+                        {
+                            searchQueued.set(false)
+                            if (!gone.value(null)) findPlaywright()
+                        },
+                        1,
+                        TimeUnit.SECONDS,
+                    )
+                }
+            },
+        )
+    }
+
+    /**
+     * Whether a change may add or remove a Playwright config: a config's own, or one of a folder where configs are
+     * searched, which the IDE reports without the files in it.
+     */
+    private fun touchesConfig(event: VFileEvent): Boolean {
+        val roots = searchRoots()
+        fun changed(path: String?, directory: Boolean) =
+            if (directory) Glue.mayHoldConfigs(path, roots) else Glue.isPlaywrightConfig(path)
+        return when (event) {
+            is VFilePropertyChangeEvent -> event.propertyName == VirtualFile.PROP_NAME && (event.file.parent?.path).let { parent ->
+                changed("$parent/${event.oldValue}", event.file.isDirectory) || changed("$parent/${event.newValue}", event.file.isDirectory)
             }
+            is VFileMoveEvent -> changed(event.oldPath, event.file.isDirectory) || changed(event.newPath, event.file.isDirectory)
+            is VFileCreateEvent -> changed(event.path, event.isDirectory)
+            is VFileDeleteEvent -> changed(event.path, event.file.isDirectory)
+            is VFileCopyEvent -> changed(event.path, event.file.isDirectory)
+            else -> false
         }
     }
 
@@ -300,8 +439,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
-     * Hand the connection to the running service (`piwi/setCredentials`) and read the
-     * status again once it has used it; without a service, start it for the open files.
+     * Hand the connection to the running service (`piwi/setCredentials`), which reads everything again with it and
+     * pushes what changed; without a service, start it for the open files.
      */
     fun sendCredentials() {
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -312,7 +451,6 @@ class PiwiProjectService(private val project: Project) : Disposable {
             } else {
                 val credentials = credentials()
                 lsp.forEach { it.piwiServer()?.setCredentials(credentials) }
-                server()?.refresh()?.orNull()
             }
             refreshStatus()
         }
@@ -340,34 +478,145 @@ class PiwiProjectService(private val project: Project) : Disposable {
         }
     }
 
-    /**
-     * The failures `piwi/failuresChanged` carries, such as a line an edit moved: the list alone, the status and the
-     * runs as they are, then the listeners.
-     */
-    fun failuresChanged(result: FailuresResult) {
-        failuresResult = result
-        failures = result.items.orEmpty()
-        ApplicationManager.getApplication().invokeLater({ listeners.forEach { it() } }, project.disposed)
+    /** The status `piwi/statusChanged` carries: the connection of each context, and the desktop app. */
+    fun statusChanged(result: StatusResult) {
+        synchronized(lock) {
+            status = result
+            statusPushes++
+        }
+        changed()
+        offerDesktop(result)
     }
 
-    /** Read the status, the latest run and its failures again, then tell the listeners. */
-    fun refreshStatus() {
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val server = server()
-            val before = runs
-            status = server?.status()?.orNull()
-            runs = server?.runStatus()?.orNull()
-            val read = server?.failures()?.orNull()
-            failuresResult = read
-            failures = read?.items.orEmpty()
-            ApplicationManager.getApplication().invokeLater({
-                listeners.forEach { it() }
-                // Another run: the gutter, the backgrounds and Code Vision of the open files show it. A run in progress
-                // moves the status bar alone.
-                if (Glue.runsInFiles(runs) != Glue.runsInFiles(before)) DaemonCodeAnalyzer.getInstance(project).restart()
-            }, project.disposed)
-            offerDesktop(status)
+    /** The runs `piwi/runStatusChanged` carries: the latest run of each context, and the run in progress. */
+    fun runStatusChanged(result: RunStatusResult) {
+        synchronized(lock) {
+            runs = result
+            runsPushes++
         }
+        changed()
+    }
+
+    /** The failures `piwi/failuresChanged` carries, such as a line an edit moved. */
+    fun failuresChanged(result: FailuresResult) {
+        synchronized(lock) {
+            failuresResult = result
+            failures = result.items.orEmpty()
+            failuresPushes++
+        }
+        changed()
+    }
+
+    /**
+     * Read the status, the latest run and its failures again, on a pooled thread, then tell the listeners. A read asked
+     * for while one runs follows it, once.
+     */
+    fun refreshStatus() {
+        readAgain.set(true)
+        if (!reading.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                while (readAgain.getAndSet(false) && !gone.value(null)) read()
+            } finally {
+                reading.set(false)
+            }
+            // Asked for between the last check and the end of the loop.
+            if (readAgain.get()) refreshStatus()
+        }
+    }
+
+    private fun read() {
+        val server = server()
+        val pushes = synchronized(lock) { Triple(statusPushes, runsPushes, failuresPushes) }
+        val readStatus = server?.status()?.orNull()
+        val readRuns = server?.runStatus()?.orNull()
+        val readFailures = server?.failures()?.orNull()
+        synchronized(lock) {
+            if (statusPushes == pushes.first) status = readStatus
+            if (runsPushes == pushes.second) runs = readRuns
+            if (failuresPushes == pushes.third) {
+                failuresResult = readFailures
+                failures = readFailures?.items.orEmpty()
+            }
+        }
+        changed()
+        offerDesktop(status)
+    }
+
+    /**
+     * Tell the listeners on the event thread, once for every change made until then, and draw the open files again as
+     * far as the runs they show changed ([draw]).
+     */
+    private fun changed() {
+        pushed.incrementAndGet()
+        if (!changeQueued.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().invokeLater({
+            changeQueued.set(false)
+            listeners.forEach { it() }
+            draw()
+        }, gone)
+    }
+
+    /**
+     * Draw the open files again as far as the runs they show changed (`Glue.redraw`): at once for another run, at most
+     * every [LIVE_TESTS_DRAW_MILLIS] for the tests a run in progress begins and ends. On the event thread.
+     */
+    private fun draw() {
+        val shown = runs
+        val redraw = Glue.redraw(drawn, shown)
+        if (redraw == Glue.Redraw.TESTS) {
+            val wait = testsDrawnAt + LIVE_TESTS_DRAW_MILLIS - System.currentTimeMillis()
+            if (wait > 0) {
+                if (drawQueued.compareAndSet(false, true)) {
+                    AppExecutorUtil.getAppScheduledExecutorService().schedule(
+                        {
+                            drawQueued.set(false)
+                            ApplicationManager.getApplication().invokeLater({ draw() }, gone)
+                        },
+                        wait,
+                        TimeUnit.MILLISECONDS,
+                    )
+                }
+                return
+            }
+            testsDrawnAt = System.currentTimeMillis()
+        }
+        drawn = shown
+        drawAgain(redraw)
+    }
+
+    /**
+     * Draw the open files Piwi reads again, or only those whose tests show a result: their gutter, their backgrounds and
+     * Code Vision. Other files, and other languages, keep their highlighting.
+     */
+    private fun drawAgain(kind: Glue.Redraw) {
+        if (kind == Glue.Redraw.NONE) return
+        val open = FileEditorManager.getInstance(project).openFiles.filter { PiwiLspServerSupportProvider.isSupported(it) }
+        filesWithTests.retainAll(open.mapTo(HashSet()) { it.url })
+        val files = if (kind == Glue.Redraw.ALL) open else open.filter { it.url in filesWithTests }
+        if (files.isEmpty()) return
+        val analyzer = DaemonCodeAnalyzer.getInstance(project)
+        ApplicationManager.getApplication().runReadAction {
+            val psi = PsiManager.getInstance(project)
+            for (file in files) psi.findFile(file)?.let { analyzer.restart(it) }
+        }
+    }
+
+    /** Whether a file shows its tests' results in the gutter, as `PiwiTestAnnotator` last drew it. */
+    fun showsTests(file: VirtualFile, shows: Boolean) {
+        if (shows) filesWithTests += file.url else filesWithTests -= file.url
+    }
+
+    /**
+     * `piwi/fileSummary` for `file` when its text is at `stamp` (its document's modification stamp): asked once, for the
+     * gutter and Code Vision of one highlighting pass, and asked again once the text or anything the service pushes
+     * changed, or after [SUMMARY_TTL_MILLIS]. Null while the service does not run, and for a file that is not on disk.
+     */
+    fun fileSummary(file: VirtualFile, stamp: Long): CompletableFuture<FileSummary?>? {
+        val server = server() ?: return null
+        val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return null
+        // Read before the request: a change pushed while it is sent makes the next pass ask again.
+        return summaries.get(uri, stamp, pushed.get(), System.currentTimeMillis()) { server.fileSummary(UriParams(uri)) }
     }
 
     /**
@@ -393,7 +642,10 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     override fun dispose() {
+        disposed = true
         listeners.clear()
+        summaries.clear()
+        filesWithTests.clear()
     }
 
     private fun credentialAttributes(serverUrl: String) =
@@ -413,23 +665,34 @@ class PiwiProjectService(private val project: Project) : Disposable {
     companion object {
         const val TIMEOUT_SECONDS = 20L
         private const val SHARED_KEY_FORGOTTEN = "piwi.sharedKeyForgotten"
+
+        /** How long a file's summary answers for the same text: the indexes the service reads again push nothing. */
+        const val SUMMARY_TTL_MILLIS = 5_000L
+
+        /** How often, at most, the files are drawn again for the tests a run in progress begins and ends. */
+        const val LIVE_TESTS_DRAW_MILLIS = 1_000L
+
+        private const val MAX_SUMMARIES = 64
+
+        /** The id of **Settings → Languages & Frameworks → Node.js**. */
+        private const val NODE_SETTINGS_ID = "settings.nodejs"
     }
 }
 
-/** Searches the project for Playwright configs once it is open, off the event thread. */
+/** Searches the project for Playwright configs once it is open, off the event thread, then whenever one comes or goes. */
 class PiwiStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
-        project.service<PiwiProjectService>().findPlaywright()
+        val service = project.service<PiwiProjectService>()
+        service.findPlaywright()
+        service.watchConfigs()
     }
 }
 
-/** The answer of a service request, or null when it failed or took too long. */
-fun <T> CompletableFuture<T>.orNull(): T? =
-    try {
-        get(PiwiProjectService.TIMEOUT_SECONDS, TimeUnit.SECONDS)
-    } catch (_: Exception) {
-        null
-    }
+/**
+ * The answer of a service request, or null when it failed or took too long. A task with progress stops waiting at its
+ * Cancel button.
+ */
+fun <T> CompletableFuture<T>.orNull(): T? = awaitCancellably(TimeUnit.SECONDS.toMillis(PiwiProjectService.TIMEOUT_SECONDS))
 
 /**
  * The answer of a service request, or null when it failed or took longer than `timeoutMillis`.

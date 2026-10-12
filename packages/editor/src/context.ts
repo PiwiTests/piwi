@@ -15,6 +15,7 @@ import type { LocatorHealingResult } from '@piwitests/core/locator-healing-types
 import {
   PiwiClient,
   PiwiHttpError,
+  type ResponseCache,
   type BranchFailures,
   type CallSiteAlternatives,
   type CatalogCase,
@@ -27,7 +28,14 @@ import {
   type QuarantinedTest,
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
-import type { BaselineChoice, ConnectionSource, EditorCredentials, LiveRun, LiveTestStatus } from './protocol.js';
+import type {
+  BaselineChoice,
+  ConnectionSource,
+  EditorCredentials,
+  LiveRun,
+  LiveTestStatus,
+  ProblemKind,
+} from './protocol.js';
 import {
   committedText,
   committedTextAt,
@@ -44,9 +52,6 @@ const MAX_SELECTIONS = 20;
 /** How long per-file answers (catalog, alternatives) are reused. */
 const FILE_CACHE_MS = 5 * 60_000;
 
-/** How many files a context keeps as the commits of its runs hold them: the latest read. */
-const MAX_COMMIT_TEXTS = 100;
-
 /** The origins of CI runs, as `branch-failures` names them. */
 export const CI_ORIGINS = new Set(['ci', 'ci-rerun']);
 
@@ -56,8 +61,9 @@ const LOCAL_ORIGINS = new Set(['local', 'desktop', 'editor']);
 /** The answer of a baseline that found no run. */
 const noRun = (): BranchFailures => ({ run: null, overlays: [], failures: [], resolved: [] });
 
-/** A file as a commit holds it: its text once read (null when the repository has none), and the read. */
+/** A file as a commit holds it: the commit, its text once read (null when the repository has none), and the read. */
 interface CommitText {
+  commit: string;
   text: string | null | undefined;
   read: Promise<string | null>;
 }
@@ -272,6 +278,42 @@ export function withServerUrl(
   return own?.serverUrl === target ? command : `${command} --server-url ${target}`;
 }
 
+/**
+ * `ask`'s answer, kept in `cache` under `key` and shared by the asks meanwhile. A failure answers `fallback`; it is
+ * kept when the instance refused the request itself (a 4xx but 408 and 429: none, or not allowed), and asked again
+ * next time otherwise (no answer, or an error of the instance).
+ */
+function once<K, V>(cache: Map<K, Promise<V>>, key: K, ask: () => Promise<V>, fallback: V): Promise<V> {
+  let found = cache.get(key);
+  if (!found) {
+    const asked: Promise<V> = ask().catch((e: unknown) => {
+      const refused = e instanceof PiwiHttpError && e.status >= 400 && e.status < 500 && ![408, 429].includes(e.status);
+      if (!refused && cache.get(key) === asked) cache.delete(key);
+      return fallback;
+    });
+    found = asked;
+    cache.set(key, found);
+  }
+  return found;
+}
+
+/** Where stored files (traces, screenshots) are downloaded, one folder per instance and path. */
+export const EVIDENCE_ROOT = path.join(os.tmpdir(), 'piwi-editor');
+/** A downloaded file not used for this long is deleted. */
+const EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+
+/** Delete the downloaded files not used for a week. Never throws. */
+export async function pruneEvidence(root = EVIDENCE_ROOT, now = Date.now()): Promise<void> {
+  const entries = await fs.promises.readdir(root, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const dir = path.join(root, entry.name);
+    const stat = await fs.promises.stat(dir).catch(() => null);
+    if (stat && now - stat.mtimeMs > EVIDENCE_MAX_AGE_MS) {
+      await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
 export class PiwiContext {
   repoRoot: string;
   client: PiwiClient | null = null;
@@ -286,6 +328,8 @@ export class PiwiContext {
   codeIndex: CodeIndex | null = null;
   /** Why the context has no data, in one sentence; null when it has. */
   problem: string | null = null;
+  /** What `problem` is about; null with no problem. */
+  problemKind: ProblemKind | null = null;
   /** The version of `@piwitests/reporter` the project installs, read at each refresh; null when none is found. */
   reporterVersion: string | null = null;
   /**
@@ -343,12 +387,24 @@ export class PiwiContext {
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
   private readonly commitTexts = new Map<string, CommitText>();
-  private translations: { head: string | null; old?: Map<string, string>; new?: Map<string, string> } = { head: null };
+  /** The translation values of `HEAD` and of the working tree, by the `HEAD` they were read at. */
+  private translations: {
+    head: string | null;
+    old?: Promise<Map<string, string>>;
+    new?: Promise<Map<string, string>>;
+  } = {
+    head: null,
+  };
   private head: string | null = null;
 
   constructor(
     /** The Playwright config's directory: call sites resolve against it. */
     readonly root: string,
+    /**
+     * The answers of the instance's conditional requests, shared by the contexts of one service: a 304 hands back the
+     * same object, and the configs reading one project share it.
+     */
+    private readonly answers: ResponseCache = new Map(),
   ) {
     this.repoRoot = root;
   }
@@ -366,7 +422,8 @@ export class PiwiContext {
       this.head = head;
       this.committedFiles = new Map();
     }
-    this.translations = { head: null };
+    // The working tree's translations are read again; those of `HEAD` stay while it does.
+    this.translations = { head: this.translations.head, old: this.translations.old };
     const named = namedInstance(this.root, this.repoRoot, env, editor);
     this.instance = named && { serverUrl: named.serverUrl, source: named.source };
     const connection = resolveContextConnection(this.root, this.repoRoot, env, editor);
@@ -375,23 +432,28 @@ export class PiwiContext {
     if (!connection) {
       this.client = null;
       this.source = null;
-      this.problem = 'No Piwi instance configured: set PIWI_DASHBOARD_URL, run piwi init, or run Piwi: Connect.';
+      this.fail(
+        'not-configured',
+        'No Piwi instance configured: set PIWI_DASHBOARD_URL, run piwi init, or run Piwi: Connect.',
+      );
       return;
     }
-    this.client = new PiwiClient(connection);
+    this.client = new PiwiClient(connection, this.answers);
     this.source = connection.source;
     try {
       if (!connection.project) {
-        this.problem =
+        this.fail(
+          'no-project',
           connection.source === 'desktop'
             ? "No project linked to this folder in the Piwi desktop app: link it on the project's page there, or run Piwi: Connect."
-            : 'No project chosen: set PIWI_PROJECT_NAME or run Piwi: Connect.';
+            : 'No project chosen: set PIWI_PROJECT_NAME or run Piwi: Connect.',
+        );
         return;
       }
       if (!this.project || this.project.name !== connection.project) {
         this.project = await this.client.resolveProject(connection.project);
         if (!this.project) {
-          this.problem = `No project named "${connection.project}" on ${connection.serverUrl}.`;
+          this.fail('no-project', `No project named "${connection.project}" on ${connection.serverUrl}.`);
           return;
         }
       }
@@ -408,6 +470,7 @@ export class PiwiContext {
       this.index = this.branch ? await this.client.locatorIndex(this.project.id, this.branch) : index;
       // The failures first: what the other indexes add to them comes once they answer.
       this.problem = null;
+      this.problemKind = null;
       await this.refreshRun();
       onRun?.();
       const client = this.client;
@@ -458,12 +521,22 @@ export class PiwiContext {
       ]);
     } catch (e) {
       const refused = e instanceof PiwiHttpError && (e.status === 401 || e.status === 403);
-      this.problem = refused
-        ? connection.apiKey
-          ? `${connection.serverUrl} refused the API key (${e.status}): run Piwi: Connect to sign in again.`
-          : `${connection.serverUrl} needs an API key (${e.status}): run Piwi: Connect to sign in.`
-        : `Could not reach ${connection.serverUrl}: ${(e as Error).message}`;
+      if (refused) {
+        this.fail(
+          'refused',
+          connection.apiKey
+            ? `${connection.serverUrl} refused the API key (${e.status}): run Piwi: Connect to sign in again.`
+            : `${connection.serverUrl} needs an API key (${e.status}): run Piwi: Connect to sign in.`,
+        );
+      } else {
+        this.fail('unreachable', `Could not reach ${connection.serverUrl}: ${(e as Error).message}`);
+      }
     }
+  }
+
+  private fail(kind: ProblemKind, problem: string): void {
+    this.problemKind = kind;
+    this.problem = problem;
   }
 
   /**
@@ -563,6 +636,10 @@ export class PiwiContext {
         this.fixPlanTexts.clear();
         this.failureAnchors.clear();
         this.commitTexts.clear();
+      } else {
+        // The files of the commits no run listed was made at any more.
+        const commits = new Set([next.run?.commit, ...(next.overlays ?? []).map((o) => o.commit)]);
+        for (const [key, entry] of this.commitTexts) if (!commits.has(entry.commit)) this.commitTexts.delete(key);
       }
       const listed = new Set([...next.failures, ...(next.resolved ?? [])].map((f) => f.executionId));
       for (const id of this.failureAnchors.keys()) if (!listed.has(id)) this.failureAnchors.delete(id);
@@ -590,37 +667,30 @@ export class PiwiContext {
   issuesOf(failure: BranchFailure): Promise<EntityLink[]> {
     const client = this.client;
     if (!client) return Promise.resolve([]);
-    let found = this.issues.get(failure.executionId);
-    if (!found) {
-      found = Promise.all([
-        failure.clusterId ? client.links('failure_cluster', failure.clusterId).catch(() => []) : [],
-        client.links('test_case', failure.testCaseId).catch(() => []),
-      ]).then(([cluster, test]) => [...new Map([...cluster, ...test].map((l) => [l.url, l])).values()]);
-      this.issues.set(failure.executionId, found);
-    }
-    return found;
+    return once(
+      this.issues,
+      failure.executionId,
+      () =>
+        Promise.all([
+          failure.clusterId ? client.links('failure_cluster', failure.clusterId) : [],
+          client.links('test_case', failure.testCaseId),
+        ]).then(([cluster, test]) => [...new Map([...cluster, ...test].map((l) => [l.url, l])).values()]),
+      [],
+    );
   }
 
   /** A failure cluster's fix plan, fetched once per run. */
   fixPlan(clusterId: number): Promise<FixPlan | null> {
-    if (!this.client) return Promise.resolve(null);
-    let found = this.fixPlans.get(clusterId);
-    if (!found) {
-      found = this.client.fixPlan(clusterId).catch(() => null);
-      this.fixPlans.set(clusterId, found);
-    }
-    return found;
+    const client = this.client;
+    return client ? once(this.fixPlans, clusterId, () => client.fixPlan(clusterId), null) : Promise.resolve(null);
   }
 
   /** The same plan as Markdown, fetched once per run. */
   fixPlanText(clusterId: number): Promise<string | null> {
-    if (!this.client) return Promise.resolve(null);
-    let found = this.fixPlanTexts.get(clusterId);
-    if (!found) {
-      found = this.client.fixPlanMarkdown(clusterId).catch(() => null);
-      this.fixPlanTexts.set(clusterId, found);
-    }
-    return found;
+    const client = this.client;
+    return client
+      ? once(this.fixPlanTexts, clusterId, () => client.fixPlanMarkdown(clusterId), null)
+      : Promise.resolve(null);
   }
 
   /** Tags and features (reused for five minutes) and the workspace's CODEOWNERS owners, for annotation completion. */
@@ -637,13 +707,10 @@ export class PiwiContext {
 
   /** The healing of a failed execution, fetched once. */
   healing(executionId: number): Promise<LocatorHealingResult | null> {
-    if (!this.client) return Promise.resolve(null);
-    let found = this.healings.get(executionId);
-    if (!found) {
-      found = this.client.locatorHealing(executionId).catch(() => null);
-      this.healings.set(executionId, found);
-    }
-    return found;
+    const client = this.client;
+    return client
+      ? once(this.healings, executionId, () => client.locatorHealing(executionId), null)
+      : Promise.resolve(null);
   }
 
   /** A stored file downloaded to the temporary directory, once; null when it cannot be fetched. */
@@ -653,16 +720,20 @@ export class PiwiContext {
     const key = `${client.connection.serverUrl}\n${storedPath}`;
     let found = this.downloads.get(key);
     if (!found) {
-      const dir = path.join(os.tmpdir(), 'piwi-editor', createHash('sha256').update(key).digest('hex').slice(0, 16));
+      const dir = path.join(EVIDENCE_ROOT, createHash('sha256').update(key).digest('hex').slice(0, 16));
       // The name comes from the server and ends up in a `show-trace "<path>"` command: keep it to plain characters.
       const name = path.basename(storedPath).replace(/[^\w.-]/g, '_');
       const target = path.join(dir, name && name !== '.' && name !== '..' ? name : 'file');
       found = (async () => {
-        if (fs.existsSync(target)) return target;
         try {
-          const bytes = await client.file(storedPath);
+          if (fs.existsSync(target)) {
+            // Used again: kept by `pruneEvidence` as long as a fresh download.
+            const now = new Date();
+            await fs.promises.utimes(dir, now, now);
+            return target;
+          }
           await fs.promises.mkdir(dir, { recursive: true });
-          await fs.promises.writeFile(target, bytes);
+          await client.download(storedPath, target);
           return target;
         } catch {
           this.downloads.delete(key);
@@ -679,9 +750,13 @@ export class PiwiContext {
     if (!this.client || !this.project) return [];
     const cached = this.catalog.get(relativeFile);
     if (cached && Date.now() - cached.at < FILE_CACHE_MS) return cached.items;
-    const items = await this.client.testCases(this.project.id, relativeFile).catch(() => [] as CatalogCase[]);
-    this.catalog.set(relativeFile, { at: Date.now(), items });
-    return items;
+    try {
+      const items = await this.client.testCases(this.project.id, relativeFile);
+      this.catalog.set(relativeFile, { at: Date.now(), items });
+      return items;
+    } catch {
+      return cached?.items ?? [];
+    }
   }
 
   /** The stored alternatives of a file's call sites. */
@@ -689,30 +764,31 @@ export class PiwiContext {
     if (!this.client || !this.project) return [];
     const cached = this.alternatives.get(relativeFile);
     if (cached && Date.now() - cached.at < FILE_CACHE_MS) return cached.items;
-    const items = await this.client.locatorAlternatives(this.project.id, relativeFile).catch(() => []);
-    this.alternatives.set(relativeFile, { at: Date.now(), items });
-    return items;
+    try {
+      const items = await this.client.locatorAlternatives(this.project.id, relativeFile);
+      this.alternatives.set(relativeFile, { at: Date.now(), items });
+      return items;
+    } catch {
+      return cached?.items ?? [];
+    }
   }
 
   /**
    * A file (repository-relative) as `commit` holds it: null when the local repository lacks the commit or the path,
-   * undefined until read. The first call starts the read, which `read` settles with; the text is kept while the latest
-   * run stays the same, for the {@link MAX_COMMIT_TEXTS} files read last.
+   * undefined until read. The first call starts the read, which `read` settles with: each file is read once per commit,
+   * kept while the latest run stays the same and a run listed with it was made at that commit, as many files as the
+   * failures go through.
    */
   textAtCommit(commit: string, repoRelative: string): CommitText {
     const key = `${commit}\n${repoRelative}`;
     const known = this.commitTexts.get(key);
     if (known) return known;
     const read = committedTextAt(this.repoRoot, commit, repoRelative);
-    const entry: CommitText = { text: undefined, read };
+    const entry: CommitText = { commit, text: undefined, read };
     void read.then((text) => {
       entry.text = text;
     });
     this.commitTexts.set(key, entry);
-    for (const oldest of this.commitTexts.keys()) {
-      if (this.commitTexts.size <= MAX_COMMIT_TEXTS) break;
-      this.commitTexts.delete(oldest);
-    }
     return entry;
   }
 
@@ -724,15 +800,23 @@ export class PiwiContext {
     return this.committedFiles.get(repoRelative) ?? null;
   }
 
-  /** Translation values of `HEAD` (`old`) and the working tree (`new`), rebuilt on each refresh. */
+  /**
+   * Translation values of `HEAD` (`old`), read again once `HEAD` moves, and of the working tree (`new`), read again on
+   * each refresh: each read once for every document that asks meanwhile, and again after it failed.
+   */
   async translationMaps(): Promise<{ old: Map<string, string>; new: Map<string, string> }> {
-    if (this.translations.head !== this.head || !this.translations.old || !this.translations.new) {
-      this.translations = {
-        head: this.head,
-        old: await translationValues(this.repoRoot, 'old'),
-        new: await translationValues(this.repoRoot, 'new'),
-      };
-    }
-    return { old: this.translations.old!, new: this.translations.new! };
+    if (this.translations.head !== this.head) this.translations = { head: this.head };
+    const read = (side: 'old' | 'new'): Promise<Map<string, string>> => {
+      const known = this.translations[side];
+      if (known) return known;
+      const values = translationValues(this.repoRoot, side);
+      this.translations[side] = values;
+      values.catch(() => {
+        if (this.translations[side] === values) this.translations[side] = undefined;
+      });
+      return values;
+    };
+    const [old, current] = await Promise.all([read('old'), read('new')]);
+    return { old, new: current };
   }
 }
