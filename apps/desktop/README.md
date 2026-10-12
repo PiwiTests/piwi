@@ -5,7 +5,8 @@ shipped as the Docker image and `@piwitests/server`, and runs it locally. No
 Docker, no `npx`, no server to set up — double-click and go. Everything binds
 `127.0.0.1`; your data lives under the OS app-data directory.
 
-Targets: **Windows (`.msi` and `.exe`)**, **macOS (`.dmg`)**, and **Linux (`.deb` /
+Targets: **Windows (`.msi` and `.exe`)**, **macOS (`.dmg`, Apple silicon, macOS 13.5 or
+later, the floor of the bundled Node 24 runtime)**, and **Linux (`.deb` /
 `.rpm` / `.AppImage`)**. The Windows **`.exe`** is an NSIS **per-user** installer
 (`%LOCALAPPDATA%`, no admin to install or update); the **`.msi`** installs **per
 machine** (`Program Files`) and needs elevation. Each keeps its own auto-update

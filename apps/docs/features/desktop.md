@@ -29,7 +29,7 @@ Download the installer from the [latest release](https://github.com/PiwiTests/pl
 | OS | Installer |
 |----|-----------|
 | **Windows** | `.exe` (per-user, no admin) or `.msi` (per-machine) |
-| **macOS** (Apple silicon) | `.dmg` |
+| **macOS** 13.5+ (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 
 The installers are **unsigned**, so the OS warns on first launch. On macOS, right-click the app, then **Open** twice;
