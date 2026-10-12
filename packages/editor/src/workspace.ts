@@ -11,7 +11,15 @@ import { isTranslationFile, parseTranslationFile } from '@piwitests/core/diff-an
 
 const run = promisify(execFile);
 
-const CONFIG_NAMES = ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs', 'playwright.config.cjs'];
+/** The names Playwright reads a config from without `--config`. */
+const CONFIG_NAMES = [
+  'playwright.config.ts',
+  'playwright.config.js',
+  'playwright.config.mjs',
+  'playwright.config.cjs',
+  'playwright.config.mts',
+  'playwright.config.cts',
+];
 const SKIP_DIRS = new Set([
   'node_modules',
   '.git',

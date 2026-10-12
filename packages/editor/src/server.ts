@@ -44,7 +44,7 @@ import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
-import { locatorCallSiteFiles, sameFilePath, type LocatorBreak } from '@piwitests/core/locator-break';
+import type { LocatorBreak } from '@piwitests/core/locator-break';
 import { stabilityLabels } from '@piwitests/core/locator-stability';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import {
@@ -54,6 +54,7 @@ import {
   breaksByAnchor,
   breaksOfChange,
   callEndLine,
+  callsLocatorsFrom,
   filePages,
   flakeLabLens,
   functionSnippet,
@@ -556,7 +557,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!relative) return false;
     if (SPEC_FILE.test(relative)) return true;
     if (!context.index) return false;
-    return [...locatorCallSiteFiles(context.index)].some((f) => sameFilePath(f, relative));
+    return callsLocatorsFrom(context.index, relative);
   };
 
   const lineOf = (file: string, line: number): string | null => {
@@ -1012,15 +1013,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }),
   });
 
-  /** Publish the failures and tell the client when the run status changed. */
-  const runChanged = () => {
-    publishFailures();
+  /** Tell the client when the run status changed. */
+  const sendRunStatus = () => {
     const status = runStatus();
     const serialized = JSON.stringify(status);
     if (serialized !== lastRunStatus) {
       lastRunStatus = serialized;
       void connection.sendNotification(RUN_STATUS_NOTIFICATION, status);
     }
+  };
+
+  /** Publish the failures and tell the client when the run status changed. */
+  const runChanged = () => {
+    publishFailures();
+    sendRunStatus();
   };
 
   /**
@@ -1054,13 +1060,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         runTimer = null;
         const due = contexts.filter((c) => dueAt(c) <= Date.now());
         for (const c of due) polledAt.set(c, Date.now());
-        await Promise.all(
+        const read = await Promise.all(
           due.map(async (c) => {
-            const [, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
+            const [changed, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
             if (ended) runWatch.end(c);
+            return changed;
           }),
         );
-        if (due.length) runChanged();
+        // A read that found the same runs and failures moves the time of the read and the run in progress alone.
+        if (read.some(Boolean)) runChanged();
+        else if (due.length) sendRunStatus();
         if (!runTimer) pollRuns();
       },
       Math.max(0, next - now),
@@ -1072,6 +1081,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     contexts: () => contexts,
     changed: () => {
       runChanged();
+      pollRuns();
+    },
+    // A run in progress moves no failure: its status alone.
+    progressed: () => {
+      sendRunStatus();
       pollRuns();
     },
     notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
@@ -1379,7 +1393,31 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
   };
 
-  async function refreshAll(): Promise<void> {
+  /** The refresh running, and the one asked for meanwhile, which follows it. */
+  let refreshing: Promise<void> | null = null;
+  let refreshNext: Promise<void> | null = null;
+
+  /**
+   * Read every context's connection, latest run and indexes again. Refreshes never overlap: one asked for while another
+   * runs follows it, once for all the asks meanwhile, and reads with the credentials of the latest.
+   */
+  function refreshAll(): Promise<void> {
+    if (!refreshing) {
+      refreshing = refreshContexts().finally(() => {
+        refreshing = null;
+      });
+      return refreshing;
+    }
+    refreshNext ??= refreshing
+      .catch(() => undefined)
+      .then(() => {
+        refreshNext = null;
+        return refreshAll();
+      });
+    return refreshNext;
+  }
+
+  async function refreshContexts(): Promise<void> {
     // A context's failures are published once its run is read, without waiting for the indexes read after it.
     const runRead = () => {
       runChanged();
@@ -2112,9 +2150,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return withBreakpoints(context, run, params.breakpoints);
   });
 
-  connection.onRequest(STATUS_REQUEST, (): StatusResult => currentStatus());
+  // An answer is what the client holds from then on: a change is pushed against it, so a client that read the state
+  // midway through a refresh still hears where the refresh ends.
+  connection.onRequest(STATUS_REQUEST, (): StatusResult => {
+    const status = currentStatus();
+    lastStatus = JSON.stringify(status);
+    return status;
+  });
 
-  connection.onRequest(RUN_STATUS_REQUEST, (): RunStatusResult => runStatus());
+  connection.onRequest(RUN_STATUS_REQUEST, (): RunStatusResult => {
+    const status = runStatus();
+    lastRunStatus = JSON.stringify(status);
+    return status;
+  });
 
   connection.onRequest(DESKTOP_REQUEST, async (): Promise<DesktopResult> => {
     const desktop = readDesktopDiscovery(env);
@@ -2182,7 +2230,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   });
 
-  connection.onRequest(FAILURES_REQUEST, (): FailuresResult => failuresResult(placer()));
+  connection.onRequest(FAILURES_REQUEST, (): FailuresResult => {
+    const failures = failuresResult(placer());
+    failuresSent = JSON.stringify({ ...failures, updatedAt: undefined });
+    return failures;
+  });
 
   connection.onRequest(
     AGENT_CONTEXT_REQUEST,

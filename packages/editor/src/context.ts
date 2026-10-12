@@ -44,9 +44,6 @@ const MAX_SELECTIONS = 20;
 /** How long per-file answers (catalog, alternatives) are reused. */
 const FILE_CACHE_MS = 5 * 60_000;
 
-/** How many files a context keeps as the commits of its runs hold them: the latest read. */
-const MAX_COMMIT_TEXTS = 100;
-
 /** The origins of CI runs, as `branch-failures` names them. */
 export const CI_ORIGINS = new Set(['ci', 'ci-rerun']);
 
@@ -56,8 +53,9 @@ const LOCAL_ORIGINS = new Set(['local', 'desktop', 'editor']);
 /** The answer of a baseline that found no run. */
 const noRun = (): BranchFailures => ({ run: null, overlays: [], failures: [], resolved: [] });
 
-/** A file as a commit holds it: its text once read (null when the repository has none), and the read. */
+/** A file as a commit holds it: the commit, its text once read (null when the repository has none), and the read. */
 interface CommitText {
+  commit: string;
   text: string | null | undefined;
   read: Promise<string | null>;
 }
@@ -343,7 +341,14 @@ export class PiwiContext {
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
   private readonly commitTexts = new Map<string, CommitText>();
-  private translations: { head: string | null; old?: Map<string, string>; new?: Map<string, string> } = { head: null };
+  /** The translation values of `HEAD` and of the working tree, by the `HEAD` they were read at. */
+  private translations: {
+    head: string | null;
+    old?: Promise<Map<string, string>>;
+    new?: Promise<Map<string, string>>;
+  } = {
+    head: null,
+  };
   private head: string | null = null;
 
   constructor(
@@ -366,7 +371,8 @@ export class PiwiContext {
       this.head = head;
       this.committedFiles = new Map();
     }
-    this.translations = { head: null };
+    // The working tree's translations are read again; those of `HEAD` stay while it does.
+    this.translations = { head: this.translations.head, old: this.translations.old };
     const named = namedInstance(this.root, this.repoRoot, env, editor);
     this.instance = named && { serverUrl: named.serverUrl, source: named.source };
     const connection = resolveContextConnection(this.root, this.repoRoot, env, editor);
@@ -563,6 +569,10 @@ export class PiwiContext {
         this.fixPlanTexts.clear();
         this.failureAnchors.clear();
         this.commitTexts.clear();
+      } else {
+        // The files of the commits no run listed was made at any more.
+        const commits = new Set([next.run?.commit, ...(next.overlays ?? []).map((o) => o.commit)]);
+        for (const [key, entry] of this.commitTexts) if (!commits.has(entry.commit)) this.commitTexts.delete(key);
       }
       const listed = new Set([...next.failures, ...(next.resolved ?? [])].map((f) => f.executionId));
       for (const id of this.failureAnchors.keys()) if (!listed.has(id)) this.failureAnchors.delete(id);
@@ -696,23 +706,20 @@ export class PiwiContext {
 
   /**
    * A file (repository-relative) as `commit` holds it: null when the local repository lacks the commit or the path,
-   * undefined until read. The first call starts the read, which `read` settles with; the text is kept while the latest
-   * run stays the same, for the {@link MAX_COMMIT_TEXTS} files read last.
+   * undefined until read. The first call starts the read, which `read` settles with: each file is read once per commit,
+   * kept while the latest run stays the same and a run listed with it was made at that commit, as many files as the
+   * failures go through.
    */
   textAtCommit(commit: string, repoRelative: string): CommitText {
     const key = `${commit}\n${repoRelative}`;
     const known = this.commitTexts.get(key);
     if (known) return known;
     const read = committedTextAt(this.repoRoot, commit, repoRelative);
-    const entry: CommitText = { text: undefined, read };
+    const entry: CommitText = { commit, text: undefined, read };
     void read.then((text) => {
       entry.text = text;
     });
     this.commitTexts.set(key, entry);
-    for (const oldest of this.commitTexts.keys()) {
-      if (this.commitTexts.size <= MAX_COMMIT_TEXTS) break;
-      this.commitTexts.delete(oldest);
-    }
     return entry;
   }
 
@@ -724,15 +731,23 @@ export class PiwiContext {
     return this.committedFiles.get(repoRelative) ?? null;
   }
 
-  /** Translation values of `HEAD` (`old`) and the working tree (`new`), rebuilt on each refresh. */
+  /**
+   * Translation values of `HEAD` (`old`), read again once `HEAD` moves, and of the working tree (`new`), read again on
+   * each refresh: each read once for every document that asks meanwhile, and again after it failed.
+   */
   async translationMaps(): Promise<{ old: Map<string, string>; new: Map<string, string> }> {
-    if (this.translations.head !== this.head || !this.translations.old || !this.translations.new) {
-      this.translations = {
-        head: this.head,
-        old: await translationValues(this.repoRoot, 'old'),
-        new: await translationValues(this.repoRoot, 'new'),
-      };
-    }
-    return { old: this.translations.old!, new: this.translations.new! };
+    if (this.translations.head !== this.head) this.translations = { head: this.head };
+    const read = (side: 'old' | 'new'): Promise<Map<string, string>> => {
+      const known = this.translations[side];
+      if (known) return known;
+      const values = translationValues(this.repoRoot, side);
+      this.translations[side] = values;
+      values.catch(() => {
+        if (this.translations[side] === values) this.translations[side] = undefined;
+      });
+      return values;
+    };
+    const [old, current] = await Promise.all([read('old'), read('new')]);
+    return { old, new: current };
   }
 }

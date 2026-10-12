@@ -153,6 +153,11 @@ export interface RunWatchOptions {
   contexts: () => readonly PiwiContext[];
   /** A context's latest run, its failures or its live run changed, or a stream connected or dropped. */
   changed: () => void;
+  /**
+   * A live run moved, at most every `PROGRESS_MS`: its counts, its status or the tests it began or ended, while every
+   * context's latest run and its failures stay as they were. `changed` when not given.
+   */
+  progressed?: () => void;
   /** A sentence for the client to show once. */
   notice: (notice: Notice) => void;
   /** A run the editor started ended, and the context read its latest run again. */
@@ -544,7 +549,7 @@ export class RunWatch {
       () => {
         this.progressTimer = null;
         this.progressAt = Date.now();
-        this.options.changed();
+        (this.options.progressed ?? this.options.changed)();
       },
       Math.max(0, this.progressAt + PROGRESS_MS - Date.now()),
     );

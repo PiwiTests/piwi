@@ -72,10 +72,11 @@ clients stay thin and both editors give the same answers.
   credentials bring. Half a second after a run ends (runs that end together are read once), the context reads its
   latest run again; while its stream is connected, the poll reads it every five minutes, otherwise every minute, every
   15 seconds while a run is in progress, and every 15 seconds while a run is `live`, connected or not (`stream` and
-  `updatedAt` in `piwi/runStatus`). A run in progress on the context's branch, or the editor's own wherever it
+  `updatedAt` in `piwi/runStatus`). A read that finds the same runs and failures places no failure again: it moves
+  `updatedAt` alone. A run in progress on the context's branch, or the editor's own wherever it
   runs, is `live` in `piwi/runStatus`, counted through its own stream (`GET /api/test-runs/:id/stream`), with at most
-  one notification every 300 ms; it goes back to null in the notification that brings the failures read once it
-  ended. The tests its stream begins and ends (`test-begin`, named by its title and suite path in its spec through the
+  one notification every 300 ms, which places no failure again (`progressed` in `RunWatchOptions`); it goes back to
+  null in the notification that brings the failures read once it ended. The tests its stream begins and ends (`test-begin`, named by its title and suite path in its spec through the
   catalog, none when the catalog cannot tell them apart: `catalogCaseOf`, and
   `test-completed`, by its id) are `PiwiContext.liveTests` until then: `running`, then their result (a pass after a
   failed attempt is flaky; a test on several projects shows the first of running, failed, flaky, passed, skipped),
@@ -174,11 +175,17 @@ needs the extension's sources, and a change to the recorder there changes what t
   folder as the editor spelled it, which on Windows may carry a lower-case drive letter.
 - **Nothing blocks typing.** The project's indexes, failures, function catalog and vocabulary are fetched on the
   refresh timer, on `piwi/refresh` and after `piwi/setCredentials` (the failures also when a run ends, on the poll and
-  on `piwi/refreshRun`), and requests answer from them. What belongs to one
+  on `piwi/refreshRun`), and requests answer from them. Refreshes never overlap: one asked for while another runs
+  follows it (`refreshAll`). What an index gives every request (each file's call sites, a locator's stability) is
+  computed once per index (`callSitesOf`, `stabilityOf` in `src/analysis.ts`). What belongs to one
   file (a spec's cases, a file's stored alternatives) or one failure (its healing, fix plan, linked issues, evidence) is
   fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it. A
-  failure's files at its run's commit are read once too, and its diagnostics wait for nothing: the files as saved stand
-  in until they are read.
+  failure's files at its run's commit are read once too, as many as the failures go through, and its diagnostics wait
+  for nothing: the files as saved stand in until they are read. The translation values of `HEAD` are read once per
+  `HEAD`, those of the working tree once per refresh, each once for every document that asks meanwhile.
+- **A change is pushed against what the client holds**: `piwi/statusChanged`, `piwi/runStatusChanged` and
+  `piwi/failuresChanged` are sent when the answer differs from the last one sent or answered to `piwi/status`,
+  `piwi/runStatus` or `piwi/failures`, so a client keeps the pushed answers and never reads one again on a push.
 - **The failures come first on a refresh** (`PiwiContext.refresh`): the project and its locator index (the ladder
   needs the default branch), then the latest run, whose failures and status are published at once (`onRun`); only then
   the other indexes, side by side, each keeping what it held when its read fails. Their slow reads are one request

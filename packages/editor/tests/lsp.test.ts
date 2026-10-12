@@ -1621,7 +1621,10 @@ describe('failures follow the edits', () => {
     };
     try {
       await client.sendRequest('piwi/refreshRun');
-      const placed = await waitFor(() => onPage((d) => (d.data as { executionId: number }).executionId === 903));
+      // Placed from the file as saved until the commit's file is read, then from it.
+      const placed = await waitFor(() =>
+        onPage((d) => (d.data as { executionId: number }).executionId === 903 && lineOf(d) === 6),
+      );
       expect(placed).toMatchObject({
         severity: 1,
         message: "locator('.cart-row').nth(2) was not found (removes a row, run #41)",
@@ -2559,6 +2562,49 @@ describe('the desktop app chosen with Connect', () => {
       fs.rmSync(desktopFile, { force: true });
       stopChosen();
       chosenClient.dispose();
+    }
+  });
+});
+
+describe('a change pushed to the client', () => {
+  test('is a change from what the client read: a desktop app a read saw, gone since, is said gone', async () => {
+    const desktopFile = path.join(dir, '.desktop-seen.json');
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopSeen = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: desktopFile },
+      debounceMs: 10,
+      // The discovery file is not watched here: only the read sees the app.
+      desktopWatchMs: 60_000,
+    });
+    const seen = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const notified: StatusResult[] = [];
+    seen.onNotification('piwi/statusChanged', (s: StatusResult) => {
+      notified.push(s);
+    });
+    seen.listen();
+    try {
+      await seen.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await seen.sendNotification('initialized', {});
+      await waitFor(() => notified.find((s) => s.contexts[0]?.connected));
+      fs.writeFileSync(desktopFile, JSON.stringify({ url: 'http://127.0.0.1:9', token: 'pd_desktop', projects: [] }));
+      const read = (await seen.sendRequest('piwi/status')) as StatusResult;
+      expect(read.desktopUrl).toBe('http://127.0.0.1:9');
+      fs.rmSync(desktopFile);
+      const before = notified.length;
+      // The same status as the last one pushed, but not as the last one read.
+      await seen.sendNotification('piwi/setCredentials', {});
+      const after = await waitFor(() => notified.slice(before).find((s) => s.desktopUrl === null));
+      expect(after.contexts[0]).toMatchObject({ connected: true, projectName: 'Acme Mugs' });
+    } finally {
+      fs.rmSync(desktopFile, { force: true });
+      stopSeen();
+      seen.dispose();
     }
   });
 });
