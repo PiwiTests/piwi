@@ -806,8 +806,8 @@ export const traceBlobs = pgTable(
     size: integer('size').notNull(), // size of the trace as uploaded, the one users download
     // Bytes the blob's own files occupy in storage: the slim ZIP plus its manifest,
     // or the whole ZIP when it was stored as is. Shared pool resources are counted
-    // in trace_resources, not here. Null for a blob written before this column
-    // until the startup backfill measures it.
+    // in trace_resources, not here. Null until the startup backfill measures the
+    // blob.
     storedSize: integer('stored_size'),
     // True once this blob's trace_blob_resources rows exist (written at ingest, or
     // backfilled from its manifest). Per-resource GC only trusts the join table

@@ -14,40 +14,60 @@ import { safeStorageSegment } from './sanitize-filename';
  *   name → pool name: the per-action screenshots (`screenshots/`) and the
  *   screencast frames (`screencast/`) of a Playwright 1.63+ trace. Their names
  *   say which action or instant they belong to, not what they hold, so they are
- *   pooled under their content hash: the "after" screenshot of one action is
- *   usually the "before" of the next, and an unchanged page renders the same
- *   bytes run after run.
+ *   pooled under a name the server derives from their bytes: the "after"
+ *   screenshot of one action is usually the "before" of the next, and an
+ *   unchanged page renders the same bytes run after run.
  *
- * A blob written before `pooledEntries` existed has none; its screenshots and
- * screencast frames are still inside the slim ZIP.
+ * A manifest without `pooledEntries` belongs to a blob whose slim ZIP holds its
+ * screenshots and screencast frames itself.
  */
 export interface TraceBlobManifest {
   resources: string[];
+  /** Entry name → pool name. Has no prototype: read it with {@link pooledEntryPoolName}. */
   pooledEntries: Record<string, string>;
 }
 
-/** Archive entry prefixes pooled by content hash (see {@link TraceBlobManifest}). */
+/** Archive entry prefixes pooled by content (see {@link TraceBlobManifest}). */
 const POOLED_ENTRY_PREFIXES = ['screenshots/', 'screencast/'];
+
+/**
+ * Prefix of every pool name the server derives for a pooled entry. Names under
+ * `resources/` come from the uploaded trace, so ingestion never pools one that
+ * carries this prefix: a trace cannot plant bytes under a name another trace's
+ * screenshot resolves to.
+ */
+const POOLED_NAME_PREFIX = 'pooled-';
 
 /** Path of the manifest that sits next to a slim trace blob. */
 export function traceManifestPath(blobPath: string): string {
-  return blobPath.replace(/\.zip$/, '.manifest.json');
+  return blobPath.endsWith('.zip') ? blobPath.replace(/\.zip$/, '.manifest.json') : `${blobPath}.manifest.json`;
 }
 
-/** Is this archive entry one that ingestion moves to the pool under its content hash? */
+/** The `project-<id>` a stored trace's path starts with, which also prefixes its pool; null for any other path. */
+export function traceProjectPrefix(path: string): string | null {
+  return path.match(/^(project-\d+)\//)?.[1] ?? null;
+}
+
+/** Is this archive entry one that ingestion moves to the pool under a name derived from its bytes? */
 export function isPooledTraceEntry(entryName: string): boolean {
   return POOLED_ENTRY_PREFIXES.some((prefix) => entryName.startsWith(prefix) && entryName.length > prefix.length);
 }
 
-/**
- * The pool name of a pooled entry: the SHA-1 of its bytes plus the entry's
- * extension (`<sha1>.png`), the same shape Playwright gives its own
- * `resources/` entries, so the pool holds one kind of name.
- */
+/** Is this a name only the server gives, so a `resources/` entry must not take it? */
+export function isReservedPoolName(name: string): boolean {
+  return name.startsWith(POOLED_NAME_PREFIX);
+}
+
+/** The pool name of a pooled entry: `pooled-<sha256 of its bytes>.<the entry's extension>`. */
 export function pooledTraceEntryName(entryName: string, data: Buffer): string {
-  const sha1 = createHash('sha1').update(data).digest('hex');
+  const sha256 = createHash('sha256').update(data).digest('hex');
   const ext = entryName.match(/\.([a-z0-9]{1,8})$/i)?.[1]?.toLowerCase();
-  return ext ? `${sha1}.${ext}` : sha1;
+  return `${POOLED_NAME_PREFIX}${sha256}${ext ? `.${ext}` : ''}`;
+}
+
+/** The pool name a manifest gives an archive entry, or null when the entry is not pooled. */
+export function pooledEntryPoolName(manifest: TraceBlobManifest, entryName: string): string | null {
+  return Object.hasOwn(manifest.pooledEntries, entryName) ? manifest.pooledEntries[entryName]! : null;
 }
 
 /** Every pool name a manifest references, once each: what the blob's `trace_blob_resources` links must cover. */
@@ -56,7 +76,7 @@ export function traceManifestPoolNames(manifest: TraceBlobManifest): string[] {
 }
 
 /**
- * Parse a stored manifest. Tolerates the older shape (no `pooledEntries`) and
+ * Parse a stored manifest. Tolerates a manifest without `pooledEntries` and
  * drops any pool name that is not a single safe path segment, so a reader can
  * append every name it returns to the pool prefix.
  */
@@ -65,7 +85,8 @@ export function parseTraceManifest(raw: Buffer): TraceBlobManifest {
   const resources = Array.isArray(json.resources)
     ? json.resources.map(String).filter((name) => safeStorageSegment(name))
     : [];
-  const pooledEntries: Record<string, string> = {};
+  // Keys are entry names a trace's own events look up: no inherited `constructor` or `__proto__`.
+  const pooledEntries: Record<string, string> = Object.create(null);
   if (json.pooledEntries && typeof json.pooledEntries === 'object' && !Array.isArray(json.pooledEntries)) {
     for (const [entryName, poolName] of Object.entries(json.pooledEntries as Record<string, unknown>)) {
       if (typeof poolName === 'string' && safeStorageSegment(poolName)) pooledEntries[entryName] = poolName;

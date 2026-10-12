@@ -35,7 +35,7 @@ export function getDialect(): 'postgres' | 'sqlite' {
 
 /**
  * Kick off the trace-resource link backfill in the background, then the
- * measuring of blobs stored before `stored_size` existed. Detached on purpose:
+ * measuring of every blob whose `stored_size` is null. Detached on purpose:
  * the first run after upgrade may read many trace manifests, and blocking
  * startup on it would delay the first request. Per-resource cleanup keeps its
  * safe whole-project fallback until a project is fully indexed, so running this

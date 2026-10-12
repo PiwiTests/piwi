@@ -48,7 +48,7 @@ import type {
   TraceSnapshotsResponse,
 } from '../../types/api';
 import { safeStorageSegment } from './sanitize-filename';
-import { readTraceManifest, type TraceBlobManifest } from './trace-manifest';
+import { pooledEntryPoolName, readTraceManifest, traceProjectPrefix, type TraceBlobManifest } from './trace-manifest';
 
 /** Path of the execution's stored (slim) trace blob, or null when no trace was uploaded. */
 export async function resolveCaseTraceBlobPath(db: DbClient, testRunsCaseId: number): Promise<string | null> {
@@ -120,17 +120,19 @@ function packEntries(
 }
 
 /**
- * The manifest of a slim blob, read when a view first needs something it lists
- * and read again next time if that read failed.
+ * The manifest of a slim blob, read once when a view first needs something it
+ * lists. The views of one page ask at the same time and share that read; one
+ * that finds no manifest is tried again by the next request.
  */
 function lazyTraceManifest(blobPath: string): () => Promise<TraceBlobManifest | null> {
-  let manifest: TraceBlobManifest | null = null;
-  return async () => (manifest ??= await readTraceManifest(getStorage(), blobPath));
-}
-
-/** The `project-<id>` a stored trace's path starts with, which prefixes its pool; null for any other path. */
-function projectPrefixOf(blobPath: string): string | null {
-  return blobPath.match(/^(project-\d+)\//)?.[1] ?? null;
+  let pending: Promise<TraceBlobManifest | null> | null = null;
+  return () => {
+    pending ??= readTraceManifest(getStorage(), blobPath).then((manifest) => {
+      if (!manifest) pending = null;
+      return manifest;
+    });
+    return pending;
+  };
 }
 
 /** One file of the project pool, decoded; null when the name is unsafe or the file cannot be read. */
@@ -154,7 +156,7 @@ function traceResourceReader(
   inlineResources: Map<string, PackedEntry>,
   manifest: () => Promise<TraceBlobManifest | null>,
 ): TraceResourceReader {
-  const projectPrefix = projectPrefixOf(blobPath);
+  const projectPrefix = traceProjectPrefix(blobPath);
   return async (name) => {
     for (const candidate of resourceNameCandidates(name, inlineResources.keys())) {
       const entry = inlineResources.get(candidate);
@@ -180,24 +182,24 @@ function pooledEntryReader(
   blobPath: string,
   manifest: () => Promise<TraceBlobManifest | null>,
 ): (entryName: string) => Promise<Buffer | null> {
-  const projectPrefix = projectPrefixOf(blobPath);
+  const projectPrefix = traceProjectPrefix(blobPath);
   return async (entryName) => {
     if (!projectPrefix) return null;
-    const poolName = (await manifest())?.pooledEntries[entryName];
+    const loaded = await manifest();
+    const poolName = loaded ? pooledEntryPoolName(loaded, entryName) : null;
     return poolName ? readPoolFile(projectPrefix, poolName) : null;
   };
 }
 
 /**
  * Load a stored trace and split its streams once. Handles both layouts: the
- * slim blob (`resources/*`, screenshots and screencast frames live in the
- * project pool listed by the sibling manifest) and a legacy/fallback full ZIP
- * (all inline).
+ * slim blob (what its sibling manifest lists lives in the project pool) and a
+ * full ZIP stored as is (everything inline).
  *
  * Only the event streams (`.trace`, `.stacks`, `.network`) are inflated. The
- * aria snapshots, and the screenshots of a blob stored before they were pooled,
- * stay compressed until a view reads one; the screencast, which no view reads,
- * is dropped with the archive.
+ * aria snapshots, and any screenshots the archive holds, stay compressed until
+ * a view reads one; a screencast in the archive, which no view reads, is
+ * dropped with it.
  */
 async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
   const archive = await readTraceArchive(blobPath);
@@ -214,8 +216,8 @@ async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
     metas.filter((m) => m.name.endsWith('.network')),
   );
   // 1.63 aria snapshots sit at their own top-level prefix in the slim ZIP, read
-  // by their trace-relative path; so do the screenshots of a blob stored before
-  // they were pooled (`readPooledEntry` serves the others).
+  // by their trace-relative path; so do the screenshots of an archive whose
+  // manifest lists no pooled entries (`readPooledEntry` serves the others).
   const snapshotEntries = packEntries(zip, metas, (name) =>
     name.startsWith('aria/') || name.startsWith('screenshots/') ? name : null,
   );

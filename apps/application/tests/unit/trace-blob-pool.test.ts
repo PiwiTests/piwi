@@ -8,10 +8,12 @@ import * as schema from '../../server/database/schema.sqlite';
 
 // In-memory storage recording every write, and the test database behind
 // `getDatabase`, shared with the mock factories through `vi.hoisted`.
-const { storageFiles, writes, holder } = vi.hoisted(() => ({
+const { storageFiles, writes, holder, failingReads } = vi.hoisted(() => ({
   storageFiles: new Map<string, Buffer>(),
   writes: [] as string[],
   holder: { db: null as unknown },
+  // Paths whose read fails although the file exists, as a passing storage error does.
+  failingReads: new Set<string>(),
 }));
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -20,6 +22,7 @@ vi.mock('../../server/storage', () => ({
       storageFiles.set(path, Buffer.from(data));
     },
     async readFile(path: string) {
+      if (failingReads.has(path)) throw new Error(`503 Slow Down: ${path}`);
       const bytes = storageFiles.get(path);
       if (!bytes) throw new Error(`ENOENT: ${path}`);
       return bytes;
@@ -47,9 +50,11 @@ const { upsertTraceBlob, backfillTraceBlobStoredSizes, backfillTraceBlobResource
   await import('../../server/utils/trace-blobs');
 const { reconstructTraceZip } = await import('../../server/utils/trace-reconstruct');
 const { getTraceSnapshotResourceFromBlob } = await import('../../server/utils/trace-evidence');
-const { gcTraceBlobs } = await import('../../server/utils/delete-run-files');
+const { gcTraceBlobs, reclaimOrphanTraceResources } = await import('../../server/utils/delete-run-files');
+const { withTracePoolIngest, reclaimTracePoolUnlessIngesting } = await import('../../server/utils/trace-pool-guard');
 const { getStorageAnalysis } = await import('../../shared/handlers/admin-storage');
-const { parseTraceManifest } = await import('../../server/utils/trace-manifest');
+const { parseTraceManifest, pooledEntryPoolName, pooledTraceEntryName } =
+  await import('../../server/utils/trace-manifest');
 const { buildZip, parseZip, parseZipDirectory } = await import('../../server/utils/trace-zip');
 const { LocalStorageAdapter } = await import('../../server/storage/local');
 
@@ -105,6 +110,7 @@ beforeEach(async () => {
   holder.db = db;
   storageFiles.clear();
   writes.length = 0;
+  failingReads.clear();
   await db.insert(schema.projects).values({ id: 1, name: 'p1' });
 });
 
@@ -135,7 +141,7 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
     ]);
     expect(pooled['screenshots/c1-after.png']).toBe(pooled['screenshots/c2-before.png']);
     expect(pooled['screencast/page@p1-1000.jpeg']).toBe(pooled['screencast/page@p1-1150.jpeg']);
-    expect(pooled['screenshots/c1-before.png']).toMatch(/^[0-9a-f]{40}\.png$/);
+    expect(pooled['screenshots/c1-before.png']).toMatch(/^pooled-[0-9a-f]{64}\.png$/);
 
     // Every pool file is registered and linked to the blob, so GC sees it.
     const [row] = await db.select().from(schema.traceBlobs).where(eq(schema.traceBlobs.id, blob.id));
@@ -205,6 +211,151 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
   });
 });
 
+describe('pooled names cannot be planted', () => {
+  test("a trace's resources/ entry under a server-only name stays in its own slim ZIP", async () => {
+    // Trace 1 ships junk under the pool name trace 2's real screenshot will get.
+    const planted = `resources/${pooledTraceEntryName('screenshots/c2-before.png', png(2))}`;
+    const junk = Buffer.from('not the screenshot');
+    const first = await upsertTraceBlob(
+      1,
+      nextHash(),
+      buildZip([
+        { name: 'trace.trace', data: Buffer.from('{"type":"before","callId":"c0"}', 'utf8') },
+        { name: planted, data: junk },
+      ]),
+    );
+    expect(parseZipDirectory(storageFiles.get(first.path)!).map((e) => e.name)).toContain(planted);
+    expect(poolWrites()).toHaveLength(0);
+
+    const second = await upsertTraceBlob(
+      1,
+      nextHash(),
+      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
+    );
+    const shot = await getTraceSnapshotResourceFromBlob(second.path, 'c2', 'screen', 'before');
+    expect(shot!.bytes.equals(png(2))).toBe(true);
+  });
+
+  test('an entry name such as constructor resolves to no pool file', () => {
+    const manifest = parseTraceManifest(Buffer.from(JSON.stringify({ resources: [], pooledEntries: {} })));
+    expect(pooledEntryPoolName(manifest, 'constructor')).toBeNull();
+    expect(pooledEntryPoolName(manifest, '__proto__')).toBeNull();
+    expect(pooledEntryPoolName(manifest, 'toString')).toBeNull();
+  });
+});
+
+describe('reconstruction and storage errors', () => {
+  async function rebuild(blobPath: string) {
+    const storage = (await import('../../server/storage')).getStorage();
+    return reconstructTraceZip(
+      storage,
+      storageFiles.get(blobPath)!,
+      blobPath.replace(/\.zip$/, '.manifest.json'),
+      'project-1/',
+    );
+  }
+
+  test('a pooled file that is gone is left out of the rebuilt trace', async () => {
+    const blob = await upsertTraceBlob(
+      1,
+      nextHash(),
+      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
+    );
+    const manifest = parseTraceManifest(storageFiles.get(blob.path.replace(/\.zip$/, '.manifest.json'))!);
+    storageFiles.delete(`project-1/trace-resources/${manifest.pooledEntries['screenshots/c1-before.png']}`);
+
+    const names = (await parseZip((await rebuild(blob.path))!)).map((e) => e.name);
+    expect(names).not.toContain('screenshots/c1-before.png');
+    expect(names).toContain('screenshots/c1-after.png');
+  });
+
+  test('a pooled file that exists but cannot be read fails the rebuild instead of dropping the entry', async () => {
+    const blob = await upsertTraceBlob(
+      1,
+      nextHash(),
+      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
+    );
+    const manifest = parseTraceManifest(storageFiles.get(blob.path.replace(/\.zip$/, '.manifest.json'))!);
+    failingReads.add(`project-1/trace-resources/${manifest.pooledEntries['screenshots/c1-before.png']}`);
+
+    await expect(rebuild(blob.path)).rejects.toThrow('503 Slow Down');
+  });
+});
+
+describe('screenshots and frames beyond one chunk', () => {
+  test('are written once each across chunks', async () => {
+    // Three distinct 12 MB images pass the 32 MB chunk; the fourth repeats the first.
+    const big = (seed: number) => Buffer.concat([png(seed), Buffer.alloc(12 * 1024 * 1024, seed)]);
+    const trace = buildZip([
+      { name: 'trace.trace', data: Buffer.from('{"type":"before","callId":"c1"}', 'utf8') },
+      { name: 'screenshots/a.png', data: big(1) },
+      { name: 'screenshots/b.png', data: big(2) },
+      { name: 'screenshots/c.png', data: big(3) },
+      { name: 'screenshots/d.png', data: big(1) },
+    ]);
+    const blob = await upsertTraceBlob(1, nextHash(), trace);
+
+    expect(poolWrites()).toHaveLength(3);
+    const storage = (await import('../../server/storage')).getStorage();
+    const rebuilt = await reconstructTraceZip(
+      storage,
+      storageFiles.get(blob.path)!,
+      blob.path.replace(/\.zip$/, '.manifest.json'),
+      'project-1/',
+    );
+    expect(entryMap(await parseZip(rebuilt!))).toEqual(entryMap(await parseZip(trace)));
+  });
+});
+
+describe('the pool guard', () => {
+  test('a reclaim skips a project while one of its traces is ingested, and runs once it is done', async () => {
+    let release!: () => void;
+    const ingest = withTracePoolIngest(1, () => new Promise<void>((resolve) => (release = resolve)));
+
+    expect(await reclaimTracePoolUnlessIngesting(1, async () => {})).toBe(false);
+    expect(await reclaimTracePoolUnlessIngesting(2, async () => {})).toBe(true);
+
+    release();
+    await ingest;
+    expect(await reclaimTracePoolUnlessIngesting(1, async () => {})).toBe(true);
+  });
+
+  test('an ingestion waits for a running reclaim of its project', async () => {
+    const order: string[] = [];
+    let release!: () => void;
+    const reclaim = reclaimTracePoolUnlessIngesting(1, async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      order.push('reclaim');
+    });
+    const ingest = withTracePoolIngest(1, async () => {
+      order.push('ingest');
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(order).toEqual([]);
+    release();
+    await Promise.all([reclaim, ingest]);
+    expect(order).toEqual(['reclaim', 'ingest']);
+  });
+
+  test('a delete during an ingestion keeps the pool, and the nightly sweep frees it afterwards', async () => {
+    const first = await upsertTraceBlob(
+      1,
+      nextHash(),
+      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
+    );
+    await upsertTraceBlob(1, nextHash(), buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
+    const firstManifest = parseTraceManifest(storageFiles.get(first.path.replace(/\.zip$/, '.manifest.json'))!);
+    const onlyInFirst = `project-1/trace-resources/${firstManifest.pooledEntries['screenshots/c1-before.png']}`;
+
+    await withTracePoolIngest(1, () => gcTraceBlobs(db as never, [first.id]));
+    expect(storageFiles.has(onlyInFirst)).toBe(true);
+
+    expect(await reclaimOrphanTraceResources(db as never)).toBe(1);
+    expect(storageFiles.has(onlyInFirst)).toBe(false);
+  });
+});
+
 describe('pooled images are reference-counted', () => {
   test('deleting one trace frees only the images no other trace uses', async () => {
     const first = await upsertTraceBlob(
@@ -245,7 +396,7 @@ describe('pooled images are reference-counted', () => {
 });
 
 describe('storage stats count what a blob occupies', () => {
-  test('the size backfill measures blobs stored before the column existed', async () => {
+  test('the size backfill measures blobs whose stored size is unknown', async () => {
     storageFiles.set('project-1/blobs/a.zip', Buffer.alloc(300));
     storageFiles.set('project-1/blobs/a.manifest.json', Buffer.alloc(20));
     await db.insert(schema.traceBlobs).values([
