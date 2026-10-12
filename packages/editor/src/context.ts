@@ -330,8 +330,6 @@ export class PiwiContext {
   problem: string | null = null;
   /** What `problem` is about; null with no problem. */
   problemKind: ProblemKind | null = null;
-  /** The answers of the instance's conditional requests, by path: a 304 hands back the same object. */
-  private readonly answers: ResponseCache = new Map();
   /** The version of `@piwitests/reporter` the project installs, read at each refresh; null when none is found. */
   reporterVersion: string | null = null;
   /**
@@ -402,6 +400,11 @@ export class PiwiContext {
   constructor(
     /** The Playwright config's directory: call sites resolve against it. */
     readonly root: string,
+    /**
+     * The answers of the instance's conditional requests, shared by the contexts of one service: a 304 hands back the
+     * same object, and the configs reading one project share it.
+     */
+    private readonly answers: ResponseCache = new Map(),
   ) {
     this.repoRoot = root;
   }
@@ -558,7 +561,6 @@ export class PiwiContext {
     this.ownRuns.clear();
     this.failureAnchors.clear();
     this.commitTexts.clear();
-    this.answers.clear();
     this.runBranch = null;
     this.checkedOutBranch = null;
     this.baselineLabel = '';

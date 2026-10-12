@@ -91,6 +91,7 @@ import {
 } from './context.js';
 import {
   PiwiClient,
+  type ResponseCache,
   type BranchFailure,
   type BranchResolved,
   type FixPlan,
@@ -525,6 +526,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
   const documents = new TextDocuments(TextDocument);
   const contexts: PiwiContext[] = [];
+  /** The instance's answers the contexts share: the configs of a repository reading one project read its indexes once. */
+  const answers: ResponseCache = new Map();
   let credentials: EditorCredentials = {};
   let folders: string[] = [];
   const appAnalyses = new Map<string, AppAnalysis>();
@@ -1499,7 +1502,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onInitialized(() => {
     for (const folder of folders) {
       for (const root of findPlaywrightRoots(folder)) {
-        if (!contexts.some((c) => c.root === root)) contexts.push(new PiwiContext(root));
+        if (!contexts.some((c) => c.root === root)) contexts.push(new PiwiContext(root, answers));
       }
     }
     applyBaselines();

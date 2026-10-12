@@ -2742,6 +2742,59 @@ describe('what keeps a context from the instance’s data', () => {
   });
 });
 
+describe('the configs of one repository reading one project', () => {
+  test('download its locator index once', async () => {
+    let downloads = 0;
+    const gate = http.createServer((req, res) => {
+      if ((req.url ?? '').startsWith('/api/projects/7/locator-index')) {
+        if (req.headers['if-none-match'] === '"shared-1"') {
+          res.statusCode = 304;
+          return res.end();
+        }
+        downloads++;
+        res.setHeader('ETag', '"shared-1"');
+      }
+      server.emit('request', req, res);
+    });
+    await new Promise<void>((resolve) => gate.listen(0, '127.0.0.1', resolve));
+    const gateUrl = `http://127.0.0.1:${(gate.address() as AddressInfo).port}`;
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-two-configs-'));
+    for (const config of ['shop/playwright.config.ts', 'admin/playwright.config.ts']) {
+      fs.mkdirSync(path.dirname(path.join(repo, config)), { recursive: true });
+      fs.writeFileSync(path.join(repo, config), 'export default {};\n');
+    }
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopTwo = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: gateUrl, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+    });
+    const twoClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    twoClient.listen();
+    try {
+      await twoClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(repo).href, name: 'two' }],
+      });
+      await twoClient.sendNotification('initialized', {});
+      const status = await waitFor(async () => {
+        const s = (await twoClient.sendRequest('piwi/status')) as StatusResult;
+        return s.contexts.length === 2 && s.contexts.every((c) => c.connected) ? s : undefined;
+      });
+      expect(status.contexts.map((c) => c.locators)).toEqual([2, 2]);
+      expect(downloads).toBe(1);
+    } finally {
+      stopTwo();
+      twoClient.dispose();
+      gate.close();
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a change pushed to the client', () => {
   test('is a change from what the client read: a desktop app a read saw, gone since, is said gone', async () => {
     const desktopFile = path.join(dir, '.desktop-seen.json');

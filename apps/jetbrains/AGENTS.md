@@ -14,7 +14,9 @@ directory: `piwi-language-server.cjs`, and beside it the recorder's launcher (`p
 reporter that prints a Playwright project's options (`piwi-use-reporter.cjs`), the recorder's IDE bundle
 (`record-ide.js`) and its messages (`record-ide-messages.json`). `buildPlugin`, `runIde` and `verifyPlugin` fail
 without one of them; the tests start the language server from `dist/` and need none of the others. The plugin starts
-the service through the platform's LSP API with the project's Node.js interpreter, once `node --version` says 20 or
+the service through the platform's LSP API with the project's Node.js interpreter, with `--clientProcessId` (the
+platform passes no process id, and the service exits within seconds of the IDE's end, however it ends), once
+`node --version` says 20 or
 later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `PiwiProjectService.startFailed` keeps
 (`startProblem`) and says once, the status bar item reads `Piwi: Node.js` and opens the Node.js settings
 (`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**

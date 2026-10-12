@@ -274,11 +274,21 @@ export interface DesktopJobState {
   jobVerdict: DesktopJobVerdict | null;
 }
 
-/** The answers of conditional requests, by path: the `ETag` the instance gave and the value read with it. */
-export type ResponseCache = Map<string, { etag: string; value: unknown }>;
+/**
+ * The answers of conditional requests, by instance, key and path: the `ETag` the instance gave and the value read with
+ * it, or the request on its way. The contexts of one service share it: the configs of a repository reading the same
+ * project share one index, read once.
+ */
+export type ResponseCache = Map<string, { etag?: string; value?: unknown; pending?: Promise<unknown> }>;
+
+/** The answers a `ResponseCache` keeps at most; the least recently used goes first. */
+const MAX_ANSWERS = 16;
 
 export class PiwiClient {
-  /** `answers` keeps what an `ETag` came with: the instance answers 304 while it holds, and the same value is used. */
+  /**
+   * `answers` keeps what an `ETag` came with: the instance answers 304 while it holds, and the same value is used; the
+   * same request on its way for another client is shared.
+   */
   constructor(
     readonly connection: PiwiConnection,
     private readonly answers?: ResponseCache,
@@ -295,8 +305,36 @@ export class PiwiClient {
 
   /** A GET answered from `answers` while the instance says it did not change; a plain GET without them. */
   private async getConditional<T>(path: string): Promise<T> {
-    if (!this.answers) return this.get(path);
-    const known = this.answers.get(path);
+    const answers = this.answers;
+    if (!answers) return this.get(path);
+    const key = `${this.connection.serverUrl}\n${this.connection.apiKey ?? ''}\n${path}`;
+    const known = answers.get(key);
+    if (known?.pending) return known.pending as Promise<T>;
+    const asked = this.askKnown<T>(path, known?.etag ? { etag: known.etag, value: known.value as T } : null);
+    const pending = asked.then((answer) => answer.value);
+    // Awaited by the clients that share it, if any.
+    pending.catch(() => {});
+    answers.delete(key);
+    answers.set(key, { ...known, pending });
+    try {
+      const answer = await asked;
+      if (answer.etag) answers.set(key, { etag: answer.etag, value: answer.value });
+      else answers.delete(key);
+      for (const oldest of [...answers.keys()].slice(0, Math.max(0, answers.size - MAX_ANSWERS)))
+        answers.delete(oldest);
+      return answer.value;
+    } catch (e) {
+      if (known?.etag) answers.set(key, { etag: known.etag, value: known.value });
+      else answers.delete(key);
+      throw e;
+    }
+  }
+
+  /** A GET with the `ETag` of what is known: what is known when the instance answers 304. */
+  private async askKnown<T>(
+    path: string,
+    known: { etag: string; value: T } | null,
+  ): Promise<{ value: T; etag: string | null }> {
     const response = await fetch(`${this.connection.serverUrl}${path}`, {
       headers: {
         ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
@@ -304,13 +342,9 @@ export class PiwiClient {
       },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (response.status === 304 && known) return known.value as T;
+    if (response.status === 304 && known) return known;
     if (!response.ok) throw new PiwiHttpError(`${path} answered ${response.status}`, response.status);
-    const value = (await response.json()) as T;
-    const etag = response.headers.get('etag');
-    if (etag) this.answers.set(path, { etag, value });
-    else this.answers.delete(path);
-    return value;
+    return { value: (await response.json()) as T, etag: response.headers.get('etag') };
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {

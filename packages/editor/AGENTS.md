@@ -197,8 +197,10 @@ needs the extension's sources, and a change to the recorder there changes what t
   `piwi/failuresChanged` are sent when the answer differs from the last one sent or answered to `piwi/status`,
   `piwi/runStatus` or `piwi/failures`, so a client keeps the pushed answers and never reads one again on a push.
 - **An index the instance says did not change is not read again**: the locator and code indexes are asked with the
-  `ETag` they came with (`If-None-Match`, `PiwiContext.answers`), and a 304 keeps the same object, so what is computed
-  once per index stays.
+  `ETag` they came with (`If-None-Match`), and a 304 keeps the same object, so what is computed once per index stays.
+  The contexts of one service share these answers (`ResponseCache`, created in `startServer`), the same request on its
+  way included: a repository with eight Playwright configs reading one project holds and downloads its index once, not
+  eight times.
 - **The failures come first on a refresh** (`PiwiContext.refresh`): the project and its locator index (the ladder
   needs the default branch), then the latest run, whose failures and status are published at once (`onRun`); only then
   the other indexes, side by side, each keeping what it held when its read fails. Their slow reads are one request

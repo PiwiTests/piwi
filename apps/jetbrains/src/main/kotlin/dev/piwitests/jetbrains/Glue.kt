@@ -38,10 +38,15 @@ object Glue {
      * under one of `roots`, at most [CONFIG_DEPTH] levels down, and neither it nor a folder above it is skipped.
      */
     fun mayHoldConfigs(path: String?, roots: List<Path>): Boolean {
-        val dir = path?.let { runCatching { Path.of(it).toAbsolutePath().normalize() }.getOrNull() } ?: return false
-        val root = roots.map { it.toAbsolutePath().normalize() }.firstOrNull { dir != it && dir.startsWith(it) } ?: return false
-        val relative = root.relativize(dir)
-        return relative.nameCount <= CONFIG_DEPTH && relative.none { it.toString().startsWith(".") || it.toString() in SKIPPED_DIRS }
+        // Strings only: it runs for every folder a refresh of the file system reports, in a write action.
+        val dir = path?.replace('\\', '/')?.trimEnd('/') ?: return false
+        for (root in roots) {
+            val prefix = root.toString().replace('\\', '/').trimEnd('/') + "/"
+            if (!dir.startsWith(prefix, ignoreCase = true)) continue
+            val segments = dir.substring(prefix.length).split('/').filter { it.isNotEmpty() && it != "." }
+            return segments.size <= CONFIG_DEPTH && segments.none { it.startsWith(".") || it in SKIPPED_DIRS }
+        }
+        return false
     }
 
     /** Directory levels searched below a folder for Playwright configs, as the editor service does. */

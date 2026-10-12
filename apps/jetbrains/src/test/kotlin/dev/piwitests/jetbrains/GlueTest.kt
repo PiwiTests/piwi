@@ -43,6 +43,20 @@ class GlueTest {
     }
 
     @Test
+    fun `a folder created under a searched root may hold a config, unless it is too deep, hidden or skipped`() {
+        val roots = listOf(java.nio.file.Path.of("/w/shop"))
+        assertEquals(true, Glue.mayHoldConfigs("/w/shop/apps/web", roots))
+        assertEquals(true, Glue.mayHoldConfigs("/w/shop/a/b/c/d", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shop/a/b/c/d/e", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shop/node_modules/pkg", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shop/apps/.cache", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shop", roots))
+        assertEquals(false, Glue.mayHoldConfigs("/w/shopping/apps", roots))
+        assertEquals(false, Glue.mayHoldConfigs(null, roots))
+        assertEquals(true, Glue.mayHoldConfigs("c:/w/shop/apps", listOf(java.nio.file.Path.of("C:\\w\\shop"))))
+    }
+
+    @Test
     fun `the IDE's Playwright runner takes an npx playwright test command, named after what it runs`() {
         assertEquals(listOf("tests/a.spec.ts:3", "--headed"), Glue.playwrightTestArgs("npx playwright test tests/a.spec.ts:3 --headed"))
         assertEquals(emptyList<String>(), Glue.playwrightTestArgs("npx playwright test"))

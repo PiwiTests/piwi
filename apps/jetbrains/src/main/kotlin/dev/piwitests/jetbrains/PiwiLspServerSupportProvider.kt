@@ -69,7 +69,8 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         project.service<PiwiProjectService>().startFailed(problem)
         if (problem != null) throw ExecutionException(problem)
         val folder = project.service<PiwiProjectService>().searchRoots().firstOrNull()?.toString() ?: project.basePath
-        return GeneralCommandLine(node, server.toString(), "--stdio")
+        // The service exits within seconds of the IDE's end, however it ends: the platform does not pass its process id.
+        return GeneralCommandLine(node, server.toString(), "--stdio", "--clientProcessId=${ProcessHandle.current().pid()}")
             .withWorkDirectory(folder)
             .withCharset(Charsets.UTF_8)
     }
