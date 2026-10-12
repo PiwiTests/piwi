@@ -162,7 +162,9 @@ mode: the `.msi` reads `latest.json` (per machine, prompts for admin), the `.exe
 reads `latest-nsis.json` (per user, no admin). tauri-action uploads `latest.json`
 for the `.msi`, macOS and Linux legs; the `.exe` leg sets `uploadUpdaterJson`
 false and a later workflow step publishes `latest-nsis.json` pointing at the NSIS
-`-setup.exe`. Builds without the overlay report updates as unsupported, the plugin
+`-setup.exe`. The macOS leg builds the `app` bundle next to the `.dmg`: the
+bundler makes the macOS update artifact (`.app.tar.gz`) from it only. Builds
+without the overlay report updates as unsupported, the plugin
 is not even registered there (see `src-tauri/src/updates.rs`).
 
 The `.exe` channel installs **quietly**: its overlay sets the updater's

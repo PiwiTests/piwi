@@ -50,9 +50,12 @@ jobs:
             target: x86_64-pc-windows-msvc
             bundles: nsis
             updaterConfig: src-tauri/tauri.updater.nsis.conf.json
+          # `app` alongside the dmg: the bundler makes the macOS update bundle
+          # (.app.tar.gz, the darwin entry of latest.json) from the app bundle
+          # only, never from the dmg.
           - runner: macos-14
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             updaterConfig: src-tauri/tauri.updater.conf.json
           # Ubuntu 22.04 (not latest): AppImage bundles the host's glibc, so
           # building on the oldest supported runner keeps the installer usable on
