@@ -9,6 +9,7 @@ import { getStorage } from '../../storage';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
 import { reconstructTraceZip } from '../../utils/trace-reconstruct';
+import { traceManifestPath } from '../../utils/trace-manifest';
 import { prepareHtmlReport } from '../../utils/html-report';
 import sharp from 'sharp';
 
@@ -262,7 +263,7 @@ export default eventHandler(async (event) => {
 
     // Slim trace blob: reconstruct full ZIP from shared resource pool
     if (ext === '.zip' && path.includes('/blobs/')) {
-      const manifestPath = path.replace(/\.zip$/, '.manifest.json');
+      const manifestPath = traceManifestPath(path);
       const projectPrefix = path.split('/blobs/')[0] + '/';
       if (await storage.exists(manifestPath)) {
         const fullZip = await reconstructTraceZip(storage, fileContent, manifestPath, projectPrefix);

@@ -93,6 +93,25 @@ export class S3StorageAdapter implements StorageAdapter {
     }
   }
 
+  async fileSize(path: string): Promise<number | null> {
+    try {
+      const command = new HeadObjectCommand({
+        Bucket: this.config.bucket,
+        Key: path,
+      });
+
+      const head = await this.s3Client.send(command);
+      return head.ContentLength ?? 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
+      console.error(`Failed to read file size from S3: ${path}`, error);
+      throw error;
+    }
+  }
+
   async mkdir(_path: string): Promise<void> {
     // S3 doesn't require directory creation
     // Directories are implicit in S3 based on key prefixes

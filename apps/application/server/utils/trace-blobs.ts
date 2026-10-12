@@ -1,22 +1,68 @@
 import { getDatabase } from '../database';
 import type { DbClient } from '../database';
 import { traceBlobs, traceResources, traceBlobResources } from '../database/schema';
-import { eq, and, inArray, gt } from 'drizzle-orm';
+import { eq, and, inArray, gt, isNull } from 'drizzle-orm';
 import { getStorage } from '../storage';
 import type { StorageAdapter } from '../storage/types';
 import { parseZipDirectory, decompressEntry, buildZip } from './trace-zip';
-import type { ZipEntry } from './trace-zip';
+import type { ZipEntry, ZipEntryMeta } from './trace-zip';
 import { safeStorageSegment } from './sanitize-filename';
 import { compressResource } from './resource-compression';
+import {
+  isPooledTraceEntry,
+  parseTraceManifest,
+  pooledTraceEntryName,
+  traceManifestPath,
+  traceManifestPoolNames,
+  type TraceBlobManifest,
+} from './trace-manifest';
 
 const ID_BATCH_SIZE = 500;
 
-/** The resource filenames a blob's manifest lists, or [] when there is no manifest. */
-async function readManifestResourceNames(storage: StorageAdapter, blobPath: string): Promise<string[]> {
-  const manifestPath = blobPath.replace(/\.zip$/, '.manifest.json');
+/**
+ * Every pool name a blob's manifest references, or [] when there is no
+ * manifest. An unreadable manifest throws rather than reading as empty: the
+ * caller would otherwise record a blob with no links, and GC could then free
+ * resources it still needs.
+ */
+async function readManifestPoolNames(storage: StorageAdapter, blobPath: string): Promise<string[]> {
+  const manifestPath = traceManifestPath(blobPath);
   if (!(await storage.exists(manifestPath))) return [];
-  const manifest = JSON.parse((await storage.readFile(manifestPath)).toString('utf8')) as { resources?: unknown };
-  return Array.isArray(manifest.resources) ? manifest.resources.map(String) : [];
+  return traceManifestPoolNames(parseTraceManifest(await storage.readFile(manifestPath)));
+}
+
+/** The names among `names` the project's pool already holds, looked up in batches. */
+async function existingPoolNames(db: DbClient, projectId: number, names: string[]): Promise<Set<string>> {
+  const existing = new Set<string>();
+  for (let i = 0; i < names.length; i += ID_BATCH_SIZE) {
+    const rows = await db
+      .select({ name: traceResources.name })
+      .from(traceResources)
+      .where(
+        and(eq(traceResources.projectId, projectId), inArray(traceResources.name, names.slice(i, i + ID_BATCH_SIZE))),
+      );
+    for (const r of rows) existing.add(r.name);
+  }
+  return existing;
+}
+
+/**
+ * Write one resource to the project pool and register it. Text resources
+ * (network bodies, CSS, JS) are gzip-compressed at rest; already-compressed
+ * ones (images, fonts) are stored as is. `size` is the on-disk byte count so
+ * storage stats stay honest.
+ */
+async function storePoolResource(
+  db: DbClient,
+  storage: StorageAdapter,
+  projectId: number,
+  name: string,
+  data: Buffer,
+): Promise<void> {
+  const { data: stored } = compressResource(data);
+  const path = `project-${projectId}/trace-resources/${name}`;
+  await storage.writeFile(path, stored);
+  await db.insert(traceResources).values({ projectId, name, path, size: stored.length }).onConflictDoNothing();
 }
 
 /**
@@ -79,10 +125,14 @@ export async function checkExistingBlobs(projectId: number, hashes: string[]): P
  *
  * Process:
  *  1. Read the ZIP central directory (names + offsets only — no decompression yet).
- *  2. For resource entries, check the project-scoped shared pool.
- *  3. Decompress and store only new resources, one at a time, to bound peak memory.
- *  4. Decompress event entries (small text files) and write a "slim" ZIP.
- *  5. Write a manifest JSON listing all resource filenames for on-demand reconstruction.
+ *  2. Hash the screenshots and screencast frames, one at a time, to get their
+ *     pool names (see `TraceBlobManifest`); only the names are kept.
+ *  3. Look up which `resources/` names and pooled entry names the project's
+ *     shared pool already holds.
+ *  4. Decompress and store only the new ones, one at a time, to bound peak memory.
+ *  5. Decompress the remaining entries (event streams, aria snapshots, sources)
+ *     and write a "slim" ZIP of them.
+ *  6. Write a manifest listing what went to the pool, for on-demand reconstruction.
  *
  * Falls back to storing the original ZIP if parsing fails.
  * Returns the canonical record — if the hash already existed nothing is written.
@@ -110,60 +160,64 @@ export async function upsertTraceBlob(
   await storage.mkdir(`project-${projectId}/blobs`);
 
   let dataToStore = data;
-  // Every resource the blob references (new + pre-existing), for the join table.
-  let resourceNames: string[] = [];
+  // The manifest written next to the slim ZIP; its every pool name gets a join-table link.
+  let manifest: TraceBlobManifest = { resources: [], pooledEntries: {} };
+  let manifestJson: Buffer | null = null;
 
   try {
     // 1. Read central directory only — zero decompression at this stage
     const directory = parseZipDirectory(data);
     const resourceMetas = directory.filter((e) => e.name.startsWith('resources/') && e.name !== 'resources/');
-    const eventMetas = directory.filter((e) => !e.name.startsWith('resources/'));
+    const pooledMetas = directory.filter((e) => isPooledTraceEntry(e.name));
+    const eventMetas = directory.filter((e) => !e.name.startsWith('resources/') && !isPooledTraceEntry(e.name));
 
-    if (resourceMetas.length > 0) {
-      const resourcesDir = `project-${projectId}/trace-resources`;
-      await storage.mkdir(resourcesDir);
+    if (resourceMetas.length > 0 || pooledMetas.length > 0) {
+      await storage.mkdir(`project-${projectId}/trace-resources`);
 
       // Resource entry names come from the untrusted ZIP central directory.
       // Reduce each to a single safe path segment so a crafted name such as
       // `resources/../../evil` can never be written outside the project prefix.
-      const safeResources: { meta: (typeof resourceMetas)[number]; name: string }[] = [];
+      const safeResources: { meta: ZipEntryMeta; name: string }[] = [];
       for (const meta of resourceMetas) {
         const name = safeStorageSegment(meta.name.slice('resources/'.length));
         if (name) safeResources.push({ meta, name });
       }
 
-      // 2. Determine which resource names are genuinely new (no decompression needed)
-      const names = safeResources.map((r) => r.name);
-      const existingRows = await db
-        .select({ name: traceResources.name })
-        .from(traceResources)
-        .where(and(eq(traceResources.projectId, projectId), inArray(traceResources.name, names)));
-      const existingNames = new Set(existingRows.map((r) => r.name));
-
-      const newResources = safeResources.filter((r) => !existingNames.has(r.name));
-
-      // 3. Decompress and store new resources one at a time to limit peak memory.
-      //    Text resources (network bodies, CSS, JS) are gzip-compressed at rest;
-      //    already-compressed ones (images, fonts) are stored as-is. `size` is
-      //    the on-disk byte count so storage stats stay honest.
-      for (const { meta, name } of newResources) {
-        const resourceData = await decompressEntry(data, meta);
-        const { data: stored } = compressResource(resourceData);
-        const resourcePath = `${resourcesDir}/${name}`;
-        await storage.writeFile(resourcePath, stored);
-        await db
-          .insert(traceResources)
-          .values({
-            projectId,
-            name,
-            path: resourcePath,
-            size: stored.length,
-          })
-          .onConflictDoNothing();
-        // resourceData / stored go out of scope here and are eligible for GC
+      // 2. Pool names of the screenshots and screencast frames. Each is inflated
+      //    to be hashed and released straight away; the entry carrying a name
+      //    first is the one inflated again if that name turns out to be new.
+      const pooledEntries: Record<string, string> = {};
+      const pooledSources = new Map<string, ZipEntryMeta>();
+      for (const meta of pooledMetas) {
+        let entryData: Buffer;
+        try {
+          entryData = await decompressEntry(data, meta);
+        } catch {
+          continue; // Skip corrupt entries, as the slim ZIP does
+        }
+        const poolName = pooledTraceEntryName(meta.name, entryData);
+        pooledEntries[meta.name] = poolName;
+        if (!pooledSources.has(poolName)) pooledSources.set(poolName, meta);
       }
 
-      // 4. Decompress event entries for the slim ZIP (these are small text-based files)
+      // 3. Which pool names are genuinely new (one lookup for both kinds)
+      manifest = { resources: safeResources.map((r) => r.name), pooledEntries };
+      const existingNames = await existingPoolNames(db, projectId, traceManifestPoolNames(manifest));
+
+      // 4. Decompress and store new pool entries one at a time to limit peak memory.
+      const written = new Set<string>();
+      for (const { meta, name } of safeResources) {
+        if (existingNames.has(name) || written.has(name)) continue;
+        await storePoolResource(db, storage, projectId, name, await decompressEntry(data, meta));
+        written.add(name);
+      }
+      for (const [name, meta] of pooledSources) {
+        if (existingNames.has(name) || written.has(name)) continue;
+        await storePoolResource(db, storage, projectId, name, await decompressEntry(data, meta));
+        written.add(name);
+      }
+
+      // 5. Decompress the remaining entries for the slim ZIP
       let eventEntries: ZipEntry[] = [];
       for (const meta of eventMetas) {
         try {
@@ -173,27 +227,29 @@ export async function upsertTraceBlob(
         }
       }
 
-      // 5. All resource names (new + pre-existing) for the manifest and join table
-      resourceNames = names;
-
       const slimZip = buildZip(eventEntries, { compress: true });
       // Release the decompressed event buffers now that they're fused into the
       // slim ZIP, so the manifest write and blob write below don't hold both.
       eventEntries = [];
-      const manifestJson = Buffer.from(JSON.stringify({ resources: resourceNames }), 'utf8');
 
+      // 6. The manifest
+      manifestJson = Buffer.from(JSON.stringify(manifest), 'utf8');
       dataToStore = slimZip;
-      await storage.writeFile(`project-${projectId}/blobs/${hash}.manifest.json`, manifestJson);
+      await storage.writeFile(traceManifestPath(blobPath), manifestJson);
 
       const savedBytes = data.length - slimZip.length;
       console.log(
-        `[TraceBlob] ${resourceNames.length} resources extracted for project ${projectId}` +
-          ` (${newResources.length} new), slim ZIP saves ${Math.round(savedBytes / 1024)} KB`,
+        `[TraceBlob] ${manifest.resources.length} resources and ${Object.keys(pooledEntries).length} screenshots` +
+          ` and screencast frames pooled for project ${projectId} (${written.size} new),` +
+          ` slim ZIP saves ${Math.round(savedBytes / 1024)} KB`,
       );
     }
   } catch (err) {
     // Malformed or unsupported ZIP — store as-is, deduplication skipped
     console.warn(`[TraceBlob] Could not extract resources from trace: ${err}`);
+    dataToStore = data;
+    manifest = { resources: [], pooledEntries: {} };
+    manifestJson = null;
   }
 
   await storage.writeFile(blobPath, dataToStore);
@@ -204,7 +260,8 @@ export async function upsertTraceBlob(
       projectId,
       hash,
       path: blobPath,
-      size: data.length, // report original size so UI shows accurate numbers
+      size: data.length, // the uploaded trace's size, which is what users download
+      storedSize: dataToStore.length + (manifestJson?.length ?? 0),
     })
     .onConflictDoNothing();
 
@@ -218,7 +275,7 @@ export async function upsertTraceBlob(
 
   // Link the blob to its resources, then mark it indexed — the order that lets
   // per-resource GC trust the join table (see gcTraceBlobs / backfill).
-  await linkBlobResources(db, projectId, blob.id, resourceNames);
+  await linkBlobResources(db, projectId, blob.id, traceManifestPoolNames(manifest));
   await db.update(traceBlobs).set({ resourcesIndexed: true }).where(eq(traceBlobs.id, blob.id));
 
   return { id: blob.id, path: blob.path, size: blob.size };
@@ -252,7 +309,7 @@ export async function backfillTraceBlobResources(db: DbClient): Promise<number> 
     for (const blob of blobs) {
       lastId = blob.id; // advance past this blob whether or not it indexes cleanly
       try {
-        const names = await readManifestResourceNames(storage, blob.path);
+        const names = await readManifestPoolNames(storage, blob.path);
         await linkBlobResources(db, blob.projectId, blob.id, names);
         await db.update(traceBlobs).set({ resourcesIndexed: true }).where(eq(traceBlobs.id, blob.id));
         indexed++;
@@ -265,6 +322,49 @@ export async function backfillTraceBlobResources(db: DbClient): Promise<number> 
   }
 
   return indexed;
+}
+
+/**
+ * Fill `trace_blobs.stored_size` for blobs written before the column existed,
+ * by asking storage for the size of each blob file and its manifest. Same
+ * cursor walk as {@link backfillTraceBlobResources}: a blob that errors (storage
+ * unreachable) keeps its null and is measured on a future run. A blob whose
+ * file is gone occupies nothing and is recorded as 0. Returns how many blobs it
+ * measured.
+ */
+export async function backfillTraceBlobStoredSizes(db: DbClient): Promise<number> {
+  const storage = getStorage();
+  let lastId = 0;
+  let measured = 0;
+
+  for (;;) {
+    const blobs = await db
+      .select({ id: traceBlobs.id, path: traceBlobs.path })
+      .from(traceBlobs)
+      .where(and(isNull(traceBlobs.storedSize), gt(traceBlobs.id, lastId)))
+      .orderBy(traceBlobs.id)
+      .limit(ID_BATCH_SIZE);
+    if (blobs.length === 0) break;
+
+    for (const blob of blobs) {
+      lastId = blob.id;
+      try {
+        const zipSize = (await storage.fileSize(blob.path)) ?? 0;
+        const manifestSize = (await storage.fileSize(traceManifestPath(blob.path))) ?? 0;
+        await db
+          .update(traceBlobs)
+          .set({ storedSize: zipSize + manifestSize })
+          .where(eq(traceBlobs.id, blob.id));
+        measured++;
+      } catch (err) {
+        console.warn(`[TraceBlob] Size backfill failed for blob #${blob.id}: ${err}`);
+      }
+    }
+
+    if (blobs.length < ID_BATCH_SIZE) break;
+  }
+
+  return measured;
 }
 
 /**

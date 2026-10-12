@@ -657,6 +657,21 @@ Trace evidence is compressed at rest, transparently. Two rules keep it that way:
   rebuilds the served ZIP stored (uncompressed) for speed. `buildZip` defaults to stored — pass
   `{ compress: true }` only for the write-once-keep path, never for archives rebuilt on every open.
 
+### Trace pooled entries
+
+Besides `resources/`, ingestion moves a trace's per-action screenshots (`screenshots/`) and screencast frames
+(`screencast/`) to the shared pool, under the SHA-1 of their bytes (`<sha1>.png`): their names say which action or
+instant they belong to, not what they hold, and many are byte-identical. The blob's manifest maps each such entry
+name to its pool name (`pooledEntries`, see `server/utils/trace-manifest.ts`); the aria snapshots stay in the slim
+ZIP. Blobs stored before this hold their screenshots and frames inline, and are never rewritten.
+
+- **Every manifest read goes through `server/utils/trace-manifest.ts`** (`readTraceManifest` for a view,
+  `parseTraceManifest` + `traceManifestPoolNames` for anything that decides what may be deleted, which must tell a
+  missing manifest from an unreadable one).
+- **A reader of a `screenshots/` or `screencast/` entry looks in the slim ZIP first, then in the pool through
+  `pooledEntries`**, as `readSnapshot` in `trace-evidence.ts` and `reconstructTraceZip` do. Reading only the ZIP
+  finds nothing for a blob stored since pooling.
+
 ### Trace resource refcounting
 
 Shared pool resources are reference-counted through `trace_blob_resources` (blob ↔ resource), so a partial
@@ -664,9 +679,14 @@ delete frees a resource the moment no surviving blob references it (`gcTraceBlob
 project loses its last blob. Two invariants keep it correct:
 
 - **Any blob write MUST record its resource links and then set `trace_blobs.resources_indexed = true`, in
-  that order.** `upsertTraceBlob` does this via `linkBlobResources`; the flag flips only after the links
-  exist, so a half-written blob is never trusted. A new blob-writing path must do the same, or resources it
-  needs can be reclaimed out from under it.
+  that order.** The links cover every pool name the manifest references, `resources` and `pooledEntries`
+  alike (`traceManifestPoolNames`). `upsertTraceBlob` does this via `linkBlobResources`; the flag flips only
+  after the links exist, so a half-written blob is never trusted. A new blob-writing path must do the same, or
+  resources it needs can be reclaimed out from under it.
+- **Any blob write MUST set `trace_blobs.stored_size`** — the bytes of the blob's own files (slim ZIP plus
+  manifest, or the whole ZIP stored as is), which the storage analysis counts. `size` stays the uploaded
+  trace's size, shown to users; counting it would count the pooled parts twice. `backfillTraceBlobStoredSizes`
+  (startup, after the link backfill) measures blobs stored before the column existed.
 - **Per-resource GC only runs for a project whose blobs are all indexed.** Deletes on a project with any
   `resources_indexed = false` blob fall back to the whole-project rule (resources go only when the last blob
   does), because such a blob's links may be missing. `backfillTraceBlobResources` (kicked off at startup
@@ -676,9 +696,10 @@ project loses its last blob. Two invariants keep it correct:
 ### Reading a stored trace
 
 A view that reads a stored trace goes through `server/utils/trace-evidence.ts` (its `getTrace*FromBlob` views and
-`loadStoredTraceEvents`), never `parseZip` on the blob. The slim blob of a Playwright 1.63 trace still holds every aria
-and screen snapshot and the screencast, nearly all of its bytes; the loader inflates only the `.trace`, `.stacks` and
-`.network` streams, one snapshot entry when a view asks for it, and never the screencast. A content-addressed blob
+`loadStoredTraceEvents`), never `parseZip` on the blob. The slim blob of a Playwright 1.63 trace holds its aria
+snapshots (and, for a blob stored before pooling, its screenshots and screencast); the loader inflates only the
+`.trace`, `.stacks` and `.network` streams, one snapshot entry when a view asks for it (from the pool when the
+manifest lists it in `pooledEntries`), and never the screencast. A content-addressed blob
 (`project-<id>/blobs/<sha256>.zip`) is loaded once for the requests of one page and kept two minutes after its last
 read, within 64 MB for all loaded traces, so a bundle keeps compressed copies of the entries it needs and no closure
 over the archive itself. Ingestion reads a trace once and does not go through that cache. A new view adds a function

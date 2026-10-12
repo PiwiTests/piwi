@@ -813,6 +813,13 @@
       "when": 1791618924095,
       "tag": "0115_network_request_fulfilled",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1791788791310,
+      "tag": "0116_trace_blob_stored_size",
+      "breakpoints": true
     }
   ]
 }

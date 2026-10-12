@@ -4,6 +4,7 @@ import { files, traceBlobs, traceResources, traceBlobResources } from '../databa
 import { eq, and, count, isNull } from 'drizzle-orm';
 import { getStorage } from '../storage';
 import type { File } from '../database/schema';
+import { traceManifestPath } from './trace-manifest';
 
 /** True when a storage path points directly at a project root (`project-<id>`). */
 function isProjectRoot(path: string): boolean {
@@ -122,7 +123,7 @@ export async function gcTraceBlobs(db: Db, blobIds: Array<number | null | undefi
 
     try {
       await storage.deleteFile(blob.path);
-      await storage.deleteFile(blob.path.replace(/\.zip$/, '.manifest.json'));
+      await storage.deleteFile(traceManifestPath(blob.path));
     } catch (error) {
       console.warn(`[delete-run] Failed to remove trace blob storage (${blob.path}):`, error);
     }

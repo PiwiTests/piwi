@@ -169,9 +169,11 @@ Deleting runs removes rows and stored files, but giving the freed pages back to 
 Files are stored under relative paths (e.g. `project-1/run-123/index.html`), so the same layout works on either
 backend. What happens to them is automatic and needs no configuration:
 
-- **Traces are split and compressed.** Each trace's network resources go to a shared pool, stored once per project
-  and freed as soon as no remaining trace references them; the rest of the trace, and every text resource, is
-  compressed. Reconstructed traces, the evidence views and offline exports see the original bytes.
+- **Traces are split and compressed.** Each trace's network resources, per-action screenshots and screencast frames go
+  to a shared pool, stored once per project and freed as soon as no remaining trace references them; the rest of the
+  trace, and every text resource, is compressed. Screenshots and frames are pooled by content, so a page that looks
+  the same before and after an action, or from one run to the next, is stored once. Reconstructed traces, the evidence
+  views and offline exports see the original bytes.
 - **Failure evidence is stored once.** The ARIA snapshot, source snippet and stack frames of a failure are stored
   once per project and shared by every execution that fails the same way.
 
@@ -186,7 +188,9 @@ The two kinds cost very differently:
 - **`aria`** adds one small JSON tree per action per phase — a few hundred bytes each, negligible next to the trace it rides in. [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns it on by default on Playwright 1.63+.
 - **`screen`** adds a **PNG per action per phase** — by far the trace's biggest cost, growing with the page size and the number of actions. It stays **opt-in**: enable it only when you want the filmstrip and the before/after screenshots, and pair it with [data retention](#data-retention) so the extra bytes are swept. Enable it with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } } }`.
 
-Unlike the network resource pool, these entries are not shared across executions: each is unique to its action's page.
+The screenshots go to the same shared pool as the network resources, keyed by their content: the screenshot after an
+action is often identical to the one before the next, and an unchanged page renders the same bytes from one run to the
+next, so each distinct image is stored once. The aria trees stay with their trace.
 
 ## Related
 - [Database](./database) — SQLite versus PostgreSQL, and what lives there instead

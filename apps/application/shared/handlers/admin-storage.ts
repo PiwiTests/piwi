@@ -29,7 +29,11 @@ function storageKindOf(row: { type: string; subtype: string | null; label: strin
  * Physical footprint is counted honestly: a deduplicated trace is stored once
  * in `trace_blobs` (with its shared `trace_resources`), so the many `files`
  * rows that reference a blob contribute to the file *count* but their bytes
- * come from the blob, never from each per-case row.
+ * come from the blob, never from each per-case row. A blob counts what its own
+ * files occupy (`stored_size`: the slim ZIP and its manifest), not the size of
+ * the trace as uploaded, whose pooled parts the `trace_resources` rows already
+ * count; a blob not yet measured by the startup backfill falls back to that
+ * uploaded size.
  *
  * Admin-only and computed on demand, so it reads the storage-bearing tables in
  * full and aggregates in one pass — reusing the canonical file classifier
@@ -51,7 +55,12 @@ export async function getStorageAnalysis(db: DrizzleDB): Promise<StorageAnalysis
       })
       .from(files),
     db
-      .select({ projectId: traceBlobs.projectId, size: traceBlobs.size, createdAt: traceBlobs.createdAt })
+      .select({
+        projectId: traceBlobs.projectId,
+        size: traceBlobs.size,
+        storedSize: traceBlobs.storedSize,
+        createdAt: traceBlobs.createdAt,
+      })
       .from(traceBlobs),
     db
       .select({ projectId: traceResources.projectId, size: traceResources.size, createdAt: traceResources.createdAt })
@@ -102,10 +111,11 @@ export async function getStorageAnalysis(db: DrizzleDB): Promise<StorageAnalysis
     }
   }
   for (const b of blobRows) {
-    totalBytes += b.size;
-    addKind('trace', b.size, 0);
-    addProject(b.projectId, b.size, 0);
-    timePoints.push({ t: new Date(b.createdAt).getTime(), bytes: b.size });
+    const bytes = b.storedSize ?? b.size;
+    totalBytes += bytes;
+    addKind('trace', bytes, 0);
+    addProject(b.projectId, bytes, 0);
+    timePoints.push({ t: new Date(b.createdAt).getTime(), bytes });
   }
   for (const r of resourceRows) {
     totalBytes += r.size;

@@ -26,6 +26,13 @@ export interface StorageAdapter {
   exists(path: string): Promise<boolean>;
 
   /**
+   * Size of a stored file in bytes, without reading it
+   * @param path - Relative path of the file
+   * @returns Promise that resolves with the byte count, or null if the file does not exist
+   */
+  fileSize(path: string): Promise<number | null>;
+
+  /**
    * Create a directory (and parent directories if needed)
    * @param path - Relative path of the directory to create
    * @returns Promise that resolves when the directory is created
