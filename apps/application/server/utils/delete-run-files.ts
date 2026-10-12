@@ -4,6 +4,8 @@ import { files, traceBlobs, traceResources, traceBlobResources } from '../databa
 import { eq, and, count, isNull } from 'drizzle-orm';
 import { getStorage } from '../storage';
 import type { File } from '../database/schema';
+import { traceManifestPath } from './trace-manifest';
+import { reclaimTracePoolUnlessIngesting } from './trace-pool-guard';
 
 /** True when a storage path points directly at a project root (`project-<id>`). */
 function isProjectRoot(path: string): boolean {
@@ -122,7 +124,7 @@ export async function gcTraceBlobs(db: Db, blobIds: Array<number | null | undefi
 
     try {
       await storage.deleteFile(blob.path);
-      await storage.deleteFile(blob.path.replace(/\.zip$/, '.manifest.json'));
+      await storage.deleteFile(traceManifestPath(blob.path));
     } catch (error) {
       console.warn(`[delete-run] Failed to remove trace blob storage (${blob.path}):`, error);
     }
@@ -131,39 +133,43 @@ export async function gcTraceBlobs(db: Db, blobIds: Array<number | null | undefi
   }
 
   for (const [projectId, candidates] of candidatesByProject) {
-    const remaining = await db.select({ n: count() }).from(traceBlobs).where(eq(traceBlobs.projectId, projectId));
-    if ((remaining[0]?.n ?? 0) === 0) {
-      await reclaimWholeProjectPool(db, projectId);
-      continue;
-    }
-
-    // Only trust the join table once every blob in the project is indexed.
-    const unindexed = await db
-      .select({ n: count() })
-      .from(traceBlobs)
-      .where(and(eq(traceBlobs.projectId, projectId), eq(traceBlobs.resourcesIndexed, false)));
-    if ((unindexed[0]?.n ?? 0) > 0) continue; // partially indexed → keep resources (safe)
-
-    for (const resourceId of candidates) {
-      const stillUsed = await db
-        .select({ n: count() })
-        .from(traceBlobResources)
-        .where(eq(traceBlobResources.resourceId, resourceId));
-      if ((stillUsed[0]?.n ?? 0) > 0) continue; // another surviving blob needs it
-
-      const res = await db
-        .select({ path: traceResources.path })
-        .from(traceResources)
-        .where(eq(traceResources.id, resourceId));
-      const path = res[0]?.path;
-      if (!path) continue;
-      try {
-        await storage.deleteFile(path);
-      } catch (error) {
-        console.warn(`[delete-run] Failed to remove trace resource (${path}):`, error);
+    // Skipped while a trace of the project is being ingested; the nightly
+    // reclaimOrphanTraceResources frees what is still unreferenced then.
+    await reclaimTracePoolUnlessIngesting(projectId, async () => {
+      const remaining = await db.select({ n: count() }).from(traceBlobs).where(eq(traceBlobs.projectId, projectId));
+      if ((remaining[0]?.n ?? 0) === 0) {
+        await reclaimWholeProjectPool(db, projectId);
+        return;
       }
-      await db.delete(traceResources).where(eq(traceResources.id, resourceId));
-    }
+
+      // Only trust the join table once every blob in the project is indexed.
+      const unindexed = await db
+        .select({ n: count() })
+        .from(traceBlobs)
+        .where(and(eq(traceBlobs.projectId, projectId), eq(traceBlobs.resourcesIndexed, false)));
+      if ((unindexed[0]?.n ?? 0) > 0) return; // partially indexed → keep resources (safe)
+
+      for (const resourceId of candidates) {
+        const stillUsed = await db
+          .select({ n: count() })
+          .from(traceBlobResources)
+          .where(eq(traceBlobResources.resourceId, resourceId));
+        if ((stillUsed[0]?.n ?? 0) > 0) continue; // another surviving blob needs it
+
+        const res = await db
+          .select({ path: traceResources.path })
+          .from(traceResources)
+          .where(eq(traceResources.id, resourceId));
+        const path = res[0]?.path;
+        if (!path) continue;
+        try {
+          await storage.deleteFile(path);
+        } catch (error) {
+          console.warn(`[delete-run] Failed to remove trace resource (${path}):`, error);
+        }
+        await db.delete(traceResources).where(eq(traceResources.id, resourceId));
+      }
+    });
   }
 }
 
@@ -186,22 +192,34 @@ export async function reclaimOrphanTraceResources(db: Db): Promise<number> {
   const notReady = new Set(unindexedRows.map((r) => r.projectId));
 
   // Resources with no join row at all (anti-join: no matching trace_blob_resources).
-  const orphans = await db
-    .select({ id: traceResources.id, path: traceResources.path, projectId: traceResources.projectId })
-    .from(traceResources)
-    .leftJoin(traceBlobResources, eq(traceBlobResources.resourceId, traceResources.id))
-    .where(isNull(traceBlobResources.id));
+  const orphansOf = (projectId?: number) =>
+    db
+      .select({ id: traceResources.id, path: traceResources.path, projectId: traceResources.projectId })
+      .from(traceResources)
+      .leftJoin(traceBlobResources, eq(traceBlobResources.resourceId, traceResources.id))
+      .where(
+        projectId === undefined
+          ? isNull(traceBlobResources.id)
+          : and(isNull(traceBlobResources.id), eq(traceResources.projectId, projectId)),
+      );
+  const projectIds = new Set((await orphansOf()).map((r) => r.projectId).filter((id) => !notReady.has(id)));
 
   let removed = 0;
-  for (const r of orphans) {
-    if (notReady.has(r.projectId)) continue;
-    try {
-      await storage.deleteFile(r.path);
-    } catch (error) {
-      console.warn(`[delete-run] Failed to remove orphan trace resource (${r.path}):`, error);
-    }
-    await db.delete(traceResources).where(eq(traceResources.id, r.id));
-    removed++;
+  for (const projectId of projectIds) {
+    // A trace being ingested has pool files it has not linked yet: leave the
+    // project for the next sweep. The orphans are read again inside, since an
+    // ingestion that finished just before may have linked some of them.
+    await reclaimTracePoolUnlessIngesting(projectId, async () => {
+      for (const r of await orphansOf(projectId)) {
+        try {
+          await storage.deleteFile(r.path);
+        } catch (error) {
+          console.warn(`[delete-run] Failed to remove orphan trace resource (${r.path}):`, error);
+        }
+        await db.delete(traceResources).where(eq(traceResources.id, r.id));
+        removed++;
+      }
+    });
   }
   return removed;
 }

@@ -75,20 +75,24 @@ export class S3StorageAdapter implements StorageAdapter {
   }
 
   async exists(path: string): Promise<boolean> {
+    return (await this.fileSize(path)) !== null;
+  }
+
+  async fileSize(path: string): Promise<number | null> {
     try {
       const command = new HeadObjectCommand({
         Bucket: this.config.bucket,
         Key: path,
       });
 
-      await this.s3Client.send(command);
-      return true;
+      const head = await this.s3Client.send(command);
+      return head.ContentLength ?? 0;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
-        return false;
+        return null;
       }
-      console.error(`Failed to check if file exists in S3: ${path}`, error);
+      console.error(`Failed to read file metadata from S3: ${path}`, error);
       throw error;
     }
   }

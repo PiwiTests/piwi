@@ -1,0 +1,1 @@
+ALTER TABLE `trace_blobs` ADD `stored_size` integer;

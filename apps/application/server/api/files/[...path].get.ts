@@ -8,7 +8,7 @@ import {
 import { getStorage } from '../../storage';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
-import { reconstructTraceZip } from '../../utils/trace-reconstruct';
+import { resolveStoredTrace } from '../../utils/trace-reconstruct';
 import { prepareHtmlReport } from '../../utils/html-report';
 import sharp from 'sharp';
 
@@ -262,17 +262,22 @@ export default eventHandler(async (event) => {
 
     // Slim trace blob: reconstruct full ZIP from shared resource pool
     if (ext === '.zip' && path.includes('/blobs/')) {
-      const manifestPath = path.replace(/\.zip$/, '.manifest.json');
-      const projectPrefix = path.split('/blobs/')[0] + '/';
-      if (await storage.exists(manifestPath)) {
-        const fullZip = await reconstructTraceZip(storage, fileContent, manifestPath, projectPrefix);
-        if (fullZip) {
-          setResponseHeader(event, 'Content-Type', 'application/zip');
-          setResponseHeader(event, 'Content-Length', fullZip.length);
-          return fullZip;
-        }
-        // Reconstruction failed — fall through to serve the slim ZIP as-is
+      let fullZip: Buffer;
+      try {
+        fullZip = await resolveStoredTrace(storage, path, fileContent);
+      } catch (error) {
+        // A passing storage error: never let the immutable cache keep a partial trace.
+        console.warn(`[Files] Could not rebuild trace ${path}:`, error);
+        removeResponseHeader(event, 'ETag');
+        setResponseHeader(event, 'Cache-Control', 'no-store');
+        throw apiError({ statusCode: 503, message: 'The trace could not be read from storage. Try again.' });
       }
+      if (fullZip !== fileContent) {
+        setResponseHeader(event, 'Content-Type', 'application/zip');
+        setResponseHeader(event, 'Content-Length', fullZip.length);
+        return fullZip;
+      }
+      // Not a slim blob, or it could not be parsed — fall through to serve it as stored
     }
 
     // If the file is a .gz archive, try to serve index.html from inside

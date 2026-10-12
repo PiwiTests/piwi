@@ -34,12 +34,14 @@ export function getDialect(): 'postgres' | 'sqlite' {
 }
 
 /**
- * Kick off the trace-resource link backfill in the background. Detached on
- * purpose: the first run after upgrade may read many trace manifests, and
- * blocking startup on it would delay the first request. Per-resource cleanup
- * keeps its safe whole-project fallback until a project is fully indexed, so
- * running this lazily never risks a premature delete. Imported dynamically to
- * avoid a module cycle (the util imports this file for `getDatabase`).
+ * Kick off the trace-resource link backfill in the background, then the
+ * measuring of every blob whose `stored_size` is null. Detached on purpose:
+ * the first run after upgrade may read many trace manifests, and blocking
+ * startup on it would delay the first request. Per-resource cleanup keeps its
+ * safe whole-project fallback until a project is fully indexed, so running this
+ * lazily never risks a premature delete; until a blob is measured, the storage
+ * stats count it at its uploaded size. Imported dynamically to avoid a module
+ * cycle (the util imports this file for `getDatabase`).
  */
 function backfillTraceResourceLinks(): void {
   void (async () => {
@@ -49,6 +51,13 @@ function backfillTraceResourceLinks(): void {
       if (indexed > 0) console.log(`[Database] Trace-resource backfill indexed ${indexed} blob(s)`);
     } catch (err) {
       console.error('[Database] Trace-resource backfill failed:', err);
+    }
+    try {
+      const { backfillTraceBlobStoredSizes } = await import('../utils/trace-blobs');
+      const measured = await backfillTraceBlobStoredSizes(db);
+      if (measured > 0) console.log(`[Database] Trace-blob size backfill measured ${measured} blob(s)`);
+    } catch (err) {
+      console.error('[Database] Trace-blob size backfill failed:', err);
     }
   })();
 }

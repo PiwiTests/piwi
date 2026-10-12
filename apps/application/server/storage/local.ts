@@ -1,5 +1,5 @@
 import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir as fsMkdir, existsSync } from 'fs';
-import { rm } from 'fs/promises';
+import { rm, stat } from 'fs/promises';
 import { join, dirname, resolve, relative, isAbsolute } from 'path';
 import { promisify } from 'util';
 import type { StorageAdapter } from './types';
@@ -53,6 +53,16 @@ export class LocalStorageAdapter implements StorageAdapter {
   async exists(path: string): Promise<boolean> {
     const fullPath = this.resolvePath(path);
     return existsSync(fullPath);
+  }
+
+  async fileSize(path: string): Promise<number | null> {
+    const fullPath = this.resolvePath(path);
+    try {
+      return (await stat(fullPath)).size;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
   }
 
   async mkdir(path: string): Promise<void> {
