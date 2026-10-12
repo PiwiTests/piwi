@@ -121,9 +121,26 @@ See [`apps/application/tests/README.md`](../application/tests/README.md#against-
 
 ## Signing
 
-Installers are **unsigned** unless code-signing secrets are configured, in which
-case CI signs (and notarizes on macOS) automatically. Unsigned apps still run —
-right-click → Open on macOS, or "More info → Run anyway" on Windows SmartScreen.
+Installers carry no publisher signature unless code-signing secrets are
+configured, in which case CI signs (and notarizes on macOS) automatically. They
+still run: on macOS, open the app once, then **Open Anyway** in System Settings →
+Privacy & Security; on Windows, "More info → Run anyway" in SmartScreen.
+
+On macOS the app is always signed, **ad hoc** when no Developer ID is configured
+(`bundle.macOS.signingIdentity: "-"` in `tauri.conf.json`). Apple silicon opens a
+downloaded app only when a signature seals the whole bundle; without one,
+Gatekeeper reports the app as damaged and offers no way to open it. A Developer ID
+set through `APPLE_SIGNING_IDENTITY` takes the place of the ad-hoc identity.
+
+The bundler signs the Node sidecar too, under the hardened runtime, with the
+entitlements in `src-tauri/macos/entitlements.plist`: the ones Node.js signs its
+own binary with, minus the debugger one. V8 needs JIT and writable executable
+memory, and Node loads native modules no team signed (sharp, libSQL, and those of
+a linked project when it runs Playwright). Without them the sidecar crashes on
+start and the window reports that the server did not start in time.
+`reusable-publish-desktop.yml` checks both on every macOS build: the bundle's
+signature (`codesign --verify --strict`), then the server started from the bundle
+with its own Node, until `/api/health` answers.
 
 ## In-app updates
 

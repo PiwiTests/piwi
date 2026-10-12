@@ -32,8 +32,8 @@ Download the installer from the [latest release](https://github.com/PiwiTests/pl
 | **macOS** 13.5+ (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 
-The installers are **unsigned**, so the OS warns on first launch. On macOS, right-click the app, then **Open** twice;
-on Windows, **More info** then **Run anyway** in SmartScreen. Linux shows no prompt.
+The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in the **Privacy & Security**
+settings; on Windows, **More info** then **Run anyway** in SmartScreen. Linux shows no prompt.
 
 Data lives in the OS app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
 `~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`

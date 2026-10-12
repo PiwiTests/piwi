@@ -82,7 +82,9 @@
     "shortDescription": "A permanent home for your Playwright test results.",
     "longDescription": "Piwi Dashboard keeps every Playwright run — traces, reports, flaky-test scoring, failure clustering, and locator healing — in a local dashboard that runs entirely on your machine. No server to set up, no data leaving your computer.",
     "macOS": {
-      "minimumSystemVersion": "13.5"
+      "minimumSystemVersion": "13.5",
+      "signingIdentity": "-",
+      "entitlements": "macos/entitlements.plist"
     },
     "windows": {
       "wix": {

@@ -149,12 +149,14 @@ jobs:
           # fails with "failed to run linuxdeploy"; extract-and-run unpacks the
           # tools to a temp dir instead. No-op on Windows/macOS.
           APPIMAGE_EXTRACT_AND_RUN: 1
-          # macOS signing is intentionally OFF: passing an invalid/placeholder
-          # APPLE_CERTIFICATE secret makes tauri-action fail at `security import`.
-          # Builds ship unsigned (right-click -> Open). To enable signing, add
-          # valid Apple Developer ID + notarization secrets and re-introduce the
-          # APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY /
-          # APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID env here.
+          # macOS is signed ad hoc (bundle.macOS.signingIdentity "-" in
+          # tauri.conf.json): no Apple Developer ID, so a first launch still
+          # asks for Open Anyway in System Settings. Passing an invalid or
+          # placeholder APPLE_CERTIFICATE secret makes tauri-action fail at
+          # `security import`. To sign with a Developer ID and notarize, add the
+          # secrets and the APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD /
+          # APPLE_SIGNING_IDENTITY / APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID env
+          # here; APPLE_SIGNING_IDENTITY takes the place of the ad-hoc identity.
           #
           # In-app updates are opt-in and OFF until the updater keypair exists.
           # To enable them: run `npx tauri signer generate` locally, put the
@@ -183,6 +185,40 @@ jobs:
           # manual dispatch (no tag) tagName is empty, so tauri-action just builds.
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+
+      # The macOS app must carry a signature that seals the whole bundle, or
+      # Gatekeeper reports a downloaded copy as damaged, and the Node sidecar
+      # the bundler re-signed must still run the server: start it from the
+      # bundle, as the shell does on launch, and wait for /api/health.
+      - name: Check the macOS app bundle
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos
+        run: |
+          app="Piwi Dashboard.app"
+          codesign --verify --strict --verbose=2 "$app"
+          codesign --display --entitlements - "$app/Contents/MacOS/node"
+          data="$(mktemp -d)"
+          mkdir -p "$data/storage"
+          NODE_ENV=production NITRO_HOST=127.0.0.1 NITRO_PORT=3917 \
+            PIWI_DATABASE_PATH="$data/piwi.db" PIWI_STORAGE_PATH="$data/storage" \
+            PIWI_SECRET_KEY="$(openssl rand -hex 32)" PIWI_DESKTOP_TOKEN="pd_$(openssl rand -hex 32)" \
+            NUXT_PUBLIC_DESKTOP=true \
+            "$app/Contents/MacOS/node" "$app/Contents/Resources/resources/app-server/.output/server/index.mjs" \
+            > "$data/server.log" 2>&1 &
+          server=$!
+          for _ in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:3917/api/health > /dev/null 2>&1; then
+              kill "$server"
+              echo "The bundled server answered /api/health"
+              exit 0
+            fi
+            kill -0 "$server" 2>/dev/null || break
+            sleep 1
+          done
+          cat "$data/server.log"
+          kill "$server" 2>/dev/null || true
+          echo "::error::The bundled server did not answer /api/health"
+          exit 1
 
       # Publish the per-user (.exe) updater manifest. tauri-action uploaded the
       # NSIS -setup.exe and its .sig but not a JSON (uploadUpdaterJson is false
