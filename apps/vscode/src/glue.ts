@@ -238,6 +238,23 @@ export function runsInFiles(runs: RunStatusResult | null): string {
   );
 }
 
+/**
+ * What a change of the runs from `before` to `after` draws again in the files: `none` when only the run in progress
+ * moved ({@link runsInFiles}); `tests` when only the tests of the run in progress began or ended (`liveTests`), which
+ * only a test's line shows; `all` when anything else the files show changed, such as the latest run or its baseline.
+ */
+export function filesRedraw(before: RunStatusResult | null, after: RunStatusResult | null): 'none' | 'tests' | 'all' {
+  if (runsInFiles(before) === runsInFiles(after)) return 'none';
+  const withoutTests = (runs: RunStatusResult | null) =>
+    runsInFiles(runs && { ...runs, contexts: runs.contexts.map((c) => ({ ...c, liveTests: undefined })) });
+  return withoutTests(before) === withoutTests(after) ? 'tests' : 'all';
+}
+
+/** The editor's own run in progress, as the failures view's first node shows it, in one string. */
+export function ownLiveRun(runs: RunStatusResult | null): string {
+  return JSON.stringify(runs?.contexts.find((c) => c.live?.own)?.live ?? null);
+}
+
 /** How the failures view groups the failures under the run. */
 export type FailuresGrouping = 'file' | 'cluster' | 'owner' | 'flat';
 

@@ -24,7 +24,9 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
 - `src/failures-view.ts` is the **Failures** view of the **Piwi** panel (`viewsContainers.panel`): a `TreeView` over
-  `piwi/failures`, read again 200 ms after a `piwi/runStatusChanged` or a `piwi/failuresChanged`, whose nodes are
+  the failures `piwi/failuresChanged` pushes (`show`), read from `piwi/failures` 200 ms after the extension starts or a
+  `piwi/statusChanged`, and drawn again when a `piwi/runStatusChanged` moves the editor's own run in progress
+  (`ownLiveRun`); a push is never answered with a read. Its nodes are
   `failureTree` in `src/glue.ts`: the run (its age, or the editor's own run in progress), **Your runs since**, then the
   failures by file, cluster, owner or flat (`piwi.groupFailuresBy`, kept in `workspaceState` as
   `piwi.failuresGrouping`). A failure's `contextValue` (`piwi.failure.<state>` and `trace`, `screenshot`, `agent`,
@@ -37,7 +39,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   fails, an information otherwise, with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**, as
   the `piwi.runNotifications` setting allows (`always`, `failures`, `never`). A test the run in progress runs has the
   `running` gutter icon (`media/test-running.svg`), then that run's result; `runsInFiles` keeps the run's `liveTests`,
-  so the files are drawn again as its tests begin and end.
+  so the files are drawn again as its tests begin and end, at most once a second (`filesRedraw`, `drawFiles` in
+  `src/extension.ts`), and at once when the latest run changes.
 - The status bar item (`statusBarView` in `src/glue.ts`): a click runs `piwi.refreshRun` (`piwi/refreshRun`, the
   item's icon spinning meanwhile: `refreshingText`), and **Piwi: Connect** while not connected. Its tooltip is a
   trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the local runs,

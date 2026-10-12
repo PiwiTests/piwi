@@ -32,6 +32,8 @@ import {
   rerunFailingArgs,
   runIdOf,
   runsInFiles,
+  filesRedraw,
+  ownLiveRun,
   runVerdict,
   sourceLabel,
   statusBarView,
@@ -228,11 +230,25 @@ describe('statusBarView', () => {
     };
     expect(runsInFiles(moving)).toBe(runsInFiles(latest));
     expect(runsInFiles(run({}))).not.toBe(runsInFiles(latest));
-    // A test of the run in progress that begins or ends is drawn at once.
+    // A test of the run in progress that begins or ends draws the tests' lines again.
     const testing = {
       contexts: [{ ...moving.contexts[0]!, liveTests: [{ testCaseId: 1, status: 'running' as const }] }],
     };
     expect(runsInFiles(testing)).not.toBe(runsInFiles(moving));
+    expect(filesRedraw(latest, moving)).toBe('none');
+    expect(filesRedraw(moving, testing)).toBe('tests');
+    expect(
+      filesRedraw(testing, {
+        contexts: [{ ...testing.contexts[0]!, liveTests: [{ testCaseId: 1, status: 'passed' }] }],
+      }),
+    ).toBe('tests');
+    expect(filesRedraw(testing, run({}))).toBe('all');
+    expect(filesRedraw(null, latest)).toBe('all');
+    expect(filesRedraw(null, null)).toBe('none');
+    // The failures view's first node follows the editor's own run alone.
+    expect(ownLiveRun(moving)).not.toBe(ownLiveRun(latest));
+    const other = { contexts: [{ ...moving.contexts[0]!, live: { ...moving.contexts[0]!.live!, own: false } }] };
+    expect(ownLiveRun(other)).toBe(ownLiveRun(latest));
   });
 
   test('a running run shows its progress', () => {

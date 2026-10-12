@@ -36,6 +36,7 @@ import {
   type DesktopJobParams,
   type DesktopJobResult,
   type DesktopJobUpdate,
+  type FailuresResult,
   type Notice,
   type PageCandidatesParams,
   type PageCandidatesResult,
@@ -101,12 +102,13 @@ import {
   desktopJobNotice,
   testDecorations,
   disconnectQuestion,
+  filesRedraw,
   importInsertion,
   indentBlock,
   mcpConfiguration,
+  ownLiveRun,
   refreshingText,
   rerunFailingArgs,
-  runsInFiles,
   runVerdict,
   VERDICT_ACTIONS,
   type RunNotifications,
@@ -126,6 +128,8 @@ import { startSendListener, type SendListener, type SendResult } from './send-li
 
 /** How often the status bar item's tooltip is written again, for the time since the latest run was read. */
 const STATUS_TICK_MS = 30_000;
+/** How often, at most, the gutter is drawn again for the tests the run in progress begins and ends. */
+const LIVE_TESTS_DRAW_MS = 1_000;
 /** A terminal whose shell has not activated shell integration this long after it opened never will. */
 const SHELL_INTEGRATION_WAIT_MS = 10_000;
 /** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
@@ -303,8 +307,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   /** The service's last answers the status bar item renders, and whether a click is reading the run again. */
   let status: StatusResult | null = null;
   let runs: RunStatusResult | null = null;
-  let runsShown = '';
+  /** The runs the CodeLens and the gutter were last drawn with, and when the run in progress's tests were. */
+  let runsShown: RunStatusResult | null = null;
+  let testsDrawnAt = 0;
+  let testsDraw: ReturnType<typeof setTimeout> | null = null;
   let refreshing = false;
+  context.subscriptions.push({ dispose: () => testsDraw && clearTimeout(testsDraw) });
+
+  /**
+   * Draw the CodeLens and the gutter again as far as the runs they show changed (`filesRedraw`): at once for another
+   * run, at most once a second for the tests the run in progress begins and ends.
+   */
+  const drawFiles = () => {
+    const change = filesRedraw(runsShown, runs);
+    if (change === 'none') return;
+    if (change === 'tests') {
+      const wait = testsDrawnAt + LIVE_TESTS_DRAW_MS - Date.now();
+      if (wait > 0) {
+        testsDraw ??= setTimeout(() => {
+          testsDraw = null;
+          drawFiles();
+        }, wait);
+        return;
+      }
+      testsDrawnAt = Date.now();
+    }
+    runsShown = runs;
+    lensesChanged.fire();
+  };
   const render = () => {
     const view = statusBarView(status, runs, !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN));
     statusItem.text = refreshing ? refreshingText(view.text) : view.text;
@@ -319,19 +349,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   /**
-   * Render the runs a `piwi/runStatusChanged` brought; without them, read the connection and the runs again. The
-   * CodeLens and the gutter are drawn again after a full read, and when the runs as the files show them changed: a
-   * run in progress moves the status bar item alone.
+   * Render the runs a `piwi/runStatusChanged` brought; without them, read the connection, the runs and the failures
+   * again. The CodeLens and the gutter are drawn again after a full read, and as far as the runs as the files show them
+   * changed (`drawFiles`): a run in progress moves the status bar item alone, and the failures view's first node while
+   * it is the editor's own. The failures come with `piwi/failuresChanged`.
    */
   const updateStatus = async (next?: RunStatusResult) => {
     const full = !next || !status;
     if (full) status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
+    const before = runs;
     runs = next ?? (await lc.sendRequest<RunStatusResult>(RUN_STATUS_REQUEST).catch(() => null));
     render();
-    failuresView.refresh();
-    const shown = runsInFiles(runs);
-    if (full || shown !== runsShown) lensesChanged.fire();
-    runsShown = shown;
+    if (full) {
+      failuresView.refresh();
+      runsShown = runs;
+      lensesChanged.fire();
+    } else {
+      if (ownLiveRun(runs) !== ownLiveRun(before)) failuresView.render();
+      drawFiles();
+    }
     if (!full) return;
     void vscode.commands.executeCommand('setContext', 'piwi.active', !!status?.contexts.some((c) => c.connected));
     if (status) void offerDesktop(context, lc, status);
@@ -811,10 +847,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(
     lc.onNotification(RUN_STATUS_NOTIFICATION, (next: RunStatusResult) => void updateStatus(next)),
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
-    // A failure moved with an edit, or its line changed since the run: the lenses and the decorations again.
-    lc.onNotification(FAILURES_NOTIFICATION, () => {
+    // A failure moved with an edit, or its line changed since the run: the lenses, the decorations and the view again.
+    lc.onNotification(FAILURES_NOTIFICATION, (failures: FailuresResult) => {
       lensesChanged.fire();
-      failuresView.refresh();
+      failuresView.show(failures);
     }),
     // A run started here ended and was read: what it changed, as `piwi.runNotifications` allows.
     lc.onNotification(RUN_ENDED_NOTIFICATION, async (ended: RunEnded) => {
