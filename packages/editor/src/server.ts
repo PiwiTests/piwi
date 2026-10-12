@@ -729,12 +729,28 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return before !== null && current !== null && titlesIn(before).has(f.title) && !titlesIn(current).has(f.title);
     };
 
-    /** Where a failure shows; null when none of its files is in the workspace. */
+    /** Whether a config folder holds a spec (relative to a config, as a failure names it): checked once per pass. */
+    const specsUnder = new Map<string, boolean>();
+    const holdsSpec = (root: string, spec: string): boolean => {
+      const key = `${root}\n${spec}`;
+      if (!specsUnder.has(key)) specsUnder.set(key, resolveReportedFile([root], spec) !== null);
+      return specsUnder.get(key)!;
+    };
+
+    /**
+     * Whether another context shows `f`: its spec is not under this context's config folder, and is under another's.
+     * The configs of a repository that read one project each list all its failures: each shows once, from the config
+     * its spec belongs to.
+     */
+    const placedElsewhere = (context: PiwiContext, f: Placeable): boolean =>
+      !holdsSpec(context.root, f.file) && contexts.some((c) => c !== context && holdsSpec(c.root, f.file));
+
+    /** Where a failure shows; null when none of its files is in the workspace, or another context shows it. */
     const place = (context: PiwiContext, f: Placeable): Placement | null => {
       if (placed.has(f)) return placed.get(f)!;
       const { site, frames } = reportedOf(context, f);
       let result: Placement | null = null;
-      if (site) {
+      if (site && !placedElsewhere(context, f)) {
         const here = placeIn(context, f, site.file, site.line);
         result = {
           file: site.file,

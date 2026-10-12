@@ -2743,7 +2743,7 @@ describe('what keeps a context from the instance’s data', () => {
 });
 
 describe('the configs of one repository reading one project', () => {
-  test('download its locator index once', async () => {
+  test('download its locator index once, and show each failure once, from the config of its spec', async () => {
     let downloads = 0;
     const gate = http.createServer((req, res) => {
       if ((req.url ?? '').startsWith('/api/projects/7/locator-index')) {
@@ -2759,10 +2759,18 @@ describe('the configs of one repository reading one project', () => {
     await new Promise<void>((resolve) => gate.listen(0, '127.0.0.1', resolve));
     const gateUrl = `http://127.0.0.1:${(gate.address() as AddressInfo).port}`;
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-two-configs-'));
-    for (const config of ['shop/playwright.config.ts', 'admin/playwright.config.ts']) {
-      fs.mkdirSync(path.dirname(path.join(repo, config)), { recursive: true });
-      fs.writeFileSync(path.join(repo, config), 'export default {};\n');
+    const files: Record<string, string> = {
+      'playwright.config.ts': 'export default {};\n',
+      'tests/rows.spec.ts': "import { test } from '@playwright/test';\n\ntest('removes a row', async () => {});\n",
+      'tests/pages/checkout.page.ts': PAGE_OBJECT,
+      'admin/playwright.config.ts': 'export default {};\n',
+    };
+    for (const [file, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+      fs.writeFileSync(path.join(repo, file), text);
     }
+    // One repository: the admin config finds the failure's page object from the repository's root too.
+    execFileSync('git', ['init', '-q'], { cwd: repo });
     const toServer = new PassThrough();
     const toClient = new PassThrough();
     const stopTwo = startServer(createConnection(toServer, toClient), {
@@ -2786,6 +2794,11 @@ describe('the configs of one repository reading one project', () => {
       });
       expect(status.contexts.map((c) => c.locators)).toEqual([2, 2]);
       expect(downloads).toBe(1);
+      const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+      const shown = failures.items.filter((f) => f.title === 'removes a row');
+      expect(shown.map((f) => [f.root, f.uri])).toEqual([
+        [repo, pathToFileURL(path.join(repo, 'tests/pages/checkout.page.ts')).href],
+      ]);
     } finally {
       stopTwo();
       twoClient.dispose();

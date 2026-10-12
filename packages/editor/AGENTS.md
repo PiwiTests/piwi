@@ -201,6 +201,10 @@ needs the extension's sources, and a change to the recorder there changes what t
   The contexts of one service share these answers (`ResponseCache`, created in `startServer`), the same request on its
   way included: a repository with eight Playwright configs reading one project holds and downloads its index once, not
   eight times.
+- **A failure shows once, from the config its spec belongs to**: the configs of a repository that read one project each
+  list all its failures, and each would find their files from the repository's root; a context places a failure only
+  when its config folder holds the failure's spec, or when no config folder does (`placedElsewhere`). So a failure's
+  files at its run's commit are read, and its diagnostics sent, once, not once per config.
 - **The failures come first on a refresh** (`PiwiContext.refresh`): the project and its locator index (the ladder
   needs the default branch), then the latest run, whose failures and status are published at once (`onRun`); only then
   the other indexes, side by side, each keeping what it held when its read fails. Their slow reads are one request
