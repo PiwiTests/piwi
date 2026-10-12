@@ -74,8 +74,16 @@ test.describe.serial('Project locators page', () => {
     });
     expect(feature.ok()).toBeTruthy();
 
-    const main = await (await request.get(`/api/projects/${projectId}/locator-index`)).json();
+    const first = await request.get(`/api/projects/${projectId}/locator-index`);
+    const main = await first.json();
     expect(main).toMatchObject({ branch: 'main', defaultBranch: 'main' });
+    // The same index again, asked with its ETag, is a 304 without a body.
+    const etag = first.headers()['etag'];
+    expect(etag).toBeTruthy();
+    const again = await request.get(`/api/projects/${projectId}/locator-index`, {
+      headers: { 'If-None-Match': etag! },
+    });
+    expect(again.status()).toBe(304);
     expect(main.branches.map((b: { name: string }) => b.name)).toEqual(['feature/voucher']);
     expect(main.locators.map((l: { locator: string }) => l.locator)).toEqual([PAY, COUNTRY]);
 
