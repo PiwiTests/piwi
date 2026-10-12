@@ -19,6 +19,19 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   to users or groups per project or on all projects, replace the three global roles, so a product owner can file an
   issue without triage or upload rights. [proposals/roles-and-groups.md](proposals/roles-and-groups.md); see
   [access, roles and groups](https://piwitests.dev/operate/project-access).
+- **Quality reports, dashboards and trends over time**: a plain-language report of a suite's health for people who
+  do not open the dashboard (pass rate and its movement, wasted CI time and what it costs, open failure causes and how
+  long they take to fix), generated from the same numbers the Analytics page shows, downloadable as HTML, PDF,
+  Markdown, JSON or CSV, delivered on a schedule by email, Slack, Microsoft Teams, webhook or browser notification, in
+  English or French, and readable through `piwi report` and MCP. Underneath: daily rollups that keep long-term trends
+  after retention prunes the runs; filters (test selections, tags, owners, browsers) and periods (calendar periods,
+  custom ranges, release cycles, sprints) carried by the URL; saved and shared dashboards with TV mode for a wall
+  screen; the default branch as the default scope, per-project targets, and trend widgets for suite growth, flaky
+  debt, time to fix and ownership. The same schedules deliver the Test Map's weekly gaps digest. Publishing a report
+  to Confluence waits for the wiki connection (see *Issue trackers, the rest*). Design record in
+  [adr/analytics-and-reporting.md](adr/analytics-and-reporting.md); see
+  [analytics](https://piwitests.dev/features/analytics), [dashboards](https://piwitests.dev/features/dashboards) and
+  [quality reports](https://piwitests.dev/features/quality-reports).
 - **Scenario gaps and the Test Map** — one graph per project of what the application exposes, what the suite reaches
   and what it would actually notice, turned into the tests that do not exist yet: ranked by exposure, each with a
   skeleton to start from. Surfaced as a Gaps tab with a feature map and an ego graph view, a per-ticket section in the
@@ -131,17 +144,6 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 - **1.0 stabilization** — settle the wire format and API surface, then commit to semver stability. The outstanding
   decisions are catalogued in [proposals/1.0-stabilization.md](proposals/1.0-stabilization.md).
-- **Quality reports, dashboards and trends over time** — being built in six milestones, starting with daily rollups,
-  filters and periods. A periodic, plain-language report of a suite's health for people who do not open the dashboard
-  (pass rate and its movement, wasted CI time and what it costs, open failure causes and how long they take to fix,
-  what changed and what is being done), generated from the same numbers the Analytics page shows, downloadable as
-  HTML, PDF, Markdown or CSV, delivered on a schedule by email, Slack or webhook, and readable by agents through MCP.
-  Underneath: daily rollups that keep long-term trends after retention prunes the runs; custom filters (test
-  selections, tags, owners, browsers) and periods (calendar periods, custom ranges, release cycles, sprints) carried
-  by the URL; saved and shared dashboards any team can shape and put on a wall screen; the default branch as the
-  default scope, per-project targets, and trend widgets for suite growth, flaky debt, time to fix and ownership. The
-  same schedules give the Test Map's weekly gaps digest, whose selection shipped in 0.37.0, its delivery route. Design
-  record in [proposals/analytics-and-reporting.md](proposals/analytics-and-reporting.md).
 
 ## Exploring
 
