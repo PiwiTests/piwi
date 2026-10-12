@@ -118,26 +118,34 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     }
 
     override fun apply() {
-        val before = service.credentials()
+        val before = connection()
         super.apply()
-        if (service.credentials() != before) service.sendCredentials()
+        if (connection() != before) service.sendCredentials()
         show()
+    }
+
+    /** What this page changes of the connection: the key is saved by Connect, never here. */
+    private fun connection(): List<Any> {
+        val settings = service.settings()
+        val local = service.local()
+        return listOf(settings.serverUrl, settings.project, local.desktop, local.desktopProject)
     }
 
     private fun show() {
         val url = service.settings().serverUrl
-        key.text = when {
-            url.isBlank() -> "None: no instance saved"
-            service.hasApiKey(url) -> "Saved for $url in the IDE's password safe"
-            else -> "None saved for $url"
-        }
+        if (url.isBlank()) key.text = "None: no instance saved"
         inUse.text = Glue.connectionSummary(service.status, service.local().desktop)
-        // The discovery file is on disk: read it off the event thread.
+        // The password safe and the discovery file: read off the event thread.
+        val keyLabel = key
         val label = desktopState
         ApplicationManager.getApplication().executeOnPooledThread {
+            val saved = url.isNotBlank() && service.hasApiKey(url)
             val running = service.desktopUrl()
             ApplicationManager.getApplication().invokeLater(
-                { label.text = running?.let { "Running on this machine at $it." } ?: "Not running on this machine." },
+                {
+                    if (url.isNotBlank()) keyLabel.text = if (saved) "Saved for $url in the IDE's password safe" else "None saved for $url"
+                    label.text = running?.let { "Running on this machine at $it." } ?: "Not running on this machine."
+                },
                 ModalityState.any(),
             )
         }

@@ -85,10 +85,11 @@ the progress of the run you started (`running 4/9`). Under it:
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with the headline and its run (`your run #124`, `edited since run #120`).
 
-Click a failure (double-click or Enter in a JetBrains IDE) to open its line. **Run this test**, **Open the trace** and
-**Open in dashboard** sit on its row in VS Code; the context menu adds **Open the screenshot**, **Copy context for
-agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, **Reproduce in the
-desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the line.
+Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) to open its line. **Run this test**,
+**Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Open the screenshot**,
+**Copy context for agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs,
+**Reproduce in the desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the
+line.
 
 The title bar, or the toolbar, holds Refresh, **Re-run the failing tests**, **Open the run in the dashboard**,
 **Compare with…** and the grouping. In VS Code, **Follow the active editor** selects the first failure of the file you

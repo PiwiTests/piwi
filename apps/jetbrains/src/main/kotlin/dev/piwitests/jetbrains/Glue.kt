@@ -9,6 +9,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * What the plugin shows, computed from the editor service's answers, where it
@@ -24,7 +26,23 @@ object Glue {
 
     val PLAYWRIGHT_CONFIGS = listOf(
         "playwright.config.ts", "playwright.config.js", "playwright.config.mjs", "playwright.config.cjs",
+        "playwright.config.mts", "playwright.config.cts",
     )
+
+    /** Whether a path, with either separator, names a Playwright config. */
+    fun isPlaywrightConfig(path: String?): Boolean =
+        path != null && path.substringAfterLast('/').substringAfterLast('\\') in PLAYWRIGHT_CONFIGS
+
+    /**
+     * Whether a folder created, removed, renamed or moved at `path` may hold a Playwright config the search finds: it is
+     * under one of `roots`, at most [CONFIG_DEPTH] levels down, and neither it nor a folder above it is skipped.
+     */
+    fun mayHoldConfigs(path: String?, roots: List<Path>): Boolean {
+        val dir = path?.let { runCatching { Path.of(it).toAbsolutePath().normalize() }.getOrNull() } ?: return false
+        val root = roots.map { it.toAbsolutePath().normalize() }.firstOrNull { dir != it && dir.startsWith(it) } ?: return false
+        val relative = root.relativize(dir)
+        return relative.nameCount <= CONFIG_DEPTH && relative.none { it.toString().startsWith(".") || it.toString() in SKIPPED_DIRS }
+    }
 
     /** Directory levels searched below a folder for Playwright configs, as the editor service does. */
     const val CONFIG_DEPTH = 4
@@ -424,6 +442,13 @@ object Glue {
     }
 
     /**
+     * Whether two failure trees hold the same nodes in the same places, by key, all the way down: then only what the
+     * nodes say changed, such as a run in progress counting its tests, and the tree keeps its rows as they are.
+     */
+    fun sameShape(a: List<FailureNode>, b: List<FailureNode>): Boolean =
+        a.size == b.size && a.indices.all { a[it].key == b[it].key && sameShape(a[it].children, b[it].children) }
+
+    /**
      * The tool window's line on the run and the baseline: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min
      * ago · Baseline: CI run #120 on feature/x`; `Your local runs · 1 failing · Baseline: your local runs only` with a
      * developer's own runs alone; the baseline alone when it found no run.
@@ -534,6 +559,49 @@ object Glue {
      */
     fun runsInFiles(runs: RunStatusResult?): RunStatusResult? =
         runs?.copy(contexts = runs.contexts?.map { it.copy(live = null, stream = null, updatedAt = null) })
+
+    /**
+     * `piwi/fileSummary` answers by file URI, each for one state of the file's text (`stamp`) and one count of the changes
+     * the service pushed (`pushed`): the gutter and Code Vision of one highlighting pass share one request. An answer
+     * older than `ttlMillis`, or one that failed, is asked for again; past `max` files, all are.
+     */
+    class SummaryCache(private val ttlMillis: Long, private val max: Int) {
+        private class Entry(val stamp: Long, val pushed: Long, val at: Long, val answer: CompletableFuture<FileSummary?>)
+
+        private val entries = ConcurrentHashMap<String, Entry>()
+
+        fun get(uri: String, stamp: Long, pushed: Long, now: Long, ask: () -> CompletableFuture<FileSummary?>): CompletableFuture<FileSummary?> {
+            entries[uri]
+                ?.takeIf { it.stamp == stamp && it.pushed == pushed && now - it.at < ttlMillis && !it.answer.isCompletedExceptionally }
+                ?.let { return it.answer }
+            if (entries.size >= max) entries.clear()
+            return ask().also { entries[uri] = Entry(stamp, pushed, now, it) }
+        }
+
+        fun clear() = entries.clear()
+    }
+
+    /** Which open files a change of the runs draws again: none, those whose tests show a result, or every file Piwi reads. */
+    enum class Redraw { NONE, TESTS, ALL }
+
+    /**
+     * What a change of the runs from `before` to `after` draws again: nothing when only the run in progress moved
+     * ([runsInFiles]); the files whose tests show a result when only the tests of the run in progress began or ended
+     * (`liveTests`), which only a test's line shows; every file Piwi reads when anything else the files show changed,
+     * such as the latest run or its baseline.
+     */
+    fun redraw(before: RunStatusResult?, after: RunStatusResult?): Redraw {
+        val shownBefore = runsInFiles(before)
+        val shownAfter = runsInFiles(after)
+        return when {
+            shownBefore == shownAfter -> Redraw.NONE
+            withoutLiveTests(shownBefore) == withoutLiveTests(shownAfter) -> Redraw.TESTS
+            else -> Redraw.ALL
+        }
+    }
+
+    private fun withoutLiveTests(runs: RunStatusResult?): RunStatusResult? =
+        runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null) })
 
     /** On the ladder, when the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {
@@ -777,6 +845,24 @@ object Glue {
         }
         return "{\n  \"mcpServers\": {\n${entries.joinToString(",\n")}\n  }\n}"
     }
+
+    /**
+     * A script file named in a line of a run's output: the characters `[start, end)` that name it, its path as written,
+     * relative to the run's folder, and its 1-based line and column.
+     */
+    data class FileLink(val start: Int, val end: Int, val path: String, val line: Int, val column: Int?)
+
+    private val FILE_LINK = Regex("""(?<![\w./\\@~+:-])((?:[\w.@~+-]+[\\/])*[\w.@~+-]+\.[cm]?[jt]sx?):(\d+)(?::(\d+))?""")
+
+    /**
+     * The script files a line of a run's output names by a path relative to the run's folder, at a line, as Playwright's
+     * reporters print them (`[chromium] › tests/login.spec.ts:12:5 › signs in`). Absolute paths are left out: the IDE's
+     * console links them already.
+     */
+    fun fileLinks(line: String): List<FileLink> = FILE_LINK.findAll(line).mapNotNull { match ->
+        val number = match.groupValues[2].toIntOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+        FileLink(match.range.first, match.range.last + 1, match.groupValues[1], number, match.groupValues[3].toIntOrNull()?.takeIf { it > 0 })
+    }.toList()
 
     /** The command line that runs a shell command string, split as a shell would for plain words and quotes. */
     fun splitCommand(command: String): List<String> {

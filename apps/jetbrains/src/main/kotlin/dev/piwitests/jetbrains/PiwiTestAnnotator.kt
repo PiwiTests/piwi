@@ -13,6 +13,7 @@ import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import javax.swing.Icon
 
@@ -21,10 +22,10 @@ import javax.swing.Icon
  * details as the tooltip and a click opening it in the dashboard, a background over a failing
  * test, and a stronger one on the line it failed at, with why as the tooltip, and whether that
  * line changed since the run. While a run the service follows runs a test, the icon says so, then gives that run's
- * result. The summary is fetched outside the read action.
+ * result. The summary is fetched outside the read action, shared with Code Vision, and drawn while the IDE indexes.
  */
-class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<SummaryLine>>() {
-    class Target(val project: Project, val uri: String)
+class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<SummaryLine>>(), DumbAware {
+    class Target(val project: Project, val file: VirtualFile, val stamp: Long)
 
     override fun collectInformation(file: PsiFile, editor: Editor, hasErrors: Boolean): Target? = collectInformation(file)
 
@@ -32,12 +33,16 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         val virtualFile = file.virtualFile ?: return null
         if (!PiwiLspServerSupportProvider.isSupported(virtualFile)) return null
         if (!file.project.service<PiwiProjectService>().hasPlaywrightConfig()) return null
-        return Target(file.project, virtualFile.toNioPath().toUri().toString())
+        val stamp = file.viewProvider.document?.modificationStamp ?: return null
+        return Target(file.project, virtualFile, stamp)
     }
 
     override fun doAnnotate(target: Target?): List<SummaryLine>? {
-        val server = target?.project?.service<PiwiProjectService>()?.server() ?: return null
-        return server.fileSummary(UriParams(target.uri)).awaitCancellably(5_000)?.lines.orEmpty().filter { it.status != null }
+        val service = target?.project?.service<PiwiProjectService>() ?: return null
+        val summary = service.fileSummary(target.file, target.stamp)?.awaitCancellably(5_000) ?: return null
+        val tests = summary.lines.orEmpty().filter { it.status != null }
+        service.showsTests(target.file, tests.isNotEmpty())
+        return tests
     }
 
     override fun apply(file: PsiFile, lines: List<SummaryLine>?, holder: AnnotationHolder) {

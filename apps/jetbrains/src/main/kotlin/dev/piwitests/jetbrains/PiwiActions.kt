@@ -12,6 +12,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.InputValidator
 import com.intellij.openapi.ui.Messages
@@ -26,7 +27,7 @@ private fun fileUri(file: VirtualFile): String? =
     if (file.isInLocalFileSystem) runCatching { file.toNioPath().toUri().toString() }.getOrNull() else null
 
 /** Piwi: Connect — the instance, a key for it (browser sign-in or pasted) and the project. */
-class ConnectAction : AnAction() {
+class ConnectAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -39,7 +40,7 @@ class ConnectAction : AnAction() {
  * Piwi: Disconnect — forget this project's saved instance and project, the key saved for that
  * instance, and the choice of the desktop app.
  */
-class DisconnectAction : AnAction() {
+class DisconnectAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -55,7 +56,7 @@ class DisconnectAction : AnAction() {
 }
 
 /** Piwi: Settings… — **Settings → Tools → Piwi**. */
-class OpenSettingsAction : AnAction() {
+class OpenSettingsAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -64,7 +65,7 @@ class OpenSettingsAction : AnAction() {
     }
 }
 
-class RefreshAction : AnAction() {
+class RefreshAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -79,12 +80,15 @@ class RefreshAction : AnAction() {
 }
 
 /** Piwi: Run the tests that reach this file. */
-class RunTestsForFileAction : AnAction() {
+class RunTestsForFileAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    /** Only in a project with a Playwright config: the editor's menu of any other project does without it. */
     override fun update(e: AnActionEvent) {
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
-        e.presentation.isEnabledAndVisible = e.project != null && file != null && PiwiLspServerSupportProvider.isSupported(file)
+        val project = e.project
+        e.presentation.isEnabledAndVisible = project != null && file != null && PiwiLspServerSupportProvider.isSupported(file) &&
+            project.service<PiwiProjectService>().hasPlaywrightConfig()
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -100,7 +104,7 @@ class RunTestsForFileAction : AnAction() {
 }
 
 /** Piwi: Open in dashboard — this file's test, or the latest run. */
-class OpenInDashboardAction : AnAction() {
+class OpenInDashboardAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -127,7 +131,7 @@ class OpenInDashboardAction : AnAction() {
 }
 
 /** Piwi: Open the Latest Run in the Dashboard — the run the status bar shows. */
-class OpenLatestRunAction : AnAction() {
+class OpenLatestRunAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -145,7 +149,7 @@ class OpenLatestRunAction : AnAction() {
  * Piwi: Compare With… — the baseline the failures are read against for the Playwright config of the file at hand (or
  * the one connected): the ladder, a branch, a run by its id or your local runs only, kept on this machine.
  */
-class CompareWithAction : AnAction() {
+class CompareWithAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -186,7 +190,7 @@ class CompareWithAction : AnAction() {
 }
 
 /** Piwi: Re-run the Failing Tests — every test still failing, or edited since its run, in the Run tool window. */
-class RerunFailingAction : AnAction() {
+class RerunFailingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -195,7 +199,7 @@ class RerunFailingAction : AnAction() {
 }
 
 /** Piwi: Run selection… — one of the project's saved selections, in the Run tool window. */
-class RunSelectionAction : AnAction() {
+class RunSelectionAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -234,7 +238,7 @@ class RunSelectionAction : AnAction() {
 }
 
 /** Piwi: Copy the MCP server configuration — for the AI Assistant's MCP settings and other agents. */
-class CopyMcpConfigurationAction : AnAction() {
+class CopyMcpConfigurationAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {

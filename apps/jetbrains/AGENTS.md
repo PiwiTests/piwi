@@ -29,18 +29,30 @@ the service through the platform's LSP API with the project's Node.js interprete
   background over a failing test, and `PIWI_FAILING_LINE` on the line it failed at, with why as the tooltip; the test's
   background goes around that line, since two backgrounds on a line have no set order (`PiwiColorSettingsPage.kt`,
   defaults in `resources/colorSchemes/`). A test the run in progress runs has `AllIcons.RunConfigurations.TestState.Run`,
-  then that run's result. Code Vision skips those lines, and the daemon restarts when the run as the files show it
-  changes (`Glue.runsInFiles`, which keeps the run's `liveTests`), not when only the run in progress moves.
+  then that run's result. Code Vision skips those lines. The annotator and Code Vision share one `piwi/fileSummary`
+  per file and state of its text (`PiwiProjectService.fileSummary`, `Glue.SummaryCache`: asked again after a push from
+  the service or five seconds). The open files are drawn again (`DaemonCodeAnalyzer.restart(PsiFile)`, never the
+  whole daemon) as `Glue.redraw` says: every file Piwi reads when the run as the files show it changes
+  (`Glue.runsInFiles`), only the files whose tests show a result (`showsTests`), at most once a second, when only the
+  run's `liveTests` moved, none when only the run in progress moves.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus` (with the run in
   progress, `live`), the **Piwi** tool window from `piwi/failures` (the LSP client highlights open files only) with
-  the connection from `piwi/status` and the run (`Glue.runHeader`), and the actions under **Tools → Piwi**.
+  the connection from `piwi/status` and the run (`Glue.runHeader`), and the actions under **Tools → Piwi**, all
+  available while the IDE indexes (`DumbAware`). The service pushes each of the three answers when it changes
+  (`piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`): `PiwiProjectService` keeps the pushed answer
+  as it comes and tells its listeners once on the event thread for the pushes meanwhile. It reads the three whole
+  (`refreshStatus`, one read at a time, another asked for meanwhile following it) only when the plugin starts, on
+  Refresh and after new credentials; a push that comes during that read wins over it.
 - The tool window (`PiwiFailuresToolWindow.kt`) is a `Tree` on a `DefaultTreeModel` of `Glue.failureTree`, the nodes
   VS Code's view has: the run, **Your runs since**, then the failures grouped by file, cluster, owner or flat (the
   toolbar's `ToggleAction`s, kept in `PiwiLocalSettings.failuresGrouping`). A `ColoredTreeCellRenderer` draws a
   failure's title, headline, run (`Glue.failureRunNote`: `your run #N`, `edited since run #N` with the information
   icon, fixed with the passed icon) and place; `TreeSpeedSearch` finds a title. The tree is built again only when
   its nodes changed, from `piwi/failuresChanged` as the edits move them too, keeping the expanded and selected nodes
-  by key. Double-click or Enter opens a failure's line, or a run's page; the right-click menu
+  by key; when only what the nodes say changed (`Glue.sameShape`, such as the editor's own run counting its tests),
+  each row is redrawn in place. The panel is an `OccurenceNavigator`: Next and Previous Occurrence, and the toolbar's
+  arrows, go from failure to failure, beside Expand All and Collapse All. Double-click or Enter opens a failure's line,
+  or a run's page; the right-click menu
   (`PopupHandler.installPopupMenu`) runs the test, opens the trace, the screenshot or the page, copies the context for
   an agent (`piwi/agentContext`) and, on a CI failure while the desktop app runs, passes it to the app, through
   `PiwiCommands`. **Re-run the Failing Tests** (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs
@@ -58,7 +70,8 @@ the service through the platform's LSP API with the project's Node.js interprete
   installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
   **Tools → Piwi** and in the tool window's toolbar) opens the run the status bar shows.
 - `PiwiCommands.run` runs a command in the Run tool window, whose **Rerun** (`RunContentExecutor.withRerun`) stops it
-  if it runs and starts it again with the same environment. For a test run (`RunCommand.ref`), a `ProcessListener`
+  if it runs and starts it again with the same environment; `RunOutputLinks` (`Glue.fileLinks`) links the script paths
+  its output names relative to the command's folder to their line, the IDE's console linking the absolute ones. For a test run (`RunCommand.ref`), a `ProcessListener`
   sends `piwi/commandEnded` with the exit code when the process ends; a rerun keeps the ref, by which the service
   recognizes it as the editor's own through the instance's event stream. A `piwi/notice` is a balloon
   (`PiwiCommands.notify`), and so is `piwi/runEnded` (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the
@@ -77,7 +90,10 @@ the service through the platform's LSP API with the project's Node.js interprete
   (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the
   solution's folder, above `.idea/.idea.<name>`), the folder the IDE guesses and the base directories, then, when those
   hold none, in the Git repository around them. The tool window, the status bar item and the service wait for it, and
-  the service's workspace folders are the folders it searched (`createInitializeParams`). **Refresh** searches again.
+  the service's workspace folders are the folders it searched (`createInitializeParams`). **Refresh** searches again,
+  and so does `watchConfigs`, a second after the IDE reports a config created, removed, renamed or moved
+  (`Glue.isPlaywrightConfig`, every name Playwright reads one from, `.mts` and `.cts` included), or such a folder where
+  configs are searched (`Glue.mayHoldConfigs`): the IDE reports a new folder without the files in it.
 - **Recording** (`PiwiRecordingActions.kt`): **Record Here** (**Tools → Piwi**, the editor's menu, Alt+Insert's
   Generate menu, and Alt+Enter through `RecordHereIntention.kt`) asks
   `piwi/pageCandidates` where the caret is: outside every test, function and class a new test, anywhere else the
@@ -153,12 +169,15 @@ the service through the platform's LSP API with the project's Node.js interprete
   `CredentialAttributes(…)` in Kotlin. What stays has no replacement in 2024.1: the LSP API, renamed in 2026.3
   (`LspServer` → `LspClient`, `LspServerSupportProvider` → `LspIntegrationProvider`, `LspServerManager` →
   `LspClientManager`, `…ServerDescriptor` → `…ClientDescriptor`, `lspCommandsSupport` →
-  `lspCustomization.commandsCustomizer`), and `DaemonCodeAnalyzer.restart()`. Kotlin compiles without its
+  `lspCustomization.commandsCustomizer`), and `DaemonCodeAnalyzer.restart(PsiFile)` (2026.x adds the reason
+  `restart(PsiFile, Object)` takes). Kotlin compiles without its
   compatibility bridges (`jvmDefault`), each of which the verifier counts as a use of the default method it calls.
 - **No logic the VS Code extension would need too.** A new feature is a service request first.
 - **Nothing blocks the event thread, and nothing in a read action waits on the service without giving way**: the daemon
-  (Code Vision) waits with `awaitCancellably`, which a write action cancels, and reads of the disk run on a pooled
-  thread.
+  (Code Vision) waits with `awaitCancellably`, which a write action cancels, `orNull` waits the same way (a task's
+  Cancel stops it), and reads of the disk and of the password safe run on a pooled thread.
+- **A push from the service is never answered with a read of the same answer**, and the files are drawn again with
+  `DaemonCodeAnalyzer.restart(PsiFile)` for the files a change shows in, never with the whole daemon's `restart()`.
 - A change to `protocol.ts` updates `Protocol.kt` in the same change.
 
 ## Workflow

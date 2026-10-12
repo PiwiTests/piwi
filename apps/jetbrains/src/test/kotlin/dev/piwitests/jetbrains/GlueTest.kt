@@ -3,9 +3,11 @@ package dev.piwitests.jetbrains
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CompletableFuture
 
 class GlueTest {
     private val connected = StatusResult(
@@ -995,5 +997,82 @@ class GlueTest {
         val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))
         assertEquals(Glue.runsInFiles(latest), Glue.runsInFiles(moving))
         assertEquals(false, Glue.runsInFiles(testing) == Glue.runsInFiles(latest))
+    }
+
+    @Test
+    fun `a run in progress draws only the files that show its tests again, a new run every file`() {
+        val latest = RunStatusResult(listOf(RunStatus(root = "/w", run = passed)))
+        val moving = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, live = LiveRun(runId = 124, done = 1), stream = "live")))
+        val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))
+        val ended = testing.copy(contexts = testing.contexts!!.map { it.copy(liveTests = listOf(LiveTest(1, "passed"))) })
+        val next = RunStatusResult(listOf(RunStatus(root = "/w", run = passed.copy(id = 42))))
+        assertEquals(Glue.Redraw.NONE, Glue.redraw(latest, moving))
+        assertEquals(Glue.Redraw.NONE, Glue.redraw(null, null))
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(latest, testing))
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(testing, ended))
+        assertEquals(Glue.Redraw.ALL, Glue.redraw(ended, next))
+        assertEquals(Glue.Redraw.ALL, Glue.redraw(null, latest))
+        // Another baseline is another run in the files.
+        val local = latest.copy(contexts = latest.contexts!!.map { it.copy(baseline = Baseline(BaselineChoice("local"), "your local runs only")) })
+        assertEquals(Glue.Redraw.ALL, Glue.redraw(latest, local))
+    }
+
+    @Test
+    fun `a tree whose nodes only say something else keeps its rows`() {
+        val result = FailuresResult(
+            items = listOf(WorkspaceFailure(uri = "file:///w/a.spec.ts", line = 3, title = "pays", executionId = 9, runId = 41, file = "a.spec.ts")),
+            run = FailuresRun(id = 41, startTime = "2026-09-27T10:00:00.000Z"),
+        )
+        val now = java.time.Instant.parse("2026-09-27T10:04:00.000Z").toEpochMilli()
+        val idle = Glue.failureTree(result, "file", now)
+        val running = Glue.failureTree(result, "file", now, LiveRun(runId = 124, done = 3, total = 9, own = true))
+        assertEquals(false, idle == running)
+        assertEquals(true, Glue.sameShape(idle, running))
+        assertEquals(false, Glue.sameShape(idle, Glue.failureTree(result, "flat", now)))
+        val another = result.copy(items = result.items!! + result.items!!.first().copy(executionId = 10, title = "refunds"))
+        assertEquals(false, Glue.sameShape(idle, Glue.failureTree(another, "file", now)))
+    }
+
+    @Test
+    fun `a file summary is asked once per text, until the service pushes a change or it gets old`() {
+        val cache = Glue.SummaryCache(ttlMillis = 5_000, max = 2)
+        var asked = 0
+        val ask = { asked++; CompletableFuture.completedFuture<FileSummary?>(FileSummary()) }
+        val first = cache.get("file:///a.ts", stamp = 1, pushed = 0, now = 0, ask = ask)
+        assertSame(first, cache.get("file:///a.ts", stamp = 1, pushed = 0, now = 4_999, ask = ask))
+        assertEquals(1, asked)
+        cache.get("file:///a.ts", stamp = 2, pushed = 0, now = 5, ask = ask)
+        cache.get("file:///a.ts", stamp = 2, pushed = 1, now = 6, ask = ask)
+        cache.get("file:///a.ts", stamp = 2, pushed = 1, now = 6_000, ask = ask)
+        assertEquals(4, asked)
+        // A failed request is not kept.
+        cache.get("file:///b.ts", stamp = 1, pushed = 1, now = 0) { asked++; CompletableFuture.failedFuture(IllegalStateException()) }
+        cache.get("file:///b.ts", stamp = 1, pushed = 1, now = 1, ask = ask)
+        assertEquals(6, asked)
+    }
+
+    @Test
+    fun `the paths of a run's output open their line, the absolute ones left to the IDE`() {
+        assertEquals(
+            listOf(Glue.FileLink(18, 43, "tests/example.spec.ts", 3, 5)),
+            Glue.fileLinks("  1) [chromium] › tests/example.spec.ts:3:5 › has title ───"),
+        )
+        assertEquals(listOf(Glue.FileLink(8, 38, "tests/pages/checkout.page.ts", 5, null)), Glue.fileLinks("    at (tests/pages/checkout.page.ts:5)"))
+        assertEquals(emptyList<Glue.FileLink>(), Glue.fileLinks("    at /home/ci/tests/example.spec.ts:7:22"))
+        assertEquals(emptyList<Glue.FileLink>(), Glue.fileLinks("    at C:\\work\\tests\\example.spec.ts:7:22"))
+        assertEquals(emptyList<Glue.FileLink>(), Glue.fileLinks("GET http://localhost:3000/app.js:10:5 failed"))
+        assertEquals(emptyList<Glue.FileLink>(), Glue.fileLinks("  7 |   await expect(page).toHaveTitle(/Playwright/);"))
+        assertEquals(listOf("a.spec.ts", "b.test.mjs"), Glue.fileLinks("a.spec.ts:1:2 and b.test.mjs:30").map { it.path })
+    }
+
+    @Test
+    fun `every name Playwright reads a config from is one`() {
+        for (name in listOf("ts", "js", "mjs", "cjs", "mts", "cts")) {
+            assertEquals(true, Glue.isPlaywrightConfig("/w/e2e/playwright.config.$name"))
+        }
+        assertEquals(true, Glue.isPlaywrightConfig("C:\\w\\playwright.config.ts"))
+        assertEquals(false, Glue.isPlaywrightConfig("/w/playwright.config.ts.bak"))
+        assertEquals(false, Glue.isPlaywrightConfig("/w/vitest.config.ts"))
+        assertEquals(false, Glue.isPlaywrightConfig(null))
     }
 }

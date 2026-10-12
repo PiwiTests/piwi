@@ -127,14 +127,16 @@ object Lsp4jAccess {
 
 /** Receives the service's notifications beside the protocol's. */
 class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val project: Project) : Lsp4jClient(handler) {
+    /** The latest run or the run in progress moved: the status bar, the tool window and, as far as they show it, the files. */
     @JsonNotification("piwi/runStatusChanged")
-    fun runStatusChanged(@Suppress("UNUSED_PARAMETER") status: RunStatusResult) {
-        project.service<PiwiProjectService>().refreshStatus()
+    fun runStatusChanged(status: RunStatusResult) {
+        project.service<PiwiProjectService>().runStatusChanged(status)
     }
 
+    /** A context connected or lost its connection, or the desktop app started or quit. */
     @JsonNotification("piwi/statusChanged")
-    fun statusChanged(@Suppress("UNUSED_PARAMETER") status: StatusResult) {
-        project.service<PiwiProjectService>().refreshStatus()
+    fun statusChanged(status: StatusResult) {
+        project.service<PiwiProjectService>().statusChanged(status)
     }
 
     /** A failure moved with an edit, or its line changed since the run: the tool window's list. */

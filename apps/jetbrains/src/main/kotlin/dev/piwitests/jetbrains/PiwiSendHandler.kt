@@ -12,6 +12,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -247,7 +248,7 @@ class PiwiSendHandler : HttpRequestHandler() {
 }
 
 /** Piwi: Pair with Piwi Picker — copies the address Piwi Picker's options take. */
-class PairPickerAction : AnAction() {
+class PairPickerAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {

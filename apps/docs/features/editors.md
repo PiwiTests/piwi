@@ -123,8 +123,9 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 
 The [plugin](https://plugins.jetbrains.com/plugin/34674-piwi) starts the editor service with the project's Node.js
 interpreter (**Settings → Languages & Frameworks → Node.js**) once it finds a Playwright config within four folders of
-the project's (in Rider, the solution's) or of its Git root; **Tools → Piwi → Refresh** looks again. The IDE's LSP
-client shows warnings, quick fixes and hover in open files; the rest is native:
+the project's (in Rider, the solution's) or of its Git root; it looks again when one is added or removed, and on
+**Tools → Piwi → Refresh**. The IDE's LSP client shows warnings, quick fixes and hover in open files; the rest is
+native:
 
 - **The Piwi tool window** names the connection and holds the latest run's failures as a tree, since the IDE
   highlights open files only: [the failures view](./editor-runs#the-failures-view).

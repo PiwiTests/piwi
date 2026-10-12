@@ -196,6 +196,73 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(service.hasPlaywrightConfig())
     }
 
+    /** A Playwright config created or removed while the project is open is found without Refresh, whatever its name. */
+    fun testFindsAConfigCreatedOrRemovedWhileTheProjectIsOpen() {
+        val service = project.getService(PiwiProjectService::class.java)
+        service.searchPlaywright()
+        service.watchConfigs()
+        val files = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        // The project's folder as the IDE shows it: the changes in it are reported.
+        val base = files.refreshAndFindFileByIoFile(File(project.basePath!!))!!
+        base.children
+        // A new folder holding a config, as a branch checked out brings it: the IDE reports the folder alone.
+        val dir = File(project.basePath!!, "web")
+        val config = File(dir, "playwright.config.mts")
+        fun waitUntil(condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(50)
+            }
+            assertTrue(condition())
+        }
+        try {
+            dir.mkdirs()
+            config.writeText("export default {};\n")
+            com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(false, true, true, base)
+            waitUntil { service.playwrightConfigDirs() == listOf(dir.toPath()) }
+            val file = files.refreshAndFindFileByIoFile(config)!!
+            com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { file.delete(this) }
+            waitUntil { !service.hasPlaywrightConfig() }
+        } finally {
+            dir.deleteRecursively()
+            service.searchPlaywright()
+        }
+    }
+
+    /** The answers the service pushes are kept as they come, and the listeners hear once of the changes made meanwhile. */
+    fun testThePushedAnswersAreKeptAndToldOnce() {
+        val service = project.getService(PiwiProjectService::class.java)
+        var told = 0
+        val parent = com.intellij.openapi.util.Disposer.newDisposable()
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, parent)
+        service.onChange(parent) { told++ }
+        val status = StatusResult(listOf(ContextStatus(root = "/w", connected = true, projectName = "Acme Mugs")))
+        val runs = RunStatusResult(listOf(RunStatus(root = "/w", run = RunInfo(id = 41, status = "failed", failedTests = 1))))
+        val failures = FailuresResult(items = listOf(WorkspaceFailure(uri = "file:///w/a.spec.ts", title = "pays", executionId = 9)))
+        try {
+            service.statusChanged(status)
+            service.runStatusChanged(runs)
+            service.failuresChanged(failures)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(1, told)
+            assertEquals(status, service.status)
+            assertEquals(runs, service.runs)
+            assertEquals(failures, service.failuresResult)
+            assertEquals(failures.items, service.failures)
+            // A run in progress moving: told again.
+            service.runStatusChanged(RunStatusResult(runs.contexts!!.map { it.copy(live = LiveRun(runId = 42, done = 1, total = 9)) }))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(2, told)
+        } finally {
+            // No service runs here: a read leaves nothing of the pushed answers to the next tests.
+            service.refreshStatus()
+            val deadline = System.currentTimeMillis() + 10_000
+            while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
     /** A read action waiting on the service gives way as soon as the platform cancels it: typing never waits on it. */
     fun testAWaitOnTheServiceEndsWhenCanceled() {
         val never = CompletableFuture<String>()
