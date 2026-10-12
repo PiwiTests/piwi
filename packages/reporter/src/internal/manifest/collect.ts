@@ -125,11 +125,25 @@ export type FetchLike = (
 const INSTRUMENTATION_FETCH_TIMEOUT_MS = 5000;
 
 /**
+ * Where the instrumentation manifest may be served: under the base URL's path
+ * first, for an application mounted below the origin (`https://host/shop/` serves
+ * `/shop/__piwi/manifest`, whose patterns carry the `/shop` prefix the tests see),
+ * then at the origin root.
+ */
+export function instrumentationManifestUrls(baseUrl: string): string[] {
+  const base = new URL(baseUrl);
+  const root = new URL(INSTRUMENTATION_MANIFEST_PATH, base).toString();
+  const path = base.pathname.replace(/\/+$/, '');
+  return path ? [new URL(`${path}${INSTRUMENTATION_MANIFEST_PATH}`, base).toString(), root] : [root];
+}
+
+/**
  * Fetch the instrumentation manifest from a base URL: probe the base URL once,
  * and only when its response carries an instrumentation header fetch and parse
- * `/__piwi/manifest`. Both requests are bounded by a timeout so the reporter
- * never hangs a run on a slow or unresponsive base URL. Best-effort — any
- * failure (including a timeout) returns null.
+ * `/__piwi/manifest`, under the base URL's path and then at the origin root; the
+ * first response that parses as a manifest wins. Every request is bounded by a
+ * timeout so the reporter never hangs a run on a slow or unresponsive base URL.
+ * Best-effort — any failure (including a timeout) returns null.
  */
 export async function fetchInstrumentationManifest(
   baseUrl: string,
@@ -138,10 +152,12 @@ export async function fetchInstrumentationManifest(
   try {
     const probe = await fetchImpl(baseUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
     if (!hasInstrumentationHeader(probe.headers)) return null;
-    const manifestUrl = new URL(INSTRUMENTATION_MANIFEST_PATH, baseUrl).toString();
-    const res = await fetchImpl(manifestUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
-    if (!res.ok) return null;
-    return parseManifestJson(await res.text());
+    for (const manifestUrl of instrumentationManifestUrls(baseUrl)) {
+      const res = await fetchImpl(manifestUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
+      const manifest = res.ok ? parseManifestJson(await res.text()) : null;
+      if (manifest) return manifest;
+    }
+    return null;
   } catch {
     return null;
   }

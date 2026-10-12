@@ -5,6 +5,7 @@ import {
   baseUrlFromConfig,
   configDirFromConfig,
   fetchInstrumentationManifest,
+  instrumentationManifestUrls,
   type FetchLike,
 } from '../src/internal/manifest/collect';
 
@@ -86,6 +87,36 @@ describe('fetchInstrumentationManifest', () => {
     await fetchInstrumentationManifest('https://app.test', fetchImpl);
     expect(signals).toHaveLength(2);
     expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
+  });
+
+  it('fetches under the base URL path first, then at the origin root', async () => {
+    expect(instrumentationManifestUrls('https://app.test')).toEqual(['https://app.test/__piwi/manifest']);
+    expect(instrumentationManifestUrls('https://app.test/')).toEqual(['https://app.test/__piwi/manifest']);
+    expect(instrumentationManifestUrls('https://app.test/shop/')).toEqual([
+      'https://app.test/shop/__piwi/manifest',
+      'https://app.test/__piwi/manifest',
+    ]);
+    expect(instrumentationManifestUrls('https://app.test/shop')).toEqual([
+      'https://app.test/shop/__piwi/manifest',
+      'https://app.test/__piwi/manifest',
+    ]);
+  });
+
+  it('falls back to the origin root when the base path serves no manifest, even with an HTML page', async () => {
+    const requested: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      requested.push(url);
+      if (url === 'https://app.test/shop/__piwi/manifest') {
+        return { ok: true, status: 200, headers: {}, text: async () => '<!doctype html><title>Shop</title>' };
+      }
+      if (url === 'https://app.test/__piwi/manifest') {
+        return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
+      }
+      return { ok: true, status: 200, headers: { 'x-piwi-logs': 'abc' }, text: async () => '' };
+    };
+    const manifest = await fetchInstrumentationManifest('https://app.test/shop/', fetchImpl);
+    expect(manifest?.routes?.[0]?.pattern).toBe('/api/cart');
+    expect(requested).toEqual(['https://app.test/shop/', 'https://app.test/shop/__piwi/manifest', 'https://app.test/__piwi/manifest']);
   });
 
   it('returns null when a request rejects (e.g. an aborted timeout)', async () => {
