@@ -178,3 +178,9 @@ public sealed class CounterComponent : Microsoft.AspNetCore.Components.Component
 {
     protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder) => builder.AddContent(0, "count");
 }
+
+public sealed class EchoConnectionHandler : Microsoft.AspNetCore.Connections.ConnectionHandler
+{
+    public override Task OnConnectedAsync(Microsoft.AspNetCore.Connections.ConnectionContext connection) =>
+        Task.CompletedTask;
+}

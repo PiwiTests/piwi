@@ -22,6 +22,9 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
     private static readonly bool ServerProbesEnabled =
         string.Equals(Environment.GetEnvironmentVariable("PIWI_SERVER_PROBES"), "true", StringComparison.Ordinal);
 
+    // The X-Piwi-Logs value of a response that captured nothing, encoded once.
+    private static readonly string EmptyLogs = GzipBase64(PiwiTestLogJson.Serialize([]));
+
     public async Task InvokeAsync(HttpContext context)
     {
         // Serve the declared-surface route manifest: this middleware joins the pipeline only in
@@ -122,7 +125,7 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
         // The level filter, entry cap and message truncation are applied by PiwiTestLogCapture.TryAdd.
         // The header is written even when nothing was captured, so the reporter can tell the app is
         // instrumented (it fetches the route manifest only then).
-        context.Response.Headers[HeaderName] = GzipBase64(PiwiTestLogJson.Serialize(logs ?? []));
+        context.Response.Headers[HeaderName] = logs is { Count: > 0 } ? GzipBase64(PiwiTestLogJson.Serialize(logs)) : EmptyLogs;
 
         if (probe is null)
             return;

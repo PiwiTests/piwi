@@ -53,7 +53,7 @@ public class ManifestTests
     }
 
     [Fact]
-    public async Task Declares_the_shortest_url_of_optional_default_and_catch_all_parameters()
+    public async Task Marks_trailing_optional_and_default_parameters_optional_and_keeps_catch_alls()
     {
         await using var app = await ManifestTestApp.StartAsync(e =>
         {
@@ -62,6 +62,7 @@ public class ManifestTests
             e.MapGet("/files/{**path}", (string path) => path);
             e.MapGet("/download/{*path}", (string path) => path);
             e.MapGet("/assets/{name}.{ext}", (string name, string ext) => name);
+            e.MapGet("/docs/{name}.{format?}", (string name, string? format) => name);
             e.MapGet("/ssn/{value:regex(^\\d{{3}}-\\d{{2}}$)}", (string value) => value);
         });
 
@@ -69,10 +70,11 @@ public class ManifestTests
 
         Assert.Equal(
             [
-                "GET /archive",
+                "GET /archive/{page?}",
                 "GET /assets/{name}.{ext}",
+                "GET /docs/{name}.{format?}",
                 "GET /download/{*path}",
-                "GET /feed",
+                "GET /feed/{format?}",
                 "GET /files/{**path}",
                 "GET /ssn/{value:regex}",
             ],
@@ -135,6 +137,18 @@ public class ManifestTests
     }
 
     [Fact]
+    public async Task Leaves_out_the_connection_endpoint_of_a_connection_handler()
+    {
+        await using var app = await ManifestTestApp.StartAsync(
+            e => e.MapConnectionHandler<EchoConnectionHandler>("/echo"),
+            services: s => s.AddConnections());
+
+        var manifest = await app.GetManifestAsync();
+
+        Assert.Equal(["POST /echo/negotiate"], manifest.RouteKeys);
+    }
+
+    [Fact]
     public async Task Declares_attribute_routed_actions_with_tokens_and_transformers_applied()
     {
         await using var app = await ManifestTestApp.StartAsync(e => e.MapControllers(), ManifestTestApp.AddTestControllers);
@@ -172,10 +186,10 @@ public class ManifestTests
             [
                 "GET /",
                 "GET /Admin",
-                "GET /Admin/Dashboard/Users",
-                "GET /BlogPosts/ShowAll",
-                "GET /Home/Privacy",
-                "POST /Home/Contact",
+                "GET /Admin/Dashboard/Users/{id?}",
+                "GET /BlogPosts/ShowAll/{id?}",
+                "GET /Home/Privacy/{id?}",
+                "POST /Home/Contact/{id?}",
             ],
             Conventional(manifest));
         Assert.All(manifest.Routes, r => Assert.EndsWith(ControllersFile, r.Handler));
@@ -190,7 +204,7 @@ public class ManifestTests
 
         var manifest = await app.GetManifestAsync();
 
-        Assert.Equal(["GET /Admin/Dashboard", "GET /Admin/Dashboard/Users"], Conventional(manifest));
+        Assert.Equal(["GET /Admin/Dashboard", "GET /Admin/Dashboard/Users/{id?}"], Conventional(manifest));
     }
 
     [Fact]
@@ -230,7 +244,13 @@ public class ManifestTests
         var manifest = await app.GetManifestAsync();
 
         Assert.Equal(
-            ["GET /", "GET /blogposts/showall", "GET /home/privacy", "GET /reports/{Year:int}", "POST /home/contact"],
+            [
+                "GET /",
+                "GET /blogposts/showall/{id?}",
+                "GET /home/privacy/{id?}",
+                "GET /reports/{Year:int}",
+                "POST /home/contact/{id?}",
+            ],
             Conventional(manifest));
     }
 
@@ -297,7 +317,7 @@ public class ManifestTests
                 new ManifestPage("/Admin/Settings", "Areas/Admin/Pages/Settings.cshtml"),
                 new ManifestPage("/Orders", "Pages/Orders/Index.cshtml"),
                 new ManifestPage("/Orders/Details/{id:int}", "Pages/Orders/Details.cshtml"),
-                new ManifestPage("/Orders/Edit", "Pages/Orders/Edit.cshtml"),
+                new ManifestPage("/Orders/Edit/{slug?}", "Pages/Orders/Edit.cshtml"),
             ],
             manifest.Pages);
     }

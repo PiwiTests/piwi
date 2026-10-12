@@ -51,6 +51,8 @@ internal static class PiwiRouteManifest
 {
     internal const string Path = "/__piwi/manifest";
 
+    private const string NegotiateSuffix = "/negotiate";
+
     /// <summary>The most routes, and the most pages, the dashboard accepts in one upload.</summary>
     internal const int MaxEntries = 5000;
 
@@ -94,7 +96,19 @@ internal static class PiwiRouteManifest
         var routes = new Dictionary<string, ManifestRoute>(StringComparer.Ordinal);
         var pages = new Dictionary<string, ManifestPage>(StringComparer.Ordinal);
 
-        foreach (var endpoint in Canonical(endpoints.OfType<RouteEndpoint>().Where(IsDeclared)))
+        // A connection endpoint (a SignalR hub, a connection handler) sits next to its negotiate
+        // endpoint, and clients reach it over a WebSocket, which the reporter does not record.
+        var connections = endpoints.OfType<RouteEndpoint>()
+            .Where(e => e.Metadata.GetMetadata<NegotiateMetadata>() is not null)
+            .Select(e => CanonicalPath(e.RoutePattern, lowercaseUrls: false, policies: null))
+            .Where(p => p.EndsWith(NegotiateSuffix, StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.Length > NegotiateSuffix.Length ? p[..^NegotiateSuffix.Length] : "/")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool IsConnection(RouteEndpoint e) =>
+            e.Metadata.GetMetadata<NegotiateMetadata>() is null &&
+            connections.Contains(CanonicalPath(e.RoutePattern, lowercaseUrls: false, policies: null));
+
+        foreach (var endpoint in Canonical(endpoints.OfType<RouteEndpoint>().Where(e => IsDeclared(e) && !IsConnection(e))))
         {
             var path = CanonicalPath(endpoint.RoutePattern, lowercaseUrls, policies);
             if (pathBase.HasValue)
@@ -126,8 +140,7 @@ internal static class PiwiRouteManifest
     /// False for endpoints that are not part of the app's own surface: link-generation-only
     /// endpoints, fallbacks (every <c>MapFallback*</c> registers at the last order) and routes that
     /// are a lone catch-all, static files, endpoints excluded from the API description (the OpenAPI
-    /// document itself), the framework's own paths, and a SignalR hub's connection endpoint, which
-    /// clients reach over a WebSocket.
+    /// document itself), and the framework's own paths.
     /// </summary>
     private static bool IsDeclared(RouteEndpoint endpoint)
     {
@@ -137,8 +150,6 @@ internal static class PiwiRouteManifest
         if (endpoint.Order == int.MaxValue)
             return false;
         if (metadata.GetMetadata<IExcludeFromDescriptionMetadata>()?.ExcludeFromDescription == true)
-            return false;
-        if (metadata.GetMetadata<HubMetadata>() is not null && metadata.GetMetadata<NegotiateMetadata>() is null)
             return false;
 #if NET9_0_OR_GREATER
         if (metadata.GetMetadata<Microsoft.AspNetCore.StaticAssets.StaticAssetDescriptor>() is not null)
@@ -201,29 +212,36 @@ internal static class PiwiRouteManifest
     }
 
     /// <summary>
-    /// The URL an endpoint is declared at: required route values substituted, trailing segments a
-    /// URL may leave out dropped, parameters rendered as <c>{name:constraint}</c>.
+    /// The URL an endpoint is declared at: required route values substituted and parameters
+    /// rendered as <c>{name:constraint}</c>. Trailing optional and default-valued parameters stay,
+    /// marked optional (<c>/archive/{page?}</c>), unless a conventional route value before them
+    /// equals its default: link generation then leaves them all out (<c>/</c> for <c>Home/Index</c>).
     /// </summary>
     internal static string CanonicalPath(RoutePattern pattern, bool lowercaseUrls, ParameterPolicyFactory? policies)
     {
         string Literal(string text) => lowercaseUrls ? text.ToLowerInvariant() : text;
 
-        var segments = new List<(string Text, bool Omittable)>();
+        // Each segment's text, whether it is a route value a URL may leave out, and its text as an
+        // optional parameter when it is one a URL may leave out.
+        var segments = new List<(string Text, bool DefaultValue, string? Optional)>();
         foreach (var segment in pattern.PathSegments)
         {
             if (segment.IsSimple && segment.Parts[0] is RoutePatternParameterPart parameter)
             {
                 if (RequiredValue(pattern, parameter) is { } value)
                 {
-                    var omittable = pattern.Defaults.TryGetValue(parameter.Name, out var fallback) &&
+                    var isDefault = pattern.Defaults.TryGetValue(parameter.Name, out var fallback) &&
                         string.Equals(Convert.ToString(fallback), value, StringComparison.OrdinalIgnoreCase);
-                    segments.Add((Literal(Transform(pattern, parameter, value, policies)), omittable));
+                    segments.Add((Literal(Transform(pattern, parameter, value, policies)), isDefault, null));
                 }
                 else
                 {
-                    var omittable = parameter.IsOptional ||
-                        (!parameter.IsCatchAll && pattern.Defaults.ContainsKey(parameter.Name));
-                    segments.Add((Placeholder(pattern, parameter), omittable));
+                    var optional = !parameter.IsCatchAll &&
+                        (parameter.IsOptional || pattern.Defaults.ContainsKey(parameter.Name));
+                    segments.Add((
+                        Placeholder(pattern, parameter, optional: false),
+                        false,
+                        optional ? Placeholder(pattern, parameter, optional: true) : null));
                 }
 
                 continue;
@@ -238,18 +256,23 @@ internal static class PiwiRouteManifest
                     RoutePatternSeparatorPart separator => Literal(separator.Content),
                     RoutePatternParameterPart p when RequiredValue(pattern, p) is { } value =>
                         Literal(Transform(pattern, p, value, policies)),
-                    RoutePatternParameterPart p => Placeholder(pattern, p),
+                    RoutePatternParameterPart p => Placeholder(pattern, p, p.IsOptional),
                     _ => "",
                 });
             }
 
-            segments.Add((text.ToString(), false));
+            segments.Add((text.ToString(), false, null));
         }
 
-        while (segments.Count > 0 && segments[^1].Omittable)
-            segments.RemoveAt(segments.Count - 1);
+        var omittable = segments.Count;
+        while (omittable > 0 && (segments[omittable - 1].DefaultValue || segments[omittable - 1].Optional is not null))
+            omittable--;
 
-        return "/" + string.Join("/", segments.Select(s => s.Text));
+        var path = segments.Select((s, i) => i >= omittable ? s.Optional ?? s.Text : s.Text);
+        if (segments.Skip(omittable).Any(s => s.DefaultValue))
+            path = path.Take(omittable);
+
+        return "/" + string.Join("/", path);
     }
 
     /// <summary>The value a conventional route requires for <paramref name="parameter"/>, e.g. <c>controller=Home</c>.</summary>
@@ -285,8 +308,11 @@ internal static class PiwiRouteManifest
         return value;
     }
 
-    /// <summary>A parameter in template syntax, constraint names kept and their arguments dropped: <c>{id:int}</c>, <c>{**path}</c>.</summary>
-    private static string Placeholder(RoutePattern pattern, RoutePatternParameterPart parameter)
+    /// <summary>
+    /// A parameter in template syntax, constraint names kept and their arguments dropped:
+    /// <c>{id:int}</c>, <c>{**path}</c>, or <c>{page?}</c> when a URL may leave it out.
+    /// </summary>
+    private static string Placeholder(RoutePattern pattern, RoutePatternParameterPart parameter, bool optional)
     {
         var text = new StringBuilder("{");
         if (parameter.IsCatchAll)
@@ -303,7 +329,7 @@ internal static class PiwiRouteManifest
             }
         }
 
-        return text.Append('}').ToString();
+        return text.Append(optional ? "?}" : "}").ToString();
     }
 
     /// <summary>

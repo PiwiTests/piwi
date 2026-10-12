@@ -146,8 +146,8 @@ uploads it with the run, so a route or page nothing reaches becomes a
 - **ASP.NET Core** reads the application's endpoint table, so the manifest holds every route from the first run, hit
   or not: minimal APIs and route groups, controllers (attribute routes, conventional routes and areas) and SignalR
   hubs as routes, Razor Pages and routable Blazor components as pages. Each one is declared at the URL link
-  generation produces (`/` for `Home/Index`, `/archive` for `/archive/{page?}`), with the source file of its handler
-  when the build has a PDB. Static files, fallbacks and endpoints marked `ExcludeFromDescription()` are left out. See
+  generation produces (`/` for `Home/Index`), optional parameters marked optional (`/archive/{page?}`), with the source
+  file of its handler when the build has a PDB. Static files, fallbacks and endpoints marked `ExcludeFromDescription()` are left out. See
   the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore#route-manifest) for
   every rule.
 - **Nitro** has no route table to read at runtime, so the plugin lists the routes the server has matched since it
