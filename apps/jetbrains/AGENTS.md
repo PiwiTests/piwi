@@ -75,6 +75,14 @@ while it does not run.
   when the run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project
   installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
   **Tools → Piwi** and in the tool window's toolbar) opens the run the status bar shows.
+- With **Run the tests in the IDE's Playwright runner** (`PiwiLocalSettings.playwrightRunner`, off by default), a test
+  run whose command is `npx playwright test …` (`Glue.playwrightTestArgs`) starts as a temporary Playwright run
+  configuration instead (`PiwiPlaywrightRunner.kt`: its arguments in `cliOptions`, its environment, the config's
+  folder; test tree, Debug, Rerun Failed Tests), its end sent as `piwi/commandEnded`. The IDE adds its reporter with
+  `PW_TEST_REPORTER`, which Playwright runs beside the config's, so the Piwi reporter still reports. The runner's
+  classes are the `JavaScript` plugin's (`intellij.aqua.runners.playwright.js`, the same signatures in 2024.1 and
+  2026.x), reached only once `PlaywrightRunnerGate.available()`, which names none of them; another command, or an
+  IDE without the runner, runs in the console.
 - `PiwiCommands.run` runs a command in the Run tool window, whose **Rerun** (`RunContentExecutor.withRerun`) stops it
   if it runs and starts it again with the same environment; `RunOutputLinks` (`Glue.fileLinks`) links the script paths
   its output names relative to the command's folder to their line, the IDE's console linking the absolute ones. For a test run (`RunCommand.ref`), a `ProcessListener`

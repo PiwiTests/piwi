@@ -177,6 +177,23 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /** The project's Playwright configs are searched for on disk, and the service's workspace is the folders searched. */
+    fun testTheIdesPlaywrightRunnerTakesTheServicesCommand() {
+        assertTrue("WebStorm has its Playwright runner", PlaywrightRunnerGate.available())
+        val env = mapOf("PIWI_ORIGIN" to "editor", "PIWI_ORIGIN_REF" to "ed-0000abcd")
+        val settings = PlaywrightRunnerLauncher.configure(project, "/w/shop", listOf("tests/a.spec.ts:3", "-g", "pays now", "--headed"), env)!!
+        try {
+            assertTrue(settings.isTemporary)
+            assertEquals("Piwi: a.spec.ts:3", settings.name)
+            val runner = (settings.configuration as com.intellij.aqua.runners.playwright.js.PlaywrightRunConfiguration).settings
+            assertEquals("/w/shop", runner.workingDir)
+            assertEquals("tests/a.spec.ts:3 -g \"pays now\" --headed", runner.cliOptions)
+            assertEquals(env, runner.envData.envs)
+            assertTrue(runner.envData.isPassParentEnvs)
+        } finally {
+            com.intellij.execution.RunManager.getInstance(project).removeConfiguration(settings)
+        }
+    }
+
     fun testFindsThePlaywrightConfigsAndHandsTheirFoldersToTheService() {
         val service = project.getService(PiwiProjectService::class.java)
         val base = File(project.basePath!!)

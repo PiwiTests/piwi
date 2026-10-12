@@ -43,6 +43,16 @@ class GlueTest {
     }
 
     @Test
+    fun `the IDE's Playwright runner takes an npx playwright test command, named after what it runs`() {
+        assertEquals(listOf("tests/a.spec.ts:3", "--headed"), Glue.playwrightTestArgs("npx playwright test tests/a.spec.ts:3 --headed"))
+        assertEquals(emptyList<String>(), Glue.playwrightTestArgs("npx playwright test"))
+        assertEquals(null, Glue.playwrightTestArgs("npm run e2e -- tests/a.spec.ts"))
+        assertEquals("Piwi: a.spec.ts:3", Glue.playwrightRunName(listOf("tests/a.spec.ts:3", "--headed")))
+        assertEquals("Piwi: a.spec.ts and 1 more", Glue.playwrightRunName(listOf("tests/a.spec.ts", "b.spec.ts", "-g", "pays")))
+        assertEquals("Piwi", Glue.playwrightRunName(listOf("--grep=@smoke")))
+    }
+
+    @Test
     fun `a Node_js missing or older than 20 is said, with its settings one click away`() {
         assertEquals(null, Glue.nodeProblem("node", "v20.11.1\n"))
         assertEquals(null, Glue.nodeProblem("/usr/bin/node", "v22.3.0"))

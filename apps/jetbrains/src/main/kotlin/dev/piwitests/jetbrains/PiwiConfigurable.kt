@@ -100,6 +100,15 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                                 "that line. Needs @piwitests/reporter 0.48.0 or later. Kept for you only, in .idea/workspace.xml",
                         )
                 }
+                row {
+                    checkBox("Run the tests in the IDE's Playwright runner: a test tree, Debug, Rerun Failed Tests")
+                        .bindSelected({ local.playwrightRunner }, { local.playwrightRunner = it })
+                        .enabled(PlaywrightRunnerGate.available())
+                        .comment(
+                            "Otherwise in the Run tool window's console, as a command other than npx playwright test is " +
+                                "(a selection's own). Kept for you only, in .idea/workspace.xml",
+                        )
+                }
             }
             group("In use") {
                 row {

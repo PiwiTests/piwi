@@ -76,7 +76,7 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * a recording's choices: the Playwright project, the start page, and the last page
  * expression typed that was not among those offered; how the failures tool window groups
  * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
- * at the IDE's breakpoints; when a run started from the IDE says what it changed (`always`,
+ * at the IDE's breakpoints, and whether they run in the IDE's Playwright runner; when a run started from the IDE says what it changed (`always`,
  * `failures`, `never`); and the baseline chosen with **Compare With…** for each Playwright
  * config folder (`Glue.encodeBaseline`; the ladder is no entry).
  */
@@ -92,6 +92,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordPage: String = "",
         var failuresGrouping: String = "file",
         var breakpoints: Boolean = true,
+        var playwrightRunner: Boolean = false,
         var runNotifications: String = "always",
         var baselines: MutableMap<String, String> = mutableMapOf(),
     )

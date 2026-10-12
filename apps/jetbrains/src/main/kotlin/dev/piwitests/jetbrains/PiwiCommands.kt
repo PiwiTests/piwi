@@ -191,7 +191,29 @@ object PiwiCommands {
             null
         }
         val env = if (base != null && address != null) base + ("PIWI_EDITOR_SEND" to address) else base
+        val args = Glue.playwrightTestArgs(line)
+        if (args != null && project.service<PiwiProjectService>().local().playwrightRunner && PlaywrightRunnerGate.available()) {
+            val ref = command.ref
+            ApplicationManager.getApplication().invokeLater({
+                // The console runs what the IDE's runner does not take.
+                val started = runCatching {
+                    PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty()) { exitCode ->
+                        if (ref != null) commandEnded(project, CommandEndedParams(ref, exitCode))
+                    }
+                }.getOrDefault(false)
+                if (!started) run(project, cwd, line, env, ref)
+            }, project.disposed)
+            return
+        }
         run(project, cwd, line, env, command.ref)
+    }
+
+    /** Tell the service a command it gave ended (`piwi/commandEnded`), off the event thread. */
+    private fun commandEnded(project: Project, ended: CommandEndedParams) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            // The plugin may have been unloaded since the run started: its service is then gone.
+            if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(ended)
+        }
     }
 
     /** Download a failure's trace, for as long as [DOWNLOAD_TIMEOUT_MILLIS] or until Cancel, and open it in the trace viewer. */
@@ -247,15 +269,7 @@ object PiwiCommands {
             }
             if (ref != null) {
                 handler.addProcessListener(object : ProcessListener {
-                    override fun processTerminated(event: ProcessEvent) {
-                        val ended = CommandEndedParams(ref, event.exitCode)
-                        ApplicationManager.getApplication().executeOnPooledThread {
-                            // The plugin may have been unloaded since the run started: its service is then gone.
-                            if (!project.isDisposed) {
-                                project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(ended)
-                            }
-                        }
-                    }
+                    override fun processTerminated(event: ProcessEvent) = commandEnded(project, CommandEndedParams(ref, event.exitCode))
                 })
             }
             ApplicationManager.getApplication().invokeLater {

@@ -18,7 +18,8 @@ in the status bar while it executes, and its results over the latest CI run's fa
 - **Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
 
 The command is the one `piwi run` would build, run from the Playwright config's folder: in a terminal in VS Code, in
-the Run tool window in a JetBrains IDE, whose **Rerun** starts it again. It sets `PIWI_ORIGIN=editor` and a
+the Run tool window in a JetBrains IDE, whose **Rerun** starts it again, or in the IDE's Playwright runner (test tree,
+Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and a
 `PIWI_ORIGIN_REF` of its own ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run on
 the instance. The editor's breakpoints pause it in the browser, with Piwi's picker one click away:
 [Breakpoints in the browser](./editor-breakpoints).
@@ -33,9 +34,8 @@ started it.
 ## After a run
 
 The editor listens to the instance's event stream: within a second of a run of the project ending, it reads the
-branch's latest run and its failures again. While the stream is connected, it also reads them every five minutes, for
-an instance scaled out without sticky sessions; without the stream, such as behind a proxy that buffers it, every
-minute.
+branch's latest run and its failures again. It also reads them every five minutes with the stream, every minute
+without.
 
 A run started from the editor is its own wherever it runs: the status bar follows it as it runs, and its failures
 read *your run #124* once it ends. When the command ends and no run on the instance carries its ref, the editor says

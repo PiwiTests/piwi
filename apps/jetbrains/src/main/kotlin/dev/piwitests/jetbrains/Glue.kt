@@ -905,6 +905,22 @@ object Glue {
         FileLink(match.range.first, match.range.last + 1, match.groupValues[1], number, match.groupValues[3].toIntOrNull()?.takeIf { it > 0 })
     }.toList()
 
+    /** A test file among a run's arguments, with its line and column: `tests/a.spec.ts:3`. */
+    private val TEST_FILE_ARG = Regex("[^-\\s][^\\s]*\\.[cm]?[jt]sx?(:\\d+){0,2}")
+
+    /** The arguments of an `npx playwright test …` command, for the IDE's Playwright runner; null for any other command. */
+    fun playwrightTestArgs(command: String): List<String>? {
+        val parts = splitCommand(command)
+        return if (parts.take(3) == listOf("npx", "playwright", "test")) parts.drop(3) else null
+    }
+
+    /** The name of the IDE's run configuration for a run: its first test file (with its line), and how many more. */
+    fun playwrightRunName(args: List<String>): String {
+        val targets = args.filter { TEST_FILE_ARG.matches(it) }
+        val first = targets.firstOrNull()?.substringAfterLast('/') ?: return "Piwi"
+        return if (targets.size > 1) "Piwi: $first and ${targets.size - 1} more" else "Piwi: $first"
+    }
+
     /** The command line that runs a shell command string, split as a shell would for plain words and quotes. */
     fun splitCommand(command: String): List<String> {
         val out = mutableListOf<String>()
