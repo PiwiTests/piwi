@@ -134,7 +134,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     private fun show() {
         val url = service.settings().serverUrl
         if (url.isBlank()) key.text = "None: no instance saved"
-        inUse.text = Glue.connectionSummary(service.status, service.local().desktop)
+        inUse.text = Glue.connectionSummary(service.status, service.local().desktop, service.startProblem)
         // The password safe and the discovery file: read off the event thread.
         val keyLabel = key
         val label = desktopState

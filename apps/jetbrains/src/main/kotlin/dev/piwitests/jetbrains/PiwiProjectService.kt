@@ -15,6 +15,8 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.options.SearchableConfigurable
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.BaseProjectDirectories.Companion.getBaseDirectories
 import com.intellij.openapi.project.Project
@@ -129,6 +131,10 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var refreshing = false
         private set
 
+    /** Why the editor service could not start (`Glue.nodeProblem`); null once it starts. */
+    @Volatile var startProblem: String? = null
+        private set
+
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /** Guards the answers and how many of each the service pushed: a read started before a push keeps the pushed one. */
@@ -215,13 +221,47 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 tools.getToolWindow(PiwiFailuresToolWindowFactory.ID)?.isAvailable = found.configDirs.isNotEmpty()
                 project.service<StatusBarWidgetsManager>().updateWidget(PiwiStatusBarWidgetFactory::class.java)
             }
-            val manager = LspServerManager.getInstance(project)
-            when {
-                manager.getServersForProvider(PiwiLspServerSupportProvider::class.java).isNotEmpty() ->
-                    manager.stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
-                found.configDirs.isNotEmpty() -> manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
-            }
+            if (found.configDirs.isNotEmpty() || hasServer()) restartServer()
         }
+    }
+
+    private fun hasServer() =
+        LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java).isNotEmpty()
+
+    /** Start the editor service again, or start it for the open files when it does not run. */
+    fun restartServer() {
+        val manager = LspServerManager.getInstance(project)
+        if (hasServer()) {
+            manager.stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
+        } else {
+            manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
+        }
+    }
+
+    /**
+     * Keep why the service could not start, or that it started (null), and say a new reason once, with the Node.js
+     * settings one click away.
+     */
+    fun startFailed(problem: String?) {
+        val before = startProblem
+        startProblem = problem
+        if (problem == before) return
+        changed()
+        if (problem == null) return
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(problem, NotificationType.WARNING)
+            .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
+            .notify(project)
+    }
+
+    /** The Node.js settings, then the service started again with the interpreter chosen there. */
+    fun openNodeSettings() {
+        ShowSettingsUtil.getInstance().showSettingsDialog(
+            project,
+            { (it as? SearchableConfigurable)?.id == NODE_SETTINGS_ID },
+            null,
+        )
+        ApplicationManager.getApplication().executeOnPooledThread { restartServer() }
     }
 
     /**
@@ -627,6 +667,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
         const val LIVE_TESTS_DRAW_MILLIS = 1_000L
 
         private const val MAX_SUMMARIES = 64
+
+        /** The id of **Settings → Languages & Frameworks → Node.js**. */
+        private const val NODE_SETTINGS_ID = "settings.nodejs"
     }
 }
 

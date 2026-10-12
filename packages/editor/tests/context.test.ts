@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -7,6 +7,7 @@ import {
   linkedDesktopProject,
   namedInstance,
   PiwiContext,
+  pruneEvidence,
   readDesktopDiscovery,
   resolveContextConnection,
   withServerUrl,
@@ -51,6 +52,27 @@ describe('the files at the commit of a run', () => {
     const again = files.map((file) => context.textAtCommit(commit, file));
     expect(again.filter((entry, i) => entry !== first[i])).toEqual([]);
     expect(again[0]!.text).toBe(`test('case ${files[0]}', async () => {});\n`);
+  });
+});
+
+describe('the downloaded files', () => {
+  test('are deleted once unused for a week, the others kept', async () => {
+    const root = workspace();
+    const day = 24 * 60 * 60_000;
+    const now = Date.now();
+    for (const [name, age] of [
+      ['old', 8 * day],
+      ['recent', day],
+    ] as const) {
+      mkdirSync(path.join(root, name));
+      writeFileSync(path.join(root, name, 'trace.zip'), 'zip');
+      const at = new Date(now - age);
+      utimesSync(path.join(root, name), at, at);
+    }
+    await pruneEvidence(root, now);
+    expect(existsSync(path.join(root, 'old'))).toBe(false);
+    expect(existsSync(path.join(root, 'recent', 'trace.zip'))).toBe(true);
+    await pruneEvidence(path.join(root, 'missing'), now);
   });
 });
 

@@ -85,6 +85,7 @@ import {
   desktopConfigPath,
   linkedDesktopProject,
   parseBaselineChoice,
+  pruneEvidence,
   readDesktopDiscovery,
   withServerUrl,
 } from './context.js';
@@ -202,6 +203,8 @@ import {
 
 /** How often every context fetches its indexes again. */
 const REFRESH_MS = 5 * 60_000;
+/** The first wait before an instance that did not answer is read again; doubled each time, up to `REFRESH_MS`. */
+const UNREACHABLE_RETRY_MS = 15_000;
 /** How often the latest run is read again while it runs, and otherwise. */
 const RUN_POLL_ACTIVE_MS = 15_000;
 const RUN_POLL_MS = 60_000;
@@ -214,6 +217,11 @@ const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 const DEBOUNCE_MS = 500;
 /** How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths. */
 const OPTIONS_WAIT_MS = 3_000;
+/**
+ * How long a quick fix or a hover waits for what it fetches from the instance: past it, it answers without, and the
+ * fetch goes on, so the next ask has it.
+ */
+const LOOKUP_WAIT_MS = 1_500;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
 const TEST_CALL =
   /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
@@ -222,6 +230,10 @@ export interface ServerOptions {
   /** The environment the connection is read from; the process's by default. */
   env?: Record<string, string | undefined>;
   refreshMs?: number;
+  /** The first wait before an instance that did not answer is read again. */
+  unreachableRetryMs?: number;
+  /** How long a quick fix or a hover waits for what it fetches from the instance. */
+  lookupWaitMs?: number;
   debounceMs?: number;
   /**
    * How often the latest run is read while none runs; a quarter of it while one runs, and five times it while the
@@ -501,6 +513,12 @@ export function hasUntestedSuspect(entry: FlakeLabEntry | undefined): boolean {
 /** Start serving on a connection. Returns a function that stops the refresh timer. */
 export function startServer(connection: Connection, options: ServerOptions = {}): () => void {
   const env = options.env ?? process.env;
+  /** What `asked` settles with, or `fallback` once a quick fix or a hover has waited long enough. */
+  const within = <T>(asked: Promise<T>, fallback: T): Promise<T> =>
+    Promise.race([
+      asked,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), options.lookupWaitMs ?? LOOKUP_WAIT_MS).unref()),
+    ]);
   const desktopFile = desktopConfigPath(env);
   const onDesktopFile = (now: fs.Stats, before: fs.Stats) => {
     if (now.mtimeMs !== before.mtimeMs || now.size !== before.size) void refreshAll();
@@ -512,6 +530,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const appAnalyses = new Map<string, AppAnalysis>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
+  /** The next read of an instance that did not answer, and the wait before it. */
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryWait = 0;
   let runTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   /** Diagnostics of the analysis of open documents, and of the latest run's failures, by URI. */
@@ -822,6 +843,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         return [
           {
             uri: pathToFileURL(at.file).href,
+            root: context.root,
             line: at.line - 1,
             title: f.title,
             headline: f.headline,
@@ -851,6 +873,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         return [
           {
             uri: pathToFileURL(at.file).href,
+            root: context.root,
             line: at.line - 1,
             title: r.title,
             headline: null,
@@ -1367,6 +1390,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       locators: c.index?.locators.length ?? 0,
       reachedFiles: c.codeIndex?.files.length ?? 0,
       problem: c.problem,
+      problemKind: c.problemKind,
       instance: c.instance,
     })),
     desktopUrl: readDesktopDiscovery(env)?.url ?? null,
@@ -1430,6 +1454,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     runChanged();
     statusChanged();
     for (const document of documents.all()) schedule(document, 0);
+    retryUnreachable();
+  }
+
+  /** Read again soon while an instance does not answer: 15 s, then twice as long each time, up to the refresh's pace. */
+  function retryUnreachable(): void {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    if (stopped || !contexts.some((c) => c.problemKind === 'unreachable')) {
+      retryWait = 0;
+      return;
+    }
+    const refreshMs = options.refreshMs ?? REFRESH_MS;
+    retryWait = Math.min(refreshMs, retryWait ? retryWait * 2 : (options.unreachableRetryMs ?? UNREACHABLE_RETRY_MS));
+    if (retryWait >= refreshMs) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      void refreshAll();
+    }, retryWait);
+    retryTimer.unref?.();
   }
 
   connection.onInitialize((params: InitializeParams) => {
@@ -1461,6 +1504,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
     applyBaselines();
     void refreshAll();
+    void pruneEvidence();
     refreshTimer = setInterval(() => void refreshAll(), options.refreshMs ?? REFRESH_MS);
     refreshTimer.unref?.();
     pollRuns();
@@ -1486,7 +1530,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     placeAgainSoon();
   });
 
-  connection.onCodeAction(async (params): Promise<CodeAction[]> => {
+  connection.onCodeAction(async (params, token): Promise<CodeAction[]> => {
     const file = uriToPath(params.textDocument.uri);
     const context = file ? contextFor(file) : null;
     const document = documents.get(params.textDocument.uri);
@@ -1494,6 +1538,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const actions: CodeAction[] = [];
     const lines = document.getText().split(/\r?\n/);
     for (const diagnostic of params.context.diagnostics) {
+      // A request the client canceled, as it does once the cursor moved, is not answered further.
+      if (token.isCancellationRequested) return [];
       if (diagnostic.source !== 'Piwi') continue;
       if (diagnostic.code === 'brittle' || diagnostic.code === 'watch') {
         const { locator, line } = diagnostic.data as { locator: string; line: number };
@@ -1590,7 +1636,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         if (!found) continue;
         const { context: owner, failure } = found;
         const fixes: CodeAction[] = [];
-        const healing = await owner.healing(failure.executionId);
+        // Asked together; each waited for a while at most.
+        const healingAsked = within(owner.healing(failure.executionId), null);
+        const fixPlanAsked = failure.clusterId ? within(owner.fixPlan(failure.clusterId), null) : null;
+        const issuesAsked = owner.client && failure.clusterId ? within(owner.issuesOf(failure), null) : null;
+        const healing = await healingAsked;
         const edit = healing?.edit;
         const line = diagnostic.range.start.line;
         const current = lines[line] ?? '';
@@ -1623,7 +1673,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           command: {
             title: 'Run this test',
             command: 'piwi.runTests',
-            arguments: [{ uri: params.textDocument.uri, testIds: [failure.testCaseId] } satisfies RunTestsArgs],
+            arguments: [
+              { uri: params.textDocument.uri, root: owner.root, testIds: [failure.testCaseId] } satisfies RunTestsArgs,
+            ],
           },
         });
         actions.push(...fixes);
@@ -1640,7 +1692,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           });
         }
         actions.push(...desktopJobActions(owner, failure, diagnostic));
-        const fixPlan = failure.clusterId ? await owner.fixPlan(failure.clusterId) : null;
+        const fixPlan = await fixPlanAsked;
         const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
         if (fixPlan && planEdit) {
           actions.push({
@@ -1661,7 +1713,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           });
         }
-        if (owner.client && failure.clusterId && !(await owner.issuesOf(failure)).length) {
+        // Offered once the failure is known to have no ticket.
+        const issues = await issuesAsked;
+        if (owner.client && failure.clusterId && issues && !issues.length) {
           actions.push({
             title: 'File an issue',
             kind: CodeActionKind.QuickFix,
@@ -1680,8 +1734,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             diagnostics: [diagnostic],
             command: {
               title: 'Copy context for agent',
-              command: 'piwi.copyText',
-              arguments: [await agentContext(owner, failure)],
+              command: 'piwi.copyAgentContext',
+              arguments: [
+                { uri: params.textDocument.uri, executionId: failure.executionId } satisfies AgentContextParams,
+              ],
             },
           });
           actions.push({
@@ -1788,7 +1844,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return null;
   };
 
-  connection.onHover(async (params): Promise<Hover | null> => {
+  connection.onHover(async (params, token): Promise<Hover | null> => {
     const file = uriToPath(params.textDocument.uri);
     const found = new Map<number, { context: PiwiContext; failure: BranchFailure }>();
     for (const d of failureDiagnostics.get(params.textDocument.uri) ?? []) {
@@ -1809,9 +1865,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const analysis = await hoverOfAnalysis(params);
     if (!found.size) return analysis;
     const parts: string[] = [];
-    for (const { context, failure } of found.values()) {
-      const shot = failure.screenshot ? await context.evidence(failure.screenshot) : null;
-      const issues = await context.issuesOf(failure);
+    // Asked together; each waited for a while at most.
+    const lookups = [...found.values()].map(({ context, failure }) => ({
+      shot: failure.screenshot ? within(context.evidence(failure.screenshot), null) : null,
+      issues: within(context.issuesOf(failure), []),
+    }));
+    for (const [i, { context, failure }] of [...found.values()].entries()) {
+      const shot = await lookups[i]!.shot;
+      const issues = await lookups[i]!.issues;
+      if (token.isCancellationRequested) return null;
       const message = failure.message?.trim();
       const at = pass.place(context, failure);
       const chain = (at?.frames ?? [])
@@ -2135,7 +2197,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(RUN_ARGS_REQUEST, async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
-    const context = file ? contextFor(file) : null;
+    const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
     if (!context?.client || !context.project || !params.testIds.length) return null;
     const { args, command } = await context.client.runArgs(context.project.id, params.testIds);
     const ref = newRunRef();
@@ -2442,6 +2504,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     recordings.dispose();
     desktopJobs.dispose();
     if (refreshTimer) clearInterval(refreshTimer);
+    if (retryTimer) clearTimeout(retryTimer);
     fs.unwatchFile(desktopFile, onDesktopFile);
     if (runTimer) clearTimeout(runTimer);
     if (placeTimer) clearTimeout(placeTimer);

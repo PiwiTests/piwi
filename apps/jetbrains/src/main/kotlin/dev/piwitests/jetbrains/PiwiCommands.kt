@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * The client commands the editor service names in summary lines and code
  * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`,
- * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`, `piwi.desktopJob`).
+ * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyAgentContext`, `piwi.copyText`, `piwi.desktopJob`).
  */
 object PiwiCommands {
     private val gson = Gson()
@@ -57,6 +57,7 @@ object PiwiCommands {
             "piwi.openTrace" -> arg<TraceParams>(arguments.firstOrNull())?.let { openTrace(project, it) }
             "piwi.openScreenshot" -> arg<TraceParams>(arguments.firstOrNull())?.let { openScreenshot(project, it) }
             "piwi.runCommand" -> arg<RunCommandArgs>(arguments.firstOrNull())?.let { run(project, it.cwd, it.command, it.env) }
+            "piwi.copyAgentContext" -> arg<TraceParams>(arguments.firstOrNull())?.let { copyAgentContext(project, it) }
             "piwi.copyText" -> arg<String>(arguments.firstOrNull())?.let {
                 CopyPasteManager.getInstance().setContents(StringSelection(it))
                 notify(project, "Copied. Paste it to your agent.")
@@ -112,8 +113,8 @@ object PiwiCommands {
     fun rerunFailing(project: Project) {
         background(project, "Piwi: resolving the failing tests") {
             val failures = project.service<PiwiProjectService>().server()?.failures()?.orNull()
-            val args = Glue.rerunFailingArgs(failures)
-            if (args == null) notify(project, "No failing test to re-run.") else runTests(project, args)
+            val runs = Glue.rerunFailingArgs(failures)
+            if (runs.isEmpty()) notify(project, "No failing test to re-run.") else runs.forEach { runTests(project, it) }
         }
     }
 

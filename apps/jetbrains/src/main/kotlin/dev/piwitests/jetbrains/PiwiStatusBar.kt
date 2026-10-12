@@ -53,7 +53,9 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
 
     override fun getPresentation(): StatusBarWidget.WidgetPresentation = this
 
-    private fun view() = project.service<PiwiProjectService>().let { Glue.statusView(it.status, it.runs, it.local().desktop) }
+    private fun view() = project.service<PiwiProjectService>().let {
+        Glue.statusView(it.status, it.runs, it.local().desktop, startProblem = it.startProblem)
+    }
 
     private fun recording() = project.getServiceIfCreated(PiwiRecordings::class.java)?.current()
 
@@ -77,7 +79,12 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
                 statusBar?.updateWidget(ID())
                 null
             }
+            Glue.StatusAction.RETRY -> "Piwi.Refresh"
             Glue.StatusAction.CONNECT -> "Piwi.Connect"
+            Glue.StatusAction.NODE_SETTINGS -> {
+                project.service<PiwiProjectService>().openNodeSettings()
+                null
+            }
             Glue.StatusAction.SETTINGS -> "Piwi.OpenSettings"
             Glue.StatusAction.NONE -> null
         }

@@ -118,8 +118,11 @@ object Glue {
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
-    /** What a click on the status bar item does: `REFRESH` reads the latest run again (`piwi/refreshRun`). */
-    enum class StatusAction { REFRESH, CONNECT, SETTINGS, NONE }
+    /**
+     * What a click on the status bar item does: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY` reads
+     * the instance again (Refresh), `NODE_SETTINGS` opens the Node.js settings, then starts the service again.
+     */
+    enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, NONE }
 
     data class StatusView(val text: String, val tooltip: String, val url: String?, val action: StatusAction)
 
@@ -169,7 +172,7 @@ object Glue {
 
     /**
      * The status bar text: the latest run on the checked-out branch, with what the runs laid over it fixed or still
-     * fail, or what keeps the service from reading it. While a run is in progress, the editor's own or one on the
+     * fail, or what keeps the service from reading it, or from starting (`startProblem`, with no status). While a run is in progress, the editor's own or one on the
      * branch, the text counts it, and the tooltip has both, with the baseline chosen and when the latest run was read. A
      * click reads it again.
      * A null status means the service has not started: it starts with the first file of the project opened.
@@ -179,12 +182,22 @@ object Glue {
         runs: RunStatusResult?,
         desktopChosen: Boolean = false,
         now: Long = System.currentTimeMillis(),
+        startProblem: String? = null,
     ): StatusView {
+        if (status == null && startProblem != null) {
+            return StatusView("Piwi: Node.js", "$startProblem\nClick to open the Node.js settings.", null, StatusAction.NODE_SETTINGS)
+        }
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else "\n$it" }
         val connected = contexts.firstOrNull { it.connected }
+        val unreachable = contexts.firstOrNull { it.problemKind == "unreachable" }
+        if (connected == null && unreachable != null) {
+            val problem = unreachable.problem ?: "The instance did not answer"
+            return StatusView("Piwi: unreachable", "$problem\nPiwi reads it again on its own; click to read it now.$hint", null, StatusAction.RETRY)
+        }
+        connected
             ?: return StatusView("Piwi: connect", (contexts.first().problem ?: "Not connected") + hint, null, StatusAction.CONNECT)
         val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
@@ -231,6 +244,21 @@ object Glue {
     }
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
+
+    /** The oldest Node.js major version the editor service runs on. */
+    const val NODE_MAJOR = 20
+
+    /**
+     * Why the editor service cannot start with the Node.js interpreter `node`, from what `node --version` printed (null
+     * when it did not run); null when it can.
+     */
+    fun nodeProblem(node: String, version: String?): String? {
+        val where = "choose one in Settings → Languages & Frameworks → Node.js"
+        val printed = version?.trim().orEmpty()
+        val major = Regex("^v?(\\d+)\\.").find(printed)?.groupValues?.get(1)?.toIntOrNull()
+            ?: return "Piwi needs Node.js $NODE_MAJOR or later, and $node did not run: $where."
+        return if (major < NODE_MAJOR) "Piwi needs Node.js $NODE_MAJOR or later, and $node is $printed: $where." else null
+    }
 
     /** Whether a `piwi/failures` item is a failure of the latest run that a later run passed. */
     fun isFixedLocally(failure: WorkspaceFailure) = failure.state == "fixed-locally"
@@ -532,14 +560,22 @@ object Glue {
     }
 
     /**
-     * What **Re-run the Failing Tests** runs: every test still failing or edited since its run, from the file of the
-     * first; null when none fails.
+     * What **Re-run the Failing Tests** runs: every test still failing or edited since its run, one run per Playwright
+     * config (`WorkspaceFailure.root`), in the order of their first failure; none when none fails.
      */
-    fun rerunFailingArgs(result: FailuresResult?): RunTestsArgs? {
-        val failing = result?.items.orEmpty().filterNot { isFixedLocally(it) }
-        val ids = failing.mapNotNull { it.testCaseId }.distinct()
-        val uri = failing.firstOrNull()?.uri ?: return null
-        return if (ids.isEmpty()) null else RunTestsArgs(uri, ids)
+    fun rerunFailingArgs(result: FailuresResult?): List<RunTestsArgs> =
+        result?.items.orEmpty()
+            .filter { !isFixedLocally(it) && it.testCaseId != null && it.uri != null }
+            .groupBy { it.root.orEmpty() }
+            .map { (_, failures) ->
+                RunTestsArgs(failures.first().uri!!, failures.mapNotNull { it.testCaseId }.distinct(), root = failures.first().root)
+            }
+
+    /** What **Run This Test** runs for a failure: its test, from the Playwright config it belongs to. */
+    fun failureRunArgs(failure: WorkspaceFailure): RunTestsArgs? {
+        val uri = failure.uri ?: return null
+        val id = failure.testCaseId ?: return null
+        return RunTestsArgs(uri, listOf(id), root = failure.root)
     }
 
     /**
@@ -694,13 +730,18 @@ object Glue {
     }
 
     /** One sentence on the connection, for the tool window and the settings page. */
-    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false): String {
-        if (status == null) return NOT_STARTED
+    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null): String {
+        if (status == null) return startProblem ?: NOT_STARTED
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return "No Playwright config found in this project."
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else " $it" }
+        val unreachable = contexts.firstOrNull { it.problemKind == "unreachable" }
         val c = contexts.firstOrNull { it.connected }
-            ?: return "Not connected. " + (contexts.first().problem ?: "") + hint
+            ?: return if (unreachable != null) {
+                "Not connected. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
+            } else {
+                "Not connected. " + (contexts.first().problem ?: "") + hint
+            }
         val branch = c.branch?.let { " on $it" } ?: ""
         return "Connected to ${c.projectName ?: "Piwi"}$branch at ${c.serverUrl}, from ${sourceLabel(c.source)}.$hint"
     }

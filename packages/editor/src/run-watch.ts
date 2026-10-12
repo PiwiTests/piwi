@@ -514,7 +514,7 @@ export class RunWatch {
     const projects = tests.get(id) ?? tests.set(id, new Map()).get(id)!;
     projects.set(typeof browser === 'string' ? browser : '', status);
     const states = new Set(projects.values());
-    context.liveTests = new Map(context.liveTests).set(
+    context.liveTests.set(
       id,
       LIVE_ORDER.find((s) => states.has(s))!,
     );

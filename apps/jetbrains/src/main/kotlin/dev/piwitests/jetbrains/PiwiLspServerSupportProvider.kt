@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.configurations.GeneralCommandLine
+import com.intellij.execution.util.ExecUtil
 import com.intellij.javascript.nodejs.interpreter.NodeJsInterpreterManager
 import com.intellij.javascript.nodejs.interpreter.local.NodeJsLocalInterpreter
 import com.intellij.notification.NotificationType
@@ -53,6 +54,9 @@ class PiwiLspServerSupportProvider : LspServerSupportProvider {
     }
 }
 
+/** How long `node --version` may take before the interpreter counts as not running. */
+private const val NODE_VERSION_TIMEOUT_MILLIS = 10_000
+
 class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor(project, "Piwi") {
     override fun isSupportedFile(file: VirtualFile): Boolean = PiwiLspServerSupportProvider.isSupported(file)
 
@@ -61,11 +65,20 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         if (!Files.isRegularFile(server)) throw ExecutionException("The Piwi editor service is missing: $server")
         val interpreter = NodeJsInterpreterManager.getInstance(project).interpreter
         val node = (interpreter as? NodeJsLocalInterpreter)?.interpreterSystemDependentPath ?: "node"
+        val problem = Glue.nodeProblem(node, nodeVersion(node))
+        project.service<PiwiProjectService>().startFailed(problem)
+        if (problem != null) throw ExecutionException(problem)
         val folder = project.service<PiwiProjectService>().searchRoots().firstOrNull()?.toString() ?: project.basePath
         return GeneralCommandLine(node, server.toString(), "--stdio")
             .withWorkDirectory(folder)
             .withCharset(Charsets.UTF_8)
     }
+
+    /** What `node --version` prints, or null when it does not run, or not within 10 s. */
+    private fun nodeVersion(node: String): String? = runCatching {
+        val output = ExecUtil.execAndGetOutput(GeneralCommandLine(node, "--version"), NODE_VERSION_TIMEOUT_MILLIS)
+        output.stdout.takeIf { output.exitCode == 0 && !output.isTimeout }
+    }.getOrNull()
 
     /** The workspace is the folders the plugin searched for Playwright configs: the service searches them again. */
     override fun createInitializeParams(): InitializeParams = super.createInitializeParams().apply {

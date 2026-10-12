@@ -20,8 +20,13 @@ clients stay thin and both editors give the same answers.
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
   owner, project, duration and whether it is new, and the answer the latest complete run of the first context that has
   one (`run`), the runs laid over it (`overlays`) and when they were read (`updatedAt`, which alone changing sends no
-  `piwi/failuresChanged`). `piwi/agentContext` answers the block **Copy context for agent** copies, for a failure the
-  view names.
+  `piwi/failuresChanged`). Each item names the folder of its Playwright config (`root`), which a run of its test takes
+  (`RunTestsArgs.root`), whatever file the failure shows in. `piwi/agentContext` answers the block **Copy context for
+  agent** copies, for a failure the view names or the quick fix (`piwi.copyAgentContext`) names once it is picked.
+- `piwi/status` says what keeps a context from the instance's data (`problemKind`: `not-configured`, `no-project`,
+  `refused`, `unreachable`), so a client tells an instance that did not answer apart from a missing connection. While
+  one does not answer, the contexts are read again 15 s later, then twice as long each time, up to the refresh's pace
+  (`retryUnreachable`, `UNREACHABLE_RETRY_MS`).
 - The latest run on the checked-out branch is read again whenever a run ends, and polled besides (below); while that
   branch has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in
   `piwi/runStatus`). That ladder is the default baseline; a client may choose another per context
@@ -179,13 +184,21 @@ needs the extension's sources, and a change to the recorder there changes what t
   follows it (`refreshAll`). What an index gives every request (each file's call sites, a locator's stability) is
   computed once per index (`callSitesOf`, `stabilityOf` in `src/analysis.ts`). What belongs to one
   file (a spec's cases, a file's stored alternatives) or one failure (its healing, fix plan, linked issues, evidence) is
-  fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it. A
+  fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it, a quick fix
+  or a hover for 1.5 s at most (`within`, `LOOKUP_WAIT_MS`), the fetch going on for the next ask; one that failed
+  without the instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again next time (`once` in
+  `src/context.ts`). A canceled quick fix or hover is not answered further. A stored file (a trace, a screenshot) is
+  written to `EVIDENCE_ROOT` as it arrives, never held in memory (`PiwiClient.download`), and the files not used for a
+  week are deleted when the service starts (`pruneEvidence`). A
   failure's files at its run's commit are read once too, as many as the failures go through, and its diagnostics wait
   for nothing: the files as saved stand in until they are read. The translation values of `HEAD` are read once per
   `HEAD`, those of the working tree once per refresh, each once for every document that asks meanwhile.
 - **A change is pushed against what the client holds**: `piwi/statusChanged`, `piwi/runStatusChanged` and
   `piwi/failuresChanged` are sent when the answer differs from the last one sent or answered to `piwi/status`,
   `piwi/runStatus` or `piwi/failures`, so a client keeps the pushed answers and never reads one again on a push.
+- **An index the instance says did not change is not read again**: the locator and code indexes are asked with the
+  `ETag` they came with (`If-None-Match`, `PiwiContext.answers`), and a 304 keeps the same object, so what is computed
+  once per index stays.
 - **The failures come first on a refresh** (`PiwiContext.refresh`): the project and its locator index (the ladder
   needs the default branch), then the latest run, whose failures and status are published at once (`onRun`); only then
   the other indexes, side by side, each keeping what it held when its read fails. Their slow reads are one request

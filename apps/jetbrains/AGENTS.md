@@ -14,7 +14,11 @@ directory: `piwi-language-server.cjs`, and beside it the recorder's launcher (`p
 reporter that prints a Playwright project's options (`piwi-use-reporter.cjs`), the recorder's IDE bundle
 (`record-ide.js`) and its messages (`record-ide-messages.json`). `buildPlugin`, `runIde` and `verifyPlugin` fail
 without one of them; the tests start the language server from `dist/` and need none of the others. The plugin starts
-the service through the platform's LSP API with the project's Node.js interpreter.
+the service through the platform's LSP API with the project's Node.js interpreter, once `node --version` says 20 or
+later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `PiwiProjectService.startFailed` keeps
+(`startProblem`) and says once, the status bar item reads `Piwi: Node.js` and opens the Node.js settings
+(`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
+while it does not run.
 
 - `PiwiLspServerSupportProvider.kt` registers the service; the LSP client renders its diagnostics, quick fixes and
   hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`; `piwi.desktopJob`,
@@ -56,7 +60,8 @@ the service through the platform's LSP API with the project's Node.js interprete
   (`PopupHandler.installPopupMenu`) runs the test, opens the trace, the screenshot or the page, copies the context for
   an agent (`piwi/agentContext`) and, on a CI failure while the desktop app runs, passes it to the app, through
   `PiwiCommands`. **Re-run the Failing Tests** (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs
-  `Glue.rerunFailingArgs`. **Compare With…** (`Piwi.CompareWith`, **Tools → Piwi** and the toolbar) is a popup of
+  `Glue.rerunFailingArgs`, one run per Playwright config, and **Run This Test** `Glue.failureRunArgs`: both name the
+  failure's config (`WorkspaceFailure.root`). **Compare With…** (`Piwi.CompareWith`, **Tools → Piwi** and the toolbar) is a popup of
   `Glue.baselineEntries` (the ladder, each of `RunStatus.branches`, a run by its id through `Messages.showInputDialog`,
   the local runs only) for the context of the file at hand; `PiwiProjectService.setBaseline` keeps the choice in
   `PiwiLocalSettings.baselines` (by root, `Glue.encodeBaseline`, the ladder as no entry), sends `piwi/setBaseline`, and
@@ -64,7 +69,8 @@ the service through the platform's LSP API with the project's Node.js interprete
   starts with the first supported file opened (2024.1 has no way to start it without one): until then the status is
   null, and the status bar and tool window say so.
 - The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`): a click runs `PiwiProjectService.refreshRun`
-  (`piwi/refreshRun` then `refreshStatus`, on a pooled thread, `Piwi: refreshing…` meanwhile), and Connect while not
+  (`piwi/refreshRun` then `refreshStatus`, on a pooled thread, `Piwi: refreshing…` meanwhile), **Refresh** while the
+  instance does not answer (`Piwi: unreachable`, `problemKind`, `StatusAction.RETRY`), and Connect while not
   connected. Its tooltip says the same as VS Code's in plain text: the counts, the local runs, the run in progress and
   when the run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project
   installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under

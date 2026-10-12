@@ -101,6 +101,7 @@ import {
   connectChoices,
   desktopJobNotice,
   testDecorations,
+  type TestDecoration,
   disconnectQuestion,
   filesRedraw,
   importInsertion,
@@ -109,6 +110,7 @@ import {
   ownLiveRun,
   refreshingText,
   rerunFailingArgs,
+  failureRunArgs,
   runVerdict,
   VERDICT_ACTIONS,
   type RunNotifications,
@@ -130,6 +132,10 @@ import { startSendListener, type SendListener, type SendResult } from './send-li
 const STATUS_TICK_MS = 30_000;
 /** How often, at most, the gutter is drawn again for the tests the run in progress begins and ends. */
 const LIVE_TESTS_DRAW_MS = 1_000;
+/** Pause after an edit before the gutter of the edited file is drawn again. */
+const GUTTER_EDIT_MS = 300;
+/** Pause after a change of the connection's settings or key before it is handed to the service. */
+const CREDENTIALS_WAIT_MS = 250;
 /** A terminal whose shell has not activated shell integration this long after it opened never will. */
 const SHELL_INTEGRATION_WAIT_MS = 10_000;
 /** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
@@ -186,6 +192,8 @@ export interface PiwiApi {
   failureChildren(node?: FailureNode): Promise<FailureNode[]>;
   /** The command of the latest test run started from the editor, as sent to its terminal; null before the first. */
   lastRun(): RunCommand | null;
+  /** The tests last drawn in the gutter of a file, by its URI. */
+  gutter(uri: string): TestDecoration[];
 }
 
 /** A failures view node, or what a command names it by. */
@@ -216,6 +224,14 @@ async function handCredentials(context: vscode.ExtensionContext, lc: LanguageCli
   await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, handed);
 }
 
+/** Hand the saved connection to the service when it differs from the one last handed. */
+async function handChangedCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
+  const next = await credentials(context);
+  if (JSON.stringify(next) === JSON.stringify(handed)) return;
+  handed = next;
+  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, next);
+}
+
 /** Hand the saved connection to the service and have it read everything again. */
 async function applyCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
   await handCredentials(context, lc);
@@ -240,6 +256,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     debug: { module: serverModule, transport: TransportKind.stdio },
   };
   handed = await credentials(context);
+  let credentialsTimer: ReturnType<typeof setTimeout> | null = null;
+  const credentialsChanged = () => {
+    if (credentialsTimer) clearTimeout(credentialsTimer);
+    credentialsTimer = setTimeout(() => {
+      credentialsTimer = null;
+      void handChangedCredentials(context, lc);
+    }, CREDENTIALS_WAIT_MS);
+  };
+  context.subscriptions.push({ dispose: () => credentialsTimer && clearTimeout(credentialsTimer) });
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', pattern: DOCUMENT_PATTERN }],
     // Read on each start of the service, the client's restarts after it stopped unexpectedly included.
@@ -272,8 +297,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
   context.subscriptions.push(failingBackground, failingLine, ...gutterIcons.values());
+  const gutter = new Map<string, TestDecoration[]>();
   const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
     const tests = testDecorations(lines);
+    gutter.set(document.uri.toString(), tests);
     for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
       for (const [status, type] of gutterIcons) {
         editor.setDecorations(
@@ -307,6 +334,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   const lensesChanged = new vscode.EventEmitter<void>();
+  /**
+   * Each open file's `piwi/fileSummary`, by URI: asked once per text version and drawing of the files (`drawing`), and
+   * shared by the CodeLens and the gutter, which draws with CodeLens turned off too.
+   */
+  const summaries = new Map<string, { version: number; drawing: number; summary: Promise<FileSummary | null> }>();
+  let drawing = 0;
+  const summaryOf = (document: vscode.TextDocument): Promise<FileSummary | null> => {
+    const uri = document.uri.toString();
+    const known = summaries.get(uri);
+    if (known && known.version === document.version && known.drawing === drawing) return known.summary;
+    const summary = lc.sendRequest<FileSummary>(FILE_SUMMARY_REQUEST, { uri }).catch(() => null);
+    summaries.set(uri, { version: document.version, drawing, summary });
+    return summary;
+  };
+  const piwiFile = (document: vscode.TextDocument) =>
+    vscode.languages.match({ scheme: 'file', pattern: DOCUMENT_PATTERN }, document) > 0;
+  /** Draw the tests of the visible files in the gutter, or of `document` alone. */
+  const decorateVisible = (document?: vscode.TextDocument) => {
+    const shown = new Set(vscode.window.visibleTextEditors.map((e) => e.document));
+    for (const d of document ? [document] : shown) {
+      if (shown.has(d) && piwiFile(d)) void summaryOf(d).then((summary) => decorateTests(d, summary?.lines ?? []));
+    }
+  };
+  /** The files' CodeLens and gutter drawn again, from a summary asked again. */
+  const filesChanged = () => {
+    drawing++;
+    lensesChanged.fire();
+    decorateVisible();
+  };
+  const gutterEdits = new Map<string, ReturnType<typeof setTimeout>>();
+  context.subscriptions.push(
+    vscode.window.onDidChangeVisibleTextEditors(() => decorateVisible()),
+    // The gutter follows the edits, 300 ms after the last.
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (!e.contentChanges.length || !piwiFile(e.document)) return;
+      const uri = e.document.uri.toString();
+      clearTimeout(gutterEdits.get(uri));
+      gutterEdits.set(
+        uri,
+        setTimeout(() => {
+          gutterEdits.delete(uri);
+          decorateVisible(e.document);
+        }, GUTTER_EDIT_MS),
+      );
+    }),
+    vscode.workspace.onDidCloseTextDocument((d) => {
+      summaries.delete(d.uri.toString());
+      gutter.delete(d.uri.toString());
+    }),
+    { dispose: () => gutterEdits.forEach((t) => clearTimeout(t)) },
+  );
   const mcpChanged = new vscode.EventEmitter<void>();
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
   statusItem.name = 'Piwi';
@@ -343,7 +421,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       testsDrawnAt = Date.now();
     }
     runsShown = runs;
-    lensesChanged.fire();
+    filesChanged();
   };
   const render = () => {
     const view = statusBarView(status, runs, !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN));
@@ -352,8 +430,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
     statusUrl = view.url;
-    statusItem.command =
-      view.action === 'refresh' ? 'piwi.refreshRun' : view.action === 'connect' ? 'piwi.connect' : undefined;
+    statusItem.command = {
+      refresh: 'piwi.refreshRun',
+      retry: 'piwi.refresh',
+      connect: 'piwi.connect',
+      none: undefined,
+    }[view.action];
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     statusItem.show();
   };
@@ -373,7 +455,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     if (full) {
       failuresView.refresh();
       runsShown = runs;
-      lensesChanged.fire();
+      filesChanged();
     } else {
       if (ownLiveRun(runs) !== ownLiveRun(before)) failuresView.render();
       drawFiles();
@@ -576,6 +658,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const failure = failureOf(target);
     const inside = (root: string) => !!failure && failure.uri.startsWith(`${vscode.Uri.file(root).toString()}/`);
     const root =
+      status?.contexts.find((c) => c.root === failure?.root) ??
       status?.contexts.filter((c) => inside(c.root)).sort((a, b) => b.root.length - a.root.length)[0] ??
       status?.contexts.find((c) => c.connected);
     if (!failure || !root) return;
@@ -613,16 +696,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     // From the failures view, a failure; from elsewhere, the tests to run.
     vscode.commands.registerCommand('piwi.runTest', async (target: FailureNode | RunTestsArgs) => {
       const failure = failureOf(target);
-      if (failure?.testCaseId !== undefined) await runTests({ uri: failure.uri, testIds: [failure.testCaseId] });
+      const args = failure ? failureRunArgs(failure) : null;
+      if (args) await runTests(args);
       else if ((target as RunTestsArgs)?.testIds) await runTests(target as RunTestsArgs);
     }),
     vscode.commands.registerCommand('piwi.rerunFailing', async () => {
-      const args = rerunFailingArgs(await failuresView.read());
-      if (!args) {
+      const runs = rerunFailingArgs(await failuresView.read());
+      if (!runs.length) {
         void vscode.window.showInformationMessage('Piwi: no failing test to re-run.');
         return;
       }
-      await runTests(args);
+      for (const args of runs) await runTests(args);
     }),
     vscode.commands.registerCommand('piwi.groupFailuresBy', () => failuresView.pickGrouping()),
     vscode.commands.registerCommand('piwi.compareWith', async () => {
@@ -672,15 +756,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
     vscode.commands.registerCommand('piwi.stopFollowingEditor', () => failuresView.toggleFollow()),
-    vscode.commands.registerCommand('piwi.copyAgentContext', async (target: FailureNode) => {
+    // From the failures view, a failure; from a quick fix, the failure it names.
+    vscode.commands.registerCommand('piwi.copyAgentContext', async (target: FailureNode | AgentContextParams) => {
       const failure = failureOf(target);
-      if (!failure) return;
-      const answer = await lc
-        .sendRequest<AgentContextResult | null>(AGENT_CONTEXT_REQUEST, {
-          uri: failure.uri,
-          executionId: failure.executionId,
-        } satisfies AgentContextParams)
-        .catch(() => null);
+      const params: AgentContextParams | null = failure
+        ? { uri: failure.uri, executionId: failure.executionId }
+        : typeof (target as AgentContextParams)?.executionId === 'number'
+          ? (target as AgentContextParams)
+          : null;
+      if (!params) return;
+      const answer = await lc.sendRequest<AgentContextResult | null>(AGENT_CONTEXT_REQUEST, params).catch(() => null);
       if (!answer) {
         void vscode.window.showWarningMessage('Piwi: this failure is no longer in the latest run.');
         return;
@@ -802,10 +887,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       {
         onDidChangeCodeLenses: lensesChanged.event,
         async provideCodeLenses(document) {
-          const summary = await lc
-            .sendRequest<FileSummary>(FILE_SUMMARY_REQUEST, { uri: document.uri.toString() })
-            .catch(() => null);
-          decorateTests(document, summary?.lines ?? []);
+          const summary = await summaryOf(document);
           if (!summary) return [];
           // A test's line is drawn in the gutter and its hover, not as a lens above it.
           return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
@@ -819,11 +901,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         },
       },
     ),
-    vscode.workspace.onDidChangeConfiguration(async (e) => {
-      if (e.affectsConfiguration('piwi')) await handCredentials(context, lc);
+    // The settings and the key the connection reads; a burst of changes, such as Connect's, is handed once.
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('piwi.serverUrl') || e.affectsConfiguration('piwi.project')) credentialsChanged();
     }),
-    context.secrets.onDidChange(async (e) => {
-      if (e.key.startsWith(API_KEY_SECRET_PREFIX)) await handCredentials(context, lc);
+    context.secrets.onDidChange((e) => {
+      if (e.key.startsWith(API_KEY_SECRET_PREFIX)) credentialsChanged();
     }),
   );
 
@@ -859,7 +942,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
     // A failure moved with an edit, or its line changed since the run: the lenses, the decorations and the view again.
     lc.onNotification(FAILURES_NOTIFICATION, (failures: FailuresResult) => {
-      lensesChanged.fire();
+      filesChanged();
       failuresView.show(failures);
     }),
     // A run started here ended and was read: what it changed, as `piwi.runNotifications` allows.
@@ -895,6 +978,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       return failuresView.getChildren(node);
     },
     lastRun: () => lastRun,
+    gutter: (uri) => gutter.get(uri) ?? [],
   };
 }
 

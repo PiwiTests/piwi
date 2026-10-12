@@ -30,6 +30,7 @@ import {
   refreshingText,
   relativeTime,
   rerunFailingArgs,
+  failureRunArgs,
   runIdOf,
   runsInFiles,
   filesRedraw,
@@ -104,6 +105,26 @@ describe('statusBarView', () => {
       tooltip: 'No project chosen.\n\n[Connect](command:piwi.connect)',
       action: 'connect',
     });
+  });
+
+  test('when the instance does not answer, says so and offers to read it again rather than Connect', () => {
+    const problem = 'Could not reach http://piwi: fetch failed';
+    const view = statusBarView(
+      { contexts: [{ ...connected.contexts[0]!, connected: false, problem, problemKind: 'unreachable' }] },
+      null,
+    );
+    expect(view).toEqual({
+      text: '$(debug-disconnect) Piwi: unreachable',
+      tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Connect](command:piwi.connect)`,
+      action: 'retry',
+      url: null,
+      error: false,
+    });
+    const refused = statusBarView(
+      { contexts: [{ ...connected.contexts[0]!, connected: false, problem: 'Refused.', problemKind: 'refused' }] },
+      null,
+    );
+    expect(refused).toMatchObject({ text: '$(plug) Piwi: connect', action: 'connect' });
   });
 
   test('a passing run, with its flaky tests; a click reads it again', () => {
@@ -1141,11 +1162,28 @@ describe('the failures view', () => {
     expect(older.map((n) => n.label)).toEqual(['login.spec.ts']);
   });
 
-  test('counts the failing tests, and re-runs them from the file of the first', () => {
+  test('counts the failing tests, and re-runs them once per Playwright config', () => {
     expect(failingCount(result)).toBe(2);
-    expect(rerunFailingArgs(result)).toEqual({ uri: 'file:///w/tests/login.spec.ts', testIds: [7, 8] });
-    expect(rerunFailingArgs({ items: [result.items[3]!] })).toBeNull();
-    expect(rerunFailingArgs(null)).toBeNull();
+    expect(rerunFailingArgs(result)).toEqual([{ uri: 'file:///w/tests/login.spec.ts', testIds: [7, 8] }]);
+    expect(rerunFailingArgs({ items: [result.items[3]!] })).toEqual([]);
+    expect(rerunFailingArgs(null)).toEqual([]);
+    const [a, b] = result.items;
+    const twoConfigs = {
+      items: [
+        { ...a!, root: '/w/apps/shop' },
+        { ...b!, root: '/w/apps/admin', uri: 'file:///w/shared/pages/admin.ts', testCaseId: 8 },
+        { ...a!, root: '/w/apps/shop', testCaseId: 9 },
+      ],
+    };
+    expect(rerunFailingArgs(twoConfigs)).toEqual([
+      { uri: a!.uri, root: '/w/apps/shop', testIds: [7, 9] },
+      { uri: 'file:///w/shared/pages/admin.ts', root: '/w/apps/admin', testIds: [8] },
+    ]);
+    expect(failureRunArgs(twoConfigs.items[1]!)).toEqual({
+      uri: 'file:///w/shared/pages/admin.ts',
+      root: '/w/apps/admin',
+      testIds: [8],
+    });
   });
 
   test('a failure names its run', () => {

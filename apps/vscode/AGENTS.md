@@ -14,14 +14,18 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
 - `src/extension.ts` starts the service with `vscode-languageclient`, draws `piwi/fileSummary` as CodeLens (a test's
   line as a gutter icon from `media/`, its details in a hover, the `piwi.failingTestBackground` color over a
   failing test and `piwi.failingLineBackground` on the line it failed at, still drawn once that line changed since
-  the run, which the hover says: `testDecorations` in `src/glue.ts`; `piwi/failuresChanged` draws them again) and
+  the run, which the hover says: `testDecorations` in `src/glue.ts`; `piwi/failuresChanged` draws them again; the
+  gutter is drawn with CodeLens turned off too, from the same `piwi/fileSummary`, asked once per text version and
+  drawing of the files: `summaryOf`, `decorateVisible`) and
   `piwi/runStatus` in the status bar (the tests still failing and those fixed locally since the latest run, from
   `failingTests` and `resolved`, and the run in progress, `live`; a notification that moves only the run in progress
   leaves the CodeLens and the gutter as they are: `runsInFiles`), implements the commands the service names
   (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`, from a quick
   fix or a flaky test's lens, which shows `piwi/desktopJobChanged` as notifications with the share button), keeps the
   API key in `SecretStorage`, hands the connection to the service with `piwi/setCredentials` and as the initialization
-  options of each of its starts (`handed`: the client starts the service again after it stops unexpectedly), and
+  options of each of its starts (`handed`: the client starts the service again after it stops unexpectedly): a change
+  of `piwi.serverUrl`, `piwi.project` or a key is handed 250 ms after the last of a burst, and only when the
+  connection differs from the one handed (`handChangedCredentials`), since each one reads everything again; and
   provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
@@ -36,7 +40,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   `piwi/agentContext`. The badge counts the failing tests; **Follow the active editor** (`piwi.toggleFollowEditor`,
   `piwi.stopFollowingEditor`, kept as `piwi.followEditor`) reveals the active file's first failure; the welcome
   content follows the `piwi.failuresView` context key. **Re-run the failing tests** (`piwi.rerunFailing`) runs
-  `rerunFailingArgs`. The view's `getChildren` is in the API `activate` returns (`failureChildren`).
+  `rerunFailingArgs`, one run per Playwright config, and **Run this test** `failureRunArgs`: both name the failure's
+  config (`root`). The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 - `piwi/runEnded` is a notification (`runVerdict` in `src/glue.ts`): a warning with **Re-run failing** when something
   fails, an information otherwise, with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**, as
   the `piwi.runNotifications` setting allows (`always`, `failures`, `never`). A test the run in progress runs has the
@@ -44,11 +49,12 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   so the files are drawn again as its tests begin and end, at most once a second (`filesRedraw`, `drawFiles` in
   `src/extension.ts`), and at once when the latest run changes.
 - The status bar item (`statusBarView` in `src/glue.ts`): a click runs `piwi.refreshRun` (`piwi/refreshRun`, the
-  item's icon spinning meanwhile: `refreshingText`), and **Piwi: Connect** while not connected. Its tooltip is a
+  item's icon spinning meanwhile: `refreshingText`), **Piwi: Refresh** while the instance does not answer
+  (`problemKind: 'unreachable'`, the `retry` action), and **Piwi: Connect** while not connected. Its tooltip is a
   trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the local runs,
   the run in progress, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every 30 s),
   the reporter version the project installs (`reporter 0.47.0`), then links to `piwi.openRun`,
-  `piwi.openInDashboard`, `piwi.compareWith` and `piwi.connect`; **Piwi: Open the latest run**
+  `piwi.openInDashboard`, `piwi.compareWith`, `piwi.connect` and `piwi.refresh`; **Piwi: Open the latest run**
   (`piwi.openRun`) is in the palette too.
 - **Piwi: Compare with…** (`piwi.compareWith`, also in the failures view's title bar and the tooltip) picks the
   baseline of the active file's context (`baselinePicks` in `src/glue.ts`: the ladder, each of `RunStatus.branches`, a
@@ -131,4 +137,4 @@ npm run vscode:package            # dist/piwi.vsix
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
 API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's
-nodes, and `lastRun`, the command a breakpoint's run was given).
+nodes, `lastRun`, the command a breakpoint's run was given, and `gutter`, the tests last drawn in a file's gutter).

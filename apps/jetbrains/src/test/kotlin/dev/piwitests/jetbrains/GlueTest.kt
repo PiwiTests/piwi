@@ -43,6 +43,37 @@ class GlueTest {
     }
 
     @Test
+    fun `a Node_js missing or older than 20 is said, with its settings one click away`() {
+        assertEquals(null, Glue.nodeProblem("node", "v20.11.1\n"))
+        assertEquals(null, Glue.nodeProblem("/usr/bin/node", "v22.3.0"))
+        val old = "Piwi needs Node.js 20 or later, and /usr/bin/node is v18.19.0: choose one in Settings → Languages & Frameworks → Node.js."
+        assertEquals(old, Glue.nodeProblem("/usr/bin/node", "v18.19.0"))
+        assertEquals(
+            "Piwi needs Node.js 20 or later, and node did not run: choose one in Settings → Languages & Frameworks → Node.js.",
+            Glue.nodeProblem("node", null),
+        )
+        assertEquals(
+            Glue.StatusView("Piwi: Node.js", "$old\nClick to open the Node.js settings.", null, Glue.StatusAction.NODE_SETTINGS),
+            Glue.statusView(null, null, startProblem = old),
+        )
+        assertEquals(old, Glue.connectionSummary(null, startProblem = old))
+        assertEquals(Glue.NOT_STARTED, Glue.connectionSummary(null))
+    }
+
+    @Test
+    fun `when the instance does not answer, says so and reads it again on a click rather than Connect`() {
+        val problem = "Could not reach http://piwi: fetch failed"
+        val status = StatusResult(listOf(ContextStatus(root = "/w", problem = problem, problemKind = "unreachable")))
+        assertEquals(
+            Glue.StatusView("Piwi: unreachable", "$problem\nPiwi reads it again on its own; click to read it now.", null, Glue.StatusAction.RETRY),
+            Glue.statusView(status, null),
+        )
+        assertEquals("Not connected. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
+        val refused = StatusResult(listOf(ContextStatus(root = "/w", problem = "Refused.", problemKind = "refused")))
+        assertEquals(Glue.StatusAction.CONNECT, Glue.statusView(refused, null).action)
+    }
+
+    @Test
     fun `a passing run, with its flaky tests, which a click reads again`() {
         assertEquals(
             Glue.StatusView(
@@ -840,12 +871,31 @@ class GlueTest {
     }
 
     @Test
-    fun `the header names the run, the failing tests are counted and re-run from the file of the first`() {
+    fun `the header names the run, the failing tests are counted and re-run once per Playwright config`() {
         assertEquals("Run #120 · CI · feature/x · 2 failing · 1 fixed locally · 4 min ago", Glue.runHeader(treeFailures, treeNow))
         assertEquals(null, Glue.runHeader(FailuresResult(emptyList())))
         assertEquals(2, Glue.failingCount(treeFailures))
-        assertEquals(RunTestsArgs("file:///w/tests/login.spec.ts", listOf(7, 8)), Glue.rerunFailingArgs(treeFailures))
-        assertEquals(null, Glue.rerunFailingArgs(FailuresResult(listOf(treeFailures.items!![3]))))
+        assertEquals(listOf(RunTestsArgs("file:///w/tests/login.spec.ts", listOf(7, 8))), Glue.rerunFailingArgs(treeFailures))
+        assertEquals(emptyList<RunTestsArgs>(), Glue.rerunFailingArgs(FailuresResult(listOf(treeFailures.items!![3]))))
+        val (a, b) = treeFailures.items!!
+        val twoConfigs = FailuresResult(
+            listOf(
+                a.copy(root = "/w/apps/shop"),
+                b.copy(root = "/w/apps/admin", uri = "file:///w/shared/pages/admin.ts", testCaseId = 8),
+                a.copy(root = "/w/apps/shop", testCaseId = 9),
+            ),
+        )
+        assertEquals(
+            listOf(
+                RunTestsArgs(a.uri!!, listOf(7, 9), root = "/w/apps/shop"),
+                RunTestsArgs("file:///w/shared/pages/admin.ts", listOf(8), root = "/w/apps/admin"),
+            ),
+            Glue.rerunFailingArgs(twoConfigs),
+        )
+        assertEquals(
+            RunTestsArgs("file:///w/shared/pages/admin.ts", listOf(8), root = "/w/apps/admin"),
+            Glue.failureRunArgs(twoConfigs.items!![1]),
+        )
     }
 
     @Test

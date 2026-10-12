@@ -108,7 +108,7 @@ kept on this machine, per Playwright config.
 ## Re-run the failing tests
 
 **Piwi: Re-run the failing tests** (**Tools → Piwi → Re-run the Failing Tests**) runs every test still failing, or
-edited since its run, in one command; when none fails, it says so. **Run this test** also sits above the reason line of
+edited since its run, one command per Playwright config; when none fails, it says so. **Run this test** also sits above the reason line of
 a failing test, beside **Screenshot** and **Trace**.
 
 ## The status bar
@@ -122,10 +122,11 @@ Refresh** fetches. The tooltip holds the run's counts, the baseline, your local 
 when the run was read (`Updated 12 s ago · live` while the event stream is connected, `· read every minute` without it).
 In VS Code it ends with **Open run #120**, **Open in dashboard**, **Compare with…** and **Connect**; in a JetBrains IDE,
 **Tools → Piwi → Open the Latest Run in the Dashboard**, also in the Piwi tool window's toolbar, opens the run. When the
-extension is not connected, the item says why, and a click runs **Piwi: Connect**.
+extension is not connected, the item says why, and a click runs **Piwi: Connect**, or retries an
+[unreachable instance](./editor-connection#an-unreachable-instance).
 
 ## Related
 
-- [Editor extensions](./editors): the failures, lenses and quick fixes the editor shows from your suite.
+- [Editor extensions](./editors): what the editor shows from your suite.
 - [Editor connection](./editor-connection): the instance the editor reads, and its key.
 - [Test selection](/features/test-selection): the saved selections **Run selection…** runs.

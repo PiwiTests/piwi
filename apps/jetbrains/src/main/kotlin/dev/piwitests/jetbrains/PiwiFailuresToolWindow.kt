@@ -155,7 +155,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             }
             val failing = Glue.failingCount(result)
             toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
-            val connection = Glue.connectionSummary(service.status, local.desktop)
+            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem)
             val run = Glue.runHeader(result)
             header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
             val connected = service.status?.contexts.orEmpty().any { it.connected }
@@ -163,7 +163,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
             when {
-                service.status == null -> tree.emptyText.appendText(Glue.NOT_STARTED)
+                service.status == null -> tree.emptyText.appendText(service.startProblem ?: Glue.NOT_STARTED)
                 !connected -> {
                     tree.emptyText.appendText("Not connected to a Piwi instance")
                     tree.emptyText.appendSecondaryText("Connect…", SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
@@ -306,14 +306,14 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         val failing = { f: WorkspaceFailure -> !Glue.isFixedLocally(f) }
         val desktop = { f: WorkspaceFailure -> failing(f) && f.source == "ci" && service.status?.desktopUrl != null }
         val job = { f: WorkspaceFailure, kind: String ->
-            Glue.contextRootOf(service.status, f.uri)?.let {
+            (f.root ?: Glue.contextRootOf(service.status, f.uri))?.let {
                 PiwiCommands.desktopJob(project, DesktopJobParams(root = it, executionId = f.executionId, kind = kind))
             }
             Unit
         }
         return DefaultActionGroup(
-            FailureAction("Run This Test", AllIcons.Actions.Execute, selected, { it.testCaseId != null && it.uri != null }) {
-                PiwiCommands.runTests(project, RunTestsArgs(it.uri!!, listOf(it.testCaseId!!)))
+            FailureAction("Run This Test", AllIcons.Actions.Execute, selected, { Glue.failureRunArgs(it) != null }) {
+                Glue.failureRunArgs(it)?.let { args -> PiwiCommands.runTests(project, args) }
             },
             Separator.getInstance(),
             FailureAction("Open the Trace", null, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },
