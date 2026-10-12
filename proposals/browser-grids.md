@@ -202,8 +202,8 @@ Prices are per parallel session per month, billed yearly, unless stated otherwis
 
 | Vendor | Model | Browsers and OS | Real mobile devices | Newest Playwright supported | Price | Data in the EU |
 |---|---|---|---|---|---|---|
-| BrowserStack Automate | remote browser; SDK optional | Chrome, Edge, Chrome for Testing, Playwright's Chromium, Firefox and WebKit; Windows 10–11, macOS | iOS Safari (since June 2025, a subset of commands), Android Chrome | 1.62, "two versions" policy | $99 desktop, $175 with mobile, $59 Chrome only; no pay per use | EU desktops in the Netherlands. Region restriction is Enterprise only, and test metadata still leaves the region. |
-| TestMu AI | remote browser; HyperExecute is a hosted runner | Chrome, Edge, Playwright's browsers; Windows, macOS | Android; iOS in beta | "latest" claimed; device tables stop at 1.60–1.61 | $79; HyperExecute $103 on Linux | EU API hosts, no documented guarantee |
+| BrowserStack Automate | remote browser; SDK optional | Chrome, Edge, Chrome for Testing, Playwright's Chromium, Firefox and WebKit; Windows 10 and 11, macOS | iOS Safari (since June 2025, a subset of commands), Android Chrome | 1.62, "two versions" policy | $99 desktop, $175 with mobile, $59 Chrome only; no pay per use | EU desktops in the Netherlands. Region restriction is Enterprise only, and test metadata still leaves the region. |
+| TestMu AI | remote browser; HyperExecute is a hosted runner | Chrome, Edge, Playwright's browsers; Windows, macOS | Android; iOS in beta | "latest" claimed; device tables stop at 1.60 and 1.61 | $79; HyperExecute $103 on Linux | EU API hosts, no documented guarantee |
 | TestingBot | remote browser | Chrome, Edge, Firefox, WebKit; Windows, macOS, Linux | Android | server matched to the client (vendor's claim) | $50 with 1,000 minutes, $90 unlimited | EU-hosted (vendor's claim); no SOC 2 or ISO 27001 |
 | Sauce Labs | hosted runner (`saucectl`) | Playwright's browsers and Chrome; Windows, macOS, Linux | none for Playwright | 1.61.1 | $149 | EU Central data center |
 | Azure Playwright Workspaces | remote browser (CDP too) | every Playwright browser; Linux, Windows | none | 1.50 and later | $0.01 per test minute on Linux, $0.02 on Windows, pay per use | West Europe and Switzerland North, data kept in the region |
@@ -229,7 +229,7 @@ Prices are per parallel session per month, billed yearly, unless stated otherwis
 | Browserless | SSPL or a commercial license; the vendor says commercial use, CI included, needs the latter | Playwright's protocol on `/chromium/playwright`, `/firefox/playwright`, `/webkit/playwright` | One image bundles several `playwright-core` copies (1.59.1 to 1.63.0 in the open-source 2.57.0) and picks one from the client's `User-Agent`. A queue and a live debug viewer. |
 | Selenosis 2, Selenwright, BrowserThing | Apache-2.0 | Playwright's protocol | Small projects, active in 2026. Selenosis runs one pod per session through a Kubernetes operator, with no queue. Selenwright is a fork of Selenoid for Docker, with video. BrowserThing routes each client to a worker of its version and has a capacity API, but its sessions share a browser process. |
 | Selenium Grid 4 | Apache-2.0 | **CDP only, Chrome and Edge**, through `SELENIUM_REMOTE_URL` (experimental in Playwright's docs): Playwright opens a WebDriver session, then connects over CDP | Router, distributor, session queue and nodes. An early pod-per-session mode on Kubernetes since 4.41, and KEDA autoscaling in the Helm chart. Video and VNC only for headed sessions, and Playwright Test runs headless by default. No `exposeNetwork`. An unauthenticated grid allows remote code execution (SeleniumGreed), so it needs its router's basic authentication and a firewall. |
-| Selenoid, Ggr | archived on 2024-12-17 | — | Their READMEs point to Moon. |
+| Selenoid, Ggr | archived on 2024-12-17 | none | Their READMEs point to Moon. |
 | Testcontainers | MIT | The .NET module runs a Playwright server in a container; the Java and Node modules for Playwright are community-maintained | A grid created for one run and removed after it: the version is pinned, there is no queue and no live view. The local Linux browser of step 2 is the same pattern. |
 | BrowserStack Automate self-hosted (formerly TurboScale) | commercial | Through BrowserStack's SDK or hub, into your own Kubernetes cluster | The grid runs in your AWS, GCP or Azure account and keeps artifacts in your storage. But test names, results and capabilities go to BrowserStack's US servers, and Linux runs Playwright 1.59. |
 | Testkube | Testkube Community License and MIT | Not a grid: it runs `npx playwright test` in pods, a hosted runner inside your cluster | Sharding needs the paid control plane ($700 per runner agent per month). The standalone API has no authentication. |
@@ -255,7 +255,7 @@ As of October 2026, the only way from Playwright onto a WebDriver grid is CDP, f
 
 What it adds:
 
-- Branded Chrome and Edge at chosen versions (83 and later) on Windows 10–11 and macOS, and Playwright's WebKit on
+- Branded Chrome and Edge at chosen versions (83 and later) on Windows 10 and 11 and macOS, and Playwright's WebKit on
   macOS.
 - **Real iOS Safari**, since June 2025. BrowserStack implements the commands one by one, with limits: one context and
   one page per session, no `request` events for subresources, no `toMatchAriaSnapshot`.
