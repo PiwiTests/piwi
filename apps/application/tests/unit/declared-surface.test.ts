@@ -1,5 +1,11 @@
 import { describe, test, expect } from 'vitest';
-import { buildManifestGraph, normalizeManifestPattern, extractImports, buildImportEdges } from '#shared/graph';
+import {
+  buildManifestGraph,
+  createDeclaredMatcher,
+  normalizeManifestPattern,
+  extractImports,
+  buildImportEdges,
+} from '#shared/graph';
 import { parseOpenApiSpec } from '#shared/openapi';
 import { detectDeclaredNeverHit, detectSuccessOnly, type RouteStat } from '#shared/handlers/scenario-gaps';
 
@@ -14,6 +20,11 @@ describe('normalizeManifestPattern', () => {
 
   test('leaves static segments untouched', () => {
     expect(normalizeManifestPattern('api/cart')).toBe('/api/cart');
+  });
+
+  test('reads a `?` inside a parameter as optional, not as a query', () => {
+    expect(normalizeManifestPattern('/archive/{page?}')).toBe('/archive/:id');
+    expect(normalizeManifestPattern('/files/{name}.{ext?}?download=1')).toBe('/files/:id');
   });
 });
 
@@ -50,6 +61,131 @@ describe('buildManifestGraph', () => {
   test('a committed manifest is origin manifest', () => {
     const { nodes } = buildManifestGraph({ routes: [{ method: 'GET', pattern: '/api/cart' }] }, 'committed');
     expect(nodes[0]?.origin).toBe('manifest');
+  });
+
+  test('keeps the declared patterns, every one that folds to the same key', () => {
+    const { nodes } = buildManifestGraph(
+      {
+        routes: [
+          { method: 'GET', pattern: '/users/{id:int}', responses: [200, 404] },
+          { method: 'GET', pattern: '/users/{name}?tab=1', responses: [200, 410] },
+        ],
+        pages: [{ pattern: '/blog/{slug}' }],
+      },
+      'instrumentation',
+    );
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]).toMatchObject({
+      key: 'GET /users/:id',
+      attrs: { declared: true, responses: [200, 404, 410], patterns: ['/users/{id:int}', '/users/{name}'] },
+    });
+    expect(nodes[1]).toMatchObject({ key: '/blog/:id', attrs: { declared: true, patterns: ['/blog/{slug}'] } });
+  });
+});
+
+describe('createDeclaredMatcher', () => {
+  /** The declared node serving `key`, from routes declared as `METHOD pattern` the way a manifest upload stores them. */
+  const servedBy = (declared: string[], key: string, kind = 'route') => {
+    const { nodes } = buildManifestGraph(
+      kind === 'route'
+        ? {
+            routes: declared.map((d) => {
+              const [method, pattern] = d.split(' ');
+              return { method: method!, pattern: pattern! };
+            }),
+          }
+        : { pages: declared.map((pattern) => ({ pattern })) },
+      'instrumentation',
+    );
+    return createDeclaredMatcher(nodes)(kind, key);
+  };
+
+  test('a string parameter serves any one segment', () => {
+    expect(servedBy(['GET /blog/{slug}'], 'GET /blog/hello-world')).toEqual(['GET /blog/:id']);
+    expect(servedBy(['GET /api/orders/:orderId'], 'GET /api/orders/abc-123')).toEqual(['GET /api/orders/:id']);
+    expect(servedBy(['GET /api/orders/[id]'], 'GET /api/orders/abc')).toEqual(['GET /api/orders/:id']);
+    expect(servedBy(['GET /blog/{slug}'], 'GET /blog/a/b')).toEqual([]);
+  });
+
+  test('a typed parameter serves only its type', () => {
+    expect(servedBy(['GET /orders/{id:int}'], 'GET /orders/:id')).toEqual(['GET /orders/:id']);
+    expect(servedBy(['GET /orders/{id:int}'], 'GET /orders/export')).toEqual([]);
+    expect(servedBy(['GET /orders/{id:guid}'], 'GET /orders/:uuid')).toEqual(['GET /orders/:uuid']);
+    expect(servedBy(['GET /orders/{id:guid}'], 'GET /orders/:id')).toEqual([]);
+    expect(servedBy(['GET /users/{userUuid}'], 'GET /users/alice')).toEqual([]);
+  });
+
+  test('a catch-all serves any depth, none included', () => {
+    for (const pattern of [
+      '/files/{**path}',
+      '/files/{*path}',
+      '/files/**',
+      '/files/**:path',
+      '/files/[...path]',
+      '/files/:path*',
+    ]) {
+      expect(servedBy([`GET ${pattern}`], 'GET /files/reports/2026/q1.pdf')).toHaveLength(1);
+      expect(servedBy([`GET ${pattern}`], 'GET /files')).toHaveLength(1);
+    }
+    expect(servedBy(['GET /files/{**path}'], 'GET /other/a')).toEqual([]);
+  });
+
+  test('a segment mixing literals and parameters serves the values it reads', () => {
+    expect(servedBy(['GET /api/v{version:apiVersion}/orders'], 'GET /api/v2/orders')).toEqual([
+      'GET /api/v{version:apiVersion}/orders',
+    ]);
+    expect(servedBy(['GET /api/v{version:apiVersion}/orders'], 'GET /api/beta/orders')).toEqual([]);
+    expect(servedBy(['GET /assets/{name}.{ext}'], 'GET /assets/logo.svg')).toEqual(['GET /assets/:id']);
+    expect(servedBy(['GET /assets/{name}.{ext}'], 'GET /assets/logo')).toEqual([]);
+    expect(servedBy(['POST /v1/{name}:cancel'], 'POST /v1/jobs%2F42:cancel')).toEqual(['POST /v1/{name}:cancel']);
+  });
+
+  test('an optional parameter serves the path with or without it', () => {
+    expect(servedBy(['GET /archive/{page?}'], 'GET /archive')).toEqual(['GET /archive/:id']);
+    expect(servedBy(['GET /archive/{page?}'], 'GET /archive/:id')).toEqual(['GET /archive/:id']);
+    expect(servedBy(['GET /archive/[[page]]'], 'GET /archive')).toEqual(['GET /archive/:id']);
+  });
+
+  test('the closest pattern wins, as in a router', () => {
+    expect(servedBy(['GET /orders/new', 'GET /orders/{slug}'], 'GET /orders/new')).toEqual(['GET /orders/new']);
+    expect(servedBy(['GET /orders/new', 'GET /orders/{slug}'], 'GET /orders/old')).toEqual(['GET /orders/:id']);
+
+    const docs = ['GET /docs/intro', 'GET /docs/{section}/{page}', 'GET /docs/{id:int}/edit', 'GET /docs/{**path}'];
+    expect(servedBy(docs, 'GET /docs/intro')).toEqual(['GET /docs/intro']);
+    expect(servedBy(docs, 'GET /docs/guide/install')).toEqual(['GET /docs/:id/:id']);
+    expect(servedBy(docs, 'GET /docs/:id/edit')).toEqual(['GET /docs/:id/edit']);
+    expect(servedBy(docs, 'GET /docs/guide/install/linux')).toEqual(['GET /docs/:id']);
+    expect(servedBy(docs, 'GET /docs')).toEqual(['GET /docs/:id']);
+
+    expect(servedBy(['GET /orders', 'GET /orders/{**rest}'], 'GET /orders')).toEqual(['GET /orders']);
+    expect(servedBy(['GET /archive', 'GET /archive/{page?}'], 'GET /archive')).toEqual(['GET /archive']);
+  });
+
+  test('matches routes on method, and literals without case or percent-encoding', () => {
+    expect(servedBy(['POST /blog/{slug}'], 'GET /blog/hello')).toEqual([]);
+    expect(servedBy(['get /Home/Privacy'], 'GET /home/privacy')).toEqual(['GET /Home/Privacy']);
+    expect(servedBy(['GET /café/{id}'], 'GET /caf%C3%A9/menu')).toEqual(['GET /café/:id']);
+  });
+
+  test('matches pages the same way', () => {
+    expect(servedBy(['/blog/{slug}', '/blog/new'], '/blog/hello-world', 'page')).toEqual(['/blog/:id']);
+    expect(servedBy(['/blog/{slug}', '/blog/new'], '/blog/new', 'page')).toEqual(['/blog/new']);
+  });
+
+  test('reads the key when a node stores no patterns', () => {
+    const match = createDeclaredMatcher([
+      { kind: 'route', key: 'GET /blog/:id', attrs: null },
+      { kind: 'route', key: 'GET /files/**', attrs: { declared: true, responses: [] } },
+      {
+        kind: 'page',
+        key: '/orders/:uuid',
+        attrs: { url: 'https://shop.test/orders/0f8fad5b-d9cb-469f-a165-70867728950e' },
+      },
+    ]);
+    expect(match('route', 'GET /blog/hello')).toEqual(['GET /blog/:id']);
+    expect(match('route', 'GET /files/a/b')).toEqual(['GET /files/**']);
+    expect(match('page', '/orders/:uuid')).toEqual(['/orders/:uuid']);
+    expect(match('page', '/orders/latest')).toEqual([]);
   });
 });
 

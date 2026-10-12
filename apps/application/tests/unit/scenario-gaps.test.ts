@@ -422,6 +422,78 @@ describe('computeScenarioGaps', () => {
     expect(declared.find((r) => r.subject.key === 'GET /api/documented')).toBeTruthy();
   });
 
+  test('a declared route or page is reached through the requests its pattern serves', async () => {
+    await seedRun(1);
+    const declare = (kind: string, key: string, patterns: string[], responses: number[] = []) =>
+      db.insert(schema.graphNodes).values({
+        projectId: 1,
+        kind,
+        key,
+        origin: 'manifest',
+        attrs: kind === 'route' ? { declared: true, responses, patterns } : { declared: true, patterns },
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+        lastSeenAt: new Date(++clock),
+      });
+    await declare('route', 'GET /blog/:id', ['/blog/{slug}']);
+    await declare('route', 'GET /orders/:id', ['/orders/{id:int}']);
+    await declare('page', '/docs/:id', ['/docs/{**path}']);
+    await seedReach(1, 'route', 'GET /blog/hello-world', 1);
+    await seedReach(1, 'route', 'GET /orders/export', 1);
+    await seedReach(1, 'page', '/docs/guide/install', 1);
+
+    await gaps.computeScenarioGaps(db, 1);
+
+    const declared = await gaps.listScenarioGaps(db, 1, { detector: 'declared-never-hit', status: 'all' });
+    expect(declared.map((r) => r.key)).toEqual(['route:GET /orders/:id']);
+    // The declared node lends nothing back: the observed route stays the one surface the test covers.
+    const single = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test', status: 'all' });
+    expect(single.map((r) => r.key).sort()).toEqual([
+      'page:/docs/guide/install',
+      'route:GET /blog/hello-world',
+      'route:GET /orders/export',
+    ]);
+  });
+
+  test('success-only names the codes the declared route serving an observed route documents', async () => {
+    await seedRun(1);
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
+    const [exec] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .returning({ id: schema.testRunsCases.id });
+    await db.insert(schema.graphNodes).values([
+      {
+        projectId: 1,
+        kind: 'route',
+        key: 'GET /users/:id',
+        origin: 'openapi',
+        attrs: { declared: true, responses: [200, 404], patterns: ['/users/{username}'] },
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+        lastSeenAt: new Date(++clock),
+      },
+      {
+        projectId: 1,
+        kind: 'route',
+        key: 'GET /users/alice',
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+        lastSeenAt: new Date(++clock),
+      },
+    ]);
+    for (let i = 0; i < 6; i++) {
+      await db
+        .insert(schema.networkRequests)
+        .values({ testRunsCaseId: exec!.id, testRunId: 1, method: 'GET', normalizedUrl: '/users/alice', status: 200 });
+    }
+
+    await gaps.computeScenarioGaps(db, 1);
+
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(list.map((r) => r.title)).toEqual(['GET /users/alice: documented 404 never tested']);
+  });
+
   test('closes a gap whose condition no longer holds', async () => {
     await seedRun(1);
     await seedReach(1, 'page', '/checkout', 1);

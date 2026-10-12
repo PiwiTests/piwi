@@ -138,6 +138,8 @@ reaches is named a **declared, never hit** blind spot instead of staying invisib
   on a recompute and records each route's documented response codes, so a *success only* gap can name the error codes a
   route documents but never returned under test.
 
+A declared pattern is reached by every request it serves, as in a router: `/blog/{slug}` by `/blog/hello`.
+
 ### Map health
 
 Under the gap list, **map health** counts each input against what it could hold and names the detectors it wakes;

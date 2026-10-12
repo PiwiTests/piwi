@@ -530,7 +530,27 @@ export function buildTriggerEdges(executions: TriggerObservation[][]): GraphEdge
 // reaching it. A route the manifest declares becomes a `route` node whose key is
 // aligned with the observed keys, so a declared route the suite later exercises
 // shares one node (and gains a `reaches` edge, dropping out of the declared-
-// never-hit detector). Documented response codes ride the node's attrs.
+// never-hit detector). Documented response codes ride the node's attrs, and so
+// do the patterns as declared, which {@link createDeclaredMatcher} reads to match
+// the requests the key cannot line up with (`/blog/{slug}` and `/blog/hello`).
+
+/** The most declared patterns one node keeps in its attrs. */
+const MAX_DECLARED_PATTERNS = 10;
+
+/**
+ * A declared pattern without its query string. A `?` inside `{…}` or `[…]` marks
+ * an optional parameter (`{page?}`), not a query.
+ */
+function declaredPath(pattern: string): string {
+  let depth = 0;
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '{' || c === '[') depth++;
+    else if ((c === '}' || c === ']') && depth > 0) depth--;
+    else if (c === '?' && depth === 0) return pattern.slice(0, i);
+  }
+  return pattern;
+}
 
 /**
  * Canonicalize a declared path pattern so it lines up with observed route keys.
@@ -539,8 +559,7 @@ export function buildTriggerEdges(executions: TriggerObservation[][]): GraphEdge
  * {@link normalizeRoute} collapses numeric and uuid segments of a real request.
  */
 export function normalizeManifestPattern(pattern: string): string {
-  const q = pattern.indexOf('?');
-  const path = q < 0 ? pattern : pattern.slice(0, q);
+  const path = declaredPath(pattern);
   const withHost = path.startsWith('/') ? path : `/${path}`;
   return (
     '/' +
@@ -580,13 +599,24 @@ export function buildManifestGraph(
     edges.set(`${spec.fromKind}\x00${spec.fromKey}\x00${spec.kind}\x00${spec.toKind}\x00${spec.toKey}`, spec);
   };
 
+  // Patterns that fold to one key (`/users/{id:int}` and `/users/{name}`) share
+  // its node, which keeps every one of them and the union of their codes.
+  const prior = (kind: string, key: string) =>
+    (nodes.get(`${kind}\x00${key}`)?.attrs ?? null) as { responses?: number[]; patterns?: string[] } | null;
+  const withPattern = (patterns: string[] | undefined, pattern: string) =>
+    [...new Set([...(patterns ?? []), declaredPath(pattern)])].slice(0, MAX_DECLARED_PATTERNS);
+
   for (const route of manifest.routes ?? []) {
     if (!route?.method || !route?.pattern) continue;
     const key = routeNodeKey(route.method, normalizeManifestPattern(route.pattern));
+    const before = prior('route', key);
     const responses = Array.isArray(route.responses)
-      ? [...new Set(route.responses.filter((c) => Number.isInteger(c)))].sort((a, b) => a - b)
-      : [];
-    addNode({ kind: 'route', key, origin, attrs: { declared: true, responses } });
+      ? [...new Set([...(before?.responses ?? []), ...route.responses.filter((c) => Number.isInteger(c))])].sort(
+          (a, b) => a - b,
+        )
+      : (before?.responses ?? []);
+    const patterns = withPattern(before?.patterns, route.pattern);
+    addNode({ kind: 'route', key, origin, attrs: { declared: true, responses, patterns } });
     const handler = route.handler?.trim();
     if (handler) {
       const handlerKey = handlerNodeKey(handler);
@@ -599,10 +629,208 @@ export function buildManifestGraph(
     if (!page?.pattern) continue;
     const key = pageNodeKey(normalizeManifestPattern(page.pattern));
     if (!key) continue;
-    addNode({ kind: 'page', key, origin, attrs: page.name ? { declared: true, name: page.name } : { declared: true } });
+    const patterns = withPattern(prior('page', key)?.patterns, page.pattern);
+    addNode({
+      kind: 'page',
+      key,
+      origin,
+      attrs: page.name ? { declared: true, name: page.name, patterns } : { declared: true, patterns },
+    });
   }
 
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
+
+/** A declared path segment, as {@link createDeclaredMatcher} reads it. */
+type DeclaredSegment =
+  | { kind: 'literal'; text: string }
+  | { kind: 'param'; accepts: 'any' | 'number' | 'uuid'; optional: boolean }
+  | { kind: 'mixed'; regex: RegExp }
+  | { kind: 'catch-all' };
+
+/** A declared pattern read for matching, with the segment counts a path needs to match it. */
+interface DeclaredPattern {
+  segments: DeclaredSegment[];
+  min: number;
+  max: number;
+}
+
+/** Route constraints that accept only a number, the segments observed keys collapse to `:id`. */
+const NUMERIC_CONSTRAINTS = new Set(['int', 'long', 'decimal', 'double', 'float', 'min', 'max', 'range']);
+
+const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A catch-all segment: `{**path}`, `{*path}`, `**`, `**:path`, `[...path]`, `:path*`, `:path+`. */
+const CATCH_ALL_SEGMENT = /^(?:\{\*{1,2}[^{}]*\}|\*\*(?::.*)?|\[\.\.\.[^\]]+\]|:[^/]+[*+])$/;
+
+/** A whole-segment parameter: `:id`, `*`, `{id}`, `{id:int}`, `{id?}`, `[[id]]`, `[id]`. */
+const PARAM_SEGMENT = /^(?::(.+)|\*|\{([^{}]+)\}|\[\[([^\]]+)\]\]|\[([^\]]+)\])$/;
+
+/** A segment compared without case or percent-encoding, as routers match it. */
+function comparableSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment).toLowerCase();
+  } catch {
+    return segment.toLowerCase();
+  }
+}
+
+function compileDeclaredSegment(segment: string, last: boolean): DeclaredSegment {
+  if (last && CATCH_ALL_SEGMENT.test(segment)) return { kind: 'catch-all' };
+  const param = PARAM_SEGMENT.exec(segment);
+  if (param) {
+    const body = param[1] ?? param[2] ?? param[3] ?? param[4] ?? '';
+    const optional = param[3] !== undefined || body.endsWith('?') || body.includes('=');
+    const [name = '', ...constraints] = body.replace(/\?$/, '').split('=')[0]!.split(':');
+    const constraintNames = constraints.map((c) => c.split('(')[0]!.toLowerCase());
+    const accepts =
+      /uuid|guid/i.test(name) || constraintNames.includes('guid')
+        ? 'uuid'
+        : constraintNames.some((c) => NUMERIC_CONSTRAINTS.has(c))
+          ? 'number'
+          : 'any';
+    return { kind: 'param', accepts, optional };
+  }
+  if (/[{[]/.test(segment)) {
+    // A literal mixing parameters (`v{version}`, `{name}.{ext}`): each parameter takes one or more characters.
+    const source = segment
+      .split(/(\{[^{}]*\}|\[[^\][]*\])/)
+      .map((part, i) => (i % 2 === 1 ? '.+' : comparableSegment(part).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+      .join('');
+    return { kind: 'mixed', regex: new RegExp(`^${source}$`) };
+  }
+  return { kind: 'literal', text: comparableSegment(segment) };
+}
+
+/** Read a declared pattern from any source's syntax: ASP.NET Core, OpenAPI, Nitro, Nuxt file routes. */
+function compileDeclaredPattern(pattern: string): DeclaredPattern {
+  const parts = pathSegments(declaredPath(pattern));
+  const segments = parts.map((segment, i) => compileDeclaredSegment(segment, i === parts.length - 1));
+  const required = segments.filter((s) => s.kind !== 'catch-all' && !(s.kind === 'param' && s.optional)).length;
+  const catchAll = segments.at(-1)?.kind === 'catch-all';
+  return { segments, min: required, max: catchAll ? Infinity : segments.length };
+}
+
+/**
+ * How closely a declared segment matches an observed one, highest first: a
+ * literal, a literal mixing parameters, a typed parameter, any parameter; -1
+ * when it does not match.
+ */
+function segmentRank(declared: DeclaredSegment, observed: string): number {
+  switch (declared.kind) {
+    case 'literal':
+      return comparableSegment(observed) === declared.text ? 4 : -1;
+    case 'mixed':
+      return declared.regex.test(comparableSegment(observed)) ? 3 : -1;
+    case 'param':
+      if (declared.accepts === 'any') return 1;
+      if (declared.accepts === 'number') return observed === ':id' || /^\d+$/.test(observed) ? 2 : -1;
+      return observed === ':uuid' || UUID_SEGMENT.test(observed) ? 2 : -1;
+    case 'catch-all':
+      return 0;
+  }
+}
+
+/** The rank of each declared segment against an observed path, or null when the pattern does not match it. */
+function matchDeclaredPattern(pattern: DeclaredPattern, observed: string[]): number[] | null {
+  if (observed.length < pattern.min || observed.length > pattern.max) return null;
+  const ranks: number[] = [];
+  for (let i = 0; i < pattern.segments.length; i++) {
+    const segment = pattern.segments[i]!;
+    if (segment.kind === 'catch-all') {
+      ranks.push(0);
+      break;
+    }
+    if (i >= observed.length) {
+      ranks.push(0);
+      continue;
+    }
+    const rank = segmentRank(segment, observed[i]!);
+    if (rank < 0) return null;
+    ranks.push(rank);
+  }
+  return ranks;
+}
+
+/**
+ * Order two matches segment by segment; a match that ends where the other goes
+ * on through a catch-all or a missing optional parameter is the closer one.
+ */
+function compareRanks(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 5;
+    const y = b[i] ?? 5;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+
+/** The patterns a declared node was declared under: its attrs' `patterns`, else its own key. */
+function declaredPatternsOf(kind: string, key: string, attrs: unknown): string[] {
+  const stored = (attrs as { patterns?: unknown } | null)?.patterns;
+  const patterns = Array.isArray(stored) ? stored.filter((p): p is string => typeof p === 'string' && p !== '') : [];
+  if (patterns.length > 0) return patterns;
+  return [kind === 'route' ? parseRouteNodeKey(key).pattern : key];
+}
+
+/** A declared `route` or `page` node, as the graph stores it. */
+export interface DeclaredSurfaceNode {
+  kind: string;
+  key: string;
+  attrs?: unknown;
+}
+
+/**
+ * Match observed route and page keys to the declared nodes that serve them. A
+ * declared key alone lines up only with numeric and uuid segments, the ones
+ * {@link normalizeRoute} collapses; this reads the patterns as declared, so
+ * `/blog/{slug}` serves `/blog/hello-world`, `/files/{**path}` serves
+ * `/files/a/b.txt` and `/api/v{version}/orders` serves `/api/v1/orders`. Typed
+ * parameters keep their type (`{id:int}` serves `/orders/:id`, not
+ * `/orders/export`), and the closest pattern wins, as in a router: a literal
+ * segment beats a parameter, which beats a catch-all. Routes match on method.
+ *
+ * Returns the keys of the declared nodes that serve `key` most closely (several
+ * only on an exact tie), or none.
+ */
+export function createDeclaredMatcher(nodes: DeclaredSurfaceNode[]): (kind: string, key: string) => string[] {
+  const groups = new Map<string, Array<{ key: string; patterns: DeclaredPattern[] }>>();
+  const groupOf = (kind: string, key: string) =>
+    kind === 'route' ? `route\x00${parseRouteNodeKey(key).method.toUpperCase()}` : `page\x00`;
+  for (const node of nodes) {
+    if (node.kind !== 'route' && node.kind !== 'page') continue;
+    const group = groupOf(node.kind, node.key);
+    const list = groups.get(group) ?? [];
+    list.push({
+      key: node.key,
+      patterns: declaredPatternsOf(node.kind, node.key, node.attrs).map(compileDeclaredPattern),
+    });
+    groups.set(group, list);
+  }
+
+  return (kind, key) => {
+    const candidates = groups.get(groupOf(kind, key));
+    if (!candidates) return [];
+    const observed = pathSegments(kind === 'route' ? parseRouteNodeKey(key).pattern : key);
+    let best: number[] | null = null;
+    let keys: string[] = [];
+    for (const candidate of candidates) {
+      let closest: number[] | null = null;
+      for (const pattern of candidate.patterns) {
+        const ranks = matchDeclaredPattern(pattern, observed);
+        if (ranks && (!closest || compareRanks(ranks, closest) > 0)) closest = ranks;
+      }
+      if (!closest) continue;
+      const order = best ? compareRanks(closest, best) : 1;
+      if (order > 0) {
+        best = closest;
+        keys = [candidate.key];
+      } else if (order === 0) {
+        keys.push(candidate.key);
+      }
+    }
+    return keys;
+  };
 }
 
 // ── Import edges (shallow scan) ──────────────────────────────────────────────
