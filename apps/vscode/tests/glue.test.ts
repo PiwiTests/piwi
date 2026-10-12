@@ -469,6 +469,19 @@ describe('the tests of a file', () => {
     expect(failing!.hover).toBe('**Piwi**: failing · passed 1/4 · failed');
   });
 
+  test('a test’s hover shows the instance’s text as written', () => {
+    const [test] = testDecorations([
+      {
+        line: 2,
+        title: 'passed 3/4 · flaky score 40 · [timing](command:piwi.openInDashboard) · in __smoke__',
+        status: 'flaky',
+      },
+    ]);
+    expect(test!.hover).toBe(
+      '**Piwi**: flaky · passed 3/4 · flaky score 40 · \\[timing\\](command:piwi.openInDashboard) · in \\_\\_smoke\\_\\_',
+    );
+  });
+
   test('the status bar says when the checked-out branch has no run yet', () => {
     const onMain: RunStatusResult = {
       contexts: [{ ...run({}).contexts[0]!, branch: 'main', checkedOut: 'feature/cart' }],

@@ -642,7 +642,7 @@ export function testResultHover(status: TestLineStatus, title: string, edited = 
     running: 'running',
     unknown: 'no recent result',
   }[status];
-  return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', title].filter(Boolean).join(' · ');
+  return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', md(title)].filter(Boolean).join(' · ');
 }
 
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */
