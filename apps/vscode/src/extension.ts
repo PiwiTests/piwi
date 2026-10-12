@@ -173,6 +173,8 @@ interface ShellIntegrationApi {
 }
 
 let client: LanguageClient | null = null;
+/** The connection last handed to the service, which each start of the service begins with. */
+let handed: EditorCredentials | null = null;
 let sendListener: SendListener | null = null;
 let recording: Recording | null = null;
 
@@ -208,9 +210,15 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
   };
 }
 
+/** Hand the saved connection to the service. */
+async function handCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
+  handed = await credentials(context);
+  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, handed);
+}
+
 /** Hand the saved connection to the service and have it read everything again. */
 async function applyCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
-  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+  await handCredentials(context, lc);
   await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
 }
 
@@ -231,9 +239,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     run: { module: serverModule, transport: TransportKind.stdio },
     debug: { module: serverModule, transport: TransportKind.stdio },
   };
+  handed = await credentials(context);
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', pattern: DOCUMENT_PATTERN }],
-    initializationOptions: { credentials: await credentials(context) },
+    // Read on each start of the service, the client's restarts after it stopped unexpectedly included.
+    initializationOptions: () => ({ credentials: handed }),
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
   client = lc;
@@ -655,7 +665,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         choice = picked.choice;
       }
       const kept = context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES);
-      await context.workspaceState.update(BASELINES, withBaseline(kept, target.root, choice));
+      const baselines = withBaseline(kept, target.root, choice);
+      await context.workspaceState.update(BASELINES, baselines);
+      if (handed) handed = { ...handed, baselines };
       await lc.sendNotification(SET_BASELINE_NOTIFICATION, { root: target.root, choice } satisfies SetBaselineParams);
     }),
     vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
@@ -808,12 +820,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       },
     ),
     vscode.workspace.onDidChangeConfiguration(async (e) => {
-      if (e.affectsConfiguration('piwi'))
-        await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+      if (e.affectsConfiguration('piwi')) await handCredentials(context, lc);
     }),
     context.secrets.onDidChange(async (e) => {
-      if (e.key.startsWith(API_KEY_SECRET_PREFIX))
-        await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+      if (e.key.startsWith(API_KEY_SECRET_PREFIX)) await handCredentials(context, lc);
     }),
   );
 

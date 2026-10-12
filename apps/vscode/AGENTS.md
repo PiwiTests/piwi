@@ -20,7 +20,9 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   leaves the CodeLens and the gutter as they are: `runsInFiles`), implements the commands the service names
   (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`, from a quick
   fix or a flaky test's lens, which shows `piwi/desktopJobChanged` as notifications with the share button), keeps the
-  API key in `SecretStorage`, and provides Piwi's MCP server through
+  API key in `SecretStorage`, hands the connection to the service with `piwi/setCredentials` and as the initialization
+  options of each of its starts (`handed`: the client starts the service again after it stops unexpectedly), and
+  provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
 - `src/failures-view.ts` is the **Failures** view of the **Piwi** panel (`viewsContainers.panel`): a `TreeView` over

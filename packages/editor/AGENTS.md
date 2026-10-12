@@ -156,7 +156,7 @@ JetBrains plugin in its `server/`); the service finds the others next to its own
 
 | File                         | What                                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `piwi-language-server.cjs`   | The language server (`src/main.ts`).                                                                               |
+| `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.             |
 | `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
 | `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options (`src/recorder/use-reporter.ts`).                  |
 | `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
