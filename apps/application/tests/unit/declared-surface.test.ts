@@ -22,6 +22,12 @@ describe('normalizeManifestPattern', () => {
     expect(normalizeManifestPattern('api/cart')).toBe('/api/cart');
   });
 
+  test('reads a uuid from a guid constraint or a uuid-like name', () => {
+    expect(normalizeManifestPattern('/orders/{id:guid}')).toBe('/orders/:uuid');
+    expect(normalizeManifestPattern('/orders/{orderGuid}/{uuidPart}')).toBe('/orders/:uuid/:uuid');
+    expect(normalizeManifestPattern('/guides/{guide}/{guidance}')).toBe('/guides/:id/:id');
+  });
+
   test('reads a `?` inside a parameter as optional, not as a query', () => {
     expect(normalizeManifestPattern('/archive/{page?}')).toBe('/archive/:id');
     expect(normalizeManifestPattern('/files/{name}.{ext?}?download=1')).toBe('/files/:id');
@@ -144,6 +150,36 @@ describe('createDeclaredMatcher', () => {
     expect(servedBy(['GET /archive/{page?}'], 'GET /archive')).toEqual(['GET /archive/:id']);
     expect(servedBy(['GET /archive/{page?}'], 'GET /archive/:id')).toEqual(['GET /archive/:id']);
     expect(servedBy(['GET /archive/[[page]]'], 'GET /archive')).toEqual(['GET /archive/:id']);
+  });
+
+  test('an optional parameter before a literal never stands in for the literal', () => {
+    expect(servedBy(['/[[lang]]/about'], '/fr', 'page')).toEqual([]);
+    expect(servedBy(['/[[lang]]/about'], '/about', 'page')).toEqual(['/:id/about']);
+    expect(servedBy(['/[[lang]]/about'], '/fr/about', 'page')).toEqual(['/:id/about']);
+    expect(servedBy(['GET /{lang?}/about'], 'GET /fr')).toEqual([]);
+  });
+
+  test('a one-or-more catch-all needs a segment', () => {
+    expect(servedBy(['GET /files/:path+'], 'GET /files')).toEqual([]);
+    expect(servedBy(['GET /files/:path+'], 'GET /files/a/b')).toEqual(['GET /files/:id']);
+  });
+
+  test('a parameter named like a guide is not a uuid', () => {
+    expect(servedBy(['GET /guides/{guide}'], 'GET /guides/install')).toEqual(['GET /guides/:id']);
+    expect(servedBy(['GET /help/{guidance}'], 'GET /help/intro')).toEqual(['GET /help/:id']);
+  });
+
+  test('numbers match as observed keys hold them', () => {
+    expect(servedBy(['GET /reports/2024'], 'GET /reports/:id')).toEqual(['GET /reports/2024']);
+    expect(servedBy(['GET /reports/2024'], 'GET /reports/latest')).toEqual([]);
+    expect(servedBy(['GET /p/{v:decimal}'], 'GET /p/1.5')).toEqual(['GET /p/:id']);
+    expect(servedBy(['GET /t/{delta:long}'], 'GET /t/-5')).toEqual(['GET /t/:id']);
+  });
+
+  test('a last optional parameter in a mixed segment may be left out with its separator', () => {
+    expect(servedBy(['GET /files/{name}.{ext?}'], 'GET /files/report')).toEqual(['GET /files/:id']);
+    expect(servedBy(['GET /files/{name}.{ext?}'], 'GET /files/report.pdf')).toEqual(['GET /files/:id']);
+    expect(servedBy(['GET /files/{name}.{ext}'], 'GET /files/report')).toEqual([]);
   });
 
   test('the closest pattern wins, as in a router', () => {

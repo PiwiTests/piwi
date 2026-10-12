@@ -455,6 +455,31 @@ describe('computeScenarioGaps', () => {
     ]);
   });
 
+  test('a route a test reached before the manifest declared it still wins over a wider declared pattern', async () => {
+    await seedRun(1);
+    await seedReach(1, 'route', 'GET /orders/new', 1);
+    // The manifest declares the reached route after the fact: origin stays `observed`, the attrs say declared.
+    await db
+      .update(schema.graphNodes)
+      .set({ attrs: { declared: true, responses: [], patterns: ['/orders/new'] } })
+      .where(eq(schema.graphNodes.key, 'GET /orders/new'));
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /orders/:id',
+      origin: 'manifest',
+      attrs: { declared: true, responses: [], patterns: ['/orders/{slug}'] },
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      lastSeenAt: new Date(++clock),
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+
+    const declared = await gaps.listScenarioGaps(db, 1, { detector: 'declared-never-hit', status: 'all' });
+    expect(declared.map((r) => r.key)).toEqual(['route:GET /orders/:id']);
+  });
+
   test('success-only names the codes the declared route serving an observed route documents', async () => {
     await seedRun(1);
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
@@ -492,6 +517,23 @@ describe('computeScenarioGaps', () => {
 
     const list = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
     expect(list.map((r) => r.title)).toEqual(['GET /users/alice: documented 404 never tested']);
+
+    // Another request the declared route serves returned the 404: it is no longer untested.
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /users/nobody',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      lastSeenAt: new Date(++clock),
+    });
+    await db
+      .insert(schema.networkRequests)
+      .values({ testRunsCaseId: exec!.id, testRunId: 1, method: 'GET', normalizedUrl: '/users/nobody', status: 404 });
+    await gaps.computeScenarioGaps(db, 1);
+
+    const after = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(after.map((r) => r.title)).toEqual(['GET /users/alice: no error path under test']);
   });
 
   test('closes a gap whose condition no longer holds', async () => {
