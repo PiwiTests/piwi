@@ -5,7 +5,8 @@ shipped as the Docker image and `@piwitests/server`, and runs it locally. No
 Docker, no `npx`, no server to set up — double-click and go. Everything binds
 `127.0.0.1`; your data lives under the OS app-data directory.
 
-Targets: **Windows (`.msi` and `.exe`)**, **macOS (`.dmg`)**, and **Linux (`.deb` /
+Targets: **Windows (`.msi` and `.exe`)**, **macOS (`.dmg`, Apple silicon, macOS 13.5 or
+later, the floor of the bundled Node 24 runtime)**, and **Linux (`.deb` /
 `.rpm` / `.AppImage`)**. The Windows **`.exe`** is an NSIS **per-user** installer
 (`%LOCALAPPDATA%`, no admin to install or update); the **`.msi`** installs **per
 machine** (`Program Files`) and needs elevation. Each keeps its own auto-update
@@ -120,9 +121,26 @@ See [`apps/application/tests/README.md`](../application/tests/README.md#against-
 
 ## Signing
 
-Installers are **unsigned** unless code-signing secrets are configured, in which
-case CI signs (and notarizes on macOS) automatically. Unsigned apps still run —
-right-click → Open on macOS, or "More info → Run anyway" on Windows SmartScreen.
+Installers carry no publisher signature unless code-signing secrets are
+configured, in which case CI signs (and notarizes on macOS) automatically. They
+still run: on macOS, open the app once, then **Open Anyway** in System Settings →
+Privacy & Security; on Windows, "More info → Run anyway" in SmartScreen.
+
+On macOS the app is always signed, **ad hoc** when no Developer ID is configured
+(`bundle.macOS.signingIdentity: "-"` in `tauri.conf.json`). Apple silicon opens a
+downloaded app only when a signature seals the whole bundle; without one,
+Gatekeeper reports the app as damaged and offers no way to open it. A Developer ID
+set through `APPLE_SIGNING_IDENTITY` takes the place of the ad-hoc identity.
+
+The bundler signs the Node sidecar too, under the hardened runtime, with the
+entitlements in `src-tauri/macos/entitlements.plist`: the ones Node.js signs its
+own binary with, minus the debugger one. V8 needs JIT and writable executable
+memory, and Node loads native modules no team signed (sharp, libSQL, and those of
+a linked project when it runs Playwright). Without them the sidecar crashes on
+start and the window reports that the server did not start in time.
+`reusable-publish-desktop.yml` checks both on every macOS build: the bundle's
+signature (`codesign --verify --strict`), then the server started from the bundle
+with its own Node, until `/api/health` answers.
 
 ## In-app updates
 
@@ -144,7 +162,9 @@ mode: the `.msi` reads `latest.json` (per machine, prompts for admin), the `.exe
 reads `latest-nsis.json` (per user, no admin). tauri-action uploads `latest.json`
 for the `.msi`, macOS and Linux legs; the `.exe` leg sets `uploadUpdaterJson`
 false and a later workflow step publishes `latest-nsis.json` pointing at the NSIS
-`-setup.exe`. Builds without the overlay report updates as unsupported, the plugin
+`-setup.exe`. The macOS leg builds the `app` bundle next to the `.dmg`: the
+bundler makes the macOS update artifact (`.app.tar.gz`) from it only. Builds
+without the overlay report updates as unsupported, the plugin
 is not even registered there (see `src-tauri/src/updates.rs`).
 
 The `.exe` channel installs **quietly**: its overlay sets the updater's
