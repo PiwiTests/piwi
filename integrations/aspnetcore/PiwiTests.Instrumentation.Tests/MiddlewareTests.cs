@@ -67,11 +67,11 @@ public class MiddlewareTests
     }
 
     [Fact]
-    public async Task Emits_nothing_when_the_request_logged_nothing_capturable()
+    public async Task Emits_an_empty_list_when_the_request_logged_nothing_capturable()
     {
         await using var app = await TestApp.StartAsync("Development", (a, _) => a.UsePiwiTestLogs(),
             services: s => s.Configure<LoggerFilterOptions>(o => o.MinLevel = LogLevel.Error));
 
-        Assert.Null(await app.GetLogsAsync("/json"));
+        Assert.Empty((await app.GetLogsAsync("/json"))!);
     }
 }

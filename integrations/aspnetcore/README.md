@@ -32,7 +32,7 @@ app.Run();
 
 `AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error entries into a per-request capture buffer (`PiwiTestLogCapture`, from the [`PiwiTests.Instrumentation.Core`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Core) package this one depends on), scoped to the current HTTP request with `AsyncLocal`.
 
-`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only in the active environments (Development and Test by default). Entries logged after that point (while a body is still streaming) can no longer ride on the response.
+`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only in the active environments (Development and Test by default). Entries logged after that point (while a body is still streaming) can no longer ride on the response. The header is sent on every response, with an empty array when nothing was captured, so the reporter can tell the application is instrumented. The same middleware serves the [route manifest](#route-manifest).
 
 ## Generic Host + classic `Startup`
 
@@ -148,6 +148,39 @@ Playwright test
                            └─ stored as serverLogs on the network request
                                 └─ visible in test-case detail + AI diagnosis
 ```
+
+## Route manifest
+
+Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the routes and pages the application declares, read from its endpoint table. The Piwi reporter fetches it when a run starts (only when the base URL's response carries `X-Piwi-Logs`) and uploads it, so a declared route or page that no test reaches becomes a **declared, never hit** gap in the Test Map. Because the endpoint table is read, the manifest holds every route from the first run, hit or not.
+
+```json
+{
+  "routes": [
+    { "method": "GET", "pattern": "/api/orders/{id:int}", "handler": "src/Shop/Controllers/OrdersController.cs" },
+    { "method": "POST", "pattern": "/hubs/chat/negotiate", "handler": "src/Shop/Hubs/ChatHub.cs" }
+  ],
+  "pages": [
+    { "pattern": "/Orders/Details/{id:int}", "name": "Pages/Orders/Details.cshtml" },
+    { "pattern": "/counter", "name": "Components/Pages/Counter.razor" }
+  ]
+}
+```
+
+| Endpoint                                              | Declared as                                                                                                              |
+|-------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| Minimal API, route group                              | A route at its template                                                                                                  |
+| Controller action, attribute routing                  | A route, with the `[controller]` and `[action]` tokens and any route token transformer applied                           |
+| Controller action, conventional routing (areas too)   | One route, at the URL the first matching conventional route generates: `/` for `Home/Index`, `/Home/Privacy`, `/Admin` |
+| SignalR hub                                           | `POST <hub>/negotiate`, the request a client starts with; the connection itself runs over a WebSocket                    |
+| Health checks, any endpoint without a method          | A `GET` route                                                                                                            |
+| Razor Page                                            | A page named by its `.cshtml` file, at its canonical URL (`/Orders`, not `/Orders/Index`)                                |
+| Blazor component with `@page`                         | A page named by its `.razor` file                                                                                        |
+
+- **Pattern.** Template syntax, with constraint names kept and their arguments dropped (`{id:int}`, `{ssn:regex}`, `{**path}`). Trailing optional and default-valued segments are dropped (`/archive/{page?}` is declared as `/archive`), literals are lower-cased when `RouteOptions.LowercaseUrls` is set, and the request's path base is prepended. The dashboard reads `{id:guid}` as a uuid segment and any other parameter as an id segment.
+- **Method.** An endpoint that accepts any method is declared as `GET`, the method a navigation uses. `HEAD` is left out when the endpoint also accepts `GET`.
+- **Handler.** The source file of the controller action, minimal API delegate or hub, read from the assembly's portable PDB (embedded or next to the DLL). The path is relative to the repository root, or to the content root outside a Git checkout; it is left out when no PDB is found.
+- **Left out.** Static files (`MapStaticAssets`), fallbacks (`MapFallback*`) and routes that are a lone catch-all, endpoints marked `ExcludeFromDescription()` (the OpenAPI document among them), link-generation-only endpoints, the framework's own paths (`/_framework`, `/_blazor`, `/_content`), and a hub's connection endpoint. To keep one of your endpoints out, mark it `ExcludeFromDescription()`; it then leaves the OpenAPI document too.
+- **Limit.** Up to 5000 routes and 5000 pages, the most the dashboard accepts in one upload.
 
 ## Server probes — the `X-Piwi-Probe` header
 
