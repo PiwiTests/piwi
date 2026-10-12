@@ -185,6 +185,12 @@ while it does not run.
 - **A push from the service is never answered with a read of the same answer**, and the files are drawn again with
   `DaemonCodeAnalyzer.restart(PsiFile)` for the files a change shows in, never with the whole daemon's `restart()`.
 - A change to `protocol.ts` updates `Protocol.kt` in the same change.
+- **The plugin loads and unloads without a restart** (no `require-restart`, and the verifier says it can be enabled or
+  disabled without one): the platform stops the editor service with the LSP provider and runs `PiwiStartupActivity`
+  for the projects already open; every listener has a project service as parent, the work a service queues expires
+  with it (`gone`: the service disposed, not only its project), and work that may outlive the plugin, such as a run's
+  end, reaches the service with `getServiceIfCreated`, never `project.service<…>()`. No application component, no
+  thread of the plugin's own.
 
 ## Workflow
 

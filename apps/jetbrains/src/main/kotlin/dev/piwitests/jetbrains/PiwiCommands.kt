@@ -250,7 +250,10 @@ object PiwiCommands {
                     override fun processTerminated(event: ProcessEvent) {
                         val ended = CommandEndedParams(ref, event.exitCode)
                         ApplicationManager.getApplication().executeOnPooledThread {
-                            if (!project.isDisposed) project.service<PiwiProjectService>().server()?.commandEnded(ended)
+                            // The plugin may have been unloaded since the run started: its service is then gone.
+                            if (!project.isDisposed) {
+                                project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(ended)
+                            }
                         }
                     }
                 })

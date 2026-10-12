@@ -38,6 +38,7 @@ import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
@@ -69,6 +70,12 @@ fun interface RecordingRemote {
  */
 @Service(Service.Level.PROJECT)
 class PiwiRecordings(private val project: Project) : Disposable {
+    /** Whether the service was disposed: with its project, or with the plugin unloaded while the project stays open. */
+    @Volatile private var disposed = false
+
+    /** What ends the work queued for later: this service disposed, or its project. */
+    private val gone = Condition<Any?> { disposed || project.isDisposed }
+
     private val sessions = ConcurrentHashMap<String, RecordingSession>()
 
     /** The latest update of each session not registered yet: `piwi/record`'s answer can come after its first update. */
@@ -115,7 +122,7 @@ class PiwiRecordings(private val project: Project) : Disposable {
     fun changed(update: RecordingUpdate) {
         val id = update.sessionId ?: return
         if (queued.put(id, update) != null) return
-        ApplicationManager.getApplication().invokeLater({ queued.remove(id)?.let { apply(it) } }, project.disposed)
+        ApplicationManager.getApplication().invokeLater({ queued.remove(id)?.let { apply(it) } }, gone)
     }
 
     /** Applies an update to its session, or keeps it until the session is registered. */
@@ -178,7 +185,7 @@ class PiwiRecordings(private val project: Project) : Disposable {
             val delay = if (answered == true) STOP_TIMEOUT_SECONDS else 0L
             val reason = if (answered == true) null else "The Piwi editor service did not answer: the recording ended here."
             val end = Runnable {
-                ApplicationManager.getApplication().invokeLater({ session.end(reason, failed = reason != null) }, project.disposed)
+                ApplicationManager.getApplication().invokeLater({ session.end(reason, failed = reason != null) }, gone)
             }
             AppExecutorUtil.getAppScheduledExecutorService().schedule(end, delay, TimeUnit.SECONDS)
         }
@@ -222,6 +229,7 @@ class PiwiRecordings(private val project: Project) : Disposable {
 
     /** The project closes: the service is asked to stop its sessions, which are disposed already, without waiting. */
     override fun dispose() {
+        disposed = true
         val server = runCatching { project.getServiceIfCreated(PiwiProjectService::class.java)?.server() }.getOrNull()
         for (id in sessions.keys) runCatching { server?.stopRecording(StopRecordingParams(id)) }
         sessions.clear()

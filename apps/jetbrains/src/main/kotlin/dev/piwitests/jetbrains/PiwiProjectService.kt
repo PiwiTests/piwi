@@ -23,6 +23,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.util.Condition
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -131,6 +132,12 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var refreshing = false
         private set
 
+    /** Whether the service was disposed: with its project, or with the plugin unloaded while the project stays open. */
+    @Volatile private var disposed = false
+
+    /** What ends the work queued for later: this service disposed, or its project. */
+    private val gone = Condition<Any?> { disposed || project.isDisposed }
+
     /** Why the editor service could not start (`Glue.nodeProblem`); null once it starts. */
     @Volatile var startProblem: String? = null
         private set
@@ -210,31 +217,28 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     fun findPlaywright() {
         ApplicationManager.getApplication().executeOnPooledThread {
-            if (project.isDisposed) return@executeOnPooledThread
+            if (gone.value(null)) return@executeOnPooledThread
             val before = playwright
             val found = searchPlaywright()
             if (found == before) return@executeOnPooledThread
             // Once the tool windows are registered.
             val tools = ToolWindowManager.getInstance(project)
             tools.invokeLater {
-                if (project.isDisposed) return@invokeLater
+                if (gone.value(null)) return@invokeLater
                 tools.getToolWindow(PiwiFailuresToolWindowFactory.ID)?.isAvailable = found.configDirs.isNotEmpty()
                 project.service<StatusBarWidgetsManager>().updateWidget(PiwiStatusBarWidgetFactory::class.java)
             }
-            if (found.configDirs.isNotEmpty() || hasServer()) restartServer()
+            restartServer(runningOnly = found.configDirs.isEmpty())
         }
     }
 
-    private fun hasServer() =
-        LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java).isNotEmpty()
-
-    /** Start the editor service again, or start it for the open files when it does not run. */
-    fun restartServer() {
+    /** Start the editor service again, or, unless `runningOnly`, start it for the open files when it does not run. */
+    fun restartServer(runningOnly: Boolean = false) {
         val manager = LspServerManager.getInstance(project)
-        if (hasServer()) {
-            manager.stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
-        } else {
-            manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
+        when {
+            manager.getServersForProvider(PiwiLspServerSupportProvider::class.java).isNotEmpty() ->
+                manager.stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
+            !runningOnly -> manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
         }
     }
 
@@ -278,7 +282,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
                     AppExecutorUtil.getAppScheduledExecutorService().schedule(
                         {
                             searchQueued.set(false)
-                            if (!project.isDisposed) findPlaywright()
+                            if (!gone.value(null)) findPlaywright()
                         },
                         1,
                         TimeUnit.SECONDS,
@@ -511,7 +515,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         if (!reading.compareAndSet(false, true)) return
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                while (readAgain.getAndSet(false) && !project.isDisposed) read()
+                while (readAgain.getAndSet(false) && !gone.value(null)) read()
             } finally {
                 reading.set(false)
             }
@@ -549,7 +553,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             changeQueued.set(false)
             listeners.forEach { it() }
             draw()
-        }, project.disposed)
+        }, gone)
     }
 
     /**
@@ -566,7 +570,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
                     AppExecutorUtil.getAppScheduledExecutorService().schedule(
                         {
                             drawQueued.set(false)
-                            ApplicationManager.getApplication().invokeLater({ draw() }, project.disposed)
+                            ApplicationManager.getApplication().invokeLater({ draw() }, gone)
                         },
                         wait,
                         TimeUnit.MILLISECONDS,
@@ -637,6 +641,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     override fun dispose() {
+        disposed = true
         listeners.clear()
         summaries.clear()
         filesWithTests.clear()
