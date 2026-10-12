@@ -130,14 +130,15 @@ on or ended on. Three optional sources add the rest:
 Beyond what tests observe, the map can hold what the application *declares* it exposes, so a route or page nothing
 reaches is named a **declared, never hit** blind spot instead of staying invisible. Three sources feed it:
 
-- **The instrumentation's route manifest.** The [Nitro plugin](/guide/backend-logs#route-manifest) serves the routes
-  it has matched at `/__piwi/manifest` outside production, and the reporter uploads it with the run. The ASP.NET Core
-  package serves no manifest.
+- **The instrumentation's route manifest.** The [backend instrumentation](/guide/backend-logs#route-manifest) serves
+  the application's routes at `/__piwi/manifest` outside production, and the reporter uploads it with the run.
 - **A committed manifest.** A `piwi.manifest.json` next to your Playwright config (`{ "routes": [...], "pages": [...] }`)
   is uploaded whenever present, whatever the backend.
 - **An OpenAPI URL**, set per project under Project → Settings → Capabilities → Scenario gaps. Piwi fetches the document
   on a recompute and records each route's documented response codes, so a *success only* gap can name the error codes a
   route documents but never returned under test.
+
+A declared pattern is reached by every request it serves, as in a router: `/blog/{slug}` by `/blog/hello`.
 
 ### Map health
 

@@ -46,6 +46,7 @@ import {
 import {
   collectOwnOrigins,
   controlNodeKey,
+  createDeclaredMatcher,
   fileRouteTarget,
   isOwnOriginRequest,
   originsFromDocumentRequests,
@@ -1951,15 +1952,73 @@ export async function computeScenarioGaps(
     }
   }
 
+  // The declared routes and pages, and the declared node serving each observed
+  // key: a declared `/blog/{slug}` serves the `/blog/hello-world` a test called,
+  // which its key alone cannot line up with. A node a test reached before the
+  // manifest declared it keeps origin `observed` but carries the declared attrs,
+  // so it still competes as the closest pattern.
+  const declaredSurface = nodeRows.filter(
+    (n): n is typeof n & { kind: 'route' | 'page'; origin: 'manifest' | 'openapi' } =>
+      (n.kind === 'route' || n.kind === 'page') && (n.origin === 'manifest' || n.origin === 'openapi'),
+  );
+  const declaredFor = createDeclaredMatcher(
+    nodeRows.filter(
+      (n) =>
+        (n.kind === 'route' || n.kind === 'page') &&
+        (n.origin === 'manifest' ||
+          n.origin === 'openapi' ||
+          (n.attrs as { declared?: unknown } | null)?.declared === true),
+    ),
+  );
+
   // Route patterns the graph holds as nodes — the own-origin set success-only reads.
   const routeNodeKeys = new Set(nodeRows.filter((n) => n.kind === 'route').map((n) => n.key));
   const routeStats = await loadRouteStats(db, recentIds, routeNodeKeys);
 
-  // Attach the priority observed around each route pattern and any documented codes.
+  // The routes whose documented codes apply to a route: its own, and the declared
+  // route serving it.
+  const documentingRoutes = (key: string) => {
+    const serving = declaredFor('route', key);
+    return documentedByRoute.has(key) && !serving.includes(key) ? [key, ...serving] : serving;
+  };
+
+  // The statuses observed across every route a declared route serves, so a code
+  // `/users/nobody` returned is not named untested on `/users/alice`.
+  const statusesByDeclared = new Map<string, Set<number>>();
+  for (const [key, stat] of routeStats) {
+    for (const declared of documentingRoutes(key)) {
+      const set = statusesByDeclared.get(declared) ?? new Set<number>();
+      for (const status of stat.statuses) set.add(status);
+      statusesByDeclared.set(declared, set);
+    }
+  }
+
+  // Attach the priority observed around each route pattern and the codes the
+  // declared route serving it documents but none of its requests returned.
   for (const [key, stat] of routeStats) {
     stat.priority = maxPriority(reachByNode.get(`route\x00${key}`) ?? [], meta);
-    const documented = documentedByRoute.get(key);
-    if (documented) stat.documentedCodes = documented;
+    const serving = documentingRoutes(key);
+    const returned = new Set(serving.flatMap((d) => [...(statusesByDeclared.get(d) ?? [])]));
+    const documented = [...new Set(serving.flatMap((d) => documentedByRoute.get(d) ?? []))].filter(
+      (code) => !returned.has(code),
+    );
+    if (documented.length > 0) stat.documentedCodes = documented;
+  }
+
+  // A declared node's reach: its own, plus that of every observed node it serves.
+  // Kept apart from `reachByNode`, so the other detectors never count one surface
+  // twice, once as observed and once as declared.
+  const declaredReach = new Map<string, Set<number>>();
+  for (const [nodeKey, ids] of reachByNode) {
+    const sep = nodeKey.indexOf('\x00');
+    const kind = nodeKey.slice(0, sep);
+    if (kind !== 'route' && kind !== 'page') continue;
+    for (const key of declaredFor(kind, nodeKey.slice(sep + 1))) {
+      const id = `${kind}\x00${key}`;
+      const set = declaredReach.get(id) ?? new Set<number>();
+      for (const testId of ids) set.add(testId);
+      declaredReach.set(id, set);
+    }
   }
 
   // Declared nodes (manifest/OpenAPI) with no test reaching them — the declared-
@@ -1967,10 +2026,9 @@ export async function computeScenarioGaps(
   // route the suite later exercises keeps its origin but gains a reaches edge and
   // is skipped here by reachCount.
   const declaredNodes: DeclaredNode[] = [];
-  for (const node of nodeRows) {
-    if (node.kind !== 'route' && node.kind !== 'page') continue;
-    if (node.origin !== 'manifest' && node.origin !== 'openapi') continue;
-    const ids = reachByNode.get(`${node.kind}\x00${node.key}`) ?? new Set<number>();
+  for (const node of declaredSurface) {
+    const nodeKey = `${node.kind}\x00${node.key}`;
+    const ids = new Set([...(reachByNode.get(nodeKey) ?? []), ...(declaredReach.get(nodeKey) ?? [])]);
     declaredNodes.push({
       nodeKind: node.kind,
       nodeKey: node.key,

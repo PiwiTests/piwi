@@ -127,7 +127,7 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     id: 'backend-logs',
     name: 'Backend instrumentation',
     summary:
-      'Packages for the app under test that, outside production, attach what the server did for each request to its response, so a failing test shows the server’s warnings and errors next to the request that caused them. `@piwitests/instrumentation-nitro` (Nitro / Nuxt) also sends server spans and the route manifest; `PiwiTests.Instrumentation.AspNetCore` covers ASP.NET Core, and `PiwiTests.Instrumentation.Serilog` is its sink for apps that log through Serilog.',
+      'Packages for the app under test that, outside production, attach what the server did for each request to its response, so a failing test shows the server’s warnings and errors next to the request that caused them. `@piwitests/instrumentation-nitro` (Nitro / Nuxt) also sends server spans; `PiwiTests.Instrumentation.AspNetCore` covers ASP.NET Core, and `PiwiTests.Instrumentation.Serilog` is its sink for apps that log through Serilog. Both packages serve the route manifest.',
     get: '`npm install @piwitests/instrumentation-nitro`, or `dotnet add package PiwiTests.Instrumentation.AspNetCore` (plus `PiwiTests.Instrumentation.Serilog` when the app logs through Serilog).',
     when: 'Your app under test runs on Nitro, Nuxt or ASP.NET Core, and a UI failure may start as a server error.',
     needs: ['fixtures', 'backend'],

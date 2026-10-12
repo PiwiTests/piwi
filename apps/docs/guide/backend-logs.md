@@ -14,7 +14,7 @@ except in those response headers, and only outside production.
 |---|---|:---:|:---:|
 | [Backend logs](#backend-logs) | The server's warnings and errors, next to the request that caused them | ✓ | ✓ |
 | [Server spans](#server-spans) | The server's time on a request, and the handler and dependencies it reached | | ✓ |
-| [Route manifest](#route-manifest) | The routes the server has, so the Test Map can name the ones no test reaches | | ✓ |
+| [Route manifest](#route-manifest) | The routes the server has, so the Test Map can name the ones no test reaches | ✓ | ✓ |
 | [Server probes](#server-probes) | A fault injected inside the server for one request (**Experimental**) | ✓ | ✓ |
 
 **Active only in non-production environments by default.** The ASP.NET Core integration emits its headers in the Development and Test environments unless you [choose others](#choosing-the-environments); the Nitro/Nuxt integration whenever `NODE_ENV` is unset, `development` or `test`. Both honor `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
@@ -107,7 +107,7 @@ On the Playwright side there is nothing to configure: the reporter reads the hea
 
 ## Backend logs
 
-The integration adds an `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to HTTP responses: the Nitro plugin to every response (an empty array when nothing was logged), the ASP.NET Core middleware only to responses that captured at least one entry. The reporter stores its entries as `serverLogs` on that request. They appear in:
+The integration adds an `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to every HTTP response, with an empty array when nothing was logged, so the reporter can tell the application is instrumented. The reporter stores its entries as `serverLogs` on that request. They appear in:
 
 - **The [execution page](/features/evidence#one-execution-diagnosis-first)**: in the network requests, a request that returned server-side logs shows a warning and error count and expands to every entry attached to it (level, category, message, timestamp and stack trace). Error logs also raise a [clue](/features/evidence#clues).
 - **The [AI diagnosis](/features/ai-diagnosis) context**: warnings and errors are included when a failure is diagnosed.
@@ -137,11 +137,21 @@ uses the handler and dependencies they name. The reporter reads them while `capt
 
 ## Route manifest
 
-The Nitro plugin serves `/__piwi/manifest` outside production: the routes the server has matched since it started.
-The reporter's global setup fetches it when the application's first response carries an instrumentation header, and
-uploads it with the run, so a route nothing reaches becomes a
+Both packages serve `/__piwi/manifest` outside production: the routes the server has, as JSON. The
+reporter's global setup fetches it when the application's first response carries an instrumentation header, and
+uploads it with the run, so a route or page nothing reaches becomes a
 [declared, never hit](/features/scenario-gaps#declared-surface) gap. Any backend can instead commit a
 `piwi.manifest.json` next to the Playwright config. Turn the upload off with `uploadManifest: false`.
+
+- **ASP.NET Core** reads the application's endpoint table, so the manifest holds every route from the first run, hit
+  or not: minimal APIs and route groups, controllers (attribute routes, conventional routes and areas) and SignalR
+  hubs as routes, Razor Pages and routable Blazor components as pages. Each one is declared at the URL link
+  generation produces (`/` for `Home/Index`), optional parameters marked optional (`/archive/{page?}`), with the source
+  file of its handler when the build has a PDB. Static files, fallbacks and endpoints marked `ExcludeFromDescription()` are left out. See
+  the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore#route-manifest) for
+  every rule.
+- **Nitro** has no route table to read at runtime, so the plugin lists the routes the server has matched since it
+  started.
 
 ## Server probes
 
