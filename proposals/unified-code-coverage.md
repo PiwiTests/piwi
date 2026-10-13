@@ -26,14 +26,18 @@ the design moves out of it); on the pricing application, where most of the CPU i
 +26% server CPU**. On the browser, Playwright's `page.coverage` always uses V8's block coverage; function coverage,
 which is all file and function reach need, reports the same executed functions for **+7% to +13% of test time
 instead of +37% to +42%** on a script-heavy page. The study proposes four levels (routes, functions per test, lines
-per test, lines per run), one storage model keyed by repository-relative path and line ranges, and the editor features
-it unlocks.
+per test, lines per run), one storage model keyed by repository-relative path and line ranges, and what to build on
+it: suspect lines for a failure (on eShopOnWeb, the failing test executed only the bug's 3 lines of a 13-line
+change), gap detectors at the code level, and the editor features.
 
 ## What the reader gets
 
 - **Per test, the server files, functions and lines it executed**, next to the browser ones, in the same lists and
   the same tables. A change to `src/Web/Services/BasketService.cs` maps to the tests that ran it, not only to the
   tests that called a route whose handler sits in another file.
+- **Suspect lines for a failure**: the changed lines the failing test executed, in the cluster page, the AI
+  diagnosis and the fix plan. On eShopOnWeb, a 13-line change narrowed to the bug's 3 lines (part 6).
+- **Gaps behind the surface**: error paths, branches and functions no test executes, per feature (part 6.3).
 - **Line-level test selection.** `piwi run impact` can select the tests that executed the changed lines, not every
   test that touched the file.
 - **Uncovered changed lines** in the pull-request comment: "12 of the 40 lines this change touches in
@@ -62,6 +66,7 @@ Each term below is used with this meaning only.
 | **Request id** | The value of the `X-Piwi-Coverage` response header that names one request's coverage on the backend. |
 | **Collection** | The reporter asking a backend for the coverage of the request ids a test received. |
 | **Fragment** | One file's coverage as one test recorded it, stored once per project and shared by every test that recorded the same. |
+| **Suspect lines** | The lines changed since a failing test's last passing run that the failing tests executed, ranked by how many passing tests executed them too. |
 
 ## What exists
 
@@ -435,6 +440,115 @@ What the editor service needs exists or is small:
 - **Local runs with coverage**: `RunCommand.env` already reaches the Playwright process on every run path; adding
   `PIWI_COVERAGE_SERVER` to it lets "Run the tests that reach this function" refresh that function's marks.
 
+## Part 6: what to build on it
+
+Coverage is an input, not a feature. This part lists what it makes possible, ordered by Piwi's four purposes
+([`ROADMAP.md`](../ROADMAP.md)), with the level each item needs. One item was tried on the prototype's data
+([Appendix C](#appendix-c-suspect-lines-on-eshoponweb)).
+
+### 6.1 Explain the failures
+
+- **Suspect lines.** The lines changed since the last passing run that the failing tests executed, ranked by how many
+  passing tests executed them too (the Ochiai score of spectrum-based fault localization). Tried on eShopOnWeb with a
+  commit changing 13 lines in 4 files, one change being an "add instead of set" bug: **the failing test executed 3
+  of the 13 changed lines, exactly the bug's hunk**, and none of the other changes. Coverage alone, without the diff,
+  ranked the bug line about 36th of the 235 lines the failing test executed: the value comes from joining the two.
+  Where it shows:
+  - the cluster's *What changed* line and the situation block: "Of 13 lines changed since the last green run, 3 ran
+    in this test: `BasketService.cs` 57 to 59";
+  - **AI diagnosis**: the patches sent to the model are filtered to the hunks the failing tests executed, first in the
+    budget, so a large diff stops being truncated before it reaches the relevant change (`ai-context.ts` cuts patches
+    to a byte budget today);
+  - the fix plan and `get_fix_plan`, and the editors' failure view, which can mark those lines.
+  Needs: lines on the side the change is on; functions give a coarser version (changed functions the failing tests
+  ran).
+- **Flaky divergence.** Coverage per attempt: the functions a failing attempt executed and a passing attempt did not,
+  and the reverse, on the Attempts tab ("the failing attempts took the retry branch in `PaymentClient.cs` line 88").
+  The Flake Lab can then aim its conditions at that code. Needs: functions per attempt.
+- **Narrower bisect.** The generated `git bisect` can restrict itself to the commits that touch files the failing test
+  executed (`git bisect start <bad> <good> -- <paths>`), so fewer steps build and run. Needs: files.
+- **Cluster hints.** Two clusters whose suspect lines are the same are likely one cause; a cluster whose tests share
+  no suspect line is likely two. Shown as a suggestion, never applied. Needs: lines.
+
+### 6.2 Hand back a fix
+
+- **Fix verification with evidence.** A cluster recorded as fixed says whether the fixing commit changed lines its
+  failing tests executed: the line between "stopped failing" and "the diagnosed change is what fixed it" gets a
+  measured basis.
+- **The owner of the code, not only of the test.** The `CODEOWNERS` entry of the suspect lines suggests who should
+  look, next to the test's owner, in the pull-request comment and in notification routing.
+- **Missing tests from the nearest test.** For uncovered lines, `draft_scenario` and the write-the-missing-test skill
+  receive the test that executes the most of the same function: the best one to copy and change, with the lines its
+  copy must reach.
+
+### 6.3 Find what the tests miss: gaps at the code level
+
+The Test Map knows the surface (routes, pages, controls) and which tests reach it. Coverage adds what is behind the
+surface: the code of each feature, executed or not. Two consequences:
+
+- **Each feature gets its code.** The browser and server files and functions its tests execute, shown on the feature
+  map and in the feature graph. Server code has a **known denominator**, every statement in the span table, so a
+  ratio is allowed there under the Test Map's rule "a percentage only over a surface with a known denominator"
+  ([`test-map-accuracy.md`](test-map-accuracy.md), D3): "Checkout executes 41 of the 63 statements of
+  `OrderService.cs`". Browser code has a denominator only for the scripts a page loaded.
+- **New and sharper detectors.** Coverage says what ran, never what was checked, so its detectors are *blind-spot* or
+  *fragile*; *false-comfort* still needs probes or assertions.
+
+| Detector | Class | Finds | Needs | Example evidence |
+|---|---|---|---|---|
+| **Error path never executed** (new) | blind-spot | a `catch` block, a `throw`, or an error return (`return NotFound()`, `Results.Problem`) inside a method the tests execute, that never ran in the last 30 runs: the code-level form of *Success only* | server lines; a statement classification from a syntax scan of the file | `OrderService.cs` 88 to 93, `catch (PaymentException)` · method run by 6 tests · block never |
+| **Branch never taken** (new) | blind-spot | an `if`, `else` or `switch` arm inside an executed method that never ran, with the condition as the scenario to write | lines | `if (order.IsGift)` · method run by 4 tests · branch never |
+| **Code nobody executes** (new) | blind-spot | a server function no test executed in the last 30 runs, ranked by exposure: dead code or a missing test | server functions, span table | `RefundService.Partial` · 0 tests in 30 runs · 7 commits in 90 days |
+| **Single covering test** (sharper) | fragile | a function exactly one trusted test executes, or only flaky and quarantined tests do | functions | `Only checkout › coupon executes CouponRules.Apply` |
+| **Incidental execution** (new) | fragile | code executed only by tests tagged with another feature: covered by accident, as *Incidental catch* is for failures | functions, `piwi:feature` tags | `Invoices code executed only by Checkout tests` |
+| **Background code never run** (new) | blind-spot | the methods of a hosted service, job or queue consumer that never ran, from run-level coverage | server run level | `NightlyExportJob.ExecuteAsync` · never in 30 runs |
+| **Changed, unreached** (sharper) | blind-spot | changed lines, not only files, no test executed, server files included without file conventions | lines | `+41 −3 · 12 changed lines never executed` |
+| **Not noticed** (sharper) | false-comfort | as today; a probe run picks the tests that execute the targeted handler instead of every test reaching the route, and names the lines the fault replaced | functions | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
+
+- **Exposure per function.** Churn, age and escape history computed for the functions a gap names, from the hunks
+  that touched them, instead of for whole handler files: a gap in a function that changed six times this quarter
+  ranks above one in a stable function of the same file.
+- **Coverage plus probes is close to mutation testing.** Coverage names the code each test executes; a server probe
+  that breaks that code and leaves those tests green is the false-comfort evidence. Targeting probes from coverage
+  keeps probe runs short.
+
+### 6.4 Selection and CI
+
+- **Line-level impact** (part 4) and **prioritization**: run first the tests that executed the changed lines, so a
+  failing pull request fails in the first minute, not the twentieth.
+- **Smoke mining over code**: the greedy set cover that mines a smoke suite over observed routes today can cover
+  functions instead, front and back, under the same time budget.
+- **Redundant tests**: a test whose executed functions and visited pages are both contained in another test's is a
+  merge candidate, listed with the evidence, never removed.
+
+### 6.5 History and reports
+
+- **Coverage trends** per feature, kept in the daily rollups, in quality reports and dashboards: "changed code this
+  sprint executed by a test: 82%".
+- **Run-level reports** exported as LCOV or Cobertura (part 4) for tools already in place.
+
+### 6.6 Order
+
+| Order | Item | Level it needs | Why first |
+|---|---|---|---|
+| 1 | Suspect lines in the cluster page, AI diagnosis and fix plan | server lines, browser functions | Strongest effect on Piwi's main purpose; tried on real data |
+| 2 | Uncovered changed lines and line-level impact | lines | Already designed in part 4 |
+| 3 | Error path never executed, code nobody executes, single covering test by function | server lines and functions | Server code has a denominator; the gaps name exact lines |
+| 4 | Feature code on the feature map | functions | Builds on 3 |
+| 5 | Flaky divergence | functions per attempt | Needs coverage on the runs where flakes happen, not only the scheduled job |
+| 6 | Editors (part 5) | lines | The index and the clients |
+| 7 | Bisect paths, prioritization, smoke over code, redundant tests | files and functions | Small each; after the rest proves the data |
+
+### 6.7 What coverage does not close
+
+- **Executed is not checked.** A line every test runs can still be wrong with every test green; that is what probes
+  and the assertion detectors are for.
+- **Coverage is as fresh as the last run that captured it.** On a scheduled job, a test's coverage can be a day old;
+  suspect lines and impact say which run the coverage came from.
+- **What the capture cannot see**: API tests through the `request` fixture until it is wrapped, calls behind a
+  front-end server that does not forward the header, other browsers than Chromium, Node backends until they implement
+  the same contract, and the startup lambdas of part 3.
+
 ## Delivery
 
 | PR | Content | Needs |
@@ -557,3 +671,26 @@ The middleware sets `Recorder.Begin` before calling the next middleware and `Rec
 request in `Response.OnStarting`, and keeps the `RequestCoverage` until it is collected. A report walks each kept
 payload: entry 0 set means the method ran (its first span is the function's line range), any other entry set means
 that statement's lines ran.
+
+## Appendix C: suspect lines on eShopOnWeb
+
+One commit on top of eShopOnWeb, 13 changed lines in 5 hunks over 4 files:
+
+- `BasketService.SetQuantities`: the quantity is added instead of set (the bug), and the log line reworded;
+- `CatalogViewModelService`: the page count computed by a new helper (executed by catalog pages);
+- `Register.cshtml.cs`: the email trimmed (executed by the registration tests);
+- `ManageController.ChangePassword`: a log line (executed by no test).
+
+The 14-test suite ran once against the coverage build in `test` mode: 1 test failed (*updates a quantity in the
+basket*), 13 passed.
+
+| Changed lines | Failing tests that executed them | Passing tests that executed them | Ochiai |
+|---|---|---|---|
+| `BasketService.cs` 57 to 59 | 1 | 2 (the two checkout tests) | 0.58 |
+| `CatalogViewModelService.cs` 42, 43, 76 | 0 | 4 | 0 |
+| `Register.cshtml.cs` 71, 72 | 0 | 2 | 0 |
+| `CatalogViewModelService.cs` 40, 41, 44, 45; `ManageController.cs` 159 | 0 | 0 | 0 |
+
+The catalog change was not executed by the failing test although it visits the catalog: the page's view model comes
+from a cache another test filled. Without the diff, the 5 lines with the top score are the basket page's update
+handler, which only the failing test runs, and the bug line comes about 36th of 235.
