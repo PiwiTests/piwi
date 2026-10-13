@@ -59,7 +59,9 @@ With the setting off, a run started from Piwi ignores the editor's breakpoints.
 - **`@piwitests/reporter` 0.48.0 or later**, with the [capture fixtures](/guide/capture-fixtures) in your tests: the
   pause runs in them. The status bar's tooltip names the reporter version the project installs. With an older one,
   the run starts anyway and the editor warns once: `Breakpoints need @piwitests/reporter 0.48.0 or later; this project
-  has 0.46.0.`
+  has 0.46.0.` A spec that imports `test` from `@playwright/test` runs without them and never pauses; the reporter
+  names those specs at the end of the run: `PIWI_PAUSE_AT is set but the tests of tests/cart.spec.ts ran without the
+  Piwi capture fixtures, so they did not pause at a breakpoint`.
 - **A run started from Piwi.** The editor passes the breakpoints under the Playwright config's folder to the run as
   `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`, relative to that folder, separated by
   semicolons), with its pairing address as

@@ -6,6 +6,7 @@ import {
   resolveOptions,
   usedDesktopDiscovery,
   PIWI_DEFAULTED_CAPTURE_ENV,
+  PIWI_LOCAL_DEBUG_ENV,
   PIWI_RESOURCES_RESULTS_ENV,
 } from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
@@ -45,6 +46,7 @@ import { collectTestLocks, collectTestMetadata, collectTestTags } from '../inter
 import { buildErrorText } from '../internal/collect/error-text.js';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { readLeakCheck, type ResourceCensus } from '../internal/capture/resource-ledger.js';
+import { PauseCoverage } from '../internal/capture/pause-at.js';
 import {
   buildResourceReport,
   formatResourceSummary,
@@ -113,6 +115,8 @@ export class PiwiDashboardReporter {
   private plannedTests: TestCase[] = [];
   /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
   private reportedTestIds = new Set<string>();
+  /** With the editor's breakpoints (`PIWI_PAUSE_AT`), the spec files that ran without the capture fixtures. */
+  private readonly pauseCoverage = process.env[PIWI_LOCAL_DEBUG_ENV.pauseAt]?.trim() ? new PauseCoverage() : null;
   /** Per-test attempt history, keyed by `test.id`; snapshotted onto every attempt's payload. */
   private attemptsByTest = new Map<
     string,
@@ -431,6 +435,11 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
     this.totalTests++;
+    this.pauseCoverage?.note(
+      testFile(test),
+      result.status,
+      (result.attachments ?? []).map((a) => a.name),
+    );
 
     this.reportedTestIds.add(test.id);
 
@@ -726,7 +735,11 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when the full test run finishes */
   async onEnd(result: FullResult): Promise<void> {
-    if (this.listMode || !this.enabled) return;
+    if (this.listMode) return;
+    // Breakpoints pause without a server, so this is said whether or not the run reports.
+    const unpausable = this.pauseCoverage?.warning();
+    if (unpausable) this.logger.warn(unpausable);
+    if (!this.enabled) return;
     // `onBegin` never ran: the run stopped before its tests (a global setup threw, a spec did not load).
     if (this.startTime === null) {
       this.logger.debug('The run stopped before any test began — nothing to report.');

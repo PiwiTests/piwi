@@ -86,6 +86,7 @@ import {
 } from './pick-on-failure.js';
 import {
   assertionLabel,
+  attachPauseMark,
   currentPauseSet,
   logPauseSkipOnce,
   pauseGateFromTestInfo,
@@ -2101,6 +2102,7 @@ export const piwiFixtures: Fixtures<
         }
         if (sink.flake) await recordFlakeAttempt(sink.flake, testInfo);
         await flushSink(sink, testInfo);
+        if (pauseSet.size) await attachPauseMark(testInfo);
         // Last: the test-scoped fixtures have torn down, so what is still open
         // now outlived the test. Throws under `PIWI_LEAK_CHECK=fail`.
         await recordResourceCensus(testInfo);

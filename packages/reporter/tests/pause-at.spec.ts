@@ -10,6 +10,7 @@ import {
 import {
   assertionLabel,
   parsePauseAt,
+  PauseCoverage,
   pauseHere,
   pausePlace,
   pauseSkipReason,
@@ -313,6 +314,7 @@ describe('breakpoints in the capture fixtures', () => {
       waitForFunction: pausePage.waitForFunction,
     };
     const attached: LocatorSnapshot[] = [];
+    const attachedNames: string[] = [];
     const testInfo = {
       status: 'passed',
       retry: 0,
@@ -320,6 +322,7 @@ describe('breakpoints in the capture fixtures', () => {
       setTimeout: vi.fn(),
       project: { use: { headless } },
       attach: vi.fn(async (name: string, b: { body: Buffer }) => {
+        attachedNames.push(name);
         if (name === ATTACHMENT_NAMES.locators) attached.push(...JSON.parse(String(b.body)));
       }),
       annotations: [],
@@ -343,12 +346,12 @@ describe('breakpoints in the capture fixtures', () => {
       testInfo,
     );
     line = 0;
-    return { shown, clicks, attached, fakeLocator };
+    return { shown, clicks, attached, attachedNames, fakeLocator };
   }
 
   it('pauses before the action on a breakpoint’s line, and not on another', async () => {
     const start = thisLine();
-    const { shown, clicks } = await runWithBreakpoints(
+    const { shown, clicks, attachedNames } = await runWithBreakpoints(
       () => `${here}:${start + 5}`,
       ['resume'],
       async (page) => {
@@ -360,6 +363,8 @@ describe('breakpoints in the capture fixtures', () => {
     expect(shown).toHaveLength(1);
     expect((shown[0] as { place: string }).place).toBe(`pause-at.spec.ts:${start + 5}`);
     expect(clicks).toEqual(['click', 'click', 'click']);
+    // The mark the reporter reads to tell the specs that ran without the fixtures.
+    expect(attachedNames).toContain(ATTACHMENT_NAMES.pause);
   });
 
   it('pauses at every action after Step, and at none after Finish', async () => {
@@ -449,7 +454,7 @@ describe('breakpoints in the capture fixtures', () => {
 
   it('never pauses a headless run, and says why once', async () => {
     const start = thisLine();
-    const { shown, clicks } = await runWithBreakpoints(
+    const { shown, clicks, attachedNames } = await runWithBreakpoints(
       () => `${here}:${start + 5}`,
       [],
       async (page) => {
@@ -459,10 +464,49 @@ describe('breakpoints in the capture fixtures', () => {
     );
     expect(shown).toEqual([]);
     expect(clicks).toEqual(['click']);
+    expect(attachedNames).toContain(ATTACHMENT_NAMES.pause);
     expect(
       log.mock.calls.map((c: unknown[]) => String(c[0])).filter((l: string) => l.includes('PIWI_PAUSE_AT')),
     ).toEqual([
       '[piwi] PIWI_PAUSE_AT is set but breakpoints are skipped: the browser is headless — re-run with --headed (or set use: { headless: false })',
     ]);
+  });
+});
+
+describe('PauseCoverage', () => {
+  const PAUSE = [ATTACHMENT_NAMES.pause];
+
+  it('says nothing when every spec that ran used the fixtures', () => {
+    const coverage = new PauseCoverage();
+    coverage.note('tests/a.spec.ts', 'passed', PAUSE);
+    coverage.note('tests/b.spec.ts', 'failed', ['screenshot', ...PAUSE]);
+    coverage.note('tests/c.spec.ts', 'skipped', []);
+    expect(coverage.warning()).toBeNull();
+  });
+
+  it('says when no test ran with the fixtures', () => {
+    const coverage = new PauseCoverage();
+    coverage.note('tests/a.spec.ts', 'passed', []);
+    expect(coverage.warning()).toBe(
+      'PIWI_PAUSE_AT is set but no test ran with the Piwi capture fixtures, so none paused at a breakpoint: ' +
+        'import `test` from a fixtures file that calls `extendPiwiFixtures` in your specs.',
+    );
+  });
+
+  it('names the specs that ran without them, a file with one marked attempt counting as covered', () => {
+    const coverage = new PauseCoverage();
+    coverage.note('tests/a.spec.ts', 'passed', PAUSE);
+    coverage.note('tests/b.spec.ts', 'passed', []);
+    coverage.note('tests/c.spec.ts', 'failed', []);
+    coverage.note('tests/c.spec.ts', 'passed', PAUSE);
+    expect(coverage.files()).toEqual(['tests/b.spec.ts']);
+    expect(coverage.warning()).toMatch(/^PIWI_PAUSE_AT is set but the tests of tests\/b\.spec\.ts ran without/);
+  });
+
+  it('lists five specs at most', () => {
+    const coverage = new PauseCoverage();
+    coverage.note('tests/a.spec.ts', 'passed', PAUSE);
+    for (let i = 1; i <= 7; i++) coverage.note(`tests/s${i}.spec.ts`, 'passed', []);
+    expect(coverage.warning()).toContain('tests/s5.spec.ts and 2 more ran without');
   });
 });

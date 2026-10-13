@@ -22,6 +22,7 @@ export const ATTACHMENT_NAMES = {
   aiUsage: 'piwi-ai-usage',
   aiMeta: 'piwi-ai-meta',
   resources: 'piwi-resources',
+  pause: 'piwi-pause',
 } as const;
 
 /** Set of every internal attachment name — used to skip them when collecting user attachments. */

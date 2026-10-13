@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import type { Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
 import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
+import { ATTACHMENT_NAMES } from './attachments.js';
 import { isCi } from './inspect-on-failure.js';
 import { pickLocator, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
@@ -175,6 +176,52 @@ export async function postPickToEditor(
     logOnce(error instanceof Error ? error.message : String(error));
   }
   return false;
+}
+
+/**
+ * Mark a test attempt that ran through the capture fixtures with `PIWI_PAUSE_AT` set, paused or not, so the reporter
+ * can tell the attempts that could not pause (`PauseCoverage`). Never throws.
+ */
+export async function attachPauseMark(testInfo: TestInfo): Promise<void> {
+  try {
+    await testInfo.attach(ATTACHMENT_NAMES.pause, { contentType: 'text/plain', body: Buffer.from('fixtures') });
+  } catch {
+    // Without the mark, the reporter says the file ran without the fixtures.
+  }
+}
+
+/**
+ * The spec files of a run with `PIWI_PAUSE_AT` set whose tests all ran without the capture fixtures (no `piwi-pause`
+ * mark on any attempt that ran), where no breakpoint can pause: the fixtures are what pauses. Fed by the reporter,
+ * which runs whether or not the specs import them.
+ */
+export class PauseCoverage {
+  private readonly marked = new Set<string>();
+  private readonly unmarked = new Set<string>();
+
+  /** One attempt: its spec file, its status, and the names of its attachments. A skipped attempt ran no fixture. */
+  note(file: string, status: string, attachmentNames: readonly string[]): void {
+    if (status === 'skipped') return;
+    if (attachmentNames.includes(ATTACHMENT_NAMES.pause)) this.marked.add(file);
+    else this.unmarked.add(file);
+  }
+
+  /** The files no marked attempt came from, in the order they first ran. */
+  files(): string[] {
+    return [...this.unmarked].filter((f) => !this.marked.has(f));
+  }
+
+  /** What to tell the run's output; null when every file that ran used the fixtures. */
+  warning(): string | null {
+    const files = this.files();
+    if (!files.length) return null;
+    const fix = (specs: string) => `import \`test\` from a fixtures file that calls \`extendPiwiFixtures\` in ${specs}`;
+    if (!this.marked.size)
+      return `${PIWI_LOCAL_DEBUG_ENV.pauseAt} is set but no test ran with the Piwi capture fixtures, so none paused at a breakpoint: ${fix('your specs')}.`;
+    const shown = files.slice(0, 5).join(', ');
+    const more = files.length > 5 ? ` and ${files.length - 5} more` : '';
+    return `${PIWI_LOCAL_DEBUG_ENV.pauseAt} is set but the tests of ${shown}${more} ran without the Piwi capture fixtures, so they did not pause at a breakpoint: ${fix('those specs')}.`;
+  }
 }
 
 /** Test-only: forget that a post failure was logged. */
