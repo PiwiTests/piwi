@@ -35,6 +35,7 @@ export * from './locator-edit';
 export * from './dotenv';
 export * from './source-map';
 export * from './code-reach';
+export * from './coverage';
 export * from './line-diff';
 export * from './editor-send';
 export * from './file-routes';
