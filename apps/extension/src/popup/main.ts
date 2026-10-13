@@ -284,8 +284,12 @@ async function refreshRecordButton(): Promise<void> {
   if (state === 'recording') {
     recordLabel.textContent = bug ? t('popup_finishBugReport', { count }) : t('popup_stopRecording', { count });
     recordHint.textContent = t('popup_stepsSoFar');
+  } else if (state === 'stopped' && bug) {
+    // Report a bug reviews the report; Record stays, and replaces it once confirmed (`recordOverBug`).
+    recordLabel.textContent = t('popup_record');
+    recordHint.textContent = t('popup_recordOverBug');
   } else if (state === 'stopped') {
-    recordLabel.textContent = bug ? t('popup_reviewBugReport') : t('popup_reviewRecording', { count });
+    recordLabel.textContent = t('popup_reviewRecording', { count });
     recordHint.textContent = t('popup_notExported');
   } else {
     recordLabel.textContent = t('popup_record');
@@ -401,9 +405,30 @@ function requestRecording(mode: RecordingMode): void {
   void startRecordingFlow(pattern, tabId, mode, granted);
 }
 
+/** Whether Record was clicked once over a bug report not yet exported: the next click discards the report. */
+let confirmingDiscard = false;
+
+/**
+ * Record over a stopped bug report: the first click asks, the second records. There is one recording at a time, and
+ * the worker's start replaces the report, its evidence included (`startRecording`).
+ */
+function recordOverBug(): void {
+  if (confirmingDiscard) {
+    requestRecording('actions');
+    return;
+  }
+  confirmingDiscard = true;
+  recordLabel.textContent = t('popup_recordConfirmDiscard');
+  recordHint.textContent = t('popup_recordConfirmHint');
+}
+
 recordBtn.addEventListener('click', () => {
   if (uiState === 'recording') {
     void stopRecordingFlow();
+    return;
+  }
+  if (uiState === 'stopped' && uiMode === 'bug') {
+    recordOverBug();
     return;
   }
   if (uiState === 'stopped') {

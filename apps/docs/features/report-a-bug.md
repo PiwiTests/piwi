@@ -102,6 +102,10 @@ With the extension connected to an instance, **Send to Piwi…** shows exactly w
 evidence, and sends it only when you click **Send**. The instance keeps the report, writes its failing test for the
 project and follows its runs: see [Bug reports](./bug-reports).
 
+The report waits in the popup until you discard it: **Report a bug** shows **Review bug report**. **Record actions**
+stays available meanwhile, and its second click discards the report to start a new recording, since the extension
+holds one recording at a time.
+
 ## Replaying a report
 
 **Replay**, on the finished report or from the popup (`R`), plays the steps again in a tab and says whether the bug

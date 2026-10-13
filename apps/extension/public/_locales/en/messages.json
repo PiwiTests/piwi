@@ -357,6 +357,18 @@
     "message": "Across pages → a test",
     "description": "Popup tile hint, under “Record actions”. At most about 22 characters."
   },
+  "popup_recordOverBug": {
+    "message": "Replaces the bug report",
+    "description": "Popup tile hint under “Record actions” while a stopped bug report is not exported yet: recording discards it. At most about 22 characters."
+  },
+  "popup_recordConfirmDiscard": {
+    "message": "Discard the bug report?",
+    "description": "Popup tile label after a first click on “Record actions” while a bug report is not exported yet: a second click discards it and records."
+  },
+  "popup_recordConfirmHint": {
+    "message": "Click again to confirm",
+    "description": "Popup tile hint under the label above. At most about 22 characters."
+  },
   "popup_pick": {
     "message": "Pick an element",
     "description": "Popup tile: click an element of the page to get its locators. At most about 16 characters: the tile is half the popup wide."

@@ -286,6 +286,15 @@
   "popup_recordHint": {
     "message": "Suas ações → um teste"
   },
+  "popup_recordOverBug": {
+    "message": "Substitui o relatório"
+  },
+  "popup_recordConfirmDiscard": {
+    "message": "Descartar o relatório?"
+  },
+  "popup_recordConfirmHint": {
+    "message": "Clique para confirmar"
+  },
   "popup_pick": {
     "message": "Escolher elemento"
   },

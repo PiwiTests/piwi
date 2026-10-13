@@ -286,6 +286,15 @@
   "popup_recordHint": {
     "message": "Vos actions → un test"
   },
+  "popup_recordOverBug": {
+    "message": "Remplace le rapport"
+  },
+  "popup_recordConfirmDiscard": {
+    "message": "Abandonner le rapport ?"
+  },
+  "popup_recordConfirmHint": {
+    "message": "Cliquez pour confirmer"
+  },
   "popup_pick": {
     "message": "Choisir un élément"
   },

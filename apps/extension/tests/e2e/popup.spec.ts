@@ -362,6 +362,42 @@ test.describe('Report a bug tile', () => {
   });
 });
 
+test.describe('Record tile', () => {
+  test('stays Record over a bug report not exported yet, and records over it on a second click', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecording: {
+          active: false,
+          events: [{ type: 'click', timestamp: 2 }],
+          startedAt: 1,
+          grantedOriginPattern: null,
+          mode: 'bug',
+        },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#report-bug-label')).toHaveText('Review bug report');
+    await expect(page.locator('#record-label')).toHaveText('Record actions');
+    await expect(page.locator('#record-hint')).toHaveText('Replaces the bug report');
+
+    // The first click asks; nothing starts.
+    await page.locator('#record').click();
+    await expect(page.locator('#record-label')).toHaveText('Discard the bug report?');
+    await expect(page.locator('#record-hint')).toHaveText('Click again to confirm');
+    await expect(page.locator('#status')).toHaveText('');
+
+    // The second asks for the site, as Record does: here an extension page, which cannot be recorded.
+    await page.locator('#record').click();
+    await expect(page.getByRole('status')).toHaveText('Piwi Picker can’t record on this page.');
+    expect(await page.evaluate(() => chrome.storage.session.get('piwiRecordIntent'))).toEqual({});
+  });
+});
+
 test.describe('the developer tools in DevTools', () => {
   test('are not in the popup, which says where they are, and it fits a popup’s 600 pixels', async ({
     context,
