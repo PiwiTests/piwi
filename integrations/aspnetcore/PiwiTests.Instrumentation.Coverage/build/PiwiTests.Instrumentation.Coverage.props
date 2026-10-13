@@ -1,0 +1,7 @@
+<Project>
+  <!-- A coverage build: dotnet build -p:PiwiCoverage=true compiles this project with the C# or Visual Basic
+       compiler's TestCoverage instrumentation, which calls the Instrumentation.CreatePayload this package supplies. -->
+  <PropertyGroup Condition="'$(PiwiCoverage)' == 'true'">
+    <Instrument>TestCoverage</Instrument>
+  </PropertyGroup>
+</Project>

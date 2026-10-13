@@ -52,7 +52,8 @@ packages/                  Packages consumed by name (`@piwitests/*`) — publis
 integrations/              Framework-specific instrumentation adapters.
   nitro/                   @piwitests/instrumentation-nitro — backend-log instrumentation for Nitro apps
   aspnetcore/              PiwiTests.Instrumentation.AspNetCore — the same for ASP.NET Core (NuGet), plus the
-                           shared .Core capture buffer, the .NET tests and PiwiTests.Instrumentation.slnx
+                           shared .Core capture buffer, the .Coverage server coverage recorder, the .NET tests
+                           and PiwiTests.Instrumentation.slnx
   serilog/                 PiwiTests.Instrumentation.Serilog — a Serilog sink feeding the same capture (NuGet)
 examples/                  Standalone usage examples (Playwright fixtures)
 shared/                    Base oxlint/oxfmt configs extended by every workspace

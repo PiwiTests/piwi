@@ -18,6 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../PiwiTests.Instrumentation.Core/PiwiTests.Instrumentation.Core.csproj" />
+    <ProjectReference Include="../PiwiTests.Instrumentation.Coverage/PiwiTests.Instrumentation.Coverage.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="PiwiTests.Instrumentation.Tests" />

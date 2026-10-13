@@ -25,7 +25,31 @@ internal sealed class PiwiSourceFiles : IDisposable
 
     internal PiwiSourceFiles(string? contentRoot)
     {
-        _baseDirectory = RepositoryRoot(contentRoot) ?? contentRoot;
+        _baseDirectory = BaseDirectory(contentRoot);
+    }
+
+    /// <summary>The directory source paths are made relative to: the repository root, else the content root.</summary>
+    internal static string? BaseDirectory(string? contentRoot) => RepositoryRoot(contentRoot) ?? contentRoot;
+
+    /// <summary>
+    /// <paramref name="document"/>, a source path as the compiler recorded it, relative to
+    /// <paramref name="baseDirectory"/> with POSIX separators; a deterministic build's <c>/_/</c> source root is
+    /// read as the repository root. Null for a path outside the base directory.
+    /// </summary>
+    internal static string? RepositoryRelative(string? baseDirectory, string document)
+    {
+        var path = document.Replace('\\', '/');
+        if (path.StartsWith(DeterministicSourceRoot, StringComparison.Ordinal))
+            return path[DeterministicSourceRoot.Length..];
+
+        if (baseDirectory is not null && Path.IsPathRooted(document))
+        {
+            var relative = Path.GetRelativePath(baseDirectory, document);
+            if (!Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                return relative.Replace('\\', '/');
+        }
+
+        return null;
     }
 
     /// <summary>The source file of <paramref name="method"/>, following an async or iterator method into its state machine.</summary>
@@ -114,21 +138,7 @@ internal sealed class PiwiSourceFiles : IDisposable
         return provider?.GetMetadataReader();
     }
 
-    private string Relative(string document)
-    {
-        var path = document.Replace('\\', '/');
-        if (path.StartsWith(DeterministicSourceRoot, StringComparison.Ordinal))
-            return path[DeterministicSourceRoot.Length..];
-
-        if (_baseDirectory is not null && Path.IsPathRooted(document))
-        {
-            var relative = Path.GetRelativePath(_baseDirectory, document);
-            if (!Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                return relative.Replace('\\', '/');
-        }
-
-        return path;
-    }
+    private string Relative(string document) => RepositoryRelative(_baseDirectory, document) ?? document.Replace('\\', '/');
 
     private static string? RepositoryRoot(string? contentRoot)
     {

@@ -182,6 +182,21 @@ Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the ro
 - **Left out.** Static files (`MapStaticAssets`), fallbacks (`MapFallback*`) and routes that are a lone catch-all, endpoints marked `ExcludeFromDescription()` (the OpenAPI document among them), link-generation-only endpoints, the framework's own paths (`/_framework`, `/_blazor`, `/_content`), and the connection endpoint next to a negotiate endpoint. To keep one of your endpoints out, mark it `ExcludeFromDescription()`; it then leaves the OpenAPI document too.
 - **Limit.** Up to 5000 routes and 5000 pages, the most the dashboard accepts in one upload.
 
+## Server coverage
+
+In a coverage build, the middleware also records which code each request executes, so the Piwi reporter can tell, per test, which server files, functions and lines ran. The recorder comes from [`PiwiTests.Instrumentation.Coverage`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Coverage), which this package depends on.
+
+1. Add `PiwiTests.Instrumentation.Coverage` to every class library whose code you want covered. A project that references this package already has it.
+2. Build the test environment with `-p:PiwiCoverage=true`, for example `dotnet build -c Release -p:PiwiCoverage=true`.
+3. Keep `app.UsePiwiTestLogs()`. Wherever the middleware is active, once instrumented code runs, it:
+   - names each request that ran instrumented code before its response started: `X-Piwi-Coverage: <process>.<sequence>`;
+   - serves `POST /__piwi/coverage/collect`, the coverage of the request ids a test received, merged per group, at `files`, `functions` or `lines` granularity, and `GET /__piwi/coverage/run`, the run-level coverage with each file's executable lines;
+   - keeps each named request until it is collected, up to 5,000 ended requests and about 64 MB, the oldest evicted first.
+
+`PIWI_COVERAGE_MODE=run` records run-level coverage only, at a lower cost, and names no request. Without a coverage build nothing changes: no header, and the coverage paths reach the application. Never ship a coverage build to production; in one, `UsePiwiTestLogs()` logs a warning when the environment is one the middleware is not active in.
+
+Lambdas created at startup, such as inline minimal API handlers, and work outside a request count at run level only. The [coverage package's README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#readme) has the JSON shapes, how statements map to lines, the limits and the measured cost.
+
 ## Server probes — the `X-Piwi-Probe` header
 
 The middleware accepts a signed fault instruction from a Piwi probe run (Test

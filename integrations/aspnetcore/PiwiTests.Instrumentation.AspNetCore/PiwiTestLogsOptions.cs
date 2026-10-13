@@ -23,4 +23,7 @@ public sealed class PiwiTestLogsOptions
     /// <see cref="Environments"/> when set.
     /// </summary>
     public Func<IHostEnvironment, bool>? IsActive { get; set; }
+
+    /// <summary>How the middleware serves server coverage; the defaults come from the coverage recorder.</summary>
+    internal PiwiCoverageSettings Coverage { get; set; } = new();
 }
