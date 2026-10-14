@@ -248,15 +248,44 @@ small ES modules like a dev server serves; one new browser context per run (one 
 | None | 492 to 523 ms | | 1,330 to 1,361 ms |
 | Function coverage through CDP (`detailed: false`) | +2% to +5% | 78 to 88 ms | +6.6% to +8.7% |
 | Function coverage, script sources read at stop, cached per worker | +5% | 128 ms | +12.6% |
+| Function coverage as shipped (debugger on from the start, see below) | about +0% to +6% | | +8% (+16% on a worker's first test) |
 | Block coverage through CDP (`detailed: true`, counts) | +74% to +85% | 89 to 104 ms | +28.6% to +34.5% |
 | `page.coverage`, what code reach uses today | +78% | 66 to 74 ms | +37.1% to +41.9% |
 
 - **Function coverage reports exactly the same executed functions** as block coverage on this page (833 functions,
   no difference either way), so moving code reach to it changes no result.
-- Code reach needs each script's source to apply its source map. Enabling the debugger only at stop replays every
-  parsed script with its content hash, and a source is read only when its hash is new to the worker: 403 sources on a
-  worker's first test, none after.
+- Code reach needs each script's source to apply its source map. The debugger stays on from the start of the test,
+  with every pause skipped: each `Debugger.scriptParsed` event gives the script's URL and V8 content hash, and the
+  source is read at that moment only when the worker has not resolved that version: 403 sources on a worker's first
+  test, none after. Enabling the debugger only at stop is cheaper but wrong: it replays only the current documents'
+  scripts, so an iframe's earlier document loses its sources (checked by a real-Chromium test). As shipped, on the same
+  page and including the resolution, a test takes 8% longer, against 50% with `page.coverage`, with the same 137 files.
 - Block coverage is what line granularity needs in the browser; its cost is V8's, not Piwi's.
+
+#### Istanbul, the build-time alternative
+
+Istanbul (`vite-plugin-istanbul`, `babel-plugin-istanbul`, the SWC plugin for Next.js) instruments the application's
+source at build time and keeps per-statement, per-branch and per-function counters in `window.__coverage__`, read with
+one `page.evaluate` at the end of a test. Measured on the same page, 9 rounds, medians:
+
+| Capture | Page JavaScript | Test time | Data read per test |
+|---|---|---|---|
+| None | 561 ms | 1,382 ms | |
+| Istanbul, the page's own code instrumented (app and its 400 modules, not Vue) | +3.8% | +9.1% | 439 KB |
+| V8 function coverage | +7.2% | +4.7% | 349 KB |
+| V8 block coverage | +85.5% | +36.7% | 395 KB |
+| Istanbul with Vue instrumented too (7 rounds) | +119% | +87% | 2.5 MB |
+
+- **Per executed statement, Istanbul's counters cost more than V8's block counters** (+119% against +85% when all the
+  page's code is instrumented). It came out cheaper in the first run only because it instruments the application's
+  own code and leaves the framework alone, while V8's coverage covers every script of the page. In an application
+  where the framework does most of the work, Istanbul gives line and branch coverage at a fraction of V8 block
+  coverage's cost; where the application's own code is the hot part, it costs more.
+- **The instrumented code is 7.7 times larger** (93 KB to 721 KB here), which a page pays in download and parse.
+- **It works in every browser**, while V8 coverage is Chromium-only; it gives branch coverage and original source
+  positions with no source map to resolve; and it needs a separate instrumented build, like the server side.
+- It fits the model without change: `fnMap` entries with a count above zero give functions, statements with a count
+  above zero give lines (D13).
 
 ### The levels
 
@@ -264,12 +293,14 @@ small ES modules like a dev server serves; one new browser context per run (one 
 |---|---|---|---|---|---|
 | **Routes** (exists) | none | route → handler file, inferred | 0 | 0 | handler files only |
 | **Functions**, per test | V8 function coverage | backend `test` mode, functions | +7% to +13% of test time, script-heavy page | under 2% of test time (eShopOnWeb); up to +24% server CPU | files and functions per test: impact, uncovered files, preflight, editor lens |
-| **Lines**, per test | V8 block coverage | backend `test` mode, lines | +29% to +35% of test time, script-heavy page | as functions: under 2% of test time; up to +26% server CPU | line-level impact, uncovered changed lines, editor line marks |
+| **Lines**, per test | V8 block coverage, or Istanbul | backend `test` mode, lines | +29% to +35% of test time with V8 block coverage; +9% with Istanbul when the framework is the hot code, +87% when the application's own code is | as functions: under 2% of test time; up to +26% server CPU | line-level impact, uncovered changed lines, editor line marks |
 | **Lines**, run level | (needs block coverage anyway) | backend `run` mode | n/a | +0.2% of test time (eShopOnWeb); up to +6% server CPU | run-level report, LCOV and Cobertura export |
 
 Server lines cost the same as server functions, so the recommended combination for a scheduled job is **browser
 functions, server lines**: within the 10% to 15% budget on both sides for typical applications, with line detail
-where it is cheap. Browser lines stay a separate choice for a job that can afford block coverage.
+where it is cheap. Browser lines stay a separate choice: V8 block coverage for a job that can afford it, or an
+Istanbul build, which is cheaper when the framework does most of the work and is the only way to cover other browsers
+than Chromium.
 
 ## Decisions
 
@@ -282,11 +313,12 @@ where it is cheap. Browser lines stay a separate choice for a job that can affor
 | D5 | Server coverage comes from the C# compiler's `TestCoverage` instrumentation and a supplied `CreatePayload`, not from IL rewriting or a profiler. | Per-request attribution with no binary rewriting, no native code, and the compiler's own handling of async, lambdas and Razor. |
 | D6 | Attribution goes through the request: an `AsyncLocal` mirrored into a thread-static field, a request id on the response, collection by request ids. No test id reaches the backend. | Exact under parallel workers, no CORS preflight, and the reporter already attributes responses to tests. |
 | D7 | The reporter process collects, in batches, after each test ends, never the test worker. | Keeps the 17 to 22 ms collection call out of test durations. |
-| D8 | Browser code reach moves from `page.coverage` to function coverage through CDP, with sources read at stop and cached by content hash. | Same functions found, about a third of the cost. |
+| D8 | Browser code reach moves from `page.coverage` to function coverage through CDP, with the debugger on from the start and a script's source read when it is parsed, only for a version the worker has not resolved. | Same files found for a sixth of the cost (+8% per test against +50%); reading sources at stop would lose an iframe's earlier documents. Shipped. |
 | D9 | Line conversion counts a statement span's lines only when the span encloses no other method's span; otherwise only its first line. | A primary constructor's or a field initializer's span covers the whole type. |
 | D10 | Coverage is opt-in on both sides; the server needs a coverage build (`-p:PiwiCoverage=true`) and serves coverage only in the environments the middleware is active in. | A coverage build must never reach production, and the endpoints expose source paths and line numbers. |
 | D11 | Line numbers (function ranges, executed lines) leave the machine only at the functions and lines granularities, which are opt-in; the files granularity, which `captureCodeReach` maps to, keeps sending paths only. Never source code, never hit counts. | The privacy page promises "never source code, coverage counts or line numbers" to today's users; that promise holds for them and changes only for those who choose more. |
 | D12 | The code index and the reach answers gain `runtime` (`browser`, `server`) and `via` (`coverage`, `route`); `origin` stays as an alias until 1.0 (`client` for browser coverage, `server` for any server reach). | `origin: 'server'` means "inferred from the route" today; measured server coverage needs its own value without breaking the editors. |
+| D13 | When a page exposes Istanbul's `window.__coverage__`, the reporter reads it at the end of the test, in any browser; for the files it covers, its counters replace V8's, and on Chromium V8's function coverage still covers the rest. | An instrumented build signals itself; it covers other browsers than Chromium, gives lines and branches, and costs less than V8 block coverage when the framework is the hot code. |
 
 ## Part 1: the model, the wire and the tables
 
@@ -347,11 +379,14 @@ merged, caps enforced.
 
 ## Part 2: browser capture
 
-- **Functions**: a CDP session per covered page, `Profiler.startPreciseCoverage({ callCount: false, detailed: false
-  })`, `Profiler.takePreciseCoverage` at stop, then `Debugger.enable` to receive every parsed script's URL and content
-  hash, `Debugger.getScriptSource` only for hashes the worker has not resolved yet. The existing resolution
-  (`resolveCodeReach`: served modules, source maps, top-level exclusion) is unchanged; it also emits each function's
-  start and end line in the original file.
+- **Functions**: a CDP session per covered page, `Debugger.enable` with every pause skipped, then
+  `Profiler.startPreciseCoverage({ callCount: false, detailed: false })`; each `Debugger.scriptParsed` event gives the
+  script's URL and content hash, and `Debugger.getScriptSource` runs only for a version the worker has not resolved;
+  `Profiler.takePreciseCoverage` at stop. Shipped for code reach (files); the same resolution (`resolveCodeReach`:
+  served modules, source maps, top-level exclusion) also gives each function's start and end line in the original
+  file, for the functions granularity.
+- **Istanbul**: when the page exposes `window.__coverage__`, its counters are read at the end of the test, in any
+  browser, and replace V8's coverage for the files they cover (D13).
 - **Lines**: `detailed: true`. V8 reports nested ranges with counts; a position's count is the innermost range's.
   Executed lines are the original-file lines that hold at least one position with a count above zero, through the
   source map, the conversion `c8` and `v8-to-istanbul` use. Pure logic in `packages/core`.
