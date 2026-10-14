@@ -145,7 +145,14 @@ export async function readPassingCaptures(db: DrizzleDB, runId: number, paths: s
 
 /** A range's changed files, as a source control provider gives them. */
 export interface SuspectRangeChanges {
-  files: Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>;
+  files: Array<{
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    patch?: string;
+    blob?: string;
+  }>;
   /** true when the provider left out every patch, the diff being too large. */
   patchesOmitted?: boolean;
 }
@@ -157,12 +164,15 @@ function changeStatus(status: string): DiffFile['status'] {
   return 'modified';
 }
 
-/** A provider's changed files, with the hunks of their patches; a file without a patch has none. */
+/**
+ * A provider's changed files, with the hunks of their patches (a file without
+ * a patch has none) and the blob id at the head where the provider gives it.
+ */
 function suspectChangesOf(files: SuspectRangeChanges['files']): SuspectChange[] {
   return files.map((file) => {
     const status = changeStatus(file.status);
     const hunks = file.patch ? diffFileFromPatch(file.filename, file.patch, status).hunks : [];
-    return { path: file.filename, status, hunks };
+    return { path: file.filename, status, hunks, ...(file.blob ? { headBlob: file.blob } : {}) };
   });
 }
 

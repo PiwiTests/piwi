@@ -178,8 +178,9 @@ describe('suspectLines: granularities', () => {
       passing: [],
     });
     expect(other.suspects[0]).toMatchObject({ granularity: 'files', lines: [[57, 59]] });
-    // The same blob, or an unknown head blob, keeps line granularity: lines 1-2 miss the hunk.
-    for (const headBlob of [BLOB_OTHER, undefined]) {
+    // The same blob (in any case), an unknown head blob, or a head blob of another hash (a SHA-256
+    // repository read by a SHA-1 hash) keeps line granularity: lines 1-2 miss the hunk.
+    for (const headBlob of [BLOB_OTHER, BLOB_OTHER.toUpperCase(), undefined, 'a'.repeat(64)]) {
       const same = suspectLines({
         changes: [change('src/Basket.cs', [57, 58, 59], { headBlob })],
         failing: [capture(covered)],

@@ -7,6 +7,7 @@ import {
   MAX_SCM_FILES_TOTAL,
   MAX_FILE_BYTES,
   FETCH_TIMEOUT_MS,
+  isGitObjectId,
   type RerunDispatchRequest,
   type RerunDispatchResult,
 } from './ScmProvider';
@@ -227,15 +228,30 @@ export async function localGitProvider(
 /** git's status letters in the hosts' words; a copy is a new file, anything else a modification. */
 const STATUS_BY_LETTER: Record<string, string> = { A: 'added', C: 'added', D: 'removed', R: 'renamed' };
 
-/** `git diff --name-status -z`: each file's status and (new) path, in diff order. */
-function parseNameStatus(out: string): Array<{ status: string; path: string }> {
+/** A gitlink's mode: the "blob" of a submodule is a commit. */
+const GITLINK_MODE = '160000';
+
+/**
+ * `git diff --raw -z --no-abbrev`: each file's status, (new) path and blob id
+ * on the new side, in diff order. Each entry is
+ * `:<old mode> <new mode> <old id> <new id> <status>`, then the path, or the
+ * old and the new path for a rename or a copy; a removed file's new id is all
+ * zeros, and a submodule has no blob.
+ */
+function parseRawDiff(out: string): Array<{ status: string; path: string; blob?: string }> {
   const parts = out.split('\0');
-  const result: Array<{ status: string; path: string }> = [];
+  const result: Array<{ status: string; path: string; blob?: string }> = [];
   for (let i = 0; i < parts.length;) {
-    const code = parts[i++];
-    if (!code) continue;
+    const meta = parts[i++];
+    if (!meta?.startsWith(':')) continue;
+    const [, newMode = '', , newId = '', code = ''] = meta.slice(1).split(' ');
     if (code.startsWith('R') || code.startsWith('C')) i++; // the old path comes first
-    result.push({ status: STATUS_BY_LETTER[code[0]!] ?? 'modified', path: parts[i++] ?? '' });
+    const blob = newMode !== GITLINK_MODE && isGitObjectId(newId) && /[^0]/.test(newId) ? newId : undefined;
+    result.push({
+      status: STATUS_BY_LETTER[code[0]!] ?? 'modified',
+      path: parts[i++] ?? '',
+      ...(blob ? { blob } : {}),
+    });
   }
   return result;
 }
@@ -343,17 +359,17 @@ export class LocalGitProvider extends ScmProvider {
   /** The changed files between two revisions (as `git diff` takes them), with their hunks. Null when git fails. */
   private async diff(revs: string[]): Promise<Omit<ScmChanges, 'commits'> | null> {
     const base = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--submodule=short', '-M'];
-    const [numstat, nameStatus, patch] = await Promise.all([
+    const [numstat, raw, patch] = await Promise.all([
       this.git([...base, '--numstat', '-z', ...revs, '--']),
-      this.git([...base, '--name-status', '-z', ...revs, '--']),
+      this.git([...base, '--raw', '-z', '--no-abbrev', ...revs, '--']),
       this.git([...base, '--patch', '--src-prefix=a/', '--dst-prefix=b/', ...revs, '--'], MAX_LOCAL_PATCH_BYTES),
     ]);
-    if (!numstat.ok || !nameStatus.ok) return null;
+    if (!numstat.ok || !raw.ok) return null;
 
     const counts = parseNumstat(numstat.stdout);
-    const statuses = parseNameStatus(nameStatus.stdout);
+    const statuses = parseRawDiff(raw.stdout);
     const sections = patch.ok ? splitPatch(patch.stdout, patch.overflow) : [];
-    const files: ChangedFile[] = statuses.slice(0, MAX_SCM_FILES_TOTAL).map(({ status, path }, i) => {
+    const files: ChangedFile[] = statuses.slice(0, MAX_SCM_FILES_TOTAL).map(({ status, path, blob }, i) => {
       const count = counts[i]?.path === path ? counts[i] : undefined;
       const section = sections[i];
       const hunks = section?.header.endsWith(` b/${path}`) ? section.hunks : undefined;
@@ -363,6 +379,7 @@ export class LocalGitProvider extends ScmProvider {
         additions: count?.additions ?? 0,
         deletions: count?.deletions ?? 0,
         patch: hunks ? truncatePatch(hunks) : undefined,
+        ...(blob ? { blob } : {}),
       };
     });
     const filesTruncated = statuses.length > MAX_SCM_FILES_TOTAL;

@@ -96,3 +96,21 @@ describe('fetchChanges returns full commit messages', () => {
     expect(changes?.commits).toEqual([]);
   });
 });
+
+describe('changed files carry their blob id at the head', () => {
+  test('GitHub gives the blob of each file but a removed one', async () => {
+    const head = 'C0FFEE'.padEnd(40, '0');
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        commits: [],
+        files: [
+          { filename: 'src/a.ts', status: 'modified', additions: 1, deletions: 1, sha: head },
+          { filename: 'src/b.ts', status: 'removed', additions: 0, deletions: 3, sha: 'a'.repeat(40) },
+          { filename: 'vendor/lib', status: 'modified', additions: 0, deletions: 0, sha: null },
+        ],
+      }),
+    );
+    const changes = await new GitHubProvider('acme/shop', 'tok').fetchChanges('aaa0005', 'bbb0005');
+    expect(changes?.files.map((f) => f.blob)).toEqual([head.toLowerCase(), undefined, undefined]);
+  });
+});

@@ -210,6 +210,8 @@ describe('LocalGitProvider reads', () => {
     expect(byName['e2e/checkout.spec.ts']).toMatchObject({ status: 'added', additions: 1, deletions: 0 });
     expect(byName['new-name.ts']).toMatchObject({ status: 'renamed', additions: 0, deletions: 0, patch: undefined });
     expect(changes?.filesTruncated).toBe(false);
+    // Each file carries its blob id at the head, the one git stores.
+    for (const name of Object.keys(byName)) expect(byName[name]!.blob).toBe(git('rev-parse', `${sha.third}:${name}`));
   });
 
   test('diffs a commit against its parent, and a root commit against nothing', async () => {
@@ -220,6 +222,8 @@ describe('LocalGitProvider reads', () => {
       ['new-name.ts', 'renamed'],
       ['notes.md', 'removed'],
     ]);
+    // A removed file has no blob at the head.
+    expect(third?.files.find((f) => f.filename === 'notes.md')?.blob).toBeUndefined();
     const root = await local.fetchCommitDiff(sha.first);
     expect(root?.files.map((f) => f.status)).toEqual(['added', 'added', 'added']);
   });

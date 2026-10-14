@@ -1607,6 +1607,8 @@ export interface ScmChangedFile {
   additions: number;
   deletions: number;
   patch?: string;
+  /** The git blob id of the file at the head commit, where the host gives it. */
+  blob?: string;
 }
 
 /**

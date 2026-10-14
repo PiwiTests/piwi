@@ -13,8 +13,8 @@
  * - `files`: the whole hunk, when the capture reached the file.
  *
  * A covered file whose blob differs from the change's head blob, when both are
- * known, counts at `files` granularity only: its line numbers refer to another
- * version of the file. A changed path matches a covered path exactly, else by
+ * known and of the same hash (SHA-1 or SHA-256), counts at `files` granularity
+ * only: its line numbers refer to another version of the file. A changed path matches a covered path exactly, else by
  * the suffix rule of `sameFilePath`.
  *
  * Each hunk the failing captures executed is scored with the Ochiai
@@ -185,7 +185,12 @@ function prepare(file: CoverageFile, headBlob: string | undefined): PreparedFile
     runtime: file.runtime,
     lines: normalizeLineRanges(file.lines ?? []),
     functions: normalizeLineRanges(file.functions ?? []),
-    otherVersion: Boolean(headBlob && file.blob && file.blob !== headBlob),
+    otherVersion: Boolean(
+      headBlob &&
+      file.blob &&
+      file.blob.length === headBlob.length &&
+      file.blob.toLowerCase() !== headBlob.toLowerCase(),
+    ),
   };
 }
 

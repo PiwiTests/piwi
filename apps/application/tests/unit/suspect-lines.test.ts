@@ -97,7 +97,7 @@ function bigPatch(count: number): string {
   return [`@@ -0,0 +1,${count} @@`, ...added].join('\n');
 }
 
-function changed(...files: Array<{ filename: string; patch?: string; status?: string }>): ScmChanges {
+function changed(...files: Array<{ filename: string; patch?: string; status?: string; blob?: string }>): ScmChanges {
   return {
     commits: [{ sha: HEAD.slice(0, 7), message: 'Update basket quantities' }],
     files: files.map((f) => ({ status: 'modified', additions: 3, deletions: 3, ...f })),
@@ -355,6 +355,19 @@ describe('suspectLinesForCluster', () => {
     const answer = await clusterSuspectLinesForChanges(db as never, 1, changes!, pinned);
     expect(fetched).toEqual([]);
     expect(answer).toMatchObject({ available: true, range: pinned, runId: 2, summary: { executedHunks: 1 } });
+  });
+
+  test('reads the coverage of another version of a changed file at files granularity only', async () => {
+    const pinned = { from: 'f'.repeat(40), to: HEAD };
+    const sameVersion = changed({ filename: BASKET, patch: BASKET_PATCH, blob: BLOB });
+    expect(await clusterSuspectLinesForChanges(db as never, 1, sameVersion, pinned)).toMatchObject({
+      suspects: [{ path: BASKET, granularity: 'lines', lines: [[57, 59]] }],
+    });
+    const otherVersion = changed({ filename: BASKET, patch: BASKET_PATCH, blob: 'e'.repeat(40) });
+    expect(await clusterSuspectLinesForChanges(db as never, 1, otherVersion, pinned)).toMatchObject({
+      summary: { executedLines: 0 },
+      suspects: [{ path: BASKET, granularity: 'files', lines: [[57, 59]] }],
+    });
   });
 
   test('falls back to the cluster’s own range when the changes end at another commit', async () => {

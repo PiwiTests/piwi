@@ -32,6 +32,17 @@ export interface ChangedFile {
   additions: number;
   deletions: number;
   patch?: string;
+  /**
+   * The git blob id of the file at the head commit, where the host gives it
+   * (GitHub and a local clone; never for a removed file). Suspect lines use it
+   * to tell whether a test's coverage refers to this version of the file.
+   */
+  blob?: string;
+}
+
+/** A git object id: 40 hex characters (SHA-1) or 64 (SHA-256). */
+export function isGitObjectId(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value);
 }
 
 export interface ScmCommit {
