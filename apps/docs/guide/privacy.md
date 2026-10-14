@@ -6,15 +6,13 @@ lang: en-US
 
 # Privacy & data flow
 
-Test results are unusually revealing: they carry your source paths, error messages, screenshots of your
-app, network calls, and sometimes your git history. That's a good reason to know exactly where the
-bytes go. This page is the inventory.
+Test results are revealing: they carry your source paths, error messages, screenshots of your app,
+network calls, and sometimes your git history. This page is the inventory of where those bytes go.
 
 The short version: **there is no telemetry**, no usage analytics, no crash reporting, and no license or
 activation call. The server never checks for updates; the desktop app checks once at startup (turn that off in
 **Settings → About**) and when you click **Check for updates** there. Every outbound call the server makes is listed
-below, and all but two are something you switched on. An instance running on an air-gapped network works the same as
-one on the internet.
+below, and all but two are something you switched on. An air-gapped instance works the same.
 
 ## What leaves your server
 
@@ -84,7 +82,8 @@ Some data is skipped at the source, so it never exists to leak:
 - **Input values in locator snapshots.** The [capture fixtures](./capture-fixtures) record what an
   element *is* — role, accessible name, test id — never what was typed into it. Playwright's own records
   are different: step titles and parameters, traces and the failure-time ARIA snapshot include the values
-  a test typed, password fields too, so don't fill real secrets in tests.
+  a test typed, password fields too, so don't fill real secrets in tests. The **DOM** view and the AI
+  diagnosis show them, password fields masked.
 - **Page-inventory field contents.** The optional [page inventory](./reporter#configuration-options)
   (`capturePageInventory`, **off by default**) records the names of a page's controls and links so the
   dashboard can tell which the suite never exercises. The name of a control that holds user input — a
@@ -92,7 +91,8 @@ Some data is skipped at the source, so it never exists to leak:
   recovery code, a draft, or a set of options never leaves the browser; link hrefs are stripped of their
   query and hash, which can carry signed tokens.
 - **Storage and cookie values.** Page state records the *names* of `localStorage` /`sessionStorage`
-  keys and their value lengths, and cookie names with their flags. Never the values.
+  keys and their value lengths, and cookie names with their flags. Never the values. Focus, mouse and
+  selection name elements, never values or selected text.
 - **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in Piwi's trace
   network view, and token-shaped strings in URLs and bodies are masked too. The trace file itself is
   stored as uploaded, so the bundled trace viewer and a downloaded trace still show them.

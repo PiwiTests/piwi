@@ -11,12 +11,18 @@
  *  - back-reference: `[[snapshotsAgo, nodeIndex]]` — the node at `nodeIndex`
  *    in the post-order node list of the snapshot `snapshotsAgo` earlier in the
  *    same frame's snapshot sequence
+ *  - live state: `__playwright_*` attributes beside an element's own (a
+ *    field's value, a checkbox's state, scroll offsets, an open dialog, the
+ *    action's target), and `template` nodes for shadow roots and adopted
+ *    stylesheets — the same in every version from 1.60 on, but for the target,
+ *    which 1.60 marks with the action's call id and later versions leave empty
  *
  * Node-free (pure rendering over already-parsed trace data) so the browser
  * demo can render the committed demo trace with the same code the server
  * uses; the node-only trace loading lives in `dom-snapshot.ts`.
  */
-import { pageActionOf, type ParsedTraceData, type TraceFrameSnapshot } from './trace-events';
+import { sanitizePageInteraction } from '#shared/page-interaction';
+import { pageActionOf, type ParsedTraceData, type TraceAction, type TraceFrameSnapshot } from './trace-events';
 
 /**
  * Cap for the rendered snapshot HTML. Generous so a fully-styled snapshot
@@ -78,6 +84,101 @@ function escapeText(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 }
 
+/**
+ * CSS written into a `<style>` element, whose text is raw (entities are not
+ * decoded there): only a closing tag could end it early, so that one is defanged.
+ */
+function rawStyleText(css: string): string {
+  return css.replace(/<\/(style)/gi, '<\\/$1');
+}
+
+/** The `__playwright_*` attributes that carry an element's live state in a recorded snapshot. */
+const LIVE = {
+  value: '__playwright_value_',
+  checked: '__playwright_checked_',
+  selected: '__playwright_selected_',
+  scrollTop: '__playwright_scroll_top_',
+  scrollLeft: '__playwright_scroll_left_',
+  target: '__playwright_target__',
+  currentSrc: '__playwright_current_src__',
+  popoverOpen: '__playwright_popover_open_',
+  dialogOpen: '__playwright_dialog_open_',
+  customElements: '__playwright_custom_elements__',
+  shadowRoot: '__playwright_shadow_root_',
+  styleSheet: '__playwright_style_sheet_',
+} as const;
+
+/** What a password field shows: that it holds something, never what. */
+export const PASSWORD_MASK = '••••••••';
+
+/** Input types whose `value` is not what the field shows: a checkbox's or radio's submitted value, a file's fake path. */
+const VALUELESS_INPUT_TYPES = new Set(['checkbox', 'radio', 'file']);
+
+type Attrs = Record<string, unknown>;
+
+/**
+ * One element's attributes as the renderer writes them: its recorded ones,
+ * less inline handlers and unsafe names, with its live state applied. What
+ * markup can say is written as markup: a field's value (masked in a password
+ * field), a checkbox's or option's state, the image the page chose from a
+ * `srcset`, an open dialog. The rest becomes a `data-piwi-*` marker the frame
+ * script applies (`restoreSnapshotState` in `#shared/snapshot-picker-extras`):
+ * scroll offsets, a modal dialog, an open popover, the action's target, the
+ * custom elements the page had defined.
+ */
+function renderedAttributes(tagUpper: string, attrs: Attrs, isTargetMark: (value: unknown) => boolean) {
+  const out = new Map<string, string>();
+  for (const [name, value] of Object.entries(attrs)) {
+    if (name.startsWith('__playwright')) continue;
+    // Inline handlers are noise for diagnosis and unsafe to re-emit.
+    if (/^on[a-z]/i.test(name) || UNSAFE_NAME_RE.test(name)) continue;
+    out.set(name, String(value));
+  }
+  const live = (name: string): string | undefined => {
+    const value = attrs[name];
+    return typeof value === 'string' ? value : undefined;
+  };
+  const setFlag = (name: string, on: boolean) => {
+    if (on) out.set(name, '');
+    else out.delete(name);
+  };
+
+  if (tagUpper === 'INPUT') {
+    const type = (out.get('type') ?? '').toLowerCase();
+    const value = live(LIVE.value);
+    if (type === 'password') {
+      const held = value ?? out.get('value');
+      if (held !== undefined) out.set('value', held ? PASSWORD_MASK : '');
+    } else if (value !== undefined && !VALUELESS_INPUT_TYPES.has(type)) {
+      out.set('value', value);
+    }
+    const checked = live(LIVE.checked);
+    if (checked !== undefined) setFlag('checked', checked === 'true');
+  }
+  const selected = live(LIVE.selected);
+  if (tagUpper === 'OPTION' && selected !== undefined) setFlag('selected', selected === 'true');
+  const currentSrc = live(LIVE.currentSrc);
+  if (tagUpper === 'IMG' && currentSrc) {
+    out.set('src', currentSrc);
+    out.delete('srcset');
+  }
+  // A dialog's `open` attribute is not recorded, only whether it was open and how.
+  const dialog = live(LIVE.dialogOpen);
+  if (tagUpper === 'DIALOG' && dialog) {
+    out.set('open', '');
+    if (dialog === 'modal') out.set('data-piwi-modal', '');
+  }
+  if (live(LIVE.popoverOpen) === 'true') out.set('data-piwi-popover-open', '');
+  const scrollTop = live(LIVE.scrollTop);
+  if (scrollTop) out.set('data-piwi-scroll-top', scrollTop);
+  const scrollLeft = live(LIVE.scrollLeft);
+  if (scrollLeft) out.set('data-piwi-scroll-left', scrollLeft);
+  if (isTargetMark(attrs[LIVE.target])) out.set('data-piwi-target', '');
+  const customElements = live(LIVE.customElements);
+  if (tagUpper === 'BODY' && customElements) out.set('data-piwi-custom-elements', customElements);
+  return out;
+}
+
 function escapeAttr(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
@@ -130,32 +231,47 @@ export function renderSnapshotHtml(
     return cached;
   };
 
+  // 1.60 marks the action's target with its call id, later versions with an
+  // empty value; an id of another action is a mark an earlier snapshot left.
+  const isTargetMark = (value: unknown) => value === '' || (!!target.callId && value === target.callId);
+
+  /**
+   * The node a back-reference names, in the earlier snapshot's node space —
+   * rendering continues in THAT snapshot's context, whose own refs go further
+   * back. Null when it can't be resolved.
+   */
+  const deref = (ref: unknown[], snapshotIndex: number): { node: unknown; snapshotIndex: number } | null => {
+    const delta = typeof ref[0] === 'number' ? ref[0] : NaN;
+    const nodeIndex = typeof ref[1] === 'number' ? ref[1] : NaN;
+    const refSnapshotIndex = snapshotIndex - delta;
+    if (!Number.isInteger(refSnapshotIndex) || refSnapshotIndex < 0 || refSnapshotIndex >= snapshotIndex) return null;
+    const refNodes = nodesOf(refSnapshotIndex);
+    if (!Number.isInteger(nodeIndex) || nodeIndex < 0 || nodeIndex >= refNodes.length) return null;
+    return { node: refNodes[nodeIndex], snapshotIndex: refSnapshotIndex };
+  };
+
+  /** The text a child node stands for, following back-references; null for an element. */
+  const textOf = (n: unknown, snapshotIndex: number): string | null => {
+    if (typeof n === 'string') return n;
+    if (!Array.isArray(n) || !Array.isArray(n[0])) return null;
+    const ref = deref(n[0], snapshotIndex);
+    return ref ? textOf(ref.node, ref.snapshotIndex) : null;
+  };
+
   const render = (n: unknown, snapshotIndex: number): string => {
     if (typeof n === 'string') return escapeText(n);
     if (!Array.isArray(n) || n.length === 0) return '';
 
-    // Back-reference: resolve into the earlier snapshot's node space and keep
-    // rendering in THAT snapshot's context (its own refs go further back).
     if (Array.isArray(n[0])) {
-      const ref = n[0] as unknown[];
-      const delta = typeof ref[0] === 'number' ? ref[0] : NaN;
-      const nodeIndex = typeof ref[1] === 'number' ? ref[1] : NaN;
-      const refSnapshotIndex = snapshotIndex - delta;
-      if (!Number.isInteger(refSnapshotIndex) || refSnapshotIndex < 0 || refSnapshotIndex >= snapshotIndex) {
-        return '<!-- [unresolved snapshot reference] -->';
-      }
-      const refNodes = nodesOf(refSnapshotIndex);
-      if (!Number.isInteger(nodeIndex) || nodeIndex < 0 || nodeIndex >= refNodes.length) {
-        return '<!-- [unresolved snapshot reference] -->';
-      }
-      return render(refNodes[nodeIndex], refSnapshotIndex);
+      const ref = deref(n[0], snapshotIndex);
+      return ref ? render(ref.node, ref.snapshotIndex) : '<!-- [unresolved snapshot reference] -->';
     }
 
     if (typeof n[0] !== 'string' || !n[0] || UNSAFE_NAME_RE.test(n[0])) return '';
     // HTML tags are recorded upper case, SVG ones as authored (`svg`, `script`).
     const tagUpper = (n[0] as string).toUpperCase();
     const tag = tagUpper.toLowerCase();
-    const attrs = n[1];
+    const attrs: Attrs = n[1] && typeof n[1] === 'object' && !Array.isArray(n[1]) ? (n[1] as Attrs) : {};
 
     // A script is an empty marker — no `src`, no body — so nothing the page
     // shipped ever runs in the rendered frame. Playwright drops HTML scripts when
@@ -163,25 +279,37 @@ export function renderSnapshotHtml(
     if (tagUpper === 'SCRIPT') return '<script></script>';
     if (tagUpper === 'LINK' && isResourceHint(attrs)) return '';
 
+    // An adopted stylesheet (the document's or a shadow root's) is recorded as a
+    // `template` holding its CSS, where it applies: written there as a `<style>`.
+    const adopted = attrs[LIVE.styleSheet];
+    if (tagUpper === 'TEMPLATE' && typeof adopted === 'string') {
+      return dropStyles ? '<style></style>' : `<style>${rawStyleText(adopted)}</style>`;
+    }
+
     let out = `<${tag}`;
-    if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
-      for (const [name, value] of Object.entries(attrs as Record<string, unknown>)) {
-        // __playwright_* bookkeeping attrs carry live input values and
-        // scroll/selection state — never surfaced (secret-leak posture).
-        if (name.startsWith('__playwright')) continue;
-        // Inline handlers are noise for diagnosis and unsafe to re-emit.
-        if (/^on[a-z]/i.test(name) || UNSAFE_NAME_RE.test(name)) continue;
-        out += ` ${name}="${escapeAttr(String(value))}"`;
-      }
+    // A shadow root is recorded as a `template` first in its host; as a
+    // declarative shadow root, the browser attaches it while parsing.
+    if (tagUpper === 'TEMPLATE' && attrs[LIVE.shadowRoot] !== undefined) out += ' shadowrootmode="open"';
+    for (const [name, value] of renderedAttributes(tagUpper, attrs, isTargetMark)) {
+      out += ` ${name}="${escapeAttr(value)}"`;
     }
     out += '>';
     if (VOID_ELEMENTS.has(tagUpper)) return out;
 
+    const value = attrs[LIVE.value];
+    if (tagUpper === 'TEXTAREA' && typeof value === 'string') {
+      // The parser drops one newline right after `<textarea>`.
+      return `${out}${value.startsWith('\n') ? '\n' : ''}${escapeText(value)}</${tag}>`;
+    }
+
     // `<style>` bodies are dropped only under the lean fallback; the tag stays
-    // as a marker.
-    const dropBody = dropStyles && tagUpper === 'STYLE';
-    if (!dropBody) {
-      for (let i = 2; i < n.length; i++) out += render(n[i], snapshotIndex);
+    // as a marker. An HTML `<style>` holds raw text, so its CSS is written as
+    // is; an SVG `style` (recorded lower case) is parsed as markup and stays escaped.
+    if (dropStyles && tagUpper === 'STYLE') return `${out}</${tag}>`;
+    const rawText = n[0] === 'STYLE';
+    for (let i = 2; i < n.length; i++) {
+      const text = rawText ? textOf(n[i], snapshotIndex) : null;
+      out += text !== null ? rawStyleText(text) : render(n[i], snapshotIndex);
     }
     return `${out}</${tag}>`;
   };
@@ -265,7 +393,7 @@ export interface SanitizeOptions {
 
 /**
  * Mask token-shaped strings and cap the rendered HTML. Pure and unit-testable.
- * The renderer already drops `__playwright_*` values, inline handlers, and
+ * The renderer already masks password fields and drops inline handlers and
  * script bodies — this pass handles secrets baked into ordinary markup.
  */
 export function sanitizeDomSnapshot(
@@ -387,8 +515,7 @@ export function inlineStylesheets(html: string, cssByHref: Record<string, string
     if (typeof css !== 'string' || css.length === 0 || css.length > budget) return tag;
     budget -= css.length;
     const media = link.media ? ` media="${escapeAttr(link.media)}"` : '';
-    const safeCss = css.replace(/<\/(style)/gi, '<\\/$1');
-    return `<style${media}>${safeCss}</style>`;
+    return `<style${media}>${rawStyleText(css)}</style>`;
   });
 }
 
@@ -474,6 +601,11 @@ export interface DomSnapshotResult {
   truncated?: boolean;
   /** Which snapshot was rendered (e.g. `before@call@12`). */
   snapshotName?: string;
+  /**
+   * The rendered snapshot is the failure-time one, the one rendered when no
+   * other moment is asked for: the page the reporter read its page state from.
+   */
+  atFailure?: boolean;
   /** The failing action the snapshot belongs to, when identified. */
   action?: string;
   /** The recorded page viewport, for proportion-preserving scaled rendering. */
@@ -509,6 +641,32 @@ export function snapshotMomentFromQuery(query: Record<string, unknown>): Snapsho
 }
 
 /**
+ * Where the mouse was when a snapshot was taken, in viewport pixels: the point
+ * of the last pointer action on the snapshot's page up to that moment — its
+ * own action included, unless the snapshot is from before it. An action's page
+ * is the one its snapshots were taken on, the only place a 1.63 trace records
+ * it. Null when nothing had moved the mouse yet.
+ */
+export function pointerAt(
+  data: Pick<ParsedTraceData, 'actions' | 'frameSnapshots'>,
+  snapshot: TraceFrameSnapshot,
+): { x: number; y: number } | null {
+  const name = snapshot.snapshotName ?? '';
+  const callId = snapshot.callId ?? name.slice(name.indexOf('@') + 1);
+  const phase = snapshot.phase ?? name.slice(0, name.indexOf('@'));
+  const index = data.actions.findIndex((a) => a.callId === callId);
+  if (index < 0) return null;
+  const pageOf = (a: TraceAction) => a.pageId ?? data.frameSnapshots.find((s) => s.callId === a.callId)?.pageId;
+  for (let i = phase === 'before' ? index - 1 : index; i >= 0; i--) {
+    const action = data.actions[i]!;
+    if (!action.point) continue;
+    const page = pageOf(action);
+    if (!snapshot.pageId || !page || page === snapshot.pageId) return action.point;
+  }
+  return null;
+}
+
+/**
  * Pick and render the failure-time DOM from parsed trace data: the failing
  * action's after-snapshot (the page when the error was raised, the moment the
  * failure screenshot and the failing aria tree show), falling back to its
@@ -529,8 +687,7 @@ export function extractDomSnapshot(
   const fa = data.failingAction;
   const pageAction = pageActionOf(data, fa);
   const named = at ? data.actions.find((a) => a.callId === at.callId) : undefined;
-  const candidates = [
-    at?.phase === 'before' ? named?.beforeSnapshot : (named?.afterSnapshot ?? named?.snapshotName),
+  const failureCandidates = [
     fa?.afterSnapshot,
     fa?.snapshotName,
     fa?.beforeSnapshot,
@@ -541,7 +698,10 @@ export function extractDomSnapshot(
   // Final fallback: the last main-frame snapshot in the trace.
   const mains = data.frameSnapshots.filter((s) => s.isMainFrame !== false && s.snapshotName);
   const last = mains[mains.length - 1];
-  if (last?.snapshotName && !candidates.includes(last.snapshotName)) candidates.push(last.snapshotName);
+  if (last?.snapshotName && !failureCandidates.includes(last.snapshotName)) failureCandidates.push(last.snapshotName);
+  const failureName = failureCandidates.find((name) => data.frameSnapshots.some((s) => s.snapshotName === name));
+  const asked = at?.phase === 'before' ? named?.beforeSnapshot : (named?.afterSnapshot ?? named?.snapshotName);
+  const candidates = asked ? [asked, ...failureCandidates] : failureCandidates;
 
   for (const name of candidates) {
     // Full-fidelity first (inline <style> kept). If keeping styles blows the
@@ -559,15 +719,43 @@ export function extractDomSnapshot(
     const rendered =
       data.frameSnapshots.find((s) => s.snapshotName === name && s.isMainFrame !== false) ??
       data.frameSnapshots.find((s) => s.snapshotName === name);
+    // Where the mouse was, for the frame script to mark it and what it hovered.
+    const pointer = rendered ? pointerAt(data, rendered) : null;
+    const html = pointer
+      ? result.html.replace(/<html\b/i, `<html data-piwi-pointer="${pointer.x},${pointer.y}"`)
+      : result.html;
     return {
       status: 'ok',
-      html: result.html,
+      html,
       truncated: result.truncated,
       snapshotName: name,
+      atFailure: name === failureName,
       action: fa?.apiName,
       viewport: rendered?.viewport,
       frameUrl: rendered?.frameUrl,
     };
   }
   return { status: 'no-snapshot' };
+}
+
+/**
+ * The failure-time snapshot with what the page was doing at test end, as the
+ * reporter read it into its page state (focus, hover, a text selection,
+ * indeterminate checkboxes), handed to the frame script as JSON on `<html>`
+ * (`data-piwi-page-state`): element paths only, which the script resolves in
+ * the rendered page. Any other snapshot, the ARIA view, or a page state
+ * without them is returned as is.
+ */
+export function withPageInteraction(result: DomSnapshotResult, pageState: unknown): DomSnapshotResult {
+  if (result.status !== 'ok' || !result.html || !result.atFailure || result.source === 'aria') return result;
+  const { focus, hover, selection, indeterminate } = sanitizePageInteraction(pageState);
+  const forFrame = {
+    ...(focus ? { focus: { path: focus.element.path, visible: focus.visible } } : {}),
+    ...(hover ? { hover: hover.path } : {}),
+    ...(selection ? { selection: { start: selection.start, end: selection.end } } : {}),
+    ...(indeterminate ? { indeterminate: indeterminate.map((box) => box.path) } : {}),
+  };
+  if (Object.keys(forFrame).length === 0) return result;
+  const attr = `data-piwi-page-state="${escapeAttr(JSON.stringify(forFrame))}"`;
+  return { ...result, html: result.html.replace(/<html\b/i, `<html ${attr}`) };
 }

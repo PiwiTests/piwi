@@ -1,11 +1,14 @@
 <script setup lang="ts">
 /**
  * App state at test end — URL, history state, storage key names + value
- * lengths, cookie names + flags. Values are never captured, so there is
- * nothing sensitive to display. Rendered from the case detail's `pageState`.
+ * lengths, cookie names + flags, and what the page was doing: the focused
+ * element, the one under the mouse, a text selection's length, indeterminate
+ * checkboxes. Values are never captured, so there is nothing sensitive to
+ * display. Rendered from the case detail's `pageState`.
  */
 
 import type { PageState } from '~~/types/api';
+import { describeFocus } from '#shared/page-state';
 import SectionCard from '../shared/SectionCard.vue';
 import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
@@ -33,6 +36,18 @@ const cardBind = computed(() =>
           help: 'page-state',
           ...(props.storageKey ? { storageKey: props.storageKey } : {}),
         },
+);
+
+const interactionRows = computed(() =>
+  [
+    { label: 'Focus', text: props.pageState.focus ? describeFocus(props.pageState.focus) : null },
+    { label: 'Mouse over', text: props.pageState.hover?.label ?? null },
+    {
+      label: 'Text selected',
+      text: props.pageState.selection ? `${props.pageState.selection.length} characters` : null,
+    },
+    { label: 'Indeterminate', text: props.pageState.indeterminate?.map((box) => box.label).join(', ') || null },
+  ].filter((row): row is { label: string; text: string } => !!row.text),
 );
 
 const cookieFlags = (c: PageState['cookies'][number]) =>
@@ -70,6 +85,11 @@ defineExpose({ reveal: () => cardRef.value?.reveal?.() });
         <code class="text-xs font-mono break-all">{{ pageState.historyState }}</code>
       </div>
 
+      <div v-for="row in interactionRows" :key="row.label" class="flex flex-col gap-0.5">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ row.label }}</span>
+        <code class="text-xs font-mono break-all">{{ row.text }}</code>
+      </div>
+
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div
           v-for="(entries, label) in { localStorage: pageState.localStorage, sessionStorage: pageState.sessionStorage }"
@@ -100,7 +120,8 @@ defineExpose({ reveal: () => cardRef.value?.reveal?.() });
       </div>
 
       <p class="text-[11px] text-gray-400 dark:text-gray-500">
-        Storage values and cookie values are never captured — key names, lengths and flags only.
+        Storage values and cookie values are never captured — key names, lengths and flags only. Focus, mouse and
+        selection name elements, never a field's value or the selected text.
       </p>
     </div>
   </component>

@@ -980,7 +980,10 @@ function buildWebVitals(proj, failing) {
   };
 }
 
-/** Themed page state; failing stories may drop localStorage keys (e.g. an unresolved quote). */
+/**
+ * Themed page state; failing stories may drop localStorage keys (e.g. an
+ * unresolved quote) and say what the page was doing (a focused field).
+ */
 function buildPageState(proj, storyEntry, title) {
   if (!proj.pageState) return null;
   const drop = new Set(storyEntry?.story.evidence.pageStateDropKeys ?? []);
@@ -993,6 +996,7 @@ function buildPageState(proj, storyEntry, title) {
     localStorage: proj.pageState.localStorage.filter((e) => !drop.has(e.key)),
     sessionStorage: proj.pageState.sessionStorage,
     cookies: proj.pageState.cookies,
+    ...storyEntry?.story.evidence.pageInteraction,
   };
 }
 

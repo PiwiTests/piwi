@@ -49,6 +49,24 @@ describe('renderAppStateMarkdown', () => {
     const md = renderAppStateMarkdown(baseline, baseline)!;
     expect(md).toContain('No differences');
   });
+
+  test('says what the page was doing: focus with its caret, the mouse, a selection, indeterminate boxes', () => {
+    const md = renderAppStateMarkdown({
+      ...failing,
+      focus: { element: { path: 'html:1/body:1/input:1', label: 'input#email' }, visible: true, selection: [4, 4] },
+      hover: { path: 'html:1/body:1/button:1', label: 'button "Pay"' },
+      selection: {
+        start: { path: 'html:1/body:1/p:1', offset: 0 },
+        end: { path: 'html:1/body:1/p:1', offset: 9 },
+        length: 9,
+      },
+      indeterminate: [{ path: 'html:1/body:1/input:2', label: 'input[name="all"]' }],
+    })!;
+    expect(md).toContain('- Focused element: input#email (focus ring shown), caret at 4');
+    expect(md).toContain('- Element under the mouse: button "Pay"');
+    expect(md).toContain('- Text selected in the page: 9 characters');
+    expect(md).toContain('- Indeterminate checkboxes: input[name="all"]');
+  });
 });
 
 describe('sanitizePageState', () => {
@@ -72,6 +90,17 @@ describe('sanitizePageState', () => {
     expect(JSON.stringify(out)).not.toContain('LEAKED');
     expect(JSON.stringify(out)).not.toContain('extraneous');
     expect((out.cookies as unknown[]).length).toBe(1);
+  });
+
+  test('keeps focus and hover by well-formed element path only', () => {
+    const out = sanitizePageState({
+      url: 'https://a.example.com/',
+      focus: { element: { path: 'html:1/body:1/input:1', label: 'input#email' }, visible: true, value: 'LEAKED' },
+      hover: { path: '<script>', label: 'x' },
+    })!;
+    expect(out.focus).toEqual({ element: { path: 'html:1/body:1/input:1', label: 'input#email' }, visible: true });
+    expect(out).not.toHaveProperty('hover');
+    expect(JSON.stringify(out)).not.toContain('LEAKED');
   });
 
   test('caps storage and cookie counts', () => {

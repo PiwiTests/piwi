@@ -3,7 +3,8 @@
  * A rendered DOM snapshot: the page in a hardened, opaque-origin iframe
  * (`sandbox="allow-scripts"`), scaled down to the stage's width at the recorded
  * viewport's proportions and scrolling inside the stage when it is taller. The
- * frame reports its content height, so the canvas fits the whole page. The
+ * frame reports its content height, so the canvas fits the whole page, and
+ * where the page was scrolled, so the stage opens on what the page showed. The
  * stage takes the width it is given and never sizes its container (a table
  * cell would otherwise grow to the recorded viewport). Load it with
  * `useDomSnapshot`, which says where the frame comes from.
@@ -56,6 +57,11 @@ function handleMessage(event: MessageEvent) {
   if (!iframeRef.value || event.source !== iframeRef.value.contentWindow) return;
   if (event.data?.type === 'piwiContentHeight' && typeof event.data.height === 'number') {
     contentHeight.value = Math.max(event.data.height, props.viewport?.height ?? 0);
+  }
+  // Where the page was scrolled, or the dialog it showed on top (content-space
+  // y → stage-space via the zoom).
+  if (event.data?.type === 'piwiScrollTo' && typeof event.data.y === 'number') {
+    stageRef.value?.scrollTo({ top: Math.max(0, event.data.y * fitZoom.value - 16) });
   }
 }
 
