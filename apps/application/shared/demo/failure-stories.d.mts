@@ -126,12 +126,28 @@ export interface StoryDomSnapshot {
 }
 
 /**
- * The browser coverage (file granularity, as code reach records it) of the
- * newest run the story fails in: the application files whose functions each
- * test of the project ran, by spec file. A test of a spec file not listed
- * records none.
+ * A server file of a story's coverage, at line granularity, in the shape of
+ * `@piwitests/core/coverage`: the git blob of the version its line numbers
+ * refer to, the functions that ran and the executed lines.
  */
-export type StoryCoverage = Record<string, string[]>;
+export interface StoryServerCoverage {
+  path: string;
+  runtime: 'server';
+  blob: string;
+  functions: Array<[number, number]>;
+  lines: Array<[number, number]>;
+}
+
+/** A file of a story's coverage: a browser file at file granularity, by its path, or a server file. */
+export type StoryCoverageFile = string | StoryServerCoverage;
+
+/**
+ * The coverage of the newest run the story fails in, per test: the files each
+ * test of a spec file ran, keyed by the spec file, and the files one test ran,
+ * keyed `<spec file> › <title>`. Browser files are recorded in Chromium only.
+ * A test with no entry records none.
+ */
+export type StoryCoverage = Record<string, StoryCoverageFile[]>;
 
 export interface FailureStory {
   key: string;
@@ -219,6 +235,8 @@ export interface ScmCommitFile {
   additions: number;
   deletions: number;
   patch?: string;
+  /** The git blob id of the file after the commit, where the history names it. */
+  blob?: string;
 }
 
 export interface ScmCommit {
@@ -318,3 +336,4 @@ export declare function storyEvidenceTimes(
 export declare function storyByClusterId(clusterId: number): FailureStory | null;
 export declare function storyForCase(projectId: number, filePath: string, title: string): FailureStory | null;
 export declare function projectSourceFilePaths(projectId: number): string[];
+export declare function storyCoverageFiles(story: FailureStory, file: string, title: string): StoryCoverageFile[];

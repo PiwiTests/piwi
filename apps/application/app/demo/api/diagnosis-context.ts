@@ -56,6 +56,7 @@ import { getLastPassPageState } from '#shared/handlers/test-cases';
 import type { ContextSection, DiagnosisContextCoverage, ScmChanges } from '~~/types/api';
 import { getDemoScmProject, getDemoChangesSince, getDemoChangesForShas, getDemoDefaultRange } from '../demo-scm';
 import { suspectLinesContext } from '#shared/suspect-lines';
+import { storyByClusterId } from '#shared/demo/failure-stories.mjs';
 import { demoClusterSuspectLines } from './suspect-lines';
 
 // ── Section plumbing ────────────────────────────────────────────────────────
@@ -568,10 +569,11 @@ function scmInvestigationMd(changes: ScmChanges): string {
   return lines.join('\n');
 }
 
-function topSuspectedMd(projectId: number, changes: ScmChanges): string | null {
+/** The Top Suspected Change section: the commit the cluster's story blames, else the project's first suspect commit. */
+function topSuspectedMd(projectId: number, clusterId: number, changes: ScmChanges): string | null {
   const proj = getDemoScmProject(projectId);
-  const suspectSha = proj?.suspectShas[0];
-  if (!suspectSha) return null;
+  const suspectSha = storyByClusterId(clusterId)?.suspectSha ?? proj?.suspectShas[0];
+  if (!proj || !suspectSha) return null;
   const commit = proj.commits.find((c) => c.sha === suspectSha);
   const changed = changes.files.map((f) => f.filename);
   if (!commit) return null;
@@ -790,7 +792,7 @@ async function assemble(
       coverage = { ...coverage, suspectLines: context.coverage };
     }
     push(section('scmInvestigation', 'SCM Investigation', scmInvestigationMd(scmChanges)));
-    push(section('topSuspectedCommit', 'Top Suspected Commit', topSuspectedMd(projectId, scmChanges)));
+    push(section('topSuspectedCommit', 'Top Suspected Commit', topSuspectedMd(projectId, cluster.id, scmChanges)));
 
     const src = sourceFilesMd(projectId);
     push(section('sourceFiles', 'Source Files', src.md));

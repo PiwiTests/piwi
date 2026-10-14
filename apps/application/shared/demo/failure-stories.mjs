@@ -261,6 +261,19 @@ export function derivePatch(file, source, edits) {
   return out.join('\n');
 }
 
+/**
+ * The file `derivePatch` turns `source` into: each edit's lines removed and
+ * its added lines in their place.
+ *
+ * @param {string[]} source @param {PatchEdit[]} edits On distinct lines.
+ * @returns {string[]}
+ */
+function applyEdits(source, edits) {
+  const out = [...source];
+  for (const { at, remove = 0, add = [] } of [...edits].sort((a, b) => b.at - a.at)) out.splice(at - 1, remove, ...add);
+  return out;
+}
+
 // ── Spec & app sources ──────────────────────────────────────────────────────
 // Every file the stories reference, as line arrays. These are the exact
 // contents `demo-scm.ts` serves as "Source files", the snippets are cut from
@@ -637,18 +650,186 @@ const USERS_SPEC = [
   '});',
 ];
 
-const USERS_API = [
-  "import { db } from '../db';",
+/**
+ * The users endpoints of the web dashboard's ASP.NET Core API (`api/`), which
+ * the dashboard's origin routes `/api/users` to.
+ */
+const USERS_ENDPOINTS_PATH = 'api/Users/UsersEndpoints.cs';
+
+/**
+ * The users endpoints as they were before the server-driven pagination
+ * commit: `ListUsers` returned every user in one page, and the table paginated
+ * them itself.
+ */
+const USERS_ENDPOINTS_BEFORE_PAGINATION = [
+  'using AdminDashboard.Api.Data;',
+  'using Microsoft.AspNetCore.Http.HttpResults;',
+  'using Microsoft.EntityFrameworkCore;',
   '',
-  '// Regression: server-driven pagination shipped with the API default (50)',
-  '// instead of the dashboard page size (25), so the table renders two pages',
-  '// worth of rows at once.',
-  'const PAGE_SIZE = 50;',
+  'namespace AdminDashboard.Api.Users;',
   '',
-  'export async function listUsers(page = 1) {',
-  '  return db.users.list({ limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE });',
+  'public sealed record UserRow(int Id, string Name, string Email, string Role);',
+  '',
+  'public sealed record UserPage(IReadOnlyList<UserRow> Rows, int Page, int PageSize, int Total);',
+  '',
+  'public sealed record UpdateUserRequest(string? Name, string? Role);',
+  '',
+  'public static class UsersEndpoints',
+  '{',
+  '    private static readonly string[] Roles = ["admin", "editor", "viewer"];',
+  '',
+  '    public static RouteGroupBuilder MapUsersEndpoints(this IEndpointRouteBuilder app)',
+  '    {',
+  '        var users = app.MapGroup("/api/users").RequireAuthorization("admin");',
+  '        users.MapGet("", ListUsers);',
+  '        users.MapPatch("/{id:int}", UpdateUser);',
+  '        users.MapDelete("/{id:int}", DeactivateUser);',
+  '        return users;',
+  '    }',
+  '',
+  '    public static async Task<Ok<UserPage>> ListUsers(',
+  '        AdminDb db,',
+  '        string? role = null,',
+  '        CancellationToken ct = default)',
+  '    {',
+  '        var query = db.Users.AsNoTracking().Where(u => u.DeactivatedAt == null);',
+  '        if (role is not null)',
+  '            query = query.Where(u => u.Role == role);',
+  '',
+  '        var ordered = query.OrderBy(u => u.Name).Select(u => new UserRow(u.Id, u.Name, u.Email, u.Role));',
+  '        var rows = await ordered.ToListAsync(ct);',
+  '        return TypedResults.Ok(new UserPage(rows, 1, rows.Count, rows.Count));',
+  '    }',
+  '',
+  '    public static async Task<Results<Ok<UserRow>, NotFound, ValidationProblem>> UpdateUser(',
+  '        int id,',
+  '        UpdateUserRequest request,',
+  '        AdminDb db,',
+  '        CancellationToken ct = default)',
+  '    {',
+  '        if (request.Role is not null && !Roles.Contains(request.Role))',
+  '            return TypedResults.ValidationProblem(new Dictionary<string, string[]>',
+  '            {',
+  '                ["role"] = [$"Role must be one of {string.Join(", ", Roles)}."],',
+  '            });',
+  '',
+  '        var user = await db.Users.FindAsync([id], ct);',
+  '        if (user is null || user.DeactivatedAt is not null)',
+  '            return TypedResults.NotFound();',
+  '',
+  '        user.Name = request.Name?.Trim() ?? user.Name;',
+  '        user.Role = request.Role ?? user.Role;',
+  '        await db.SaveChangesAsync(ct);',
+  '        return TypedResults.Ok(new UserRow(user.Id, user.Name, user.Email, user.Role));',
+  '    }',
+  '',
+  '    public static async Task<Results<NoContent, NotFound>> DeactivateUser(',
+  '        int id,',
+  '        AdminDb db,',
+  '        TimeProvider clock,',
+  '        CancellationToken ct = default)',
+  '    {',
+  '        var user = await db.Users.FindAsync([id], ct);',
+  '        if (user is null)',
+  '            return TypedResults.NotFound();',
+  '',
+  '        user.DeactivatedAt ??= clock.GetUtcNow();',
+  '        await db.SaveChangesAsync(ct);',
+  '        return TypedResults.NoContent();',
+  '    }',
   '}',
 ];
+
+/**
+ * The server-driven pagination commit: `ListUsers` takes the page and an
+ * optional page size, and a request that names no page size gets the API's
+ * default of 50 rows, where the table shows 25. Written with git's three lines
+ * of context, as the host's patch shows it.
+ *
+ * @type {PatchEdit[]}
+ */
+const USERS_PAGINATION_EDITS = [
+  {
+    at: lineOf(USERS_ENDPOINTS_BEFORE_PAGINATION, 'private static readonly string[] Roles'),
+    add: ['    private const int DefaultPageSize = 50;', ''],
+    context: 3,
+  },
+  {
+    at: lineOf(USERS_ENDPOINTS_BEFORE_PAGINATION, 'string? role = null,'),
+    add: ['        int page = 1,', '        int? pageSize = null,'],
+    context: 3,
+  },
+  {
+    at: lineOf(USERS_ENDPOINTS_BEFORE_PAGINATION, 'var rows = await ordered.ToListAsync(ct);'),
+    remove: 2,
+    add: [
+      '        var size = pageSize ?? DefaultPageSize;',
+      '        var rows = await ordered.Skip((page - 1) * size).Take(size).ToListAsync(ct);',
+      '        return TypedResults.Ok(new UserPage(rows, page, size, await query.CountAsync(ct)));',
+    ],
+    context: 3,
+  },
+];
+
+/** The users endpoints at the head of the canned history, with the pagination commit applied. */
+const USERS_ENDPOINTS = applyEdits(USERS_ENDPOINTS_BEFORE_PAGINATION, USERS_PAGINATION_EDITS);
+
+/** The pagination commit's patch, as the host gives it: the hunks, without the file headers. */
+const USERS_PAGINATION_PATCH = derivePatch(
+  USERS_ENDPOINTS_PATH,
+  USERS_ENDPOINTS_BEFORE_PAGINATION,
+  USERS_PAGINATION_EDITS,
+)
+  .split('\n')
+  .slice(2)
+  .join('\n');
+
+/**
+ * The git blob id of the users endpoints at the head, as `git hash-object`
+ * gives it for `sourceText`: the canned history names it on the file's change,
+ * and the server coverage of the story's run names it on the file, so the two
+ * refer to the same version. `demo-suspect-lines.test.ts` recomputes it.
+ */
+const USERS_ENDPOINTS_BLOB = '9eccc2710a72897ea23a202703c1c9068909bbb4';
+
+/**
+ * The server coverage one request to `GET /api/users` records of the users
+ * endpoints: `ListUsers` as the function that ran, and the lines of its
+ * statements, with the role filter's when the request names a role. The
+ * compiler marks statements only, so the signature, the constant and the
+ * blank lines never count as executed.
+ *
+ * @param {{ role?: boolean }} [request]
+ * @returns {import('./failure-stories.d.mts').StoryServerCoverage}
+ */
+function listUsersCoverage({ role = false } = {}) {
+  const line = (needle) => lineOf(USERS_ENDPOINTS, needle);
+  const start = line('ListUsers(');
+  const end = USERS_ENDPOINTS.indexOf('    }', start) + 1;
+  const statements = [
+    'var query = db.Users',
+    'if (role is not null)',
+    ...(role ? ['query = query.Where(u => u.Role == role);'] : []),
+    'var ordered = query',
+    'var size = pageSize',
+    'var rows = await ordered',
+    'return TypedResults.Ok(new UserPage',
+  ];
+  /** @type {Array<[number, number]>} */
+  const lines = [];
+  for (const n of statements.map(line).sort((a, b) => a - b)) {
+    const last = lines.at(-1);
+    if (last && n === last[1] + 1) last[1] = n;
+    else lines.push([n, n]);
+  }
+  return {
+    path: USERS_ENDPOINTS_PATH,
+    runtime: 'server',
+    blob: USERS_ENDPOINTS_BLOB,
+    functions: [[start, end]],
+    lines,
+  };
+}
 
 const LOGIN_SPEC = [
   "import { test, expect } from '@playwright/test';",
@@ -714,7 +895,7 @@ export const SOURCE_FILES = {
   'tests/admin/reports.spec.ts': REPORTS_SPEC,
   'src/styles/theme.css': THEME_CSS,
   'tests/admin/users.spec.ts': USERS_SPEC,
-  'src/server/users.ts': USERS_API,
+  [USERS_ENDPOINTS_PATH]: USERS_ENDPOINTS,
   'tests/admin/login.spec.ts': LOGIN_SPEC,
   'tests/admin/settings.spec.ts': SETTINGS_SPEC,
 };
@@ -1723,7 +1904,7 @@ export const FAILURE_STORIES = [
         },
       ],
     },
-    appFiles: ['src/server/users.ts'],
+    appFiles: [USERS_ENDPOINTS_PATH],
     suspectSha: 'c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7',
     diagnosis: {
       seeded: true,
@@ -1731,18 +1912,40 @@ export const FAILURE_STORIES = [
       area: 'users table / pagination',
       fix: {
         description: 'Restore the dashboard page size the server-driven pagination change overrode.',
-        file: 'src/server/users.ts',
-        patch: derivePatch('src/server/users.ts', USERS_API, {
-          at: lineOf(USERS_API, 'const PAGE_SIZE = 50;'),
+        file: USERS_ENDPOINTS_PATH,
+        patch: derivePatch(USERS_ENDPOINTS_PATH, USERS_ENDPOINTS, {
+          at: lineOf(USERS_ENDPOINTS, 'private const int DefaultPageSize = 50;'),
           remove: 1,
-          add: ['const PAGE_SIZE = 25;'],
+          add: ['    private const int DefaultPageSize = 25;'],
         }),
       },
     },
     media: { screenshot: 'admin-users-table.png' },
     firing: { startAgo: 4, chance: 0.85 },
+    // The server coverage of the newest run the cluster fails in, recorded
+    // from a coverage build of the ASP.NET Core API: the three users tests
+    // request `GET /api/users`, and the other tests make no request to it. Of
+    // the pagination commit's changed lines, the statements that page the
+    // query ran in the failing test and in the two passing ones.
+    coverage: {
+      'tests/admin/users.spec.ts › Users table paginates 25 rows per page': [listUsersCoverage()],
+      'tests/admin/users.spec.ts › invites a user by email': [listUsersCoverage()],
+      'tests/admin/users.spec.ts › filters users by role': [listUsersCoverage({ role: true })],
+    },
   },
 ];
+
+/**
+ * The coverage one test of a story's covered run recorded: the entries of its
+ * spec file, then those of the test itself (`<spec file> › <title>`).
+ *
+ * @param {import('./failure-stories.d.mts').FailureStory} story
+ * @param {string} file @param {string} title
+ * @returns {import('./failure-stories.d.mts').StoryCoverageFile[]}
+ */
+export function storyCoverageFiles(story, file, title) {
+  return [...(story.coverage?.[file] ?? []), ...(story.coverage?.[`${file} › ${title}`] ?? [])];
+}
 
 // ── Derived captured artifacts (testSource / testSourceFrames) ──────────────
 
@@ -2991,11 +3194,12 @@ export const SCM_REPOS = {
         branch: 'main',
         files: [
           {
-            filename: 'src/server/users.ts',
+            filename: USERS_ENDPOINTS_PATH,
             status: 'modified',
-            additions: 3,
-            deletions: 2,
-            patch: `@@ -4,5 +4,6 @@\n-const PAGE_SIZE = 25;\n+// API default page size\n+const PAGE_SIZE = 50;\n\n export async function listUsers(page = 1) {`,
+            additions: USERS_PAGINATION_EDITS.reduce((n, edit) => n + (edit.add?.length ?? 0), 0),
+            deletions: USERS_PAGINATION_EDITS.reduce((n, edit) => n + (edit.remove ?? 0), 0),
+            patch: USERS_PAGINATION_PATCH,
+            blob: USERS_ENDPOINTS_BLOB,
           },
         ],
       },

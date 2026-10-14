@@ -8,7 +8,13 @@ import { computeErrorFingerprint } from '#shared/error-fingerprint';
 import { resolveHealingForCase } from '~~/server/utils/locator-healing';
 import { validatePatch } from '#shared/patch';
 import { allDemoSourceFiles, getDemoChangesSince, getDemoDefaultRange } from '~~/app/demo/demo-scm';
-import { FAILURE_STORIES, SCM_REPOS, SIMULATOR_ERRORS, storyForCase } from '#shared/demo/failure-stories.mjs';
+import {
+  FAILURE_STORIES,
+  SCM_REPOS,
+  SIMULATOR_ERRORS,
+  storyCoverageFiles,
+  storyForCase,
+} from '#shared/demo/failure-stories.mjs';
 import { parseAriaCandidates } from '#shared/locator-fingerprint';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { extractStepLocatorUse, renderLocatorChain, tryParseLocatorChain } from '#shared/locator-chain';
@@ -1047,8 +1053,17 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
   if (want.suspects) {
     expect(want.cluster, `${label}: suspects needs a cluster`).toBeTruthy();
     const story = FAILURE_STORIES.find((s) => s.clusterId === want.cluster!.id)!;
-    const { path } = want.suspects;
-    expect(story.coverage?.[story.specFile], `${label}: the failing tests' coverage`).toContain(path);
+    const { path, granularity } = want.suspects;
+    const covered = story.failingCases
+      .flatMap((fc) => storyCoverageFiles(story, fc.frames.at(-1)!.file, fc.title))
+      .filter((entry) => (typeof entry === 'string' ? entry : entry.path) === path);
+    expect(covered.length, `${label}: the failing tests' coverage names ${path}`).toBeGreaterThan(0);
+    if (granularity === 'lines') {
+      expect(
+        covered.every((entry) => typeof entry !== 'string' && entry.lines.length > 0),
+        `${label}: the failing tests' coverage of ${path} names lines`,
+      ).toBe(true);
+    }
     const range = getDemoDefaultRange(story.projectId);
     const changed = range ? getDemoChangesSince(story.projectId, range.from)?.files.map((f) => f.filename) : [];
     expect(changed, `${label}: the canned changes change ${path}`).toContain(path);

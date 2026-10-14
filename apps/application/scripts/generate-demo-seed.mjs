@@ -46,6 +46,7 @@ import {
   authoredFailureSteps,
   authoredBeforeEachMs,
   storyEvidenceTimes,
+  storyCoverageFiles,
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
@@ -56,6 +57,7 @@ import {
   buildWebDashboardTestMap,
   webDashboardFinalPage,
   webDashboardPassingConsole,
+  webDashboardRecordsSpans,
   webDashboardRequests,
   webDashboardStepTitles,
 } from '../shared/demo/demo-test-map.mjs';
@@ -888,15 +890,18 @@ function buildNetwork(proj, storyEntry) {
 
 /**
  * The requests one execution makes. A web-dashboard test makes the requests of its
- * Test Map journey, plus the requests its failure story adds; the themed list is
- * still built so the random stream the rest of the seed reads is unchanged.
+ * Test Map journey, plus the requests its failure story adds, with server spans
+ * only from the backend that records them; the themed list is still built so the
+ * random stream the rest of the seed reads is unchanged.
  */
 function executionRequests(proj, storyEntry, title) {
   const themed = buildNetwork(proj, storyEntry);
   if (proj.id !== WEB_DASHBOARD_PROJECT_ID) return themed;
   const journey = webDashboardRequests(title);
   const story = storyEntry?.story.evidence.failingNetwork ?? [];
-  const fromStory = themed.filter((req) => story.some((o) => o.method === req.method && o.url === req.url));
+  const fromStory = themed
+    .filter((req) => story.some((o) => o.method === req.method && o.url === req.url))
+    .map((req) => (webDashboardRecordsSpans(req.method, req.url) ? req : { ...req, serverTraces: null }));
   return [...journey, ...fromStory];
 }
 
@@ -2434,7 +2439,7 @@ const CLUSTER_TRIAGE = {
   10: {
     status: 'open',
     triage_note:
-      'Capped the API default page size to the requested pageSize so the users table renders 25 rows again; verified once the count assertion turned green.',
+      'Set the users API’s default page size back to 25 so the users table renders 25 rows again; verified once the count assertion turned green.',
   },
 };
 
@@ -2994,10 +2999,11 @@ const FAILURE_DIAGNOSES = [
           category: 'app-bug',
           likelihood: 88,
           rootCause:
-            'listUsers now queries with PAGE_SIZE 50 — the API default — instead of the dashboard page size 25.',
+            'ListUsers now pages with DefaultPageSize, 50, when the request names no pageSize, and the users table sends none, so it gets 50 rows instead of the 25 it shows.',
           evidence: [
-            'Expected 26 rows (header + 25), received 51 — exactly two pages plus the header [executionError]',
+            'Expected 26 rows (header + 25), received 51: exactly two pages plus the header [executionError]',
             'The users API request returns 50 records [networkRequests]',
+            'The failing test ran 3 of the 13 changed lines, UsersEndpoints.cs 40 to 42: the ListUsers statements that size, fetch and return the page [suspectLines]',
             'The pagination change shipped in the suspect commit [scmInvestigation]',
           ],
         },
@@ -3011,14 +3017,15 @@ const FAILURE_DIAGNOSES = [
       evidence: [
         'Deterministic 26-vs-51 row count mismatch [executionError]',
         'GET /api/users?page=1 returns 50 records on failing runs [networkRequests]',
-        'The "server-driven pagination" commit changed PAGE_SIZE from 25 to 50 [scmInvestigation]',
+        'The failing test ran 3 of the 13 changed lines, UsersEndpoints.cs 40 to 42, which page the query [suspectLines]',
+        'The "server-driven pagination" commit pages ListUsers by DefaultPageSize 50 unless the request sends pageSize [scmInvestigation]',
       ],
       investigationSteps: [
         'Confirm the intended dashboard page size with the design system (table density assumes 25)',
         'Check other tables consuming the same endpoint for the same regression',
       ],
       preventionTips: [
-        'Keep page-size constants in one shared module consumed by both API and UI',
+        'Have the users table send the page size it renders instead of relying on the API default',
         'Assert on user-visible pagination controls in addition to raw row counts',
       ],
       suggestedFix: storyFix(10),
@@ -3842,28 +3849,35 @@ const CODE_REACH = [];
 
 // ── Coverage (the suspect lines of a story's cluster) ─────────────────────────
 // A story with `coverage` gets it on every execution of the newest run its
-// cluster fails in: the browser files each test reached, by spec file, stored
-// as the reporter's ingest stores them (one fragment per file, a payload of
-// fragment ids per execution). Joined with the demo's canned changes, the
-// cluster and its executions get suspect lines.
+// cluster fails in, as the reporter's ingest stores it: one fragment per file
+// (`canonicalCoverageFile`'s fields, hashed), a payload of fragment ids per
+// execution. A browser file names its path only, and only a Chromium execution
+// records it; a server file names its git blob, the functions that ran and the
+// executed lines. Joined with the demo's canned changes, the cluster and its
+// executions get suspect lines.
 const COVERAGE_FRAGMENTS = [];
 {
+  const ranges = (list) =>
+    (list ?? []).map(([start, end]) => (start === end ? String(start) : `${start}-${end}`)).join(',');
   const fragmentIds = new Map();
-  const fragmentId = (projectId, path, seenAt) => {
-    const key = `${projectId}\x00${path}`;
+  const fragmentId = (projectId, entry, seenAt) => {
+    const file =
+      typeof entry === 'string'
+        ? { runtime: 'browser', path: entry, blob: null, functions: '', lines: '' }
+        : { ...entry, functions: ranges(entry.functions), lines: ranges(entry.lines) };
+    const canonical = JSON.stringify([file.runtime, file.path, file.blob ?? '', file.functions, file.lines]);
+    const key = `${projectId}\x00${canonical}`;
     if (!fragmentIds.has(key)) {
       const id = COVERAGE_FRAGMENTS.length + 1;
-      // The hash of `canonicalCoverageFile` for a file with no blob, functions or lines.
-      const canonical = JSON.stringify(['browser', path, '', '', '']);
       COVERAGE_FRAGMENTS.push({
         id,
         project_id: projectId,
         hash: createHash('sha256').update(canonical).digest('hex'),
-        runtime: 'browser',
-        path,
-        blob: null,
-        functions: null,
-        lines: null,
+        runtime: file.runtime,
+        path: file.path,
+        blob: file.blob,
+        functions: file.functions || null,
+        lines: file.lines || null,
         created_at: seenAt,
         last_seen_at: seenAt,
       });
@@ -3888,7 +3902,6 @@ const COVERAGE_FRAGMENTS = [];
     }
     return casePayloadIds.get(key);
   };
-  const fileOfCase = new Map(TEST_CASES.map((tc) => [tc.id, tc.file_path]));
   for (const story of FAILURE_STORIES) {
     if (!story.coverage) continue;
     const failingRunIds = new Set(
@@ -3904,9 +3917,12 @@ const COVERAGE_FRAGMENTS = [];
     if (!run) continue;
     for (const trc of TEST_RUNS_CASES) {
       if (trc.test_run_id !== run.id || (trc.status !== 'failed' && trc.status !== 'passed')) continue;
-      const files = story.coverage[fileOfCase.get(trc.test_case_id)];
-      if (!files?.length) continue;
-      const ids = files.map((path) => fragmentId(story.projectId, path, run.start_time));
+      const { file, title } = caseById.get(trc.test_case_id);
+      const files = storyCoverageFiles(story, file, title).filter(
+        (entry) => typeof entry !== 'string' || trc.browser.browserName === 'chromium',
+      );
+      if (!files.length) continue;
+      const ids = files.map((entry) => fragmentId(story.projectId, entry, run.start_time));
       trc.coverage_payload_id = coveragePayloadId(story.projectId, ids, run.start_time);
     }
   }
