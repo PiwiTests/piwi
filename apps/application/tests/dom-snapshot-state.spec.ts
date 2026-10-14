@@ -21,6 +21,25 @@ const trace = (version: string) =>
 const UNCHECK_CALL = 'call@16';
 const HOVER_CALL = 'call@22';
 
+// What the capture fixtures would read at test end on the recorded page, by element path: the dialog's OK button
+// focused with its focus ring, the mouse over the dialog's text, "modal" selected, the newsletter box indeterminate.
+const PAGE_STATE = {
+  url: 'about:blank',
+  hash: null,
+  historyState: null,
+  localStorage: [],
+  sessionStorage: [],
+  cookies: [],
+  focus: { element: { path: 'html:1/body:1/dialog:1/button:1', label: 'button#ok' }, visible: true },
+  hover: { path: 'html:1/body:1/dialog:1/p:1', label: 'p "modal body"' },
+  selection: {
+    start: { path: 'html:1/body:1/dialog:1/p:1', offset: 0 },
+    end: { path: 'html:1/body:1/dialog:1/p:1', offset: 5 },
+    length: 5,
+  },
+  indeterminate: [{ path: 'html:1/body:1/input:2', label: 'input#news' }],
+};
+
 async function uploadFailingCase(request: APIRequestContext, version: string): Promise<number> {
   const testCase = {
     title: `profile form keeps its state (${version})`,
@@ -41,6 +60,7 @@ async function uploadFailingCase(request: APIRequestContext, version: string): P
           status: 'failed',
           duration: 900,
           error: "TimeoutError: page.click: Timeout 300ms exceeded.\n  - waiting for locator('#missing')",
+          ...(version === '1.63' ? { pageState: PAGE_STATE } : {}),
         },
       ],
     },
@@ -110,6 +130,36 @@ test.describe('DOM snapshot live state', () => {
       });
     });
   }
+
+  test('the failure-time frame shows the focus, hover, selection and checkbox the reporter read', async ({ page }) => {
+    await page.goto(`/api/test-run-cases/${executions['1.63']}/dom-snapshot-frame?mode=readonly`);
+    // The page's own `button:focus-visible` rule, on the button that held focus.
+    await expect(page.locator('#ok')).toHaveCSS('outline-color', 'rgb(255, 0, 0)');
+    await expect(page.locator('#ok')).toHaveAttribute('data-piwi-focus', '');
+    await expect(page.locator('#dlg')).toHaveAttribute('data-piwi-focus-within', '');
+    await expect(page.locator('dialog p')).toHaveAttribute('data-piwi-hover', '');
+    expect(await page.evaluate(() => [...CSS.highlights.get('piwi-selection')!][0]!.toString())).toBe('modal');
+    expect(await page.locator('#news').evaluate((box: HTMLInputElement) => box.indeterminate)).toBe(true);
+
+    // Another moment of the test is not the page the reporter read.
+    await page.goto(
+      `/api/test-run-cases/${executions['1.63']}/dom-snapshot-frame?mode=readonly&callId=${HOVER_CALL}&phase=after`,
+    );
+    await expect(page.locator('[data-piwi-focus]')).toHaveCount(0);
+  });
+
+  test('the State tab names what the page was doing, never a value', async ({ page }) => {
+    await page.goto(`/test-run-cases/${executions['1.63']}`);
+    await waitForHydration(page);
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'State', exact: true })
+      .click();
+    await expect(page.getByText('button#ok (focus ring shown)')).toBeVisible();
+    await expect(page.getByText('p "modal body"')).toBeVisible();
+    await expect(page.getByText('5 characters')).toBeVisible();
+    await expect(page.getByText('input#news')).toBeVisible();
+  });
 
   test('the Screen tab opens on the dialog the page showed, and keeps keyboard focus', async ({ page }) => {
     await page.goto(`/test-run-cases/${executions['1.63']}`);

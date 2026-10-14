@@ -1099,6 +1099,15 @@ export const FAILURE_STORIES = [
         message: 'Your session is about to expire. Stay signed in?',
       },
       pageStateDropKeys: ['quote'],
+      // The CVV the helper typed last still holds focus, caret after its three
+      // digits, when the test timeout stops the Pay click.
+      pageInteraction: {
+        focus: {
+          element: { path: 'html:1/body:1/div:1/form:1/div:1/div:2/input:1', label: 'input#card-cvv' },
+          visible: true,
+          selection: [3, 3],
+        },
+      },
     },
     appFiles: ['tests/helpers/payment.ts', 'src/components/CheckoutForm.vue'],
     suspectSha: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4',

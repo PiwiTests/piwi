@@ -14,6 +14,7 @@ import {
   snapshotMomentFromQuery,
   PASSWORD_MASK,
   pointerAt,
+  withPageInteraction,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
@@ -869,6 +870,52 @@ describe('pointerAt — where the mouse was', () => {
       actions,
     };
     expect(extractDomSnapshot(data, 1_000_000).html).toBe('<html data-piwi-pointer="30,40"></html>');
+  });
+});
+
+describe('withPageInteraction — the reporter’s focus, hover and selection', () => {
+  const failing: TraceAction = {
+    callId: 'call@2',
+    apiName: 'Frame.click',
+    startTime: 0,
+    afterSnapshot: 'after@call@2',
+    error: { message: 'Timeout' },
+  };
+  const data: ParsedTraceData = {
+    ...traceData([
+      snap({ callId: 'call@1', snapshotName: 'after@call@1', html: ['HTML', {}, ['BODY', {}, 'one']] }),
+      snap({ callId: 'call@2', snapshotName: 'after@call@2', html: ['HTML', {}, ['BODY', {}, 'two']] }),
+    ]),
+    actions: [{ callId: 'call@1', apiName: 'Frame.fill', startTime: 0, afterSnapshot: 'after@call@1' }, failing],
+    failingAction: failing,
+    failingActionIndex: 1,
+  };
+  const pageState = {
+    url: 'https://app.example.com/',
+    focus: { element: { path: 'html:1/body:1/input:1', label: 'input#email' }, visible: true, selection: [1, 1] },
+    hover: { path: 'html:1/body:1/button:1', label: 'button "Pay"' },
+  };
+
+  test('marks the snapshot rendered when no other moment is asked for as the failure-time one', () => {
+    expect(extractDomSnapshot(data, 1_000_000).atFailure).toBe(true);
+    expect(extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@2', phase: 'after' }).atFailure).toBe(true);
+    expect(extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@1', phase: 'after' }).atFailure).toBe(false);
+  });
+
+  test('hands the frame element paths only, on the failure-time snapshot only', () => {
+    const atFailure = withPageInteraction({ ...extractDomSnapshot(data, 1_000_000), source: 'dom' }, pageState);
+    const attr = /data-piwi-page-state="([^"]*)"/.exec(atFailure.html!)![1]!.replace(/&quot;/g, '"');
+    expect(JSON.parse(attr)).toEqual({
+      focus: { path: 'html:1/body:1/input:1', visible: true },
+      hover: 'html:1/body:1/button:1',
+    });
+
+    const earlier = extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@1', phase: 'after' });
+    expect(withPageInteraction(earlier, pageState)).toBe(earlier);
+    const aria = { status: 'ok' as const, html: '<ul></ul>', atFailure: true, source: 'aria' as const };
+    expect(withPageInteraction(aria, pageState)).toBe(aria);
+    const noInteraction = extractDomSnapshot(data, 1_000_000);
+    expect(withPageInteraction(noInteraction, { url: 'https://app.example.com/' })).toBe(noInteraction);
   });
 });
 

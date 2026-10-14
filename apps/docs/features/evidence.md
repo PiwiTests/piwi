@@ -8,7 +8,7 @@ lang: en-US
 
 Everything Piwi captured about a failing attempt lands on one screen: what each tab holds and what a trace adds.
 
-Two pages are involved, told apart in [Core concepts](/guide/concepts#execution):
+Two pages, told apart in [Core concepts](/guide/concepts#execution):
 
 | Page | Path | Answers |
 |---|---|---|
@@ -38,7 +38,8 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
   [**Page diff**](#page-diff), **Video**) over the trace and attachments. **DOM** renders it as recorded: field values
-  (passwords masked), scroll, open dialogs, shadow DOM, the action's target outlined, the mouse and what it hovers. **Open in picker** finds a
+  (passwords masked), scroll, open dialogs, shadow DOM, the action's target outlined, the mouse and what it hovers,
+  the focus. **Open in picker** finds a
   locator on that DOM.
 - **Source**: the test source as a call stack (the line that threw plus its callers), deepened
   [with a trace](#trace-powered-deep-views).
@@ -51,7 +52,7 @@ Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-t
 of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error, opens on
 **Attempts** and keeps its next step; any other passing execution shows identity and facts, with the evidence on
 **Timeline**. A test that **did not run** gives its reason as Most likely, with no evidence card. Network, console,
-Web Vitals, ARIA and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
+Web Vitals, ARIA, focus and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
 
 ### Clues
 

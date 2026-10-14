@@ -21,6 +21,7 @@
  * demo can render the committed demo trace with the same code the server
  * uses; the node-only trace loading lives in `dom-snapshot.ts`.
  */
+import { sanitizePageInteraction } from '#shared/page-interaction';
 import { pageActionOf, type ParsedTraceData, type TraceAction, type TraceFrameSnapshot } from './trace-events';
 
 /**
@@ -600,6 +601,11 @@ export interface DomSnapshotResult {
   truncated?: boolean;
   /** Which snapshot was rendered (e.g. `before@call@12`). */
   snapshotName?: string;
+  /**
+   * The rendered snapshot is the failure-time one, the one rendered when no
+   * other moment is asked for: the page the reporter read its page state from.
+   */
+  atFailure?: boolean;
   /** The failing action the snapshot belongs to, when identified. */
   action?: string;
   /** The recorded page viewport, for proportion-preserving scaled rendering. */
@@ -638,8 +644,8 @@ export function snapshotMomentFromQuery(query: Record<string, unknown>): Snapsho
  * Where the mouse was when a snapshot was taken, in viewport pixels: the point
  * of the last pointer action on the snapshot's page up to that moment — its
  * own action included, unless the snapshot is from before it. An action's page
- * is the one its snapshots were taken on, as 1.63 no longer records it on the
- * action. Null when nothing had moved the mouse yet.
+ * is the one its snapshots were taken on, the only place a 1.63 trace records
+ * it. Null when nothing had moved the mouse yet.
  */
 export function pointerAt(
   data: Pick<ParsedTraceData, 'actions' | 'frameSnapshots'>,
@@ -681,8 +687,7 @@ export function extractDomSnapshot(
   const fa = data.failingAction;
   const pageAction = pageActionOf(data, fa);
   const named = at ? data.actions.find((a) => a.callId === at.callId) : undefined;
-  const candidates = [
-    at?.phase === 'before' ? named?.beforeSnapshot : (named?.afterSnapshot ?? named?.snapshotName),
+  const failureCandidates = [
     fa?.afterSnapshot,
     fa?.snapshotName,
     fa?.beforeSnapshot,
@@ -693,7 +698,10 @@ export function extractDomSnapshot(
   // Final fallback: the last main-frame snapshot in the trace.
   const mains = data.frameSnapshots.filter((s) => s.isMainFrame !== false && s.snapshotName);
   const last = mains[mains.length - 1];
-  if (last?.snapshotName && !candidates.includes(last.snapshotName)) candidates.push(last.snapshotName);
+  if (last?.snapshotName && !failureCandidates.includes(last.snapshotName)) failureCandidates.push(last.snapshotName);
+  const failureName = failureCandidates.find((name) => data.frameSnapshots.some((s) => s.snapshotName === name));
+  const asked = at?.phase === 'before' ? named?.beforeSnapshot : (named?.afterSnapshot ?? named?.snapshotName);
+  const candidates = asked ? [asked, ...failureCandidates] : failureCandidates;
 
   for (const name of candidates) {
     // Full-fidelity first (inline <style> kept). If keeping styles blows the
@@ -721,10 +729,33 @@ export function extractDomSnapshot(
       html,
       truncated: result.truncated,
       snapshotName: name,
+      atFailure: name === failureName,
       action: fa?.apiName,
       viewport: rendered?.viewport,
       frameUrl: rendered?.frameUrl,
     };
   }
   return { status: 'no-snapshot' };
+}
+
+/**
+ * The failure-time snapshot with what the page was doing at test end, as the
+ * reporter read it into its page state (focus, hover, a text selection,
+ * indeterminate checkboxes), handed to the frame script as JSON on `<html>`
+ * (`data-piwi-page-state`): element paths only, which the script resolves in
+ * the rendered page. Any other snapshot, the ARIA view, or a page state
+ * without them is returned as is.
+ */
+export function withPageInteraction(result: DomSnapshotResult, pageState: unknown): DomSnapshotResult {
+  if (result.status !== 'ok' || !result.html || !result.atFailure || result.source === 'aria') return result;
+  const { focus, hover, selection, indeterminate } = sanitizePageInteraction(pageState);
+  const forFrame = {
+    ...(focus ? { focus: { path: focus.element.path, visible: focus.visible } } : {}),
+    ...(hover ? { hover: hover.path } : {}),
+    ...(selection ? { selection: { start: selection.start, end: selection.end } } : {}),
+    ...(indeterminate ? { indeterminate: indeterminate.map((box) => box.path) } : {}),
+  };
+  if (Object.keys(forFrame).length === 0) return result;
+  const attr = `data-piwi-page-state="${escapeAttr(JSON.stringify(forFrame))}"`;
+  return { ...result, html: result.html.replace(/<html\b/i, `<html ${attr}`) };
 }

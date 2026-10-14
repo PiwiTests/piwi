@@ -41,6 +41,7 @@ import {
   computeCoreVitals,
   internalCall,
   probeElementAttrs,
+  readPageInteraction,
   CAPTURED_ATTRS_ARG,
   LocatorPageLog,
   noteLocatorCall,
@@ -284,7 +285,8 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
           .context()
           .cookies()
           .catch(() => null);
-        const pageState = buildPageState(rawState, cookies as Array<Record<string, unknown>> | null);
+        const interaction = await page.evaluate(readPageInteraction).catch(() => null);
+        const pageState = buildPageState(rawState, cookies as Array<Record<string, unknown>> | null, interaction);
         await testInfo.attach(ATTACHMENT_NAMES.pageState, {
           contentType: 'application/json',
           body: Buffer.from(JSON.stringify(pageState)),

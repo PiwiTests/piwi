@@ -1,11 +1,12 @@
 /**
  * Pure rendering/diff helpers for the page state the reporter captures at test
- * end (URL, history state, storage key names + lengths, cookie names + flags —
- * values are never captured). Shared by the server AI-context builder and the
- * demo mirror so both produce identical evidence.
+ * end (URL, history state, storage key names + lengths, cookie names + flags,
+ * focus, hover and selection — values are never captured). Shared by the server
+ * AI-context builder and the demo mirror so both produce identical evidence.
  */
+import type { PageInteraction } from '#shared/page-interaction';
 
-export interface PageStateLike {
+export interface PageStateLike extends PageInteraction {
   url?: string | null;
   hash?: string | null;
   historyState?: string | null;
@@ -17,6 +18,17 @@ export interface PageStateLike {
     secure?: boolean;
     sameSite?: string;
   }> | null;
+}
+
+/** The focused element, whether its focus ring showed, and its caret or selected range in a field. */
+export function describeFocus(focus: NonNullable<PageInteraction['focus']>): string {
+  const range = focus.selection;
+  const where = !range
+    ? ''
+    : range[0] === range[1]
+      ? `, caret at ${range[0]}`
+      : `, text selected from ${range[0]} to ${range[1]}`;
+  return `${focus.element.label}${focus.visible ? ' (focus ring shown)' : ''}${where}`;
 }
 
 function storageLine(label: string, entries: PageStateLike['localStorage']): string {
@@ -60,7 +72,15 @@ export function renderAppStateMarkdown(failing: PageStateLike | null, baseline?:
   lines.push(
     cookies.length === 0 ? '- Cookies: none' : `- Cookies (${cookies.length}): ${cookies.map(cookieFlags).join(', ')}`,
   );
-  lines.push('- Storage values and cookie values are never captured — key names, lengths and flags only.');
+  if (failing.focus) lines.push(`- Focused element: ${describeFocus(failing.focus)}`);
+  if (failing.hover) lines.push(`- Element under the mouse: ${failing.hover.label}`);
+  if (failing.selection) lines.push(`- Text selected in the page: ${failing.selection.length} characters`);
+  if (failing.indeterminate?.length) {
+    lines.push(`- Indeterminate checkboxes: ${failing.indeterminate.map((box) => box.label).join(', ')}`);
+  }
+  lines.push(
+    "- Storage values and cookie values are never captured — key names, lengths and flags only; focus, mouse and selection name elements, never a field's value or the selected text.",
+  );
 
   if (baseline) {
     const diffLines: string[] = [];

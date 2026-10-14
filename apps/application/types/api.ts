@@ -18,6 +18,7 @@ import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
 import type { HeadlinePart } from '#shared/describe-failure';
+import type { PageInteraction } from '#shared/page-interaction';
 import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { AccessSummary, InstanceRole } from '#shared/permissions';
 export type { TestMetadata, TestSourceFrame };
@@ -829,9 +830,11 @@ export interface WebVitals {
 
 /**
  * Page state captured at test end by the reporter fixtures. Storage values and
- * cookie values are never captured — key names, lengths and flags only.
+ * cookie values are never captured — key names, lengths and flags only. Focus,
+ * hover and a text selection name elements by element path and never carry a
+ * value or the selected text (see `#shared/page-interaction`).
  */
-export interface PageState {
+export interface PageState extends PageInteraction {
   url: string;
   hash: string | null;
   /** `history.state` as JSON, capped and token-masked. */

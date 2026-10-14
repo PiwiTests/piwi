@@ -250,7 +250,11 @@ export function installSnapshotPickerExtras() {
  * `data-piwi-*` markers): the custom elements the page had defined, so its
  * `:defined` styles match; modal dialogs and open popovers in the top layer;
  * every element's scroll offsets; an outline on the action's target; a dot
- * where the mouse was, with the element under it styled as `:hover`. It runs
+ * where the mouse was, with the element under it styled as `:hover`; and, on
+ * the failure-time snapshot, what the reporter read at test end
+ * (`data-piwi-page-state`): the focused element styled as `:focus`, the
+ * hovered one as `:hover`, a text selection highlighted, indeterminate
+ * checkboxes. It runs
  * first in both the picker and the read-only documents, so the picker overlay
  * installs over the page as it was. A browser without declarative shadow DOM
  * gets its shadow roots attached here too. The page's own scroll offset can't
@@ -351,7 +355,12 @@ export function restoreSnapshotState() {
 
   // A pseudo-class can't be set from a script, so each rule using one gets a
   // copy, right after it and as specific, that reads a marker attribute instead.
-  var PSEUDO_CLASSES = [[/:hover(?![-\w])/g, '[data-piwi-hover]']];
+  var PSEUDO_CLASSES = [
+    [/:hover(?![-\w])/g, '[data-piwi-hover]'],
+    [/:focus-visible(?![-\w])/g, '[data-piwi-focus-visible]'],
+    [/:focus-within(?![-\w])/g, '[data-piwi-focus-within]'],
+    [/:focus(?![-\w])/g, '[data-piwi-focus]'],
+  ];
   function mirror(rules, owner) {
     for (var i = rules.length - 1; i >= 0; i--) {
       var rule = rules[i];
@@ -377,13 +386,103 @@ export function restoreSnapshotState() {
       }
     }
   }
+  // The element itself, then up through its ancestors and shadow hosts.
+  function markUp(el, attr) {
+    for (; el; el = el.parentElement || (el.parentNode && el.parentNode.host)) el.setAttribute(attr, '');
+  }
+  // A style the page's own rules come after, in the root (document or shadow root) holding `el`.
+  function addStyle(el, css) {
+    var style = doc.createElement('style');
+    style.textContent = css;
+    var root = el.getRootNode ? el.getRootNode() : doc;
+    if (root === doc) (doc.head || doc.documentElement).prepend(style);
+    else root.prepend(style);
+  }
+
+  // What the page was doing at test end, as the reporter read it: elements by
+  // element path (`@piwitests/core/page-interaction`), text by offset.
+  var state = null;
+  try {
+    state = JSON.parse(doc.documentElement.getAttribute('data-piwi-page-state') || 'null');
+  } catch (err) {}
+  function resolvePath(path) {
+    var node = null;
+    var levels = String(path).split('|');
+    for (var l = 0; l < levels.length; l++) {
+      node = l === 0 ? doc : node && node.shadowRoot;
+      var steps = levels[l].split('/');
+      for (var st = 0; st < steps.length && node; st++) {
+        var step = steps[st].split(':');
+        var count = 0;
+        var found = null;
+        for (var k = 0; k < node.children.length && !found; k++) {
+          if (node.children[k].localName === step[0] && ++count === Number(step[1])) found = node.children[k];
+        }
+        node = found;
+      }
+    }
+    return node;
+  }
+  var SKIPPED_TEXT = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'];
+  function textAt(point) {
+    var el = point && resolvePath(point.path);
+    if (!el) return null;
+    var walker = doc.createTreeWalker(el, 4);
+    var left = point.offset;
+    var last = null;
+    for (var text = walker.nextNode(); text; text = walker.nextNode()) {
+      if (SKIPPED_TEXT.indexOf(text.parentElement && text.parentElement.tagName) !== -1) continue;
+      last = text;
+      if (left <= text.data.length) return [text, left];
+      left -= text.data.length;
+    }
+    return last ? [last, last.data.length] : [el, 0];
+  }
+  var focused = state && state.focus && resolvePath(state.focus.path);
+  if (focused) {
+    focused.setAttribute('data-piwi-focus', '');
+    markUp(focused, 'data-piwi-focus-within');
+    if (state.focus.visible) {
+      focused.setAttribute('data-piwi-focus-visible', '');
+      // The browser's own focus ring, which no page stylesheet holds.
+      addStyle(
+        focused,
+        '[data-piwi-focus-visible]{outline:2px solid #2563eb;outline:auto 1px -webkit-focus-ring-color}',
+      );
+    }
+  }
+  var hoveredEl = state && state.hover && resolvePath(state.hover);
+  if (hoveredEl) markUp(hoveredEl, 'data-piwi-hover');
+  var boxes = (state && state.indeterminate) || [];
+  for (var b = 0; b < boxes.length; b++) {
+    var box = resolvePath(boxes[b]);
+    if (box) box.indeterminate = true;
+  }
+  var from = state && state.selection && textAt(state.selection.start);
+  var to = state && state.selection && textAt(state.selection.end);
+  if (from && to) {
+    try {
+      var range = doc.createRange();
+      range.setStart(from[0], from[1]);
+      range.setEnd(to[0], to[1]);
+      // A highlight, which a click in the frame can't clear; else the selection itself.
+      if (g.CSS && g.CSS.highlights && g.Highlight) {
+        g.CSS.highlights.set('piwi-selection', new g.Highlight(range));
+        addStyle(doc.documentElement, '::highlight(piwi-selection){background-color:#b4d5fe;color:inherit}');
+      } else {
+        g.getSelection().removeAllRanges();
+        g.getSelection().addRange(range);
+      }
+    } catch (err) {}
+  }
 
   // The mouse where the last pointer action left it: a dot, and the element
-  // under it marked hovered with its ancestors. The frame first has the
-  // recorded viewport's height, so a point below it waits for the host to
-  // grow the frame to its content.
+  // under it marked hovered with its ancestors, unless the reporter read the
+  // hovered element itself. The frame first has the recorded viewport's
+  // height, so a point below it waits for the host to grow the frame to its
+  // content.
   var pointer = (doc.documentElement.getAttribute('data-piwi-pointer') || '').split(',');
-  var hovered = pointer.length !== 2;
+  var pointed = pointer.length !== 2;
   function hitAt(x, y) {
     var el = doc.elementFromPoint(x, y);
     while (el && el.shadowRoot) {
@@ -393,14 +492,12 @@ export function restoreSnapshotState() {
     }
     return el;
   }
-  function hover() {
+  function point() {
     var x = Number(pointer[0]) + page.x;
     var y = Number(pointer[1]) + page.y;
-    if (hovered || !(x >= 0 && y >= 0 && x <= g.innerWidth && y <= g.innerHeight)) return;
-    hovered = true;
-    for (var el = hitAt(x, y); el; el = el.parentElement || (el.parentNode && el.parentNode.host)) {
-      el.setAttribute('data-piwi-hover', '');
-    }
+    if (pointed || !(x >= 0 && y >= 0 && x <= g.innerWidth && y <= g.innerHeight)) return;
+    pointed = true;
+    if (!hoveredEl) markUp(hitAt(x, y), 'data-piwi-hover');
     var dot = doc.createElement('div');
     dot.id = '__piwi_pointer';
     dot.style.cssText =
@@ -418,11 +515,11 @@ export function restoreSnapshotState() {
       dot.showPopover();
     } catch (err) {}
   }
-  if (!hovered) {
-    mirrorStyleSheets();
-    hover();
-    g.addEventListener('resize', hover);
-    g.addEventListener('load', hover);
+  if (state || !pointed) mirrorStyleSheets();
+  if (!pointed) {
+    point();
+    g.addEventListener('resize', point);
+    g.addEventListener('load', point);
   }
 
   // The height goes first, so the host's canvas is tall enough to scroll to y.

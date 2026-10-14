@@ -17,7 +17,7 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: 'Serve the failure-time DOM snapshot as a sandboxed picker/readonly frame',
     description:
-      'Returns the failure-time DOM snapshot wrapped as a self-contained HTML document — the interactive locator picker (`mode=pick`, the default) or the read-only render (`mode=readonly`) — served with a `Content-Security-Policy` that sandboxes it (`sandbox allow-scripts`), runs only its own nonce-marked script and loads nothing from the network: the stylesheets and images captured in the trace are embedded as `data:` URIs and every other subresource reference is removed. It is loaded via an iframe `src` (not `srcdoc`) so the frame carries its own CSP instead of inheriting the dashboard page policy, which in the desktop shell blocks the inline picker script. Same snapshot resolution and rendering as `dom-snapshot`; the frame’s script then puts back the state the `data-piwi-*` attributes mark (scroll offsets, a modal dialog, an open popover, the action’s target outlined, a dot where the mouse was with the element under it styled as hovered) and reports to the host, over `postMessage`, its content height and where to scroll (`piwiScrollTo`). A password field’s value is masked, inline handlers and script bodies are never included, and token-shaped strings are masked.',
+      'Returns the failure-time DOM snapshot wrapped as a self-contained HTML document — the interactive locator picker (`mode=pick`, the default) or the read-only render (`mode=readonly`) — served with a `Content-Security-Policy` that sandboxes it (`sandbox allow-scripts`), runs only its own nonce-marked script and loads nothing from the network: the stylesheets and images captured in the trace are embedded as `data:` URIs and every other subresource reference is removed. It is loaded via an iframe `src` (not `srcdoc`) so the frame carries its own CSP instead of inheriting the dashboard page policy, which in the desktop shell blocks the inline picker script. Same snapshot resolution and rendering as `dom-snapshot`; the frame’s script then puts back the state the `data-piwi-*` attributes mark (scroll offsets, a modal dialog, an open popover, the action’s target outlined, a dot where the mouse was with the element under it styled as hovered; on the failure-time snapshot, the focused and hovered elements styled as `:focus` and `:hover`, a text selection highlighted, indeterminate checkboxes) and reports to the host, over `postMessage`, its content height and where to scroll (`piwiScrollTo`). A password field’s value is masked, inline handlers and script bodies are never included, and token-shaped strings are masked.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'Test run case id' },
       {
@@ -81,7 +81,11 @@ export default eventHandler(async (event) => {
       .where(and(eq(files.testRunsCaseId, id), eq(files.type, 'trace')))
       .limit(1),
     db
-      .select({ aria: testRunsCases.ariaSnapshot, ariaPayloadId: testRunsCases.ariaSnapshotPayloadId })
+      .select({
+        aria: testRunsCases.ariaSnapshot,
+        ariaPayloadId: testRunsCases.ariaSnapshotPayloadId,
+        pageState: testRunsCases.pageState,
+      })
       .from(testRunsCases)
       .where(eq(testRunsCases.id, id))
       .limit(1),
@@ -98,6 +102,7 @@ export default eventHandler(async (event) => {
     source,
     inlineStyles: true,
     at: snapshotMomentFromQuery(query),
+    pageState: caseRows[0]?.pageState,
   });
 
   // Sandbox the untrusted snapshot HTML: an opaque origin with scripts allowed,

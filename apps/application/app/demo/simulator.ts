@@ -869,6 +869,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           beforeEach: authoredBeforeEachMs(failingCase, { scale }),
         });
         tests[i]!.wastedTimeMs = null;
+        tests[i]!.pageState = { ...tests[i]!.pageState, ...CLUSTER1_STORY.evidence.pageInteraction };
         tests[i]!.attempts = [
           {
             status: 'failed',

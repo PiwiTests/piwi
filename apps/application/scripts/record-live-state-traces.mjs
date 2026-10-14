@@ -2,8 +2,9 @@
 /**
  * Records the trace fixtures of `tests/dom-snapshot-state.spec.ts`: one page holding every live state a trace
  * snapshot keeps beside the DOM (field values, a password, checkboxes, a selected option, a scrolled list and
- * page, a modal dialog, a popover, a web component with an adopted stylesheet) and a menu shown by CSS `:hover`,
- * driven by a test that hovers the menu and whose last click fails, so the failure-time snapshot holds them all.
+ * page, a modal dialog, a popover, a web component with an adopted stylesheet), a menu shown by CSS `:hover` and
+ * a `:focus-visible` rule, driven by a test that hovers the menu and whose last click fails, so the failure-time
+ * snapshot holds them all.
  *
  * Usage (from apps/application/), once per Playwright version the fixtures cover:
  *   node scripts/record-live-state-traces.mjs          # the workspace's Playwright
@@ -28,6 +29,7 @@ const PAGE = `<!doctype html><html><head><style>
 x-card:not(:defined) { visibility: hidden }
 .submenu { display: none }
 #products:hover > .submenu { display: block }
+button:focus-visible { outline: 3px solid rgb(255, 0, 0) }
 </style></head><body>
 <nav><ul><li id="products">Products<ul class="submenu"><li>Laptops</li></ul></li></ul></nav>
 <label>Name <input id="name" value="default"></label>

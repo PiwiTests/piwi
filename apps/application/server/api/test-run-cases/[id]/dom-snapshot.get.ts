@@ -14,7 +14,7 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: 'Render the failure-time DOM snapshot for a test-run case',
     description:
-      'Extracts the DOM snapshot from the stored trace ZIP, falling back to a nested render of the captured ARIA snapshot when no trace is available. Pass `source=aria` to render the ARIA tree even when a trace exists. The page is rendered as recorded, with field values, checkbox and option states, open dialogs and shadow roots; a password field’s value is masked, inline handlers and script bodies are never included, and token-shaped strings are masked. `data-piwi-*` attributes mark what only a script can restore: scroll offsets (`data-piwi-scroll-top`, `data-piwi-scroll-left`), a modal dialog (`data-piwi-modal`), an open popover (`data-piwi-popover-open`), the element the action targeted (`data-piwi-target`), the custom elements the page defined (`data-piwi-custom-elements`) and, on `<html>`, where the last pointer action left the mouse, in viewport pixels (`data-piwi-pointer="x,y"`).',
+      'Extracts the DOM snapshot from the stored trace ZIP, falling back to a nested render of the captured ARIA snapshot when no trace is available. Pass `source=aria` to render the ARIA tree even when a trace exists. The page is rendered as recorded, with field values, checkbox and option states, open dialogs and shadow roots; a password field’s value is masked, inline handlers and script bodies are never included, and token-shaped strings are masked. `data-piwi-*` attributes mark what only a script can restore: scroll offsets (`data-piwi-scroll-top`, `data-piwi-scroll-left`), a modal dialog (`data-piwi-modal`), an open popover (`data-piwi-popover-open`), the element the action targeted (`data-piwi-target`), the custom elements the page defined (`data-piwi-custom-elements`) and, on `<html>`, where the last pointer action left the mouse, in viewport pixels (`data-piwi-pointer="x,y"`), and on the failure-time snapshot what the capture fixtures read at test end, as JSON of element paths (`data-piwi-page-state`: the focused element, the one under the mouse, a text selection, indeterminate checkboxes).',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'Test run case id' },
       {
@@ -73,7 +73,11 @@ export default eventHandler(async (event) => {
       .where(and(eq(files.testRunsCaseId, id), eq(files.type, 'trace')))
       .limit(1),
     db
-      .select({ aria: testRunsCases.ariaSnapshot, ariaPayloadId: testRunsCases.ariaSnapshotPayloadId })
+      .select({
+        aria: testRunsCases.ariaSnapshot,
+        ariaPayloadId: testRunsCases.ariaSnapshotPayloadId,
+        pageState: testRunsCases.pageState,
+      })
       .from(testRunsCases)
       .where(eq(testRunsCases.id, id))
       .limit(1),
@@ -90,5 +94,6 @@ export default eventHandler(async (event) => {
     source,
     inlineStyles,
     at: snapshotMomentFromQuery(query),
+    pageState: caseRows[0]?.pageState,
   });
 });
