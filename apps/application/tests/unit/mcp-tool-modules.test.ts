@@ -28,7 +28,7 @@ describe('MCP tool modules', () => {
     }
   });
 
-  it('the diagnosis, healing, scm, fixtures and integrations tools carry their capability', () => {
+  it('the diagnosis, healing, scm, fixtures, coverage and integrations tools carry their capability', () => {
     const byName = new Map(ALL_TOOLS.map((t) => [t.name, t]));
     const expected: Record<string, string> = {
       run_cluster_diagnosis: 'ai',
@@ -49,6 +49,9 @@ describe('MCP tool modules', () => {
       get_network_requests: 'fixtures',
       get_slow_tests: 'fixtures',
       get_performance_trend: 'fixtures',
+      get_coverage: 'coverage',
+      compare_coverage: 'coverage',
+      get_coverage_loss: 'coverage',
     };
     for (const [name, capability] of Object.entries(expected)) {
       expect(byName.get(name)?.capability, name).toBe(capability);

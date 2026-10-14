@@ -14,6 +14,7 @@ import { classifyFlakyRootCause, type BrowserOutcomes, type FlakyRootCause } fro
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { getAttemptDiff } from './test-cases';
 import { notLabRun } from './probes';
+import { isOrderDependent } from './coverage-insights';
 import type { DrizzleDB } from './db';
 
 /** How many recent flaky executions to diff for the attempt-diff network vote. */
@@ -24,6 +25,8 @@ const RECENT_ATTEMPTS = 100;
 const FINALIZE_CLASSIFY_LIMIT = 20;
 /** How many unclassified tests a flaky-list read classifies before it answers. */
 const READ_CLASSIFY_LIMIT = 10;
+/** Recent failed attempts with coverage needed before the test's path variation is read for an order dependency. */
+const ORDER_MIN_FAILURES_WITH_COVERAGE = 2;
 
 export async function classifyAndPersistFlakyRootCause(
   db: DrizzleDB,
@@ -61,6 +64,7 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
         error: testRunsCases.error,
         steps: testRunsCases.steps,
         browser: testRunsCases.browser,
+        coveragePayloadId: testRunsCases.coveragePayloadId,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -145,6 +149,11 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
     }
   }
 
+  // Only a test whose recent failures recorded coverage has its path variation read.
+  const failuresWithCoverage = recentFailures.filter((r) => r.coveragePayloadId != null).length;
+  const orderDependent =
+    failuresWithCoverage >= ORDER_MIN_FAILURES_WITH_COVERAGE && (await isOrderDependent(db, testCaseId));
+
   return classifyFlakyRootCause({
     errorMessages,
     stepErrors,
@@ -153,6 +162,7 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
     status5xxCount,
     attemptDiffNetworkVotes,
     browserDistribution,
+    orderDependent,
   });
 }
 

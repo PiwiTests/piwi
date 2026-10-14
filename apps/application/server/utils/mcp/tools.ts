@@ -206,6 +206,7 @@ import { resolveMaxUploadBytes } from '../upload-limits';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { dropNulls } from './json';
 import { describePiwi, getReleaseNotes } from './about-piwi';
+import { COVERAGE_TOOL_HANDLERS, clusterTestsUniqueCoverage, uniqueCoverageSummary } from './coverage-tools';
 
 // ── Token-optimization helpers ───────────────────────────────────────────────
 
@@ -2524,6 +2525,13 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         .map((r) => r.id),
     );
     const result = await apply([...allowed]);
+    const uniqueCoverage =
+      action === 'quarantine' || action === 'release'
+        ? await clusterTestsUniqueCoverage(
+            db,
+            rows.filter((r) => allowed.has(r.id)),
+          )
+        : [];
     return dropNulls({
       action,
       requested: ids.length,
@@ -2532,6 +2540,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       quarantined: action === 'quarantine' ? result.changed : null,
       released: action === 'release' ? result.changed : null,
       skippedIds: ids.filter((id) => !allowed.has(id)),
+      uniqueCoverage,
     });
   },
 
@@ -2645,11 +2654,23 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (params.quarantined) {
       const { created } = await addQuarantine(db, projectId, testCaseId, { reason, createdBy: ctx.user?.id || null });
       // A test already in quarantine keeps the reason it was quarantined with.
-      return dropNulls({ testCaseId, quarantined: true, changed: created, reason: created ? reason : null });
+      return dropNulls({
+        testCaseId,
+        quarantined: true,
+        changed: created,
+        reason: created ? reason : null,
+        uniqueCoverage: await uniqueCoverageSummary(db, projectId, [testCaseId]),
+      });
     }
     const { released } = await releaseQuarantine(db, projectId, testCaseId, reason, mcpActor(ctx));
     if (!released) throw new Error(`Test ${testCaseId} is not in quarantine`);
-    return dropNulls({ testCaseId, quarantined: false, changed: true, reason });
+    return dropNulls({
+      testCaseId,
+      quarantined: false,
+      changed: true,
+      reason,
+      uniqueCoverage: await uniqueCoverageSummary(db, projectId, [testCaseId]),
+    });
   },
 
   // ── set_bug_report_status ──────────────────────────────────────────────────
@@ -2890,6 +2911,19 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         }),
       ),
     });
+  },
+
+  // ── get_coverage, compare_coverage, get_coverage_loss (coverage-tools.ts) ──
+  async get_coverage(db, params, ctx) {
+    return COVERAGE_TOOL_HANDLERS.get_coverage(db, params, ctx);
+  },
+
+  async compare_coverage(db, params, ctx) {
+    return COVERAGE_TOOL_HANDLERS.compare_coverage(db, params, ctx);
+  },
+
+  async get_coverage_loss(db, params, ctx) {
+    return COVERAGE_TOOL_HANDLERS.get_coverage_loss(db, params, ctx);
   },
 
   async list_scenario_gaps(db, params, ctx) {

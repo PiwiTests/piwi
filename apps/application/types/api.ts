@@ -1575,9 +1575,40 @@ export interface DiagnosisContextCoverage {
     changedLines: number;
     executedLines: number;
   } | null;
+  /**
+   * The code the execution ran that the test's last passing execution with coverage did not, and the reverse:
+   * the baseline execution and the counts the context carried. null when there is nothing to compare.
+   */
+  coverageDivergence?: {
+    baselineExecutionId: number;
+    filesOnlyHere: number;
+    linesOnlyHere: number;
+    filesOnlyBaseline: number;
+    linesOnlyBaseline: number;
+  } | null;
   /** Sections where data is not applicable (with reason), keyed by section id. Absent in coverage means "no data". */
   notApplicable?: Record<string, string>;
 }
+
+// Coverage insights: `GET /api/test-run-cases/:id/coverage-divergence`, `GET /api/test-cases/:id/path-variation`,
+// `GET /api/projects/:id/coverage-loss` and `GET /api/test-cases/:id/coverage-reach`. The shapes live in
+// `#shared/coverage-insights`, shared with the server, the demo mirror, the MCP tools and the AI context.
+export type {
+  CoverageBaseline,
+  CoverageDivergenceAnswer,
+  CoverageDivergenceReason,
+  CoverageLossAnswer,
+  CoverageReachAnswer,
+  DivergedFile,
+  FailuresFollow,
+  LossFile,
+  LossTest,
+  NearestTest,
+  PathExplanation,
+  PathVariationAnswer,
+  VaryingCode,
+  VaryingFile,
+} from '#shared/coverage-insights';
 
 // Suspect lines: `GET /api/test-run-cases/:id/suspect-lines` and `GET /api/failure-clusters/:id/suspect-lines`.
 // The shapes live in `#shared/suspect-lines`, shared with the server, the demo mirror and the fix plan.

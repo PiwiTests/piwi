@@ -19,7 +19,7 @@ Prefer the **Piwi MCP server** if it is connected to this agent (tools named `li
 
 3. **Group by cause.** Call `get_failure_groups` (or `list_clusters` / `get_cluster`) — failures that share a root cause are clustered, so you fix one thing, not five. Work cluster by cluster.
 
-4. **Read the evidence per cluster.** Call `get_cluster_context` — the same SCM-grounded context the built-in diagnosis uses: representative errors, test steps, console logs, failing network requests, ARIA snapshots, and the **diff of files changed since the last green run**. If a diagnosis already exists, `get_cluster_diagnosis` returns its root cause and suggested fix.
+4. **Read the evidence per cluster.** Call `get_cluster_context` — the same SCM-grounded context the built-in diagnosis uses: representative errors, test steps, console logs, failing network requests, ARIA snapshots, and the **diff of files changed since the last green run**. If a diagnosis already exists, `get_cluster_diagnosis` returns its root cause and suggested fix. When the failure has no change behind it and the project records coverage, call `compare_coverage` with a failing execution's id: the code this run took that the last passing run did not (an error path, a fallback) is where to look.
 
 5. **Form the diagnosis.** Tie the failure to a cause with evidence: a selector that stopped matching, an assertion on changed copy, a slow/500 endpoint (`get_network_requests`), a race, a genuinely flaky test (check `get_test_stability_trend` — if it fails intermittently, treat it as flaky, not a regression). Point at the specific commit/file from the diff when the evidence supports it.
 

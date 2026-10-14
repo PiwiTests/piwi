@@ -149,6 +149,8 @@ function rootCauseColor(cause: string | null): string {
       return 'blue';
     case 'environment':
       return 'purple';
+    case 'order':
+      return 'teal';
     default:
       return 'gray';
   }
@@ -168,6 +170,7 @@ const ROOT_CAUSE_OPTIONS = [
   { label: 'Network', value: 'network' },
   { label: 'Assertion', value: 'assertion' },
   { label: 'Environment', value: 'environment' },
+  { label: 'Order', value: 'order' },
   { label: 'Other', value: 'other' },
 ];
 

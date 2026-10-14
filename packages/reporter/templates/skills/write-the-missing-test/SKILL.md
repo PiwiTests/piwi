@@ -14,7 +14,7 @@ drafts it from the graph, and opens it in the same change.
 ## How you reach Piwi
 
 Prefer the **Piwi MCP server** if it is connected (`list_scenario_gaps`,
-`draft_scenario`, `get_change_coverage`, `triage_gap`). Otherwise use the dashboard's **Gaps**
+`draft_scenario`, `get_change_coverage`, `get_coverage`, `triage_gap`). Otherwise use the dashboard's **Gaps**
 view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
 `PIWI_PROJECT_NAME` set.
 
@@ -38,7 +38,11 @@ view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
    skeleton: a title, `piwi:` annotations from the nearest test, the graph path
    from a reached page to the gap as the step list, the catalog page-object
    methods that match the page, and a `TODO` assertion naming what to check.
-   Nothing is committed — the skeleton is yours to finish.
+   Nothing is committed — the skeleton is yours to finish. When the gap points at
+   application code (an uncovered file, a handler, an error path), name the target
+   lines in it and call `get_coverage` with `projectId`, `file` and `lines`:
+   `nearest` is the existing test running most of the function around them, the
+   one whose setup to copy.
 
 4. **Finish the assertion.** The draft reaches the subject; you write the check.
    For a false-comfort gap, assert the effect the probe fault suppressed (the row
@@ -51,11 +55,33 @@ view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
    for the right reason: temporarily break the behavior it asserts and see it
    fail. Open it in the same pull request as the change that motivated it.
 
-6. **Report.** State which gap you closed (class, subject, score) and how the new
-   test asserts the missing behavior. If the gap had no reachable path, say so —
-   the draft cannot invent an entry point, and the gap may need a fixture.
+6. **Prove it reaches its target lines.** When the project records server
+   coverage (an ASP.NET Core backend in a coverage build), run the new test with
+   it on and reporting to Piwi:
 
-7. **Report back to Piwi.** Tell Piwi what you decided about the gap with
+   ```bash
+   PIWI_COVERAGE_SERVER=lines npx playwright test <file> -g "<title>"
+   ```
+
+   ```powershell
+   $env:PIWI_COVERAGE_SERVER='lines'; npx playwright test <file> -g "<title>"
+   ```
+
+   Then call `get_coverage` with `projectId`, `testFile`, `testTitle`, `file`
+   and `lines` (the target lines). `ran` lists the target lines it executed,
+   `notRan` those it did not, `notExecutable` those that cannot run (blank lines,
+   comments), and `unknown` those the capture could not tell: run it again, and
+   check the backend records `lines`, not only files. While a target line did not
+   run, compare your test with `nearest`, change the steps or the data that lead
+   to that code, and run again, until `allRan` is true. If `get_coverage` says the
+   project records no coverage, skip this step and say so in the report.
+
+7. **Report.** State which gap you closed (class, subject, score), how the new
+   test asserts the missing behavior, and which target lines it ran. If the gap
+   had no reachable path, say so — the draft cannot invent an entry point, and
+   the gap may need a fixture.
+
+8. **Report back to Piwi.** Tell Piwi what you decided about the gap with
    `triage_gap` (reporter or admin access): `verb: "accept"` for the gap you
    wrote the test for, `covered-by` with the covering test's id when a test you
    found already covers it, or `dismiss` with the reason (`not-worth-testing`,

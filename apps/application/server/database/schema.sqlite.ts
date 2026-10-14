@@ -132,7 +132,7 @@ export const testCases = sqliteTable(
     suitePath: text('suite_path').notNull().default(''), // \x1f-delimited describe block path, e.g. 'Auth\x1fLogin'
     suiteId: integer('suite_id').references(() => testSuites.id), // FK to immediate parent describe block (null for root-level tests)
     title: text('title').notNull(),
-    flakyRootCause: text('flaky_root_cause'), // 'timing' | 'network' | 'assertion' | 'environment' | 'other'
+    flakyRootCause: text('flaky_root_cause'), // 'timing' | 'network' | 'assertion' | 'environment' | 'order' | 'other'
     // Latest-known test-level tags and `piwi:` metadata, refreshed on every run
     // that reports this test. Per-execution truth lives on test_runs_cases;
     // these denormalized columns let project-wide views filter without a join.

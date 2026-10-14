@@ -15,7 +15,7 @@ Prefer the **Piwi MCP server** if it is connected (`list_flaky_tests`, `get_flak
 
 1. **Rank the flaky tests.** Call `list_flaky_tests` for the project and take the top few by impact. Do not try to fix the whole list at once.
 
-2. **Read the suspects.** For a chosen test, call `get_flake_profile`. Each suspect carries raw counts ("slow in 7 of 8 failures and 3 of 44 passes"), the condition that would test it, and, once the lab has run, its latest result (`lab`). `experiments` lists what the lab already found; if an experiment reproduced the test, skip to step 4. Read one failing execution (`get_test_run_case` / `explain_failure`) for the error at the moment it flaked.
+2. **Read the suspects.** For a chosen test, call `get_flake_profile`. Each suspect carries raw counts ("slow in 7 of 8 failures and 3 of 44 passes"), the condition that would test it, and, once the lab has run, its latest result (`lab`). `experiments` lists what the lab already found; if an experiment reproduced the test, skip to step 4. Read one failing execution (`get_test_run_case` / `explain_failure`) for the error at the moment it flaked. A test whose root cause is `order` depends on state an earlier test leaves behind: `compare_coverage` with its `testCaseId` names that test and the code whose path changes, so reproduce by running that test before this one in a single worker, and fix the shared state, not the wait.
 
 3. **Reproduce it.** Run the lab on the test (`plan_flake_experiment` gives the exact commands and the arms it will run, with an estimate):
 
