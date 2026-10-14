@@ -75,6 +75,8 @@ export const PROJECT = {
   ENV_STREAM_START: 'env-stream-start-test',
   ENV_UI: 'env-ui-test',
   ENV_UPLOAD: 'env-upload-test',
+  EXECUTION_COVERAGE: 'execution-coverage-test',
+  EXECUTION_COVERAGE_OFF: 'execution-coverage-off-test',
   EXECUTION_STATES: 'execution-states-test',
   EXPECTED_FAILURE: 'expected-failure-test',
   EXPORT_OFFLINE: 'export-offline-test',

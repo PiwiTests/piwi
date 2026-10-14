@@ -42,7 +42,12 @@ const { can } = useAuth();
 // instance. The page keeps what it renders on: whether the What changed card
 // has anything to show, and the commit coverage behind the More menu's Copy git
 // log.
-const { hasChangesToShow, coverage: contextCoverage, scmChanges } = provideClusterDiagnosis(clusterId);
+const {
+  hasChangesToShow,
+  coverage: contextCoverage,
+  scmChanges,
+  suspectLines: clusterSuspectLines,
+} = provideClusterDiagnosis(clusterId);
 
 const { data: cluster, refresh: refreshCluster } = await useFetch<FailureClusterDetail>(
   `/api/failure-clusters/${clusterId}`,
@@ -790,7 +795,11 @@ const breadcrumbItems = computed(() => [
 
           <!-- Line 8: what changed, the commits since the last passing run in one line -->
           <template #whatChanged>
-            <WhatChangedLine ref="whatChangedLine" @see="scrollToEl(scmEl)" />
+            <WhatChangedLine
+              ref="whatChangedLine"
+              :coverage-active="clusterCapState('coverage') === 'active'"
+              @see="scrollToEl(scmEl)"
+            />
           </template>
 
           <!-- Line 9: the facts line: Details, Raw error, Copy summary -->
@@ -829,6 +838,8 @@ const breadcrumbItems = computed(() => [
                 :has-trace="hasTrace"
                 :default-hint="defaultHint"
                 :fixtures-state="clusterCapState('fixtures')"
+                :coverage-state="clusterCapState('coverage')"
+                :suspect-lines="clusterSuspectLines"
                 :can-decide-fixtures="canDecideClusterCap"
                 help="case.evidence"
                 @decline-fixtures="declineClusterFixtures"

@@ -27,3 +27,20 @@ export async function sha256Hex(input: string): Promise<string> {
   const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+/**
+ * The git blob id of a text file's content, as `git hash-object` gives it for
+ * the file stored as its UTF-8 bytes: the SHA-1 of `blob <byte length>\0`
+ * followed by the content, or its SHA-256 for a repository that hashes with
+ * SHA-256 (`format: 'sha256'`, whose ids have 64 hex characters).
+ */
+export async function gitBlobId(content: string, format: 'sha1' | 'sha256' = 'sha1'): Promise<string> {
+  const bytes = new TextEncoder().encode(content);
+  const object = `blob ${bytes.length}\0${content}`;
+  if (nodeCrypto) return nodeCrypto.createHash(format).update(object).digest('hex');
+  const digest = await globalThis.crypto.subtle.digest(
+    format === 'sha256' ? 'SHA-256' : 'SHA-1',
+    new TextEncoder().encode(object),
+  );
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}

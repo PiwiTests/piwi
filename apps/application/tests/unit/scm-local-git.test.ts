@@ -228,6 +228,16 @@ describe('LocalGitProvider reads', () => {
     expect(root?.files.map((f) => f.status)).toEqual(['added', 'added', 'added']);
   });
 
+  test('reads a blob by its id, and asks the host for one the clone does not have', async () => {
+    const local = await provider();
+    expect(await local.fetchBlob(git('rev-parse', `${sha.second}:README.md`))).toBe('shop\nnow with a cart\n');
+    const missing = 'e'.repeat(40);
+    const hostBlob = vi.spyOn(GitHubProvider.prototype, 'fetchBlob').mockResolvedValue(null);
+    expect(await local.fetchBlob(missing)).toBeNull();
+    expect(hostBlob).toHaveBeenCalledWith(missing);
+    expect(await local.fetchBlob('not-a-blob')).toBeNull();
+  });
+
   test('asks the host for a range the clone does not have', async () => {
     const missing = 'f'.repeat(40);
     const hostChanges = vi.spyOn(GitHubProvider.prototype, 'fetchChanges').mockResolvedValue(null);

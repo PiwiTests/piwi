@@ -8,6 +8,7 @@ import {
   MAX_FILE_BYTES,
   FETCH_TIMEOUT_MS,
   isGitObjectId,
+  readBlobText,
 } from './ScmProvider';
 import type {
   ChangedFile,
@@ -313,6 +314,15 @@ export class GitHubProvider extends ScmProvider {
     };
     fetchFileCache.set(key, result);
     return result;
+  }
+
+  override async fetchBlob(blob: string): Promise<string | null> {
+    if (!isGitObjectId(blob)) return null;
+    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/git/blobs/${blob.toLowerCase()}`, {
+      headers: { ...this.makeHeaders(), Accept: 'application/vnd.github.raw+json' },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    return res.ok ? readBlobText(res) : null;
   }
 
   async fetchTree(ref: string): Promise<string[] | null> {

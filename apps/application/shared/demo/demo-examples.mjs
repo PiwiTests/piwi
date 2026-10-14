@@ -31,6 +31,10 @@
  *   with that file, at that granularity when one is given: its story's failing
  *   tests recorded coverage of it (with lines for `lines`), and the demo's
  *   canned changes change it.
+ * - `coverage: { serverFiles, browserFiles, runCoverage? }`: the execution
+ *   recorded coverage of that many server files, each with executed lines, and
+ *   that many browser files; with `runCoverage`, its run's own coverage holds
+ *   each of those server files with its executable lines.
  */
 
 /** @type {readonly import('./demo-examples.d.mts').DemoExample[]} */
@@ -75,6 +79,18 @@ export const DEMO_EXAMPLES = [
     expect: {
       cluster: { id: 5, story: 'modal-never-opens' },
       suspects: { path: 'src/components/modal-controller.ts', granularity: 'files' },
+    },
+  },
+  {
+    id: 'execution-coverage-server',
+    doc: 'features/code-reach',
+    title: 'Web Dashboard › Users table paginates 25 rows per page: the server lines this test ran',
+    shows:
+      'The Source tab’s Coverage section lists the five files of the ASP.NET Core API the test ran, 20 lines, the users endpoints first with the suspect lines it ran, then the three browser files of the users page; open a server file to read its source with the lines the test ran marked, and the executable lines it did not run in a lighter mark.',
+    route: '/test-run-cases/711?evidence=source',
+    expect: {
+      execution: { id: 711, title: 'Users table paginates 25 rows per page' },
+      coverage: { serverFiles: 5, browserFiles: 3, runCoverage: true },
     },
   },
   {

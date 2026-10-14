@@ -7,6 +7,8 @@ import {
   MAX_SCM_FILES_TOTAL,
   MAX_FILE_BYTES,
   FETCH_TIMEOUT_MS,
+  isGitObjectId,
+  readBlobText,
 } from './ScmProvider';
 import type {
   ScmCommitDetail,
@@ -327,6 +329,16 @@ export class GitLabProvider extends ScmProvider {
     };
     fetchFileCache.set(key, result);
     return result;
+  }
+
+  override async fetchBlob(blob: string): Promise<string | null> {
+    if (!isGitObjectId(blob)) return null;
+    const projectPath = encodeURIComponent(this.repoPath);
+    const res = await fetch(
+      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/blobs/${blob.toLowerCase()}/raw`,
+      { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    );
+    return res.ok ? readBlobText(res) : null;
   }
 
   async fetchTree(ref: string): Promise<string[] | null> {

@@ -138,6 +138,14 @@ export interface StoryServerCoverage {
   lines: Array<[number, number]>;
 }
 
+/**
+ * A server file of a run's coverage, attributed to no test: what the run's
+ * tests and the app's startup ran, with the file's executable lines.
+ */
+export interface StoryRunCoverageFile extends StoryServerCoverage {
+  executable: Array<[number, number]>;
+}
+
 /** A file of a story's coverage: a browser file at file granularity, by its path, or a server file. */
 export type StoryCoverageFile = string | StoryServerCoverage;
 
@@ -169,6 +177,8 @@ export interface FailureStory {
   firing: StoryFiring;
   /** Gives the cluster suspect lines: the coverage its newest failing run recorded. */
   coverage?: StoryCoverage;
+  /** The run coverage the same run sent at its end. */
+  runCoverage?: StoryRunCoverageFile[];
 }
 
 export interface DemoCase {
@@ -336,4 +346,6 @@ export declare function storyEvidenceTimes(
 export declare function storyByClusterId(clusterId: number): FailureStory | null;
 export declare function storyForCase(projectId: number, filePath: string, title: string): FailureStory | null;
 export declare function projectSourceFilePaths(projectId: number): string[];
+/** The authored files a project's stories' coverage names, which its canned repository serves by git blob. */
+export declare function projectCoveredFilePaths(projectId: number): string[];
 export declare function storyCoverageFiles(story: FailureStory, file: string, title: string): StoryCoverageFile[];

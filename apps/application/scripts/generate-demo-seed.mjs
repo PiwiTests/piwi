@@ -3851,11 +3851,16 @@ const CODE_REACH = [];
 // A story with `coverage` gets it on every execution of the newest run its
 // cluster fails in, as the reporter's ingest stores it: one fragment per file
 // (`canonicalCoverageFile`'s fields, hashed), a payload of fragment ids per
-// execution. A browser file names its path only, and only a Chromium execution
-// records it; a server file names its git blob, the functions that ran and the
-// executed lines. Joined with the demo's canned changes, the cluster and its
-// executions get suspect lines.
+// execution, and per test case and runtime the fragments of that run
+// (`test_coverage`, on the run's branch, '' for the default one). A browser
+// file names its path only, and only a Chromium execution records it; a server
+// file names its git blob, the functions that ran and the executed lines. A
+// story with `runCoverage` also gets the run's own coverage (`run_coverage`),
+// with each server file's executable lines. Joined with the demo's canned
+// changes, the cluster and its executions get suspect lines.
 const COVERAGE_FRAGMENTS = [];
+const TEST_COVERAGE = [];
+const RUN_COVERAGE = [];
 {
   const ranges = (list) =>
     (list ?? []).map(([start, end]) => (start === end ? String(start) : `${start}-${end}`)).join(',');
@@ -3915,6 +3920,9 @@ const COVERAGE_FRAGMENTS = [];
       null,
     );
     if (!run) continue;
+    const project = PROJECTS.find((p) => p.id === story.projectId);
+    const branch = run.branch && run.branch !== project?.default_branch ? run.branch : '';
+    const covered = new Set();
     for (const trc of TEST_RUNS_CASES) {
       if (trc.test_run_id !== run.id || (trc.status !== 'failed' && trc.status !== 'passed')) continue;
       const { file, title } = caseById.get(trc.test_case_id);
@@ -3924,6 +3932,34 @@ const COVERAGE_FRAGMENTS = [];
       if (!files.length) continue;
       const ids = files.map((entry) => fragmentId(story.projectId, entry, run.start_time));
       trc.coverage_payload_id = coveragePayloadId(story.projectId, ids, run.start_time);
+      for (const id of ids) {
+        const key = `${trc.test_case_id}\x00${id}`;
+        if (covered.has(key)) continue;
+        covered.add(key);
+        TEST_COVERAGE.push({
+          id: TEST_COVERAGE.length + 1,
+          project_id: story.projectId,
+          test_case_id: trc.test_case_id,
+          branch,
+          runtime: COVERAGE_FRAGMENTS[id - 1].runtime,
+          fragment_id: id,
+          last_seen_run_id: run.id,
+          last_seen_at: run.start_time * 1000,
+        });
+      }
+    }
+    for (const entry of story.runCoverage ?? []) {
+      RUN_COVERAGE.push({
+        id: RUN_COVERAGE.length + 1,
+        run_id: run.id,
+        project_id: story.projectId,
+        runtime: entry.runtime,
+        path: entry.path,
+        blob: entry.blob,
+        functions: ranges(entry.functions) || null,
+        lines: ranges(entry.lines) || null,
+        executable: ranges(entry.executable) || null,
+      });
     }
   }
 }
@@ -4532,6 +4568,7 @@ const REBASE_SQL = [
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
   `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,
+  `UPDATE test_coverage SET last_seen_at = last_seen_at + ${D_MS};`,
   // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
   // candidates to it; they are all stamped at BASE_START_MS, which the run
   // timestamps already bound. Nullable columns stay NULL.
@@ -5481,6 +5518,10 @@ const lines = [
   '-- Code reach (references test_cases and test_runs)',
   insert('code_reach', CODE_REACH),
   '',
+  '-- Test and run coverage (reference test_cases, coverage_fragments and test_runs)',
+  insert('test_coverage', TEST_COVERAGE),
+  insert('run_coverage', RUN_COVERAGE),
+  '',
   '-- Probe ledger (Test Map, checked axis)',
   insert('probes', PROBES),
   '',
@@ -5545,3 +5586,5 @@ console.log(`   Links      : ${ENTITY_LINKS.length}`);
 console.log(`   LocatorSnap: ${LOCATOR_SNAPSHOTS.length}`);
 console.log(`   CodeReach  : ${CODE_REACH.length}`);
 console.log(`   CovFrags   : ${COVERAGE_FRAGMENTS.length}`);
+console.log(`   TestCov    : ${TEST_COVERAGE.length}`);
+console.log(`   RunCov     : ${RUN_COVERAGE.length}`);

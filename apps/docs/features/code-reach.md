@@ -62,30 +62,22 @@ route a test called also counts as reached, with no capture of its own.
 The map must be linked from the bundle: `sourcemap: 'hidden'` and webpack's `hidden-source-map` write the map but
 not the comment that names it, so they record nothing.
 
-Each was checked on a React app with four components, a lazy-loaded one, a shared utility and a module imported on
-start but never called, with Vite 8, webpack 5.111 and Next.js 16.3: every test recorded exactly the files it ran,
-none missed and none extra. Nuxt dev was checked on Piwi's own suite. The same builds without source maps record
-nothing.
+Each was checked on a React app with Vite 8, webpack 5.111 and Next.js 16.3, and Nuxt dev on Piwi's own suite: every
+test recorded exactly the files it ran. The same builds without source maps record nothing.
 
 ## Cost
 
 Code reach reads V8's function coverage, which records only whether each function ran, so the page's own JavaScript
-runs at nearly its usual speed. Each test pays for a CDP session with the debugger on, which reports every script's
-version, and for one coverage read at the end. A script's source is read once per worker, the first time a test loads
-that version of it. Measured on a 4-core sandbox (Xeon at 2.10 GHz, Ubuntu 24.04, Node 22, Playwright 1.63, headless
-Chromium), each configuration run in turn, round after round, medians:
+runs at nearly its usual speed. Each test pays for a CDP session with the debugger on and one coverage read at the
+end; a script's source is read once per worker. Medians on a 4-core sandbox, headless Chromium:
 
-- **A script-heavy page** (Vue's development build rendering a 1,000-row table of components 30 times, plus 400 small
-  ES modules; a new browser context per test, 15 rounds): a test goes from 1,128 ms to 1,220 ms, 8% more, and 16% more
-  for a worker's first test, which reads all 403 sources. With two documents per test, 17% more. Playwright's
-  `page.coverage`, which records block coverage and reads every script's source in every test, adds 50% and 54% on the
-  same page, and reaches the same 137 files. Over three runs on a machine shared with other work, code reach added 5% to
-  23% to a test, `page.coverage` 44% to 55%.
-- **A light page** (the reporter's capture benchmark, `npm run reporter:bench`, 12 tests of 20 actions and
-  assertions): 61 ms and 103 ms more per test on top of the default capture in two runs, a median test going from 1,215
-  to 1,276 ms in one and from 1,140 to 1,242 ms in the other; `page.coverage` added 209 ms and 176 ms.
+- **A script-heavy page** (Vue's development build rendering a 1,000-row table 30 times, plus 400 small ES modules): a
+  test goes from 1,128 ms to 1,220 ms, 8% more, and 16% more for a worker's first test. Playwright's `page.coverage`
+  (block coverage, every source read in every test) adds 50%.
+- **A light page** (the reporter's capture benchmark, `npm run reporter:bench`): 61 ms and 103 ms more per test in two
+  runs, where `page.coverage` added 209 ms and 176 ms.
 
-The extra time grows with the number of scripts the page loads and the number of documents a test opens.
+The extra time grows with the scripts a page loads and the documents a test opens.
 
 ## Server code
 
@@ -101,9 +93,9 @@ With an ASP.NET Core backend built for coverage, each test also records the back
 reporter: [['@piwitests/reporter', { coverage: { server: 'lines' } }]],
 ```
 
-The backend names each request's coverage on its response. The fixtures keep the names a test's pages received; once
-the test ends, the reporter asks the backend for their coverage, several tests per call, outside the test's time, and
-the test's result reaches the dashboard with it.
+The backend names each request's coverage on its response. The fixtures keep the names a test's responses carried,
+its pages' and its API calls'; once the test ends, the reporter asks the backend for their coverage, several tests per
+call, outside the test's time, and the test's result reaches the dashboard with it.
 
 | `coverage.server` | Records per test |
 | --- | --- |
@@ -118,12 +110,26 @@ file's executable lines at `lines` granularity. A test whose coverage the backen
 
 - **Run level only:** lambdas created at startup (inline minimal API handlers, inline middleware, DI factory lambdas)
   and work outside a request (hosted services, timers). The methods they call count normally.
-- **Pages only:** API tests through Playwright's `request` fixture record no server coverage.
+- **API calls** through Playwright's `request` fixture keep their last response's coverage only: a redirect's earlier
+  responses, and a response `failOnStatusCode` turns into an error, name none.
 - C# and Visual Basic only.
 
 Measured on a prototype, per-test server coverage added under 2% to test duration on Microsoft's eShopOnWeb, whose
 CPU goes to the framework, and up to 26% more server CPU on an application that spends its CPU in business logic.
 Functions cost about what lines cost.
+
+## On the execution page
+
+Where its project records coverage, an execution's **Source** tab lists what the test ran: server files by executed
+lines, then browser files, each opening in your editor. A file the failure's
+[suspect lines](/guide/concepts#suspect-lines) name, or that changed since the last pass, links to the cluster's What
+changed card. A server file unfolds to its source at the version the test ran, marking the lines it ran and, from the
+run's own coverage, the executable lines it did not.
+
+<figure>
+  <img src="/screenshots/execution-coverage.png" alt="The Coverage section of an execution's Source tab">
+  <figcaption>What a failing test ran.</figcaption>
+</figure>
 
 ## Where it is used
 
@@ -133,6 +139,8 @@ Functions cost about what lines cost.
   modules.
 - **[Uncovered changes](./uncovered-changes)** counts a changed file as reached when a test executed it.
 - **[Locator preflight](./preflight)** calls a break *likely* only when one of its tests reaches the changed file.
+- **[Coverage in the editor](./editor-coverage)** marks the lines tests ran, the executable lines none runs and the
+  lines changed since the coverage run, with the tests behind each function and line, in VS Code and the JetBrains IDEs.
 - **[Suspect lines](/guide/concepts#suspect-lines)**: the changed lines a failure's tests executed, ranked against the
   passing tests, on the failure pages' [What changed](./failure-clusters#the-cluster-page) line and diff, in the
   [AI diagnosis](./ai-diagnosis#scm-grounded-context) and the [fix plan](./fix-plans).
@@ -144,7 +152,7 @@ The dashboard's API serves the tests reaching one file and the whole map of a br
 
 - **Chromium only** in the browser: other browsers have no JavaScript coverage and record no browser files. Server
   coverage works with every browser.
-- **Observed reach, not coverage.** A reached file may hide an untested branch: the unit is the file, never the line.
+- **Browser files are reached, not covered:** a reached file may hide an untested branch.
 - A build with neither per-module URLs nor source maps yields nothing, and so does code rendered on the server only,
   React server components included.
 - A module whose top-level code calls its own functions, a table built on import, counts for every test that loads it.
@@ -153,6 +161,10 @@ The dashboard's API serves the tests reaching one file and the whole map of a br
   coverage of a document the page has left. Client-side navigation stays in one document, and an iframe's earlier
   documents stay covered.
 - Reach is per branch: a branch's own runs replace its tests' reach, and the default branch's stands in for the rest.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

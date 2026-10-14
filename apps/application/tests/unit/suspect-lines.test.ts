@@ -238,6 +238,7 @@ describe('suspectLinesForExecution', () => {
           score: 0.707,
         },
       ],
+      changedPaths: [BASKET],
     });
   });
 
@@ -471,5 +472,33 @@ describe('the AI diagnosis context', () => {
     expect(context.sections.some((s) => s.id === 'suspectLines')).toBe(false);
     expect(context.coverage.suspectLines).toBeNull();
     expect(context.text).toContain('absent (the failing tests recorded no coverage)');
+  });
+
+  test('a project that records no coverage hears of the capability, not of its tests', async () => {
+    await db.insert(schema.projects).values({ id: 2, name: 'blog', defaultBranch: 'main' });
+    await db.insert(schema.testRuns).values({
+      id: 20,
+      projectId: 2,
+      status: 'failed',
+      startTime: new Date(T0),
+      branch: 'main',
+      metadata: { scm: { commit: HEAD, branch: 'main' } },
+      totalTests: 1,
+    });
+    await persistRunCases(db as never, 2, 20, [execution('publishes a post', 'failed')]);
+    await db.insert(schema.failureClusters).values({
+      id: 20,
+      projectId: 2,
+      fingerprint: 'fp-20',
+      signature: 'Error: expected 2, received 3',
+      errorType: 'Error',
+      firstSeenRunId: 20,
+      lastSeenRunId: 20,
+      status: 'open',
+    });
+    await db.update(schema.testRunsCases).set({ failureClusterId: 20 }).where(eq(schema.testRunsCases.testRunId, 20));
+    const context = await buildDiagnosisContext(db as never, { kind: 'cluster', clusterId: 20 });
+    expect(context.text).toContain('absent (not captured — coverage not active for this project)');
+    expect(context.text).not.toContain('the failing tests recorded no coverage');
   });
 });

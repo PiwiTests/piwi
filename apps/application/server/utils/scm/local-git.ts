@@ -501,6 +501,14 @@ export class LocalGitProvider extends ScmProvider {
     };
   }
 
+  override async fetchBlob(blob: string): Promise<string | null> {
+    if (!isGitObjectId(blob)) return null;
+    const out = await this.git(['cat-file', 'blob', blob.toLowerCase()], MAX_FILE_BYTES * 4);
+    // A blob the clone lacks is worth asking the host about.
+    if (!out.ok) return this.hosted.fetchBlob(blob);
+    return out.overflow || out.stdout.length > MAX_FILE_BYTES ? null : out.stdout;
+  }
+
   async fetchTree(ref: string): Promise<string[] | null> {
     if (!isValidGitRef(ref)) return null;
     const out = await this.git(['ls-tree', '-r', '-z', '--full-tree', ref]);

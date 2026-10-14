@@ -101,6 +101,21 @@ export const MAX_RAW_DIFF_BYTES = 200_000;
 export const MAX_FILE_BYTES = 200_000;
 export const FETCH_TIMEOUT_MS = 10_000;
 
+/**
+ * A blob response's text, or null when it is longer than {@link MAX_FILE_BYTES}
+ * characters: a blob is served whole or not at all. A body whose declared size
+ * is past four bytes a character is not read.
+ */
+export async function readBlobText(res: Response): Promise<string | null> {
+  const declared = Number(res.headers.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > MAX_FILE_BYTES * 4) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
+  const text = await res.text();
+  return text.length > MAX_FILE_BYTES ? null : text;
+}
+
 export function truncatePatch(patch: string): string {
   if (patch.length <= MAX_PATCH_PER_FILE) return patch;
   return `${patch.slice(0, MAX_PATCH_PER_FILE)}\n${PATCH_TRUNCATED_NOTE}`;
@@ -237,6 +252,17 @@ export abstract class ScmProvider {
    * immutable per SHA, so implementations may cache aggressively.
    */
   abstract fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null>;
+
+  /**
+   * The content of a git blob, read by its id, when it is at most
+   * {@link MAX_FILE_BYTES} characters. Null when the host cannot read a blob by
+   * id (this default), the blob is larger, or the fetch fails. A blob never
+   * changes, so a caller may keep the answer under its id.
+   */
+  async fetchBlob(_blob: string): Promise<string | null> {
+    return null;
+  }
+
   /**
    * Recursive list of repo-relative file paths at a ref. Used to normalize
    * reporter paths to repo-relative and to validate patch paths. Returns null

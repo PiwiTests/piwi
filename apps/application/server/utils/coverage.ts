@@ -637,6 +637,81 @@ export function parseRunCoverage(body: unknown): RunCoverageFile[] | string {
   return [...files.values()].sort(compareFiles);
 }
 
+/** A run's coverage as `GET /api/test-runs/:id/coverage` answers it. */
+export interface RunCoverage {
+  runId: number;
+  /** The run's executions that recorded coverage of their own. */
+  executionsWithCoverage: number;
+  /** The files of the run's coverage per runtime, whatever `file` and `limit` keep. */
+  fileCounts: Record<CoverageRuntime, number>;
+  /** The run's coverage per file, sorted by path then runtime: those matching `file`, at most `limit`. */
+  files: RunCoverageFile[];
+}
+
+/**
+ * A run's coverage, attributed to no test (`run_coverage`): every file, or
+ * those whose path matches `file` (`sameFilePath`), at most `limit`; with the
+ * number of the run's executions that recorded coverage of their own. Null
+ * when there is no such run.
+ */
+export async function getRunCoverage(
+  db: DrizzleDB,
+  runId: number,
+  opts: { file?: string | null; limit?: number } = {},
+): Promise<RunCoverage | null> {
+  const [run] = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!run) return null;
+  const [withCoverage, counted, rows] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(testRunsCases)
+      .where(and(eq(testRunsCases.testRunId, runId), sql`${testRunsCases.coveragePayloadId} IS NOT NULL`)),
+    db
+      .select({ runtime: runCoverage.runtime, n: sql<number>`count(*)` })
+      .from(runCoverage)
+      .where(eq(runCoverage.runId, runId))
+      .groupBy(runCoverage.runtime),
+    opts.limit === 0
+      ? Promise.resolve([])
+      : db
+          .select({
+            runtime: runCoverage.runtime,
+            path: runCoverage.path,
+            blob: runCoverage.blob,
+            functions: runCoverage.functions,
+            lines: runCoverage.lines,
+            executable: runCoverage.executable,
+          })
+          .from(runCoverage)
+          .where(
+            opts.file
+              ? and(eq(runCoverage.runId, runId), sameBaseName(runCoverage.path, opts.file))
+              : eq(runCoverage.runId, runId),
+          ),
+  ]);
+  const fileCounts: Record<CoverageRuntime, number> = { browser: 0, server: 0 };
+  for (const row of counted) fileCounts[asRuntime(row.runtime)] += Number(row.n);
+  const files = rows
+    .filter((row) => !opts.file || sameFilePath(row.path, opts.file))
+    .map((row) =>
+      runFileEntry(
+        row.path,
+        asRuntime(row.runtime),
+        row.blob ?? undefined,
+        decodeFunctionRanges(row.functions),
+        decodeLineRanges(row.lines),
+        decodeLineRanges(row.executable),
+      ),
+    )
+    .sort(compareFiles);
+  return {
+    runId,
+    executionsWithCoverage: Number(withCoverage[0]?.n ?? 0),
+    fileCounts,
+    files: opts.limit != null ? files.slice(0, opts.limit) : files,
+  };
+}
+
 const runLocks = new Map<number, Promise<unknown>>();
 
 /** Run `fn` after every earlier call for the same run has finished, within this server process. */

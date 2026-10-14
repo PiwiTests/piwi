@@ -52,6 +52,12 @@ import { drawAnnotations, clearAnnotations } from './screenshot-annotations.mjs'
 import { resolveChromium, startServer, waitForPortFree } from './lib/dev-server.mjs';
 import { waitForHydration, settlePage } from './lib/page-waits.mjs';
 import { SUSPECT_SCENE_CLUSTER, SUSPECT_SCENE_EXECUTION, withSceneChanges } from './lib/suspect-lines-scene.mjs';
+import {
+  COVERAGE_SCENE_EXECUTION,
+  COVERAGE_SCENE_PROJECT,
+  COVERAGE_SCENE_SUSPECT_LINES,
+  coverageSceneSource,
+} from './lib/coverage-scene.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -3665,12 +3671,48 @@ const SCENES = [
     },
     outputs: [`cluster-suspect-lines${suffix}-line.png`, `cluster-suspect-lines${suffix}-card.png`],
   })),
+  // The execution page's Coverage section: execution 711, whose run carries
+  // server coverage of the web dashboard's ASP.NET Core API. A dev server
+  // cannot read the demo's canned repositories, so these scenes serve the
+  // demo's own suspect lines and sources (`lib/coverage-scene.mjs`, checked
+  // against the demo handlers by a unit test). The users endpoints open on
+  // their source, the lines the test ran marked and the executable lines it
+  // did not run in the lighter mark.
+  {
+    name: 'execution-coverage',
+    description:
+      'Execution page, Source tab: the Coverage section with the users endpoints unfolded to their source, the lines the test ran and the executable lines it did not run marked',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 2800 },
+    async run({ page, goto, settle, shoot }) {
+      await openCoverageScene(page, goto, settle);
+      await shoot(undefined, { of: '[data-shot="execution-coverage"]', pad: 12 });
+    },
+  },
+  ...[
+    { suffix: 'wide', viewport: { width: 1280, height: 2800 }, pad: 12 },
+    { suffix: 'mobile', viewport: { width: 390, height: 4400 }, pad: 8 },
+  ].map(({ suffix, viewport, pad }) => ({
+    name: `execution-coverage-${suffix}`,
+    description: `Execution page at ${viewport.width} px with the Source tab's Coverage section, the users endpoints unfolded: the section, then the whole page`,
+    route: '/',
+    viewport,
+    async run({ page, goto, settle, shoot }) {
+      await openCoverageScene(page, goto, settle);
+      await shoot('section', { of: '[data-shot="execution-coverage"]', pad });
+      await shoot('page');
+    },
+    outputs: [`execution-coverage-${suffix}-section.png`, `execution-coverage-${suffix}-page.png`],
+  })),
   {
     name: 'what-changed-coverage-hint',
     description:
-      'Cluster What changed line for failing tests with no coverage: the diff summary, then the help hint on turning coverage on',
-    // Cluster 6 shares cluster 5's project and records no coverage; the demo's
-    // canned diff gives its line the summary the hint sits on.
+      'Cluster What changed line for failing tests with no coverage in a project that records some: the diff summary, then the help hint on why',
+    // Cluster 6 shares cluster 5's project, which records coverage, and its
+    // tests recorded none; the demo's canned diff gives its line the summary
+    // the hint sits on.
     route: '/',
     viewport: { width: 1280, height: 1100 },
     of: '[data-shot="situation-block"]',
@@ -4927,6 +4969,32 @@ async function serveSuspectLinesScene(page, clusterId = SUSPECT_SCENE_CLUSTER.id
       await route.fulfill({ response, json: withSceneChanges(await response.json()) });
     },
   );
+}
+
+/**
+ * Open execution 711 on its Source tab with the demo's suspect lines and
+ * sources served, and unfold the users endpoints to their source.
+ */
+async function openCoverageScene(page, goto, settle) {
+  await page.route(`**/api/test-run-cases/${COVERAGE_SCENE_EXECUTION}/suspect-lines`, (route) =>
+    route.fulfill({ json: COVERAGE_SCENE_SUSPECT_LINES }),
+  );
+  await page.route(
+    (url) => url.pathname === `/api/projects/${COVERAGE_SCENE_PROJECT}/source`,
+    (route) => {
+      const url = new URL(route.request().url());
+      const source = coverageSceneSource(url.searchParams.get('path'), url.searchParams.get('blob'));
+      return source
+        ? route.fulfill({ json: source })
+        : route.fulfill({ status: 404, json: { message: 'Source not available' } });
+    },
+  );
+  await goto(`/test-run-cases/${COVERAGE_SCENE_EXECUTION}?evidence=source`);
+  const section = page.locator('[data-shot="execution-coverage"]');
+  await section.locator('[data-coverage-mark="suspect"]').waitFor({ timeout: 60_000 });
+  await section.getByRole('button', { name: 'Show the source of api/Users/UsersEndpoints.cs' }).click();
+  await section.locator('[data-coverage-source] [data-not-executed]').first().waitFor({ timeout: 30_000 });
+  await settle();
 }
 
 /** Mocked Tauri IPC bridge, shaped per scene. Mirrors the real shell's commands. */

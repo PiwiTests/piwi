@@ -25,6 +25,7 @@ const {
   deleteBranchCoverageRows,
   getExecutionCoverage,
   getFileCoverage,
+  getRunCoverage,
   parseCoveragePayload,
   parseRunCoverage,
   pruneStaleBranchCoverageRows,
@@ -464,6 +465,46 @@ describe('run coverage', () => {
       ['server', 'src/B.cs', null, null, '7,9', null],
       ['browser', 'src/a.ts', null, '1-4', null, null],
     ]);
+  });
+
+  test('reads a run’s coverage back, every file or the ones matching a path, with its counts', async () => {
+    await persistRunCases(db as never, 1, 30, [execution('pays', capture(layout)), execution('browses')]);
+    const all = await getRunCoverage(db as never, 30);
+    expect(all).toMatchObject({ runId: 30, executionsWithCoverage: 1, fileCounts: { browser: 1, server: 2 } });
+    expect(all!.files).toEqual([
+      {
+        path: 'src/A.cs',
+        runtime: 'server',
+        blob: BLOB_A,
+        lines: [
+          [1, 3],
+          [5, 6],
+        ],
+        executable: [
+          [1, 10],
+          [12, 14],
+        ],
+      },
+      {
+        path: 'src/B.cs',
+        runtime: 'server',
+        lines: [
+          [7, 7],
+          [9, 9],
+        ],
+      },
+      { path: 'src/a.ts', runtime: 'browser', functions: [[1, 4]] },
+    ]);
+    // A path suffix matches as for a file's coverage; the counts stay the run's.
+    const one = await getRunCoverage(db as never, 30, { file: 'A.cs' });
+    expect(one!.files.map((f) => f.path)).toEqual(['src/A.cs']);
+    expect(one!.fileCounts).toEqual({ browser: 1, server: 2 });
+    expect((await getRunCoverage(db as never, 30, { file: 'src/Other/A.cs' }))!.files).toEqual([]);
+    const counts = await getRunCoverage(db as never, 30, { limit: 0 });
+    expect(counts!.files).toEqual([]);
+    expect(counts!.fileCounts).toEqual({ browser: 1, server: 2 });
+    expect((await getRunCoverage(db as never, 30, { limit: 1 }))!.files).toHaveLength(1);
+    expect(await getRunCoverage(db as never, 999)).toBeNull();
   });
 });
 

@@ -11,6 +11,7 @@ import { canonicalCoverageFile, decodeFunctionRanges, decodeLineRanges } from '@
 import { FAILURE_STORIES, SCM_REPOS, sourceText, storyCoverageFiles } from '#shared/demo/failure-stories.mjs';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
 import * as scene from '../../scripts/lib/suspect-lines-scene.mjs';
+import * as coverageScene from '../../scripts/lib/coverage-scene.mjs';
 
 /**
  * The demo's suspect lines over a freshly generated seed: the stories that
@@ -134,10 +135,23 @@ describe('demo suspect lines', () => {
         .update(text)
         .digest('hex');
       expect(file.blob, file.path).toBe(blob);
+      // A file the canned history changes names the same blob on its change.
       const changes = SCM_REPOS[story.projectId]!.commits.flatMap((c) => c.files).filter(
         (f) => f.filename === file.path,
       );
-      expect(changes.map((f) => f.blob)).toEqual([blob]);
+      if (changes.length > 0)
+        expect(
+          changes.map((f) => f.blob),
+          file.path,
+        ).toEqual([blob]);
+    }
+    for (const file of story.runCoverage ?? []) {
+      const text = sourceText(file.path);
+      const blob = createHash('sha1')
+        .update(`blob ${Buffer.byteLength(text)}\0`)
+        .update(text)
+        .digest('hex');
+      expect(file.blob, file.path).toBe(blob);
     }
   });
 
@@ -250,6 +264,26 @@ describe('demo suspect lines', () => {
     const shown = scene.withSceneChanges({ coverage: { scm: null } });
     expect(shown.scmChanges).toEqual(context.scmChanges);
     expect(shown.coverage.scm.range).toEqual(context.coverage.scm?.range);
+  });
+
+  test('the Coverage section scenes serve what the demo answers', async () => {
+    const { demoExecutionSuspectLines } = await import('~~/app/demo/api/suspect-lines');
+    const { getDemoSourceAtBlob } = await import('~~/app/demo/demo-scm');
+    expect(await demoExecutionSuspectLines(db, coverageScene.COVERAGE_SCENE_EXECUTION)).toEqual(
+      coverageScene.COVERAGE_SCENE_SUSPECT_LINES,
+    );
+    const rows = (
+      await client.execute(
+        `SELECT path, blob FROM run_coverage WHERE run_id = (SELECT test_run_id FROM test_runs_cases WHERE id = ${coverageScene.COVERAGE_SCENE_EXECUTION})`,
+      )
+    ).rows;
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      const [path, blob] = [String(row.path), String(row.blob)];
+      expect(coverageScene.coverageSceneSource(path, blob), path).toEqual(
+        await getDemoSourceAtBlob(coverageScene.COVERAGE_SCENE_PROJECT, path, blob),
+      );
+    }
   });
 
   test('a cluster whose tests recorded no coverage answers so', async () => {

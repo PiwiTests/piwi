@@ -235,6 +235,7 @@ export async function joinSuspectChanges(
     summary: result.summary,
     ...(unreadFiles > 0 ? { unreadFiles } : {}),
     suspects: result.suspects,
+    changedPaths: changed.filter((c) => c.status !== 'deleted').map((c) => c.path),
   };
 }
 

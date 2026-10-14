@@ -614,7 +614,7 @@ export const HELP_TOPICS = {
   'case.evidence': {
     title: 'Evidence',
     text: [
-      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the attempts of a test that retried, the page at the failure, the test source, the locators it used, the network requests, the console output, the app state at the end, and the browser performance. It opens on the tab a strong or medium clue cites when that is the source or the performance, else on the Timeline when it can place two or more items; a test that passed on retry opens on Attempts. On a cluster, the line above the tabs names the test and the run it shows.',
+      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the attempts of a test that retried, the page at the failure, the test source with what the test ran where the project records coverage, the locators it used, the network requests, the console output, the app state at the end, and the browser performance. It opens on the tab a strong or medium clue cites when that is the source or the performance, else on the Timeline when it can place two or more items; a test that passed on retry opens on Attempts. On a cluster, the line above the tabs names the test and the run it shows.',
       '',
       '- **Timeline** colors a step’s or a request’s duration only when it stands out, and **Network** a request’s by the same rule: at least 1 s, and either a third of the test or more, or twice its usual time and 1 s more, the usual time being the median over the last five passing runs on the same browser (shown under it). A step with parameters opens them from its title, and an arrow at the edge of the axis marks a bar that runs on outside the window.',
       '- **Screen** shows the page as views: its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video. **Open in picker** finds a locator on that DOM; the failing step on the timeline carries the same first three.',
@@ -648,6 +648,33 @@ export const HELP_TOPICS = {
     title: 'Test source',
     text: 'The source around the failing line and the callers above it — captured from the failure’s call stack — so you can read where it broke, and the code that led there, without opening your editor. When the execution has a trace, this deepens into the complete call stack with the real source of every frame, read from the trace’s embedded files.',
     doc: 'features/evidence#trace-powered-deep-views',
+  },
+  'case.coverage': {
+    title: 'Coverage',
+    text: [
+      'The code this test ran, as its coverage recorded it: the backend files with their lines, and the browser files.',
+      '',
+      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core today), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked, and the executable lines it did not run in a lighter mark when the run sent its own coverage.',
+      '- **Browser** — the application files whose functions ran in Chromium, by path.',
+      '- **Precision** — by line, by function, or by file, as the reporter’s `coverage` option recorded it.',
+      '- **suspect lines** — the changed lines this failing test ran, and **changed** a file changed since the last passing run; both open the cluster’s What changed card.',
+    ].join('\n'),
+    doc: 'features/code-reach#on-the-execution-page',
+  },
+  'case.coverage-incomplete': {
+    title: 'Incomplete coverage',
+    text: 'Part of this test’s coverage is missing: the backend no longer held the coverage of one of its requests when the reporter asked for it, a collection failed, a cap was reached, or part of it is no longer stored. The files listed ran; others may have too.',
+    doc: 'features/code-reach#server-code',
+  },
+  'case.coverage-none': {
+    title: 'No coverage for this test',
+    text: 'This project records coverage, but this test recorded none. Browser files are recorded in Chromium only, and backend lines only for the requests that reached a backend built for coverage; a run from before coverage was turned on, or with the reporter option off, records none.',
+    doc: 'features/code-reach',
+  },
+  'case.coverage-backend-none': {
+    title: 'No backend coverage for this test',
+    text: 'The run recorded backend coverage, but none for this test. Its requests may not have reached the instrumented backend (a page served from elsewhere, a mocked route, a request that failed), or the backend may no longer have held the coverage when the reporter asked.',
+    doc: 'features/code-reach#server-code',
   },
   'export.offline': {
     // Deliberately avoids the word "Export": the hint sits beside a button with
@@ -748,7 +775,7 @@ export const HELP_TOPICS = {
   },
   'cluster.suspect-lines-coverage': {
     title: 'Suspect lines need coverage',
-    text: 'With coverage turned on, Piwi narrows these changes to the lines the failing tests ran, ranked by how few passing tests ran them too. Server coverage records the executed lines of an ASP.NET Core backend.',
+    text: 'This project records coverage, but the failing tests of this run recorded none, so the changes are not narrowed to the lines they ran. A test records browser files in Chromium only, and backend lines only when its requests reach a backend built for coverage; the run may also predate coverage being turned on.',
     doc: 'features/code-reach#server-code',
   },
   'cluster.baseline': {

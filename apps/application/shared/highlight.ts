@@ -4,6 +4,7 @@
  */
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
+import csharp from 'highlight.js/lib/languages/csharp';
 import css from 'highlight.js/lib/languages/css';
 import diff from 'highlight.js/lib/languages/diff';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -14,7 +15,22 @@ import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
 
-const LANGUAGES = { bash, css, diff, javascript, json, powershell, python, typescript, xml, yaml } as const;
+/** C#, for a path or fence that names it only: auto-detection keeps to the languages it always chose from. */
+const csharpNamed: typeof csharp = (api) => ({ ...csharp(api), disableAutodetect: true });
+
+const LANGUAGES = {
+  bash,
+  csharp: csharpNamed,
+  css,
+  diff,
+  javascript,
+  json,
+  powershell,
+  python,
+  typescript,
+  xml,
+  yaml,
+} as const;
 
 for (const [name, language] of Object.entries(LANGUAGES)) {
   if (!hljs.getLanguage(name)) hljs.registerLanguage(name, language);
@@ -26,6 +42,7 @@ if (!hljs.getLanguage('js')) hljs.registerLanguage('js', javascript);
 if (!hljs.getLanguage('yml')) hljs.registerLanguage('yml', yaml);
 if (!hljs.getLanguage('html')) hljs.registerLanguage('html', xml);
 if (!hljs.getLanguage('pwsh')) hljs.registerLanguage('pwsh', powershell);
+if (!hljs.getLanguage('cs')) hljs.registerLanguage('cs', csharpNamed);
 
 /**
  * Auto-detection walks every registered grammar, which is far too slow for a
@@ -86,6 +103,7 @@ const EXTENSION_LANGUAGES: Record<string, string> = {
   svg: 'xml',
   vue: 'xml',
   py: 'python',
+  cs: 'csharp',
   sh: 'bash',
   bash: 'bash',
   ps1: 'powershell',

@@ -936,6 +936,7 @@ const EXPECT_KEYS = new Set([
   'incident',
   'gaps',
   'suspects',
+  'coverage',
 ]);
 const ROUTE_ENTITIES = [
   { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
@@ -1072,6 +1073,34 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       where failure_cluster_id = ${want.cluster!.id} and coverage_payload_id is not null
     `);
     expect(recorded.length, `${label}: the cluster's executions recorded coverage`).toBeGreaterThan(0);
+  }
+  if (want.coverage) {
+    expect(want.execution, `${label}: coverage needs an execution`).toBeTruthy();
+    const [execution] = q(`
+      select trc.test_run_id as runId, cp.content as content from test_runs_cases trc
+      join case_payloads cp on cp.id = trc.coverage_payload_id
+      where trc.id = ${want.execution!.id}
+    `);
+    expect(execution, `${label}: the execution recorded coverage`).toBeTruthy();
+    const ids = (JSON.parse(String(execution!.content)) as number[]).join(',');
+    const fragments = q(`select runtime, path, lines from coverage_fragments where id in (${ids})`);
+    const server = fragments.filter((f) => f.runtime === 'server');
+    expect(server.length, `${label}: server files`).toBe(want.coverage.serverFiles);
+    expect(
+      server.every((f) => f.lines),
+      `${label}: every server file names its lines`,
+    ).toBe(true);
+    expect(fragments.filter((f) => f.runtime === 'browser').length, `${label}: browser files`).toBe(
+      want.coverage.browserFiles,
+    );
+    if (want.coverage.runCoverage) {
+      const run = new Set(
+        q(`select path from run_coverage where run_id = ${execution!.runId} and executable is not null`).map((r) =>
+          String(r.path),
+        ),
+      );
+      for (const f of server) expect(run.has(String(f.path)), `${label}: run coverage of ${f.path}`).toBe(true);
+    }
   }
   if (want.lab) {
     expect(want.testCase, `${label}: lab needs a test case`).toBeTruthy();
