@@ -17,9 +17,11 @@ const fromSource =
 process.env.PIWI_PROBE_SECRET ??= PROBE_SECRET;
 process.env.PIWI_SERVER_PROBES ??= 'true';
 
-// The routes are the files under routes/, the Piwi integration is plugins/piwi-test-logs.ts.
+// The routes are the files under routes/, the Piwi integration is plugins/piwi-test-logs.ts, and its module gives the
+// route manifest the route table.
 export default defineNitroConfig({
   compatibilityDate: '2026-07-17',
+  modules: [fromSource ? here('../../../../integrations/nitro/src/module.ts') : '@piwitests/instrumentation-nitro/module'],
   alias: fromSource ? { '@piwitests/instrumentation-nitro': integrationSource } : {},
   // The server bundles the integration rather than loading it from node_modules: up to 0.52.0 its build imported its
   // own modules without a file extension, which Node does not resolve.

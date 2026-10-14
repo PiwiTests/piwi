@@ -66,7 +66,7 @@ feature its backend does not provide is skipped with the reason; `backends.ts` l
 | Tags, owners and features | `tags-and-ownership`, `shop` | ✓ | ✓ |
 | Page objects as fixtures, and [recording from the editor](https://piwitests.dev/features/editor-recording) | `shop`, `shop-recorded` | ✓ | ✓ |
 | [Backend logs](https://piwitests.dev/guide/backend-logs): the server's warnings and errors on each request | `backend-logs` | ✓ | ✓ |
-| Route manifest: the routes the backend declares, so the Test Map names the ones no test reaches (`GET /api/orders`) | `route-manifest` | ✓ | only the routes it has answered |
+| Route manifest: the routes the backend declares, so the Test Map names the ones no test reaches (`GET /api/orders`) | `route-manifest` | ✓ | ✓ |
 | Server spans on each request (`X-Piwi-Trace`) | `server-spans` | only for a probe | ✓ |
 | [Server probes](https://piwitests.dev/features/probes#server-probes): a signed fault applied inside the server | `server-probes` | ✓ | ✓ |
 | [Server coverage](https://piwitests.dev/features/code-reach#server-code): the backend lines each test ran | `server-coverage`, `shop` | ✓ | |
@@ -77,8 +77,7 @@ feature its backend does not provide is skipped with the reason; `backends.ts` l
 The reporter options are in `playwright.shared.ts`: on top of the defaults, the page inventory, a video of a failing
 test, leak reports, and `coverage: { browser: 'files', server: 'lines' }` (the server side only for a backend with
 coverage). `piwi.manifest.json` names the pages, so on the dashboard `/shop/orders` shows as declared and never
-reached. A backend whose route manifest declares its routes (ASP.NET Core) adds them, so `GET /api/orders` shows the
-same, and so does `GET /api/before-all-marker`, which only a `beforeAll` hook calls.
+reached. The backend's route manifest adds its routes, so `GET /api/orders` shows the same, and so does `GET /api/before-all-marker`, which only a `beforeAll` hook calls.
 
 ### The specs
 
@@ -308,10 +307,10 @@ export { default } from '@piwitests/instrumentation-nitro';
   build.
 - **Environment.** `nitro.config.ts` gives `nitro dev` (what `backends.ts` and `start:nitro` run) the probe secret,
   `PROBE_SECRET` from `backends.ts`, and `PIWI_SERVER_PROBES=true`, unless the environment sets them.
-- **Route manifest.** Nitro has no route table to read while it runs, so the integration's `/__piwi/manifest` lists the
-  routes the server has answered since it started, by their paths (`GET /api/products/rain-jacket`, a number folded to
-  `:id`). The reporter reads it as the run starts, before the tests reach them: `route-manifest.spec.ts` is skipped,
-  and on the dashboard the pages no test reaches come from `piwi.manifest.json` only.
+- **Route manifest.** Nitro has no route table to read while it runs: the integration's module
+  (`modules: ['@piwitests/instrumentation-nitro/module']` in `nitro.config.ts`) reads it when the server is bundled,
+  so `/__piwi/manifest` lists every route under `routes/` from the first request, `GET /shop/orders` and
+  `GET /api/orders` included. Without the module, it lists only the routes the server has answered since it started.
 - **The integration's source or its package.** Inside this repository, until an `npm install` here, `nitro.config.ts`
   builds the integration from its source (`integrations/nitro/src/`), and `tsconfig.json` type-checks against it;
   otherwise the server uses the `@piwitests/instrumentation-nitro` npm package at the version release-please pins,

@@ -155,8 +155,8 @@ uploads it with the run, so a route or page nothing reaches becomes a
   file of its handler when the build has a PDB. Static files, fallbacks and endpoints marked `ExcludeFromDescription()` are left out. See
   the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore#route-manifest) for
   every rule.
-- **Nitro** has no route table to read at runtime, so the plugin lists the routes the server has matched since it
-  started.
+- **Nitro** reads its route table at build time through the package's module
+  (`modules: ['@piwitests/instrumentation-nitro/module']`, under `nitro` in Nuxt); without it, only matched routes.
 
 ## Server probes
 

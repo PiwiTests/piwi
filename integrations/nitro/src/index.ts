@@ -14,6 +14,7 @@ import {
   collapsePathPattern,
   type ManifestRouteEntry,
 } from './manifest.js';
+import { declaredRoutes } from './route-table.js';
 import {
   routeMatchesRequest,
   faultStatus,
@@ -176,8 +177,9 @@ const PROBE_SECRET = process.env.PIWI_PROBE_SECRET || undefined;
 const MANIFEST_PATH = '/__piwi/manifest';
 
 /**
- * Routes the server has matched this process, accumulated for `/__piwi/manifest`.
- * Nitro exposes no runtime route table, so the manifest is built from observation.
+ * Routes the server has matched this process, accumulated for `/__piwi/manifest`
+ * next to the declared ones: Nitro exposes no runtime route table, so without the
+ * module (`./module`, which reads it at build time) only these are listed.
  */
 const observedRoutes = new Map<string, ManifestRouteEntry>();
 
@@ -229,13 +231,16 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   const originalHandler = nitroApp.h3App.handler;
   nitroApp.h3App.handler = ((event) => {
     // Serve the declared-surface manifest outside production (the plugin already
-    // returned early when log capture is disabled). Built from observed routes.
+    // returned early when log capture is disabled): the routes the module declared,
+    // then the ones observed.
     const requestPath = String(event.path ?? event.node.req.url ?? '').split('?')[0] ?? '';
     if (requestPath === MANIFEST_PATH) {
+      const routes = new Map<string, ManifestRouteEntry>();
+      for (const route of [...declaredRoutes(), ...observedRoutes.values()]) recordObservedRoute(routes, route);
       const res = event.node.res as any;
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify(buildRouteManifest(observedRoutes)));
+      res.end(JSON.stringify(buildRouteManifest(routes)));
       return;
     }
 

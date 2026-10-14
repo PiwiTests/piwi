@@ -56,11 +56,11 @@ export const BACKENDS = {
   nitro: {
     name: 'nitro',
     label: 'Nitro',
-    // The development server, where the integration is active. It takes the probe settings from
-    // backends/nitro/nitro.config.ts. Its route manifest lists only the routes it has answered since it started.
+    // The development server, where the integration is active. It takes the probe settings and the integration's
+    // module, which gives the route manifest Nitro's route table, from backends/nitro/nitro.config.ts.
     command: `nitro dev backends/nitro --port ${PORT}`,
     startTimeout: 60_000,
-    features: { backendLogs: true, routeManifest: false, serverSpans: true, serverProbes: true, serverCoverage: false },
+    features: { backendLogs: true, routeManifest: true, serverSpans: true, serverProbes: true, serverCoverage: false },
   },
 } satisfies Record<string, Backend>;
 
