@@ -20,8 +20,10 @@ namespace PiwiTests.Instrumentation.Tests;
 /// <summary>
 /// An in-memory app on the Generic Host with a classic <c>Configure(IApplicationBuilder)</c>
 /// pipeline. <c>/json</c> logs a warning and writes a JSON body, <c>/empty</c> logs a warning
-/// and ends with no body, <c>/throw</c> logs a warning and throws, and <c>/error</c> logs a
-/// warning and then an error carrying a thrown exception.
+/// and ends with no body, <c>/throw</c> logs a warning and throws, <c>/error</c> logs a
+/// warning and then an error carrying a thrown exception, and <c>/rethrow</c> logs a warning,
+/// then an error carrying a thrown exception, and rethrows it. <c>outer</c> runs before the
+/// Piwi middleware, <c>inner</c> between it and the handler.
 /// </summary>
 internal sealed class TestApp : IAsyncDisposable
 {
@@ -42,7 +44,8 @@ internal sealed class TestApp : IAsyncDisposable
         Action<IApplicationBuilder, IHostEnvironment> usePiwi,
         Action<IServiceCollection>? services = null,
         Action<IApplicationBuilder>? outer = null,
-        Action<IHostBuilder>? hostBuilder = null)
+        Action<IHostBuilder>? hostBuilder = null,
+        Action<IApplicationBuilder>? inner = null)
     {
         var builder = new HostBuilder();
         hostBuilder?.Invoke(builder);
@@ -59,6 +62,7 @@ internal sealed class TestApp : IAsyncDisposable
                 {
                     outer?.Invoke(app);
                     usePiwi(app, context.HostingEnvironment);
+                    inner?.Invoke(app);
                     app.Run(HandleAsync);
                 }))
             .StartAsync();
@@ -114,6 +118,16 @@ internal sealed class TestApp : IAsyncDisposable
                 }
                 await context.Response.WriteAsJsonAsync(new { ok = false });
                 return;
+            case "/rethrow":
+                try
+                {
+                    throw new InvalidOperationException("boom");
+                }
+                catch (InvalidOperationException e)
+                {
+                    logger.LogError(e, "Order {OrderId} failed", 7);
+                    throw;
+                }
             default:
                 await context.Response.WriteAsJsonAsync(new { ok = true });
                 return;

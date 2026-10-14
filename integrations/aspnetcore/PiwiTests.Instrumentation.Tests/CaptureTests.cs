@@ -13,6 +13,7 @@ public class CaptureTests
         Assert.False(PiwiTestLogCapture.IsCapturing);
 
         PiwiTestLogCapture.TryAdd(LogLevel.Error, "Orders", "dropped", null);
+        PiwiTestLogCapture.TryAddUnhandled(Thrown());
 
         Assert.Null(PiwiTestLogCapture.Stop());
     }
@@ -53,6 +54,38 @@ public class CaptureTests
 
         Assert.Equal("boom", entry.ExceptionMessage);
         Assert.Contains("p.i.t.CaptureTests.Thrown", entry.StackTrace);
+    }
+
+    [Fact]
+    public void Records_an_unhandled_exception_as_an_error_named_by_its_type()
+    {
+        PiwiTestLogCapture.Begin();
+        PiwiTestLogCapture.TryAddUnhandled(Thrown());
+
+        var entry = Assert.Single(PiwiTestLogCapture.Stop()!);
+
+        Assert.Equal("Error", entry.Level);
+        Assert.Equal("System.InvalidOperationException", entry.Category);
+        Assert.Equal("boom", entry.Message);
+        Assert.Equal("boom", entry.ExceptionMessage);
+        Assert.Contains("p.i.t.CaptureTests.Thrown", entry.StackTrace);
+    }
+
+    [Fact]
+    public void Records_an_unhandled_exception_once_unless_a_captured_entry_already_carries_it()
+    {
+        PiwiTestLogCapture.Begin();
+        var logged = Thrown();
+        var loggedBelowWarning = Thrown();
+        PiwiTestLogCapture.TryAdd(LogLevel.Error, "Orders", "failed", logged);
+        PiwiTestLogCapture.TryAdd(LogLevel.Information, "Orders", "retrying", loggedBelowWarning);
+        PiwiTestLogCapture.TryAddUnhandled(logged);
+        PiwiTestLogCapture.TryAddUnhandled(loggedBelowWarning);
+        PiwiTestLogCapture.TryAddUnhandled(loggedBelowWarning);
+
+        var logs = PiwiTestLogCapture.Stop()!;
+
+        Assert.Equal(["failed", "boom"], logs.Select(e => e.Message));
     }
 
     [Fact]

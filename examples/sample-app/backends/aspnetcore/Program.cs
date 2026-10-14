@@ -1,6 +1,5 @@
 using Microsoft.Extensions.FileProviders;
 using PiwiTests.Instrumentation.AspNetCore;
-using SampleApp;
 using SampleApp.Endpoints;
 using SampleApp.Services;
 
@@ -9,8 +8,6 @@ var builder = WebApplication.CreateBuilder(args);
 // Backend logs: the Warning, Error and Critical entries each request logs, for the middleware below.
 builder.AddPiwiTestLogs();
 
-builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<UnhandledExceptionHandler>();
 builder.Services.AddSingleton<PriceFeed>();
 builder.Services.AddSingleton<InventoryService>();
 builder.Services.AddSingleton<UserDirectory>();
@@ -27,9 +24,6 @@ var app = builder.Build();
 // the server probes (PIWI_PROBE_SECRET, PIWI_SERVER_PROBES) and, in a coverage build (-p:PiwiCoverage=true), the
 // X-Piwi-Coverage header and the /__piwi/coverage endpoints. Active in the Development and Test environments.
 app.UsePiwiTestLogs();
-
-// Inside the Piwi middleware: UnhandledExceptionHandler logs an unhandled exception before its 500 response starts.
-app.UseExceptionHandler();
 
 app.UseStaticFiles(new StaticFileOptions
 {

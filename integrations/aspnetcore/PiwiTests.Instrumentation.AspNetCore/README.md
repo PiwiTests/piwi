@@ -126,9 +126,22 @@ Each captured entry contains:
 |--------------------|------------------------------------------------------------------------------------------------------|
 | `timestamp`        | Unix timestamp in milliseconds                                                                       |
 | `level`            | `"Warning"`, `"Error"`, or `"Critical"`                                                              |
-| `category`         | Logger category name (e.g. `MyApp.Services.OrderService`)                                            |
-| `message`          | Formatted log message                                                                                |
+| `category`         | Logger category name (e.g. `MyApp.Services.OrderService`); the exception's type for an [unhandled exception](#unhandled-exceptions) |
+| `message`          | Formatted log message; the exception message for an unhandled exception                              |
 | `stack`            | Exception message, then the shrunk stack trace (5 frames max, framework frames removed, namespace parts shortened to first letter); omitted when no exception was logged |
+
+### Unhandled exceptions
+
+ASP.NET Core logs an unhandled exception too late for the header: the developer exception page `WebApplication` adds in Development, like any exception handler registered before `UsePiwiTestLogs()`, logs it once the middleware's capture has ended, and on .NET 10 an exception handler registered after it logs it once its response has started, or not at all when an `IExceptionHandler` handled it. So the middleware records the exception itself, as an Error entry: the exception's type as `category` (e.g. `System.InvalidOperationException`), its message as `message`, and its `stack`.
+
+| The exception is answered by                                                                                      | Recorded                                                                 |
+|-------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| A handler outside the middleware: the developer exception page, or `UseExceptionHandler()` before `UsePiwiTestLogs()` | As it leaves the middleware, which rethrows it unchanged               |
+| A handler inside the middleware: `UseExceptionHandler()` after `UsePiwiTestLogs()`, with or without an `IExceptionHandler` | As the handler's response starts, when it answers with a server error (5xx); an exception it turns into a 4xx is the app's answer and is not recorded |
+
+An exception is recorded once per request: when the application logs that same exception instance before the response starts (an `IExceptionHandler` that logs it, then answers, or a handler that logs it and rethrows), its own entry is kept and no other is added.
+
+With no exception handling at all (outside Development, a `WebApplication` without `UseExceptionHandler()`), the server answers with a bare 500 that keeps none of the response's headers, so nothing reaches the reporter, `X-Piwi-Logs` included. Register `AddProblemDetails()` and `UseExceptionHandler()` in the environments the middleware is active in. An exception thrown after the response has started (while a body streams) cannot ride on it either.
 
 ## Requirements
 

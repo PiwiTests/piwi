@@ -39,7 +39,7 @@ public static class DemoEndpoints
     /// <summary>The stock report, which logs a warning and an error on its way.</summary>
     public static Ok<StockReport> Report(InventoryService inventory) => TypedResults.Ok(inventory.Report());
 
-    /// <summary>An unhandled exception: the exception handler answers a 500 and logs the error.</summary>
+    /// <summary>An unhandled exception: the developer exception page answers a 500, which carries the error.</summary>
     public static Ok<OkBody> Failing(InventoryService inventory)
     {
         inventory.Sync();

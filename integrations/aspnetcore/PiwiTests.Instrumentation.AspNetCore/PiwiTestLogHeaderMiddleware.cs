@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 
 namespace PiwiTests.Instrumentation.AspNetCore;
@@ -82,6 +83,12 @@ public sealed class PiwiTestLogHeaderMiddleware
         var captureEnded = false;
         context.Response.OnStarting(() =>
         {
+            // An exception handler inside this middleware answers an exception with a server error:
+            // record it now, as the framework may log it only after this response starts, or not at
+            // all. An exception it turns into a 4xx is the app's answer, not a server error.
+            if (!captureEnded && context.Response.StatusCode >= 500
+                && context.Features.Get<IExceptionHandlerFeature>()?.Error is { } handled)
+                PiwiTestLogCapture.TryAddUnhandled(handled);
             var logs = captureEnded ? endedLogs : PiwiTestLogCapture.Stop();
             WriteInstrumentationHeaders(context, probe, startMs, logs);
             if (coverage is not null && _coverage.Name(coverage) is { } requestId)
@@ -130,6 +137,14 @@ public sealed class PiwiTestLogHeaderMiddleware
 
             if (!faultEndedResponse)
                 await _next(context);
+        }
+        catch (Exception exception)
+        {
+            // The exception leaves the code this middleware wraps: the app's exception handling
+            // (the developer exception page, an outer UseExceptionHandler, the server) logs it
+            // after this capture ends, so it is recorded here, then rethrown unchanged.
+            PiwiTestLogCapture.TryAddUnhandled(exception);
+            throw;
         }
         finally
         {
