@@ -3,9 +3,9 @@
  * The suspect lines of the What changed card: the changed hunks the cluster's
  * failing tests ran, most suspect first, each with its file (open in the IDE),
  * its lines, its granularity in words, and how many failing and passing tests
- * ran it; the score is on hover. A meta line says whose coverage it read, and
- * the range when the diff below is not of the same commits. The first five
- * show; the rest unfold.
+ * ran it; the score is on hover. A meta line says whose coverage it read, the
+ * range when the diff below is not of the same commits, and how many changed
+ * files had no patch to check. The first five show; the rest unfold.
  */
 import type { ClusterSuspectLinesAnswer } from '~~/types/api';
 import { lineRangesText, suspectGranularityLabel, suspectLinesSentence, testCountText } from '~/utils/suspect-lines';
@@ -22,13 +22,19 @@ const showAll = ref(false);
 const shown = computed(() => (showAll.value ? props.answer.suspects : props.answer.suspects.slice(0, FIRST)));
 const hidden = computed(() => props.answer.suspects.length - shown.value.length);
 
-/** Whose coverage the list reads, and the range when the diff below shows another. */
+/**
+ * Whose coverage the list reads, the range when the diff below shows another,
+ * and the changed files whose lines it could not check.
+ */
 const meta = computed(() => {
-  const { summary, runId, range } = props.answer;
+  const { summary, runId, range, unreadFiles } = props.answer;
   const tests = `${testCountText(summary.failingWithCoverage, 'failing')} and ${testCountText(summary.passingWithCoverage, 'passing')} with coverage`;
   const run = runId != null ? `, in run #${runId}` : '';
   const since = !props.marked && range ? ` · ${range.from.slice(0, 7)}..${range.to.slice(0, 7)}` : '';
-  return `${tests}${run}${since}`;
+  const unread = unreadFiles
+    ? ` · ${unreadFiles} changed file${unreadFiles === 1 ? '' : 's'} not checked (no patch)`
+    : '';
+  return `${tests}${run}${since}${unread}`;
 });
 
 /** With no hunk the failing tests ran, the sentence that says so. */

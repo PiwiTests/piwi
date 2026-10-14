@@ -303,19 +303,7 @@ async function loadFragments(db: DrizzleDB, ids: number[]) {
  * fragment it names no longer exists. Null when there is no such execution.
  */
 export async function getExecutionCoverage(db: DrizzleDB, executionId: number): Promise<CoverageCapture | null> {
-  const [row] = await db
-    .select({ payloadId: testRunsCases.coveragePayloadId })
-    .from(testRunsCases)
-    .where(eq(testRunsCases.id, executionId));
-  if (!row) return null;
-  if (row.payloadId == null) return { v: 1, files: [] };
-  const content = (await resolveCasePayloadContents(db, [row.payloadId])).get(row.payloadId);
-  const payload = parseCoveragePayload(content);
-  if (!payload) return { v: 1, files: [], incomplete: true };
-  const ids = [...new Set(payload.fragmentIds)];
-  const fragments = await loadFragments(db, ids);
-  const files = fragments.map(fragmentFile).sort(compareFiles);
-  return payload.incomplete || fragments.length < ids.length ? { v: 1, files, incomplete: true } : { v: 1, files };
+  return (await getExecutionsCoverage(db, [executionId])).get(executionId) ?? null;
 }
 
 /** A repository-relative path's file name, the part `sameFilePath` always compares. */

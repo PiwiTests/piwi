@@ -29,12 +29,8 @@ import { inlineCasePayloads } from './case-payloads';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { LocalGitProvider } from './scm/local-git';
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
-import {
-  CONTEXT_SUSPECTS,
-  suspectFilesFirst,
-  suspectLinesReasonText,
-  suspectLinesSection,
-} from '#shared/suspect-lines';
+import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
+import { suspectLinesContext, suspectLinesReasonText } from '#shared/suspect-lines';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
 import type {
@@ -253,7 +249,7 @@ function renderBudgetedPatches(
       continue;
     }
     const patch =
-      f.patch.length > budget.remaining ? f.patch.slice(0, budget.remaining) + '\n[... patch truncated ...]' : f.patch;
+      f.patch.length > budget.remaining ? `${f.patch.slice(0, budget.remaining)}\n${PATCH_TRUNCATED_NOTE}` : f.patch;
     budget.remaining -= Math.min(f.patch.length, budget.remaining);
     patches.push(`--- ${f.filename}\n${patch}`);
   }
@@ -2454,16 +2450,10 @@ async function scmInvestigationSections(
         () => null,
       );
       if (suspects?.available) {
-        changes.files = suspectFilesFirst(changes.files, suspects.suspects);
-        sections.push({ id: 'suspectLines', markdown: suspectLinesSection(suspects) });
-        suspectLines = {
-          coverage: {
-            suspects: Math.min(suspects.suspects.length, CONTEXT_SUSPECTS),
-            changedLines: suspects.summary.changedLines,
-            executedLines: suspects.summary.executedLines,
-          },
-          absentReason: null,
-        };
+        const context = suspectLinesContext(suspects, changes.files, { from: fromSha, to: toSha });
+        changes.files = context.files;
+        sections.push({ id: 'suspectLines', markdown: context.markdown });
+        suspectLines = { coverage: context.coverage, absentReason: null };
       } else if (suspects?.reason) {
         suspectLines = { coverage: null, absentReason: suspectLinesReasonText(suspects.reason) };
       }

@@ -231,6 +231,20 @@ describe('suspectLines: paths', () => {
     expect(result.suspects[0]).toMatchObject({ path: 'web/src/Pay.vue', runtime: 'browser', granularity: 'functions' });
   });
 
+  test('a bare file name matches no file in another folder, either way', () => {
+    const result = suspectLines({
+      changes: [change('apps/admin/index.ts', [3]), change('App.tsx', [4])],
+      failing: [
+        capture(
+          { path: 'index.ts', runtime: 'browser', lines: [[3, 3]] },
+          { path: 'apps/web/App.tsx', runtime: 'browser', lines: [[4, 4]] },
+        ),
+      ],
+      passing: [],
+    });
+    expect(result.suspects).toEqual([]);
+  });
+
   test('the runtime is the one most failing captures executed the hunk in', () => {
     const file = (runtime: 'browser' | 'server'): CoverageFile => ({ path: 'shared/price.ts', runtime });
     const result = suspectLines({

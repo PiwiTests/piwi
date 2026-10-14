@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { SuspectLine, SuspectLinesAnswer } from '#shared/suspect-lines';
+import { suspectLinesContext, type SuspectLine, type SuspectLinesAnswer } from '#shared/suspect-lines';
 import { parsePatchLines } from '~/utils';
 import {
   lineRangesText,
@@ -154,6 +154,11 @@ describe('marking the suspect lines in a diff', () => {
     expect(patchHeadLines(parsePatchLines(PATCH))).toEqual([null, 54, null, 55, 56, 57, null, null, 91, null]);
   });
 
+  test('a removed line that starts with `--` does not shift the head-side lines after it', () => {
+    const sql = ['@@ -10,3 +10,3 @@', '--- the old note', '+-- the new note', ' select 1;', '+'].join('\n');
+    expect(patchHeadLines(parsePatchLines(sql))).toEqual([null, null, 10, 11, 12]);
+  });
+
   test('the marks of a file merge its suspects’ lines, normalized', () => {
     const marks = suspectMarks([
       suspect({ lines: [[60, 61]] }),
@@ -167,5 +172,32 @@ describe('marking the suspect lines in a diff', () => {
       ],
       'src/b.ts': [[1, 1]],
     });
+  });
+});
+
+describe('suspect lines in the AI context', () => {
+  const files = [{ filename: 'src/Web/Program.cs' }, { filename: BASKET }];
+  const cluster = (over: Partial<SuspectLinesAnswer> = {}) => ({ ...answer([suspect()]), runId: 6, ...over });
+
+  test('next to the diff they were read on, their files come first', () => {
+    const context = suspectLinesContext(cluster(), files, { from: 'a'.repeat(7), to: 'b'.repeat(7) });
+    expect(context.files.map((f) => f.filename)).toEqual([BASKET, 'src/Web/Program.cs']);
+    expect(context.markdown).toContain('The patches of these files come first');
+    expect(context.markdown).not.toContain('another range');
+    expect(context.coverage).toEqual({ suspects: 1, changedLines: 13, executedLines: 3 });
+  });
+
+  test('next to another range or hand-picked commits, the files keep their order and the section says so', () => {
+    for (const shown of [{ from: 'a'.repeat(40), to: 'c'.repeat(40) }, null]) {
+      const context = suspectLinesContext(cluster(), files, shown);
+      expect(context.files).toEqual(files);
+      expect(context.markdown).toContain('The changed files below are of another range than these lines');
+      expect(context.markdown).not.toContain('come first');
+    }
+  });
+
+  test('says how many changed files had no patch to check', () => {
+    const context = suspectLinesContext(cluster({ unreadFiles: 2 }), files, null);
+    expect(context.markdown).toContain('- 2 changed files had no complete patch, so their lines were not checked.');
   });
 });

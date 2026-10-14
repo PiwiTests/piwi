@@ -35,11 +35,7 @@ export default eventHandler(async (event) => {
 
   const plan = await buildFixPlan(db, clusterId);
   if (!plan) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
-  const enriched = await withFixPlanSuspectLines(
-    db,
-    clusterId,
-    await enrichFixPlanOwnership(db, cluster.projectId, plan),
-  );
+  const enriched = await withFixPlanSuspectLines(db, clusterId, enrichFixPlanOwnership(db, cluster.projectId, plan));
 
   if (getQuery(event).format === 'markdown') {
     setResponseHeader(event, 'Content-Type', 'text/markdown; charset=utf-8');

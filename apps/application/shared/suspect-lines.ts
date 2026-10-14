@@ -31,6 +31,12 @@ export interface SuspectLinesAnswer {
   /** The last green run the range starts at. */
   baselineRunId?: number;
   summary: SuspectLinesSummary;
+  /**
+   * Changed files whose lines were not checked: the host gave no patch for
+   * them or cut it short, or listed only the range's first files. Absent when
+   * every changed file was read.
+   */
+  unreadFiles?: number;
   /** Most suspect first, at most 50. */
   suspects: SuspectLine[];
 }
@@ -123,21 +129,28 @@ export function suspectLinesLead(answer: SuspectLinesAnswer): string {
 }
 
 /** Suspects listed in the AI context at most. */
-export const CONTEXT_SUSPECTS = 10;
+const CONTEXT_SUSPECTS = 10;
 
 /** Changed files with the files of the suspects first, in suspect order, then the rest in their order. */
-export function suspectFilesFirst<T extends { filename: string }>(files: T[], suspects: Array<{ path: string }>): T[] {
+function suspectFilesFirst<T extends { filename: string }>(files: T[], suspects: Array<{ path: string }>): T[] {
   const rank = new Map<string, number>();
   for (const suspect of suspects) if (!rank.has(suspect.path)) rank.set(suspect.path, rank.size);
   const first = files.filter((f) => rank.has(f.filename)).sort((a, b) => rank.get(a.filename)! - rank.get(b.filename)!);
   return [...first, ...files.filter((f) => !rank.has(f.filename))];
 }
 
+/** Whether two commit SHAs, either one possibly short, name the same commit. */
+function sameCommit(a: string, b: string): boolean {
+  return a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a));
+}
+
 /**
  * The AI context's "Changed Lines the Failing Tests Executed" section: the
- * summary and the top suspects, at most {@link CONTEXT_SUSPECTS}.
+ * summary and the top suspects, at most {@link CONTEXT_SUSPECTS}. `sameDiff`
+ * says whether the changed files listed below are the diff the suspect lines
+ * were read on, so their patches come first and share their line numbers.
  */
-export function suspectLinesSection(answer: ClusterSuspectLinesAnswer): string {
+function suspectLinesSection(answer: ClusterSuspectLinesAnswer, sameDiff: boolean): string {
   const { summary } = answer;
   const shown = answer.suspects.slice(0, CONTEXT_SUSPECTS);
   const failing = `${summary.failingWithCoverage} failing execution${summary.failingWithCoverage === 1 ? '' : 's'}`;
@@ -148,9 +161,19 @@ export function suspectLinesSection(answer: ClusterSuspectLinesAnswer): string {
     suspectLinesLead(answer),
     `- Coverage${run}: ${failing}, ${passing} of the same run.`,
   ];
-  if (shown.length > 0) {
+  if (answer.unreadFiles) {
+    const files = `${answer.unreadFiles} changed file${answer.unreadFiles === 1 ? '' : 's'}`;
+    lines.push(`- ${files} had no complete patch, so their lines were not checked.`);
+  }
+  if (!sameDiff) {
     lines.push(
-      '- Ranked by evidence (executed lines, then a function that ran, then the file reached), then by how few passing executions ran the same lines (Ochiai score, 1 when only failing executions ran them). The patches of these files come first in the changed files below.',
+      '- The changed files below are of another range than these lines: their patches can number the same lines differently.',
+    );
+  }
+  if (shown.length > 0) {
+    const first = sameDiff ? ' The patches of these files come first in the changed files below.' : '';
+    lines.push(
+      `- Ranked by evidence (executed lines, then a function that ran, then the file reached), then by how few passing executions ran the same lines (Ochiai score, 1 when only failing executions ran them).${first}`,
       '',
       ...shown.map(suspectLineMarkdown),
     );
@@ -158,4 +181,37 @@ export function suspectLinesSection(answer: ClusterSuspectLinesAnswer): string {
     if (more > 0) lines.push(`- … and ${more} more executed hunk${more === 1 ? '' : 's'}`);
   }
   return lines.join('\n');
+}
+
+/** What the AI context takes from a cluster's suspect lines, next to the changed files it lists. */
+export interface SuspectLinesContext<T> {
+  /** The "Changed Lines the Failing Tests Executed" section. */
+  markdown: string;
+  /** The changed files, the suspects' files first when they are the diff the suspect lines were read on. */
+  files: T[];
+  /** The counts the context preview shows. */
+  coverage: { suspects: number; changedLines: number; executedLines: number };
+}
+
+/**
+ * A cluster's suspect lines in the AI context, next to the changed files of
+ * `shown` (the range of the diff it lists; null when it is no range, such as
+ * hand-picked commits). Read on another head commit, the section says so and
+ * the files keep their order. The server's context and the demo's share it.
+ */
+export function suspectLinesContext<T extends { filename: string }>(
+  answer: ClusterSuspectLinesAnswer,
+  files: T[],
+  shown: { from: string; to: string } | null,
+): SuspectLinesContext<T> {
+  const sameDiff = Boolean(shown && answer.range && sameCommit(answer.range.to, shown.to));
+  return {
+    markdown: suspectLinesSection(answer, sameDiff),
+    files: sameDiff ? suspectFilesFirst(files, answer.suspects) : files,
+    coverage: {
+      suspects: Math.min(answer.suspects.length, CONTEXT_SUSPECTS),
+      changedLines: answer.summary.changedLines,
+      executedLines: answer.summary.executedLines,
+    },
+  };
 }

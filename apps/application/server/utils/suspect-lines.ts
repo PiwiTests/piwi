@@ -14,6 +14,7 @@
 import {
   clusterSuspectTarget,
   executionSuspectTarget,
+  hasFiles,
   joinSuspectChanges,
   readFailingCaptures,
   type SuspectRun,
@@ -95,16 +96,15 @@ async function suspectLinesOfRun(
   const cached = answers.get(cacheKey) ?? scmFailures.get(cacheKey);
   if (cached) return cached;
 
-  const failing = await readFailingCaptures(db, failingIds);
-  if (!failing.some((capture) => capture.files.length > 0)) return unavailableSuspectLines('no-coverage', known);
-
   const changes = await fetchRangeChanges(db, run.projectId, range.repositoryUrl, range.from, range.to);
   if (!changes) {
-    const answer = unavailableSuspectLines('no-scm', known);
-    scmFailures.set(cacheKey, answer);
+    // Without the changes, whether the failing executions recorded a file at all decides the reason.
+    const recorded = (await readFailingCaptures(db, failingIds, [])).some(hasFiles);
+    const answer = unavailableSuspectLines(recorded ? 'no-scm' : 'no-coverage', known);
+    (recorded ? scmFailures : answers).set(cacheKey, answer);
     return answer;
   }
-  const answer = await joinSuspectChanges(db, run, failing, changes, known);
+  const answer = await joinSuspectChanges(db, run, failingIds, changes, known);
   answers.set(cacheKey, answer);
   return answer;
 }
@@ -137,7 +137,8 @@ export async function suspectLinesForCluster(db: DbClient, clusterId: number): P
 /**
  * The suspect lines of a cluster for changes already fetched for `range`:
  * joined with them when the run the cluster's coverage comes from tested the
- * range's head commit, the cluster's own answer otherwise.
+ * range's head commit (kept per cluster, run and range), the cluster's own
+ * answer otherwise, whose range then differs from `range`.
  */
 export async function clusterSuspectLinesForChanges(
   db: DbClient,
@@ -149,20 +150,25 @@ export async function clusterSuspectLinesForChanges(
   if (target.reason) return { ...unavailableSuspectLines(target.reason), runId: target.runId };
   const commit = (target.run.metadata as RunMetadata | null)?.scm?.commit ?? null;
   if (commit !== range.to) return suspectLinesForCluster(db, clusterId);
-  const failing = await readFailingCaptures(db, target.failingIds);
-  const known = { range };
-  if (!failing.some((capture) => capture.files.length > 0)) {
-    return { ...unavailableSuspectLines('no-coverage', known), runId: target.run.id };
+  const cacheKey = `changes:cluster:${clusterId}:${target.run.id}\x00${range.from}..${range.to}`;
+  let answer = answers.get(cacheKey);
+  if (!answer) {
+    answer = await joinSuspectChanges(db, target.run, target.failingIds, changes, { range });
+    answers.set(cacheKey, answer);
   }
-  return { ...(await joinSuspectChanges(db, target.run, failing, changes, known)), runId: target.run.id };
+  return { ...answer, runId: target.run.id };
 }
 
-/** A fix plan with its cluster's top suspect lines; the plan unchanged when they cannot be read. */
+/**
+ * A fix plan with its cluster's top suspect lines; the plan unchanged when
+ * they cannot be read. They are read while `plan` resolves, when it is still
+ * being built.
+ */
 export async function withFixPlanSuspectLines<T extends { suspectLines: ClusterSuspectLinesAnswer | null }>(
   db: DbClient,
   clusterId: number,
-  plan: T,
+  plan: T | Promise<T>,
 ): Promise<T> {
-  const answer = await suspectLinesForCluster(db, clusterId).catch(() => null);
-  return answer ? { ...plan, suspectLines: fixPlanSuspectLines(answer) } : plan;
+  const [resolved, answer] = await Promise.all([plan, suspectLinesForCluster(db, clusterId).catch(() => null)]);
+  return answer ? { ...resolved, suspectLines: fixPlanSuspectLines(answer) } : resolved;
 }

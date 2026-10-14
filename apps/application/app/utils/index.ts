@@ -612,12 +612,44 @@ export const patchLineClass: Record<PatchLineType, string> = {
 /** The mark on a diff row a failing test ran (a suspect line): a bar on its left edge, in the text's color. */
 export const SUSPECT_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--ui-text-highlighted)]';
 
-/** Split a unified-diff patch into typed lines for colored rendering. */
+const HUNK_COUNTS = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
+
+/**
+ * Split a unified-diff patch into typed lines for colored rendering. Inside a
+ * hunk, the line counts of its header say how many rows follow, so a removed
+ * line that starts with `--` (the row `---`) is a removal and an added `++`
+ * line an addition; outside one, `---` and `+++` are file headers.
+ */
 export function parsePatchLines(patch: string): PatchLine[] {
-  return patch.split('\n').map((line) => {
+  let oldLeft = 0;
+  let newLeft = 0;
+  return patch.split('\n').map((line): PatchLine => {
+    if (oldLeft > 0 || newLeft > 0) {
+      if (line.startsWith('-') && oldLeft > 0) {
+        oldLeft--;
+        return { type: 'remove', text: line };
+      }
+      if (line.startsWith('+') && newLeft > 0) {
+        newLeft--;
+        return { type: 'add', text: line };
+      }
+      if ((line.startsWith(' ') || line === '') && oldLeft > 0 && newLeft > 0) {
+        oldLeft--;
+        newLeft--;
+        return { type: 'context', text: line };
+      }
+      if (line.startsWith('\\')) return { type: 'context', text: line };
+      oldLeft = 0;
+      newLeft = 0;
+    }
+    const counts = HUNK_COUNTS.exec(line);
+    if (counts) {
+      oldLeft = counts[1] === undefined ? 1 : Number(counts[1]);
+      newLeft = counts[2] === undefined ? 1 : Number(counts[2]);
+    }
+    if (line.startsWith('@@')) return { type: 'hunk', text: line };
     if (line.startsWith('+') && !line.startsWith('+++')) return { type: 'add', text: line };
     if (line.startsWith('-') && !line.startsWith('---')) return { type: 'remove', text: line };
-    if (line.startsWith('@@')) return { type: 'hunk', text: line };
     return { type: 'context', text: line };
   });
 }

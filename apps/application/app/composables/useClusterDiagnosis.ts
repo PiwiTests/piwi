@@ -84,6 +84,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
 
   const suspectLines = ref<ClusterSuspectLinesAnswer | null>(null);
   let suspectLinesRequest: Promise<void> | null = null;
+  let suspectLinesAsked = 0;
 
   const diagnosis = ref<FailureDiagnosis | null>(null);
   const posting = ref(false);
@@ -138,14 +139,16 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
 
   // The suspect lines read source control and coverage, which can take a while:
   // the first component that shows them asks for them, after the page mounted.
+  // Only the latest request's answer is kept, whichever arrives first.
   function loadSuspectLines(force = false): Promise<void> {
     if (suspectLinesRequest && !force) return suspectLinesRequest;
+    const asked = ++suspectLinesAsked;
     suspectLinesRequest = $fetch<ClusterSuspectLinesAnswer>(`/api/failure-clusters/${clusterId}/suspect-lines`)
       .then((answer) => {
-        suspectLines.value = answer;
+        if (asked === suspectLinesAsked) suspectLines.value = answer;
       })
       .catch(() => {
-        suspectLines.value = null;
+        if (asked === suspectLinesAsked) suspectLines.value = null;
       });
     return suspectLinesRequest;
   }

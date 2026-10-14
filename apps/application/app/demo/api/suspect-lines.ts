@@ -9,7 +9,6 @@ import {
   clusterSuspectTarget,
   executionSuspectTarget,
   joinSuspectChanges,
-  readFailingCaptures,
   type SuspectRun,
 } from '#shared/handlers/suspect-lines';
 import {
@@ -21,13 +20,11 @@ import type { DrizzleDB } from '#shared/handlers/db';
 import { getDemoChangesSince, getDemoDefaultRange } from '../demo-scm';
 
 /** The suspect lines of failing executions of one run, over the project's default demo range. */
-async function joinDemoChanges(db: DrizzleDB, run: SuspectRun, failingIds: number[]): Promise<SuspectLinesAnswer> {
+function joinDemoChanges(db: DrizzleDB, run: SuspectRun, failingIds: number[]): Promise<SuspectLinesAnswer> {
   const range = getDemoDefaultRange(run.projectId);
   const changes = range ? getDemoChangesSince(run.projectId, range.from) : null;
-  if (!range || !changes) return unavailableSuspectLines('no-scm');
-  const failing = await readFailingCaptures(db, failingIds);
-  if (!failing.some((capture) => capture.files.length > 0)) return unavailableSuspectLines('no-coverage', { range });
-  return joinSuspectChanges(db, run, failing, changes, { range });
+  if (!range || !changes) return Promise.resolve(unavailableSuspectLines('no-scm'));
+  return joinSuspectChanges(db, run, failingIds, changes, { range });
 }
 
 /** An execution's suspect lines; null when there is no such execution. */

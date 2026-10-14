@@ -5,6 +5,7 @@ import {
   type CompiledCodeowners,
 } from '@piwitests/core/codeowners';
 import type { CiRerunSettings } from '#shared/ci-rerun';
+import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
 
 /** What a CI re-run dispatch carries besides the Playwright arguments. */
 export interface RerunDispatchRequest {
@@ -102,7 +103,7 @@ export const FETCH_TIMEOUT_MS = 10_000;
 
 export function truncatePatch(patch: string): string {
   if (patch.length <= MAX_PATCH_PER_FILE) return patch;
-  return patch.slice(0, MAX_PATCH_PER_FILE) + '\n[... patch truncated ...]';
+  return `${patch.slice(0, MAX_PATCH_PER_FILE)}\n${PATCH_TRUNCATED_NOTE}`;
 }
 
 /** FNV-1a 32-bit hash → 8 hex chars. Stable, dependency-free, good enough to namespace cache keys by token. */

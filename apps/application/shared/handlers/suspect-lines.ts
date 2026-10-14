@@ -15,6 +15,7 @@ import { testRuns, testRunsCases } from '../../server/database/schema';
 import { getExecutionsCoverage } from '../../server/utils/coverage';
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import { unavailableSuspectLines, type SuspectLinesAnswer, type SuspectLinesReason } from '../suspect-lines';
+import { PATCH_TRUNCATED_NOTE } from '../patch';
 import type { DrizzleDB } from './db';
 
 /** Failing executions of a cluster's run whose coverage is read, at most. */
@@ -108,9 +109,16 @@ export async function clusterSuspectTarget(db: DrizzleDB, clusterId: number): Pr
   return { run, failingIds: failing.map((row) => row.id) };
 }
 
-/** The coverage of the failing executions of a target, every file with its ranges. */
-export async function readFailingCaptures(db: DrizzleDB, failingIds: number[]): Promise<CoverageCapture[]> {
-  const coverage = await getExecutionsCoverage(db, failingIds);
+/**
+ * The coverage of the failing executions of a target; with `paths`, only the
+ * files matching them keep their ranges (none with `[]`), else every file.
+ */
+export async function readFailingCaptures(
+  db: DrizzleDB,
+  failingIds: number[],
+  paths?: string[],
+): Promise<CoverageCapture[]> {
+  const coverage = await getExecutionsCoverage(db, failingIds, paths ? { rangesFor: paths } : {});
   return failingIds.flatMap((id) => {
     const capture = coverage.get(id);
     return capture ? [capture] : [];
@@ -155,6 +163,9 @@ export interface SuspectRangeChanges {
   }>;
   /** true when the provider left out every patch, the diff being too large. */
   patchesOmitted?: boolean;
+  /** true when the provider listed only the range's first files, `totalChangedFiles` of them in all when known. */
+  filesTruncated?: boolean;
+  totalChangedFiles?: number;
 }
 
 /** A provider's file status as the diff names it. */
@@ -177,29 +188,57 @@ function suspectChangesOf(files: SuspectRangeChanges['files']): SuspectChange[] 
 }
 
 /**
- * Join a range's changes with the coverage of the failing executions and of
- * the run's passing ones. With no changed line on the head side, `no-scm` when
- * the provider left out the patches of files whose lines changed, `no-changes`
- * otherwise.
+ * The changed files whose lines cannot be read: a file whose lines changed
+ * with no patch or a patch cut short, and the files past the ones the
+ * provider listed.
+ */
+function unreadFilesOf(changes: SuspectRangeChanges): number {
+  const unread = changes.files.filter(
+    (f) =>
+      changeStatus(f.status) !== 'deleted' &&
+      f.additions + f.deletions > 0 &&
+      (!f.patch || f.patch.endsWith(PATCH_TRUNCATED_NOTE)),
+  ).length;
+  const unlisted = changes.filesTruncated
+    ? Math.max(0, (changes.totalChangedFiles ?? changes.files.length) - changes.files.length)
+    : 0;
+  return unread + unlisted;
+}
+
+/**
+ * Join a range's changes with the coverage of the failing executions (their
+ * ranges read for the changed files only) and of the run's passing ones. With
+ * no changed line on the head side, `no-scm` when the provider left out the
+ * patches of files whose lines changed, `no-changes` otherwise; `no-coverage`
+ * when no failing execution recorded a file.
  */
 export async function joinSuspectChanges(
   db: DrizzleDB,
   run: Pick<SuspectRun, 'id'>,
-  failing: CoverageCapture[],
+  failingIds: number[],
   changes: SuspectRangeChanges,
   known: Pick<SuspectLinesAnswer, 'range' | 'baselineRunId'>,
 ): Promise<SuspectLinesAnswer> {
   if (changes.patchesOmitted) return unavailableSuspectLines('no-scm', known);
   const changed = suspectChangesOf(changes.files);
-  if (!changed.some((c) => c.status !== 'deleted' && c.hunks.length > 0)) {
-    const unread = changes.files.some(
-      (f) => !f.patch && changeStatus(f.status) !== 'deleted' && f.additions + f.deletions > 0,
-    );
-    return unavailableSuspectLines(unread ? 'no-scm' : 'no-changes', known);
-  }
-  const paths = changed.filter((c) => c.hunks.length > 0).map((c) => c.path);
+  const paths = changed.filter((c) => c.status !== 'deleted' && c.hunks.length > 0).map((c) => c.path);
+  if (paths.length === 0) return unavailableSuspectLines(unreadFilesOf(changes) > 0 ? 'no-scm' : 'no-changes', known);
+  const failing = await readFailingCaptures(db, failingIds, paths);
+  if (!failing.some(hasFiles)) return unavailableSuspectLines('no-coverage', known);
   const passing = await readPassingCaptures(db, run.id, paths);
   const result = suspectLines({ changes: changed, failing, passing });
   if (result.summary.changedLines === 0) return unavailableSuspectLines('no-changes', known);
-  return { available: true, ...known, summary: result.summary, suspects: result.suspects };
+  const unreadFiles = unreadFilesOf(changes);
+  return {
+    available: true,
+    ...known,
+    summary: result.summary,
+    ...(unreadFiles > 0 ? { unreadFiles } : {}),
+    suspects: result.suspects,
+  };
+}
+
+/** Whether a capture names a file. */
+export function hasFiles(capture: CoverageCapture): boolean {
+  return capture.files.length > 0;
 }

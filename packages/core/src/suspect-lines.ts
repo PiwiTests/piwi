@@ -15,7 +15,7 @@
  * A covered file whose blob differs from the change's head blob, when both are
  * known and of the same hash (SHA-1 or SHA-256), counts at `files` granularity
  * only: its line numbers refer to another version of the file. A changed path matches a covered path exactly, else by
- * the suffix rule of `sameFilePath`.
+ * the suffix rule of `sameFilePath` when the shorter path has a folder in it.
  *
  * Each hunk the failing captures executed is scored with the Ochiai
  * coefficient of spectrum-based fault localization:
@@ -243,10 +243,20 @@ function hasCoverage(capture: CoverageCapture): boolean {
   return capture.files.length > 0;
 }
 
-/** The covered paths a changed path matches: the same path, else the paths `sameFilePath` matches. */
+/**
+ * Whether two paths name the same file by the suffix rule of `sameFilePath`,
+ * the shorter one with a folder in it: a bare file name (`index.ts`) names no
+ * file in another folder.
+ */
+function sameFileBySuffix(a: string, b: string): boolean {
+  const shorter = a.length <= b.length ? a : b;
+  return shorter.includes('/') && sameFilePath(a, b);
+}
+
+/** The covered paths a changed path matches: the same path, else the paths {@link sameFileBySuffix} matches. */
 function matchCovered(path: string, coveredPaths: string[]): Set<string> {
   if (coveredPaths.includes(path)) return new Set([path]);
-  return new Set(coveredPaths.filter((covered) => sameFilePath(covered, path)));
+  return new Set(coveredPaths.filter((covered) => sameFileBySuffix(covered, path)));
 }
 
 /** Each capture's files grouped by path, read once. */

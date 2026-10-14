@@ -597,8 +597,9 @@ const { handle: handleNextStepAction } = useNextStepActions({
 });
 
 // Deep links from the execution page: its fix-plan link opens the fix-plan
-// section, its suspect lines scroll to the What changed card once it renders
-// (it waits for the context, fetched after mount).
+// section, its suspect lines scroll to the What changed card, now when it is
+// already there, else once it renders (it waits for the context, fetched after
+// mount).
 onMounted(() => {
   if (route.hash === '#fix-plan') nextTick(() => openFixPlan());
   if (route.hash === '#what-changed') {
@@ -607,9 +608,9 @@ onMounted(() => {
       (el) => {
         if (!el) return;
         scrollToEl(el);
-        stop();
+        queueMicrotask(() => stop());
       },
-      { flush: 'post' },
+      { flush: 'post', immediate: true },
     );
   }
 });

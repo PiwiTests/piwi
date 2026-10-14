@@ -55,7 +55,7 @@ import { renderAppStateMarkdown, type PageStateLike } from '#shared/page-state';
 import { getLastPassPageState } from '#shared/handlers/test-cases';
 import type { ContextSection, DiagnosisContextCoverage, ScmChanges } from '~~/types/api';
 import { getDemoScmProject, getDemoChangesSince, getDemoChangesForShas, getDemoDefaultRange } from '../demo-scm';
-import { CONTEXT_SUSPECTS, suspectFilesFirst, suspectLinesSection } from '#shared/suspect-lines';
+import { suspectLinesContext } from '#shared/suspect-lines';
 import { demoClusterSuspectLines } from './suspect-lines';
 
 // ── Section plumbing ────────────────────────────────────────────────────────
@@ -783,16 +783,11 @@ async function assemble(
     // The changed lines the failing tests ran, over the default range, with their files first.
     const suspects = await demoClusterSuspectLines(db, cluster.id);
     if (suspects.available) {
-      scmChanges.files = suspectFilesFirst(scmChanges.files, suspects.suspects);
-      push(section('suspectLines', 'Changed Lines the Failing Tests Executed', suspectLinesSection(suspects)));
-      coverage = {
-        ...coverage,
-        suspectLines: {
-          suspects: Math.min(suspects.suspects.length, CONTEXT_SUSPECTS),
-          changedLines: suspects.summary.changedLines,
-          executedLines: suspects.summary.executedLines,
-        },
-      };
+      const shown = scmRangeFor(projectId, opts.baseCommit, opts.selectedShas);
+      const context = suspectLinesContext(suspects, scmChanges.files, shown);
+      scmChanges.files = context.files;
+      push(section('suspectLines', 'Changed Lines the Failing Tests Executed', context.markdown));
+      coverage = { ...coverage, suspectLines: context.coverage };
     }
     push(section('scmInvestigation', 'SCM Investigation', scmInvestigationMd(scmChanges)));
     push(section('topSuspectedCommit', 'Top Suspected Commit', topSuspectedMd(projectId, scmChanges)));

@@ -332,7 +332,7 @@ describe('suspectLinesForCluster', () => {
 
   test('no-changes when the range changes no line on the head side', async () => {
     changes = changed({ filename: 'src/Old.cs', status: 'removed', patch: '@@ -1,2 +0,0 @@\n-a\n-b' });
-    const answer = await clusterSuspectLinesForChanges(db as never, 1, changes, { from: 'e'.repeat(40), to: HEAD });
+    const answer = await clusterSuspectLinesForChanges(db as never, 1, changes, { from: '1'.repeat(40), to: HEAD });
     expect(answer).toMatchObject({ available: false, reason: 'no-changes', runId: 2 });
   });
 
@@ -340,13 +340,13 @@ describe('suspectLinesForCluster', () => {
     const unread = changed({ filename: BASKET }, { filename: 'assets/logo.png', status: 'modified' });
     unread.files[1]!.additions = 0;
     unread.files[1]!.deletions = 0;
-    const answer = await clusterSuspectLinesForChanges(db as never, 1, unread, { from: 'e'.repeat(40), to: HEAD });
+    const answer = await clusterSuspectLinesForChanges(db as never, 1, unread, { from: '2'.repeat(40), to: HEAD });
     expect(answer).toMatchObject({ available: false, reason: 'no-scm', runId: 2 });
     const binaryOnly = changed({ filename: 'assets/logo.png' });
     binaryOnly.files[0]!.additions = 0;
     binaryOnly.files[0]!.deletions = 0;
     expect(
-      await clusterSuspectLinesForChanges(db as never, 1, binaryOnly, { from: 'e'.repeat(40), to: HEAD }),
+      await clusterSuspectLinesForChanges(db as never, 1, binaryOnly, { from: '3'.repeat(40), to: HEAD }),
     ).toMatchObject({ available: false, reason: 'no-changes' });
   });
 
@@ -358,15 +358,33 @@ describe('suspectLinesForCluster', () => {
   });
 
   test('reads the coverage of another version of a changed file at files granularity only', async () => {
-    const pinned = { from: 'f'.repeat(40), to: HEAD };
+    const pinned = { from: '4'.repeat(40), to: HEAD };
     const sameVersion = changed({ filename: BASKET, patch: BASKET_PATCH, blob: BLOB });
     expect(await clusterSuspectLinesForChanges(db as never, 1, sameVersion, pinned)).toMatchObject({
       suspects: [{ path: BASKET, granularity: 'lines', lines: [[57, 59]] }],
     });
     const otherVersion = changed({ filename: BASKET, patch: BASKET_PATCH, blob: 'e'.repeat(40) });
-    expect(await clusterSuspectLinesForChanges(db as never, 1, otherVersion, pinned)).toMatchObject({
+    expect(
+      await clusterSuspectLinesForChanges(db as never, 1, otherVersion, { from: '5'.repeat(40), to: HEAD }),
+    ).toMatchObject({
       summary: { executedLines: 0 },
       suspects: [{ path: BASKET, granularity: 'files', lines: [[57, 59]] }],
+    });
+  });
+
+  test('counts the changed files whose lines it could not read', async () => {
+    const pinned = { from: '6'.repeat(40), to: HEAD };
+    const partial = changed(
+      { filename: BASKET, patch: BASKET_PATCH },
+      { filename: 'src/Huge.cs' },
+      { filename: 'src/Long.cs', patch: '@@ -1,1 +1,1 @@\n-a\n+b\n[... patch truncated ...]' },
+    );
+    partial.filesTruncated = true;
+    partial.totalChangedFiles = 5;
+    expect(await clusterSuspectLinesForChanges(db as never, 1, partial, pinned)).toMatchObject({
+      available: true,
+      unreadFiles: 4,
+      suspects: [{ path: BASKET }],
     });
   });
 
