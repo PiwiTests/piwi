@@ -190,8 +190,41 @@ describe('blob ids', () => {
     const expected = gitBlobId(fs.readFileSync(path.join(dir, 'src', 'Basket.cs')));
     expect(named.map((file) => file.blob)).toEqual([expected, expected, undefined, undefined, undefined]);
     expect(named[2]!.lines).toEqual([[1, 1]]);
-    // Each path read once.
-    expect(root).toHaveBeenCalledTimes(3);
+    // Each path read once: a second call reads nothing.
+    await blobs.withBlobs(files);
+    expect(root).toHaveBeenCalledTimes(1);
+  });
+
+  it('hashes the file on disk when git cannot', async () => {
+    const hashObjects = vi.fn(async () => null);
+    const blobs = new BlobIds(() => dir, hashObjects);
+    const files: CoverageFile[] = [{ path: 'src/Basket.cs', runtime: 'server', lines: [[1, 1]] }];
+    const [named] = await blobs.withBlobs(files);
+    expect(hashObjects).toHaveBeenCalledWith(dir, [path.join('src', 'Basket.cs')]);
+    expect(named!.blob).toBe(gitBlobId(fs.readFileSync(path.join(dir, 'src', 'Basket.cs'))));
+  });
+
+  it('gives the id of what git stores when the checkout converts line endings', async () => {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-blob-crlf-')));
+    try {
+      const git = (...args: string[]) =>
+        execFileSync('git', ['-c', 'core.autocrlf=true', ...args], { cwd: repo, encoding: 'utf8' }).trim();
+      git('init', '--quiet');
+      git('config', 'core.autocrlf', 'true');
+      fs.mkdirSync(path.join(repo, 'src'));
+      fs.writeFileSync(path.join(repo, 'src', 'Basket.cs'), 'namespace Shop;\r\npublic class Basket { }\r\n');
+      git('add', '.');
+      git('-c', 'user.name=Piwi', '-c', 'user.email=piwi@example.com', 'commit', '--quiet', '-m', 'Basket');
+      const stored = git('rev-parse', 'HEAD:src/Basket.cs');
+      const onDisk = gitBlobId(fs.readFileSync(path.join(repo, 'src', 'Basket.cs')));
+      expect(stored).not.toBe(onDisk);
+
+      const files: CoverageFile[] = [{ path: 'src/Basket.cs', runtime: 'server', lines: [[2, 2]] }];
+      const [named] = await new BlobIds(() => repo).withBlobs(files);
+      expect(named!.blob).toBe(stored);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
 

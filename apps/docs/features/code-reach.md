@@ -111,8 +111,8 @@ the test's result reaches the dashboard with it.
 | `functions` | also the start and end line of each function that ran |
 | `lines` | also the executed lines |
 
-With `functions` and `lines`, each file names the git blob of the checkout's version, which its line numbers refer to.
-At the end of the run the reporter also sends the run's coverage of the backend, attributed to no test, with each
+With `functions` and `lines`, each file names its git blob, as `git hash-object` gives it, which its line numbers
+refer to. At the end of the run the reporter also sends the run's coverage of the backend, attributed to no test, with each
 file's executable lines at `lines` granularity. A test whose coverage the backend no longer held, or that could not be collected, is marked incomplete.
 `coverage.browser: 'files'` is the same as `captureCodeReach: true`.
 
