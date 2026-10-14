@@ -7,11 +7,14 @@ server coverage **per test** while Playwright runs tests in parallel against one
 costs, and what the editors can do with the result later. Every cost below was measured on a prototype, not
 estimated; [Appendix A](#appendix-a-measurements) gives the method and the raw numbers.
 
-**Status.** Proposed 2026-10-13. Nothing is built in this repository. A prototype (a .NET recorder, an ASP.NET Core
-middleware, a reporter-side collection fixture and the benchmarks) was built and measured outside the repository on
-Microsoft's eShopOnWeb reference application and on a small application written to spend its CPU in business logic
-(the **pricing application**). New wire fields, options and endpoints freeze at 1.0 and would get an entry in
-[`1.0-stabilization.md`](1.0-stabilization.md).
+**Status.** Proposed 2026-10-13. Delivery PRs 1 to 5 are built: the core model, browser code reach on V8 function
+coverage, the dashboard's storage and endpoints, the .NET coverage package, and the reporter's collection of server
+coverage, checked end to end on eShopOnWeb (each test's server files, functions and lines stored with their git blob
+ids, and the run-level coverage with executable lines). Not built yet: browser functions and lines, the Istanbul
+adapter (D13), the consumers of part 4, what part 6 builds on it, and the editors. The study's measurements came from
+a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
+written to spend its CPU in business logic (the **pricing application**). New wire fields, options and endpoints
+freeze at 1.0 and need an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** The C# compiler can instrument code for coverage by itself: building with `-p:Instrument=TestCoverage`
 inserts a statement marker in every method and calls a method the application supplies,
