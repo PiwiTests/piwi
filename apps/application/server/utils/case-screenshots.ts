@@ -8,7 +8,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { files } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { isScreenshotFileRow } from '#shared/file-classify';
+import { failurePageFirst, isScreenshotFileRow } from '#shared/file-classify';
 
 export { isScreenshotFileRow };
 
@@ -20,7 +20,10 @@ export interface ScreenshotFileRow {
   path: string;
 }
 
-/** Screenshot files for one execution, newest first (the failure shot is captured last). */
+/**
+ * Screenshot files for one execution: the page the test failed on first when
+ * it is known (see {@link failurePageFirst}), then the others newest first.
+ */
 export async function selectCaseScreenshots(
   db: DrizzleDB,
   testRunsCaseId: number,
@@ -32,6 +35,9 @@ export async function selectCaseScreenshots(
     .where(and(eq(files.testRunsCaseId, testRunsCaseId), inArray(files.type, ['screenshot', 'attachment'])))
     .orderBy(desc(files.id));
 
-  const shots = rows.filter((r: ScreenshotFileRow) => isScreenshotFileRow(r));
+  const shots = failurePageFirst(
+    rows.filter((r: ScreenshotFileRow) => isScreenshotFileRow(r)),
+    (r) => r.subtype,
+  );
   return limit != null ? shots.slice(0, limit) : shots;
 }

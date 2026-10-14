@@ -352,6 +352,7 @@ export async function getTestRunCase(
       .select()
       .from(files)
       .where(sql`${files.testRunsCaseId} = ${trc.id} AND ${files.type} = 'attachment'`)
+      .orderBy(files.id)
       .then((r: any[]) =>
         r.map((att: any) => ({
           id: att.id,

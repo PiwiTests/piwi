@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
 import { formatRelativeTime } from '~/utils';
+import { failurePageFirst } from '#shared/file-classify';
 
 interface AffectedCase {
   recentTestRunsCaseId: number;
@@ -65,8 +66,9 @@ async function loadScreenshots() {
         browser: string | null;
         testRun: { startTime: string | null } | null;
       }>(`/api/test-run-cases/${tc.recentTestRunsCaseId}`);
-      for (const att of detail.attachments ?? []) {
-        if (!isImageFile(att.path, att.contentType)) continue;
+      const images = (detail.attachments ?? []).filter((att) => isImageFile(att.path, att.contentType));
+      // The page the test failed on first, so the image limit keeps it.
+      for (const att of failurePageFirst(images, (a) => a.name)) {
         if (results.length >= MAX_SCREENSHOTS) break;
         const imgName = att.name || att.path.split('/').pop() || 'screenshot';
         const url = fileApiUrl(att.path, att.contentType, config.app?.baseURL, true);
