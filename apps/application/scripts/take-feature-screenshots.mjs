@@ -443,16 +443,17 @@ function reportUsualDuration(request, base) {
 /**
  * A run on three workers with `retries: 2`, as Playwright schedules it: a
  * failed attempt ends its worker process, and the retry runs in the next free
- * worker. "applies a discount code" fails, then passes on a retry on another
- * worker; "pays with a saved card" fails all three attempts. Offsets are ms
- * from the run's start; `retry` is the attempt's retry index.
+ * worker. "applies a discount code" fails, then passes on a retry in the new
+ * process of its lane; "pays with a saved card" fails all three attempts, the
+ * last one picked up by worker 2's process, free by then. Offsets are ms from
+ * the run's start; `retry` is the attempt's retry index.
  */
 const RETRIED_RUN_CASES = [
   { title: 'shows the product list', worker: 0, at: 0, duration: 3200 },
   { title: 'applies a discount code', worker: 0, at: 3300, duration: 5500, failed: true },
   { title: 'updates the shipping address', worker: 3, at: 9800, duration: 3700 },
   { title: 'pays with a saved card', worker: 3, at: 13600, duration: 6200, failed: true, retry: 1 },
-  { title: 'pays with a saved card', worker: 5, at: 20700, duration: 6200, failed: true, retry: 2 },
+  { title: 'pays with a saved card', worker: 2, at: 20900, duration: 6200, failed: true, retry: 2 },
   { title: 'signs in with a password', worker: 1, at: 0, duration: 2500 },
   { title: 'pays with a saved card', worker: 1, at: 2600, duration: 5800, failed: true },
   { title: 'applies a discount code', worker: 4, at: 9300, duration: 4500, retry: 1 },
@@ -510,7 +511,7 @@ function reportRetriedRun(request, base) {
       data: {
         streamToken,
         status: 'failed',
-        duration: 26900,
+        duration: 27100,
         totalTests: titles.length,
         passedTests: titles.length - 1,
         failedTests: 1,
