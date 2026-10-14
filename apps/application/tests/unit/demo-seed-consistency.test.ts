@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { computeErrorFingerprint } from '#shared/error-fingerprint';
 import { resolveHealingForCase } from '~~/server/utils/locator-healing';
 import { validatePatch } from '#shared/patch';
-import { allDemoSourceFiles } from '~~/app/demo/demo-scm';
+import { allDemoSourceFiles, getDemoChangesSince, getDemoDefaultRange } from '~~/app/demo/demo-scm';
 import { FAILURE_STORIES, SCM_REPOS, SIMULATOR_ERRORS, storyForCase } from '#shared/demo/failure-stories.mjs';
 import { parseAriaCandidates } from '#shared/locator-fingerprint';
 import { parsePlaywrightError } from '#shared/error-parse';
@@ -929,6 +929,7 @@ const EXPECT_KEYS = new Set([
   'resources',
   'incident',
   'gaps',
+  'suspects',
 ]);
 const ROUTE_ENTITIES = [
   { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
@@ -1042,6 +1043,20 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
     expect(row?.key, `${label}: cluster ${want.cluster!.id}'s tracked issue`).toBe(want.issue.key);
     expect(row?.provider, `${label}: ${want.issue.key} is a Jira issue`).toBe('jira');
     expect(row?.status_text, `${label}: ${want.issue.key}'s status`).toBe(want.issue.status);
+  }
+  if (want.suspects) {
+    expect(want.cluster, `${label}: suspects needs a cluster`).toBeTruthy();
+    const story = FAILURE_STORIES.find((s) => s.clusterId === want.cluster!.id)!;
+    const { path } = want.suspects;
+    expect(story.coverage?.[story.specFile], `${label}: the failing tests' coverage`).toContain(path);
+    const range = getDemoDefaultRange(story.projectId);
+    const changed = range ? getDemoChangesSince(story.projectId, range.from)?.files.map((f) => f.filename) : [];
+    expect(changed, `${label}: the canned changes change ${path}`).toContain(path);
+    const recorded = q(`
+      select id from test_runs_cases
+      where failure_cluster_id = ${want.cluster!.id} and coverage_payload_id is not null
+    `);
+    expect(recorded.length, `${label}: the cluster's executions recorded coverage`).toBeGreaterThan(0);
   }
   if (want.lab) {
     expect(want.testCase, `${label}: lab needs a test case`).toBeTruthy();

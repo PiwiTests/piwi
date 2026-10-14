@@ -25,6 +25,7 @@ export interface DemoExampleExpect {
   resources?: 'leaky';
   incident?: true;
   gaps?: { detectors: string[] };
+  suspects?: { path: string };
 }
 
 export interface DemoExample {

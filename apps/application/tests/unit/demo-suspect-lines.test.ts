@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import type { Client } from '@libsql/client';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { FAILURE_STORIES } from '#shared/demo/failure-stories.mjs';
+import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
 import * as scene from '../../scripts/lib/suspect-lines-scene.mjs';
 
 /**
@@ -68,6 +69,16 @@ describe('demo suspect lines', () => {
       // The story's own app files are what its failing tests ran.
       expect(story.appFiles).toContain(answer.suspects[0]!.path);
       expect(answer.summary.failingWithCoverage).toBe(story.failingCases.length);
+    }
+  });
+
+  test('a demo example that names a suspect opens a cluster whose suspect lines start with it', async () => {
+    const { demoClusterSuspectLines } = await import('~~/app/demo/api/suspect-lines');
+    const examples = DEMO_EXAMPLES.filter((e) => e.expect.suspects);
+    expect(examples.length).toBeGreaterThan(0);
+    for (const example of examples) {
+      const answer = await demoClusterSuspectLines(db, example.expect.cluster!.id);
+      expect(answer.suspects[0]?.path, example.id).toBe(example.expect.suspects!.path);
     }
   });
 
