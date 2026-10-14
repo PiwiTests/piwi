@@ -180,6 +180,13 @@ export type ProcessRole =
 /** The kinds of files tests attach, by Playwright's attachment names. */
 export type ArtifactKind = 'trace' | 'video' | 'screenshot' | 'other';
 
+/**
+ * Name of the PNG the capture fixtures attach to a failed test: the page the
+ * test last acted on. The reporter uploads it with the execution's files, and
+ * the dashboard shows it as the page at the failure.
+ */
+export const FAILURE_SCREENSHOT_ATTACHMENT = 'piwi-failure-screenshot';
+
 /** What the processes of one role used during a test. */
 export interface RoleCost {
   cpuMs: number;

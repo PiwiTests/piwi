@@ -27,6 +27,12 @@ export const ATTACHMENT_NAMES = {
 /** Set of every internal attachment name — used to skip them when collecting user attachments. */
 export const INTERNAL_ATTACHMENT_NAMES: ReadonlySet<string> = new Set(Object.values(ATTACHMENT_NAMES));
 
+/**
+ * The screenshot of the page a failed test last acted on. Not an internal
+ * name: it is uploaded as a file with the test's other attachments.
+ */
+export { FAILURE_SCREENSHOT_ATTACHMENT } from '@piwitests/core/wire';
+
 /** Annotation type that surfaces a locator-healing suggestion in the report/trace. */
 export const LOCATOR_SUGGESTION_ANNOTATION = ATTACHMENT_NAMES.locatorSuggestion;
 

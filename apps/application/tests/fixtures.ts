@@ -69,6 +69,7 @@ import {
 } from '../../../packages/reporter/dist/internal/capture/pick-on-failure.js';
 import {
   ATTACHMENT_NAMES,
+  FAILURE_SCREENSHOT_ATTACHMENT,
   LOCATOR_SUGGESTION_ANNOTATION,
   USER_PICK_ANNOTATION,
 } from '../../../packages/reporter/dist/internal/capture/attachments.js';
@@ -608,7 +609,7 @@ export const test = base.extend<{ page: Page; piwiResourceCensus: void }, { piwi
     try {
       if (testInfo.status !== testInfo.expectedStatus) {
         const screenshot = await page.screenshot({ fullPage: true, timeout: 5000 });
-        await testInfo.attach('failure-screenshot', {
+        await testInfo.attach(FAILURE_SCREENSHOT_ATTACHMENT, {
           contentType: 'image/png',
           body: screenshot,
         });
