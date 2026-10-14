@@ -6,7 +6,7 @@ lang: en-US
 
 # Capture fixtures
 
-The [reporter](./reporter) uploads complete test results (statuses, errors, traces, HTML reports) without any change to your test code. The **capture fixtures** are an optional, one-file addition that observes your tests from the inside and unlocks the dashboard's richest features: slow-endpoint analysis, Web Vitals, console capture, failure-time ARIA snapshots, and [locator healing](/features/locator-healing).
+The [reporter](./reporter) uploads complete test results (statuses, errors, traces, HTML reports) without any change to your test code. The **capture fixtures** are an optional, one-file addition that observes your tests from the inside for slow-endpoint analysis, Web Vitals, console capture, failure-time ARIA snapshots, and [locator healing](/features/locator-healing).
 
 ## Setup
 
@@ -45,7 +45,7 @@ That's the entire setup: nothing to start, wrap, or await inside your tests.
 | **Network requests**: method, URL, status, duration, start time, content type, for fetch, XHR, document and `other` traffic only (static assets are skipped); one that failed without a response keeps the browser's error (`net::ERR_CONNECTION_RESET`) | per request | [Slow endpoints](/features/slow-tests); [backend log correlation](./backend-logs) via the `X-Piwi-Logs` response header; the [failure timeline](/features/evidence#one-execution-diagnosis-first) |
 | **Console entries**: `warning`, `error` and `assert` messages with source location and a timestamp (not `console.log`) | as they happen | The console card and the failure timeline on the [execution page](/features/evidence#one-execution-diagnosis-first); [AI diagnosis](/features/ai-diagnosis) evidence |
 | **Web Vitals**: TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint, plus LCP, CLS and INP (Chromium-only) | at test teardown | Web vitals card with color-coded thresholds; [performance trends](/features/slow-tests) |
-| **ARIA snapshot** of the final page state: the YAML dump, plus the JSON aria tree on Playwright 1.63 or later | on failure | Failure evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages; [AI diagnosis](/features/ai-diagnosis) context; the JSON tree feeds [locator healing](/features/locator-healing)'s rename matching and the page diff |
+| **ARIA snapshot** of the final page state: the YAML dump, plus the JSON aria tree on Playwright 1.63 or later; its **screenshot** when Playwright keeps failure screenshots | on failure | Failure evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages; [AI diagnosis](/features/ai-diagnosis) context; the JSON tree feeds [locator healing](/features/locator-healing)'s rename matching and the page diff |
 | **Browser dialogs**: an `alert`/`confirm`/`prompt`/`beforeunload` dialog's type, message and close time, through Playwright 1.63's `dialogclosed` event | as each dialog closes | A *dialogs* lane on the [failure timeline](/features/evidence#one-execution-diagnosis-first) and a *a dialog was open when the action failed* [clue](/features/evidence#clues) |
 | **Locator snapshots**: element attributes, stable-ancestor anchors, same-role position and ranked alternative locators for each element a test proves resolvable, stamped with the call site | after each successful action and each passing web-first assertion (`toBeVisible()`, `toHaveText()`, …) | [Locator healing](/features/locator-healing); when a failing name-based locator (`getByRole`, `getByText`, `getByLabel`, …) matches nothing, a fresh suggestion is attached to the test as a Playwright annotation |
 | **Locator pages**: the [page key](/guide/concepts#page-key) each locator call ran on, never a query or raw id | at each locator action and assertion | [Locator pages](/features/locator-usage#pages); **This page** in [Tested elements](/features/tested-elements) |
@@ -85,7 +85,7 @@ The fixtures wire capture at the **browser** level, so it works however your tes
 Semantics worth knowing:
 
 - **`beforeAll` / `afterAll` activity is not captured**: only a test's own activity is attributed to it.
-- **Multi-page tests** attribute Web Vitals and the failure ARIA snapshot to the most recently active page.
+- **Multi-page tests** attribute Web Vitals, the failure ARIA snapshot and screenshot to the most recently active page.
 - **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per call site per test. If a probe fails, the next run of that line tries again.
 - **Assertion capture is positive-presence only** — negated (`.not.…`), absence (`toBeHidden`), multi-element (`toHaveCount`) and page-level (`toHaveURL`) assertions never probe.
 
@@ -114,7 +114,7 @@ Two rules:
 
 ## Cost & opt-outs
 
-Capture is designed to never fail or noticeably slow down a test:
+Capture never fails or noticeably slows a test:
 
 - Per call site: one DOM read, and a bounded ARIA snapshot (500 ms deadline) only when the element's attributes don't
   already settle its accessible name.

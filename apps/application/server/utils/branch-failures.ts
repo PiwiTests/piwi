@@ -11,7 +11,7 @@ import { extractStackFrames, stripAnsi, withoutStackFrames } from '@piwitests/co
 import { failureClusters, files, testCases, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { caseHeadline } from '#shared/failure-verdict';
-import { isScreenshotFileRow } from '#shared/file-classify';
+import { failurePageFirst, isScreenshotFileRow } from '#shared/file-classify';
 import { extractErrorLocation } from './locator-healing';
 import { lastAttempts } from '#shared/status-classify';
 import {
@@ -562,13 +562,15 @@ export async function getBranchFailures(
           .orderBy(desc(files.id))
       : [];
   const traces = new Map<number, string[]>();
-  const screenshots = new Map<number, string>();
+  const caseShots = new Map<number, typeof evidence>();
   for (const f of evidence) {
     if (f.testRunsCaseId == null) continue;
     if (f.type === 'trace') traces.set(f.testRunsCaseId, [...(traces.get(f.testRunsCaseId) ?? []), f.path]);
-    // Newest first: the failure screenshot is captured last.
-    else if (!screenshots.has(f.testRunsCaseId) && isScreenshotFileRow(f)) screenshots.set(f.testRunsCaseId, f.path);
+    else if (isScreenshotFileRow(f)) caseShots.set(f.testRunsCaseId, [...(caseShots.get(f.testRunsCaseId) ?? []), f]);
   }
+  // The page the test failed on when it is known, else the newest screenshot.
+  const screenshots = new Map<number, string>();
+  for (const [caseId, shots] of caseShots) screenshots.set(caseId, failurePageFirst(shots, (f) => f.subtype)[0]!.path);
 
   return {
     run: run

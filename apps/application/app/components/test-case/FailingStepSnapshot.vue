@@ -8,11 +8,13 @@
  * whether it has anything to show).
  *
  * - Screenshot: with Playwright 1.63 per-action snapshots, the page before the
- *   failing action beside the page at the failure; otherwise the run's failure
- *   screenshot. The Screen tab adds every other screenshot the execution
- *   attached. Each opens full-screen in the shared lightbox, whose details
- *   name the test, the failing step and, beside the page at the failure, the
- *   error raised on it.
+ *   failing action beside the page at the failure; otherwise the attached
+ *   screenshot of the page the test failed on, when one is known to be (see
+ *   `failurePageScreenshot`). The Screen tab adds every other screenshot the
+ *   execution attached, and says so when none of several is known to be it.
+ *   Each opens full-screen in the shared lightbox, whose details name the
+ *   test, the failing step and, beside the page at the failure, the error
+ *   raised on it.
  * - DOM: the trace's DOM snapshot of the moment the screenshot at the failure
  *   shows (the failing action's after-phase, its before-phase when that is the
  *   only screenshot), else the failure-time snapshot, rendered as the page.
@@ -34,13 +36,15 @@ import type { EvidenceState } from '#shared/evidence-state';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
 import { isImageFile } from '~/utils/text-format';
+import { FAILURE_SCREENSHOT_ATTACHMENT } from '@piwitests/core/wire';
+import { failurePageFirst, failurePageScreenshot } from '#shared/file-classify';
 import { useTraceSnapshots } from '~/composables/useTraceSnapshots';
 import { useDomSnapshot, type DomSnapshotMoment } from '~/composables/useDomSnapshot';
 import DomSnapshotFrame from './DomSnapshotFrame.vue';
 
 const props = defineProps<{
   testRunsCaseId: number;
-  /** The execution's attachments — the run's failure screenshot when the trace has no 1.63 `screen` snapshot. */
+  /** The execution's attachments — the screenshot of the failing page when the trace has no 1.63 `screen` snapshot. */
   attachments?: AttachmentInfo[] | null;
   /** The execution's failure-time ARIA tree, shown when the trace carries no per-action aria. */
   ariaSnapshot?: string | null;
@@ -101,25 +105,39 @@ const traceShots = computed<Shot[]>(() => {
   return list;
 });
 
+const attachedImages = computed(() =>
+  (props.attachments ?? []).filter((att) => isImageFile(att.path, att.contentType)),
+);
+// The attached screenshot of the page the test failed on, when one is known to be.
+const failureImage = computed(() => failurePageScreenshot(attachedImages.value, (att) => att.name));
+// Playwright names each of its screenshots `screenshot`: the file name tells them apart.
+function shotName(att: AttachmentInfo): string {
+  if (att.name === FAILURE_SCREENSHOT_ATTACHMENT) return 'Page the test failed on';
+  if (att.name && att.name !== 'screenshot') return att.name;
+  return att.path.split('/').pop() || att.path;
+}
 const attachedShots = computed<Shot[]>(() =>
-  (props.attachments ?? [])
-    .filter((att) => isImageFile(att.path, att.contentType))
-    .map((att) => ({
-      src: fileApiUrl(att.path, att.contentType, config.app?.baseURL),
-      name: att.name || att.path.split('/').pop() || att.path,
-      failed: false,
-    })),
+  failurePageFirst(attachedImages.value, (att) => att.name).map((att) => ({
+    src: fileApiUrl(att.path, att.contentType, config.app?.baseURL),
+    name: shotName(att),
+    failed: false,
+  })),
+);
+// Several screenshots, none known to show the page the test failed on.
+const unplacedShots = computed(
+  () => !traceShots.value.length && !failureImage.value && attachedImages.value.length > 1,
 );
 
-// The failing step's screenshots: the trace's pair, else the run's failure
-// screenshot (the page at the moment it failed, which is this step). The Screen
-// tab lists every other attached screenshot after them. The same list feeds the
-// frames and the lightbox, so a frame's index addresses it in the enlarged view.
+// The failing step's screenshots: the trace's pair, else the attached screenshot
+// of the page the test failed on (the page at the moment it failed, which is this
+// step). The Screen tab lists every other attached screenshot after them. The
+// same list feeds the frames and the lightbox, so a frame's index addresses it in
+// the enlarged view.
 const shots = computed<Shot[]>(() => {
-  const [first, ...rest] = attachedShots.value;
   if (traceShots.value.length) return props.full ? [...traceShots.value, ...attachedShots.value] : traceShots.value;
-  if (!first) return [];
-  const atFailure = { ...first, name: 'At the failure', failed: true, step: stepLabel.value, error: errorText.value };
+  if (!failureImage.value) return props.full ? attachedShots.value : [];
+  const [first, ...rest] = attachedShots.value;
+  const atFailure = { ...first!, name: 'At the failure', failed: true, step: stepLabel.value, error: errorText.value };
   return props.full ? [atFailure, ...rest] : [atFailure];
 });
 const lightboxIndex = ref<number | null>(null);
@@ -270,6 +288,11 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
 
     <!-- ── Screenshot ──────────────────────────────────────────── -->
     <template v-if="activeView === 'screenshot'">
+      <p v-if="unplacedShots" class="text-xs text-muted">
+        Playwright took one screenshot per page the test had open, and none says which page it failed on. The
+        <DocLink to="guide/capture-fixtures#what-gets-captured" no-icon>capture fixtures</DocLink> add a screenshot of
+        that page.
+      </p>
       <div v-if="shots.length" :class="shots.length > 1 ? 'grid gap-3 sm:grid-cols-2' : ''">
         <figure v-for="(shot, idx) in shots" :key="shot.src" class="min-w-0 space-y-1">
           <figcaption class="flex items-center gap-1 text-xs text-muted">

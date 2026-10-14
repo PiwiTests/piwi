@@ -7,7 +7,12 @@ import {
   probeElementAttrs,
   CAPTURED_ATTRS_ARG,
 } from '../src/internal/capture/capture-fixtures.js';
-import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION } from '../src/internal/capture/attachments.js';
+import {
+  ATTACHMENT_NAMES,
+  FAILURE_SCREENSHOT_ATTACHMENT,
+  LOCATOR_SUGGESTION_ANNOTATION,
+} from '../src/internal/capture/attachments.js';
+import { keepsFailureScreenshots } from '../src/internal/capture/failure-screenshot.js';
 import type { LocatorSnapshot } from '../src/internal/capture/locator-healing.js';
 import * as path from 'node:path';
 import {
@@ -1404,5 +1409,124 @@ describe('network capture (requestfinished, requestfailed)', () => {
       );
     });
     expect(requests).toBeNull();
+  });
+});
+
+describe('failure-page screenshot', () => {
+  /** A fake page whose screenshot bytes are its name; closing it marks it closed. */
+  function fakeShotPage(name: string) {
+    let closed = false;
+    const rootLocator = { ariaSnapshot: async () => null };
+    const factory = (_selector?: string) => ({ click: async () => {}, evaluate: async () => null });
+    return {
+      getByRole: factory,
+      getByTestId: factory,
+      getByText: factory,
+      getByLabel: factory,
+      getByPlaceholder: factory,
+      getByAltText: factory,
+      getByTitle: factory,
+      locator: (sel: string) => (sel === ':root' ? rootLocator : factory()),
+      on: () => {},
+      evaluate: async () => null,
+      screenshot: vi.fn(async (_options?: unknown) => Buffer.from(name)),
+      isClosed: () => closed,
+      close: async () => {
+        closed = true;
+      },
+    };
+  }
+  type ShotPage = ReturnType<typeof fakeShotPage>;
+
+  /**
+   * Run the capture fixture around two pages and `body`, with Playwright's
+   * `screenshot` option, and return the failure-page screenshot it attached.
+   */
+  async function runShot(
+    screenshot: unknown,
+    body: (first: ShotPage, second: ShotPage) => Promise<void>,
+    info: { status?: string; retry?: number } = {},
+  ): Promise<{ shot: string | null; first: ShotPage; second: ShotPage }> {
+    const first = fakeShotPage('first page');
+    const second = fakeShotPage('second page');
+    const testInfo = {
+      status: info.status ?? 'failed',
+      retry: info.retry ?? 0,
+      attach: vi.fn(async (_name: string, _body: { body: Buffer; contentType: string }) => {}),
+      annotations: [],
+    };
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: unknown },
+      use: (page: ShotPage) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: { screenshot: unknown }, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+
+    await captureFixture(
+      { screenshot },
+      () => pageFixture({ page: first }, () => pageFixture({ page: second }, () => body(first, second))),
+      testInfo,
+    );
+
+    const call = testInfo.attach.mock.calls.find((c) => c[0] === FAILURE_SCREENSHOT_ATTACHMENT);
+    if (call) expect(call[1].contentType).toBe('image/png');
+    return { shot: call ? call[1].body.toString() : null, first, second };
+  }
+
+  it('attaches the page the test last acted on, not the last page opened', async () => {
+    const { shot, second } = await runShot('only-on-failure', async (first) => {
+      await first.getByTestId('save').click();
+    });
+    expect(shot).toBe('first page');
+    expect(second.screenshot).not.toHaveBeenCalled();
+  });
+
+  it('takes it before a close takes the page with it', async () => {
+    const { shot } = await runShot('only-on-failure', async (first) => {
+      await first.getByTestId('save').click();
+      await first.close();
+    });
+    expect(shot).toBe('first page');
+  });
+
+  it('passes the option’s fullPage through, as Playwright does for its own', async () => {
+    const { first } = await runShot({ mode: 'on', fullPage: true }, async (page) => {
+      await page.getByTestId('save').click();
+    });
+    expect(first.screenshot).toHaveBeenCalledWith(expect.objectContaining({ fullPage: true, caret: 'initial' }));
+  });
+
+  it('takes none when Playwright keeps no screenshot of this failure', async () => {
+    const act = async (first: ShotPage) => {
+      await first.getByTestId('save').click();
+    };
+    expect((await runShot('off', act)).shot).toBeNull();
+    expect((await runShot(undefined, act)).shot).toBeNull();
+    expect((await runShot('on-first-failure', act, { retry: 1 })).shot).toBeNull();
+  });
+
+  it('takes none for a passing test', async () => {
+    const { shot, first } = await runShot(
+      'on',
+      async (page) => {
+        await page.getByTestId('save').click();
+      },
+      { status: 'passed' },
+    );
+    expect(shot).toBeNull();
+    expect(first.screenshot).not.toHaveBeenCalled();
+  });
+});
+
+describe('keepsFailureScreenshots', () => {
+  it('follows the modes that keep a failed attempt’s screenshots', () => {
+    expect(keepsFailureScreenshots('on', 0)).toBe(true);
+    expect(keepsFailureScreenshots('only-on-failure', 2)).toBe(true);
+    expect(keepsFailureScreenshots({ mode: 'only-on-failure', fullPage: true }, 0)).toBe(true);
+    expect(keepsFailureScreenshots('on-first-failure', 0)).toBe(true);
+    expect(keepsFailureScreenshots('on-first-failure', 1)).toBe(false);
+    expect(keepsFailureScreenshots('off', 0)).toBe(false);
+    expect(keepsFailureScreenshots(undefined, 0)).toBe(false);
   });
 });

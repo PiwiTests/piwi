@@ -41,7 +41,13 @@ import {
   type LocatorSnapshot,
   type FailedLocatorInfo,
 } from './locator-healing.js';
-import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION, USER_PICK_ANNOTATION } from './attachments.js';
+import {
+  ATTACHMENT_NAMES,
+  FAILURE_SCREENSHOT_ATTACHMENT,
+  LOCATOR_SUGGESTION_ANNOTATION,
+  USER_PICK_ANNOTATION,
+} from './attachments.js';
+import { keepsFailureScreenshots, readFailureScreenshot, type ScreenshotOption } from './failure-screenshot.js';
 import {
   capPageInventory,
   collectPageInventoryInPage,
@@ -252,6 +258,11 @@ interface CaptureSink {
   // the healing, clue and page-diff paths that read a tree; the YAML above feeds
   // the ARIA card.
   stashedAriaJson: string | null;
+  // Playwright's `screenshot` option when it keeps this attempt's failure
+  // screenshots, null when it keeps none; and the failure-page screenshot the
+  // close wrappers took while the page was still open.
+  failureScreenshot: ScreenshotOption | null;
+  stashedScreenshot: Buffer | null;
   // One window per URL the test navigated to, each stamped with its settle time,
   // so the dashboard can attribute a request to the page that was current when it
   // started rather than to the end-of-test page. Controls/links are filled at
@@ -305,6 +316,8 @@ function createSink(): CaptureSink {
     stashedPageState: null,
     stashedAria: null,
     stashedAriaJson: null,
+    failureScreenshot: null,
+    stashedScreenshot: null,
     pageInventories: [],
     probeItem: null,
     probePageErrors: 0,
@@ -746,7 +759,8 @@ async function recordPageWindow(sink: CaptureSink, page: Page): Promise<void> {
 
 /**
  * Take the page-dependent teardown reads (web vitals; page state; ARIA
- * snapshot when the test failed) while the last active page is still open.
+ * snapshot and screenshot when the test failed) while the last active page is
+ * still open.
  * Called by the close wrappers just before a close that would take that page
  * with it — flushSink runs too late for a live read on the standard test page.
  */
@@ -792,6 +806,8 @@ async function readPageBeforeClose(sink: CaptureSink, page: Page): Promise<void>
   };
   if (status === 'failed' || status === 'timedOut' || status === 'interrupted') {
     await sampleAria();
+    if (sink.failureScreenshot)
+      sink.stashedScreenshot = (await readFailureScreenshot(page, sink.failureScreenshot)) ?? sink.stashedScreenshot;
   } else if (
     status === 'passed' &&
     process.env.PIWI_SAMPLE_ARIA_ON_PASS !== 'false' &&
@@ -1827,6 +1843,23 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     }
   }
 
+  // The page the test failed on, as a screenshot. Playwright's own failure
+  // screenshots cover every page still open and every context the test closed,
+  // none of them marked as the page the test failed on; this one is.
+  if (testInfo.status !== 'passed' && testInfo.status !== 'skipped' && sink.failureScreenshot) {
+    const option = sink.failureScreenshot;
+    const shot =
+      (pageReadable ? await internalCall(page, () => readFailureScreenshot(page, option)) : null) ??
+      sink.stashedScreenshot;
+    if (shot) {
+      try {
+        await testInfo.attach(FAILURE_SCREENSHOT_ATTACHMENT, { contentType: 'image/png', body: shot });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   // Sample the ARIA snapshot at the end of a passing test, but only for the
   // tests the server flagged as due a fresh green sample this run. The same
   // attachment carries it as a failure snapshot, so ingest and the diff read it
@@ -2031,12 +2064,13 @@ export const piwiFixtures: Fixtures<
   // (attach the collected data) at teardown. Runs for every test without being
   // requested, so suites that never destructure `page` are still captured.
   piwiCapture: [
-    async ({}, use: UseFn<void>, testInfo: TestInfo) => {
+    async ({ screenshot }: PlaywrightWorkerOptions, use: UseFn<void>, testInfo: TestInfo) => {
       boxCaptureFrames();
       const conflict = labModeConflict();
       if (conflict) throw new Error(conflict);
       const sink = createSink();
       sink.testInfo = testInfo;
+      if (keepsFailureScreenshots(screenshot, testInfo.retry)) sink.failureScreenshot = screenshot;
       const pauseSet = currentPauseSet();
       if (pauseSet.size) {
         const reason = pauseSkipReason(pauseGateFromTestInfo(testInfo));

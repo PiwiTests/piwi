@@ -96,8 +96,8 @@ that needs no green baseline: the structure at the failure against the last diff
 
 ## Trace-powered deep views
 
-::: tip Screenshots are Playwright's to record
-Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` `use` option. Playwright's default is `'off'`: the evidence has video and traces but no screenshot. See [Basic configuration](/guide/reporter#basic-configuration).
+::: tip Where screenshots come from
+Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` [option](/guide/reporter#basic-configuration), one per page. The failing step shows the [capture fixtures](/guide/capture-fixtures#what-gets-captured)' screenshot of the failing page, else the only one.
 :::
 
 With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two views go deeper:
