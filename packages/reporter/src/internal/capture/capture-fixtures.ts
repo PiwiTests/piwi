@@ -14,6 +14,7 @@ import type {
   PlaywrightWorkerArgs,
   PlaywrightWorkerOptions,
   Request,
+  Response,
   TestInfo,
   TestType,
   WorkerInfo,
@@ -230,6 +231,9 @@ export function computeCoreVitals(
  */
 interface CaptureSink {
   networkRequests: Array<Record<string, unknown>>;
+  // The responses of tracked requests that have neither finished nor failed
+  // yet; the ones still open at teardown are recorded then.
+  openResponses: Map<Request, Response>;
   consoleEntries: Array<Record<string, unknown>>;
   dialogs: Array<Record<string, unknown>>;
   pendingHandlers: Promise<void>[];
@@ -307,6 +311,7 @@ interface CaptureSink {
 function createSink(): CaptureSink {
   return {
     networkRequests: [],
+    openResponses: new Map(),
     consoleEntries: [],
     dialogs: [],
     pendingHandlers: [],
@@ -1369,7 +1374,8 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
 /**
  * The error text each browser gives a request the page cancelled itself:
  * Chromium's `net::ERR_ABORTED`, Firefox's `NS_BINDING_ABORTED`, WebKit's
- * "cancelled".
+ * "cancelled". Chromium also gives `net::ERR_ABORTED` to an error response with
+ * an empty body the page did not read, once that response arrived.
  */
 const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABORT$|cancell?ed/i;
 
@@ -1549,88 +1555,142 @@ function instrumentPage(page: Page): void {
     }
   }
 
-  // A request that finished (with or without a response) and one that failed
-  // (reset, refused, aborted) are recorded alike; a failed one has status 0 and
-  // carries Playwright's error text as `failure`.
-  const recordRequest = (request: Request, failed: boolean) => {
+  // A request is recorded once it finishes or fails (`recordRequest`). The
+  // response of a tracked one is kept from its arrival, so a request whose body
+  // never finishes loading is still recorded, at teardown (`flushSink`).
+  page.on('response', (response: Response) => {
     const sink = currentSink;
     if (!sink) return;
+    try {
+      const request = response.request();
+      if (isTrackedRequest(request.url(), request.resourceType())) sink.openResponses.set(request, response);
+    } catch {
+      /* a page event handler must never throw */
+    }
+  });
+  const onRequestEnd = (request: Request, failed: boolean) => {
+    const sink = currentSink;
+    if (!sink || RECORDED_OPEN.has(request)) return;
     sink.lastActivePage = page;
-    const p = (async () => {
-      try {
-        const url = request.url();
-        if (url.startsWith('data:') || url.startsWith('blob:')) return;
-        const resourceType = request.resourceType();
+    const response = sink.openResponses.get(request) ?? null;
+    sink.openResponses.delete(request);
+    recordRequest(sink, request, failed ? 'failed' : 'finished', response);
+  };
+  page.on('requestfinished', (request: Request) => onRequestEnd(request, false));
+  page.on('requestfailed', (request: Request) => onRequestEnd(request, true));
+}
 
-        // Only keep API/document requests; skip static assets (scripts, styles, fonts, images, media)
-        if (!TRACKED_REQUEST_TYPES.includes(resourceType)) return;
+/**
+ * How a request's record ends: it finished, it failed, or its response arrived
+ * but its body never finished loading (the page cancelled it, or it was still
+ * open as the test ended).
+ */
+type RequestEnd = 'finished' | 'failed' | 'unfinished';
 
-        const failure = failed ? (request.failure()?.errorText ?? 'failed') : null;
-        // A request the page cancelled itself (a navigation, an AbortController, the page closing) did not fail.
-        if (failure && CANCELLED_REQUEST.test(failure)) return;
+/** Requests recorded while still open at a test's end: their late finish or failure is not recorded again. */
+const RECORDED_OPEN = new WeakSet<Request>();
 
-        const timing = request.timing();
-        const response = failed ? null : await request.response();
-        const entry: Record<string, unknown> = {
-          method: request.method(),
-          url,
-          status: response ? response.status() : 0,
-          duration: requestDuration(timing, failed),
-          startTime: timing.startTime,
-          resourceType,
-        };
-        if (failure) entry.failure = failure;
+/** An API call or a document: not a static asset (script, style, font, image, media), nor a `data:` or `blob:` URL. */
+function isTrackedRequest(url: string, resourceType: string): boolean {
+  if (url.startsWith('data:') || url.startsWith('blob:')) return false;
+  return TRACKED_REQUEST_TYPES.includes(resourceType);
+}
 
-        if (response) {
-          // No server answered: the test's own route handler fulfilled the request,
-          // or a cache or a service worker served it. Playwright then names neither
-          // a request start nor a server address.
-          if (timing.requestStart < 0 && typeof response.serverAddr === 'function') {
-            if ((await response.serverAddr().catch(() => undefined)) === null) entry.fulfilled = true;
-          }
+/**
+ * Record a request in the background. A failed one (reset, refused) has
+ * status 0 and carries Playwright's error text as `failure`. One the page
+ * cancelled itself (a navigation, an AbortController, the page closing) did
+ * not fail: it is dropped when no response had arrived, and recorded
+ * unfinished otherwise. `response` is the one the `response` event delivered,
+ * when the capture saw it.
+ */
+function recordRequest(sink: CaptureSink, request: Request, end: RequestEnd, response: Response | null): void {
+  const p = (async () => {
+    try {
+      const url = request.url();
+      const resourceType = request.resourceType();
+      if (!isTrackedRequest(url, resourceType)) return;
 
-          const headers = response.headers();
-          // Response content type (without charset/boundary params) — relevant
-          // per-request metadata for distinguishing API/JSON vs document/HTML calls.
-          const contentType = headers['content-type'];
-          if (contentType) entry.contentType = contentType.split(';')[0]!.trim();
+      let failure = end === 'failed' ? (request.failure()?.errorText ?? 'failed') : null;
+      if (failure && CANCELLED_REQUEST.test(failure)) {
+        if (!response) return;
+        failure = null;
+        end = 'unfinished';
+      }
 
-          const logHeader = headers['x-piwi-logs'];
-          if (logHeader) {
-            try {
-              entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));
-            } catch {
-              /* ignore malformed header */
-            }
-          }
+      const timing = request.timing();
+      if (end === 'failed') response = null;
+      else if (end === 'finished') response ??= await request.response();
+      const entry: Record<string, unknown> = {
+        method: request.method(),
+        url,
+        status: response ? response.status() : 0,
+        duration: requestDuration(timing, end),
+        startTime: timing.startTime,
+        resourceType,
+      };
+      if (failure) entry.failure = failure;
 
-          // The id the backend gave this request's server coverage, kept per
-          // origin for the reporter to collect once the test ends.
-          const coverageHeader = headers['x-piwi-coverage'];
-          if (coverageHeader && serverCoverageInWorker()) recordServerCoverageIds(sink, url, coverageHeader);
+      if (response) {
+        // No server answered: the test's own route handler fulfilled the request,
+        // or a cache or a service worker served it. Playwright then names neither
+        // a request start nor a server address.
+        if (timing.requestStart < 0 && typeof response.serverAddr === 'function') {
+          if ((await response.serverAddr().catch(() => undefined)) === null) entry.fulfilled = true;
+        }
 
-          // Server-side spans emitted by a Piwi instrumentation plugin, in the
-          // same gzip+base64 form as the logs header. Skipped when trace capture
-          // is disabled; absent header (no instrumentation) is a no-op.
-          const traceHeader = headers['x-piwi-trace'];
-          if (traceHeader && process.env.PIWI_CAPTURE_SERVER_TRACES !== 'false') {
-            try {
-              entry.serverTraces = JSON.parse(gunzipSync(Buffer.from(traceHeader, 'base64')).toString('utf-8'));
-            } catch {
-              /* ignore malformed header */
-            }
+        const headers = response.headers();
+        // Response content type (without charset/boundary params) — relevant
+        // per-request metadata for distinguishing API/JSON vs document/HTML calls.
+        const contentType = headers['content-type'];
+        if (contentType) entry.contentType = contentType.split(';')[0]!.trim();
+
+        const logHeader = headers['x-piwi-logs'];
+        if (logHeader) {
+          try {
+            entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));
+          } catch {
+            /* ignore malformed header */
           }
         }
 
-        sink.networkRequests.push(entry);
-      } catch {
-        /* ignore */
+        // The id the backend gave this request's server coverage, kept per
+        // origin for the reporter to collect once the test ends.
+        const coverageHeader = headers['x-piwi-coverage'];
+        if (coverageHeader && serverCoverageInWorker()) recordServerCoverageIds(sink, url, coverageHeader);
+
+        // Server-side spans emitted by a Piwi instrumentation plugin, in the
+        // same gzip+base64 form as the logs header. Skipped when trace capture
+        // is disabled; absent header (no instrumentation) is a no-op.
+        const traceHeader = headers['x-piwi-trace'];
+        if (traceHeader && process.env.PIWI_CAPTURE_SERVER_TRACES !== 'false') {
+          try {
+            entry.serverTraces = JSON.parse(gunzipSync(Buffer.from(traceHeader, 'base64')).toString('utf-8'));
+          } catch {
+            /* ignore malformed header */
+          }
+        }
       }
-    })();
-    sink.pendingHandlers.push(p);
-  };
-  page.on('requestfinished', (request: Request) => recordRequest(request, false));
-  page.on('requestfailed', (request: Request) => recordRequest(request, true));
+
+      sink.networkRequests.push(entry);
+    } catch {
+      /* ignore */
+    }
+  })();
+  sink.pendingHandlers.push(p);
+}
+
+/**
+ * Record the requests whose response arrived but which neither finished nor
+ * failed before the test ended: a response whose body the page never read can
+ * stay open in Chromium. A later event for one of them adds no record.
+ */
+function recordOpenRequests(sink: CaptureSink): void {
+  for (const [request, response] of sink.openResponses) {
+    RECORDED_OPEN.add(request);
+    recordRequest(sink, request, 'unfinished', response);
+  }
+  sink.openResponses.clear();
 }
 
 /** Wait until the running test's flake conditions are on its page, so they apply before it navigates. */
@@ -1769,13 +1829,17 @@ function recordServerCoverageIds(sink: CaptureSink, url: string, value: string):
 /**
  * A request's duration in ms: to the response end when there is one, else, for
  * a request that failed before answering, to the moment the failure was seen.
+ * An unfinished one has no response end: it is timed to its response headers.
  */
 function requestDuration(
-  timing: { startTime: number; requestStart: number; responseEnd: number },
-  failed: boolean,
+  timing: { startTime: number; requestStart: number; responseStart: number; responseEnd: number },
+  end: RequestEnd,
 ): number {
+  if (end === 'unfinished') {
+    return timing.responseStart >= 0 ? Math.max(0, Math.round(timing.responseStart - timing.requestStart)) : 0;
+  }
   if (timing.responseEnd > 0) return Math.round(timing.responseEnd - timing.requestStart);
-  if (failed && timing.startTime > 0) return Math.max(0, Math.round(Date.now() - timing.startTime));
+  if (end === 'failed' && timing.startTime > 0) return Math.max(0, Math.round(Date.now() - timing.startTime));
   return 0;
 }
 
@@ -1785,9 +1849,11 @@ function requestDuration(
  * were made.
  */
 async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
-  // Wait for all in-flight requestfinished handlers before snapshotting
-  // networkRequests — the last request (often the one that failed the test)
-  // races with teardown and its serverLogs would otherwise be lost.
+  // Record the requests still open, then wait for all in-flight request
+  // handlers before snapshotting networkRequests: the last request (often the
+  // one that failed the test) races with teardown and its serverLogs would
+  // otherwise be lost.
+  recordOpenRequests(sink);
   await Promise.allSettled(sink.pendingHandlers);
 
   // ── Attach locator snapshots ──────────────────────────────────────────

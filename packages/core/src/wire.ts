@@ -143,7 +143,10 @@ export interface WireNetworkRequest {
   url: string;
   /** The HTTP status; 0 when no response arrived (the request failed, or finished without one). */
   status: number;
-  /** Milliseconds to the response end; for a failed request, to the moment it failed. */
+  /**
+   * Milliseconds to the response end; for a failed request, to the moment it failed; for a response whose body never
+   * finished loading (the page cancelled it, or it was still open as the test ended), to its headers.
+   */
   duration: number;
   /** Request start, Unix epoch milliseconds. */
   startTime?: number;
