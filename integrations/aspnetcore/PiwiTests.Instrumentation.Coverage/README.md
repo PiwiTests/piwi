@@ -11,7 +11,7 @@ The C# and Visual Basic compilers can instrument code for coverage themselves: c
 - the payload of the **HTTP request being served**, found through an `AsyncLocal` the middleware sets per request, so each request has its own coverage (work the request starts with `Task.Run` or a fire-and-forget task records into it too);
 - a **shared** payload outside a request (startup, background work), which holds the run-level coverage.
 
-The compiler also embeds a **span table** in the assembly (the `<DynamicAnalysisData>` resource): the source file, start and end line of each method and statement. A report maps the payloads to it: a method whose entry is marked gives a function (its line range), a marked statement gives its lines. Line ranges are 1-based and inclusive, file paths relative to the repository root.
+The compiler also embeds a **span table** in the assembly (the `<DynamicAnalysisData>` resource): the source file, start and end line of each method and statement. A report maps the payloads to it: a method whose entry is marked gives a function (its line range), a marked statement gives its lines. Line ranges are 1-based and inclusive, file paths relative to the repository root: the one above the application's content root, else the one above the source file on this machine, or the directory `PIWI_SOURCE_ROOT` names when the application was built where its sources no longer are.
 
 - A statement whose span encloses another method's span, such as a primary constructor, which spans the whole type, counts its first line only.
 - A statement that declares a lambda counts its own lines, and the lambda's lines only once the lambda ran.

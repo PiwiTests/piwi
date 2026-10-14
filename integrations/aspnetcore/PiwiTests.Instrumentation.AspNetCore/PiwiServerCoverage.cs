@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using PiwiTests.Instrumentation.Coverage;
 
 namespace PiwiTests.Instrumentation.AspNetCore;
@@ -58,6 +59,7 @@ internal sealed class PiwiServerCoverage
     private readonly PiwiCoverageStore _store;
     private string? _baseDirectory;
     private bool _baseDirectoryResolved;
+    private int _unplacedWarned;
 
     internal PiwiServerCoverage(PiwiCoverageSettings settings)
     {
@@ -253,7 +255,19 @@ internal sealed class PiwiServerCoverage
         }
 
         var baseDirectory = _baseDirectory;
-        return document => PiwiSourceFiles.RepositoryRelative(baseDirectory, document);
+        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("PiwiTests.Instrumentation");
+        return document =>
+        {
+            var path = PiwiSourceFiles.RepositoryRelative(baseDirectory, document);
+            if (path is null && Path.IsPathRooted(document) && Interlocked.Exchange(ref _unplacedWarned, 1) == 0)
+            {
+                logger?.LogWarning(
+                    "Server coverage leaves out {Document} and every other source file outside the repository: the sources are not under the content root's repository nor in a repository on this machine. Set PIWI_SOURCE_ROOT to the directory the sources were compiled from.",
+                    document);
+            }
+
+            return path;
+        };
     }
 
     private static void AddToRunLevel(List<PiwiRequestCoverage>? requests)
