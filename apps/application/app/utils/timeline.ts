@@ -113,6 +113,26 @@ export function timelineStatusFill(status: string, retries?: number | null): { f
   return style;
 }
 
+type RetriedAttemptStyle = { fill: string; fillOpacity: number; stroke: string; strokeWidth: number };
+
+const retriedAttemptStyles = new Map<string, RetriedAttemptStyle>();
+
+/**
+ * An attempt Playwright retried: a pale wash of its outcome color under an
+ * outline of it, so it reads as that outcome but not as the test's last word,
+ * which the next attempt's solid bar gives. One shared object per color, like
+ * `timelineStatusFill`.
+ */
+export function timelineRetriedAttemptStyle(status: string, retries?: number | null): RetriedAttemptStyle {
+  const color = timelineStatusColor(status, retries);
+  let style = retriedAttemptStyles.get(color);
+  if (!style) {
+    style = { fill: color, fillOpacity: 0.18, stroke: color, strokeWidth: 1.5 };
+    retriedAttemptStyles.set(color, style);
+  }
+  return style;
+}
+
 /**
  * Hook sections sit over their test's bar as a hatched overlay: a dark wash
  * when they passed, so the bar reads setup · body · teardown in any outcome

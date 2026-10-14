@@ -293,7 +293,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_case_screenshots',
     module: 'core',
     description:
-      'Get screenshots for a test-run-case. By default returns metadata only (name, type, size). Set content=true to include base64-encoded image data (max 3, capped at ~100 KB each). Call metadata-only first to discover what exists, then request content for the ones you need.',
+      "Get screenshots for a test-run-case, the page the test failed on first and flagged atFailure when it is known: the capture fixtures' screenshot of the page the test last acted on, or the only screenshot. Playwright takes one per page still open at the failure and one per page of each context the test closed before, so among several none is flagged without the fixtures. By default returns metadata only (file name, media type, size) for every screenshot. Set content=true to include base64-encoded image data for the first 3 (capped at ~100 KB each). Call metadata-only first to discover what exists, then request content for the ones you need.",
     inputSchema: {
       type: 'object',
       properties: {

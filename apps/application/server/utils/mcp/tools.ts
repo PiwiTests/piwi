@@ -154,6 +154,7 @@ import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
+import { failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
@@ -1139,11 +1140,13 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
     const withContent = params.content === true || params.content === 'true';
 
-    const screenshotRows = await selectCaseScreenshots(db, id, 3);
-    if (screenshotRows.length === 0) return { items: [] };
+    const allRows = await selectCaseScreenshots(db, id);
+    if (allRows.length === 0) return { items: [] };
+    const atFailure = failurePageScreenshot(allRows, (r) => r.subtype);
+    const screenshotRows = withContent ? allRows.slice(0, 3) : allRows;
 
     const storage = getStorage();
-    const results: Array<{ name: string; mediaType: string; dataLength: number; data?: string }> = [];
+    const results: Array<{ name: string; mediaType: string; dataLength: number; atFailure?: true; data?: string }> = [];
 
     for (const f of screenshotRows) {
       try {
@@ -1159,9 +1162,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
                 : 'image/png';
 
         const entry: any = {
-          name: f.label || f.path.split('/').pop() || 'screenshot',
+          name: f.path.split('/').pop() || 'screenshot',
           mediaType,
           dataLength: buf.length,
+          ...(f === atFailure ? { atFailure: true } : {}),
         };
 
         if (withContent) {

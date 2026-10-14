@@ -4,6 +4,7 @@ import { isWastedWait, DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted
 import { buildStepSpans } from '~/utils/step-spans';
 import { stepPhases } from '#shared/step-tree';
 import type { TestStepEventHook } from '#shared/types';
+import { testAttemptKey } from '~/utils/test-attempts';
 
 /**
  * What a timeline bar represents; drives rendering, filtering and header counts.
@@ -52,6 +53,13 @@ export interface TimelineItem {
   locks?: string[] | null;
   /** Retries the execution needed — test bars only; a pass after a retry reads as flaky. */
   retries?: number | null;
+  /**
+   * The bars of every attempt of this test in the run, first attempt first —
+   * test bars of a test that ran more than once only, one array shared by them.
+   */
+  attemptKeys?: string[] | null;
+  /** Whether a later attempt of this test ran: Playwright retried it after this one — test bars only. */
+  retried?: boolean;
   /**
    * The duration Playwright reported, when the bar is noticeably longer — test
    * bars only. Playwright leaves `beforeAll` / `afterAll` hooks and worker
@@ -409,6 +417,22 @@ function laneGaps(
 }
 
 /**
+ * Link the bars of each test that ran more than once in the run: each learns
+ * its attempts in order, and every attempt but the last that it was retried.
+ */
+function linkAttempts(groups: Iterable<TimelineItem[]>): void {
+  for (const bars of groups) {
+    if (bars.length < 2) continue;
+    bars.sort((a, b) => (a.retries ?? 0) - (b.retries ?? 0) || a.start - b.start);
+    const keys = bars.map((bar) => bar.key);
+    bars.forEach((bar, i) => {
+      bar.attemptKeys = keys;
+      bar.retried = i < bars.length - 1;
+    });
+  }
+}
+
+/**
  * Derive the timeline's row model from the run's test cases. Returns the
  * drawable items, the ordered worker rows, the shard groupings, and the total
  * time span. Pure and free of DOM/viewport concerns so it can be unit-tested.
@@ -511,6 +535,8 @@ export function useTimelineModel(props: TimelineModelInput): {
     const laneByWorker = new Map<number, { baseLane: number; slot: number; end: number }>();
     // Each lane's test bars in time order, for marking its empty stretches.
     const laneTests: Array<{ baseLane: number; slot: number; tests: TimelineItem[] }> = [];
+    // Each test's attempts, which can run on different lanes, for linking them.
+    const attemptBars = new Map<string, TimelineItem[]>();
 
     lanes.value.forEach((lane, i) => {
       const baseLane = rows[i]!.baseLane;
@@ -532,7 +558,7 @@ export function useTimelineModel(props: TimelineModelInput): {
           const span = absolute ? caseSpan(tc) : null;
           const start = absolute ? absoluteStart(tc.startedAt) : cursor;
           const duration = span ? span.end - span.start : reported;
-          rowItems.push({
+          const testItem: TimelineItem = {
             key: `t${tc.executionId}`,
             kind: 'test',
             testCaseId: tc.executionId,
@@ -547,7 +573,12 @@ export function useTimelineModel(props: TimelineModelInput): {
             retries: tc.retries ?? null,
             reportedDuration: duration - reported >= UNCOUNTED_HOOK_TIME_MS ? reported : null,
             expanded: expanded?.has(tc.executionId) ?? false,
-          });
+          };
+          rowItems.push(testItem);
+          const attemptKey = testAttemptKey(tc);
+          const attempts = attemptBars.get(attemptKey);
+          if (attempts) attempts.push(testItem);
+          else attemptBars.set(attemptKey, [testItem]);
           cursor = start + duration;
 
           stepEvents.forEach((step, stepIndex) => {
@@ -649,6 +680,7 @@ export function useTimelineModel(props: TimelineModelInput): {
       });
     }
 
+    linkAttempts(attemptBars.values());
     if (absolute && !props.live) result.push(...laneGaps(laneTests, result));
     return result;
   });

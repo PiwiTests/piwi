@@ -1115,7 +1115,7 @@ async function resolveScreenshots(
   limits: ContextLimits,
 ): Promise<AiAttachedImage[]> {
   if (limits.maxImages <= 0) return [];
-  // Newest first, so the most recently captured screenshot (usually the on-failure one) comes first.
+  // The page the test failed on first when it is known, so a low image limit keeps it.
   const screenshotRows = await selectCaseScreenshots(db, rep.id, limits.maxImages);
 
   if (screenshotRows.length === 0) return [];

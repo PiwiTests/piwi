@@ -7,6 +7,7 @@
  * `files.type = 'screenshot'` filter matches nothing the upload endpoints
  * write. These predicates accept both shapes.
  */
+import { FAILURE_SCREENSHOT_ATTACHMENT } from '@piwitests/core/wire';
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 const VIDEO_EXTS = new Set(['webm', 'mp4', 'ogg']);
@@ -51,6 +52,23 @@ export function isScreenshotFileRow(row: ClassifiableFileRow): boolean {
   if (row.type === 'screenshot') return true;
   if (row.type !== 'attachment') return false;
   return isAttachmentOfFamily(row, 'image', 'screenshot', IMAGE_EXTS);
+}
+
+/**
+ * The screenshot of the page a failed test was on, among one execution's
+ * screenshots: the one the capture fixtures took of the page the test last
+ * acted on, else the only one. Playwright takes a screenshot of every page
+ * still open when a test fails and of every page of each context the test
+ * closed before, so among several of its own none is known to be that page.
+ */
+export function failurePageScreenshot<T>(shots: readonly T[], name: (shot: T) => string | null | undefined): T | null {
+  return shots.find((shot) => name(shot) === FAILURE_SCREENSHOT_ATTACHMENT) ?? (shots.length === 1 ? shots[0]! : null);
+}
+
+/** One execution's screenshots in their order, with the page the test failed on first when it is known. */
+export function failurePageFirst<T>(shots: readonly T[], name: (shot: T) => string | null | undefined): T[] {
+  const atFailure = failurePageScreenshot(shots, name);
+  return atFailure ? [atFailure, ...shots.filter((shot) => shot !== atFailure)] : [...shots];
 }
 
 /** True when a files row refers to a recorded video. */

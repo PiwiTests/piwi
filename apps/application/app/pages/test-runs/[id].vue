@@ -86,8 +86,7 @@ const displayTestCases = ref<TestCaseResult[]>([]);
 function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
   const byKey = new Map<string, TestCaseResult>();
   for (const tc of cases) {
-    const browser = tc.browser?.projectName ?? tc.browser?.browserName ?? '';
-    const key = tc.testCaseId > 0 ? `c${tc.testCaseId}\x00${browser}` : `${tc.title}\x00${tc.location}\x00${browser}`;
+    const key = testAttemptKey(tc);
     const prev = byKey.get(key);
     if (!prev || (tc.retries ?? 0) >= (prev.retries ?? 0)) byKey.set(key, tc);
   }

@@ -1,7 +1,10 @@
 import { describe, test, expect } from 'vitest';
+import { FAILURE_SCREENSHOT_ATTACHMENT } from '@piwitests/core/wire';
 import {
   classifyEvidenceFile,
   contentTypeForPath,
+  failurePageFirst,
+  failurePageScreenshot,
   isScreenshotFileRow,
   isVideoFileRow,
   supportedImageMediaType,
@@ -153,5 +156,38 @@ describe('contentTypeForPath', () => {
     expect(contentTypeForPath('x/no-extension')).toBe('application/octet-stream');
     expect(contentTypeForPath('x/blob.bin', null)).toBe('application/octet-stream');
     expect(contentTypeForPath('')).toBe('application/octet-stream');
+  });
+});
+
+describe('failurePageScreenshot / failurePageFirst', () => {
+  const name = (row: { subtype: string }) => row.subtype;
+  // Playwright's own: one per page open at the failure, one per page of a context closed earlier.
+  const listPage = attachment('screenshot', 'image/png', 'run/1/test-failed-1.png');
+  const detailPage = attachment('screenshot', 'image/png', 'run/1/test-failed-2.png');
+  const popup = attachment('screenshot', 'image/png', 'run/1/test-failed-3.png');
+  const failingPage = attachment(FAILURE_SCREENSHOT_ATTACHMENT, 'image/png', 'run/1/piwi-failure-screenshot.png');
+
+  test('the capture fixtures’ screenshot is the failing page, wherever it sits', () => {
+    expect(failurePageScreenshot([listPage, detailPage, failingPage, popup], name)).toBe(failingPage);
+    expect(failurePageFirst([listPage, detailPage, failingPage, popup], name)).toEqual([
+      failingPage,
+      listPage,
+      detailPage,
+      popup,
+    ]);
+  });
+
+  test('a lone screenshot is the failing page', () => {
+    expect(failurePageScreenshot([popup], name)).toBe(popup);
+  });
+
+  test('among several of Playwright’s own, none is the failing page and the order is kept', () => {
+    expect(failurePageScreenshot([listPage, detailPage, popup], name)).toBeNull();
+    expect(failurePageFirst([listPage, detailPage, popup], name)).toEqual([listPage, detailPage, popup]);
+  });
+
+  test('no screenshot, no failing page', () => {
+    expect(failurePageScreenshot([], name)).toBeNull();
+    expect(failurePageFirst([], name)).toEqual([]);
   });
 });
