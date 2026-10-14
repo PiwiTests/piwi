@@ -90,11 +90,12 @@ evidence rebuilt from a trace, and the fallback the reporter took to send the ru
     click it to open the test's steps on that hook. Playwright leaves `beforeAll` / `afterAll` hooks and worker
     fixtures out of a test's duration; the bar spans them anyway, and its tooltip gives the duration Playwright
     reported. Runs sent by an older reporter show the sections without their hook list.
-  - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test (and starts one for
-    tests that need another project or different worker options), so a lane can hold several processes one after
-    another: **↻** marks where a new one took over, and the stretch before it is the old process shutting down and
-    the new one starting. A dashed line is time the worker ran no test — before its first test, between two tests,
+  - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test, so a lane can hold
+    several processes one after another: **↻** marks where a new one took over, and the stretch before it is the old
+    process shutting down and the new one starting. A dashed line is time the worker ran no test — before its first test, between two tests,
     or after its last one while the others finished. Hover either to see which it was.
+  - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
+    them with arrows.
   - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
     workers are drawn above the worker rows, on the same axis, and one metric of your choice under each worker row.
     Hover a track for its values at that moment; turn each one off from the **Resources** menu. See

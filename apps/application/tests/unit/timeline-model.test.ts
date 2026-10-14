@@ -11,6 +11,9 @@ import type { TestCaseResult, TestStepEvent } from '../../types/api';
 type StepLike = Partial<TestStepEvent> & { title: string; category: string };
 type CaseLike = {
   executionId: number;
+  testCaseId?: number;
+  location?: string;
+  browser?: { projectName?: string } | null;
   title: string;
   status: string;
   workerIndex: number | null;
@@ -401,6 +404,105 @@ describe('useTimelineModel', () => {
 
     expect(timelineData.value).toHaveLength(1);
     expect(timelineData.value[0]!.kind).toBe('test');
+  });
+
+  test('links the attempts of a retried test across lanes and marks every attempt but the last as retried', () => {
+    const { timelineData } = model([
+      // Attempt 2 is listed first: the order comes from the retry index, not the input.
+      {
+        executionId: 2,
+        testCaseId: 7,
+        title: 'pays',
+        status: 'passed',
+        retries: 1,
+        workerIndex: 2,
+        startedAt: 6000,
+        duration: 1000,
+      },
+      {
+        executionId: 1,
+        testCaseId: 7,
+        title: 'pays',
+        status: 'failed',
+        retries: 0,
+        workerIndex: 0,
+        startedAt: 1000,
+        duration: 2000,
+      },
+      {
+        executionId: 3,
+        testCaseId: 8,
+        title: 'lists',
+        status: 'passed',
+        workerIndex: 1,
+        startedAt: 1000,
+        duration: 500,
+      },
+      // The same test in another browser project is another test.
+      {
+        executionId: 4,
+        testCaseId: 7,
+        title: 'pays',
+        status: 'failed',
+        workerIndex: 1,
+        startedAt: 2000,
+        duration: 900,
+        browser: { projectName: 'firefox' },
+      },
+    ]);
+    const bar = (id: number) => timelineData.value.find((d) => d.key === `t${id}`)!;
+
+    expect(bar(1).attemptKeys).toEqual(['t1', 't2']);
+    expect(bar(2).attemptKeys).toBe(bar(1).attemptKeys);
+    expect(bar(1).retried).toBe(true);
+    expect(bar(2).retried).toBe(false);
+    expect(bar(3).attemptKeys ?? null).toBeNull();
+    expect(bar(3).retried ?? false).toBe(false);
+    expect(bar(4).attemptKeys ?? null).toBeNull();
+  });
+
+  test('links live attempts by title and location before they carry a test case id', () => {
+    const { timelineData } = model(
+      [
+        {
+          executionId: -1,
+          testCaseId: 0,
+          title: 'pays',
+          location: 'a.spec.ts:3:5',
+          status: 'failed',
+          workerIndex: 0,
+          startedAt: 1000,
+          duration: 900,
+        },
+        {
+          executionId: -2,
+          testCaseId: 0,
+          title: 'pays',
+          location: 'a.spec.ts:3:5',
+          status: 'running',
+          retries: 1,
+          workerIndex: 1,
+          startedAt: 2500,
+          duration: 100,
+        },
+        {
+          executionId: -3,
+          testCaseId: 0,
+          title: 'pays',
+          location: 'b.spec.ts:3:5',
+          status: 'passed',
+          workerIndex: 2,
+          startedAt: 1000,
+          duration: 900,
+        },
+      ],
+      { live: true },
+    );
+    const bar = (id: number) => timelineData.value.find((d) => d.key === `t${id}`)!;
+
+    expect(bar(-1).attemptKeys).toEqual(['t-1', 't-2']);
+    expect(bar(-1).retried).toBe(true);
+    expect(bar(-3).attemptKeys ?? null).toBeNull();
   });
 
   test('exposes the run locks (sorted, distinct) and carries them onto test bars', () => {

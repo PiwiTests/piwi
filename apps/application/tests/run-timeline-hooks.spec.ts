@@ -117,4 +117,35 @@ test.describe('Run timeline hooks and gaps', () => {
     await page.mouse.move(setupBox.x + setupBox.width / 2, setupBox.y + setupBox.height / 2);
     await expect(page.getByText('Playwright reports 800ms')).toBeVisible();
   });
+
+  test('draws a retried attempt apart and joins the attempts of a test on hover', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await waitForHydration(page);
+
+    // Three bars, two tests: the failed attempt Playwright retried is not another test.
+    const timeline = page.locator('[data-shot="run-timeline"]');
+    await expect(timeline).toContainText('2 tests · 1 retry');
+    const attempts = timeline.locator('[data-timeline-test][data-title="removes the catalog"]');
+    await expect(attempts).toHaveCount(2);
+    const retried = timeline.locator('[data-timeline-test][data-retried]');
+    await expect(retried).toHaveCount(1);
+    await expect(retried).toHaveAttribute('data-attempt', '1');
+
+    // Hovering the passing retry lifts the failed attempt with it, joined by an arrow, and lists both.
+    const retryBox = (await timeline.locator('[data-timeline-test][data-attempt="2"]').first().boundingBox())!;
+    await page.mouse.move(retryBox.x + retryBox.width / 2, retryBox.y + retryBox.height / 2);
+    const focus = page.locator('[data-timeline-focus]');
+    await expect(focus.locator('[data-timeline-test]')).toHaveCount(2);
+    await expect(focus.locator('[data-timeline-retry-arrow]')).toHaveCount(1);
+    const list = page.getByTestId('timeline-tooltip-attempts');
+    await expect(list).toContainText('Passed on attempt 2');
+    await expect(list.locator('li')).toHaveText([/Attempt 1\s*failed/, /Attempt 2\s*passed/]);
+    await expect(list.locator('li[data-current]')).toContainText('Attempt 2');
+
+    // A test that ran once lifts alone (hovered past its beforeAll, on the test body).
+    const onceBox = (await timeline.locator('[data-timeline-test]:not([data-title])').first().boundingBox())!;
+    await page.mouse.move(onceBox.x + onceBox.width * 0.8, onceBox.y + onceBox.height / 2);
+    await expect(focus.locator('[data-timeline-test]')).toHaveCount(1);
+    await expect(page.getByTestId('timeline-tooltip-attempts')).toHaveCount(0);
+  });
 });
