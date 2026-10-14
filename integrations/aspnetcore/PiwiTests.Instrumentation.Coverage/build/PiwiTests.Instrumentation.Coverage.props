@@ -4,4 +4,15 @@
   <PropertyGroup Condition="'$(PiwiCoverage)' == 'true'">
     <Instrument>TestCoverage</Instrument>
   </PropertyGroup>
+
+  <!-- The instrumentation is no input of the compile step, so an up-to-date assembly of the other kind would be kept:
+       a file naming it is one, rewritten only when it changes, so switching between a coverage build and a plain build
+       recompiles. -->
+  <ItemGroup>
+    <CustomAdditionalCompileInputs Include="$(IntermediateOutputPath)piwi-instrument.txt" />
+  </ItemGroup>
+  <Target Name="PiwiWriteInstrumentMarker" BeforeTargets="CoreCompile">
+    <WriteLinesToFile File="$(IntermediateOutputPath)piwi-instrument.txt" Lines="Instrument=$(Instrument)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
 </Project>
