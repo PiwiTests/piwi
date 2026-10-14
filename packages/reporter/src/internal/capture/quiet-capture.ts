@@ -98,6 +98,16 @@ export function boxCaptureFrames(extraPrefixes: readonly string[] = []): void {
   }
 }
 
+/**
+ * Call a Playwright method on its own receiver. Playwright names an API call
+ * after the method frame the call enters, so the call keeps its real name
+ * (`locator.fill: Timeout …`); a call through `Function.prototype.apply` is
+ * named `apply`.
+ */
+export function callMethod(target: object, prop: string | symbol, args: unknown[]): unknown {
+  return (target as Record<string | symbol, (...a: unknown[]) => unknown>)[prop]!(...args);
+}
+
 type ApiCallOwner = {
   _wrapApiCall?: (run: () => Promise<unknown>, options: { internal: boolean; title?: string }) => Promise<unknown>;
 };

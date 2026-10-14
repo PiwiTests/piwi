@@ -108,7 +108,8 @@ The plugin is auto-loaded by Nitro. It captures `consola` Warning/Error entries 
 ### Reporter setup
 
 On the Playwright side there is nothing to configure: the reporter reads the headers from every request the
-[capture fixtures](./capture-fixtures) record, so every spec must import `test` from your fixtures file.
+[capture fixtures](./capture-fixtures) record, the `request` fixture's API calls included, so every spec must import
+`test` from your fixtures file.
 
 ## Backend logs
 

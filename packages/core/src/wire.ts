@@ -135,8 +135,9 @@ export interface LocatorPageUse {
 }
 
 /**
- * One request the page made, as the capture fixtures record it in the
- * `piwi-network` attachment: API calls and documents, not static assets.
+ * One request a test made, as the capture fixtures record it in the
+ * `piwi-network` attachment: its pages' API calls and documents, not static
+ * assets, and its calls through an API request context.
  */
 export interface WireNetworkRequest {
   method: string;
@@ -150,7 +151,10 @@ export interface WireNetworkRequest {
   duration: number;
   /** Request start, Unix epoch milliseconds. */
   startTime?: number;
-  /** Playwright's resource type: `fetch`, `xhr`, `document` or `other`. */
+  /**
+   * Playwright's resource type: `fetch`, `xhr`, `document` or `other`. Absent for a call through an API request
+   * context (the `request` fixture, `page.request`), which no page made.
+   */
   resourceType?: string;
   /** The response's content type, without parameters. */
   contentType?: string;
@@ -158,7 +162,10 @@ export interface WireNetworkRequest {
   serverLogs?: unknown;
   /** Backend spans from the `X-Piwi-Trace` response header. */
   serverTraces?: unknown;
-  /** Why the request failed, as Playwright reports it (`net::ERR_CONNECTION_RESET`); absent when it finished. */
+  /**
+   * Why the request failed, as Playwright reports it (`net::ERR_CONNECTION_RESET`; for an API call, its error's first
+   * line: `connect ECONNREFUSED …`); absent when it finished.
+   */
   failure?: string;
   /**
    * True when no server sent the response: the test's own route handler fulfilled it (`route.fulfill`), or a cache

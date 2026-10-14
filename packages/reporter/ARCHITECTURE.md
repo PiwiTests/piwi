@@ -37,13 +37,18 @@ Two **external contracts** beyond the npm API:
   `/proc/<pid>/clear_refs` of the processes it started at each test's start,
   which resets their peak RSS for the test (`internal/capture/worker-metrics.ts`),
   and in Chromium it opens a DevTools session on each page that outlives its test.
+  The capture fixtures wrap `playwright.request.newContext` and hand out every API
+  request context behind a proxy that records each call, the `request` fixture's and
+  each browser context's own `request` (`page.request`) included
+  (`internal/capture/api-requests.ts`).
   A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) pauses with the
   `__piwiPauseState` page global and posts a locator picked meanwhile to the editor's
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`).
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`).
   With server coverage on (`coverage.server`), the capture fixtures keep the
-  `X-Piwi-Coverage` request ids of each test's responses (`piwi-server-coverage-requests`),
+  `X-Piwi-Coverage` request ids of each test's responses, its pages' and its API
+  calls' (`piwi-server-coverage-requests`),
   `onBegin` writes `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` for the workers,
   and the reporter process calls each origin's `/__piwi/coverage/collect` and
   `/__piwi/coverage/run` and reads the covered files from the checkout for their
@@ -142,6 +147,8 @@ src/
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,
                 trace and stack locations — Playwright internals, feature-detected)
+                api-requests (the calls a test makes through Playwright's API
+                request contexts: the `request` fixture, `page.request`)
                 resource-ledger (the browsers, contexts, pages and API request
                 contexts each worker opens, and the census per test),
                 worker-metrics (what a test cost the worker and its browsers,

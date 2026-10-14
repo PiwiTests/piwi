@@ -20,6 +20,8 @@ export default defineConfig({
   // verification (its own `expect()`s, not the capture attachments this reporter
   // checks); keep it out of this run.
   testIgnore: '**/ai/**',
+  // The stub instrumented backend the API tests call, in this process.
+  globalSetup: './api-backend.ts',
   timeout: 30_000,
   reporter: [['./verify-reporter.ts'], ['line']],
   use: {
