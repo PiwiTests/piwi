@@ -17,7 +17,14 @@ import { FAILURE_STORIES, SOURCE_FILES, lineOf } from './failure-stories.mjs';
 export const WEB_DASHBOARD_PROJECT_ID = 5;
 const WEB_DASHBOARD_ORIGIN = 'https://admin.example.com';
 
-/** The handler file and the dependencies its child spans name, per route. */
+/**
+ * The handler file and the dependencies its child spans name, per route. The
+ * dashboard's origin serves its routes from the Nuxt app's Nitro server,
+ * except `/api/users`, which it routes, with `/__piwi/`, to the dashboard's
+ * ASP.NET Core API in `api/` (`backend: 'aspnetcore'`): that backend records
+ * no server spans, so its route names its handler through its route manifest,
+ * and no dependency.
+ */
 const ROUTES = {
   'POST /api/auth/sso/start': { handler: 'server/api/auth/sso/start.post.ts', calls: ['okta', 'redis'] },
   'GET /api/auth/sso/callback': {
@@ -32,7 +39,7 @@ const ROUTES = {
     calls: ['postgres'],
     responses: [200, 403, 422],
   },
-  'GET /api/users': { handler: 'server/api/users/index.get.ts', calls: ['postgres'] },
+  'GET /api/users': { handler: 'api/Users/UsersEndpoints.cs', calls: [], backend: 'aspnetcore' },
   'GET /api/roles': { handler: 'server/api/roles/index.get.ts', calls: ['postgres'] },
   'POST /api/invitations': {
     handler: 'server/api/invitations/index.post.ts',
@@ -77,7 +84,7 @@ const RECORDED_CHANGES = [
     commit: 'a2f6d0b4e8c1f5a93d7b0e4c8f2a6d1b5e9c3f7a',
     files: ['server/api/auth/sso/start.post.ts', 'server/api/auth/sso/callback.get.ts'],
   },
-  { commit: 'demo010', files: ['server/api/users/index.get.ts', 'src/server/users.ts'] },
+  { commit: 'demo010', files: ['api/Users/UsersEndpoints.cs'] },
 ];
 
 /** Routes the project's OpenAPI document declares that no test requests, with their documented codes. */
@@ -1018,11 +1025,17 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
     return id;
   };
 
-  // Routes, their handlers and the dependencies those call.
+  // Routes, their handlers and the dependencies those call: a Nitro route's
+  // handler from its server spans, an ASP.NET Core route's from the manifest.
   for (const [route, spec] of Object.entries(ROUTES)) {
     addNode('route', route, 'observed', spec.responses ? { responses: spec.responses } : null);
-    addNode('handler', spec.handler);
-    addEdge('route', route, 'handled-by', 'handler', spec.handler);
+    if (spec.backend === 'aspnetcore') {
+      addNode('handler', spec.handler, 'manifest', { declared: true });
+      addEdge('route', route, 'handled-by', 'handler', spec.handler, { origin: 'manifest' });
+    } else {
+      addNode('handler', spec.handler);
+      addEdge('route', route, 'handled-by', 'handler', spec.handler);
+    }
     for (const dep of spec.calls) {
       addNode('dependency', dep);
       addEdge('handler', spec.handler, 'calls', 'dependency', dep);
@@ -1243,10 +1256,20 @@ export function webDashboardPassingConsole(title) {
 }
 
 /**
+ * Whether the backend serving a request records server spans: the Nitro
+ * server does, the ASP.NET Core API does not.
+ */
+export function webDashboardRecordsSpans(method, url) {
+  const path = url.startsWith('/') ? url : new URL(url).pathname;
+  return ROUTES[`${method} ${routePattern(path)}`]?.backend !== 'aspnetcore';
+}
+
+/**
  * The requests one execution of a test makes, in order, for the network table:
  * the journey's requests with durations from their position, so the seed's
- * random stream is left untouched. Each carries the server spans the backend
- * instrumentation records: the handler on the root span, one child per dependency.
+ * random stream is left untouched. A request the Nitro server answers carries
+ * the server spans its instrumentation records: the handler on the root span,
+ * one child per dependency.
  */
 export function webDashboardRequests(title) {
   const journey = WEB_DASHBOARD_JOURNEYS[title];
@@ -1255,31 +1278,33 @@ export function webDashboardRequests(title) {
     const route = `${method} ${routePattern(path)}`;
     const spec = ROUTES[route];
     const duration = 40 + ((i * 37 + path.length * 11) % 160);
-    const spans = [
-      {
-        id: 'root',
-        name: route,
-        kind: 'server',
-        startMs: 0,
-        durMs: duration,
-        status: status >= 500 ? 'error' : 'ok',
-        attrs: {
-          'http.method': method,
-          'http.route': routePattern(path),
-          'http.status_code': status,
-          ...(spec ? { 'piwi.handler': spec.handler } : {}),
-        },
-      },
-      ...(spec?.calls ?? []).map((dep, j) => ({
-        id: `dep-${j}`,
-        parentId: 'root',
-        name: dep,
-        kind: 'client',
-        startMs: Math.round(duration * (0.15 + 0.25 * j)),
-        durMs: Math.max(2, Math.round(duration * 0.2)),
-        attrs: { 'peer.service': dep },
-      })),
-    ];
+    const spans = !webDashboardRecordsSpans(method, path)
+      ? null
+      : [
+          {
+            id: 'root',
+            name: route,
+            kind: 'server',
+            startMs: 0,
+            durMs: duration,
+            status: status >= 500 ? 'error' : 'ok',
+            attrs: {
+              'http.method': method,
+              'http.route': routePattern(path),
+              'http.status_code': status,
+              ...(spec ? { 'piwi.handler': spec.handler } : {}),
+            },
+          },
+          ...(spec?.calls ?? []).map((dep, j) => ({
+            id: `dep-${j}`,
+            parentId: 'root',
+            name: dep,
+            kind: 'client',
+            startMs: Math.round(duration * (0.15 + 0.25 * j)),
+            durMs: Math.max(2, Math.round(duration * 0.2)),
+            attrs: { 'peer.service': dep },
+          })),
+        ];
     return {
       method,
       url: `${WEB_DASHBOARD_ORIGIN}${path.split('?')[0]}`,

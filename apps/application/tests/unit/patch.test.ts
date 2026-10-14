@@ -309,7 +309,7 @@ describe('patchExcerpt', () => {
     expect(excerpt.hiddenLines).toBe(0);
     // Cluster 10's patch ends on a blank context line.
     const seeded = patchExcerpt(seededPatch(10))!;
-    expect(body(seeded.diff).at(-1)).toBe('+const PAGE_SIZE = 25;');
+    expect(body(seeded.diff).at(-1)).toBe('+    private const int DefaultPageSize = 25;');
     expect(seeded.hiddenLines).toBe(0);
   });
 

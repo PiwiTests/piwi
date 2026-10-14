@@ -25,7 +25,7 @@ export interface DemoExampleExpect {
   resources?: 'leaky';
   incident?: true;
   gaps?: { detectors: string[] };
-  suspects?: { path: string };
+  suspects?: { path: string; granularity?: 'lines' | 'functions' | 'files' };
 }
 
 export interface DemoExample {

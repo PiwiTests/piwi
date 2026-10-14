@@ -27,9 +27,10 @@
  * - `incident: true`: the run is flagged as an environment incident.
  * - `gaps: { detectors }`: the project has an open scenario gap (or finding)
  *   from each named detector.
- * - `suspects: { path }`: the cluster's suspect lines start with that file:
- *   its story's failing tests recorded coverage of it, and the demo's canned
- *   changes change it.
+ * - `suspects: { path, granularity? }`: the cluster's suspect lines start
+ *   with that file, at that granularity when one is given: its story's failing
+ *   tests recorded coverage of it (with lines for `lines`), and the demo's
+ *   canned changes change it.
  */
 
 /** @type {readonly import('./demo-examples.d.mts').DemoExample[]} */
@@ -53,15 +54,27 @@ export const DEMO_EXAMPLES = [
     expect: { cluster: { id: 10, story: 'users-table-page-size' }, diagnosis: 'with-patch', fixLanded: true },
   },
   {
+    id: 'suspect-lines-server',
+    doc: 'features/ai-diagnosis',
+    title: 'Web Dashboard › Users table paginates 25 rows per page',
+    shows:
+      'The dashboard’s ASP.NET Core API records server coverage by line: of the 13 lines changed in the range, the failing test ran 3, the statements of UsersEndpoints.cs that size, fetch and return the page, which two passing tests ran too; the What changed line names them, the diff marks them, and the diagnosis context and the fix plan list them.',
+    route: '/failure-clusters/10',
+    expect: {
+      cluster: { id: 10, story: 'users-table-page-size' },
+      suspects: { path: 'api/Users/UsersEndpoints.cs', granularity: 'lines' },
+    },
+  },
+  {
     id: 'suspect-lines-cluster',
     doc: 'features/ai-diagnosis',
     title: 'UI Components › Modal opens and closes correctly',
     shows:
-      'Of the two files changed in the range, the failing modal tests ran the modal controller and no passing test did: it heads the suspect lines on the What changed line, its card and the diagnosis context.',
+      'Browser coverage names files: of the two files changed in the range, the failing modal tests ran the modal controller and no passing test did, so its whole hunk heads the suspect lines on the What changed line, its card and the diagnosis context.',
     route: '/failure-clusters/5',
     expect: {
       cluster: { id: 5, story: 'modal-never-opens' },
-      suspects: { path: 'src/components/modal-controller.ts' },
+      suspects: { path: 'src/components/modal-controller.ts', granularity: 'files' },
     },
   },
   {

@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import type { Client } from '@libsql/client';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { FAILURE_STORIES } from '#shared/demo/failure-stories.mjs';
+import { createHash } from 'node:crypto';
+import { canonicalCoverageFile, decodeFunctionRanges, decodeLineRanges } from '@piwitests/core/coverage';
+import { FAILURE_STORIES, SCM_REPOS, sourceText, storyCoverageFiles } from '#shared/demo/failure-stories.mjs';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
 import * as scene from '../../scripts/lib/suspect-lines-scene.mjs';
 
@@ -14,7 +16,9 @@ import * as scene from '../../scripts/lib/suspect-lines-scene.mjs';
  * The demo's suspect lines over a freshly generated seed: the stories that
  * carry coverage give their cluster and its failing executions suspect lines,
  * joined with the canned changes the cluster's What changed card shows, and
- * every other cluster answers that its tests recorded no coverage.
+ * every other cluster answers that its tests recorded no coverage. The modal
+ * story's browser coverage names files, the users story's server coverage
+ * names lines, against the version of the file the canned history ends on.
  */
 
 // The context's trace and DOM views read the in-browser database, which a test has none of.
@@ -79,7 +83,107 @@ describe('demo suspect lines', () => {
     for (const example of examples) {
       const answer = await demoClusterSuspectLines(db, example.expect.cluster!.id);
       expect(answer.suspects[0]?.path, example.id).toBe(example.expect.suspects!.path);
+      if (example.expect.suspects!.granularity) {
+        expect(answer.suspects[0]?.granularity, example.id).toBe(example.expect.suspects!.granularity);
+      }
     }
+  });
+
+  test('the users story: the ASP.NET Core API’s users endpoints are the one suspect, at the lines the failing test ran', async () => {
+    const { demoClusterSuspectLines } = await import('~~/app/demo/api/suspect-lines');
+    const answer = await demoClusterSuspectLines(db, 10);
+    // ListUsers' three paging statements: the failing test and the two passing
+    // users tests ran them, so the score is 1 / sqrt(1 × 3).
+    expect(answer.suspects).toEqual([
+      {
+        path: 'api/Users/UsersEndpoints.cs',
+        runtime: 'server',
+        hunk: [40, 42],
+        lines: [[40, 42]],
+        granularity: 'lines',
+        failing: 1,
+        passing: 2,
+        score: 0.577,
+      },
+    ]);
+    // The pagination commit's constant and parameters are not statements, and
+    // the stylesheet is no code coverage reads; package.json and the reports
+    // page changed with no patch.
+    expect(answer.summary).toEqual({
+      changedFiles: 2,
+      changedLines: 13,
+      hunks: 4,
+      executedHunks: 1,
+      executedLines: 3,
+      failingWithCoverage: 1,
+      passingWithCoverage: 2,
+    });
+    expect(answer.unreadFiles).toBe(2);
+  });
+
+  test('server coverage names the blob of the version the canned history ends on', () => {
+    const story = FAILURE_STORIES.find((s) => s.key === 'users-table-page-size')!;
+    const servers = story.failingCases
+      .flatMap((fc) => storyCoverageFiles(story, fc.frames.at(-1)!.file, fc.title))
+      .filter((entry) => typeof entry !== 'string');
+    expect(servers.length).toBeGreaterThan(0);
+    for (const file of servers) {
+      const text = sourceText(file.path);
+      const blob = createHash('sha1')
+        .update(`blob ${Buffer.byteLength(text)}\0`)
+        .update(text)
+        .digest('hex');
+      expect(file.blob, file.path).toBe(blob);
+      const changes = SCM_REPOS[story.projectId]!.commits.flatMap((c) => c.files).filter(
+        (f) => f.filename === file.path,
+      );
+      expect(changes.map((f) => f.blob)).toEqual([blob]);
+    }
+  });
+
+  test('every seeded coverage fragment is stored under the hash the ingest gives it', async () => {
+    const rows = (await client.execute('SELECT hash, runtime, path, blob, functions, lines FROM coverage_fragments'))
+      .rows;
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const canonical = canonicalCoverageFile({
+        path: String(row.path),
+        runtime: row.runtime as 'browser' | 'server',
+        ...(row.blob ? { blob: String(row.blob) } : {}),
+        functions: decodeFunctionRanges(row.functions as string | null),
+        lines: decodeLineRanges(row.lines as string | null),
+      });
+      expect(row.hash, String(row.path)).toBe(createHash('sha256').update(canonical).digest('hex'));
+    }
+  });
+
+  test('a stored diagnosis that cites the suspect lines quotes what the demo answers', async () => {
+    const { demoClusterSuspectLines } = await import('~~/app/demo/api/suspect-lines');
+    const rows = (await client.execute('SELECT cluster_id, details FROM failure_diagnoses')).rows;
+    const citing = rows.filter((row) => String(row.details).includes('[suspectLines]'));
+    expect(citing.length).toBeGreaterThan(0);
+    for (const row of citing) {
+      const { summary, suspects } = await demoClusterSuspectLines(db, Number(row.cluster_id));
+      const details = String(row.details);
+      expect(details, `cluster ${row.cluster_id}`).toContain(
+        `${summary.executedLines} of the ${summary.changedLines} changed lines`,
+      );
+      const top = suspects[0]!;
+      const lines = top.lines.map(([start, end]) => (start === end ? `${start}` : `${start} to ${end}`)).join(', ');
+      expect(details, `cluster ${row.cluster_id}`).toContain(`${top.path.split('/').pop()} ${lines}`);
+    }
+  });
+
+  test("the users cluster's fix plan lists its suspect lines", async () => {
+    const { demoClusterSuspectLines } = await import('~~/app/demo/api/suspect-lines');
+    const { buildFixPlan } = await import('~~/server/utils/fix-plan');
+    const { fixPlanSuspectLines } = await import('#shared/suspect-lines');
+    const { fixPlanToMarkdown } = await import('#shared/fix-plan-markdown');
+    const built = await buildFixPlan(db, 10);
+    const plan = { ...built!, suspectLines: fixPlanSuspectLines(await demoClusterSuspectLines(db, 10)) };
+    expect(fixPlanToMarkdown(plan)).toContain(
+      '- `api/Users/UsersEndpoints.cs` 40-42 (server): executed lines, 1 failing test, 2 passing tests, score 0.58',
+    );
   });
 
   test('the modal story: the controller is the one suspect, reached only by the failing tests', async () => {

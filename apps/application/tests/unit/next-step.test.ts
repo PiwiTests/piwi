@@ -116,14 +116,14 @@ describe('computeNextStep — one row per rule', () => {
     const s = step({
       diagnosisCompleted: true,
       patchAppliesCleanly: true,
-      patchFile: 'src/server/users.ts',
-      diagnosisSummary: 'PAGE_SIZE 50 → 25',
+      patchFile: 'api/Users/UsersEndpoints.cs',
+      diagnosisSummary: 'DefaultPageSize 50 → 25',
     });
     expect(s.kind).toBe('apply-patch');
     expect(s.primary).toMatchObject({ label: 'Copy apply command', action: 'copy-git-apply' });
-    expect(s.title).toContain('src/server/users.ts');
+    expect(s.title).toContain('api/Users/UsersEndpoints.cs');
     // The summary is the "Most likely" line's job; the step names only the work.
-    expect(s.title).not.toContain('PAGE_SIZE 50 → 25');
+    expect(s.title).not.toContain('DefaultPageSize 50 → 25');
   });
 
   test('5: a completed diagnosis whose patch is stale or absent', () => {
