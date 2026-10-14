@@ -56,6 +56,14 @@ import { isLabRun } from '#shared/handlers/probes';
 import { eligibleExecutionSql, isEligibleRun } from '#shared/run-eligibility';
 import { runFacts, upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
+import {
+  codeReachOfCoverage,
+  coveragePayloadContent,
+  upsertCoverageFragments,
+  upsertTestCoverage,
+  type TestCoverageCase,
+} from './coverage';
+import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorPageUse } from '@piwitests/core/wire';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
@@ -113,8 +121,13 @@ export interface RunCaseInput {
   pageInventory?: unknown;
   /** The page each locator call ran on — stored through case_payloads, joined to the locator index. */
   locatorPages?: unknown;
-  /** The source files the test executed — stored through case_payloads, and per test in `code_reach`. */
+  /** The source files the test executed — stored through case_payloads, and per test in `code_reach` without `coverage`. */
   codeReach?: unknown;
+  /**
+   * The test's coverage (`CoverageCapture`) — its fragments in `coverage_fragments`, their ids per execution through
+   * case_payloads, per test in `test_coverage`, and its files in `code_reach`.
+   */
+  coverage?: unknown;
   /** What the execution cost its worker and browsers (`piwi-resources`). */
   resources?: unknown;
   aiUsage?: unknown;
@@ -438,7 +451,10 @@ export async function persistRunCases(
     inventory: string | null;
     locatorPages: string | null;
     codeReach: string | null;
+    coverage: string | null;
   }> = [];
+  // Each row's coverage, stored as fragments once the loop has built every row.
+  const rowCoverage: Array<CoverageCapture | null> = [];
   // The pages each row ran locator calls on, which the feature graph reads as reach.
   const rowLocatorPages: Array<LocatorPageUse[] | null> = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
@@ -523,8 +539,11 @@ export async function persistRunCases(
       complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= limits.steps,
     });
 
+    // Code reach comes from the coverage's files when the execution sent coverage, else from its list.
+    const coverage = sanitizeCoverage(c.coverage);
     const reached = sanitizeCodeReach(c.codeReach);
-    if (reached) perCaseReach.push({ testCaseId: caseId, runId: testRunId, files: reached });
+    if (coverage) perCaseReach.push(...codeReachOfCoverage(caseId, testRunId, coverage));
+    else if (reached) perCaseReach.push({ testCaseId: caseId, runId: testRunId, files: reached });
 
     if (fingerprint) {
       const pending = pendingClusters.get(fingerprint.fingerprint);
@@ -555,7 +574,9 @@ export async function persistRunCases(
       inventory,
       locatorPages: locatorPages ? JSON.stringify(locatorPages) : null,
       codeReach: reached ? JSON.stringify(reached) : null,
+      coverage: null,
     });
+    rowCoverage.push(coverage);
 
     runCasesRows.push({
       testRunId,
@@ -638,11 +659,29 @@ export async function persistRunCases(
   // dropped when the test already has a recent one, so many runs a day stay bounded.
   await dedupeGreenSamples(db, runCasesRows, rowPayloads);
 
+  // Coverage fragments land first, so each execution's payload can name them.
+  const rowFragments = await upsertCoverageFragments(db, projectId, rowCoverage);
+  const perCaseCoverage: TestCoverageCase[] = [];
+  rowFragments.forEach((fragments, i) => {
+    if (!fragments) return;
+    rowPayloads[i]!.coverage = coveragePayloadContent(fragments, rowCoverage[i]!.incomplete === true);
+    perCaseCoverage.push({ testCaseId: runCasesRows[i]!.testCaseId, runId: testRunId, fragments });
+  });
+
   // Payloads land first so the junction rows can reference them.
   const payloadIds = await upsertCasePayloads(
     db,
     projectId,
-    rowPayloads.flatMap((p) => [p.aria, p.ariaJson, p.source, p.framesJson, p.inventory, p.locatorPages, p.codeReach]),
+    rowPayloads.flatMap((p) => [
+      p.aria,
+      p.ariaJson,
+      p.source,
+      p.framesJson,
+      p.inventory,
+      p.locatorPages,
+      p.codeReach,
+      p.coverage,
+    ]),
   );
   runCasesRows.forEach((row, i) => {
     const p = rowPayloads[i]!;
@@ -653,6 +692,7 @@ export async function persistRunCases(
     row.pageInventoryPayloadId = p.inventory ? (payloadIds.get(p.inventory) ?? null) : null;
     row.locatorPagesPayloadId = p.locatorPages ? (payloadIds.get(p.locatorPages) ?? null) : null;
     row.codeReachPayloadId = p.codeReach ? (payloadIds.get(p.codeReach) ?? null) : null;
+    row.coveragePayloadId = p.coverage ? (payloadIds.get(p.coverage) ?? null) : null;
   });
 
   if (!probeRun) {
@@ -693,10 +733,16 @@ export async function persistRunCases(
       defaultBranch: storedDefaultBranch,
       routeOrigins: projectRouteOrigins(project?.routeOrigins),
     }).catch((err) => console.warn('[locator-usages] failed to index the locators of this batch', err));
-    await upsertCodeReach(db, projectId, perCaseReach, {
+    const runLookups = {
       runs: new Map(run ? [[testRunId, { startedAt: new Date(run.startTime), branch: run.branch }]] : []),
       defaultBranch: storedDefaultBranch,
-    }).catch((err) => console.warn('[code-reach] failed to store the code reach of this batch', err));
+    };
+    await upsertCodeReach(db, projectId, perCaseReach, runLookups).catch((err) =>
+      console.warn('[code-reach] failed to store the code reach of this batch', err),
+    );
+    await upsertTestCoverage(db, projectId, perCaseCoverage, runLookups).catch((err) =>
+      console.warn('[coverage] failed to store the test coverage of this batch', err),
+    );
   }
   if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordIngestHealth(

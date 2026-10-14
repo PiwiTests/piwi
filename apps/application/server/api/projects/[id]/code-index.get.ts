@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Download a project’s code index',
     description:
-      'Every application source file the project’s tests reach, with the tests reaching it, for editors: `files` (repository-relative paths), `tests` (shaped as in the locator index, with their latest outcome) and `reach`, one entry per file and origin giving positions in `files` and `tests`. `client` reach comes from the reporter’s opt-in `captureCodeReach`; `server` reach from the Test Map’s routes and their handler files. Capped at 20000 files; `truncated` says when more exist. Carries an `ETag`: a request whose `If-None-Match` names it is answered 304 without a body.',
+      'Every application source file the project’s tests reach, with the tests reaching it, for editors: `files` (repository-relative paths), `tests` (shaped as in the locator index, with their latest outcome) and `reach`, one entry per file and kind of reach giving positions in `files` and `tests`. A kind is a `runtime` (`browser` or `server`, where the file’s code ran) and a `via`: `coverage` when the tests’ coverage recorded the file (the reporter’s opt-in `captureCodeReach` or coverage capture), `route` when the tests called a route the Test Map knows is handled by it. `origin` names the same in two values: `client` for browser coverage, `server` for any server reach. `builtAt` is when the newest coverage was recorded. Capped at 20000 files; `truncated` says when more exist. Carries an `ETag`: a request whose `If-None-Match` names it is answered 304 without a body.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {

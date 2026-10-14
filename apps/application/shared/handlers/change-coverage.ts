@@ -264,7 +264,7 @@ async function loadGraphNodeReach(
   return { byRoute, byPage };
 }
 
-/** Per file, the tests whose execution ran its functions (`code_reach`, every branch). */
+/** Per file, the tests whose execution ran its code (`code_reach`, every branch and runtime, browser and server). */
 async function loadCodeReach(db: DrizzleDB, projectId: number): Promise<Map<string, Set<number>>> {
   const rows = await db
     .select({ file: codeReach.file, testCaseId: codeReach.testCaseId })

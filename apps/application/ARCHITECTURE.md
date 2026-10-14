@@ -56,6 +56,7 @@ Tables, by area:
 | Core results       | `projects`, `test_runs`, `test_suites`, `test_cases`, `test_runs_cases`, `network_requests`                                   |
 | Failure analysis   | `failure_clusters`, `failure_cluster_aliases`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions` |
 | Evidence & storage | `files`, `trace_resources`, `trace_blobs`, `case_payloads`, `locator_snapshots`, `locator_usages`                             |
+| Coverage           | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`                                                           |
 | Metadata           | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`                        |
 | Identity           | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`                                             |
 | Notifications      | `notification_channels`, `subscriptions`, `notification_deliveries`                                                           |
@@ -77,6 +78,15 @@ Non-obvious ones:
   `test_runs_cases.locator_pages_payload_id`, so a rebuild keeps it; `server/utils/locator-pages.ts`), `''` when
   unknown; `arrival` says a call ran there before any locator interaction. Feeds "Who uses this?", the project's
   Locators page and the extension's Tested elements (`GET /api/projects/:id/locator-index`).
+- **Coverage** (`server/utils/coverage.ts`, `server/utils/code-reach.ts`) — which code each test executed, per
+  repository-relative file and runtime (`browser`, `server`). `coverage_fragments` holds one file's coverage as one test
+  recorded it (function and executed line ranges, the git blob they refer to), content-addressed per project (unique
+  `(project_id, hash)`); each execution names its fragments through `test_runs_cases.coverage_payload_id` (a
+  `case_payloads` row); `test_coverage` holds, per test case, branch and runtime, the fragments of its latest run with
+  coverage, and `code_reach` their files (or the reporter's `codeReach` list for a test without coverage), replaced the
+  same way. `branch` is `''` for the default branch, and a view of another branch reads, per runtime, the branch's rows
+  of the tests that have some. `run_coverage` holds a run's coverage per file, merged across shards. Branch rows go with
+  the Test Map's branch rows (`graph:sweep`, 30 days); fragments nothing references go in the orphan sweep.
 - **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
   at query time.
 - **`notification_deliveries`** — an outbox: `dedupeKey` unique for idempotency, `status`, `attempts` + `scheduledFor`
@@ -133,6 +143,7 @@ Key server utilities (`server/utils/`):
 | `case-payloads.ts`                                            | Content-addressed payload upsert/inline/resolve                                                                                                                                                                                                                                                                                                                                            |
 | `locator-healing.ts`                                          | Shared `upsertLocatorSnapshots`, `getLocatorHealing`, `saveLocatorPick` (server + demo)                                                                                                                                                                                                                                                                                                    |
 | `locator-usages.ts`                                           | Shared locator index: step indexing on ingest, "Who uses this?", `getLocatorIndex` (server + demo)                                                                                                                                                                                                                                                                                         |
+| `code-reach.ts`, `coverage.ts`                                | Code reach (the code index, a file's reach, latest-run replacement per test, branch and runtime) and coverage storage (fragments, per-execution payloads, test and run coverage, their reads, retention) (server + demo)                                                                                                                                                                   |
 | `project-access.ts`                                           | `getProjectScope`, `requireProjectAccess`, `requireResolvedProjectAccess`, entity resolvers                                                                                                                                                                                                                                                                                                |
 | `route-required-permission.ts`, `route-permission-match.ts`   | Read `x-required-permission` from compiled route metas; rou3 matching                                                                                                                                                                                                                                                                                                                      |
 | `ai-*.ts`                                                     | Provider abstraction, diagnosis, context building + limits, research stage, embeddings, images, system prompt, function-catalog extraction from pasted code (rules/schema/prompt-builder live in `shared/test-function-extract-prompt.ts` — one source for the AI-calling endpoint, the dashboard's no-AI-credits "copy prompt" flow, and the MCP `create_test_function` tool description) |

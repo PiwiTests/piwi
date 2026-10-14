@@ -36,6 +36,14 @@ import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/
 import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
 import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
+import {
+  codeReachOfCoverage,
+  coveragePayloadContent,
+  upsertCoverageFragments,
+  upsertTestCoverage,
+  type TestCoverageCase,
+} from '~~/server/utils/coverage';
+import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { runOrigin } from '#shared/run-eligibility';
@@ -476,6 +484,8 @@ export interface RunCaseInput {
   locatorPages?: unknown;
   /** The source files the test executed (code reach). */
   codeReach?: unknown;
+  /** The test's coverage (`CoverageCapture`). */
+  coverage?: unknown;
   /** What the execution cost its worker and browsers (`piwi-resources`). */
   resources?: unknown;
   aiUsage?: unknown;
@@ -680,6 +690,7 @@ export async function persistRunCases(
   const rowLocatorPages: Array<string | null> = [];
   const rowCodeReach: Array<string | null> = [];
   const perCaseReach: CodeReachCase[] = [];
+  const rowCoverage: Array<CoverageCapture | null> = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
   for (let i = 0; i < cases.length; i++) {
@@ -749,9 +760,12 @@ export async function persistRunCases(
     });
     const locatorPages = sanitizeLocatorPages(c.locatorPages);
     rowLocatorPages.push(locatorPages ? JSON.stringify(locatorPages) : null);
+    const coverage = sanitizeCoverage(c.coverage);
+    rowCoverage.push(coverage);
     const reached = sanitizeCodeReach(c.codeReach);
     rowCodeReach.push(reached ? JSON.stringify(reached) : null);
-    if (reached) perCaseReach.push({ testCaseId: shared.id, runId: testRunId, files: reached });
+    if (coverage) perCaseReach.push(...codeReachOfCoverage(shared.id, testRunId, coverage));
+    else if (reached) perCaseReach.push({ testCaseId: shared.id, runId: testRunId, files: reached });
     perCaseUsages.push({
       caseId: shared.id,
       browserName: resolveBrowserName(c.browser),
@@ -823,12 +837,26 @@ export async function persistRunCases(
 
   if (runCasesRows.length === 0) return [];
 
-  const pagePayloadIds = await upsertCasePayloads(db, projectId, [...rowLocatorPages, ...rowCodeReach]);
+  const rowFragments = await upsertCoverageFragments(db, projectId, rowCoverage);
+  const rowCoveragePayload = rowFragments.map((fragments, i) =>
+    fragments ? coveragePayloadContent(fragments, rowCoverage[i]!.incomplete === true) : null,
+  );
+  const perCaseCoverage: TestCoverageCase[] = [];
+  rowFragments.forEach((fragments, i) => {
+    if (fragments) perCaseCoverage.push({ testCaseId: runCasesRows[i]!.testCaseId, runId: testRunId, fragments });
+  });
+  const pagePayloadIds = await upsertCasePayloads(db, projectId, [
+    ...rowLocatorPages,
+    ...rowCodeReach,
+    ...rowCoveragePayload,
+  ]);
   runCasesRows.forEach((row, i) => {
     const content = rowLocatorPages[i];
     row.locatorPagesPayloadId = content ? (pagePayloadIds.get(content) ?? null) : null;
     const reach = rowCodeReach[i];
     row.codeReachPayloadId = reach ? (pagePayloadIds.get(reach) ?? null) : null;
+    const coverage = rowCoveragePayload[i];
+    row.coveragePayloadId = coverage ? (pagePayloadIds.get(coverage) ?? null) : null;
   });
 
   await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
@@ -863,6 +891,7 @@ export async function persistRunCases(
   if (!options.keepTestState) await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await upsertLocatorUsages(db, projectId, perCaseUsages).catch(() => {});
   await upsertCodeReach(db, projectId, perCaseReach).catch(() => {});
+  await upsertTestCoverage(db, projectId, perCaseCoverage).catch(() => {});
   if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordIngestHealth(
     db,
