@@ -34,6 +34,15 @@
           "jsonpath": "$.devDependencies['@piwitests/instrumentation-nitro']"
         },
         {
+          "type": "json",
+          "path": "examples/sample-app/package.json",
+          "jsonpath": "$.devDependencies['@piwitests/reporter']"
+        },
+        {
+          "type": "generic",
+          "path": "examples/sample-app/backends/aspnetcore/SampleApp.AspNetCore.csproj"
+        },
+        {
           "type": "generic",
           "path": "integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore/PiwiTests.Instrumentation.AspNetCore.csproj"
         },

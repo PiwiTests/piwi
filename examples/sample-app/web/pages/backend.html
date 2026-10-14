@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backend logs demo · Piwi Sample</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f766e'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body data-page="backend">
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="/">Piwi Sample</a>
+      <nav class="main-nav" aria-label="Main">
+        <a href="/">Home</a>
+        <a href="/form">Form</a>
+        <a href="/popup">Popup</a>
+        <a href="/slow">Slow</a>
+        <a href="/backend">Backend</a>
+        <a href="/shop">Shop</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <h1>Backend logs demo</h1>
+    <p class="lead">Each button calls an API endpoint whose server-side logs ride back on the <code>X-Piwi-Logs</code> response header.</p>
+    <div class="card">
+      <div class="actions">
+        <button type="button" class="primary" data-testid="load-report">Load report</button>
+        <button type="button" class="danger" data-testid="trigger-failure">Trigger backend failure</button>
+      </div>
+      <p id="backend-result" class="message" role="status"></p>
+    </div>
+  </main>
+</body>
+</html>

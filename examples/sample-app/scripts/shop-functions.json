@@ -1,0 +1,57 @@
+[
+  {
+    "name": "login",
+    "kind": "page-object-method",
+    "module": "./pages/login-page",
+    "receiver": "loginPage",
+    "importName": "LoginPage",
+    "params": [
+      { "name": "email", "type": "string" },
+      { "name": "password", "type": "string" }
+    ],
+    "urlPattern": "**/shop/login*",
+    "steps": [
+      { "action": "fill", "target": { "role": "textbox", "name": "Email" } },
+      { "action": "fill", "target": { "name": "Password" } },
+      { "action": "click", "target": { "role": "button", "name": "Sign in" } }
+    ],
+    "paramSources": [
+      { "param": "email", "stepIndex": 0, "from": "value" },
+      { "param": "password", "stepIndex": 1, "from": "value" }
+    ]
+  },
+  {
+    "name": "addToCart",
+    "kind": "page-object-method",
+    "module": "./pages/products-page",
+    "receiver": "productsPage",
+    "importName": "ProductsPage",
+    "params": [{ "name": "product", "type": "string" }],
+    "urlPattern": "**/shop",
+    "steps": [
+      { "action": "click", "target": { "role": "link" } },
+      { "action": "click", "target": { "role": "button", "name": "Add to cart" } }
+    ],
+    "paramSources": [{ "param": "product", "stepIndex": 0, "from": "text" }]
+  },
+  {
+    "name": "placeOrder",
+    "kind": "page-object-method",
+    "module": "./pages/checkout-page",
+    "receiver": "checkoutPage",
+    "importName": "CheckoutPage",
+    "params": [{ "name": "shipping", "type": "object", "fields": ["name", "address", "city"] }],
+    "urlPattern": "**/shop/checkout",
+    "steps": [
+      { "action": "fill", "target": { "role": "textbox", "name": "Full name" } },
+      { "action": "fill", "target": { "role": "textbox", "name": "Address" } },
+      { "action": "fill", "target": { "role": "textbox", "name": "City" } },
+      { "action": "click", "target": { "role": "button", "name": "Place order" } }
+    ],
+    "paramSources": [
+      { "param": "shipping", "path": "name", "stepIndex": 0, "from": "value" },
+      { "param": "shipping", "path": "address", "stepIndex": 1, "from": "value" },
+      { "param": "shipping", "path": "city", "stepIndex": 2, "from": "value" }
+    ]
+  }
+]

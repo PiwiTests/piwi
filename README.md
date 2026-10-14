@@ -231,6 +231,9 @@ The instrumentation packages are optional and only needed for
 same images; use whichever your organization prefers. The browser extension and the JetBrains plugin
 reach their stores through each store's review, so a listed version can trail a release by a day or two.
 
+[`examples/sample-app`](./examples/sample-app) is one web app served by each supported backend with its
+instrumentation package wired in, and the Playwright suite that checks what the package sends.
+
 ## Project status
 
 Pre-1.0 and under active development: expect occasional breaking changes between minor versions, pin a

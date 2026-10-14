@@ -55,7 +55,9 @@ integrations/              Framework-specific instrumentation adapters.
                            shared .Core capture buffer, the .Coverage server coverage recorder, the .NET tests
                            and PiwiTests.Instrumentation.slnx
   serilog/                 PiwiTests.Instrumentation.Serilog — a Serilog sink feeding the same capture (NuGet)
-examples/                  Standalone usage examples (Playwright fixtures)
+examples/                  Standalone usage examples, not workspaces
+  playwright-fixtures/     The capture fixtures on a small Nitro app
+  sample-app/              One web app and its Playwright suite, served by each supported backend (ASP.NET Core)
 shared/                    Base oxlint/oxfmt configs extended by every workspace
 plans/                     Local working docs — gitignored, never committed
 ```
@@ -68,11 +70,11 @@ plans/                     Local working docs — gitignored, never committed
   imported or bundled by another workspace (`core`, `picker-dom`, `editor`).
 - `integrations/*` — a framework-specific instrumentation adapter, one directory per framework.
 
-Every JS workspace is listed in the root [`package.json`](package.json) `workspaces` array. Three directories carry a
+Every JS workspace is listed in the root [`package.json`](package.json) `workspaces` array. Four directories carry a
 `package.json` but are **intentionally not workspaces**: `apps/desktop` and `apps/docs` install and build on their own
-toolchains (Tauri, VitePress) rather than through the root install, and `examples/playwright-fixtures` must resolve
-`@piwitests/*` from the published npm registry — release-please bumps its pinned versions — so making it a workspace
-would symlink the local copies and defeat the example.
+toolchains (Tauri, VitePress) rather than through the root install, and the two examples, `examples/playwright-fixtures`
+and `examples/sample-app`, must resolve `@piwitests/*` from the published npm registry at the versions release-please
+pins, so making them workspaces would symlink the local copies and defeat the examples.
 
 **Adding a workspace takes two entries in [`release-please-config.json`](release-please-config.json)**, not one: its
 `package.json` `$.version`, _and_ its `package-lock.json` `$.packages['<dir>'].version`. release-please natively bumps
@@ -129,7 +131,7 @@ From `packages/reporter/`: `reporter:build`, `reporter:dev` (watch), `reporter:t
 `reporter:format[:check]`, `reporter:test[:watch|:coverage|:integration]`, `reporter:bench[:micro]`.
 
 From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` builds every .NET instrumentation package
-for each target framework and runs their tests (needs the .NET 10 SDK).
+for each target framework and the sample app's ASP.NET Core backend, and runs their tests (needs the .NET 10 SDK).
 
 From the repository root: `node scripts/package-smoke.mjs <dir>` installs the packed `@piwitests/server` and
 `@piwitests/reporter` tarballs from `<dir>` into a new project, starts the server with `npx @piwitests/server` and

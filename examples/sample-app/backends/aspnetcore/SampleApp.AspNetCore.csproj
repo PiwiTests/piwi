@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SampleApp</RootNamespace>
+    <!-- Built by the integration's solution, which packs the NuGet packages: never a package itself. -->
+    <IsPackable>false</IsPackable>
+    <WarnOnPackingNonPackableProject>false</WarnOnPackingNonPackableProject>
+    <!-- Inside the Piwi repository the sample builds the integration from its source; copied anywhere else, it uses
+         the NuGet packages. -->
+    <PiwiIntegrationSource>$(MSBuildThisFileDirectory)../../../../integrations/aspnetcore/</PiwiIntegrationSource>
+    <PiwiFromSource Condition="Exists('$(PiwiIntegrationSource)PiwiTests.Instrumentation.slnx')">true</PiwiFromSource>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(PiwiFromSource)' != 'true'">
+    <PackageReference Include="PiwiTests.Instrumentation.AspNetCore" Version="0.52.0" /> <!-- x-release-please-version -->
+  </ItemGroup>
+
+  <!-- A project reference brings no build props: the coverage package's props, which turn -p:PiwiCoverage=true into
+       the compiler's coverage instrumentation, are imported here, as the package does for a package reference. -->
+  <ItemGroup Condition="'$(PiwiFromSource)' == 'true'">
+    <ProjectReference Include="$(PiwiIntegrationSource)PiwiTests.Instrumentation.AspNetCore/PiwiTests.Instrumentation.AspNetCore.csproj" />
+  </ItemGroup>
+  <Import Condition="'$(PiwiFromSource)' == 'true'" Project="$(PiwiIntegrationSource)PiwiTests.Instrumentation.Coverage/build/PiwiTests.Instrumentation.Coverage.props" />
+</Project>

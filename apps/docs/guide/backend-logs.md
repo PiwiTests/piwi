@@ -81,6 +81,8 @@ Or, without touching code, set `PIWI_TEST_LOGS_ENVIRONMENTS=Development,Podman,I
 
 **Requirements:** .NET 8, 9, or 10.
 
+[`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app) runs an ASP.NET Core app with this package wired in, and a Playwright suite that checks what it sends.
+
 ### Nitro / Nuxt (npm)
 
 ```bash

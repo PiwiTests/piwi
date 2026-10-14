@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="../../examples/sample-app/backends/aspnetcore/SampleApp.AspNetCore.csproj" />
   <Project Path="../serilog/PiwiTests.Instrumentation.Serilog/PiwiTests.Instrumentation.Serilog.csproj" />
   <Project Path="PiwiTests.Instrumentation.AspNetCore/PiwiTests.Instrumentation.AspNetCore.csproj" />
   <Project Path="PiwiTests.Instrumentation.Core/PiwiTests.Instrumentation.Core.csproj" />

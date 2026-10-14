@@ -34,6 +34,8 @@ app.Run();
 
 `UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only in the active environments (Development and Test by default). Entries logged after that point (while a body is still streaming) can no longer ride on the response. The header is sent on every response, with an empty array when nothing was captured, so the reporter can tell the application is instrumented. The same middleware serves the [route manifest](#route-manifest).
 
+[`examples/sample-app`](../../examples/sample-app) runs a minimal API app with every feature of this package wired in: backend logs, the route manifest, server coverage and server probes.
+
 ## Generic Host + classic `Startup`
 
 The capture buffer is decoupled from any single logging front-end, so the integration is not limited to minimal hosting or to the Microsoft.Extensions.Logging pipeline. Hosting-agnostic overloads cover `Startup`-based apps:

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shipping · Piwi Sample</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f766e'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
+  <script src="/assets/shop.js" defer></script>
+</head>
+<body data-page="shop-checkout">
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="/">Piwi Sample</a>
+      <nav class="main-nav" aria-label="Main">
+        <a href="/">Home</a>
+        <a href="/form">Form</a>
+        <a href="/popup">Popup</a>
+        <a href="/slow">Slow</a>
+        <a href="/backend">Backend</a>
+        <a href="/shop">Shop</a>
+      </nav>
+    </div>
+  </header>
+  <div class="shop-bar">
+    <div class="bar">
+      <nav class="shop-nav" aria-label="Shop">
+        <a href="/shop">Products</a>
+        <a href="/shop/cart" aria-label="Cart">Cart (<span id="cart-count">0</span>)</a>
+        <a href="/shop/orders">Orders</a>
+      </nav>
+      <span id="shopper" class="shopper"></span>
+      <button type="button" id="sign-out" class="small" hidden>Sign out</button>
+    </div>
+  </div>
+  <main>
+    <h1>Shipping</h1>
+    <p class="lead">The backend checks the order, prices it and sends back its summary.</p>
+    <form id="shipping" class="card narrow">
+      <div class="field">
+        <label for="name">Full name</label>
+        <input id="name" name="name" autocomplete="name" required>
+      </div>
+      <div class="field">
+        <label for="address">Address</label>
+        <input id="address" name="address" autocomplete="street-address" required>
+      </div>
+      <div class="field">
+        <label for="city">City</label>
+        <input id="city" name="city" autocomplete="address-level2" required>
+      </div>
+      <div class="field">
+        <label for="country">Country</label>
+        <select id="country" name="country">
+          <option>France</option><option>Germany</option><option>Spain</option><option>United Kingdom</option>
+        </select>
+      </div>
+      <button type="submit" class="primary">Place order</button>
+      <p id="order-error" class="message" role="alert"></p>
+    </form>
+  </main>
+</body>
+</html>

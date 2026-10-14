@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Popup launcher · Piwi Sample</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f766e'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body data-page="popup">
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="/">Piwi Sample</a>
+      <nav class="main-nav" aria-label="Main">
+        <a href="/">Home</a>
+        <a href="/form">Form</a>
+        <a href="/popup">Popup</a>
+        <a href="/slow">Slow</a>
+        <a href="/backend">Backend</a>
+        <a href="/shop">Shop</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <h1>Popup launcher</h1>
+    <p class="lead">Opens the child window with <code>window.open</code>. Its console and network are recorded too.</p>
+    <div class="card actions">
+      <button type="button" class="primary" data-testid="open-child">Open child window</button>
+    </div>
+  </main>
+</body>
+</html>

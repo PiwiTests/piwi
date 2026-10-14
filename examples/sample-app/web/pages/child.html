@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Child window · Piwi Sample</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f766e'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body data-page="child">
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="/">Piwi Sample</a>
+      <nav class="main-nav" aria-label="Main">
+        <a href="/">Home</a>
+        <a href="/form">Form</a>
+        <a href="/popup">Popup</a>
+        <a href="/slow">Slow</a>
+        <a href="/backend">Backend</a>
+        <a href="/shop">Shop</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <h1>Child window</h1>
+    <p class="lead">Logs a console warning when it opens, and calls <code>GET /api/child</code>.</p>
+    <div class="card">
+      <div class="actions">
+        <button type="button" class="primary" data-testid="child-action">Child action</button>
+      </div>
+      <p id="child-result" class="message" role="status"></p>
+    </div>
+  </main>
+</body>
+</html>

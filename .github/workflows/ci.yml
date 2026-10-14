@@ -132,6 +132,7 @@ jobs:
             dotnet:
               - 'integrations/aspnetcore/**'
               - 'integrations/serilog/**'
+              - 'examples/sample-app/backends/aspnetcore/**'
             smoke:
               - 'packages/server/**'
               - 'packages/reporter/**'
