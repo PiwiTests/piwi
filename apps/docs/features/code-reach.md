@@ -133,6 +133,8 @@ Functions cost about what lines cost.
   modules.
 - **[Uncovered changes](./uncovered-changes)** counts a changed file as reached when a test executed it.
 - **[Locator preflight](./preflight)** calls a break *likely* only when one of its tests reaches the changed file.
+- **[Suspect lines](/guide/concepts#suspect-lines)**: the changed lines a failure's tests executed, ranked against the
+  passing tests, in the [AI diagnosis](./ai-diagnosis#scm-grounded-context) and the [fix plan](./fix-plans).
 
 The dashboard's API serves the tests reaching one file and the whole map of a branch; see the
 [API docs](https://piwitests.dev/demo/docs) (`/docs` on your instance).

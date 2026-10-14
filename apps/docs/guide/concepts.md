@@ -299,6 +299,15 @@ Which source code a test ran, per repository-relative file and **runtime** (`bro
 the git blob of the file version. Code reach is its file-level view. A test's coverage is **incomplete** when part of it
 could not be collected.
 
+### Suspect lines
+
+The lines changed since a failing test's last passing run that the failing tests executed, read from their
+[coverage](#coverage) and the diff of the source control range: each changed hunk they executed, ranked by how many
+passing tests of the same run executed it too (the Ochiai score of spectrum-based fault localization, 1 when only
+failing tests did). Line coverage names the executed lines, function coverage the changed lines inside a function that
+ran, and file coverage the whole hunk. The [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) lists them and
+sends their files' patches first; the [fix plan](/features/fix-plans) carries the top five.
+
 ### Locator index
 
 The locator chains each test used in its steps, recorded per branch and per Playwright project. It answers which tests

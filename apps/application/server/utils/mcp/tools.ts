@@ -11,6 +11,7 @@ import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { buildFixPlan } from '../fix-plan';
 import { codeownersOwnerResolver, enrichFixPlanOwnership } from '../scm/ownership';
+import { withFixPlanSuspectLines } from '../suspect-lines';
 import { getNetworkRequests, getFailureGroups } from '#shared/handlers/test-runs';
 import {
   getTestCase,
@@ -1030,7 +1031,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const plan = await buildFixPlan(db, clusterId);
     if (!plan) return null;
-    const enriched = await enrichFixPlanOwnership(db, cluster.projectId, plan);
+    const enriched = await withFixPlanSuspectLines(
+      db,
+      clusterId,
+      await enrichFixPlanOwnership(db, cluster.projectId, plan),
+    );
 
     // Additive: the story, the situation and the computed next step,
     // read on the cluster's latest occurrence through the shared handlers.

@@ -318,6 +318,99 @@ export async function getExecutionCoverage(db: DrizzleDB, executionId: number): 
   return payload.incomplete || fragments.length < ids.length ? { v: 1, files, incomplete: true } : { v: 1, files };
 }
 
+/** A repository-relative path's file name, the part `sameFilePath` always compares. */
+function baseName(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  return normalized.slice(normalized.lastIndexOf('/') + 1);
+}
+
+/** Whether a path matches one of the given paths by `sameFilePath`, looked up by file name. */
+function pathMatcher(paths: string[]): (path: string) => boolean {
+  const byName = new Map<string, string[]>();
+  for (const path of paths) {
+    const name = baseName(path);
+    byName.set(name, [...(byName.get(name) ?? []), path]);
+  }
+  return (path) => (byName.get(baseName(path)) ?? []).some((candidate) => sameFilePath(path, candidate));
+}
+
+/**
+ * The coverage of several executions, read in bulk, by execution id; an
+ * execution without coverage has no files, and an id with no execution is
+ * left out. `incomplete` as {@link getExecutionCoverage} sets it. With
+ * `rangesFor`, only the files matching one of those paths (`sameFilePath`)
+ * keep their blob and ranges; the others keep their path and runtime, all a
+ * reader joining on those paths needs.
+ */
+export async function getExecutionsCoverage(
+  db: DrizzleDB,
+  executionIds: number[],
+  opts: { rangesFor?: string[] } = {},
+): Promise<Map<number, CoverageCapture>> {
+  const ids = [...new Set(executionIds)];
+  const rows: Array<{ id: number; payloadId: number | null }> = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    rows.push(
+      ...(await db
+        .select({ id: testRunsCases.id, payloadId: testRunsCases.coveragePayloadId })
+        .from(testRunsCases)
+        .where(inArray(testRunsCases.id, ids.slice(i, i + ID_CHUNK)))),
+    );
+  }
+  const contents = await resolveCasePayloadContents(
+    db,
+    rows.map((r) => r.payloadId),
+  );
+  const payloads = new Map(
+    rows.map((r) => [r.id, r.payloadId == null ? null : parseCoveragePayload(contents.get(r.payloadId))]),
+  );
+  const fragmentIds = [...new Set([...payloads.values()].flatMap((p) => p?.fragmentIds ?? []))];
+
+  const files = new Map<number, CoverageFile>();
+  if (opts.rangesFor) {
+    const matches = pathMatcher(opts.rangesFor);
+    const heads: Array<{ id: number; runtime: string; path: string }> = [];
+    for (let i = 0; i < fragmentIds.length; i += ID_CHUNK) {
+      heads.push(
+        ...(await db
+          .select({ id: coverageFragments.id, runtime: coverageFragments.runtime, path: coverageFragments.path })
+          .from(coverageFragments)
+          .where(inArray(coverageFragments.id, fragmentIds.slice(i, i + ID_CHUNK)))),
+      );
+    }
+    const ranged: number[] = [];
+    for (const head of heads) {
+      if (matches(head.path)) ranged.push(head.id);
+      else files.set(head.id, { path: head.path, runtime: asRuntime(head.runtime) });
+    }
+    for (const fragment of await loadFragments(db, ranged)) files.set(fragment.id, fragmentFile(fragment));
+  } else {
+    for (const fragment of await loadFragments(db, fragmentIds)) files.set(fragment.id, fragmentFile(fragment));
+  }
+
+  const out = new Map<number, CoverageCapture>();
+  for (const row of rows) {
+    const payload = payloads.get(row.id);
+    if (row.payloadId == null) {
+      out.set(row.id, { v: 1, files: [] });
+      continue;
+    }
+    if (!payload) {
+      out.set(row.id, { v: 1, files: [], incomplete: true });
+      continue;
+    }
+    const own = [...new Set(payload.fragmentIds)];
+    const found = own.flatMap((id) => {
+      const file = files.get(id);
+      return file ? [file] : [];
+    });
+    const capture: CoverageCapture = { v: 1, files: found.sort(compareFiles) };
+    if (payload.incomplete || found.length < own.length) capture.incomplete = true;
+    out.set(row.id, capture);
+  }
+  return out;
+}
+
 /** The coverage of one file on a branch, and the tests that recorded it. */
 export interface FileCoverage {
   file: string;

@@ -46,6 +46,7 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'retryProgression', label: 'Retry progression (per-attempt errors)', short: 'Retries' },
   { id: 'passedPeers', label: 'Passing peers in same file', short: 'Peers' },
   { id: 'scmInvestigation', label: 'SCM diff since last green', short: 'SCM diff' },
+  { id: 'suspectLines', label: 'Changed lines the failing tests executed (suspect lines)', short: 'Suspect lines' },
   { id: 'selectedCommits', label: 'Manually selected commits', short: 'Commits' },
   { id: 'priorDiagnosis', label: 'Prior diagnosis & triage', short: 'Prior' },
   { id: 'previouslyFixed', label: 'Previously fixed similar failure', short: 'Fixed before' },

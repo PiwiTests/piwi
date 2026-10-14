@@ -71,6 +71,8 @@ import { getDemoDb } from '../db.client';
 import { publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import { getExecutionCoverage, getFileCoverage, parseRunCoverage, storeRunCoverage } from '~~/server/utils/coverage';
+import { demoClusterSuspectLines, demoExecutionSuspectLines } from './suspect-lines';
+import { fixPlanSuspectLines } from '#shared/suspect-lines';
 import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
 import { branchFailuresOrError } from '~~/server/utils/branch-failures';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
@@ -1837,6 +1839,16 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/suspect-lines$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      const answer = await demoExecutionSuspectLines(await getDemoDb(), +m[1]!);
+      if (!answer) throw demoHttpError(404, 'Test run case not found');
+      return answer;
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/test-run-cases\/(\d+)\/locator-pick$/,
     handler: async (m, body, _q, ctx) => {
@@ -2242,10 +2254,30 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/failure-clusters\/(\d+)\/fix-plan$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const plan = await buildFixPlan(await getDemoDb(), +m[1]!);
+      const db = await getDemoDb();
+      const built = await buildFixPlan(db, +m[1]!);
+      const plan = built && { ...built, suspectLines: fixPlanSuspectLines(await demoClusterSuspectLines(db, +m[1]!)) };
       const format = (q as URLSearchParams | undefined)?.get('format');
       if (format === 'markdown' && plan) return fixPlanToMarkdown(plan);
       return plan;
+    },
+  },
+
+  // Suspect lines of a cluster: the database's answer, since the demo reads no source control.
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/suspect-lines$/,
+    handler: async (m, _b, _q, ctx) => {
+      const projectId = await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const db = await getDemoDb();
+      if (projectId === null) {
+        const [cluster] = await db
+          .select({ id: failureClusters.id })
+          .from(failureClusters)
+          .where(eq(failureClusters.id, +m[1]!));
+        if (!cluster) throw demoHttpError(404, 'Failure cluster not found');
+      }
+      return demoClusterSuspectLines(db, +m[1]!);
     },
   },
 

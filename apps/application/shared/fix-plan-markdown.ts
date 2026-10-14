@@ -9,6 +9,7 @@
  */
 import type { FixPlan } from '#shared/fix-plan.types';
 import { reproScript } from '#shared/reproduce';
+import { suspectLineMarkdown, suspectLinesLead } from '#shared/suspect-lines';
 
 /** Fenced code block, guarding against a body that already ends in a newline. */
 function fence(body: string, lang = ''): string {
@@ -83,6 +84,18 @@ export function fixPlanToMarkdown(plan: FixPlan, opts: { url?: string } = {}): s
       const validation = patchValidationLine(diagnosis);
       if (validation) lines.push(`**Patch validation:** ${validation}`, '');
       lines.push(fence(diagnosis.patch, 'diff'), '');
+    }
+  }
+
+  // Suspect lines: the changed lines the failing tests executed, where to look first.
+  if (plan.suspectLines?.available) {
+    lines.push('## Suspect lines', '', suspectLinesLead(plan.suspectLines), '');
+    const { suspects, summary } = plan.suspectLines;
+    if (suspects.length) {
+      const top = suspects.length < summary.executedHunks ? `, the top ${suspects.length}` : '';
+      lines.push(`Most suspect first${top}:`, '');
+      for (const suspect of suspects) lines.push(suspectLineMarkdown(suspect));
+      lines.push('');
     }
   }
 

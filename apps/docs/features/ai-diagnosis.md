@@ -7,8 +7,7 @@ lang: en-US
 # AI diagnosis
 
 When a run finishes, Piwi groups related failures into [failure clusters](./failure-clusters) and, optionally, asks an
-LLM to explain them. Clustering decides *what* to diagnose; AI diagnosis explains *why* it broke, against the code that
-changed.
+LLM to explain why each broke, against the code that changed.
 
 ## Semantic merging (optional)
 
@@ -27,9 +26,8 @@ project's Failure clusters tab, for a Maintainer or above to approve or dismiss,
 past five model calls in a run, the pair becomes a suggestion directly. This runs after every finished run
 whenever an embedding role is configured, independently of auto-diagnose.
 
-Each pair is judged once: the model's no is kept, so the same pair is not sent to the model again. A pair that
-someone dismissed, or that came from [moving tests to a new cluster](#split-a-cluster-by-hand), is never merged
-automatically, however close the two clusters score.
+Each pair is judged once: the model's no is kept. A pair that someone dismissed, or that came from [moving tests to a
+new cluster](#split-a-cluster-by-hand), is never merged automatically, however close the two clusters score.
 
 <figure>
   <img src="/diagrams/failure-clustering-semantic-merge.svg" alt="Diagram of the semantic merging flow: clusters are embedded, compared by cosine similarity, and kept apart, adjudicated by a model, or merged depending on the score">
@@ -58,7 +56,7 @@ A diagnosis comes back in the [response language](/guide/ai-provider#response-la
 
 ## What a diagnosis contains
 
-A diagnosis is grounded in your actual run, not a generic "ask AI" button. Each result includes:
+Each result includes:
 
 - **Category** and **confidence**
 - **Root cause**: the most likely explanation
@@ -96,6 +94,10 @@ run where this test passed; the context preview names which one it used. With th
 helpers, fixtures), capped by `PIWI_AI_MAX_SOURCE_FILES` (default 4) and `PIWI_AI_MAX_SOURCE_FILE_CHARS`. The
 repository connection is set up on [Source control](/guide/source-control).
 
+When the failing tests recorded [coverage](./code-reach#server-code), the context lists their
+[suspect lines](/guide/concepts#suspect-lines): the changed lines they executed, ranked by how many passing tests of the same run executed them too. Their files' patches
+come first within the patch budget.
+
 ### Validated patches
 
 Every suggested patch is dry-run, hunk by hunk, against the source files the model was shown. The patch carries one
@@ -124,8 +126,8 @@ When the failure is a broken locator, the context includes the ranked replacemen
 
 ## Fix plans
 
-The diagnosis, its patch, the locator fix and the verify command come together in a fix plan: see
-[Fix plans, reproduce & bisect](./fix-plans).
+The diagnosis, its patch, the locator fix, the top five suspect lines and the verify command come together in a fix
+plan: see [Fix plans, reproduce & bisect](./fix-plans).
 
 ## Diagnosis history
 
@@ -151,7 +153,7 @@ Each input sent to the model is capped to keep diagnoses fast and affordable; th
 
 ## Privacy
 
-API keys are encrypted at rest with [`PIWI_SECRET_KEY`](/reference/configuration#general). When you run a diagnosis, the bounded context above is sent to your configured provider, so for fully local analysis, use Ollama or another self-hosted OpenAI-compatible model and keep everything on your own infrastructure.
+API keys are encrypted at rest with [`PIWI_SECRET_KEY`](/reference/configuration#general). When you run a diagnosis, the bounded context above is sent to your configured provider; for fully local analysis, use Ollama or another self-hosted OpenAI-compatible model.
 
 ## Try it in the demo
 
