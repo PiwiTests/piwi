@@ -38,7 +38,7 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
   [**Page diff**](#page-diff), **Video**) over the trace and attachments. **DOM** renders it as recorded: field values
-  (passwords masked), scroll offsets, open dialogs, shadow DOM, the action's target outlined. **Open in picker** finds a
+  (passwords masked), scroll, open dialogs, shadow DOM, the action's target outlined, the mouse and what it hovers. **Open in picker** finds a
   locator on that DOM.
 - **Source**: the test source as a call stack (the line that threw plus its callers), deepened
   [with a trace](#trace-powered-deep-views).
@@ -124,15 +124,15 @@ it carry a **derived from the trace** chip; fixture-captured data is never repla
 ### Why a card is empty
 
 A tab that needs the capture fixtures appears only when it holds data or the fixtures ran and found nothing; otherwise
-one footer line names the missing tabs. When a card does open empty, it says which case applies: **captured, nothing
+one footer line names the missing tabs. An empty card says which case applies: **captured, nothing
 happened**, **not applicable** (backend logs need a [backend integration](/guide/backend-logs)), or **declined** for this
 project ([Declining a capability](/operate/capabilities#declining-a-capability)). The AI diagnosis's **Data coverage**
 block uses the same words.
 
 ## Trace viewer
 
-**Open trace**, atop the evidence card on every tab, opens the Playwright trace viewer; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces never go to a
-third party, with or without [authentication](/operate/authentication). The hosted
+**Open trace**, atop the evidence card on every tab, opens the Playwright trace viewer; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces stay on your
+server, with or without [authentication](/operate/authentication). The hosted
 `trace.playwright.dev` can't send your session cookie, so it only works with authentication off.
 
 ## The test case page

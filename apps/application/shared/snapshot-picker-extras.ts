@@ -249,7 +249,8 @@ export function installSnapshotPickerExtras() {
  * (`renderedAttributes` in `server/utils/dom-snapshot-render.ts` writes the
  * `data-piwi-*` markers): the custom elements the page had defined, so its
  * `:defined` styles match; modal dialogs and open popovers in the top layer;
- * every element's scroll offsets; an outline on the action's target. It runs
+ * every element's scroll offsets; an outline on the action's target; a dot
+ * where the mouse was, with the element under it styled as `:hover`. It runs
  * first in both the picker and the read-only documents, so the picker overlay
  * installs over the page as it was. A browser without declarative shadow DOM
  * gets its shadow roots attached here too. The page's own scroll offset can't
@@ -331,26 +332,103 @@ export function restoreSnapshotState() {
     el.style.setProperty('outline-offset', '1px', 'important');
   });
 
-  var pageY = 0;
+  var page = { x: 0, y: 0 };
   function scroll() {
     each('[data-piwi-scroll-top],[data-piwi-scroll-left]', function (el) {
       var top = Number(el.getAttribute('data-piwi-scroll-top')) || 0;
+      var left = Number(el.getAttribute('data-piwi-scroll-left')) || 0;
       if (el === doc.documentElement || el === doc.body) {
-        pageY = top;
+        page = { x: left, y: top };
         return;
       }
       el.scrollTop = top;
-      el.scrollLeft = Number(el.getAttribute('data-piwi-scroll-left')) || 0;
+      el.scrollLeft = left;
     });
   }
   scroll();
   // Images change scroll heights as they load, so the offsets apply again then.
   g.addEventListener('load', scroll);
 
+  // A pseudo-class can't be set from a script, so each rule using one gets a
+  // copy, right after it and as specific, that reads a marker attribute instead.
+  var PSEUDO_CLASSES = [[/:hover(?![-\w])/g, '[data-piwi-hover]']];
+  function mirror(rules, owner) {
+    for (var i = rules.length - 1; i >= 0; i--) {
+      var rule = rules[i];
+      if (rule.selectorText === undefined) {
+        if (rule.cssRules) mirror(rule.cssRules, rule);
+        continue;
+      }
+      var copy = rule.cssText;
+      for (var p = 0; p < PSEUDO_CLASSES.length; p++) copy = copy.replace(PSEUDO_CLASSES[p][0], PSEUDO_CLASSES[p][1]);
+      if (copy === rule.cssText) continue;
+      try {
+        owner.insertRule(copy, i + 1);
+      } catch (err) {}
+    }
+  }
+  function mirrorStyleSheets() {
+    for (var i = 0; i < roots.length; i++) {
+      var sheets = roots[i].styleSheets || [];
+      for (var j = 0; j < sheets.length; j++) {
+        try {
+          mirror(sheets[j].cssRules, sheets[j]);
+        } catch (err) {}
+      }
+    }
+  }
+
+  // The mouse where the last pointer action left it: a dot, and the element
+  // under it marked hovered with its ancestors. The frame first has the
+  // recorded viewport's height, so a point below it waits for the host to
+  // grow the frame to its content.
+  var pointer = (doc.documentElement.getAttribute('data-piwi-pointer') || '').split(',');
+  var hovered = pointer.length !== 2;
+  function hitAt(x, y) {
+    var el = doc.elementFromPoint(x, y);
+    while (el && el.shadowRoot) {
+      var inner = el.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === el) break;
+      el = inner;
+    }
+    return el;
+  }
+  function hover() {
+    var x = Number(pointer[0]) + page.x;
+    var y = Number(pointer[1]) + page.y;
+    if (hovered || !(x >= 0 && y >= 0 && x <= g.innerWidth && y <= g.innerHeight)) return;
+    hovered = true;
+    for (var el = hitAt(x, y); el; el = el.parentElement || (el.parentNode && el.parentNode.host)) {
+      el.setAttribute('data-piwi-hover', '');
+    }
+    var dot = doc.createElement('div');
+    dot.id = '__piwi_pointer';
+    dot.style.cssText =
+      'position:fixed;inset:auto;left:' +
+      (x - 7) +
+      'px;top:' +
+      (y - 7) +
+      'px;width:14px;height:14px;margin:0;padding:0;box-sizing:border-box;overflow:visible;' +
+      'border:2px solid #fff;border-radius:50%;background:#ef4444;box-shadow:0 0 0 1px #b91c1c;' +
+      'pointer-events:none;z-index:2147483647;';
+    doc.documentElement.appendChild(dot);
+    // In the top layer, so a modal dialog doesn't cover it.
+    try {
+      dot.setAttribute('popover', 'manual');
+      dot.showPopover();
+    } catch (err) {}
+  }
+  if (!hovered) {
+    mirrorStyleSheets();
+    hover();
+    g.addEventListener('resize', hover);
+    g.addEventListener('load', hover);
+  }
+
   // The height goes first, so the host's canvas is tall enough to scroll to y.
   setTimeout(function () {
     var onTop = modals[0] || popovers[0];
-    var y = onTop ? onTop.getBoundingClientRect().top : pageY;
+    var y = onTop ? onTop.getBoundingClientRect().top : page.y;
     if (y <= 0) return;
     var height = Math.max(doc.documentElement.scrollHeight, (doc.body && doc.body.scrollHeight) || 0);
     g.parent.postMessage({ type: 'piwiContentHeight', height: height }, '*');

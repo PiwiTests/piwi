@@ -8,7 +8,8 @@ import { PROJECT } from '#shared/test-project-names';
 
 /**
  * The DOM view renders the page as the trace recorded it: field values, checkbox and option states, scroll offsets,
- * a modal dialog and a popover, a web component's shadow DOM and adopted stylesheets, the action's target. Driven by
+ * a modal dialog and a popover, a web component's shadow DOM and adopted stylesheets, the action's target, the mouse
+ * and the `:hover` styles of the element under it. Driven by
  * real traces of the same test recorded with Playwright 1.60 and 1.63 (`scripts/record-live-state-traces.mjs`),
  * whose snapshot formats differ.
  */
@@ -16,8 +17,9 @@ const VERSIONS = ['1.60', '1.63'] as const;
 const trace = (version: string) =>
   readFileSync(fileURLToPath(new URL(`./fixtures/trace-live-state-${version}.zip`, import.meta.url)));
 
-// The recorder's `page.uncheck('#agree')`, the same call in both versions.
+// The recorder's `page.uncheck('#agree')` and `page.hover('#products')`, the same calls in both versions.
 const UNCHECK_CALL = 'call@16';
+const HOVER_CALL = 'call@22';
 
 async function uploadFailingCase(request: APIRequestContext, version: string): Promise<number> {
   const testCase = {
@@ -93,6 +95,19 @@ test.describe('DOM snapshot live state', () => {
       );
       await expect(page.locator('#agree')).toHaveCSS('outline-color', 'rgb(37, 99, 235)');
       await expect(page.locator('[data-piwi-target]')).toHaveCount(1);
+    });
+
+    test(`the mouse is shown, and the menu it hovered open (Playwright ${version})`, async ({ page }) => {
+      await page.goto(
+        `/api/test-run-cases/${executions[version]}/dom-snapshot-frame?mode=readonly&callId=${HOVER_CALL}&phase=after`,
+      );
+      // A menu only CSS `:hover` shows.
+      await expect(page.locator('#products .submenu')).toBeVisible();
+      const dot = await page.locator('#__piwi_pointer').boundingBox();
+      expect(dot && { x: Math.round(dot.x + dot.width / 2), y: Math.round(dot.y + dot.height / 2) }).toEqual({
+        x: 420,
+        y: 25,
+      });
     });
   }
 

@@ -2,8 +2,8 @@
 /**
  * Records the trace fixtures of `tests/dom-snapshot-state.spec.ts`: one page holding every live state a trace
  * snapshot keeps beside the DOM (field values, a password, checkboxes, a selected option, a scrolled list and
- * page, a modal dialog, a popover, a web component with an adopted stylesheet), driven by a test whose last click
- * fails, so the failure-time snapshot holds all of them.
+ * page, a modal dialog, a popover, a web component with an adopted stylesheet) and a menu shown by CSS `:hover`,
+ * driven by a test that hovers the menu and whose last click fails, so the failure-time snapshot holds them all.
  *
  * Usage (from apps/application/), once per Playwright version the fixtures cover:
  *   node scripts/record-live-state-traces.mjs          # the workspace's Playwright
@@ -26,7 +26,10 @@ const version = createRequire(from)('playwright-core/package.json').version.spli
 const PAGE = `<!doctype html><html><head><style>
 .card { padding: 4px; & .inner { color: green } }
 x-card:not(:defined) { visibility: hidden }
+.submenu { display: none }
+#products:hover > .submenu { display: block }
 </style></head><body>
+<nav><ul><li id="products">Products<ul class="submenu"><li>Laptops</li></ul></li></ul></nav>
 <label>Name <input id="name" value="default"></label>
 <label>Password <input id="pw" type="password"></label>
 <textarea id="notes">initial</textarea>
@@ -73,6 +76,7 @@ await page.fill('#notes', 'typed notes');
 await page.uncheck('#agree');
 await page.check('#news');
 await page.selectOption('#country', 'de');
+await page.hover('#products');
 await page.click('#open');
 await page.evaluate(() => {
   document.getElementById('list').scrollTop = 120;

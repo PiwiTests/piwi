@@ -13,12 +13,14 @@ import {
   maskCssText,
   snapshotMomentFromQuery,
   PASSWORD_MASK,
+  pointerAt,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
 import {
   parseResourceSnapshots,
   parseTraceTexts,
+  type TraceAction,
   type TraceFrameSnapshot,
   type ParsedTraceData,
 } from '~~/server/utils/trace-events';
@@ -819,6 +821,54 @@ describe('extractDomSnapshot — styled/lean two-pass', () => {
     expect(res.html).toContain('<style></style>'); // CSS dropped
     expect(res.html).not.toContain('.x{color:red}');
     expect(res.html).toContain('<button>Click me</button>'); // body preserved
+  });
+});
+
+describe('pointerAt — where the mouse was', () => {
+  const action = (callId: string, point?: { x: number; y: number }, pageId?: string): TraceAction => ({
+    callId,
+    apiName: 'Frame.click',
+    startTime: 0,
+    ...(point ? { point } : {}),
+    ...(pageId ? { pageId } : {}),
+  });
+  const actions = [
+    action('call@1', { x: 10, y: 20 }),
+    action('call@2'),
+    action('call@3', { x: 30, y: 40 }),
+    action('call@4'),
+  ];
+  const at = (callId: string, phase: string, pageId?: string) =>
+    snap({ callId, phase, snapshotName: `${phase}@${callId}`, ...(pageId ? { pageId } : {}) });
+
+  test('is the last pointer action up to the snapshot, its own included unless before it', () => {
+    const data = { actions, frameSnapshots: [] };
+    expect(pointerAt(data, at('call@3', 'after'))).toEqual({ x: 30, y: 40 });
+    expect(pointerAt(data, at('call@3', 'action'))).toEqual({ x: 30, y: 40 });
+    expect(pointerAt(data, at('call@3', 'before'))).toEqual({ x: 10, y: 20 });
+    expect(pointerAt(data, at('call@4', 'after'))).toEqual({ x: 30, y: 40 });
+    expect(pointerAt(data, at('call@1', 'before'))).toBeNull();
+    expect(pointerAt(data, at('call@9', 'after'))).toBeNull();
+  });
+
+  test('reads the call id and phase from a 1.60–1.62 snapshot name', () => {
+    const named = snap({ snapshotName: 'input@call@3' });
+    expect(pointerAt({ actions, frameSnapshots: [] }, named)).toEqual({ x: 30, y: 40 });
+  });
+
+  test("skips another page's mouse, the page read from the action or from its snapshots", () => {
+    const twoPages = [action('call@1', { x: 10, y: 20 }, 'page@1'), action('call@2', { x: 99, y: 99 })];
+    const frameSnapshots = [at('call@2', 'after', 'page@2')];
+    expect(pointerAt({ actions: twoPages, frameSnapshots }, at('call@2', 'after', 'page@1'))).toEqual({ x: 10, y: 20 });
+    expect(pointerAt({ actions: twoPages, frameSnapshots }, at('call@2', 'after', 'page@2'))).toEqual({ x: 99, y: 99 });
+  });
+
+  test('extractDomSnapshot hands the frame the point on <html>', () => {
+    const data: ParsedTraceData = {
+      ...traceData([at('call@3', 'after')]),
+      actions,
+    };
+    expect(extractDomSnapshot(data, 1_000_000).html).toBe('<html data-piwi-pointer="30,40"></html>');
   });
 });
 

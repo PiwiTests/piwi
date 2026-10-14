@@ -21,7 +21,7 @@
  * demo can render the committed demo trace with the same code the server
  * uses; the node-only trace loading lives in `dom-snapshot.ts`.
  */
-import { pageActionOf, type ParsedTraceData, type TraceFrameSnapshot } from './trace-events';
+import { pageActionOf, type ParsedTraceData, type TraceAction, type TraceFrameSnapshot } from './trace-events';
 
 /**
  * Cap for the rendered snapshot HTML. Generous so a fully-styled snapshot
@@ -635,6 +635,32 @@ export function snapshotMomentFromQuery(query: Record<string, unknown>): Snapsho
 }
 
 /**
+ * Where the mouse was when a snapshot was taken, in viewport pixels: the point
+ * of the last pointer action on the snapshot's page up to that moment — its
+ * own action included, unless the snapshot is from before it. An action's page
+ * is the one its snapshots were taken on, as 1.63 no longer records it on the
+ * action. Null when nothing had moved the mouse yet.
+ */
+export function pointerAt(
+  data: Pick<ParsedTraceData, 'actions' | 'frameSnapshots'>,
+  snapshot: TraceFrameSnapshot,
+): { x: number; y: number } | null {
+  const name = snapshot.snapshotName ?? '';
+  const callId = snapshot.callId ?? name.slice(name.indexOf('@') + 1);
+  const phase = snapshot.phase ?? name.slice(0, name.indexOf('@'));
+  const index = data.actions.findIndex((a) => a.callId === callId);
+  if (index < 0) return null;
+  const pageOf = (a: TraceAction) => a.pageId ?? data.frameSnapshots.find((s) => s.callId === a.callId)?.pageId;
+  for (let i = phase === 'before' ? index - 1 : index; i >= 0; i--) {
+    const action = data.actions[i]!;
+    if (!action.point) continue;
+    const page = pageOf(action);
+    if (!snapshot.pageId || !page || page === snapshot.pageId) return action.point;
+  }
+  return null;
+}
+
+/**
  * Pick and render the failure-time DOM from parsed trace data: the failing
  * action's after-snapshot (the page when the error was raised, the moment the
  * failure screenshot and the failing aria tree show), falling back to its
@@ -685,9 +711,14 @@ export function extractDomSnapshot(
     const rendered =
       data.frameSnapshots.find((s) => s.snapshotName === name && s.isMainFrame !== false) ??
       data.frameSnapshots.find((s) => s.snapshotName === name);
+    // Where the mouse was, for the frame script to mark it and what it hovered.
+    const pointer = rendered ? pointerAt(data, rendered) : null;
+    const html = pointer
+      ? result.html.replace(/<html\b/i, `<html data-piwi-pointer="${pointer.x},${pointer.y}"`)
+      : result.html;
     return {
       status: 'ok',
-      html: result.html,
+      html,
       truncated: result.truncated,
       snapshotName: name,
       action: fa?.apiName,
