@@ -21,7 +21,11 @@
  * in `app/utils/snapshot-picker-script.ts`, which re-exports these.
  */
 import { installPickerOverlay, probeElementAttrs, type PickerOverlayArg, type ProbeArg } from '@piwitests/picker-dom';
-import { installSnapshotPickerExtras, readonlySnapshotScript } from '#shared/snapshot-picker-extras';
+import {
+  installSnapshotPickerExtras,
+  readonlySnapshotScript,
+  restoreSnapshotState,
+} from '#shared/snapshot-picker-extras';
 
 /** Configuration handed to the serialized picker (the only bridge into it). */
 export interface SnapshotPickerConfig {
@@ -36,11 +40,14 @@ const escScriptClose = (src: string): string => src.replace(/<\/(script)/gi, '<\
 const nonceAttr = (nonce?: string): string => (nonce ? ` nonce="${nonce}"` : '');
 
 /**
- * The `<script>` tag to append to the snapshot HTML. Three self-contained
+ * The `<script>` tag to append to the snapshot HTML. Four self-contained
  * pieces run in sequence, each re-serialized independently via
  * `Function.prototype.toString()` — a serialized function can carry no
  * imports, so they can't just import one another:
  *
+ *  0. `restoreSnapshotState` puts the page back as it was recorded (open
+ *     dialogs, scroll offsets, the action's target…), before anything installs
+ *     over it.
  *  1. `probeElementAttrs` is installed on `globalThis.__piwiProbe` — the
  *     shared core overlay reads it from there when a pick commits, since it
  *     runs standalone in this iframe with no Node process to probe from later
@@ -56,6 +63,7 @@ const nonceAttr = (nonce?: string): string => (nonce ? ` nonce="${nonce}"` : '')
 export function snapshotPickerScriptTag(config: SnapshotPickerConfig, nonce?: string): string {
   const probeArg: ProbeArg = { keep: config.probedAttrs, includeStructural: false };
   const overlayArg: PickerOverlayArg = { transport: 'postMessage', probeArg };
+  const restoreSrc = escScriptClose(String(restoreSnapshotState));
   const probeSrc = escScriptClose(String(probeElementAttrs));
   const extrasSrc = escScriptClose(String(installSnapshotPickerExtras));
   const overlaySrc = escScriptClose(String(installPickerOverlay));
@@ -73,6 +81,7 @@ export function snapshotPickerScriptTag(config: SnapshotPickerConfig, nonce?: st
     `addEventListener('error',function(e){__piwiReport(e.error||e.message);});` +
     `addEventListener('unhandledrejection',function(e){__piwiReport(e.reason);});` +
     `try{` +
+    `(${restoreSrc})();` +
     `globalThis.__piwiProbe = (${probeSrc});` +
     `(${extrasSrc})();` +
     `(${overlaySrc})(${JSON.stringify(overlayArg)});` +
@@ -185,12 +194,14 @@ export function buildPickerDocument(html: string, config: SnapshotPickerConfig, 
 
 /**
  * Build the read-only document: the snapshot with its network references
- * stripped, plus the inert-and-measure script (`readonlySnapshotScript`) — the
- * styled page as the picker shows it, but with no picking overlay, reporting its
- * content height over `postMessage` so the host can size the sandboxed iframe
- * exactly as the picker does.
+ * stripped, plus the page's recorded state put back (`restoreSnapshotState`)
+ * and the inert-and-measure script (`readonlySnapshotScript`) — the styled page
+ * as the picker shows it, but with no picking overlay, reporting its content
+ * height over `postMessage` so the host can size the sandboxed iframe exactly
+ * as the picker does.
  */
 export function buildReadonlyDocument(html: string, nonce?: string): string {
+  const restoreSrc = escScriptClose(String(restoreSnapshotState));
   const src = escScriptClose(String(readonlySnapshotScript));
-  return stripNetworkReferences(html) + `<script${nonceAttr(nonce)}>(${src})();</script>`;
+  return stripNetworkReferences(html) + `<script${nonceAttr(nonce)}>(${restoreSrc})();(${src})();</script>`;
 }

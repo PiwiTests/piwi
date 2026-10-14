@@ -58,6 +58,7 @@ export const PROJECT = {
   DESKTOP_REPRO: 'desktop-repro-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',
   DIAGNOSE_STREAM: 'diagnose-stream-test',
+  DOM_SNAPSHOT_STATE: 'dom-snapshot-state-test',
   DOWNLOAD_TEST: 'download-test-project',
   DUP_UI: 'dup-ui-project',
   DUPLICATE: 'duplicate-project',

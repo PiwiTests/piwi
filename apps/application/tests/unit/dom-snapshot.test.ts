@@ -12,6 +12,7 @@ import {
   mediaMatchesViewport,
   maskCssText,
   snapshotMomentFromQuery,
+  PASSWORD_MASK,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
@@ -72,14 +73,16 @@ describe('renderSnapshotHtml', () => {
       [
         snap({
           snapshotName: 's1',
-          html: ['HTML', {}, ['BODY', {}, ['INPUT', { __playwright_value_: 'hunter2', id: 'pw', onclick: 'evil()' }]]],
+          html: [
+            'HTML',
+            {},
+            ['BODY', {}, ['DIV', { __playwright_bounding_rect__: '{"left":0}', id: 'box', onclick: 'evil()' }]],
+          ],
         }),
       ],
       's1',
     );
-    expect(html).toContain('<input id="pw">');
-    expect(html).not.toContain('hunter2');
-    expect(html).not.toContain('onclick');
+    expect(html).toBe('<html><body><div id="box"></div></body></html>');
   });
 
   test('drops tag and attribute names that would spill into the markup', () => {
@@ -216,6 +219,172 @@ describe('renderSnapshotHtml', () => {
     });
     const main = snap({ snapshotName: 's1', html: ['HTML', {}, ['BODY', {}, 'main content']] });
     expect(renderSnapshotHtml([iframe, main], 's1')).toContain('main content');
+  });
+});
+
+describe('renderSnapshotHtml — live state', () => {
+  // Node shapes as Playwright 1.60 to 1.63 record them.
+  const body = (...children: unknown[]) => ['HTML', {}, ['BODY', {}, ...children]];
+  const render = (html: unknown, extra: Partial<TraceFrameSnapshot> = {}) =>
+    renderSnapshotHtml([snap({ snapshotName: 's1', html, ...extra })], 's1');
+
+  test('writes back the value a field held, not the one it was served with', () => {
+    expect(render(body(['INPUT', { __playwright_value_: 'Ada Lovelace', id: 'name', value: 'default' }]))).toContain(
+      '<input id="name" value="Ada Lovelace">',
+    );
+    expect(render(body(['INPUT', { __playwright_value_: 'a "quoted" <b>', id: 'q' }]))).toContain(
+      '<input id="q" value="a &quot;quoted&quot; <b>">',
+    );
+  });
+
+  test('masks a password field, showing only whether it holds something', () => {
+    const html = render(
+      body(
+        ['INPUT', { __playwright_value_: 'hunter2', id: 'pw', type: 'password' }],
+        ['INPUT', { __playwright_value_: '', id: 'empty', type: 'PASSWORD', value: 'served-secret' }],
+        ['INPUT', { id: 'served', type: 'password', value: 'served-secret' }],
+      ),
+    );
+    expect(html).not.toContain('hunter2');
+    expect(html).not.toContain('served-secret');
+    expect(html).toContain(`<input id="pw" type="password" value="${PASSWORD_MASK}">`);
+    expect(html).toContain('<input id="empty" type="PASSWORD" value="">');
+    expect(html).toContain(`<input id="served" type="password" value="${PASSWORD_MASK}">`);
+  });
+
+  test('sets checkbox, radio and option state, and keeps their submitted values', () => {
+    const html = render(
+      body(
+        [
+          'INPUT',
+          { __playwright_value_: 'on', __playwright_checked_: 'false', id: 'a', type: 'checkbox', checked: '' },
+        ],
+        ['INPUT', { __playwright_value_: 'x', __playwright_checked_: 'true', id: 'b', type: 'radio', value: 'x' }],
+        ['INPUT', { __playwright_value_: 'C:\\fakepath\\a.txt', id: 'f', type: 'file' }],
+        [
+          'SELECT',
+          {},
+          ['OPTION', { __playwright_selected_: 'false', value: 'fr', selected: '' }, 'France'],
+          ['OPTION', { __playwright_selected_: 'true', value: 'de' }, 'Germany'],
+        ],
+      ),
+    );
+    expect(html).toContain('<input id="a" type="checkbox">');
+    expect(html).toContain('<input id="b" type="radio" value="x" checked="">');
+    expect(html).toContain('<input id="f" type="file">');
+    expect(html).toContain('<option value="fr">France</option><option value="de" selected="">Germany</option>');
+  });
+
+  test("replaces a textarea's served text with what it held", () => {
+    expect(render(body(['TEXTAREA', { __playwright_value_: 'typed <notes>', id: 'n' }, 'initial']))).toContain(
+      '<textarea id="n">typed &lt;notes></textarea>',
+    );
+    // The parser drops one newline right after the tag, so a leading one is doubled.
+    expect(render(body(['TEXTAREA', { __playwright_value_: '\nsecond line' }]))).toContain(
+      '<textarea>\n\nsecond line</textarea>',
+    );
+  });
+
+  test('opens a recorded dialog and marks a modal one, a popover, scroll offsets and custom elements', () => {
+    const html = render([
+      'HTML',
+      { __playwright_scroll_top_: '300' },
+      [
+        'BODY',
+        { __playwright_custom_elements__: 'x-card,x-menu' },
+        ['DIALOG', { __playwright_dialog_open_: 'modal', id: 'm' }],
+        ['DIALOG', { __playwright_dialog_open_: 'true', id: 'n' }],
+        ['DIALOG', { id: 'closed' }],
+        ['DIV', { __playwright_popover_open_: 'true', popover: '' }],
+        ['DIV', { __playwright_scroll_top_: '120', __playwright_scroll_left_: '8', id: 'list' }],
+      ],
+    ]);
+    expect(html).toBe(
+      '<html data-piwi-scroll-top="300"><body data-piwi-custom-elements="x-card,x-menu">' +
+        '<dialog id="m" open="" data-piwi-modal=""></dialog><dialog id="n" open=""></dialog><dialog id="closed"></dialog>' +
+        '<div popover="" data-piwi-popover-open=""></div>' +
+        '<div id="list" data-piwi-scroll-top="120" data-piwi-scroll-left="8"></div></body></html>',
+    );
+  });
+
+  test("marks the action's target: an empty mark, or 1.60's call id of the snapshot's own action", () => {
+    const html = render(
+      body(
+        ['BUTTON', { __playwright_target__: '', id: 'empty' }],
+        ['BUTTON', { __playwright_target__: 'call@26', id: 'own' }],
+        ['BUTTON', { __playwright_target__: 'call@10', id: 'stale' }],
+      ),
+      { callId: 'call@26' },
+    );
+    expect(html).toContain('<button id="empty" data-piwi-target="">');
+    expect(html).toContain('<button id="own" data-piwi-target="">');
+    expect(html).toContain('<button id="stale">');
+  });
+
+  test('shows the image the page chose from its srcset', () => {
+    expect(
+      render(
+        body(['IMG', { __playwright_current_src__: 'https://x/b@2x.png', src: '/a.png', srcset: '/b@2x.png 2x' }]),
+      ),
+    ).toContain('<img src="https://x/b@2x.png">');
+  });
+
+  test('writes a shadow root as a declarative one and an adopted stylesheet as a <style> where it applies', () => {
+    const shadow = [
+      'X-CARD',
+      { id: 'wc' },
+      [
+        'template',
+        { __playwright_shadow_root_: 'open' },
+        ['B', { class: 't' }, 'shadow title'],
+        ['SLOT'],
+        ['template', { __playwright_style_sheet_: '.t { color: purple; }' }],
+      ],
+      ['SPAN', {}, 'light'],
+    ];
+    const tree = [
+      'HTML',
+      {},
+      ['BODY', {}, shadow],
+      ['template', { __playwright_style_sheet_: 'body { font: serif; }' }],
+    ];
+    expect(render(tree)).toBe(
+      '<html><body><x-card id="wc"><template shadowrootmode="open"><b class="t">shadow title</b><slot></slot>' +
+        '<style>.t { color: purple; }</style></template><span>light</span></x-card></body>' +
+        '<style>body { font: serif; }</style></html>',
+    );
+    expect(renderSnapshotHtml([snap({ snapshotName: 's1', html: tree })], 's1', { dropStyles: true })).toContain(
+      '<style></style></template>',
+    );
+  });
+
+  test('resolves an adopted stylesheet an earlier snapshot recorded', () => {
+    const first = snap({
+      snapshotName: 's1',
+      html: ['HTML', {}, ['BODY', {}], ['template', { __playwright_style_sheet_: 'p { color: red; }' }]],
+    });
+    // s1 nodes: [BODY, template, HTML] → the stylesheet is index 1.
+    const second = snap({ snapshotName: 's2', html: ['HTML', {}, ['BODY', {}, 'new'], [[1, 1]]] });
+    expect(renderSnapshotHtml([first, second], 's2')).toBe(
+      '<html><body>new</body><style>p { color: red; }</style></html>',
+    );
+  });
+
+  test('writes HTML <style> text raw, defanging only a closing tag; an SVG style stays escaped', () => {
+    const html = render([
+      'HTML',
+      {},
+      [
+        'HEAD',
+        {},
+        ['STYLE', {}, '.card { & > .inner { content: "<"; } }'],
+        ['STYLE', {}, 'a::after { content: "</style><script>x()</script>"; }'],
+      ],
+      ['BODY', {}, ['svg', {}, ['style', {}, 'a > b & c']]],
+    ]);
+    expect(html).toContain('<style>.card { & > .inner { content: "<"; } }</style>');
+    expect(html).toContain('<style>a::after { content: "<\\/style><script>x()</script>"; }</style>');
+    expect(html).toContain('<svg><style>a > b &amp; c</style></svg>');
   });
 });
 

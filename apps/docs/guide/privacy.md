@@ -84,7 +84,8 @@ Some data is skipped at the source, so it never exists to leak:
 - **Input values in locator snapshots.** The [capture fixtures](./capture-fixtures) record what an
   element *is* — role, accessible name, test id — never what was typed into it. Playwright's own records
   are different: step titles and parameters, traces and the failure-time ARIA snapshot include the values
-  a test typed, password fields too, so don't fill real secrets in tests.
+  a test typed, password fields too, so don't fill real secrets in tests. The **DOM** view and the AI
+  diagnosis show them, password fields masked.
 - **Page-inventory field contents.** The optional [page inventory](./reporter#configuration-options)
   (`capturePageInventory`, **off by default**) records the names of a page's controls and links so the
   dashboard can tell which the suite never exercises. The name of a control that holds user input — a

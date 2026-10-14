@@ -302,8 +302,9 @@ function handleMessage(event: MessageEvent) {
     return;
   }
   if (data?.type === 'piwiScrollTo' && typeof data.y === 'number') {
-    // The picker found a match; scroll the stage so it's in view (content-space
-    // y → stage-space via the current zoom).
+    // A match the picker found, or where the page was scrolled or the dialog it
+    // showed: scroll the stage so it's in view (content-space y → stage-space
+    // via the current zoom).
     const stage = stageRef.value;
     if (stage) stage.scrollTo({ top: Math.max(0, data.y * zoom.value - 80), behavior: 'smooth' });
     return;

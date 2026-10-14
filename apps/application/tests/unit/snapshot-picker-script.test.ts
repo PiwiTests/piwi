@@ -172,6 +172,16 @@ describe('snapshotPickerScriptTag / buildPickerDocument', () => {
     expect(doc.indexOf('<button>Go</button>')).toBeLessThan(doc.indexOf('<script>'));
   });
 
+  test('puts the recorded page state back before anything installs over it', () => {
+    const tag = snapshotPickerScriptTag({ probedAttrs: [] });
+    expect(tag).toContain('data-piwi-modal');
+    expect(tag.indexOf('data-piwi-modal')).toBeLessThan(tag.indexOf('globalThis.__piwiProbe'));
+    const doc = buildReadonlyDocument('<p>x</p>');
+    expect(doc).toContain('data-piwi-scroll-top');
+    expect(doc.indexOf('data-piwi-scroll-top')).toBeLessThan(doc.indexOf('.closest('));
+    expect(doc.match(/<\/script>/g)).toHaveLength(1);
+  });
+
   test('marks the appended script with the CSP nonce when one is given', () => {
     expect(snapshotPickerScriptTag({ probedAttrs: [] }, 'n0nce').startsWith('<script nonce="n0nce">')).toBe(true);
     expect(buildPickerDocument('<p>x</p>', { probedAttrs: [] }, 'n0nce')).toContain('<script nonce="n0nce">');

@@ -6,8 +6,7 @@ lang: en-US
 
 # Failure evidence
 
-When a test fails, everything Piwi captured about that attempt lands on one screen: what each tab holds and what a
-trace adds.
+Everything Piwi captured about a failing attempt lands on one screen: what each tab holds and what a trace adds.
 
 Two pages are involved, told apart in [Core concepts](/guide/concepts#execution):
 
@@ -38,8 +37,9 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
   shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed out.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
-  [**Page diff**](#page-diff), **Video**) over the trace and attachments. **Open in picker** finds a locator on that
-  DOM.
+  [**Page diff**](#page-diff), **Video**) over the trace and attachments. **DOM** renders it as recorded: field values
+  (passwords masked), scroll offsets, open dialogs, shadow DOM, the action's target outlined. **Open in picker** finds a
+  locator on that DOM.
 - **Source**: the test source as a call stack (the line that threw plus its callers), deepened
   [with a trace](#trace-powered-deep-views).
 - **Network**: the requests with inline [backend logs](/guide/backend-logs); one with no response shows the browser's
@@ -102,8 +102,8 @@ Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` [opti
 
 With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two views go deeper:
 
-- **Source → Full stack**: the complete call stack of the failing action, every frame with its real source from the
-  trace, dependency frames folded, and Open in IDE on each frame in your project.
+- **Source → Full stack**: the failing action's whole call stack, each frame with its source from the trace,
+  dependency frames folded, Open in IDE on your project's frames.
 - **Network → Full trace**: every request the page made, on a waterfall with the failing action's window shaded, with
   timing phases, headers and a capped body preview. Sensitive headers and token-shaped strings are masked on the server.
 
@@ -119,7 +119,7 @@ step. The [in-execution page diff](#page-diff) reads the same snapshots.
 
 With the reporter alone and a trace uploaded, the dashboard recovers the **console** entries, the **network requests**
 (including failed and aborted ones) and the failure-time **ARIA snapshot** from the trace at ingest. Cards showing
-this data carry a **derived from the trace** chip, and fixture-captured data is never replaced.
+it carry a **derived from the trace** chip; fixture-captured data is never replaced.
 
 ### Why a card is empty
 
@@ -131,9 +131,9 @@ block uses the same words.
 
 ## Trace viewer
 
-**Open trace**, at the top of the evidence card on every tab, opens the full Playwright trace viewer; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces never go to a
+**Open trace**, atop the evidence card on every tab, opens the Playwright trace viewer; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces never go to a
 third party, with or without [authentication](/operate/authentication). The hosted
-`trace.playwright.dev` cannot send your session cookie, so it only works against a dashboard with authentication off.
+`trace.playwright.dev` can't send your session cookie, so it only works with authentication off.
 
 ## The test case page
 

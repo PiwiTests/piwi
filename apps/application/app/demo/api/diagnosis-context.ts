@@ -723,7 +723,7 @@ async function assemble(
         section(
           'domSnapshot',
           'DOM Snapshot (from Trace)',
-          `## DOM Snapshot (failure time, from trace)\nSanitized HTML of the page as Playwright recorded it around the failing action (trace snapshot \`${domSnap.snapshotName}\`) — input values, handlers and script bodies removed:\n\`\`\`html\n${domSnap.html}\n\`\`\``,
+          `## DOM Snapshot (failure time, from trace)\nSanitized HTML of the page as Playwright recorded it around the failing action (trace snapshot \`${domSnap.snapshotName}\`) — field values as typed, password fields masked, handlers and script bodies removed; \`data-piwi-target\` marks the element the action targeted:\n\`\`\`html\n${domSnap.html}\n\`\`\``,
         ),
       );
       coverage = {

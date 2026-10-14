@@ -245,6 +245,120 @@ export function installSnapshotPickerExtras() {
 }
 
 /**
+ * Applies, in the snapshot iframe, the live state the renderer could only mark
+ * (`renderedAttributes` in `server/utils/dom-snapshot-render.ts` writes the
+ * `data-piwi-*` markers): the custom elements the page had defined, so its
+ * `:defined` styles match; modal dialogs and open popovers in the top layer;
+ * every element's scroll offsets; an outline on the action's target. It runs
+ * first in both the picker and the read-only documents, so the picker overlay
+ * installs over the page as it was. A browser without declarative shadow DOM
+ * gets its shadow roots attached here too. The page's own scroll offset can't
+ * apply in a frame as tall as its content, so it goes to the host as
+ * `piwiScrollTo`, right after the frame's height; an open modal dialog or
+ * popover goes instead, being what the page showed on top. Serialized with
+ * `String(...)`, like the scripts around it.
+ */
+export function restoreSnapshotState() {
+  var doc = document;
+  var g = window;
+
+  // The document and every open shadow root in it.
+  var roots = [doc];
+  for (var r = 0; r < roots.length; r++) {
+    var templates = roots[r].querySelectorAll('template[shadowrootmode]');
+    for (var t = 0; t < templates.length; t++) {
+      var host = templates[t].parentNode;
+      try {
+        if (host && host.nodeType === 1 && !host.shadowRoot) {
+          host.attachShadow({ mode: 'open' }).appendChild(templates[t].content);
+          templates[t].remove();
+        }
+      } catch (err) {}
+    }
+    var all = roots[r].querySelectorAll('*');
+    for (var a = 0; a < all.length; a++) if (all[a].shadowRoot) roots.push(all[a].shadowRoot);
+  }
+  function each(selector, apply) {
+    var found = [];
+    for (var i = 0; i < roots.length; i++) {
+      var matches = roots[i].querySelectorAll(selector);
+      for (var j = 0; j < matches.length; j++) found.push(matches[j]);
+    }
+    for (var k = 0; k < found.length; k++) {
+      try {
+        apply(found[k]);
+      } catch (err) {}
+    }
+    return found;
+  }
+
+  var names = ((doc.body && doc.body.getAttribute('data-piwi-custom-elements')) || '').split(',');
+  for (var n = 0; n < names.length; n++) {
+    try {
+      if (names[n] && g.customElements && !g.customElements.get(names[n])) {
+        g.customElements.define(names[n], class extends HTMLElement {});
+      }
+    } catch (err) {}
+  }
+
+  // A modal stays open: no Escape, no close request.
+  doc.addEventListener(
+    'cancel',
+    function (e) {
+      e.preventDefault();
+    },
+    true,
+  );
+  // Inert while it opens, so it focuses nothing and keyboard focus stays in the host page.
+  var modals = each('dialog[data-piwi-modal]', function (el) {
+    el.removeAttribute('open');
+    el.inert = true;
+    try {
+      el.showModal();
+    } catch (err) {
+      el.setAttribute('open', '');
+    }
+    el.inert = false;
+  });
+  // Manual, so neither a click nor another popover dismisses it.
+  var popovers = each('[data-piwi-popover-open]', function (el) {
+    el.setAttribute('popover', 'manual');
+    el.showPopover();
+  });
+
+  each('[data-piwi-target]', function (el) {
+    el.style.setProperty('outline', '2px solid #2563eb', 'important');
+    el.style.setProperty('outline-offset', '1px', 'important');
+  });
+
+  var pageY = 0;
+  function scroll() {
+    each('[data-piwi-scroll-top],[data-piwi-scroll-left]', function (el) {
+      var top = Number(el.getAttribute('data-piwi-scroll-top')) || 0;
+      if (el === doc.documentElement || el === doc.body) {
+        pageY = top;
+        return;
+      }
+      el.scrollTop = top;
+      el.scrollLeft = Number(el.getAttribute('data-piwi-scroll-left')) || 0;
+    });
+  }
+  scroll();
+  // Images change scroll heights as they load, so the offsets apply again then.
+  g.addEventListener('load', scroll);
+
+  // The height goes first, so the host's canvas is tall enough to scroll to y.
+  setTimeout(function () {
+    var onTop = modals[0] || popovers[0];
+    var y = onTop ? onTop.getBoundingClientRect().top : pageY;
+    if (y <= 0) return;
+    var height = Math.max(doc.documentElement.scrollHeight, (doc.body && doc.body.scrollHeight) || 0);
+    g.parent.postMessage({ type: 'piwiContentHeight', height: height }, '*');
+    g.parent.postMessage({ type: 'piwiScrollTo', y: y }, '*');
+  }, 0);
+}
+
+/**
  * The read-only variant's in-iframe script: no picking overlay, just make the
  * snapshot inert (no navigation, no submits) and report its content height over
  * `postMessage` so the host can size the opaque-origin iframe. Kept here (with
