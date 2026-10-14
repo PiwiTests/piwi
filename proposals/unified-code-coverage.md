@@ -12,7 +12,8 @@ coverage, the dashboard's storage and endpoints, the .NET coverage package, and 
 coverage, checked end to end on eShopOnWeb (each test's server files, functions and lines stored with their git blob
 ids, and the run-level coverage with executable lines). Suspect lines (part 6) are built too: the API, the AI
 context, the fix plan and the failure pages, checked on eShopOnWeb with a planted bug. Not built yet: browser
-functions and lines, the Istanbul adapter (D13), the consumers of part 4, the rest of part 6, and the editors. The study's measurements came from
+functions and lines, the Istanbul adapter (D13), the consumers of part 4, the rest of part 6, and the editors. A
+view of each test's coverage on the execution page is planned in [`test-coverage-view.md`](test-coverage-view.md). The study's measurements came from
 a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
 written to spend its CPU in business logic (the **pricing application**). New wire fields, options and endpoints
 freeze at 1.0 and need an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
