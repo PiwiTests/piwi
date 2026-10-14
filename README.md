@@ -147,7 +147,7 @@ export { expect }
 
 Import `test` from this file in your specs instead of `@playwright/test` — that's the whole change.
 Details in the [capture fixtures guide](https://piwitests.dev/guide/capture-fixtures); a runnable
-project lives in [`examples/playwright-fixtures`](./examples/playwright-fixtures).
+project lives in [`examples/sample-app`](./examples/sample-app).
 
 Steps 2–4 are also one command, if you prefer:
 `npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project` — idempotent,

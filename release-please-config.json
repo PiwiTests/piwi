@@ -25,18 +25,13 @@
         { "type": "generic", "path": "apps/jetbrains/gradle.properties" },
         {
           "type": "json",
-          "path": "examples/playwright-fixtures/package.json",
+          "path": "examples/sample-app/package.json",
           "jsonpath": "$.devDependencies['@piwitests/reporter']"
-        },
-        {
-          "type": "json",
-          "path": "examples/playwright-fixtures/package.json",
-          "jsonpath": "$.devDependencies['@piwitests/instrumentation-nitro']"
         },
         {
           "type": "json",
           "path": "examples/sample-app/package.json",
-          "jsonpath": "$.devDependencies['@piwitests/reporter']"
+          "jsonpath": "$.devDependencies['@piwitests/instrumentation-nitro']"
         },
         {
           "type": "generic",

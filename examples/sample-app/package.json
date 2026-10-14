@@ -7,14 +7,21 @@
   "scripts": {
     "test": "playwright test",
     "test:aspnetcore": "playwright test",
+    "test:nitro": "playwright test",
+    "test:manual-reporter": "playwright test --config=playwright.manual-reporter.config.ts",
     "start:aspnetcore": "dotnet run --project backends/aspnetcore -p:PiwiCoverage=true",
+    "start:nitro": "nitro dev backends/nitro --port 4173",
     "typecheck": "tsc --noEmit",
     "demo:functions": "node scripts/register-functions.mjs"
   },
   "devDependencies": {
+    "@piwitests/instrumentation-nitro": "0.52.0",
     "@piwitests/reporter": "0.52.0",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.1.1",
+    "consola": "^3.4.2",
+    "h3": "^1.15.11",
+    "nitropack": "^2.13.4",
     "typescript": "^6.0.3"
   }
 }

@@ -44,6 +44,8 @@ app.Run();
 
 `AddPiwiTestLogs()` registers a logger provider that collects Warning and Error entries per request; `UsePiwiTestLogs()` adds the middleware that writes them to the response, only in the active environments.
 
+An unhandled exception answered with a 5xx is recorded too, once, its type as the category. Outside Development, register `UseExceptionHandler()`: the server's bare 500 carries no header.
+
 The capture buffer is decoupled from the logging front-end, so it also works outside minimal hosting. Apps on the classic **Generic Host + `Startup`** model use the hosting-agnostic overloads: `services.AddPiwiTestLogs()` (or `ILoggingBuilder.AddPiwiTestLogs()`) in `ConfigureServices`, and `app.UsePiwiTestLogs(env)` on `IApplicationBuilder` in `Configure`.
 
 Apps that route logging through **Serilog** never call other logging providers (with Serilog's default `writeToProviders: false`), so they add the sink package instead:
@@ -101,7 +103,7 @@ The plugin is auto-loaded by Nitro. It captures `consola` Warning/Error entries 
 
 **Requirements:** Nuxt 3+ / Nitro 2+ (peer deps `nitropack ≥2`, `h3 ≥1`, `consola ≥3` — all included in any Nuxt project).
 
-A runnable end-to-end demo lives in [`examples/playwright-fixtures`](https://github.com/PiwiTests/platform/tree/main/examples/playwright-fixtures) — a standalone Nitro app instrumented with this package, with a Playwright spec (`backend-logs.spec.ts`) showing the captured logs in the dashboard.
+[`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app) runs a standalone Nitro app with this package wired in, and the same Playwright suite.
 
 ### Reporter setup
 

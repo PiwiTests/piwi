@@ -13,7 +13,9 @@ test.describe('API contract', { tag: '@api' }, () => {
 
     const user = await request.get('/api/users/7');
     expect(await user.json()).toEqual({ id: 7, name: 'User 7' });
-    expect((await request.get('/api/users/seven')).status()).toBe(404);
+    const unknown = await request.get('/api/users/seven');
+    expect(unknown.status()).toBe(404);
+    expect(await unknown.json()).toEqual({ error: 'No such user' });
   });
 
   test('checks the contact form on the server', async ({ request }) => {

@@ -9,7 +9,7 @@ const config: KnipConfig = {
   ignoreExportsUsedInFile: true,
   ignoreBinaries: ['tauri', 'playwright'],
   // Built on their own toolchains (Tauri, VitePress) or resolved from the npm registry.
-  ignoreWorkspaces: ['apps/desktop', 'apps/docs', 'examples/playwright-fixtures', 'examples/sample-app'],
+  ignoreWorkspaces: ['apps/desktop', 'apps/docs', 'examples/sample-app'],
   workspaces: {
     '.': {
       entry: ['scripts/*.mjs', 'commitlint.config.js'],

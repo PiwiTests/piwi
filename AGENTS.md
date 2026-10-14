@@ -56,8 +56,7 @@ integrations/              Framework-specific instrumentation adapters.
                            and PiwiTests.Instrumentation.slnx
   serilog/                 PiwiTests.Instrumentation.Serilog — a Serilog sink feeding the same capture (NuGet)
 examples/                  Standalone usage examples, not workspaces
-  playwright-fixtures/     The capture fixtures on a small Nitro app
-  sample-app/              One web app and its Playwright suite, served by each supported backend (ASP.NET Core)
+  sample-app/              One web app and its Playwright suite, served by each supported backend (ASP.NET Core, Nitro)
 shared/                    Base oxlint/oxfmt configs extended by every workspace
 plans/                     Local working docs — gitignored, never committed
 ```
@@ -70,11 +69,12 @@ plans/                     Local working docs — gitignored, never committed
   imported or bundled by another workspace (`core`, `picker-dom`, `editor`).
 - `integrations/*` — a framework-specific instrumentation adapter, one directory per framework.
 
-Every JS workspace is listed in the root [`package.json`](package.json) `workspaces` array. Four directories carry a
+Every JS workspace is listed in the root [`package.json`](package.json) `workspaces` array. Three directories carry a
 `package.json` but are **intentionally not workspaces**: `apps/desktop` and `apps/docs` install and build on their own
-toolchains (Tauri, VitePress) rather than through the root install, and the two examples, `examples/playwright-fixtures`
-and `examples/sample-app`, must resolve `@piwitests/*` from the published npm registry at the versions release-please
-pins, so making them workspaces would symlink the local copies and defeat the examples.
+toolchains (Tauri, VitePress) rather than through the root install, and `examples/sample-app` must resolve
+`@piwitests/*` from the published npm registry at the versions release-please pins, so making it a workspace would
+symlink the local copies and defeat the example. Without an install of its own, inside the repository, it resolves
+them from the root `node_modules` (its README says how).
 
 **Adding a workspace takes two entries in [`release-please-config.json`](release-please-config.json)**, not one: its
 `package.json` `$.version`, _and_ its `package-lock.json` `$.packages['<dir>'].version`. release-please natively bumps

@@ -14,9 +14,10 @@ test('backend logs ride along on the X-Piwi-Logs header', async ({ page }) => {
   await page.getByTestId('load-report').click();
   await expect(page.locator('#backend-result')).toHaveText('report loaded');
   const reportLogs = backendLogs((await report).headers()['x-piwi-logs']);
+  // The error's exception is in its stack; the Nitro integration also writes the exception's message after the log's.
   expect(reportLogs?.map(({ level, message }) => ({ level, message }))).toEqual([
     { level: 'Warning', message: 'demo: low stock for item Alpha' },
-    { level: 'Error', message: 'demo: price sync failed, using cached prices' },
+    { level: 'Error', message: expect.stringMatching(/^demo: price sync failed, using cached prices/) },
   ]);
   expect(reportLogs?.[1]?.stack).toBeTruthy();
 

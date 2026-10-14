@@ -7,7 +7,7 @@ const sample = {
   /** A price in euros, as the pages show it. */
   price: (value) => '€' + Number(value).toFixed(2),
 
-  /** Fetches a URL and reads its body: `body` is the parsed JSON, or the text when it is not JSON. */
+  /** Fetches a URL whose body the page uses: `body` is the parsed JSON, or the text when it is not JSON. */
   async request(url, init) {
     const response = await fetch(url, init);
     const text = await response.text();
@@ -97,7 +97,7 @@ sample.pages.popup = () => {
 sample.pages.child = () => {
   console.warn('demo: child window opened');
   document.querySelector('[data-testid="child-action"]').addEventListener('click', async () => {
-    await sample.request('/api/child');
+    await fetch('/api/child');
     document.getElementById('child-result').textContent = 'child done';
   });
 };
@@ -106,7 +106,7 @@ sample.pages.slow = async () => {
   const timings = document.getElementById('timings');
   const timed = async (url) => {
     const start = performance.now();
-    const { status } = await sample.request(url);
+    const { status } = await fetch(url);
     const row = sample.element('li');
     row.append(
       sample.element('code', '', url),
@@ -122,11 +122,12 @@ sample.pages.slow = async () => {
 sample.pages.backend = () => {
   const result = document.getElementById('backend-result');
   document.querySelector('[data-testid="load-report"]').addEventListener('click', async () => {
-    const { ok } = await sample.request('/api/report');
+    // Only the status matters here: the body is never read, as in many apps, and the reporter keeps the request.
+    const { ok } = await fetch('/api/report');
     result.textContent = ok ? 'report loaded' : 'report failed';
   });
   document.querySelector('[data-testid="trigger-failure"]').addEventListener('click', async () => {
-    const { ok, status } = await sample.request('/api/failing');
+    const { ok, status } = await fetch('/api/failing');
     result.textContent = ok ? 'unexpectedly ok' : `backend failed as expected (${status})`;
   });
 };

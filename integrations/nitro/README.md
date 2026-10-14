@@ -28,7 +28,7 @@ export { default } from '@piwitests/instrumentation-nitro'
 
 That's all. Nitro auto-loads every file in that directory on startup (`server/plugins/` in a Nuxt app, `plugins/` under the Nitro `srcDir` in a standalone Nitro app).
 
-A runnable end-to-end demo lives in [`examples/playwright-fixtures`](../../examples/playwright-fixtures) — a standalone Nitro app instrumented with this package, with a Playwright spec showing the captured logs in the dashboard.
+[`examples/sample-app`](../../examples/sample-app) runs a standalone Nitro app with this package wired in (`backends/nitro/`), and a Playwright suite that checks what it sends: backend logs, server spans and server probes.
 
 ## What gets captured
 

@@ -4,6 +4,8 @@ playwright-report/
 # The backends' build output
 bin/
 obj/
+.nitro/
+.output/
 # The sample installs the published @piwitests packages: no lockfile.
 # The exact pins are bumped by release-please on every release.
 package-lock.json

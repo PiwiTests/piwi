@@ -6,7 +6,11 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    // Inside the Piwi repository, the Nitro integration's source, as backends/nitro/nitro.config.ts builds it;
+    // copied anywhere else, the path does not exist and the npm package is used.
+    "paths": { "@piwitests/instrumentation-nitro": ["../../integrations/nitro/src/index.ts"] }
   },
-  "include": ["tests/**/*.ts", "backends.ts", "playwright.config.ts"]
+  "include": ["tests/**/*.ts", "backends.ts", "playwright*.ts", "backends/nitro/**/*.ts"],
+  "exclude": ["backends/nitro/.nitro"]
 }

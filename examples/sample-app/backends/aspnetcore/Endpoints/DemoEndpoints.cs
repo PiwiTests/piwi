@@ -13,7 +13,7 @@ public static class DemoEndpoints
         var api = app.MapGroup("/api");
         api.MapGet("/items", ListItems);
         api.MapPost("/submit", Submit);
-        api.MapGet("/users/{id:int}", FindUser);
+        api.MapGet("/users/{id}", FindUser);
         api.MapGet("/slow", SlowAsync);
         api.MapGet("/report", Report);
         api.MapGet("/failing", Failing);
@@ -28,7 +28,11 @@ public static class DemoEndpoints
             ? TypedResults.BadRequest(new ErrorBody("email is required"))
             : TypedResults.Ok(new OkBody(true));
 
-    public static Ok<User> FindUser(int id, UserDirectory users) => TypedResults.Ok(users.Find(id));
+    /// <summary>A user by integer id; any other id answers a 404, as every error does, with an error body.</summary>
+    public static Results<Ok<User>, NotFound<ErrorBody>> FindUser(string id, UserDirectory users) =>
+        int.TryParse(id, out var number)
+            ? TypedResults.Ok(users.Find(number))
+            : TypedResults.NotFound(new ErrorBody("No such user"));
 
     public static async Task<Ok<OkBody>> SlowAsync()
     {
