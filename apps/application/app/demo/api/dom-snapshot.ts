@@ -18,6 +18,7 @@ import {
   DOM_SNAPSHOT_CAP_CHARS,
   extractDomSnapshot,
   snapshotMomentFromQuery,
+  withPageInteraction,
   type DomSnapshotResult,
   type DomSnapshotSource,
   type SnapshotMoment,
@@ -95,6 +96,7 @@ export async function apiGetDemoDomSnapshot(testRunsCaseId: number, query?: URLS
     db
       .select({
         aria: testRunsCases.ariaSnapshot,
+        pageState: testRunsCases.pageState,
         projectId: testCases.projectId,
         filePath: testCases.filePath,
         title: testCases.title,
@@ -145,7 +147,8 @@ export async function apiGetDemoDomSnapshot(testRunsCaseId: number, query?: URLS
 
   if (tracePath) {
     const result = await getTraceDomSnapshot(tracePath, snapshotMomentFromQuery(Object.fromEntries(query ?? [])));
-    if (result) return { ...result, source: 'dom', availableSources: sources() };
+    if (result)
+      return withPageInteraction({ ...result, source: 'dom', availableSources: sources() }, caseRow?.pageState);
     // The trace produced no usable DOM — drop it as an option and fall back.
     domAvailable = false;
   }

@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { probeElementAttrs, type ProbeArg, type ProbedAttrs } from '@piwitests/picker-dom';
+import { sanitizePageInteraction, type PageInteraction } from '@piwitests/core/page-interaction';
 import type {
   Browser,
   BrowserContext,
@@ -114,12 +115,14 @@ import {
   startResourceLedger,
   stopResourceLedger,
 } from './resource-ledger.js';
+import { readPageInteraction } from './page-interaction.js';
 
 // Re-exported: probeElementAttrs now lives in @piwitests/picker-dom (shared
 // with the dashboard's snapshot picker), but the dogfood mirror
 // (`application/tests/fixtures.ts`) and this package's own tests import it
-// from here, as the mirror does the quiet-capture helpers.
-export { probeElementAttrs, internalCall, boxCaptureFrames };
+// from here, as the mirror does the quiet-capture helpers and the page
+// interaction read.
+export { probeElementAttrs, internalCall, boxCaptureFrames, readPageInteraction };
 export { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach };
 // The dogfood mirror runs the same resource ledger from its own fixtures.
 export { activeResourceLedger, noteResourceUse, recordResourceCensus, startResourceLedger, stopResourceLedger };
@@ -553,7 +556,7 @@ async function readWebVitals(page: Page): Promise<WebVitals | null> {
 }
 
 /** Page state captured at test end. Storage values and cookie values are NEVER included. */
-export interface PageState {
+export interface PageState extends PageInteraction {
   url: string;
   hash: string | null;
   /** `history.state` as JSON, capped and token-masked. */
@@ -588,11 +591,16 @@ const PAGE_STATE_HISTORY_CAP = 2048;
 const TOKEN_MASK_RES = [/\beyJ[\w-]{10,}\.[\w-]{5,}\.[\w-]{5,}\b/g, /\b[0-9a-f]{32,}\b/gi];
 
 /**
- * Assemble the wire page-state from the in-page reads and the context cookies.
- * Pure and Node-side so the sanitization (token masking, caps, value-free
- * cookies) is unit-testable.
+ * Assemble the wire page-state from the in-page reads, the context cookies and
+ * what the page was doing (`readPageInteraction`). Pure and Node-side so the
+ * sanitization (token masking, caps, value-free cookies, well-formed element
+ * paths) is unit-testable.
  */
-export function buildPageState(raw: RawPageState, cookies: Array<Record<string, unknown>> | null): PageState {
+export function buildPageState(
+  raw: RawPageState,
+  cookies: Array<Record<string, unknown>> | null,
+  interaction?: unknown,
+): PageState {
   let historyState = raw.historyState;
   if (historyState) {
     for (const re of TOKEN_MASK_RES) historyState = historyState.replace(re, '[masked]');
@@ -621,6 +629,7 @@ export function buildPageState(raw: RawPageState, cookies: Array<Record<string, 
       ...(c.sameSite !== undefined ? { sameSite: String(c.sameSite) } : {}),
       ...(typeof c.expires === 'number' ? { expires: c.expires } : {}),
     })),
+    ...sanitizePageInteraction(interaction),
   };
 }
 
@@ -666,7 +675,10 @@ async function readPageState(page: Page): Promise<PageState | null> {
       cookies = null;
     }
 
-    return buildPageState(raw, cookies);
+    // Focus, hover and selection, which no trace snapshot records.
+    const interaction = await page.evaluate(readPageInteraction).catch(() => null);
+
+    return buildPageState(raw, cookies, interaction);
   } catch {
     return null;
   }

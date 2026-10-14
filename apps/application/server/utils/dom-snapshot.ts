@@ -22,6 +22,7 @@ import {
   inlineImageSources,
   mediaMatchesViewport,
   maskCssText,
+  withPageInteraction,
   type DomSnapshotResult,
   type DomSnapshotSource,
   type SnapshotMoment,
@@ -243,6 +244,8 @@ export interface ResolveCaseDomSnapshotOptions {
   inlineStyles?: boolean;
   /** One action's snapshot to render first — the DOM beside a screenshot of the same moment. */
   at?: SnapshotMoment;
+  /** The case's page state: its focus, hover and selection apply to the failure-time snapshot. */
+  pageState?: unknown;
 }
 
 /**
@@ -289,7 +292,7 @@ export async function resolveCaseDomSnapshot(
       at: options.at,
     });
     if (result.status === 'ok' && result.html) {
-      return { ...result, source: 'dom', availableSources: sources() };
+      return withPageInteraction({ ...result, source: 'dom', availableSources: sources() }, options.pageState);
     }
     // The trace produced no usable DOM — drop it as an option and fall back.
     domAvailable = false;

@@ -503,6 +503,22 @@ describe('parseTraceEvents — 1.63 aria/screen snapshot events', () => {
     expect(data!.actions[0]!.ariaSnapshotBefore).toBeUndefined();
   });
 
+  test("keys an input event's mouse point onto its action, the last one winning", async () => {
+    const zip = buildTraceZip([
+      { type: 'before', callId: 'c1', startTime: 100, class: 'Frame', method: 'click' },
+      // 1.60–1.62 name the input-time snapshot; 1.63 adds the target's box.
+      { type: 'input', callId: 'c1', point: { x: 147.88, y: 225.5 }, inputSnapshot: 'input@c1' },
+      { type: 'input', callId: 'c1', point: { x: 147.88, y: 207.5 }, box: { x: 120, y: 200, width: 50, height: 20 } },
+      { type: 'after', callId: 'c1', endTime: 200 },
+      { type: 'before', callId: 'c2', startTime: 300, class: 'Page', method: 'keyboardPress' },
+      { type: 'input', callId: 'c2' },
+      { type: 'after', callId: 'c2', endTime: 400 },
+    ]);
+    const data = await parseTraceEvents(zip);
+    expect(data!.actions[0]!.point).toEqual({ x: 147.88, y: 207.5 });
+    expect(data!.actions[1]!.point).toBeUndefined();
+  });
+
   test('a 1.61 trace with no snapshot events leaves the fields unset', async () => {
     const zip = buildTraceZip([
       { type: 'before', callId: 'c1', startTime: 100, class: 'Frame', method: 'click' },

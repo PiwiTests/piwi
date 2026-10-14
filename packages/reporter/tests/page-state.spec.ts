@@ -74,4 +74,14 @@ describe('buildPageState', () => {
     const state = buildPageState(raw(), cookies);
     expect(state.cookies).toHaveLength(30);
   });
+
+  it('adds what the page was doing, keeping only well-formed element paths', () => {
+    const state = buildPageState(raw(), null, {
+      focus: { element: { path: 'html:1/body:1/input:1', label: 'input#email' }, visible: true },
+      hover: { path: 'body > li', label: 'li' },
+    });
+    expect(state.focus).toEqual({ element: { path: 'html:1/body:1/input:1', label: 'input#email' }, visible: true });
+    expect(state.hover).toBeUndefined();
+    expect(buildPageState(raw(), null, null)).not.toHaveProperty('focus');
+  });
 });

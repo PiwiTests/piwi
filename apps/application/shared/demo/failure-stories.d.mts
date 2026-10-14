@@ -2,6 +2,7 @@
  * Type declarations for the demo failure-story fixture module.
  * See `failure-stories.mjs` for the data itself.
  */
+import type { PageInteraction } from '#shared/page-interaction';
 
 export interface StoryFrame {
   file: string;
@@ -88,6 +89,8 @@ export interface StoryEvidence {
   dialogOnFail?: StoryDialog;
   /** localStorage keys missing from the failing page state (vs the passing template). */
   pageStateDropKeys?: string[];
+  /** What the page was doing at the failure (focus, hover…), merged into the failing executions' page state. */
+  pageInteraction?: PageInteraction;
   /** Crash stories: the page is gone — no console/aria/page-state/web-vitals at all. */
   noPageArtifacts?: boolean;
 }

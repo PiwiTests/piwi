@@ -934,7 +934,7 @@ async function domSnapshotSection(
   if (result.status !== 'ok' || !result.html) return { section: null, coverage: null };
 
   const origin = result.snapshotName ? ` (trace snapshot \`${result.snapshotName}\`)` : '';
-  const markdown = `## DOM Snapshot (failure time, from trace)\nSanitized HTML of the page as Playwright recorded it around the failing action${origin} — input values, handlers and script bodies removed:\n\`\`\`html\n${result.html}${result.truncated ? '\n[truncated]' : ''}\n\`\`\``;
+  const markdown = `## DOM Snapshot (failure time, from trace)\nSanitized HTML of the page as Playwright recorded it around the failing action${origin} — field values as typed, password fields masked, handlers and script bodies removed; \`data-piwi-target\` marks the element the action targeted:\n\`\`\`html\n${result.html}${result.truncated ? '\n[truncated]' : ''}\n\`\`\``;
   return {
     section: markdown,
     coverage: { chars: result.html.length, ...(result.snapshotName ? { snapshotName: result.snapshotName } : {}) },

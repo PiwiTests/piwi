@@ -5,6 +5,7 @@ import { capStepValue } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
 import { withoutIncidentMetadata } from '#shared/run-incident';
 import { reporterIngestHealth } from '#shared/ingest-health';
+import { sanitizePageInteraction } from '#shared/page-interaction';
 
 /**
  * URL and network data sanitization helpers.
@@ -108,7 +109,8 @@ export function sanitizeMetadata(metadata: Record<string, unknown> | null | unde
  * Defensive shape-validation of the reporter's page-state payload before it is
  * persisted. The reporter already never captures storage/cookie values — this
  * server-side pass enforces the same contract against arbitrary submitters:
- * only whitelisted fields survive, counts and string lengths are capped.
+ * only whitelisted fields survive, counts and string lengths are capped, and
+ * focus, hover and selection keep only well-formed element paths.
  */
 export function sanitizePageState(state: unknown): Record<string, unknown> | null {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
@@ -150,6 +152,7 @@ export function sanitizePageState(state: unknown): Record<string, unknown> | nul
     localStorage: storage(s.localStorage),
     sessionStorage: storage(s.sessionStorage),
     cookies,
+    ...sanitizePageInteraction(s),
   };
 }
 

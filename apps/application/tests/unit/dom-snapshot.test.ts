@@ -12,12 +12,16 @@ import {
   mediaMatchesViewport,
   maskCssText,
   snapshotMomentFromQuery,
+  PASSWORD_MASK,
+  pointerAt,
+  withPageInteraction,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
 import {
   parseResourceSnapshots,
   parseTraceTexts,
+  type TraceAction,
   type TraceFrameSnapshot,
   type ParsedTraceData,
 } from '~~/server/utils/trace-events';
@@ -72,14 +76,16 @@ describe('renderSnapshotHtml', () => {
       [
         snap({
           snapshotName: 's1',
-          html: ['HTML', {}, ['BODY', {}, ['INPUT', { __playwright_value_: 'hunter2', id: 'pw', onclick: 'evil()' }]]],
+          html: [
+            'HTML',
+            {},
+            ['BODY', {}, ['DIV', { __playwright_bounding_rect__: '{"left":0}', id: 'box', onclick: 'evil()' }]],
+          ],
         }),
       ],
       's1',
     );
-    expect(html).toContain('<input id="pw">');
-    expect(html).not.toContain('hunter2');
-    expect(html).not.toContain('onclick');
+    expect(html).toBe('<html><body><div id="box"></div></body></html>');
   });
 
   test('drops tag and attribute names that would spill into the markup', () => {
@@ -216,6 +222,172 @@ describe('renderSnapshotHtml', () => {
     });
     const main = snap({ snapshotName: 's1', html: ['HTML', {}, ['BODY', {}, 'main content']] });
     expect(renderSnapshotHtml([iframe, main], 's1')).toContain('main content');
+  });
+});
+
+describe('renderSnapshotHtml — live state', () => {
+  // Node shapes as Playwright 1.60 to 1.63 record them.
+  const body = (...children: unknown[]) => ['HTML', {}, ['BODY', {}, ...children]];
+  const render = (html: unknown, extra: Partial<TraceFrameSnapshot> = {}) =>
+    renderSnapshotHtml([snap({ snapshotName: 's1', html, ...extra })], 's1');
+
+  test('writes back the value a field held, not the one it was served with', () => {
+    expect(render(body(['INPUT', { __playwright_value_: 'Ada Lovelace', id: 'name', value: 'default' }]))).toContain(
+      '<input id="name" value="Ada Lovelace">',
+    );
+    expect(render(body(['INPUT', { __playwright_value_: 'a "quoted" <b>', id: 'q' }]))).toContain(
+      '<input id="q" value="a &quot;quoted&quot; <b>">',
+    );
+  });
+
+  test('masks a password field, showing only whether it holds something', () => {
+    const html = render(
+      body(
+        ['INPUT', { __playwright_value_: 'hunter2', id: 'pw', type: 'password' }],
+        ['INPUT', { __playwright_value_: '', id: 'empty', type: 'PASSWORD', value: 'served-secret' }],
+        ['INPUT', { id: 'served', type: 'password', value: 'served-secret' }],
+      ),
+    );
+    expect(html).not.toContain('hunter2');
+    expect(html).not.toContain('served-secret');
+    expect(html).toContain(`<input id="pw" type="password" value="${PASSWORD_MASK}">`);
+    expect(html).toContain('<input id="empty" type="PASSWORD" value="">');
+    expect(html).toContain(`<input id="served" type="password" value="${PASSWORD_MASK}">`);
+  });
+
+  test('sets checkbox, radio and option state, and keeps their submitted values', () => {
+    const html = render(
+      body(
+        [
+          'INPUT',
+          { __playwright_value_: 'on', __playwright_checked_: 'false', id: 'a', type: 'checkbox', checked: '' },
+        ],
+        ['INPUT', { __playwright_value_: 'x', __playwright_checked_: 'true', id: 'b', type: 'radio', value: 'x' }],
+        ['INPUT', { __playwright_value_: 'C:\\fakepath\\a.txt', id: 'f', type: 'file' }],
+        [
+          'SELECT',
+          {},
+          ['OPTION', { __playwright_selected_: 'false', value: 'fr', selected: '' }, 'France'],
+          ['OPTION', { __playwright_selected_: 'true', value: 'de' }, 'Germany'],
+        ],
+      ),
+    );
+    expect(html).toContain('<input id="a" type="checkbox">');
+    expect(html).toContain('<input id="b" type="radio" value="x" checked="">');
+    expect(html).toContain('<input id="f" type="file">');
+    expect(html).toContain('<option value="fr">France</option><option value="de" selected="">Germany</option>');
+  });
+
+  test("replaces a textarea's served text with what it held", () => {
+    expect(render(body(['TEXTAREA', { __playwright_value_: 'typed <notes>', id: 'n' }, 'initial']))).toContain(
+      '<textarea id="n">typed &lt;notes></textarea>',
+    );
+    // The parser drops one newline right after the tag, so a leading one is doubled.
+    expect(render(body(['TEXTAREA', { __playwright_value_: '\nsecond line' }]))).toContain(
+      '<textarea>\n\nsecond line</textarea>',
+    );
+  });
+
+  test('opens a recorded dialog and marks a modal one, a popover, scroll offsets and custom elements', () => {
+    const html = render([
+      'HTML',
+      { __playwright_scroll_top_: '300' },
+      [
+        'BODY',
+        { __playwright_custom_elements__: 'x-card,x-menu' },
+        ['DIALOG', { __playwright_dialog_open_: 'modal', id: 'm' }],
+        ['DIALOG', { __playwright_dialog_open_: 'true', id: 'n' }],
+        ['DIALOG', { id: 'closed' }],
+        ['DIV', { __playwright_popover_open_: 'true', popover: '' }],
+        ['DIV', { __playwright_scroll_top_: '120', __playwright_scroll_left_: '8', id: 'list' }],
+      ],
+    ]);
+    expect(html).toBe(
+      '<html data-piwi-scroll-top="300"><body data-piwi-custom-elements="x-card,x-menu">' +
+        '<dialog id="m" open="" data-piwi-modal=""></dialog><dialog id="n" open=""></dialog><dialog id="closed"></dialog>' +
+        '<div popover="" data-piwi-popover-open=""></div>' +
+        '<div id="list" data-piwi-scroll-top="120" data-piwi-scroll-left="8"></div></body></html>',
+    );
+  });
+
+  test("marks the action's target: an empty mark, or 1.60's call id of the snapshot's own action", () => {
+    const html = render(
+      body(
+        ['BUTTON', { __playwright_target__: '', id: 'empty' }],
+        ['BUTTON', { __playwright_target__: 'call@26', id: 'own' }],
+        ['BUTTON', { __playwright_target__: 'call@10', id: 'stale' }],
+      ),
+      { callId: 'call@26' },
+    );
+    expect(html).toContain('<button id="empty" data-piwi-target="">');
+    expect(html).toContain('<button id="own" data-piwi-target="">');
+    expect(html).toContain('<button id="stale">');
+  });
+
+  test('shows the image the page chose from its srcset', () => {
+    expect(
+      render(
+        body(['IMG', { __playwright_current_src__: 'https://x/b@2x.png', src: '/a.png', srcset: '/b@2x.png 2x' }]),
+      ),
+    ).toContain('<img src="https://x/b@2x.png">');
+  });
+
+  test('writes a shadow root as a declarative one and an adopted stylesheet as a <style> where it applies', () => {
+    const shadow = [
+      'X-CARD',
+      { id: 'wc' },
+      [
+        'template',
+        { __playwright_shadow_root_: 'open' },
+        ['B', { class: 't' }, 'shadow title'],
+        ['SLOT'],
+        ['template', { __playwright_style_sheet_: '.t { color: purple; }' }],
+      ],
+      ['SPAN', {}, 'light'],
+    ];
+    const tree = [
+      'HTML',
+      {},
+      ['BODY', {}, shadow],
+      ['template', { __playwright_style_sheet_: 'body { font: serif; }' }],
+    ];
+    expect(render(tree)).toBe(
+      '<html><body><x-card id="wc"><template shadowrootmode="open"><b class="t">shadow title</b><slot></slot>' +
+        '<style>.t { color: purple; }</style></template><span>light</span></x-card></body>' +
+        '<style>body { font: serif; }</style></html>',
+    );
+    expect(renderSnapshotHtml([snap({ snapshotName: 's1', html: tree })], 's1', { dropStyles: true })).toContain(
+      '<style></style></template>',
+    );
+  });
+
+  test('resolves an adopted stylesheet an earlier snapshot recorded', () => {
+    const first = snap({
+      snapshotName: 's1',
+      html: ['HTML', {}, ['BODY', {}], ['template', { __playwright_style_sheet_: 'p { color: red; }' }]],
+    });
+    // s1 nodes: [BODY, template, HTML] → the stylesheet is index 1.
+    const second = snap({ snapshotName: 's2', html: ['HTML', {}, ['BODY', {}, 'new'], [[1, 1]]] });
+    expect(renderSnapshotHtml([first, second], 's2')).toBe(
+      '<html><body>new</body><style>p { color: red; }</style></html>',
+    );
+  });
+
+  test('writes HTML <style> text raw, defanging only a closing tag; an SVG style stays escaped', () => {
+    const html = render([
+      'HTML',
+      {},
+      [
+        'HEAD',
+        {},
+        ['STYLE', {}, '.card { & > .inner { content: "<"; } }'],
+        ['STYLE', {}, 'a::after { content: "</style><script>x()</script>"; }'],
+      ],
+      ['BODY', {}, ['svg', {}, ['style', {}, 'a > b & c']]],
+    ]);
+    expect(html).toContain('<style>.card { & > .inner { content: "<"; } }</style>');
+    expect(html).toContain('<style>a::after { content: "<\\/style><script>x()</script>"; }</style>');
+    expect(html).toContain('<svg><style>a > b &amp; c</style></svg>');
   });
 });
 
@@ -650,6 +822,100 @@ describe('extractDomSnapshot — styled/lean two-pass', () => {
     expect(res.html).toContain('<style></style>'); // CSS dropped
     expect(res.html).not.toContain('.x{color:red}');
     expect(res.html).toContain('<button>Click me</button>'); // body preserved
+  });
+});
+
+describe('pointerAt — where the mouse was', () => {
+  const action = (callId: string, point?: { x: number; y: number }, pageId?: string): TraceAction => ({
+    callId,
+    apiName: 'Frame.click',
+    startTime: 0,
+    ...(point ? { point } : {}),
+    ...(pageId ? { pageId } : {}),
+  });
+  const actions = [
+    action('call@1', { x: 10, y: 20 }),
+    action('call@2'),
+    action('call@3', { x: 30, y: 40 }),
+    action('call@4'),
+  ];
+  const at = (callId: string, phase: string, pageId?: string) =>
+    snap({ callId, phase, snapshotName: `${phase}@${callId}`, ...(pageId ? { pageId } : {}) });
+
+  test('is the last pointer action up to the snapshot, its own included unless before it', () => {
+    const data = { actions, frameSnapshots: [] };
+    expect(pointerAt(data, at('call@3', 'after'))).toEqual({ x: 30, y: 40 });
+    expect(pointerAt(data, at('call@3', 'action'))).toEqual({ x: 30, y: 40 });
+    expect(pointerAt(data, at('call@3', 'before'))).toEqual({ x: 10, y: 20 });
+    expect(pointerAt(data, at('call@4', 'after'))).toEqual({ x: 30, y: 40 });
+    expect(pointerAt(data, at('call@1', 'before'))).toBeNull();
+    expect(pointerAt(data, at('call@9', 'after'))).toBeNull();
+  });
+
+  test('reads the call id and phase from a 1.60–1.62 snapshot name', () => {
+    const named = snap({ snapshotName: 'input@call@3' });
+    expect(pointerAt({ actions, frameSnapshots: [] }, named)).toEqual({ x: 30, y: 40 });
+  });
+
+  test("skips another page's mouse, the page read from the action or from its snapshots", () => {
+    const twoPages = [action('call@1', { x: 10, y: 20 }, 'page@1'), action('call@2', { x: 99, y: 99 })];
+    const frameSnapshots = [at('call@2', 'after', 'page@2')];
+    expect(pointerAt({ actions: twoPages, frameSnapshots }, at('call@2', 'after', 'page@1'))).toEqual({ x: 10, y: 20 });
+    expect(pointerAt({ actions: twoPages, frameSnapshots }, at('call@2', 'after', 'page@2'))).toEqual({ x: 99, y: 99 });
+  });
+
+  test('extractDomSnapshot hands the frame the point on <html>', () => {
+    const data: ParsedTraceData = {
+      ...traceData([at('call@3', 'after')]),
+      actions,
+    };
+    expect(extractDomSnapshot(data, 1_000_000).html).toBe('<html data-piwi-pointer="30,40"></html>');
+  });
+});
+
+describe('withPageInteraction — the reporter’s focus, hover and selection', () => {
+  const failing: TraceAction = {
+    callId: 'call@2',
+    apiName: 'Frame.click',
+    startTime: 0,
+    afterSnapshot: 'after@call@2',
+    error: { message: 'Timeout' },
+  };
+  const data: ParsedTraceData = {
+    ...traceData([
+      snap({ callId: 'call@1', snapshotName: 'after@call@1', html: ['HTML', {}, ['BODY', {}, 'one']] }),
+      snap({ callId: 'call@2', snapshotName: 'after@call@2', html: ['HTML', {}, ['BODY', {}, 'two']] }),
+    ]),
+    actions: [{ callId: 'call@1', apiName: 'Frame.fill', startTime: 0, afterSnapshot: 'after@call@1' }, failing],
+    failingAction: failing,
+    failingActionIndex: 1,
+  };
+  const pageState = {
+    url: 'https://app.example.com/',
+    focus: { element: { path: 'html:1/body:1/input:1', label: 'input#email' }, visible: true, selection: [1, 1] },
+    hover: { path: 'html:1/body:1/button:1', label: 'button "Pay"' },
+  };
+
+  test('marks the snapshot rendered when no other moment is asked for as the failure-time one', () => {
+    expect(extractDomSnapshot(data, 1_000_000).atFailure).toBe(true);
+    expect(extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@2', phase: 'after' }).atFailure).toBe(true);
+    expect(extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@1', phase: 'after' }).atFailure).toBe(false);
+  });
+
+  test('hands the frame element paths only, on the failure-time snapshot only', () => {
+    const atFailure = withPageInteraction({ ...extractDomSnapshot(data, 1_000_000), source: 'dom' }, pageState);
+    const attr = /data-piwi-page-state="([^"]*)"/.exec(atFailure.html!)![1]!.replace(/&quot;/g, '"');
+    expect(JSON.parse(attr)).toEqual({
+      focus: { path: 'html:1/body:1/input:1', visible: true },
+      hover: 'html:1/body:1/button:1',
+    });
+
+    const earlier = extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@1', phase: 'after' });
+    expect(withPageInteraction(earlier, pageState)).toBe(earlier);
+    const aria = { status: 'ok' as const, html: '<ul></ul>', atFailure: true, source: 'aria' as const };
+    expect(withPageInteraction(aria, pageState)).toBe(aria);
+    const noInteraction = extractDomSnapshot(data, 1_000_000);
+    expect(withPageInteraction(noInteraction, { url: 'https://app.example.com/' })).toBe(noInteraction);
   });
 });
 

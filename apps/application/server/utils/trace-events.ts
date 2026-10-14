@@ -52,6 +52,11 @@ export interface TraceAction {
    */
   screenshotBefore?: string;
   screenshotAfter?: string;
+  /**
+   * Where the action put the mouse, in viewport pixels: the `point` of its
+   * `input` event, recorded for a pointer action (click, hover, `mouse.move`…).
+   */
+  point?: { x: number; y: number };
 }
 
 export interface TraceConsoleEntry {
@@ -319,6 +324,15 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
           action.afterSnapshot = afterSnapshot;
           afterSnapshots.set(callId, afterSnapshot);
         }
+      }
+    }
+
+    if (type === 'input') {
+      const callId = evt.callId as string;
+      const action = callId ? openActions.get(callId) : undefined;
+      const point = evt.point as { x?: unknown; y?: unknown } | undefined;
+      if (action && typeof point?.x === 'number' && typeof point.y === 'number') {
+        action.point = { x: point.x, y: point.y };
       }
     }
 

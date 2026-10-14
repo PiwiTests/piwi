@@ -6,14 +6,13 @@ lang: en-US
 
 # Privacy & data flow
 
-Test results are unusually revealing: they carry your source paths, error messages, screenshots of your
-app, network calls, and sometimes your git history. This page is the inventory of where the bytes go.
+Test results are revealing: they carry your source paths, error messages, screenshots of your app,
+network calls, and sometimes your git history. This page is the inventory of where those bytes go.
 
 The short version: **there is no telemetry**, no usage analytics, no crash reporting, and no license or
 activation call. The server never checks for updates; the desktop app checks once at startup (turn that off in
 **Settings → About**) and when you click **Check for updates** there. Every outbound call the server makes is listed
-below, and all but two are something you switched on. An instance running on an air-gapped network works the same as
-one on the internet.
+below, and all but two are something you switched on. An air-gapped instance works the same.
 
 ## What leaves your server
 
@@ -30,9 +29,9 @@ Every outbound connection Piwi can make:
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
 
-The reporter sends your own instance what its options switch on. [Code reach and server coverage](/features/code-reach),
-off by default, send repository-relative file paths. Line numbers (function ranges and executed lines), with each file's
-git blob id, are sent only with `coverage.server: 'functions'` or `'lines'`. Never source code or hit counts.
+The reporter sends your instance what its options switch on. [Code reach and server coverage](/features/code-reach),
+off by default, send repository-relative file paths; line numbers and each file's git blob id only with
+`coverage.server: 'functions'` or `'lines'`; source code and hit counts never.
 
 Two rows need no setting: the anonymous git-host reads happen whenever runs report a public-host remote,
 and a link's title is fetched when someone attaches it. Both fail quietly without network access.
@@ -84,7 +83,8 @@ Some data is skipped at the source, so it never exists to leak:
 - **Input values in locator snapshots.** The [capture fixtures](./capture-fixtures) record what an
   element *is* — role, accessible name, test id — never what was typed into it. Playwright's own records
   are different: step titles and parameters, traces and the failure-time ARIA snapshot include the values
-  a test typed, password fields too, so don't fill real secrets in tests.
+  a test typed, password fields too, so don't fill real secrets in tests. The **DOM** view and the AI
+  diagnosis show them, password fields masked.
 - **Page-inventory field contents.** The optional [page inventory](./reporter#configuration-options)
   (`capturePageInventory`, **off by default**) records the names of a page's controls and links so the
   dashboard can tell which the suite never exercises. The name of a control that holds user input — a
@@ -92,7 +92,8 @@ Some data is skipped at the source, so it never exists to leak:
   recovery code, a draft, or a set of options never leaves the browser; link hrefs are stripped of their
   query and hash, which can carry signed tokens.
 - **Storage and cookie values.** Page state records the *names* of `localStorage` /`sessionStorage`
-  keys and their value lengths, and cookie names with their flags. Never the values.
+  keys and their value lengths, and cookie names with their flags. Never the values. Focus, mouse and
+  selection name elements, never values or selected text.
 - **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in Piwi's trace
   network view, and token-shaped strings in URLs and bodies are masked too. The trace file itself is
   stored as uploaded, so the bundled trace viewer and a downloaded trace still show them.

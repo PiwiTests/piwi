@@ -706,6 +706,24 @@ over the archive itself. Ingestion reads a trace once and does not go through th
 there; an answer that is a pure function of the trace and costly to build is kept on the loaded bundle, as
 `snapshotView` is.
 
+### DOM snapshot live state
+
+The DOM view renders a trace snapshot with the live state Playwright records beside the DOM (`__playwright_*`
+attributes; `template` nodes for shadow roots and adopted stylesheets), the same from Playwright 1.60 on.
+
+- **Markup, or a marker the frame applies.** `renderedAttributes` (`server/utils/dom-snapshot-render.ts`) writes what
+  markup can hold and turns the rest into `data-piwi-*` markers that `restoreSnapshotState`
+  (`shared/snapshot-picker-extras.ts`) applies in the frame. The script is serialized, so both name each marker: a new
+  one lands in both, and in `tests/dom-snapshot-state.spec.ts`.
+- **A password field's value is always masked** (`PASSWORD_MASK`); every other field value is shown.
+- **`restoreSnapshotState` runs first in every frame document** (picker and read-only), before anything installs over
+  the page, and moves no keyboard focus out of the dashboard.
+- **The reporter's focus, hover and selection apply to the failure-time snapshot only** (`atFailure`,
+  `withPageInteraction`): they were read at test end. Their element paths are the format of
+  `@piwitests/core/page-interaction`, written by the reporter's `readPageInteraction` and read by the frame script.
+- **A trace format change is checked against recorded traces**: `scripts/record-live-state-traces.mjs` records the
+  E2E fixtures with any Playwright version; keep 1.60 and the latest.
+
 ## Adding a field to test run data
 
 The full chain, in order:

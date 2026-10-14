@@ -123,8 +123,8 @@ Capture never fails or noticeably slows a test:
 - Capture adds no steps to the report or trace, and errors, step locations and stacks name your own call.
 
 `collectPerformanceMetrics: false` discards all fixture data; `captureLocators: false` turns off only the locator
-snapshots and pages, and `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags, never
-values). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLocatorOnFailure`, open
+snapshots and pages, and `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags,
+focus, hover, never values). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLocatorOnFailure`, open
 [the failing page for inspection](/features/locator-healing#inspect-the-failing-page-live-local-runs) or
 [let you pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs);
 a third, `PIWI_PAUSE_AT` (semicolon-separated `file:line`: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`),

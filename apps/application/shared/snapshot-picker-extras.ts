@@ -245,6 +245,295 @@ export function installSnapshotPickerExtras() {
 }
 
 /**
+ * Applies, in the snapshot iframe, the live state the renderer could only mark
+ * (`renderedAttributes` in `server/utils/dom-snapshot-render.ts` writes the
+ * `data-piwi-*` markers): the custom elements the page had defined, so its
+ * `:defined` styles match; modal dialogs and open popovers in the top layer;
+ * every element's scroll offsets; an outline on the action's target; a dot
+ * where the mouse was, with the element under it styled as `:hover`; and, on
+ * the failure-time snapshot, what the reporter read at test end
+ * (`data-piwi-page-state`): the focused element styled as `:focus`, the
+ * hovered one as `:hover`, a text selection highlighted, indeterminate
+ * checkboxes. It runs
+ * first in both the picker and the read-only documents, so the picker overlay
+ * installs over the page as it was. A browser without declarative shadow DOM
+ * gets its shadow roots attached here too. The page's own scroll offset can't
+ * apply in a frame as tall as its content, so it goes to the host as
+ * `piwiScrollTo`, right after the frame's height; an open modal dialog or
+ * popover goes instead, being what the page showed on top. Serialized with
+ * `String(...)`, like the scripts around it.
+ */
+export function restoreSnapshotState() {
+  var doc = document;
+  var g = window;
+
+  // The document and every open shadow root in it.
+  var roots = [doc];
+  for (var r = 0; r < roots.length; r++) {
+    var templates = roots[r].querySelectorAll('template[shadowrootmode]');
+    for (var t = 0; t < templates.length; t++) {
+      var host = templates[t].parentNode;
+      try {
+        if (host && host.nodeType === 1 && !host.shadowRoot) {
+          host.attachShadow({ mode: 'open' }).appendChild(templates[t].content);
+          templates[t].remove();
+        }
+      } catch (err) {}
+    }
+    var all = roots[r].querySelectorAll('*');
+    for (var a = 0; a < all.length; a++) if (all[a].shadowRoot) roots.push(all[a].shadowRoot);
+  }
+  function each(selector, apply) {
+    var found = [];
+    for (var i = 0; i < roots.length; i++) {
+      var matches = roots[i].querySelectorAll(selector);
+      for (var j = 0; j < matches.length; j++) found.push(matches[j]);
+    }
+    for (var k = 0; k < found.length; k++) {
+      try {
+        apply(found[k]);
+      } catch (err) {}
+    }
+    return found;
+  }
+
+  var names = ((doc.body && doc.body.getAttribute('data-piwi-custom-elements')) || '').split(',');
+  for (var n = 0; n < names.length; n++) {
+    try {
+      if (names[n] && g.customElements && !g.customElements.get(names[n])) {
+        g.customElements.define(names[n], class extends HTMLElement {});
+      }
+    } catch (err) {}
+  }
+
+  // A modal stays open: no Escape, no close request.
+  doc.addEventListener(
+    'cancel',
+    function (e) {
+      e.preventDefault();
+    },
+    true,
+  );
+  // Inert while it opens, so it focuses nothing and keyboard focus stays in the host page.
+  var modals = each('dialog[data-piwi-modal]', function (el) {
+    el.removeAttribute('open');
+    el.inert = true;
+    try {
+      el.showModal();
+    } catch (err) {
+      el.setAttribute('open', '');
+    }
+    el.inert = false;
+  });
+  // Manual, so neither a click nor another popover dismisses it.
+  var popovers = each('[data-piwi-popover-open]', function (el) {
+    el.setAttribute('popover', 'manual');
+    el.showPopover();
+  });
+
+  each('[data-piwi-target]', function (el) {
+    el.style.setProperty('outline', '2px solid #2563eb', 'important');
+    el.style.setProperty('outline-offset', '1px', 'important');
+  });
+
+  var page = { x: 0, y: 0 };
+  function scroll() {
+    each('[data-piwi-scroll-top],[data-piwi-scroll-left]', function (el) {
+      var top = Number(el.getAttribute('data-piwi-scroll-top')) || 0;
+      var left = Number(el.getAttribute('data-piwi-scroll-left')) || 0;
+      if (el === doc.documentElement || el === doc.body) {
+        page = { x: left, y: top };
+        return;
+      }
+      el.scrollTop = top;
+      el.scrollLeft = left;
+    });
+  }
+  scroll();
+  // Images change scroll heights as they load, so the offsets apply again then.
+  g.addEventListener('load', scroll);
+
+  // A pseudo-class can't be set from a script, so each rule using one gets a
+  // copy, right after it and as specific, that reads a marker attribute instead.
+  var PSEUDO_CLASSES = [
+    [/:hover(?![-\w])/g, '[data-piwi-hover]'],
+    [/:focus-visible(?![-\w])/g, '[data-piwi-focus-visible]'],
+    [/:focus-within(?![-\w])/g, '[data-piwi-focus-within]'],
+    [/:focus(?![-\w])/g, '[data-piwi-focus]'],
+  ];
+  function mirror(rules, owner) {
+    for (var i = rules.length - 1; i >= 0; i--) {
+      var rule = rules[i];
+      if (rule.selectorText === undefined) {
+        if (rule.cssRules) mirror(rule.cssRules, rule);
+        continue;
+      }
+      var copy = rule.cssText;
+      for (var p = 0; p < PSEUDO_CLASSES.length; p++) copy = copy.replace(PSEUDO_CLASSES[p][0], PSEUDO_CLASSES[p][1]);
+      if (copy === rule.cssText) continue;
+      try {
+        owner.insertRule(copy, i + 1);
+      } catch (err) {}
+    }
+  }
+  function mirrorStyleSheets() {
+    for (var i = 0; i < roots.length; i++) {
+      var sheets = roots[i].styleSheets || [];
+      for (var j = 0; j < sheets.length; j++) {
+        try {
+          mirror(sheets[j].cssRules, sheets[j]);
+        } catch (err) {}
+      }
+    }
+  }
+  // The element itself, then up through its ancestors and shadow hosts.
+  function markUp(el, attr) {
+    for (; el; el = el.parentElement || (el.parentNode && el.parentNode.host)) el.setAttribute(attr, '');
+  }
+  // A style the page's own rules come after, in the root (document or shadow root) holding `el`.
+  function addStyle(el, css) {
+    var style = doc.createElement('style');
+    style.textContent = css;
+    var root = el.getRootNode ? el.getRootNode() : doc;
+    if (root === doc) (doc.head || doc.documentElement).prepend(style);
+    else root.prepend(style);
+  }
+
+  // What the page was doing at test end, as the reporter read it: elements by
+  // element path (`@piwitests/core/page-interaction`), text by offset.
+  var state = null;
+  try {
+    state = JSON.parse(doc.documentElement.getAttribute('data-piwi-page-state') || 'null');
+  } catch (err) {}
+  function resolvePath(path) {
+    var node = null;
+    var levels = String(path).split('|');
+    for (var l = 0; l < levels.length; l++) {
+      node = l === 0 ? doc : node && node.shadowRoot;
+      var steps = levels[l].split('/');
+      for (var st = 0; st < steps.length && node; st++) {
+        var step = steps[st].split(':');
+        var count = 0;
+        var found = null;
+        for (var k = 0; k < node.children.length && !found; k++) {
+          if (node.children[k].localName === step[0] && ++count === Number(step[1])) found = node.children[k];
+        }
+        node = found;
+      }
+    }
+    return node;
+  }
+  var SKIPPED_TEXT = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'];
+  function textAt(point) {
+    var el = point && resolvePath(point.path);
+    if (!el) return null;
+    var walker = doc.createTreeWalker(el, 4);
+    var left = point.offset;
+    var last = null;
+    for (var text = walker.nextNode(); text; text = walker.nextNode()) {
+      if (SKIPPED_TEXT.indexOf(text.parentElement && text.parentElement.tagName) !== -1) continue;
+      last = text;
+      if (left <= text.data.length) return [text, left];
+      left -= text.data.length;
+    }
+    return last ? [last, last.data.length] : [el, 0];
+  }
+  var focused = state && state.focus && resolvePath(state.focus.path);
+  if (focused) {
+    focused.setAttribute('data-piwi-focus', '');
+    markUp(focused, 'data-piwi-focus-within');
+    if (state.focus.visible) {
+      focused.setAttribute('data-piwi-focus-visible', '');
+      // The browser's own focus ring, which no page stylesheet holds.
+      addStyle(
+        focused,
+        '[data-piwi-focus-visible]{outline:2px solid #2563eb;outline:auto 1px -webkit-focus-ring-color}',
+      );
+    }
+  }
+  var hoveredEl = state && state.hover && resolvePath(state.hover);
+  if (hoveredEl) markUp(hoveredEl, 'data-piwi-hover');
+  var boxes = (state && state.indeterminate) || [];
+  for (var b = 0; b < boxes.length; b++) {
+    var box = resolvePath(boxes[b]);
+    if (box) box.indeterminate = true;
+  }
+  var from = state && state.selection && textAt(state.selection.start);
+  var to = state && state.selection && textAt(state.selection.end);
+  if (from && to) {
+    try {
+      var range = doc.createRange();
+      range.setStart(from[0], from[1]);
+      range.setEnd(to[0], to[1]);
+      // A highlight, which a click in the frame can't clear; else the selection itself.
+      if (g.CSS && g.CSS.highlights && g.Highlight) {
+        g.CSS.highlights.set('piwi-selection', new g.Highlight(range));
+        addStyle(doc.documentElement, '::highlight(piwi-selection){background-color:#b4d5fe;color:inherit}');
+      } else {
+        g.getSelection().removeAllRanges();
+        g.getSelection().addRange(range);
+      }
+    } catch (err) {}
+  }
+
+  // The mouse where the last pointer action left it: a dot, and the element
+  // under it marked hovered with its ancestors, unless the reporter read the
+  // hovered element itself. The frame first has the recorded viewport's
+  // height, so a point below it waits for the host to grow the frame to its
+  // content.
+  var pointer = (doc.documentElement.getAttribute('data-piwi-pointer') || '').split(',');
+  var pointed = pointer.length !== 2;
+  function hitAt(x, y) {
+    var el = doc.elementFromPoint(x, y);
+    while (el && el.shadowRoot) {
+      var inner = el.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === el) break;
+      el = inner;
+    }
+    return el;
+  }
+  function point() {
+    var x = Number(pointer[0]) + page.x;
+    var y = Number(pointer[1]) + page.y;
+    if (pointed || !(x >= 0 && y >= 0 && x <= g.innerWidth && y <= g.innerHeight)) return;
+    pointed = true;
+    if (!hoveredEl) markUp(hitAt(x, y), 'data-piwi-hover');
+    var dot = doc.createElement('div');
+    dot.id = '__piwi_pointer';
+    dot.style.cssText =
+      'position:fixed;inset:auto;left:' +
+      (x - 7) +
+      'px;top:' +
+      (y - 7) +
+      'px;width:14px;height:14px;margin:0;padding:0;box-sizing:border-box;overflow:visible;' +
+      'border:2px solid #fff;border-radius:50%;background:#ef4444;box-shadow:0 0 0 1px #b91c1c;' +
+      'pointer-events:none;z-index:2147483647;';
+    doc.documentElement.appendChild(dot);
+    // In the top layer, so a modal dialog doesn't cover it.
+    try {
+      dot.setAttribute('popover', 'manual');
+      dot.showPopover();
+    } catch (err) {}
+  }
+  if (state || !pointed) mirrorStyleSheets();
+  if (!pointed) {
+    point();
+    g.addEventListener('resize', point);
+    g.addEventListener('load', point);
+  }
+
+  // The height goes first, so the host's canvas is tall enough to scroll to y.
+  setTimeout(function () {
+    var onTop = modals[0] || popovers[0];
+    var y = onTop ? onTop.getBoundingClientRect().top : page.y;
+    if (y <= 0) return;
+    var height = Math.max(doc.documentElement.scrollHeight, (doc.body && doc.body.scrollHeight) || 0);
+    g.parent.postMessage({ type: 'piwiContentHeight', height: height }, '*');
+    g.parent.postMessage({ type: 'piwiScrollTo', y: y }, '*');
+  }, 0);
+}
+
+/**
  * The read-only variant's in-iframe script: no picking overlay, just make the
  * snapshot inert (no navigation, no submits) and report its content height over
  * `postMessage` so the host can size the opaque-origin iframe. Kept here (with

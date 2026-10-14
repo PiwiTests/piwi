@@ -53,7 +53,8 @@
     "./error-signature": "./src/error-signature.ts",
     "./flake-plan": "./src/flake-plan.ts",
     "./flake-verdict": "./src/flake-verdict.ts",
-    "./skill-stamp": "./src/skill-stamp.ts"
+    "./skill-stamp": "./src/skill-stamp.ts",
+    "./page-interaction": "./src/page-interaction.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

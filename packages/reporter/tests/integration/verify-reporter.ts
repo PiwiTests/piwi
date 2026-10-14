@@ -194,6 +194,24 @@ export default class VerifyCaptureReporter implements Reporter {
       'the element probe must not be recorded as a step',
     );
 
+    // The clicked Save button still holds focus and the mouse at test end.
+    const pageState = byName('piwi-page-state');
+    assert(!!pageState?.body, 'expected a piwi-page-state attachment');
+    if (pageState?.body) {
+      const state = JSON.parse(pageState.body.toString('utf8')) as {
+        focus?: { element: { path: string; label: string } };
+        hover?: { path: string; label: string };
+      };
+      assert(
+        state.focus?.element.label === 'button#save' && state.focus.element.path === 'html:1/body:1/button:1',
+        `the clicked button should hold focus at test end, got ${JSON.stringify(state.focus)}`,
+      );
+      assert(
+        state.hover?.label === 'button#save',
+        `the mouse should be over the clicked button, got ${JSON.stringify(state.hover)}`,
+      );
+    }
+
     const locators = byName('piwi-locators');
     if (locators?.body) {
       const snapshots = JSON.parse(locators.body.toString('utf8')) as Array<{
