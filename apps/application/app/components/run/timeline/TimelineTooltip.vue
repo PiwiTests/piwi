@@ -15,6 +15,8 @@ const props = defineProps<{
   state: { item: TimelineItem | null; pos: { x: number; y: number } };
   /** Lock name → color, so the tooltip swatches match the brackets. */
   lockColorMap?: Map<string, string>;
+  /** Every attempt of a test that ran more than once, first attempt first; empty otherwise. */
+  attempts?: (item: TimelineItem) => TimelineItem[];
 }>();
 
 const item = computed(() => props.state.item);
@@ -51,6 +53,45 @@ const hookRows = computed(() =>
 );
 
 const isGap = computed(() => (item.value ? isGapKind(item.value.kind) : false));
+
+/** Every attempt of the hovered test, when Playwright ran it more than once. */
+const attemptList = computed<TimelineItem[]>(() => {
+  const hovered = item.value;
+  if (!hovered || hovered.kind !== 'test' || !props.attempts) return [];
+  const attempts = props.attempts(hovered);
+  return attempts.length > 1 ? attempts : [];
+});
+
+/** One row per attempt: its own status, when it started on the run's axis, how long it took and where. */
+const attemptRows = computed(() =>
+  attemptList.value.map((attempt) => {
+    const color = timelineStatusColor(attempt.status, attempt.retries);
+    return {
+      key: attempt.key,
+      label: `Attempt ${(attempt.retries ?? 0) + 1}`,
+      status: formatStatusLabel(attempt.status),
+      // A retried attempt's dot is an outline, like its bar.
+      dot: attempt.retried ? { borderColor: color, borderWidth: '1.5px' } : { backgroundColor: color },
+      facts: `at ${formatTimelineTime(attempt.start)} · ${formatTimelineTime(attempt.duration)} · Worker ${attempt.slot ?? attempt.workerIndex}`,
+      current: attempt.key === item.value?.key,
+    };
+  }),
+);
+
+/** What the attempts came to: the last one decides the test's outcome. */
+const attemptsOutcome = computed(() => {
+  const last = attemptList.value[attemptList.value.length - 1];
+  if (!last) return null;
+  const number = (last.retries ?? 0) + 1;
+  switch (statusPaletteKey(last.status, last.retries)) {
+    case 'flaky':
+      return `Passed on attempt ${number}`;
+    case 'failed':
+      return `Failed all ${number} attempts`;
+    default:
+      return `Attempt ${number} ${formatStatusLabel(last.status)}`;
+  }
+});
 
 /** The worker process, named when it differs from the lane's worker number. */
 const processLabel = computed(() => {
@@ -90,7 +131,9 @@ const positionStyle = computed(() => {
   const { x, y } = props.state.pos;
   if (typeof window === 'undefined') return { left: `${x + 12}px`, top: `${y - 10}px` };
   const flipX = x + 12 + TOOLTIP_MAX_WIDTH > window.innerWidth;
-  const flipY = y + 90 + (hookRows.value.length + gapText.value.length * 2) * 16 > window.innerHeight;
+  const extraRows =
+    hookRows.value.length + gapText.value.length * 2 + (attemptRows.value.length ? attemptRows.value.length + 1 : 0);
+  const flipY = y + 90 + extraRows * 16 > window.innerHeight;
   return {
     left: flipX ? undefined : `${x + 12}px`,
     right: flipX ? `${window.innerWidth - x + 12}px` : undefined,
@@ -104,6 +147,7 @@ const positionStyle = computed(() => {
   <Teleport to="body">
     <div
       v-if="item"
+      data-testid="timeline-tooltip"
       class="fixed z-[9999] pointer-events-none rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs shadow-lg"
       :style="positionStyle"
     >
@@ -128,7 +172,7 @@ const positionStyle = computed(() => {
         {{ item.subtitle }}
       </div>
       <div class="flex items-center gap-3 text-gray-500">
-        <span v-if="!isGap" class="capitalize">{{ formatExecutionStatus(item.status, item.retries) }}</span>
+        <span v-if="!isGap">{{ statusChipLabel(item.status, item.retries) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
         <span>
           Worker {{ item.slot ?? item.workerIndex }}<template v-if="processLabel"> · {{ processLabel }}</template>
@@ -152,6 +196,23 @@ const positionStyle = computed(() => {
           <span class="ml-auto pl-2 tabular-nums text-gray-400">{{ formatTimelineTime(hook.duration) }}</span>
         </li>
       </ul>
+      <div v-if="attemptRows.length" class="mt-1.5 max-w-80" data-testid="timeline-tooltip-attempts">
+        <p class="text-gray-600 dark:text-gray-300">{{ attemptsOutcome }}</p>
+        <ul class="mt-0.5 space-y-0.5">
+          <li
+            v-for="row in attemptRows"
+            :key="row.key"
+            class="flex items-center gap-2"
+            :class="row.current ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-500'"
+            :data-current="row.current ? '' : undefined"
+          >
+            <span class="inline-block size-2 rounded-full shrink-0 border-solid" :style="row.dot" />
+            <span class="shrink-0">{{ row.label }}</span>
+            <span class="shrink-0">{{ row.status }}</span>
+            <span class="ml-auto pl-2 tabular-nums whitespace-nowrap">{{ row.facts }}</span>
+          </li>
+        </ul>
+      </div>
       <div v-if="item.error" class="mt-1 text-red-500 line-clamp-2 break-words max-w-72">{{ item.error }}</div>
       <div v-if="clickHint" class="mt-1 text-[11px] text-gray-400">{{ clickHint }}</div>
       <div v-if="item.locks?.length" class="flex items-center gap-2 flex-wrap mt-1 text-gray-500">

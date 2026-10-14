@@ -308,8 +308,10 @@ const {
   extraHeight,
 });
 
-// Header counts: tests, hook sections that failed, wasted waits.
-const testCount = computed(() => timelineData.value.filter((d) => d.kind === 'test').length);
+// Header counts: tests (an attempt Playwright retried is not another test),
+// retries, hook sections that failed, wasted waits.
+const retryCount = computed(() => testItems.value.filter((d) => d.retried).length);
+const testCount = computed(() => testItems.value.length - retryCount.value);
 const hasHooks = computed(() => timelineData.value.some((d) => isHookKind(d.kind)));
 const hookFailureCount = computed(
   () => timelineData.value.filter((d) => isHookKind(d.kind) && d.status === 'failed').length,
@@ -358,6 +360,19 @@ const barItems = computed(() => {
     (item) => !isTestHook(item) && item.start <= end && item.start + item.duration >= start,
   );
 });
+
+/** Test bars by key, to find the attempts of a test that ran more than once. */
+const testsByKey = computed(() => new Map(testItems.value.map((item) => [item.key, item])));
+
+/** A test with no other attempt: one shared array. */
+const NO_ATTEMPTS: TimelineItem[] = [];
+
+/** Every attempt of the item's test, first attempt first; empty when it ran once. */
+function attemptsFor(item: TimelineItem): TimelineItem[] {
+  if (!item.attemptKeys) return NO_ATTEMPTS;
+  const map = testsByKey.value;
+  return item.attemptKeys.flatMap((key) => map.get(key) ?? []);
+}
 
 function hooksFor(item: TimelineItem): TimelineItem[] {
   return item.kind === 'test' && item.testCaseId != null
@@ -446,6 +461,7 @@ function onResourceLeave(): void {
       :worker-count="workerRows.length"
       :shard-total="shardTotal"
       :test-count="testCount"
+      :retry-count="retryCount"
       :hook-failure-count="hookFailureCount"
       :wait-count="waitCount"
       :restart-count="restartCount"
@@ -512,6 +528,19 @@ function onResourceLeave(): void {
             <rect width="6" height="6" :fill="colors.fill" :fill-opacity="colors.opacity" />
             <rect width="2" height="6" fill="white" fill-opacity="0.35" />
           </pattern>
+          <!-- Arrowhead of the arrows joining the attempts of a retried test. -->
+          <marker
+            id="timeline-retry-arrow"
+            viewBox="0 0 8 8"
+            refX="7"
+            refY="4"
+            markerWidth="8"
+            markerHeight="8"
+            markerUnits="userSpaceOnUse"
+            orient="auto"
+          >
+            <path d="M 0 0 L 8 4 L 0 8 z" class="fill-gray-600 dark:fill-gray-300" />
+          </marker>
           <filter id="glow">
             <feGaussianBlur stdDeviation="2.5" result="blur" />
             <feMerge>
@@ -581,13 +610,14 @@ function onResourceLeave(): void {
           :expandable="barExpandable"
           :hooks="hooksFor"
           :hook-geometry="hookGeometry"
+          :attempts="attemptsFor"
         />
 
         <TimelineResourceCursor :state="resourceHover" :px-per-ms="pxPerMs" :content-height="contentHeight" />
       </svg>
     </div>
 
-    <TimelineTooltip :state="hover" :lock-color-map="lockColorMap" />
+    <TimelineTooltip :state="hover" :lock-color-map="lockColorMap" :attempts="attemptsFor" />
     <TimelineResourceTooltip :state="resourceHover" :tracks-for="tracksFor" />
   </div>
   <EmptyState v-else icon="i-lucide-rows-3" text="No worker data available for this run." />

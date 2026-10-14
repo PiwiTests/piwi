@@ -5,6 +5,7 @@ import {
   TIMELINE_LAYOUT,
   TIMELINE_WAIT_COLORS,
   timelineStatusFill,
+  timelineRetriedAttemptStyle,
   timelineHookColors,
   timelineStepColor,
   formatTimelineTime,
@@ -42,8 +43,8 @@ const isHookLike = computed(() => isHookKind(props.item.kind));
 /** An empty stretch of the lane, drawn faintly. */
 const isGap = computed(() => isGapKind(props.item.kind));
 
-/** Approximate width of one character of a gap's 10px label. */
-const GAP_LABEL_CHAR_PX = 5.5;
+/** Approximate width of one character of a bar's or a gap's 10px label. */
+const LABEL_CHAR_PX = 5.5;
 
 /**
  * A gap's duration, centered on its dashed line when it fits (`↻ 1.1s` for a
@@ -53,7 +54,7 @@ const gapLabel = computed<{ text: string; from: number; to: number } | null>(() 
   if (!isGap.value) return null;
   const time = formatTimelineTime(props.item.duration);
   const text = props.item.kind === 'restart' ? `↻ ${time}` : `idle ${time}`;
-  const half = (text.length * GAP_LABEL_CHAR_PX) / 2 + 4;
+  const half = (text.length * LABEL_CHAR_PX) / 2 + 4;
   if (props.width < half * 2 + 12) return null;
   const center = props.x + props.width / 2;
   return { text, from: center - half, to: center + half };
@@ -78,6 +79,40 @@ const hookRects = computed(() => {
     return [{ ...rect, width, stroke: timelineHookColors(rect.item.status).stroke }];
   });
 });
+
+/**
+ * A test bar's fill: solid in its outcome color, or for an attempt Playwright
+ * retried, a pale wash under an outline drawn inside the bar's edge.
+ */
+const testRect = computed(() => {
+  const { x, y, width, item } = props;
+  if (!item.retried) return { x, y, width, height: barHeight, style: timelineStatusFill(item.status, item.retries) };
+  const inset = Math.min(0.75, width / 4);
+  return {
+    x: x + inset,
+    y: y + 0.75,
+    width: width - inset * 2,
+    height: barHeight - 1.5,
+    style: timelineRetriedAttemptStyle(item.status, item.retries),
+  };
+});
+
+/**
+ * A test bar's label: its duration, led by the attempt number when the test
+ * ran more than once and the bar has room for both.
+ */
+const testLabel = computed<string | null>(() => {
+  const time = formatTimelineTime(props.item.duration);
+  if (props.item.attemptKeys) {
+    const room = props.width - (props.expandable ? 16 : 4) - 4;
+    const text = `Attempt ${(props.item.retries ?? 0) + 1} · ${time}`;
+    if (text.length * LABEL_CHAR_PX <= room) return text;
+  }
+  return props.width > 40 ? time : null;
+});
+
+/** Label text on a solid bar is white; on a retried attempt's pale wash it is the page's text color. */
+const testLabelClass = computed(() => (props.item.retried ? 'fill-gray-800 dark:fill-gray-100' : 'fill-white'));
 
 /** Every bar with an owning test case clicks through to it (suite setup has none). */
 const clickable = computed(() => props.item.testCaseId != null);
@@ -270,14 +305,18 @@ function onTestClick(): void {
     </template>
     <template v-else>
       <rect
-        :x="x"
-        :y="y"
-        :width="width"
-        :height="barHeight"
+        :x="testRect.x"
+        :y="testRect.y"
+        :width="testRect.width"
+        :height="testRect.height"
         :rx="3"
         :ry="3"
-        :style="timelineStatusFill(item.status, item.retries)"
+        :style="testRect.style"
         class="cursor-pointer opacity-90"
+        data-timeline-test
+        :data-title="item.attemptKeys ? item.title : undefined"
+        :data-attempt="item.attemptKeys ? (item.retries ?? 0) + 1 : undefined"
+        :data-retried="item.retried ? '' : undefined"
         @click="onTestClick"
       />
       <!-- Lock brackets: a thin colored strip along the top edge per held lock. -->
@@ -296,17 +335,19 @@ function onTestClick(): void {
         v-if="expandable && width > 22"
         :x="x + 4"
         :y="y + barHeight / 2 + 3.5"
-        class="fill-white text-[10px] pointer-events-none select-none"
+        class="text-[10px] pointer-events-none select-none"
+        :class="testLabelClass"
       >
         {{ item.expanded ? '▾' : '▸' }}
       </text>
       <text
-        v-if="width > 40"
+        v-if="testLabel"
         :x="expandable ? x + 16 : x + 4"
         :y="y + barHeight / 2 + 4"
-        class="fill-white text-[10px] font-medium pointer-events-none"
+        class="text-[10px] font-medium pointer-events-none"
+        :class="testLabelClass"
       >
-        {{ formatTimelineTime(item.duration) }}
+        {{ testLabel }}
       </text>
     </template>
     <!-- Hook time over the test's bar: a wash hatched so it reads as not the test body. -->

@@ -6,7 +6,10 @@ import type { ResourceTrackKind, WorkerMetricKind } from '~/utils/resource-track
 const props = defineProps<{
   workerCount: number;
   shardTotal?: number | null;
+  /** Tests drawn, each counted once however many times Playwright ran it. */
   testCount: number;
+  /** Attempts Playwright retried: every attempt of a test but its last. */
+  retryCount?: number;
   /** Hook sections that failed — drawn whatever the hooks toggle says. */
   hookFailureCount: number;
   waitCount: number;
@@ -94,6 +97,10 @@ const resourceItems = computed<DropdownMenuItem[][]>(() => {
           &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
         </template>
         &middot; {{ testCount }} tests
+        <template v-if="retryCount && retryCount > 0">
+          &middot;
+          <span data-testid="timeline-retries">{{ retryCount }} {{ retryCount > 1 ? 'retries' : 'retry' }}</span>
+        </template>
         <template v-if="hookFailureCount > 0">
           &middot;
           <span class="text-error" data-testid="timeline-hook-failures"

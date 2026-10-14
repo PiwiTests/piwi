@@ -441,6 +441,89 @@ function reportUsualDuration(request, base) {
 }
 
 /**
+ * A run on three workers with `retries: 2`, as Playwright schedules it: a
+ * failed attempt ends its worker process, and the retry runs in the next free
+ * worker. "applies a discount code" fails, then passes on a retry in the new
+ * process of its lane; "pays with a saved card" fails all three attempts, the
+ * last one picked up by worker 2's process, free by then. Offsets are ms from
+ * the run's start; `retry` is the attempt's retry index.
+ */
+const RETRIED_RUN_CASES = [
+  { title: 'shows the product list', worker: 0, at: 0, duration: 3200 },
+  { title: 'applies a discount code', worker: 0, at: 3300, duration: 5500, failed: true },
+  { title: 'updates the shipping address', worker: 3, at: 9800, duration: 3700 },
+  { title: 'pays with a saved card', worker: 3, at: 13600, duration: 6200, failed: true, retry: 1 },
+  { title: 'pays with a saved card', worker: 2, at: 20900, duration: 6200, failed: true, retry: 2 },
+  { title: 'signs in with a password', worker: 1, at: 0, duration: 2500 },
+  { title: 'pays with a saved card', worker: 1, at: 2600, duration: 5800, failed: true },
+  { title: 'applies a discount code', worker: 4, at: 9300, duration: 4500, retry: 1 },
+  { title: 'exports the invoice', worker: 4, at: 13900, duration: 2600 },
+  { title: 'searches by SKU', worker: 4, at: 16600, duration: 2400 },
+  { title: 'shows the order history', worker: 4, at: 19100, duration: 3100 },
+  { title: 'filters by category', worker: 2, at: 0, duration: 4500 },
+  { title: 'sorts by price', worker: 2, at: 4600, duration: 2400 },
+  { title: 'adds a review', worker: 2, at: 7100, duration: 3900 },
+  { title: 'removes an item', worker: 2, at: 11100, duration: 2900 },
+  { title: 'checks out as a guest', worker: 2, at: 14100, duration: 3400 },
+  { title: 'prints the receipt', worker: 2, at: 17600, duration: 3200 },
+];
+
+/** The retried run's id, reported once per session. */
+let retriedRun;
+
+function reportRetriedRun(request, base) {
+  retriedRun ??= (async () => {
+    const post = (path, options) => postRetrying(request, base, path, options);
+    const startTime = Date.now() - 60_000;
+    const titles = [...new Set(RETRIED_RUN_CASES.map((c) => c.title))];
+    const { runId, streamToken } = await (
+      await post('/api/test-runs/start', {
+        data: {
+          projectName: 'checkout-retries',
+          startTime: new Date(startTime).toISOString(),
+          totalTests: titles.length,
+        },
+      })
+    ).json();
+    const attempt = (c) => ({
+      retry: c.retry ?? 0,
+      status: c.failed ? 'failed' : 'passed',
+      duration: c.duration,
+      startedAt: startTime + c.at,
+    });
+    const testCases = RETRIED_RUN_CASES.map((c) => ({
+      type: 'complete',
+      title: c.title,
+      location: `tests/checkout.spec.ts:${titles.indexOf(c.title) * 8 + 3}:5`,
+      status: c.failed ? 'failed' : 'passed',
+      duration: c.duration,
+      error: c.failed ? "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('alert')" : null,
+      retries: c.retry ?? 0,
+      attempts: RETRIED_RUN_CASES.filter((o) => o.title === c.title && (o.retry ?? 0) <= (c.retry ?? 0))
+        .map(attempt)
+        .sort((a, b) => a.retry - b.retry),
+      workerIndex: c.worker,
+      startedAt: startTime + c.at,
+      browser: { projectName: 'chromium', browserName: 'chromium' },
+    }));
+    await post(`/api/test-runs/${runId}/events`, { data: { streamToken, testCases } });
+    await post(`/api/test-runs/${runId}/finish`, {
+      data: {
+        streamToken,
+        status: 'failed',
+        duration: 27100,
+        totalTests: titles.length,
+        passedTests: titles.length - 1,
+        failedTests: 1,
+        flakyTests: 1,
+      },
+    });
+    return runId;
+  })();
+  return retriedRun;
+}
+
+/**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
  * session, so both widths of its scene show the same cluster in the same state.
@@ -2561,6 +2644,63 @@ const SCENES = [
       await settle();
       await shoot();
     },
+  },
+  {
+    name: 'run-timeline-retries',
+    description:
+      'A run whose failed tests were retried: the timeline at rest, with the passing retry hovered, with the first attempt of the test that failed every attempt hovered, then at phone width',
+    route: '/projects',
+    viewport: { width: 1280, height: 700 },
+    of: '[data-shot="run-timeline"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.runId = await reportRetriedRun(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-runs/${this.runId}?tab=workers`);
+      const bars = page.locator('[data-shot="run-timeline"] [data-timeline-test]');
+      await bars.first().waitFor({ timeout: 60000 });
+      await settle();
+      await shoot();
+      // The tooltip is fixed to the viewport and hangs below the timeline's box,
+      // so a hovered capture clips to the two together.
+      const shootWithTooltip = async (label) => {
+        const boxes = [
+          await page.locator('[data-shot="run-timeline"]').boundingBox(),
+          await page.getByTestId('timeline-tooltip').boundingBox(),
+        ];
+        const viewport = page.viewportSize();
+        const x = Math.max(0, Math.min(...boxes.map((b) => b.x)) - 12);
+        const y = Math.max(0, Math.min(...boxes.map((b) => b.y)) - 12);
+        const right = Math.min(viewport.width, Math.max(...boxes.map((b) => b.x + b.width)) + 12);
+        const bottom = Math.min(viewport.height, Math.max(...boxes.map((b) => b.y + b.height)) + 12);
+        await shoot(label, { of: false, clip: { x, y, width: right - x, height: bottom - y } });
+      };
+      const hoverBar = async (title, attempt) => {
+        const box = await page
+          .locator(`[data-shot="run-timeline"] [data-timeline-test][data-title="${title}"][data-attempt="${attempt}"]`)
+          .first()
+          .boundingBox();
+        await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+        await page.getByTestId('timeline-tooltip-attempts').waitFor();
+      };
+      await hoverBar('applies a discount code', 2);
+      await shootWithTooltip('passing-retry');
+      await hoverBar('pays with a saved card', 1);
+      await shootWithTooltip('failed-attempt');
+      await page.mouse.move(0, 0);
+      await page.setViewportSize({ width: 390, height: 700 });
+      await settle();
+      await hoverBar('pays with a saved card', 3);
+      await shootWithTooltip('narrow');
+      await page.mouse.move(0, 0);
+    },
+    outputs: [
+      'run-timeline-retries.png',
+      'run-timeline-retries-passing-retry.png',
+      'run-timeline-retries-failed-attempt.png',
+      'run-timeline-retries-narrow.png',
+    ],
   },
   {
     name: 'run-timeline-resources',
