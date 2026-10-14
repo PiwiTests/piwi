@@ -312,7 +312,7 @@ than Chromium.
 |---|---|---|
 | D1 | One coverage model for both runtimes: per test, per repository-relative file, the functions (start and end lines) and, at line granularity, the executed line ranges; the runtime is a field. | Both V8 (through source maps) and the span table resolve to file and line; every consumer joins on paths and lines. |
 | D2 | Lines are the unit, never byte offsets or statement indexes; ranges are 1-based and inclusive. | Offsets and indexes depend on the build; lines map to diffs and to editor positions. |
-| D3 | Each covered file carries the git blob id of the file the lines refer to, computed by the reporter from its checkout. | Lines are only meaningful against one version of the file; a blob id compares directly with git, the SCM APIs and the working copy. |
+| D3 | Each covered file carries the git blob id of the file the lines refer to, computed by the reporter from its checkout. | Lines are only meaningful against one version of the file; a blob id compares directly with git, the SCM APIs and the working copy. Suspect lines compare it with the head blob GitHub (`files[].sha`) and a local clone give; GitLab and Bitbucket give none. |
 | D4 | Code reach stays and becomes the file-level view of coverage: its rows are derived from the coverage of the same run, with a new `runtime` column. | Every existing consumer keeps working unchanged, and gets server files for free. |
 | D5 | Server coverage comes from the C# compiler's `TestCoverage` instrumentation and a supplied `CreatePayload`, not from IL rewriting or a profiler. | Per-request attribution with no binary rewriting, no native code, and the compiler's own handling of async, lambdas and Razor. |
 | D6 | Attribution goes through the request: an `AsyncLocal` mirrored into a thread-static field, a request id on the response, collection by request ids. No test id reaches the backend. | Exact under parallel workers, no CORS preflight, and the reporter already attributes responses to tests. |
@@ -438,7 +438,8 @@ read as the repository root). Files under `obj/` and generated sources are dropp
   and attach them (`piwi-server-coverage-requests`, internal, never uploaded).
 - The reporter process collects after `onTestEnd`, several tests per call, from each origin the ids came from (the
   base URL in practice, the origin `/__piwi/manifest` is already fetched from), merges the answer into the test's
-  `coverage`, and computes each file's blob id from the checkout, cached per run.
+  `coverage`, and computes each file's blob id from the checkout, cached per run, through `git hash-object` so
+  line ending conversion (`core.autocrlf`) gives the id git stores; it hashes the file itself only without git.
 - Options: `coverage: { browser: 'off' | 'files' | 'functions' | 'lines', server: 'off' | 'files' | 'functions' |
   'lines' }`, with `PIWI_COVERAGE_BROWSER` and `PIWI_COVERAGE_SERVER`. `files` costs what `functions` costs and sends
   paths only; `captureCodeReach: true` stays as an alias of `browser: 'files'`. At run end the reporter also fetches
