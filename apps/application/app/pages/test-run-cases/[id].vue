@@ -26,6 +26,8 @@ import { issueLineForm } from '~/utils/issue-line';
 import { buildNextStepChange } from '~/utils/next-step-change';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { hasHealingAlternatives } from '#shared/locator-healing';
+import type { SuspectLinesAnswer } from '#shared/suspect-lines';
+import { suspectLinesSentence } from '~/utils/suspect-lines';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -183,6 +185,21 @@ const didNotRun = computed(
 
 // A commit in the situation links to the SCM host only when the run has a repository.
 const repositoryUrl = computed(() => reproduceData.value?.desktop?.repositoryUrl ?? null);
+
+// The What changed line of a failing execution: how many of the lines changed
+// since the last passing run it ran (its suspect lines), linked to the
+// cluster's What changed card. They read source control and coverage, so they
+// load in the browser and the line shows only once they are available.
+const isFailedExecution = isFailedStatus(testCase.value?.status);
+const { data: suspectLinesData } = useFetch<SuspectLinesAnswer>(`/api/test-run-cases/${testCaseId}/suspect-lines`, {
+  key: `suspect-lines-${testCaseId}`,
+  server: false,
+  lazy: true,
+  immediate: isFailedExecution,
+});
+const suspectSentence = computed(() =>
+  failureCluster.value ? suspectLinesSentence(suspectLinesData.value, 'execution') : null,
+);
 
 const blockedTests = computed(() => (testCase.value as { blockedTests?: BlockedCaseRef[] } | null)?.blockedTests ?? []);
 
@@ -876,7 +893,17 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </div>
           </template>
 
-          <!-- Line 6: the facts line, one size smaller, with Details and Raw error -->
+          <!-- Line 6: what changed, the changed lines this test ran (its suspect lines) -->
+          <template v-if="isProblem && suspectSentence && failureCluster" #whatChanged>
+            <p data-shot="execution-what-changed">
+              <SuspectLinesSentence
+                :sentence="suspectSentence"
+                :to="`/failure-clusters/${failureCluster.id}#what-changed`"
+              />
+            </p>
+          </template>
+
+          <!-- Line 7: the facts line, one size smaller, with Details and Raw error -->
           <template #facts>
             <ExecutionFactsLine
               ref="factsLine"

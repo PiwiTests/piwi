@@ -1,24 +1,51 @@
 <script setup lang="ts">
 /**
  * The "What changed" card of the cluster page: the baseline picker, the commit
- * browser and the diff between the baseline and the failing run. It renders only
- * with something to show — a resolved diff or a hand-picked commit range; the
- * situation block's "What changed" line (`WhatChangedLine`) sums the range up
- * and, with nothing to diff, says why and offers the browser instead.
+ * browser, the suspect lines and the diff between the baseline and the failing
+ * run. It renders only with something to show, a resolved diff or a
+ * hand-picked commit range; the situation block's "What changed" line
+ * (`WhatChangedLine`) sums the range up and, with nothing to diff, says why and
+ * offers the browser instead. The diff marks the suspect lines when it is of
+ * the commit their coverage was recorded on and no commits are picked by hand,
+ * so its line numbers are theirs.
  */
+import { suspectMarks } from '~/utils/suspect-lines';
+
+defineProps<{
+  /** The cluster's project, for the suspect files' IDE links. */
+  project?: { id: number; name?: string | null } | null;
+}>();
+
 const {
   clusterId,
   baseCommit,
   selectedCommitShas,
   autoSelectedCommits,
   baseCommitIsPinned,
+  coverage,
   scmChanges,
   contextLoading,
   hasChangesToShow,
   refreshContext,
+  suspectLines,
+  loadSuspectLines,
 } = useClusterDiagnosis();
 
 const commitBrowserOpen = ref(false);
+
+onMounted(() => void loadSuspectLines());
+const suspects = computed(() => (suspectLines.value?.available ? suspectLines.value : null));
+const marked = computed(() => {
+  const head = suspects.value?.range?.to;
+  const shown = coverage.value?.scm?.range?.to;
+  return Boolean(head && shown && head.startsWith(shown) && selectedCommitShas.value.length === 0);
+});
+const marks = computed(() => (marked.value && suspects.value ? suspectMarks(suspects.value.suspects) : null));
+
+function refresh() {
+  void refreshContext();
+  void loadSuspectLines(true);
+}
 </script>
 
 <template>
@@ -53,16 +80,18 @@ const commitBrowserOpen = ref(false);
               color="neutral"
               variant="outline"
               :loading="contextLoading"
-              @click="refreshContext"
+              @click="refresh"
             />
           </div>
         </div>
       </div>
 
+      <SuspectLinesList v-if="suspects" :answer="suspects" :marked="marked" :project="project" />
+
       <div v-if="contextLoading && !scmChanges" class="flex items-center justify-center py-6">
         <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin text-gray-400" />
       </div>
-      <ScmChangesView v-else-if="scmChanges" :changes="scmChanges" />
+      <ScmChangesView v-else-if="scmChanges" :changes="scmChanges" :marks="marks" />
     </div>
     <CommitBrowserModal
       v-model:open="commitBrowserOpen"

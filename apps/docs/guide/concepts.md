@@ -305,8 +305,10 @@ The lines changed since a failing test's last passing run that the failing tests
 [coverage](#coverage) and the diff of the source control range: each changed hunk they executed, ranked by how many
 passing tests of the same run executed it too (the Ochiai score of spectrum-based fault localization, 1 when only
 failing tests did). Line coverage names the executed lines, function coverage the changed lines inside a function that
-ran, and file coverage the whole hunk. The [AI diagnosis](/features/ai-diagnosis#scm-grounded-context) lists them and
-sends their files' patches first; the [fix plan](/features/fix-plans) carries the top five.
+ran, and file coverage the whole hunk. The failure pages' **What changed** line names the first, the cluster's diff
+lists them and marks them ([cluster page](/features/failure-clusters#the-cluster-page)), the
+[AI diagnosis](/features/ai-diagnosis#scm-grounded-context) lists them and sends their files' patches first, and the
+[fix plan](/features/fix-plans) carries the top five.
 
 ### Locator index
 

@@ -144,7 +144,7 @@ Key server utilities (`server/utils/`):
 | `locator-healing.ts`                                          | Shared `upsertLocatorSnapshots`, `getLocatorHealing`, `saveLocatorPick` (server + demo)                                                                                                                                                                                                                                                                                                    |
 | `locator-usages.ts`                                           | Shared locator index: step indexing on ingest, "Who uses this?", `getLocatorIndex` (server + demo)                                                                                                                                                                                                                                                                                         |
 | `code-reach.ts`, `coverage.ts`                                | Code reach (the code index, a file's reach, latest-run replacement per test, branch and runtime) and coverage storage (fragments, per-execution payloads, test and run coverage, their reads, retention) (server + demo)                                                                                                                                                                   |
-| `suspect-lines.ts`                                            | Suspect lines of an execution or a failure cluster: the regression context's range, its changes from source control and the coverage, joined by `@piwitests/core/suspect-lines`, kept five minutes; the database reads live in `#shared/handlers/suspect-lines` (server + demo)                                                                                                            |
+| `suspect-lines.ts`                                            | Suspect lines of an execution or a failure cluster: the regression context's range, its changes from source control and the coverage, joined by `@piwitests/core/suspect-lines`, kept five minutes; the database reads and the join live in `#shared/handlers/suspect-lines` (server + demo)                                                                                               |
 | `project-access.ts`                                           | `getProjectScope`, `requireProjectAccess`, `requireResolvedProjectAccess`, entity resolvers                                                                                                                                                                                                                                                                                                |
 | `route-required-permission.ts`, `route-permission-match.ts`   | Read `x-required-permission` from compiled route metas; rou3 matching                                                                                                                                                                                                                                                                                                                      |
 | `ai-*.ts`                                                     | Provider abstraction, diagnosis, context building + limits, research stage, embeddings, images, system prompt, function-catalog extraction from pasted code (rules/schema/prompt-builder live in `shared/test-function-extract-prompt.ts` — one source for the AI-calling endpoint, the dashboard's no-AI-credits "copy prompt" flow, and the MCP `create_test_function` tool description) |
@@ -200,13 +200,16 @@ the run (`open-blocker`, `open-run`). Under the block, the execution page shows 
 `useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the
 one the next step points at open) and History (`HistoryStrip`). The cluster page shows the section the next step points
 at as a card of its own (`Toolbox` with `lead`; the sections, their order and the step each serves are in
-`app/utils/fix-sections.ts`), then `ClusterInvestigation` when there is a diff to browse, `ClusterAffectedTests` (its
+`app/utils/fix-sections.ts`), then `ClusterInvestigation` when there is a diff to browse (with the cluster's suspect
+lines in `SuspectLinesList`, marked in its diff), `ClusterAffectedTests` (its
 selection picks the execution the evidence shows, with several tests), `EvidenceTabs`, More ways to fix with the other
 sections folded, then the history, folded to one line each: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`,
 opened by the occurrence sparkline) and `ClusterActivity`. Both
 pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites,
 and `useEvidenceHint` hands the evidence card what Most likely cites, whose tabs and timeline rows it marks
-(`citedItemIds`, `app/utils/timeline-rows.ts`).
+(`citedItemIds`, `app/utils/timeline-rows.ts`). Both What changed lines say what the suspect lines say
+(`SuspectLinesSentence`, worded by `app/utils/suspect-lines.ts`), from the suspect-lines endpoints, fetched in the
+browser after the page mounted.
 `/bug-reports/[id]` opens on the same block with Situation, State, Next and The suite. `npm run app:measure` holds the
 two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).
 

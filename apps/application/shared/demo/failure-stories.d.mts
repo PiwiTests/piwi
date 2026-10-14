@@ -122,6 +122,14 @@ export interface StoryDomSnapshot {
   html: string;
 }
 
+/**
+ * The browser coverage (file granularity, as code reach records it) of the
+ * newest run the story fails in: the application files whose functions each
+ * test of the project ran, by spec file. A test of a spec file not listed
+ * records none.
+ */
+export type StoryCoverage = Record<string, string[]>;
+
 export interface FailureStory {
   key: string;
   clusterId: number;
@@ -140,6 +148,8 @@ export interface FailureStory {
   diagnosis: StoryDiagnosis;
   media: StoryMedia;
   firing: StoryFiring;
+  /** Gives the cluster suspect lines: the coverage its newest failing run recorded. */
+  coverage?: StoryCoverage;
 }
 
 export interface DemoCase {

@@ -12,9 +12,9 @@
  *   _The suite_).
  *
  * Every page fills only the lines it has, so one order serves the execution
- * page (Most likely, Next, Cluster), the cluster page (Most likely, State,
- * Next, Issue, Occurrences, What changed) and a bug report (Situation, State,
- * Next, The suite).
+ * page (Most likely, Next, Cluster, and What changed when its suspect lines are
+ * known), the cluster page (Most likely, State, Next, Issue, Occurrences, What
+ * changed) and a bug report (Situation, State, Next, The suite).
  */
 export const SITUATION_ROWS = [
   { slot: 'story', label: 'Most likely' },

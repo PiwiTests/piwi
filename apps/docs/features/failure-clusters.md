@@ -84,12 +84,13 @@ Three lines are cluster-specific:
 - **The state line**, right above **Next**.
 - **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*;
   a single test is named, *quarantined* if it is.
-- **What changed**: the commits and files between the last passing run (or your baseline) and this failure, with
-  **See the changes** for the diff. When setup is missing (runs that record no commit or repository URL, a host Piwi
-  does not read, or an [SCM token](/guide/source-control) missing or refused), it shows the range, the host's error
-  and **Compare** page, and a help hint on what to set up; **More actions › Copy git log** lists the range in your
-  checkout. With no passing run yet, **Browse commits** picks a baseline. The same commit on both sides means the
-  change is not in the code.
+- **What changed**: the commits and files since the last passing run (or your baseline), with **See the changes**
+  for the diff and, with [coverage](./code-reach#server-code), the first
+  [suspect line](/guide/concepts#suspect-lines): a changed line the failing tests ran, marked in the diff. Missing
+  setup (no commit or repository URL, an unsupported host, a missing or refused [SCM token](/guide/source-control))
+  shows the range, the host's error, its **Compare** page and a hint on what to set up;
+  **More actions › Copy git log** lists the range in your checkout. With no passing run yet, **Browse commits** picks
+  a baseline. The same commit on both sides means the change is not in the code.
 
 With several tests, the **Affected tests** list picks the one the evidence shows; **Move to a new cluster**
 [splits tests off](./ai-diagnosis#split-a-cluster-by-hand). The fix section **Next** points at leads under the block;

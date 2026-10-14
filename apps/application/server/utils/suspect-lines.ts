@@ -11,14 +11,11 @@
  * per execution or cluster and range (one minute when the provider failed),
  * and a provider failure answers `no-scm`, never an error.
  */
-import { diffFileFromPatch, type DiffFile } from '@piwitests/core/diff-anchors';
-import { suspectLines, type SuspectChange } from '@piwitests/core/suspect-lines';
-import type { CoverageCapture } from '@piwitests/core/coverage';
 import {
   clusterSuspectTarget,
   executionSuspectTarget,
+  joinSuspectChanges,
   readFailingCaptures,
-  readPassingCaptures,
   type SuspectRun,
 } from '#shared/handlers/suspect-lines';
 import {
@@ -32,7 +29,7 @@ import type { DbClient } from '../database';
 import { computeRegressionContext } from './regression-context';
 import type { RunMetadata } from './run-json-types';
 import { createScmProvider } from './scm';
-import type { ChangedFile, ScmChanges } from './scm/ScmProvider';
+import type { ScmChanges } from './scm/ScmProvider';
 import { TtlCache } from './ttl-cache';
 
 const ANSWER_TTL_MS = 5 * 60 * 1000;
@@ -46,50 +43,6 @@ const scmFailures = new TtlCache<SuspectLinesAnswer>(FAILED_SCM_TTL_MS, MAX_CACH
 type SuspectRange =
   | { from: string; to: string; repositoryUrl: string | null; baselineRunId: number }
   | { reason: SuspectLinesReason; known: Pick<SuspectLinesAnswer, 'range' | 'baselineRunId'> };
-
-/** A provider's file status as the diff names it. */
-function changeStatus(status: string): DiffFile['status'] {
-  if (status === 'removed' || status === 'deleted') return 'deleted';
-  if (status === 'added' || status === 'renamed') return status;
-  return 'modified';
-}
-
-/** A provider's changed files, with the hunks of their patches; a file without a patch has none. */
-function suspectChangesOf(files: ChangedFile[]): SuspectChange[] {
-  return files.map((file) => {
-    const status = changeStatus(file.status);
-    const hunks = file.patch ? diffFileFromPatch(file.filename, file.patch, status).hunks : [];
-    return { path: file.filename, status, hunks };
-  });
-}
-
-/**
- * Join a range's changes with the coverage of the failing executions and of
- * the run's passing ones. With no changed line on the head side, `no-scm` when
- * the provider left out the patches of files whose lines changed, `no-changes`
- * otherwise.
- */
-async function joinChanges(
-  db: DbClient,
-  run: SuspectRun,
-  failing: CoverageCapture[],
-  changes: ScmChanges,
-  known: Pick<SuspectLinesAnswer, 'range' | 'baselineRunId'>,
-): Promise<SuspectLinesAnswer> {
-  if (changes.patchesOmitted) return unavailableSuspectLines('no-scm', known);
-  const changed = suspectChangesOf(changes.files);
-  if (!changed.some((c) => c.status !== 'deleted' && c.hunks.length > 0)) {
-    const unread = changes.files.some(
-      (f) => !f.patch && changeStatus(f.status) !== 'deleted' && f.additions + f.deletions > 0,
-    );
-    return unavailableSuspectLines(unread ? 'no-scm' : 'no-changes', known);
-  }
-  const paths = changed.filter((c) => c.hunks.length > 0).map((c) => c.path);
-  const passing = await readPassingCaptures(db, run.id, paths);
-  const result = suspectLines({ changes: changed, failing, passing });
-  if (result.summary.changedLines === 0) return unavailableSuspectLines('no-changes', known);
-  return { available: true, ...known, summary: result.summary, suspects: result.suspects };
-}
 
 /** The range from the last green run's commit to the run's, as the regression context gives it. */
 async function rangeOf(db: DbClient, run: SuspectRun): Promise<SuspectRange> {
@@ -151,7 +104,7 @@ async function suspectLinesOfRun(
     scmFailures.set(cacheKey, answer);
     return answer;
   }
-  const answer = await joinChanges(db, run, failing, changes, known);
+  const answer = await joinSuspectChanges(db, run, failing, changes, known);
   answers.set(cacheKey, answer);
   return answer;
 }
@@ -201,7 +154,7 @@ export async function clusterSuspectLinesForChanges(
   if (!failing.some((capture) => capture.files.length > 0)) {
     return { ...unavailableSuspectLines('no-coverage', known), runId: target.run.id };
   }
-  return { ...(await joinChanges(db, target.run, failing, changes, known)), runId: target.run.id };
+  return { ...(await joinSuspectChanges(db, target.run, failing, changes, known)), runId: target.run.id };
 }
 
 /** A fix plan with its cluster's top suspect lines; the plan unchanged when they cannot be read. */

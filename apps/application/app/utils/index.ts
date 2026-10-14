@@ -609,6 +609,9 @@ export const patchLineClass: Record<PatchLineType, string> = {
   context: 'text-gray-600 dark:text-gray-400',
 };
 
+/** The mark on a diff row a failing test ran (a suspect line): a bar on its left edge, in the text's color. */
+export const SUSPECT_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--ui-text-highlighted)]';
+
 /** Split a unified-diff patch into typed lines for colored rendering. */
 export function parsePatchLines(patch: string): PatchLine[] {
   return patch.split('\n').map((line) => {

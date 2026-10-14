@@ -7,9 +7,9 @@
  * The list follows one order on every page (`SITUATION_ROWS`): the explanation,
  * then the action (the state right above the next step), then the context.
  * Every line is an optional named slot; a line with no slot collapses, so the same
- * frame serves a failing execution, a passing one (identity and facts only), the
- * cluster page, which adds its state, occurrence and what-changed lines, and a
- * bug report.
+ * frame serves a failing execution (with a what-changed line when its suspect
+ * lines are known), a passing one (identity and facts only), the cluster page,
+ * which adds its state, occurrence and what-changed lines, and a bug report.
  *
  * The block uses four text styles and no more: the heading, one body style for
  * the sentences, one label style, one meta style; code in a heading or a sentence

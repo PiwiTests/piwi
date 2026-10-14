@@ -49,6 +49,8 @@ The **Next** line names the one thing to do, chosen for you rather than offered 
 
 The **Cluster** line names the [failure cluster](/features/failure-clusters) the failure joins and how many other tests of the run share it, with its triage status, whether an earlier fix did not hold, and who owns the test. It ends with the cluster's [issue](/features/issue-tracking) and its status, or offers to create or link one.
 
+With [coverage](/features/code-reach#server-code), a **What changed** line counts the changed lines the test ran and names the first of its [suspect lines](/guide/concepts#suspect-lines).
+
 The block closes on a **facts** line, one size smaller: the failing file and line (open it in your IDE), browser and viewport, duration against its average, the attempts, the branch, and the CI build. A **Details** popover holds the rest, and **Raw error** shows the verbatim error with a **Copy failure** action.
 
 ## 5. The evidence: see it

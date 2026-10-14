@@ -51,6 +51,7 @@ import { fileURLToPath } from 'url';
 import { drawAnnotations, clearAnnotations } from './screenshot-annotations.mjs';
 import { resolveChromium, startServer, waitForPortFree } from './lib/dev-server.mjs';
 import { waitForHydration, settlePage } from './lib/page-waits.mjs';
+import { SUSPECT_SCENE_CLUSTER, SUSPECT_SCENE_EXECUTION, withSceneChanges } from './lib/suspect-lines-scene.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -3499,6 +3500,67 @@ const SCENES = [
       await shoot();
     },
   })),
+  // Suspect lines: cluster 5's newest failing run carries coverage. A dev
+  // server cannot read the demo's canned repositories, so these scenes serve
+  // the demo's own answers (`lib/suspect-lines-scene.mjs`, checked against the
+  // demo handlers by a unit test): the What changed line, then the card's list
+  // and the diff marking them, on the cluster page; the line on its execution.
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 1600 }, pad: 12 },
+    { suffix: '-mobile', viewport: { width: 375, height: 2600 }, pad: 8 },
+  ].map(({ suffix, viewport, pad }) => ({
+    name: `cluster-suspect-lines${suffix}`,
+    description: `Cluster page with suspect lines: the What changed line names the first, the card lists them and marks them in the diff, at ${viewport.width} px`,
+    route: '/',
+    viewport,
+    async run({ page, goto, settle, shoot }) {
+      await serveSuspectLinesScene(page);
+      await goto(`/failure-clusters/${SUSPECT_SCENE_CLUSTER.id}`);
+      await page.locator('[data-shot="suspect-lines-sentence"]').waitFor({ timeout: 60_000 });
+      await page.locator('[data-shot="suspect-lines"]').waitFor({ timeout: 60_000 });
+      await page.locator('[data-suspect]').first().waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('line', { of: '[data-shot="situation-block"]', pad });
+      await shoot('card', { of: '[data-shot="what-changed-card"]', pad });
+    },
+    outputs: [`cluster-suspect-lines${suffix}-line.png`, `cluster-suspect-lines${suffix}-card.png`],
+  })),
+  {
+    name: 'what-changed-coverage-hint',
+    description:
+      'Cluster What changed line for failing tests with no coverage: the diff summary, then the help hint on turning coverage on',
+    // Cluster 6 shares cluster 5's project and records no coverage; the demo's
+    // canned diff gives its line the summary the hint sits on.
+    route: '/',
+    viewport: { width: 1280, height: 1100 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+    async run({ page, goto, settle, shoot }) {
+      await serveSuspectLinesScene(page, 6);
+      await goto('/failure-clusters/6');
+      await page.getByRole('button', { name: 'Help: Suspect lines need coverage' }).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 900 }, pad: 12 },
+    { suffix: '-mobile', viewport: { width: 375, height: 1400 }, pad: 8 },
+  ].map(({ suffix, viewport, pad }) => ({
+    name: `execution-suspect-lines${suffix}`,
+    description: `Execution situation block whose What changed line names the first of its suspect lines, at ${viewport.width} px`,
+    route: '/',
+    viewport,
+    of: '[data-shot="situation-block"]',
+    pad,
+    async run({ page, goto, settle, shoot }) {
+      await serveSuspectLinesScene(page);
+      await goto(`/test-run-cases/${SUSPECT_SCENE_EXECUTION.id}`);
+      await page.locator('[data-shot="suspect-lines-sentence"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  })),
   ...['', '-mobile'].map((suffix) => ({
     name: `what-changed-no-repository${suffix}`,
     description: suffix
@@ -4704,6 +4766,27 @@ function sceneOutputs(scene) {
 function outDirFor(scene, override) {
   if (override) return override;
   return OUT_TARGETS[scene.out ?? 'screens'];
+}
+
+/**
+ * Serve the demo's suspect lines of cluster 5 and of its execution 496, and the
+ * What changed of `clusterId` (cluster 5 or another of its project) with the
+ * demo's canned changes, to the page.
+ */
+async function serveSuspectLinesScene(page, clusterId = SUSPECT_SCENE_CLUSTER.id) {
+  await page.route(`**/api/failure-clusters/${SUSPECT_SCENE_CLUSTER.id}/suspect-lines`, (route) =>
+    route.fulfill({ json: SUSPECT_SCENE_CLUSTER.answer }),
+  );
+  await page.route(`**/api/test-run-cases/${SUSPECT_SCENE_EXECUTION.id}/suspect-lines`, (route) =>
+    route.fulfill({ json: SUSPECT_SCENE_EXECUTION.answer }),
+  );
+  await page.route(
+    (url) => url.pathname === `/api/failure-clusters/${clusterId}/context`,
+    async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: withSceneChanges(await response.json()) });
+    },
+  );
 }
 
 /** Mocked Tauri IPC bridge, shaped per scene. Mirrors the real shell's commands. */

@@ -1,11 +1,34 @@
 <script setup lang="ts">
+/**
+ * A range's commits and changed files, each file folding open on its diff.
+ * `marks` names the suspect lines per file: their rows are marked in the diff,
+ * and a file with marks opens on its own the first time its marks arrive.
+ */
+import type { LineRange } from '@piwitests/core/coverage';
 import type { ScmChanges } from '~~/types/api';
 
-defineProps<{
+const props = defineProps<{
   changes: ScmChanges;
+  /** Head-side line ranges to mark, by file path. */
+  marks?: Record<string, LineRange[]> | null;
 }>();
 
 const expandedFiles = ref<Set<string>>(new Set());
+
+// A marked file opens once; folding it afterwards is the reader's choice.
+const opened = new Set<string>();
+watch(
+  () => props.marks,
+  (marks) => {
+    const fresh = Object.keys(marks ?? {}).filter(
+      (path) => !opened.has(path) && props.changes.files.some((f) => f.filename === path && f.patch),
+    );
+    if (!fresh.length) return;
+    for (const path of fresh) opened.add(path);
+    expandedFiles.value = new Set([...expandedFiles.value, ...fresh]);
+  },
+  { immediate: true },
+);
 
 function toggle(filename: string) {
   const next = new Set(expandedFiles.value);
@@ -19,7 +42,7 @@ function toggle(filename: string) {
   <div class="space-y-3">
     <!-- Commits -->
     <div v-if="changes.commits.length > 0" class="space-y-1">
-      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1">
+      <p class="text-sm font-semibold text-highlighted">
         {{ changes.commits.length }} commit{{ changes.commits.length === 1 ? '' : 's' }}
       </p>
       <div class="rounded-md border border-default overflow-hidden divide-y divide-default">
@@ -33,10 +56,10 @@ function toggle(filename: string) {
 
     <!-- Files -->
     <div class="space-y-1">
-      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1">
+      <p class="text-sm font-semibold text-highlighted">
         {{ changes.files.length }} file{{ changes.files.length === 1 ? '' : 's' }} changed
-        <span v-if="changes.patchesOmitted" class="text-yellow-500 font-normal normal-case">
-          — diff too large, file names only
+        <span v-if="changes.patchesOmitted" class="text-xs font-normal text-muted">
+          · diff too large, file names only
         </span>
       </p>
       <div class="rounded-md border border-default overflow-hidden divide-y divide-default">
@@ -72,7 +95,7 @@ function toggle(filename: string) {
             v-if="file.patch && expandedFiles.has(file.filename)"
             class="border-t border-default overflow-x-auto max-h-96"
           >
-            <DiffPatch :patch="file.patch" :file="file.filename" />
+            <DiffPatch :patch="file.patch" :file="file.filename" :marked="marks?.[file.filename]" />
           </div>
         </div>
       </div>

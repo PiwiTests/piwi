@@ -30,10 +30,10 @@ import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { LocalGitProvider } from './scm/local-git';
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import {
-  suspectLineMarkdown,
-  suspectLinesLead,
+  CONTEXT_SUSPECTS,
+  suspectFilesFirst,
   suspectLinesReasonText,
-  type ClusterSuspectLinesAnswer,
+  suspectLinesSection,
 } from '#shared/suspect-lines';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
@@ -2375,44 +2375,6 @@ async function buildSourceFiles(
 interface ScmSection {
   id: SectionId;
   markdown: string;
-}
-
-/** Suspects listed in the AI context at most. */
-const CONTEXT_SUSPECTS = 10;
-
-/** Changed files with the files of the suspects first, in suspect order, then the rest in their order. */
-function suspectFilesFirst(files: ChangedFile[], suspects: Array<{ path: string }>): ChangedFile[] {
-  const rank = new Map<string, number>();
-  for (const suspect of suspects) if (!rank.has(suspect.path)) rank.set(suspect.path, rank.size);
-  const first = files.filter((f) => rank.has(f.filename)).sort((a, b) => rank.get(a.filename)! - rank.get(b.filename)!);
-  return [...first, ...files.filter((f) => !rank.has(f.filename))];
-}
-
-/**
- * The "Changed Lines the Failing Tests Executed" section: the summary and the
- * top suspects, at most {@link CONTEXT_SUSPECTS}.
- */
-function suspectLinesSection(answer: ClusterSuspectLinesAnswer): string {
-  const { summary } = answer;
-  const shown = answer.suspects.slice(0, CONTEXT_SUSPECTS);
-  const failing = `${summary.failingWithCoverage} failing execution${summary.failingWithCoverage === 1 ? '' : 's'}`;
-  const passing = `${summary.passingWithCoverage} passing execution${summary.passingWithCoverage === 1 ? '' : 's'}`;
-  const run = answer.runId != null ? ` of run #${answer.runId}` : '';
-  const lines = [
-    '## Changed Lines the Failing Tests Executed',
-    suspectLinesLead(answer),
-    `- Coverage${run}: ${failing}, ${passing} of the same run.`,
-  ];
-  if (shown.length > 0) {
-    lines.push(
-      '- Ranked by evidence (executed lines, then a function that ran, then the file reached), then by how few passing executions ran the same lines (Ochiai score, 1 when only failing executions ran them). The patches of these files come first in the changed files below.',
-      '',
-      ...shown.map(suspectLineMarkdown),
-    );
-    const more = summary.executedHunks - shown.length;
-    if (more > 0) lines.push(`- … and ${more} more executed hunk${more === 1 ? '' : 's'}`);
-  }
-  return lines.join('\n');
 }
 
 /**

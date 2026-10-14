@@ -54,7 +54,9 @@ import type { TraceCallStackResponse, TraceNetworkResponse } from '~~/types/api'
 import { renderAppStateMarkdown, type PageStateLike } from '#shared/page-state';
 import { getLastPassPageState } from '#shared/handlers/test-cases';
 import type { ContextSection, DiagnosisContextCoverage, ScmChanges } from '~~/types/api';
-import { getDemoScmProject, getDemoChangesSince, getDemoChangesForShas } from '../demo-scm';
+import { getDemoScmProject, getDemoChangesSince, getDemoChangesForShas, getDemoDefaultRange } from '../demo-scm';
+import { CONTEXT_SUSPECTS, suspectFilesFirst, suspectLinesSection } from '#shared/suspect-lines';
+import { demoClusterSuspectLines } from './suspect-lines';
 
 // ── Section plumbing ────────────────────────────────────────────────────────
 
@@ -98,6 +100,7 @@ const SECTION_ORDER = [
   'recurrenceFlakiness',
   'browserDistribution',
   'affectedTests',
+  'suspectLines',
   'scmInvestigation',
   'topSuspectedCommit',
   'selectedCommits',
@@ -543,9 +546,14 @@ function scmChangesFor(projectId: number, baseCommit: string | null, selectedSha
   if (selectedShas.length) return getDemoChangesForShas(projectId, selectedShas);
   // Default baseline: the oldest known commit, so every newer commit (including the
   // suspect) appears as "what changed since the last green run".
-  const proj = getDemoScmProject(projectId);
-  const fallbackBaseline = baseCommit || proj?.commits[proj.commits.length - 1]?.sha || null;
-  return getDemoChangesSince(projectId, fallbackBaseline);
+  return getDemoChangesSince(projectId, baseCommit || getDemoDefaultRange(projectId)?.from || null);
+}
+
+/** The range a baseline diff compares, as short SHAs; none for hand-picked commits. */
+function scmRangeFor(projectId: number, baseCommit: string | null, selectedShas: string[]) {
+  const range = getDemoDefaultRange(projectId);
+  if (selectedShas.length || !range) return null;
+  return { from: (baseCommit || range.from).slice(0, 7), to: range.to.slice(0, 7) };
 }
 
 function scmInvestigationMd(changes: ScmChanges): string {
@@ -772,6 +780,20 @@ async function assemble(
   // SCM (canned)
   const scmChanges = scmChangesFor(projectId, opts.baseCommit, opts.selectedShas);
   if (scmChanges && scmChanges.files.length) {
+    // The changed lines the failing tests ran, over the default range, with their files first.
+    const suspects = await demoClusterSuspectLines(db, cluster.id);
+    if (suspects.available) {
+      scmChanges.files = suspectFilesFirst(scmChanges.files, suspects.suspects);
+      push(section('suspectLines', 'Changed Lines the Failing Tests Executed', suspectLinesSection(suspects)));
+      coverage = {
+        ...coverage,
+        suspectLines: {
+          suspects: Math.min(suspects.suspects.length, CONTEXT_SUSPECTS),
+          changedLines: suspects.summary.changedLines,
+          executedLines: suspects.summary.executedLines,
+        },
+      };
+    }
     push(section('scmInvestigation', 'SCM Investigation', scmInvestigationMd(scmChanges)));
     push(section('topSuspectedCommit', 'Top Suspected Commit', topSuspectedMd(projectId, scmChanges)));
 
@@ -804,6 +826,7 @@ async function assemble(
         patchesOmitted: false,
         patchesTruncated: false,
         baselineKind: opts.baseCommit ? 'manual' : 'run-green',
+        range: scmRangeFor(projectId, opts.baseCommit, opts.selectedShas),
       },
     };
   } else {
