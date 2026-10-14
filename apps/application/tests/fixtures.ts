@@ -15,7 +15,7 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
-import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
+import { test as base, expect, type Page, type Request, type Response, type TestInfo } from '@playwright/test';
 import {
   generateAlternatives,
   extractAccessibleName,
@@ -88,16 +88,25 @@ type NetworkRequest = {
 async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
   const networkRequests: NetworkRequest[] = [];
   const pendingHandlers: Promise<void>[] = [];
+  // As the reporter's capture: the response of each request, kept from its arrival, so a request whose body the page
+  // never read (a no-store response that never finishes, an empty error response Chromium cancels) is still recorded.
+  const openResponses = new Map<Request, Response>();
+  const recordedOpen = new WeakSet<Request>();
 
-  page.on('requestfinished', (request) => {
+  /** A request's record; `unfinished` when its response arrived but its body never finished loading. */
+  const record = (request: Request, response: Response | null, unfinished: boolean) => {
     const p = (async () => {
       try {
         const url = request.url();
         if (url.startsWith('data:') || url.startsWith('blob:')) return;
 
         const timing = request.timing();
-        const response = await request.response();
-        const duration = timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0;
+        response ??= unfinished ? null : await request.response();
+        const duration = unfinished
+          ? Math.max(0, Math.round(timing.responseStart - timing.requestStart))
+          : timing.responseEnd > 0
+            ? Math.round(timing.responseEnd - timing.requestStart)
+            : 0;
 
         const entry: NetworkRequest = {
           method: request.method(),
@@ -125,10 +134,34 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
       }
     })();
     pendingHandlers.push(p);
+  };
+
+  page.on('response', (response) => {
+    try {
+      openResponses.set(response.request(), response);
+    } catch {
+      /* a page event handler must never throw */
+    }
+  });
+
+  page.on('requestfinished', (request) => {
+    if (recordedOpen.has(request)) return;
+    const response = openResponses.get(request) ?? null;
+    openResponses.delete(request);
+    record(request, response, false);
   });
 
   page.on('requestfailed', (request) => {
+    if (recordedOpen.has(request)) return;
+    const response = openResponses.get(request) ?? null;
+    openResponses.delete(request);
     try {
+      const failure = request.failure()?.errorText ?? 'failed';
+      // Cancelled after its response arrived: the response is the record.
+      if (response && /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|cancell?ed/i.test(failure)) {
+        record(request, response, true);
+        return;
+      }
       const url = request.url();
       if (url.startsWith('data:') || url.startsWith('blob:')) return;
       const timing = request.timing();
@@ -139,7 +172,7 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
         duration: timing.startTime > 0 ? Math.max(0, Math.round(Date.now() - timing.startTime)) : 0,
         startTime: timing.startTime,
         resourceType: request.resourceType(),
-        failure: request.failure()?.errorText ?? 'failed',
+        failure,
       });
     } catch {
       /* a request shape the reader does not expect — skip it */
@@ -151,6 +184,12 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
     // snapshotting networkRequests — without this, the last request (often
     // the one that caused the test to fail) races with fixture teardown and
     // its entry (including serverLogs) can be missing from the attachment.
+    // The requests whose response arrived but which are still open are recorded first.
+    for (const [request, response] of openResponses) {
+      recordedOpen.add(request);
+      record(request, response, true);
+    }
+    openResponses.clear();
     await Promise.allSettled(pendingHandlers);
 
     if (networkRequests.length > 0) {
