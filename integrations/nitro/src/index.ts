@@ -7,13 +7,13 @@ import { consola } from 'consola';
 // server bundle externalizes it (e.g. dev builds).
 import type { NitroAppPlugin } from 'nitropack';
 import { createError } from 'h3';
-import { verifyProbeHeader, ProbeNonceCache, type PiwiProbeSpec } from './probe';
+import { verifyProbeHeader, ProbeNonceCache, type PiwiProbeSpec } from './probe.js';
 import {
   buildRouteManifest,
   recordObservedRoute,
   collapsePathPattern,
   type ManifestRouteEntry,
-} from './manifest';
+} from './manifest.js';
 import {
   routeMatchesRequest,
   faultStatus,
@@ -25,7 +25,7 @@ import {
   dependencyCallMatches,
   mutateResponseBody,
   appliedFaultLabel,
-} from './faults';
+} from './faults.js';
 
 export {
   verifyProbeHeader,
@@ -34,9 +34,9 @@ export {
   PROBE_TTL_MS,
   type PiwiProbeSpec,
   type SignedProbe,
-} from './probe';
-export { buildRouteManifest, recordObservedRoute, collapsePathPattern, type RouteManifest } from './manifest';
-export * from './faults';
+} from './probe.js';
+export { buildRouteManifest, recordObservedRoute, collapsePathPattern, type RouteManifest } from './manifest.js';
+export * from './faults.js';
 
 const MAX_ENTRIES = 50;
 const MAX_MSG_LENGTH = 500;
@@ -315,8 +315,10 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
         const handlerFile = resolveHandlerFile(event);
 
         // Record this route for the declared-surface manifest. Prefer the matched
-        // route's own pattern; fall back to collapsing the concrete path.
-        const matchedPattern = (event.context?.matchedRoute as { route?: unknown; path?: unknown } | undefined)?.route;
+        // route's own pattern (`path` in h3 1.x, `route` in later versions); fall
+        // back to collapsing the concrete path.
+        const matchedRoute = event.context?.matchedRoute as { route?: unknown; path?: unknown } | undefined;
+        const matchedPattern = matchedRoute?.route ?? matchedRoute?.path;
         const pattern = typeof matchedPattern === 'string' && matchedPattern ? matchedPattern : collapsePathPattern(path);
         recordObservedRoute(observedRoutes, { method, pattern, handler: handlerFile });
 
