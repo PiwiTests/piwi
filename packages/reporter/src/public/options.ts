@@ -96,8 +96,9 @@ export interface PiwiDashboardOptions {
    * `piwi preflight`. Only repository-relative file paths are sent. Chromium only;
    * other browsers record nothing. It adds time to every test, so run it on
    * one scheduled job rather than every run. **Defaults to `false`** — opt in
-   * with `captureCodeReach: true` (or `PIWI_CAPTURE_CODE_REACH=true`).
-   * Automatically disabled when `collectPerformanceMetrics` is `false`.
+   * with `captureCodeReach: true` (or `PIWI_CAPTURE_CODE_REACH=true`), the
+   * same as `coverage.browser: 'files'`. Automatically disabled when
+   * `collectPerformanceMetrics` is `false`.
    */
   captureCodeReach?: boolean;
   /**
@@ -108,6 +109,34 @@ export interface PiwiDashboardOptions {
    * config's directory (Nuxt: `['app']`).
    */
   codeReachRoots?: string[];
+  /**
+   * Record, per test, which source code ran, in the browser and in the
+   * backend, and send it with the test as its coverage. Rides the capture
+   * fixtures. Off on both sides unless set, and automatically disabled when
+   * `collectPerformanceMetrics` is `false`.
+   */
+  coverage?: {
+    /**
+     * What the browser side records: `'files'`, the application files whose
+     * functions ran, from Chromium's JavaScript coverage, which is what
+     * `captureCodeReach: true` records; `'off'` records nothing. Only paths are
+     * sent. Defaults to `'off'`. Can also be set with `PIWI_COVERAGE_BROWSER`.
+     */
+    browser?: 'off' | 'files';
+    /**
+     * What the server side records, from a backend built with Piwi's coverage
+     * instrumentation (ASP.NET Core: `-p:PiwiCoverage=true`), which names each
+     * request's coverage on its response: `'files'` sends the backend files
+     * each test ran, `'functions'` adds the start and end line of each function
+     * that ran, `'lines'` adds the executed lines. The reporter collects a
+     * test's coverage from the backend after the test ends, never in the test,
+     * and at the end of the run sends the run's coverage of the backend too.
+     * Line numbers are sent with `'functions'` and `'lines'` only, never source
+     * code or hit counts. Defaults to `'off'`. Can also be set with
+     * `PIWI_COVERAGE_SERVER`.
+     */
+    server?: 'off' | 'files' | 'functions' | 'lines';
+  };
   /**
    * Capture server-side spans for each API/document request the test makes,
    * read from the `X-Piwi-Trace` response header emitted by a Piwi

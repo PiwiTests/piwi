@@ -82,6 +82,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     locatorSnapshots: rest.locatorSnapshots || null,
     locatorPages: rest.locatorPages || null,
     codeReach: rest.codeReach || null,
+    coverage: rest.coverage || null,
     resources: rest.resources ?? null,
     didNotRunReason: rest.didNotRunReason ?? null,
     expectedStatus: rest.expectedStatus ?? null,

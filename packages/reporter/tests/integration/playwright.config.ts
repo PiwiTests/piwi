@@ -1,5 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
+// The workers inherit it: the capture fixtures keep the `X-Piwi-Coverage`
+// request ids the fixture server names, as with server coverage on.
+process.env.PIWI_COVERAGE_SERVER = 'lines';
+
 /**
  * Standalone Playwright project for the capture-fixtures integration spec.
  * Deliberately separate from the Vitest unit suite (which cannot drive a real

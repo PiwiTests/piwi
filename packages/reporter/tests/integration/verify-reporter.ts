@@ -231,6 +231,25 @@ export default class VerifyCaptureReporter implements Reporter {
       assert(ping?.status === 200, 'captured request should record its response status');
     }
 
+    // The request ids of the server coverage the page's document and fetch named, under their origin.
+    const coverageRequests = byName('piwi-server-coverage-requests');
+    assert(!!coverageRequests, 'expected a piwi-server-coverage-requests attachment');
+    if (coverageRequests?.body) {
+      const byOrigin = JSON.parse(coverageRequests.body.toString('utf8')) as Record<string, string[]>;
+      const origins = Object.keys(byOrigin);
+      assert(
+        origins.length === 1 && /^http:\/\/127\.0\.0\.1:\d+$/.test(origins[0]!),
+        `expected one origin, got ${origins.join(', ')}`,
+      );
+      const ids = byOrigin[origins[0]!] ?? [];
+      assert(
+        ids.length === 2 &&
+          ids.some((id) => id.startsWith('itest.doc-')) &&
+          ids.some((id) => id.startsWith('itest.ping-')),
+        `expected the document's and the fetch's request ids, got ${ids.join(', ')}`,
+      );
+    }
+
     const console_ = byName('piwi-console');
     assert(!!console_, 'expected a piwi-console attachment');
     if (console_?.body) {

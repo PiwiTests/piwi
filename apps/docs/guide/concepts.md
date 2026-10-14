@@ -287,9 +287,17 @@ no one feature, so it links none. See [how features group](/reference/gap-detect
 ### Code reach
 
 The application source files a test executed: those whose functions ran in the page, from Chromium's JavaScript
-coverage when [code reach](/features/code-reach) is on, and the handler files of the routes it called
+coverage when [code reach](/features/code-reach) is on, those it ran in an ASP.NET Core backend with
+[server coverage](/features/code-reach#server-code) on, and the handler files of the routes it called
 when the backend is instrumented. Observed reach at file level, never line coverage. It feeds
 [impact-from-diff](/features/test-selection#impact-from-diff) and [Uncovered changes](/features/uncovered-changes).
+
+### Coverage
+
+Which source code a test ran, per repository-relative file and **runtime** (`browser` or `server`), at a
+**granularity**: the files only, the functions that ran (their start and end lines), or the executed lines too, against
+the git blob of the file version. Code reach is its file-level view. A test's coverage is **incomplete** when part of it
+could not be collected.
 
 ### Locator index
 

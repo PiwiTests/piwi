@@ -1,0 +1,355 @@
+import type * as http from 'node:http';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { CoverageFile } from '@piwitests/core/coverage';
+import {
+  ServerCoverageCollector,
+  baseUrlsFromConfig,
+  parseServerCoverageRequests,
+  type CollectorLimits,
+} from '../src/internal/collect/server-coverage.js';
+import { Logger } from '../src/internal/support/logger.js';
+import { jsonRes, startServerOnTestPort, textRes, type FakeServer, type RecordedReq } from './_helpers.js';
+
+interface CollectBody {
+  granularity: string;
+  groups: Array<{ key: string; requests: string[] }>;
+}
+
+/** The coverage the fake backend holds per request id; an id it does not hold answers as missing. */
+const HELD: Record<string, CoverageFile[]> = {
+  'p.1': [{ path: 'src/Web/Services/BasketService.cs', runtime: 'server', functions: [[22, 25]], lines: [[23, 24]] }],
+  'p.2': [{ path: 'src/Web/Services/BasketService.cs', runtime: 'server', functions: [[31, 48]], lines: [[33, 35]] }],
+  'p.3': [{ path: 'src/Web/Pages/Index.cshtml', runtime: 'server', lines: [[1, 4]] }],
+  'p.4': [{ path: 'src/Web/Program.cs', runtime: 'server', functions: [[10, 12]], lines: [[11, 11]] }],
+  'p.5': [{ path: 'src/Web/Program.cs', runtime: 'server', functions: [[20, 22]], lines: [[21, 21]] }],
+};
+
+/** A collect answer for a body, from `HELD`. */
+function answer(body: CollectBody): unknown {
+  return {
+    v: 1,
+    groups: body.groups.map((group) => ({
+      key: group.key,
+      files: group.requests.flatMap((id) => HELD[id] ?? []),
+      missing: group.requests.filter((id) => !HELD[id]),
+    })),
+  };
+}
+
+let servers: FakeServer[] = [];
+
+afterEach(async () => {
+  await Promise.all(servers.map((server) => server.close()));
+  servers = [];
+  vi.restoreAllMocks();
+});
+
+/** A backend serving coverage under `base` (the origin root by default); every other path answers 404. */
+async function backend(
+  options: { base?: string; respond?: (req: RecordedReq, res: http.ServerResponse) => boolean } = {},
+): Promise<FakeServer> {
+  const base = options.base ?? '';
+  const server = await startServerOnTestPort((req, res) => {
+    if (options.respond?.(req, res)) return;
+    if (req.method === 'POST' && req.url === `${base}/__piwi/coverage/collect`) {
+      jsonRes(res, 200, answer(JSON.parse(req.body) as CollectBody));
+    } else if (req.method === 'GET' && req.url?.startsWith(`${base}/__piwi/coverage/run`)) {
+      jsonRes(res, 200, {
+        v: 1,
+        files: [
+          {
+            path: 'src/Web/Program.cs',
+            runtime: 'server',
+            functions: [[10, 12]],
+            lines: [[11, 11]],
+            executable: [[11, 30]],
+          },
+          { path: '../outside.cs', runtime: 'server', lines: [[1, 1]] },
+        ],
+      });
+    } else {
+      textRes(res, 404, 'not found');
+    }
+  });
+  servers.push(server);
+  return server;
+}
+
+function collector(
+  baseUrls: string[],
+  limits: Partial<CollectorLimits> = {},
+  granularity: 'files' | 'functions' | 'lines' = 'lines',
+): ServerCoverageCollector {
+  return new ServerCoverageCollector({
+    granularity,
+    baseUrls,
+    blobs: null,
+    logger: new Logger(),
+    limits: { batchDelayMs: 20, ...limits },
+  });
+}
+
+const collectCalls = (server: FakeServer) =>
+  server.requests
+    .filter((req) => req.method === 'POST')
+    .map((req) => ({ url: req.url, body: JSON.parse(req.body) as CollectBody }));
+
+describe('ServerCoverageCollector', () => {
+  it('batches the tests of an origin into one call, one group per test', async () => {
+    const server = await backend();
+    const c = collector([server.url]);
+    const [a, b, d] = await Promise.all([
+      c.collect({ [server.url]: ['p.1'] }),
+      c.collect({ [server.url]: ['p.2', 'p.3'] }),
+      c.collect({ [server.url]: ['p.4'] }),
+    ]);
+    const calls = collectCalls(server);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body.granularity).toBe('lines');
+    expect(calls[0]!.body.groups.map((group) => group.requests)).toEqual([['p.1'], ['p.2', 'p.3'], ['p.4']]);
+    expect(a).toEqual({ files: HELD['p.1'], incomplete: false });
+    expect(b.files.map((file) => file.path)).toEqual([
+      'src/Web/Pages/Index.cshtml',
+      'src/Web/Services/BasketService.cs',
+    ]);
+    expect(b.incomplete).toBe(false);
+    expect(d.files).toEqual(HELD['p.4']);
+  });
+
+  it('sends a batch as soon as it holds batchTests tests', async () => {
+    const server = await backend();
+    const c = collector([server.url], { batchTests: 2, batchDelayMs: 60_000 });
+    await Promise.all([c.collect({ [server.url]: ['p.1'] }), c.collect({ [server.url]: ['p.2'] })]);
+    expect(collectCalls(server)).toHaveLength(1);
+  });
+
+  it('waits for the batch delay, or a flush, before sending a smaller batch', async () => {
+    const server = await backend();
+    const c = collector([server.url], { batchDelayMs: 60_000 });
+    const pending = c.collect({ [server.url]: ['p.1'] });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(collectCalls(server)).toHaveLength(0);
+    c.flush();
+    expect((await pending).files).toEqual(HELD['p.1']);
+  });
+
+  it('splits a batch into calls of at most maxIdsPerCall ids, and merges a split test back', async () => {
+    const server = await backend();
+    const c = collector([server.url], { maxIdsPerCall: 3 });
+    const [big, small] = await Promise.all([
+      c.collect({ [server.url]: ['p.1', 'p.2', 'p.3', 'p.4', 'p.5'] }),
+      c.collect({ [server.url]: ['p.1'] }),
+    ]);
+    const calls = collectCalls(server);
+    expect(calls.map((call) => call.body.groups.flatMap((group) => group.requests).length)).toEqual([3, 3]);
+    expect(calls.flatMap((call) => call.body.groups.flatMap((group) => group.requests))).toEqual([
+      'p.1',
+      'p.2',
+      'p.3',
+      'p.4',
+      'p.5',
+      'p.1',
+    ]);
+    // Every key is distinct, the split test's pieces included.
+    const keys = calls.flatMap((call) => call.body.groups.map((group) => group.key));
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(big.incomplete).toBe(false);
+    expect(big.files).toEqual([
+      { path: 'src/Web/Pages/Index.cshtml', runtime: 'server', lines: [[1, 4]] },
+      {
+        path: 'src/Web/Program.cs',
+        runtime: 'server',
+        functions: [
+          [10, 12],
+          [20, 22],
+        ],
+        lines: [
+          [11, 11],
+          [21, 21],
+        ],
+      },
+      {
+        path: 'src/Web/Services/BasketService.cs',
+        runtime: 'server',
+        functions: [
+          [22, 25],
+          [31, 48],
+        ],
+        lines: [
+          [23, 24],
+          [33, 35],
+        ],
+      },
+    ]);
+    expect(small).toEqual({ files: HELD['p.1'], incomplete: false });
+  });
+
+  it('keeps each call body within maxBodyBytes', async () => {
+    const server = await backend();
+    const maxBodyBytes = 80;
+    const c = collector([server.url], { maxBodyBytes });
+    const result = await c.collect({ [server.url]: ['p.1', 'p.2', 'p.3', 'p.4', 'p.5'] });
+    const bodies = server.requests.filter((req) => req.method === 'POST').map((req) => req.body);
+    expect(bodies.length).toBeGreaterThan(1);
+    for (const body of bodies) expect(Buffer.byteLength(body)).toBeLessThanOrEqual(maxBodyBytes);
+    expect(result.files.map((file) => file.path)).toHaveLength(3);
+    expect(result.incomplete).toBe(false);
+  });
+
+  it('caps the ids of one test and marks it incomplete', async () => {
+    const server = await backend();
+    const c = collector([server.url], { maxIdsPerTest: 2 });
+    const result = await c.collect({ [server.url]: ['p.1', 'p.2', 'p.3'] });
+    expect(collectCalls(server)[0]!.body.groups[0]!.requests).toEqual(['p.1', 'p.2']);
+    expect(result.incomplete).toBe(true);
+  });
+
+  it("finds the path base under the base URL's path and keeps it", async () => {
+    const server = await backend({ base: '/shop' });
+    const c = collector([`${server.url}/shop/`]);
+    await c.collect({ [server.url]: ['p.1'] });
+    await c.collect({ [server.url]: ['p.2'] });
+    expect(collectCalls(server).map((call) => call.url)).toEqual([
+      '/shop/__piwi/coverage/collect',
+      '/shop/__piwi/coverage/collect',
+    ]);
+  });
+
+  it("falls back to the origin root when the base URL's path serves no coverage, and keeps it", async () => {
+    const server = await backend();
+    const c = collector([`${server.url}/shop`]);
+    const first = await c.collect({ [server.url]: ['p.1'] });
+    await c.collect({ [server.url]: ['p.2'] });
+    expect(collectCalls(server).map((call) => call.url)).toEqual([
+      '/shop/__piwi/coverage/collect',
+      '/__piwi/coverage/collect',
+      '/__piwi/coverage/collect',
+    ]);
+    expect(first).toEqual({ files: HELD['p.1'], incomplete: false });
+  });
+
+  it('marks a test incomplete when the backend no longer holds one of its ids', async () => {
+    const server = await backend();
+    const result = await collector([server.url]).collect({ [server.url]: ['p.1', 'gone.9'] });
+    expect(result).toEqual({ files: HELD['p.1'], incomplete: true });
+  });
+
+  it('marks the tests incomplete when no endpoint answers with coverage, warning once per origin', async () => {
+    const server = await backend({
+      respond: (_req, res) => {
+        textRes(res, 500, 'boom');
+        return true;
+      },
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = collector([server.url]);
+    expect(await c.collect({ [server.url]: ['p.1'] })).toEqual({ files: [], incomplete: true });
+    expect(await c.collect({ [server.url]: ['p.2'] })).toEqual({ files: [], incomplete: true });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain(`[Piwi Dashboard] Could not collect the server coverage`);
+  });
+
+  it('marks the tests incomplete when the backend is down', async () => {
+    const server = await backend();
+    const origin = server.url;
+    await server.close();
+    servers = servers.filter((s) => s !== server);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await collector([origin]).collect({ [origin]: ['p.1'] })).toEqual({ files: [], incomplete: true });
+  });
+
+  it('marks the tests incomplete when a call times out', async () => {
+    const server = await backend({ respond: () => true });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const started = Date.now();
+    const result = await collector([server.url], { callTimeoutMs: 150 }).collect({ [server.url]: ['p.1'] });
+    expect(result).toEqual({ files: [], incomplete: true });
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('collects each origin of a test from that origin', async () => {
+    const one = await backend();
+    const two = await backend();
+    const result = await collector([one.url]).collect({ [one.url]: ['p.1'], [two.url]: ['p.4'] });
+    expect(collectCalls(one)[0]!.body.groups[0]!.requests).toEqual(['p.1']);
+    expect(collectCalls(two)[0]!.body.groups[0]!.requests).toEqual(['p.4']);
+    expect(result.files.map((file) => file.path)).toEqual(['src/Web/Program.cs', 'src/Web/Services/BasketService.cs']);
+  });
+
+  it('resolves the tests still queued as incomplete once closed', async () => {
+    const server = await backend();
+    const c = collector([server.url], { batchDelayMs: 60_000 });
+    const pending = c.collect({ [server.url]: ['p.1'] });
+    c.close();
+    expect(await pending).toEqual({ files: [], incomplete: true });
+    expect(await c.collect({ [server.url]: ['p.2'] })).toEqual({ files: [], incomplete: true });
+    expect(collectCalls(server)).toHaveLength(0);
+  });
+
+  it('fetches the run-level coverage at the granularity it collects, cleaning its paths', async () => {
+    const server = await backend({ base: '/shop' });
+    const c = collector([`${server.url}/shop`], {}, 'functions');
+    const files = await c.fetchRun(server.url);
+    expect(server.requests[server.requests.length - 1]!.url).toBe('/shop/__piwi/coverage/run?granularity=functions');
+    expect(files).toEqual([
+      {
+        path: 'src/Web/Program.cs',
+        runtime: 'server',
+        functions: [[10, 12]],
+        lines: [[11, 11]],
+        executable: [[11, 30]],
+      },
+    ]);
+  });
+
+  it('answers null for the run-level coverage of an origin without it', async () => {
+    const server = await backend({
+      respond: (_req, res) => {
+        textRes(res, 404, 'nope');
+        return true;
+      },
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await collector([server.url]).fetchRun(server.url)).toBeNull();
+  });
+});
+
+describe('parseServerCoverageRequests', () => {
+  it('keeps http and https origins and valid ids, each once', () => {
+    const body = Buffer.from(
+      JSON.stringify({
+        'http://127.0.0.1:5000': ['a1.1', 'a1.1', 'a1.2', 'has space', 42, ''],
+        'https://api.shop.test': ['b.1'],
+        'ftp://files.test': ['c.1'],
+        'http://127.0.0.1:5000/path': ['d.1'],
+        'not a url': ['e.1'],
+        'http://empty.test': [],
+      }),
+    );
+    expect(parseServerCoverageRequests(body)).toEqual({
+      'http://127.0.0.1:5000': ['a1.1', 'a1.2'],
+      'https://api.shop.test': ['b.1'],
+    });
+  });
+
+  it('answers null for a body without any id', () => {
+    expect(parseServerCoverageRequests(Buffer.from('{}'))).toBeNull();
+    expect(parseServerCoverageRequests(Buffer.from('not json'))).toBeNull();
+    expect(parseServerCoverageRequests(Buffer.from('["a.1"]'))).toBeNull();
+  });
+});
+
+describe('baseUrlsFromConfig', () => {
+  it("lists each project's base URL once", () => {
+    expect(
+      baseUrlsFromConfig({
+        projects: [
+          { use: { baseURL: 'http://localhost:5000/shop' } },
+          { use: { baseURL: 'http://localhost:5000/shop' } },
+          { use: {} },
+          { use: { baseURL: 'http://localhost:3000' } },
+        ],
+      }),
+    ).toEqual(['http://localhost:5000/shop', 'http://localhost:3000']);
+  });
+});

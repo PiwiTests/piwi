@@ -208,6 +208,21 @@ describe('toWireTestCase', () => {
     expect(out.testSource).toBe('src');
   });
 
+  it('projects the coverage beside the code reach, null when there is none', () => {
+    const coverage = {
+      v: 1 as const,
+      files: [
+        { path: 'src/Web/Program.cs', runtime: 'server' as const, functions: [[10, 12] as [number, number]] },
+        { path: 'src/a.ts', runtime: 'browser' as const },
+      ],
+      incomplete: true,
+    };
+    const out = toWireTestCase({ type: 'complete', title: 't', location: 'l', codeReach: ['src/a.ts'], coverage });
+    expect(out.coverage).toBe(coverage);
+    expect(out.codeReach).toEqual(['src/a.ts']);
+    expect(toWireTestCase({ type: 'complete', title: 't', location: 'l' }).coverage).toBe(null);
+  });
+
   it('collapses browser=undefined to null', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l' });
     expect(out.browser).toBe(null);
@@ -243,6 +258,7 @@ describe('toWireTestCase', () => {
       'browser',
       'codeReach',
       'consoleLogs',
+      'coverage',
       'dialogs',
       'didNotRunReason',
       'duration',

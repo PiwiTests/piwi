@@ -96,6 +96,7 @@ import {
   type PauseSet,
 } from './pause-at.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
+import { browserCoverageInWorker, serverCoverageInWorker } from '../collect/coverage-settings.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
 import { boxCaptureFrames, internalCall } from './quiet-capture.js';
 import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach } from './code-reach.js';
@@ -287,6 +288,9 @@ interface CaptureSink {
   // JavaScript coverage of the test's first page, when code reach is on, and
   // the source files it resolved to once stopped.
   codeReach: { page: Page; started: Promise<boolean>; stopped: boolean; files: string[] | null } | null;
+  // The server coverage request ids (`X-Piwi-Coverage`) the test's responses
+  // carried, by origin, when server coverage is on.
+  serverCoverage: Map<string, Set<string>>;
 }
 
 function createSink(): CaptureSink {
@@ -316,17 +320,19 @@ function createSink(): CaptureSink {
     pause: null,
     locatorPages: new LocatorPageLog(),
     codeReach: null,
+    serverCoverage: new Map(),
   };
 }
 
 /**
  * Start JavaScript coverage on the running test's first page when code reach
- * is on (`PIWI_CAPTURE_CODE_REACH=true`). Resolves once coverage is running,
- * so a caller can await it before the test navigates.
+ * is on (`PIWI_CAPTURE_CODE_REACH=true` or `PIWI_COVERAGE_BROWSER=files`).
+ * Resolves once coverage is running, so a caller can await it before the test
+ * navigates.
  */
 function maybeStartCodeReach(page: Page): Promise<boolean> {
   const sink = currentSink;
-  if (!sink || process.env.PIWI_CAPTURE_CODE_REACH !== 'true') return Promise.resolve(false);
+  if (!sink || !browserCoverageInWorker()) return Promise.resolve(false);
   if (sink.codeReach) return sink.codeReach.page === page ? sink.codeReach.started : Promise.resolve(false);
   const started = startCodeReach(page);
   sink.codeReach = { page, started, stopped: false, files: null };
@@ -1582,6 +1588,11 @@ function instrumentPage(page: Page): void {
             }
           }
 
+          // The id the backend gave this request's server coverage, kept per
+          // origin for the reporter to collect once the test ends.
+          const coverageHeader = headers['x-piwi-coverage'];
+          if (coverageHeader && serverCoverageInWorker()) recordServerCoverageIds(sink, url, coverageHeader);
+
           // Server-side spans emitted by a Piwi instrumentation plugin, in the
           // same gzip+base64 form as the logs header. Skipped when trace capture
           // is disabled; absent header (no instrumentation) is a no-op.
@@ -1711,6 +1722,34 @@ function readRootAriaJson(page: Page): Promise<string | null> {
 /** Request types worth keeping: API calls and documents, not static assets. */
 const TRACKED_REQUEST_TYPES = ['fetch', 'xhr', 'document', 'other'];
 
+/** A server coverage request id: printable ASCII without spaces, 128 characters at most. */
+const SERVER_COVERAGE_ID = /^[\x21-\x7e]{1,128}$/;
+
+/**
+ * Keep the request ids an `X-Piwi-Coverage` header value names (one, or
+ * several separated by commas or whitespace) under the origin of the
+ * request's URL, for http and https URLs only.
+ */
+function recordServerCoverageIds(sink: CaptureSink, url: string, value: string): void {
+  let origin: string;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+    origin = parsed.origin;
+  } catch {
+    return;
+  }
+  for (const id of value.split(/[\s,]+/)) {
+    if (!SERVER_COVERAGE_ID.test(id)) continue;
+    let ids = sink.serverCoverage.get(origin);
+    if (!ids) {
+      ids = new Set();
+      sink.serverCoverage.set(origin, ids);
+    }
+    ids.add(id);
+  }
+}
+
 /**
  * A request's duration in ms: to the response end when there is one, else, for
  * a request that failed before answering, to the moment the failure was seen.
@@ -1772,6 +1811,16 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     await testInfo.attach(ATTACHMENT_NAMES.codeReach, {
       contentType: 'application/json',
       body: Buffer.from(JSON.stringify(sink.codeReach.files)),
+    });
+  }
+
+  // The server coverage request ids, per origin, for the reporter to collect.
+  if (sink.serverCoverage.size > 0) {
+    const requests: Record<string, string[]> = {};
+    for (const [origin, ids] of sink.serverCoverage) requests[origin] = [...ids];
+    await testInfo.attach(ATTACHMENT_NAMES.serverCoverageRequests, {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify(requests)),
     });
   }
 

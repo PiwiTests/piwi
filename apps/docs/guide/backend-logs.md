@@ -8,7 +8,7 @@ lang: en-US
 
 A small package in your backend attaches to each HTTP response what the server did for that request, and the
 [capture fixtures](./capture-fixtures) read it from the response while your tests run. Nothing leaves your backend
-except in those response headers, and only outside production.
+except in those response headers, or from the coverage endpoints of a coverage build, and only outside production.
 
 | Use | What you get | ASP.NET Core | Nitro / Nuxt |
 |---|---|:---:|:---:|
@@ -16,6 +16,7 @@ except in those response headers, and only outside production.
 | [Server spans](#server-spans) | The server's time on a request, and the handler and dependencies it reached | | ✓ |
 | [Route manifest](#route-manifest) | The routes the server has, so the Test Map can name the ones no test reaches | ✓ | ✓ |
 | [Server probes](#server-probes) | A fault injected inside the server for one request (**Experimental**) | ✓ | ✓ |
+| [Server coverage](/features/code-reach#server-code) | The backend files, functions and lines each test ran, from a coverage build | ✓ | |
 
 **Active only in non-production environments by default.** The ASP.NET Core integration emits its headers in the Development and Test environments unless you [choose others](#choosing-the-environments); the Nitro/Nuxt integration whenever `NODE_ENV` is unset, `development` or `test`. Both honor `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
 
@@ -183,4 +184,5 @@ Cap entries at a reasonable limit (50 is the default in the provided integration
 - [Capture fixtures](./capture-fixtures): the fixtures that read these headers
 - [Failure evidence](/features/evidence): where backend logs appear on a failing execution
 - [Scenario gaps & the Test Map](/features/scenario-gaps): what spans, the manifest and probes feed
+- [Code reach](/features/code-reach#server-code): turning on server coverage per test
 - [Configuration reference](/reference/configuration#backend-logs): `PIWI_TEST_LOGS_DISABLED` and `PIWI_TEST_LOGS_ENVIRONMENTS`

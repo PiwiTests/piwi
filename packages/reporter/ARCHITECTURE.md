@@ -42,6 +42,12 @@ Two **external contracts** beyond the npm API:
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`).
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`).
+  With server coverage on (`coverage.server`), the capture fixtures keep the
+  `X-Piwi-Coverage` request ids of each test's responses (`piwi-server-coverage-requests`),
+  `onBegin` writes `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` for the workers,
+  and the reporter process calls each origin's `/__piwi/coverage/collect` and
+  `/__piwi/coverage/run` and reads the covered files from the checkout for their
+  blob ids (`internal/collect/server-coverage.ts`, `test-coverage.ts`).
 
 ## Two processes, two paths
 
@@ -95,8 +101,20 @@ A run delivered by a later rung than its first choice carries `metadata.ingestHe
 (`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,
 so the dashboard can say how the run arrived.
 
-All HTTP goes through `internal/transport/http-client.ts`, which throws `HttpError`
+All HTTP to the dashboard goes through `internal/transport/http-client.ts`, which throws `HttpError`
 (carrying `status`) so callers branch on `error.status`, never the message text.
+
+## Coverage (`internal/collect/test-coverage.ts`)
+
+A test's `coverage` is its browser files (code reach) and, with `coverage.server`
+on, the server coverage the reporter collects from the backend after the test
+ends, never in the worker. `onTestEnd` queues the result event of such a test only
+once its coverage is in, or after 30 seconds; every other event keeps its place.
+Collection batches tests per origin (25 tests or 1 second), and the run's last test
+ending sends what is queued at once and fetches the run-level coverage, since
+Playwright stops a `webServer` before `onEnd`. `onEnd` waits at most 15 seconds for
+the tests still collecting, before the ladder above, and sends the run-level coverage
+(`PUT /api/test-runs/:id/coverage`) once the ladder returned the run id.
 
 ## Directory layout
 
@@ -115,7 +133,11 @@ src/
                 stitched into leaked, idle, piling-up and handle findings),
                 process-sampler (the run's processes and the machine, sampled
                 from the reporter), machine-panel (the end-of-run CPU, memory
-                and disk lines), resource-wire (what the server receives)
+                and disk lines), resource-wire (what the server receives),
+                coverage-settings, server-coverage (the backends' collect and
+                run endpoints, batched per origin), test-coverage (each test's
+                coverage field, the wait before its result streams, the run's
+                coverage), blob-ids (the git blob of each covered file)
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,

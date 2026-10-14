@@ -1262,6 +1262,7 @@ describe('network capture (requestfinished, requestfailed)', () => {
   /** Drive the fixtures against a fake page, fire network events, read the attachment. */
   async function runNetwork(
     fire: (emit: (event: string, request: unknown) => void) => void,
+    attachment: string = ATTACHMENT_NAMES.network,
   ): Promise<Array<Record<string, unknown>> | null> {
     const handlers = new Map<string, Array<(arg?: unknown) => void>>();
     const rootLocator = { ariaSnapshot: async () => null };
@@ -1306,7 +1307,7 @@ describe('network capture (requestfinished, requestfailed)', () => {
       testInfo,
     );
 
-    const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.network);
+    const call = testInfo.attach.mock.calls.find((c) => c[0] === attachment);
     return call ? (JSON.parse(call[1].body.toString()) as Array<Record<string, unknown>>) : null;
   }
 
@@ -1321,6 +1322,7 @@ describe('network capture (requestfinished, requestfailed)', () => {
     errorText?: string;
     /** A response no server sent: no request start, no server address. */
     fulfilled?: boolean;
+    headers?: Record<string, string>;
   }) => ({
     url: () => opts.url,
     method: () => opts.method ?? 'GET',
@@ -1330,7 +1332,7 @@ describe('network capture (requestfinished, requestfailed)', () => {
       opts.status != null
         ? {
             status: () => opts.status,
-            headers: () => ({ 'content-type': 'application/json' }),
+            headers: () => ({ 'content-type': 'application/json', ...opts.headers }),
             serverAddr: async () => (opts.fulfilled ? null : { ipAddress: '127.0.0.1', port: 443 }),
           }
         : null,
@@ -1394,6 +1396,42 @@ describe('network capture (requestfinished, requestfailed)', () => {
       emit('requestfailed', fakeRequest({ url: 'https://shop.test/api/cart', errorText: 'net::ERR_FAILED' }));
     });
     expect(requests!.map((r) => r.url)).toEqual(['https://shop.test/api/cart']);
+  });
+
+  describe('server coverage request ids', () => {
+    const saved = process.env.PIWI_COVERAGE_SERVER;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.PIWI_COVERAGE_SERVER;
+      else process.env.PIWI_COVERAGE_SERVER = saved;
+    });
+
+    const fireCoverage = (emit: (event: string, request: unknown) => void) => {
+      const finished = (url: string, id: string) =>
+        emit('requestfinished', fakeRequest({ url, responseEnd: 10, status: 200, headers: { 'x-piwi-coverage': id } }));
+      finished('https://shop.test/', 'k1.1');
+      finished('https://shop.test/api/basket', 'k1.2');
+      finished('https://shop.test/api/basket', 'k1.2');
+      finished('https://api.shop.test/orders', 'k2.7');
+      finished('https://shop.test/api/long', 'x'.repeat(129));
+      finished('https://shop.test/api/two', 'k1.3, k1.4');
+      emit('requestfinished', fakeRequest({ url: 'https://shop.test/api/plain', responseEnd: 10, status: 200 }));
+    };
+
+    it('keeps each id once, per origin, while server coverage is on', async () => {
+      process.env.PIWI_COVERAGE_SERVER = 'lines';
+      const requests = await runNetwork(fireCoverage, ATTACHMENT_NAMES.serverCoverageRequests);
+      expect(requests).toEqual({
+        'https://shop.test': ['k1.1', 'k1.2', 'k1.3', 'k1.4'],
+        'https://api.shop.test': ['k2.7'],
+      });
+    });
+
+    it('records nothing while server coverage is off', async () => {
+      delete process.env.PIWI_COVERAGE_SERVER;
+      expect(await runNetwork(fireCoverage, ATTACHMENT_NAMES.serverCoverageRequests)).toBeNull();
+      process.env.PIWI_COVERAGE_SERVER = 'off';
+      expect(await runNetwork(fireCoverage, ATTACHMENT_NAMES.serverCoverageRequests)).toBeNull();
+    });
   });
 
   it('skips failed static assets, as it does finished ones', async () => {

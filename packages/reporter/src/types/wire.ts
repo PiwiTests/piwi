@@ -98,6 +98,12 @@ export interface WireTestCase {
   locatorPages?: unknown;
   /** The repository-relative source files the test executed (`piwi-code-reach`). */
   codeReach?: unknown;
+  /**
+   * The test's coverage (`@piwitests/core/coverage` `CoverageCapture`): per
+   * repository-relative file and runtime, browser and server, the functions
+   * and lines that ran at the configured granularity.
+   */
+  coverage?: unknown;
   /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
   resources?: WireExecutionResources | null;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
@@ -162,6 +168,12 @@ export interface CompleteStreamEvent {
   locatorPages?: unknown;
   /** The repository-relative source files the test executed (`piwi-code-reach`). */
   codeReach?: unknown;
+  /**
+   * The test's coverage (`@piwitests/core/coverage` `CoverageCapture`): per
+   * repository-relative file and runtime, browser and server, the functions
+   * and lines that ran at the configured granularity.
+   */
+  coverage?: unknown;
   /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
   resources?: WireExecutionResources | null;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */

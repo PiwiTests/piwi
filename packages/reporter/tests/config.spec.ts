@@ -1,7 +1,7 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import { originEnv, resolveOptions } from '../src/internal/config/env.js';
+import { applyOptionsToEnv, originEnv, resolveOptions } from '../src/internal/config/env.js';
 
 const PIWI_KEYS = [
   'PIWI_DASHBOARD_URL',
@@ -24,6 +24,8 @@ const PIWI_KEYS = [
   'PIWI_UPLOAD_REPORT',
   'PIWI_OUTPUT_FILE',
   'PIWI_DESKTOP_CONFIG',
+  'PIWI_COVERAGE_BROWSER',
+  'PIWI_COVERAGE_SERVER',
 ];
 
 // Point desktop discovery at a path that cannot exist, so these expectations do
@@ -182,6 +184,58 @@ describe('resolveOptions', () => {
     process.env.PIWI_OUTPUT_FILE = 'piwi-run.json';
     expect(resolveOptions({}).outputFile).toBe('piwi-run.json');
     expect(resolveOptions({ outputFile: 'explicit.json' }).outputFile).toBe('explicit.json');
+  });
+});
+
+describe('coverage options and their variables', () => {
+  let saved: NodeJS.ProcessEnv = {};
+  beforeEach(() => {
+    saved = { ...process.env };
+    for (const key of Object.keys(process.env)) if (key.startsWith('PIWI_')) delete process.env[key];
+    process.env.PIWI_DESKTOP_CONFIG = NO_DESKTOP_APP;
+  });
+  afterEach(() => {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  });
+
+  it('is unset by default', () => {
+    expect(resolveOptions({}).coverage).toBeUndefined();
+  });
+
+  it('fills each side from PIWI_COVERAGE_BROWSER and PIWI_COVERAGE_SERVER', () => {
+    process.env.PIWI_COVERAGE_BROWSER = 'files';
+    process.env.PIWI_COVERAGE_SERVER = 'lines';
+    expect(resolveOptions({}).coverage).toEqual({ browser: 'files', server: 'lines' });
+  });
+
+  it('keeps an explicit side over its variable, and fills only the other', () => {
+    process.env.PIWI_COVERAGE_BROWSER = 'files';
+    process.env.PIWI_COVERAGE_SERVER = 'lines';
+    expect(resolveOptions({ coverage: { server: 'functions' } }).coverage).toEqual({
+      browser: 'files',
+      server: 'functions',
+    });
+  });
+
+  it('bridges the options into the variables the workers read', () => {
+    applyOptionsToEnv({ coverage: { browser: 'files', server: 'functions' } });
+    expect(process.env.PIWI_COVERAGE_BROWSER).toBe('files');
+    expect(process.env.PIWI_COVERAGE_SERVER).toBe('functions');
+    expect(resolveOptions({}).coverage).toEqual({ browser: 'files', server: 'functions' });
+  });
+
+  it('leaves the variables unset when the options are', () => {
+    applyOptionsToEnv({});
+    expect(process.env.PIWI_COVERAGE_BROWSER).toBeUndefined();
+    expect(process.env.PIWI_COVERAGE_SERVER).toBeUndefined();
+  });
+
+  it('turns both sides off with collectPerformanceMetrics: false', () => {
+    process.env.PIWI_COVERAGE_SERVER = 'lines';
+    applyOptionsToEnv({ collectPerformanceMetrics: false, coverage: { browser: 'files', server: 'lines' } });
+    expect(process.env.PIWI_COVERAGE_BROWSER).toBe('off');
+    expect(process.env.PIWI_COVERAGE_SERVER).toBe('off');
   });
 });
 

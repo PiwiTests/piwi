@@ -55,6 +55,12 @@ export interface CollectedRun {
   resourceReport?: WireResourceReport | null;
 }
 
+/** The run the dashboard took, and the credential that reached it. */
+export interface SubmittedRun {
+  runId: number | string;
+  auth: string | null;
+}
+
 /** Why the reporter left the rung it would normally deliver a run through. */
 type SubmitFallbackReason = 'results-lost' | 'finish-failed' | 'upload-failed';
 
@@ -97,16 +103,17 @@ export class RunSubmitter {
    * Run the fallback ladder for a completed test run, within the
    * `submitTimeout` budget. When the budget runs out, every request in flight
    * and every later one fails, so the ladder falls through to saving the
-   * recovery copy.
+   * recovery copy. Returns the run the dashboard took, or null when none did
+   * or it named no run id.
    */
-  async submit(run: CollectedRun, result: FullResult): Promise<void> {
+  async submit(run: CollectedRun, result: FullResult): Promise<SubmittedRun | null> {
     const budgetMs = run.options.submitTimeout ?? 0;
     const timer =
       budgetMs > 0 && Number.isFinite(budgetMs)
         ? setTimeout(() => this.expireBudget(budgetMs), Math.min(budgetMs, MAX_TIMER_DELAY_MS))
         : null;
     try {
-      await this.submitRun(run, result);
+      return await this.submitRun(run, result);
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -119,7 +126,7 @@ export class RunSubmitter {
     this.httpClient.close(`the end-of-run time budget (submitTimeout: ${budgetMs} ms) ran out`);
   }
 
-  private async submitRun(run: CollectedRun, result: FullResult): Promise<void> {
+  private async submitRun(run: CollectedRun, result: FullResult): Promise<SubmittedRun | null> {
     const endTime = new Date().toISOString();
     const duration = new Date(endTime).getTime() - new Date(run.startTime!).getTime();
 
@@ -198,12 +205,12 @@ export class RunSubmitter {
       outcome = await this.tryUploadJSON(run, overallStatus, duration, auth);
     }
 
-    if (outcome.output) {
-      // Failures that had no run id yet (batch mode, or a stream that never
-      // opened) get their link lines now, ahead of the run URL.
-      this.failureLinks?.printPending(outcome.output.runId);
-      emitRunOutputs(outcome.output, this.logger, run.options.outputFile);
-    }
+    if (!outcome.output) return null;
+    // Failures that had no run id yet (batch mode, or a stream that never
+    // opened) get their link lines now, ahead of the run URL.
+    this.failureLinks?.printPending(outcome.output.runId);
+    emitRunOutputs(outcome.output, this.logger, run.options.outputFile);
+    return { runId: outcome.output.runId, auth };
   }
 
   /** Assemble a CI-facing run output, or `null` when the server returned no run id. */

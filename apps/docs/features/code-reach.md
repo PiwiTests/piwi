@@ -1,14 +1,15 @@
 ---
 title: Code reach
-description: "Which tests execute each application source file, recorded from Chromium's JavaScript coverage on a scheduled run and used by test selection, change coverage and preflight."
+description: "Which tests execute each application source file, recorded from Chromium's JavaScript coverage and an ASP.NET Core backend's coverage on a scheduled run, and used by test selection, change coverage and preflight."
 lang: en-US
 ---
 
 # Code reach
 
 "Which tests reach this file?" has an answer for test code from the locators a test calls. Code reach answers it for
-application code: an opt-in capture records the source files whose functions ran during each test, so a change to a
-component or a module maps to the tests that execute it.
+application code: an opt-in capture records the source files whose functions ran during each test, in the browser and,
+with an instrumented ASP.NET Core backend, on the [server](#server-code), so a change to a component or a module maps
+to the tests that execute it.
 
 ## Turn it on
 
@@ -86,11 +87,50 @@ Chromium), each configuration run in turn, round after round, medians:
 
 The extra time grows with the number of scripts the page loads and the number of documents a test opens.
 
+## Server code
+
+With an ASP.NET Core backend built for coverage, each test also records the backend code it ran:
+
+1. Add the `PiwiTests.Instrumentation.Coverage` package to every project whose code you want covered, as its
+   [README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#readme)
+   shows, serve it with `app.UsePiwiTestLogs()` ([backend logs](/guide/backend-logs)), and build the test environment
+   with `-p:PiwiCoverage=true`. Never ship that build to production.
+2. Set the reporter's `coverage.server` option, or `PIWI_COVERAGE_SERVER`, with the capture fixtures in place.
+
+```ts
+reporter: [['@piwitests/reporter', { coverage: { server: 'lines' } }]],
+```
+
+The backend names each request's coverage on its response. The fixtures keep the names a test's pages received; once
+the test ends, the reporter asks the backend for their coverage, several tests per call, outside the test's time, and
+the test's result reaches the dashboard with it.
+
+| `coverage.server` | Records per test |
+| --- | --- |
+| `files` | the backend files that ran, paths only |
+| `functions` | also the start and end line of each function that ran |
+| `lines` | also the executed lines |
+
+With `functions` and `lines`, each file names the git blob of the checkout's version, which its line numbers refer to.
+At the end of the run the reporter also sends the run's coverage of the backend, attributed to no test, with each
+file's executable lines at `lines` granularity. A test whose coverage the backend no longer held, or that could not be collected, is marked incomplete.
+`coverage.browser: 'files'` is the same as `captureCodeReach: true`.
+
+- **Run level only:** lambdas created at startup (inline minimal API handlers, inline middleware, DI factory lambdas)
+  and work outside a request (hosted services, timers). The methods they call count normally.
+- **Pages only:** API tests through Playwright's `request` fixture record no server coverage.
+- C# and Visual Basic only.
+
+Measured on a prototype, per-test server coverage added under 2% to test duration on Microsoft's eShopOnWeb, whose
+CPU goes to the framework, and up to 26% more server CPU on an application that spends its CPU in business logic.
+Functions cost about what lines cost.
+
 ## Where it is used
 
 - **[Impact-from-diff](./test-selection#impact-from-diff)** maps a changed file to the tests that executed it. Code
   reach only adds tests: a changed source file that no test reached still widens the run to the whole suite, since
-  code reach does not see module top-level code, server code or type-only modules.
+  code reach does not see module top-level code, server code without [server coverage](#server-code), or type-only
+  modules.
 - **[Uncovered changes](./uncovered-changes)** counts a changed file as reached when a test executed it.
 - **[Locator preflight](./preflight)** calls a break *likely* only when one of its tests reaches the changed file.
 
@@ -99,7 +139,8 @@ The dashboard's API serves the tests reaching one file and the whole map of a br
 
 ## Limits
 
-- **Chromium only.** Other browsers have no JavaScript coverage and record nothing.
+- **Chromium only** in the browser: other browsers have no JavaScript coverage and record no browser files. Server
+  coverage works with every browser.
 - **Observed reach, not coverage.** A reached file may hide an untested branch: the unit is the file, never the line.
 - A build with neither per-module URLs nor source maps yields nothing, and so does code rendered on the server only,
   React server components included.

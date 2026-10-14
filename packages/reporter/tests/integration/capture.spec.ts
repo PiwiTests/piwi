@@ -35,15 +35,26 @@ const PAGE_HTML = `<!doctype html>
   </body>
 </html>`;
 
+// Each response names its request's server coverage, as an instrumented backend does.
+let coverageSequence = 0;
+
 function startFixtureServer(): Promise<{ server: http.Server; url: string }> {
   const server = http.createServer((req, res) => {
     if (req.url === '/api/ping') {
       const body = JSON.stringify({ ok: true });
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'X-Piwi-Coverage': `itest.ping-${++coverageSequence}`,
+      });
       res.end(body);
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Length': Buffer.byteLength(PAGE_HTML) });
+    res.writeHead(200, {
+      'Content-Type': 'text/html',
+      'Content-Length': Buffer.byteLength(PAGE_HTML),
+      'X-Piwi-Coverage': `itest.doc-${++coverageSequence}`,
+    });
     res.end(PAGE_HTML);
   });
   return new Promise((resolve, reject) => {

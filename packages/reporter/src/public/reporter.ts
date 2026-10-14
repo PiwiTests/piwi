@@ -6,6 +6,7 @@ import {
   resolveOptions,
   usedDesktopDiscovery,
   PIWI_DEFAULTED_CAPTURE_ENV,
+  PIWI_ENV_KEYS,
   PIWI_RESOURCES_RESULTS_ENV,
 } from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
@@ -66,6 +67,10 @@ import {
   type ArtifactBytes,
 } from '../internal/collect/machine-panel.js';
 import { FailureLinks, failureHeadline } from '../internal/support/failure-links.js';
+import { coverageSettings, type CoverageSettings } from '../internal/collect/coverage-settings.js';
+import { CoverageCollection, LastTestWatch } from '../internal/collect/test-coverage.js';
+import { baseUrlsFromConfig, ignoresHttpsErrors } from '../internal/collect/server-coverage.js';
+import { configDirFromConfig } from '../internal/manifest/collect.js';
 import type {
   CollectedTestCase,
   StreamEvent,
@@ -149,6 +154,14 @@ export class PiwiDashboardReporter {
   private artifactBytes: ArtifactBytes = emptyArtifacts();
   /** The run's resource report for the dashboard, built in `onEnd`. */
   private resourceReport: WireResourceReport | null = null;
+  /** The coverage the options switch on, per runtime. */
+  private readonly coverageSettings: CoverageSettings;
+  /** Each test's coverage, when browser or server coverage is on; set in `onBegin`. */
+  private coverage: CoverageCollection | null = null;
+  /** Tells when the run's last test ended, while server coverage is on. */
+  private lastTestWatch: LastTestWatch | null = null;
+  /** Result events that stream once their test's server coverage is in. */
+  private coverageSends: Array<Promise<void>> = [];
 
   private httpClient: HttpClient;
   private uploader: Uploader;
@@ -168,6 +181,7 @@ export class PiwiDashboardReporter {
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
+    this.coverageSettings = coverageSettings(this.options);
 
     const logger = new Logger(this.options.verbose ?? false);
     this.logger = logger;
@@ -315,6 +329,24 @@ export class PiwiDashboardReporter {
       resolveRunLabel(this.options.runLabel, this.shardInfo !== null),
     );
 
+    // Workers start after this hook and inherit the environment, so the
+    // capture fixtures record the coverage the options switch on.
+    const coverage = this.coverageSettings;
+    if (coverage.browser !== 'off' || coverage.server !== 'off') {
+      if (coverage.browser === 'files') process.env[PIWI_ENV_KEYS.coverageBrowser] = 'files';
+      if (coverage.server !== 'off') {
+        process.env[PIWI_ENV_KEYS.coverageServer] = coverage.server;
+        this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
+      }
+      this.coverage = new CoverageCollection({
+        settings: coverage,
+        baseUrls: baseUrlsFromConfig(config),
+        ignoreHttpsErrors: ignoresHttpsErrors(config),
+        configDir: configDirFromConfig(config),
+        logger: this.logger,
+      });
+    }
+
     this.streamManager?.start(
       this.startTime,
       this.metadata,
@@ -332,6 +364,7 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when an individual test begins */
   onTestBegin(test: TestCase, result: TestResult): void {
+    this.lastTestWatch?.begin(test.id);
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
     const beginEvent: CollectedTestCase = {
       type: 'begin',
@@ -535,7 +568,7 @@ export class PiwiDashboardReporter {
 
     // The source files the test executed, when code reach is on.
     const reachAttachment =
-      this.options.captureCodeReach === true && this.options.collectPerformanceMetrics !== false
+      this.coverageSettings.browser === 'files'
         ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.codeReach)
         : undefined;
     if (reachAttachment?.body) {
@@ -546,6 +579,8 @@ export class PiwiDashboardReporter {
         /* ignore parse errors */
       }
     }
+    // The test's coverage: set now, or once its server coverage is collected.
+    const coverageReady = this.coverage?.apply(testCase, result.attachments) ?? null;
 
     switch (status) {
       case 'passed':
@@ -588,9 +623,22 @@ export class PiwiDashboardReporter {
     if (liveRunId != null) this.failureLinks.printPending(liveRunId);
 
     if (this.streamManager) {
-      this.streamManager.queueEvent(toWireTestCase(testCase) as StreamEvent);
-      if (this.options.liveFileUploads) this.streamManager.scheduleLiveUpload(testCase);
+      const streamManager = this.streamManager;
+      const send = () => {
+        streamManager.queueEvent(toWireTestCase(testCase) as StreamEvent);
+        if (this.options.liveFileUploads) streamManager.scheduleLiveUpload(testCase);
+      };
+      // A test waiting for its server coverage streams once it is in.
+      if (coverageReady) this.coverageSends.push(coverageReady.then(send));
+      else send();
     }
+
+    const willRetry =
+      result.status !== 'skipped' &&
+      result.status !== 'interrupted' &&
+      result.status !== test.expectedStatus &&
+      result.retry < (test.retries ?? 0);
+    if (this.lastTestWatch?.end(test.id, willRetry)) this.coverage?.lastTestEnded();
   }
 
   /**
@@ -733,6 +781,14 @@ export class PiwiDashboardReporter {
       return;
     }
 
+    // Every test's coverage first, so each test streams, or is submitted, with it.
+    if (this.coverage) {
+      await this.coverage.settle();
+      await Promise.all(this.coverageSends);
+      // Fetched while the run is submitted, sent once its id is known.
+      this.coverage.fetchRunCoverage();
+    }
+
     // Tests Playwright never reported were cut off by a run-level condition —
     // the global timeout, the failure budget, or an interruption.
     const unrunReason = resolveUnrunReason(result?.status, {
@@ -744,7 +800,7 @@ export class PiwiDashboardReporter {
     await this.reportResources();
 
     try {
-      await this.submitter.submit(
+      const submitted = await this.submitter.submit(
         {
           options: this.options,
           testCases: this.testCases,
@@ -767,7 +823,11 @@ export class PiwiDashboardReporter {
         },
         result,
       );
+      if (submitted && this.coverage) {
+        await this.coverage.sendRunCoverage(this.httpClient, submitted.runId, submitted.auth);
+      }
     } finally {
+      this.coverage?.close();
       // Body-only attachments were staged as temp files for the uploads above.
       this.fileHandler.cleanupBodyAttachments();
     }
