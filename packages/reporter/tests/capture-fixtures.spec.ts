@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { Locator } from '@playwright/test';
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { gzipSync } from 'node:zlib';
+import { describe, it, expect, vi, afterAll, afterEach, beforeAll } from 'vitest';
+import { chromium, type Browser, type Locator, type Page } from '@playwright/test';
 import {
   ariaSnapshotBestEffort,
   ariaSnapshotJSONBestEffort,
@@ -1263,15 +1266,13 @@ describe('dialog capture (dialogclosed)', () => {
   });
 });
 
-describe('network capture (requestfinished, requestfailed)', () => {
-  /** Drive the fixtures against a fake page, fire network events, read the attachment. */
-  async function runNetwork(
-    fire: (emit: (event: string, request: unknown) => void) => void,
-  ): Promise<Array<Record<string, unknown>> | null> {
+describe('network capture (response, requestfinished, requestfailed)', () => {
+  /** A fake page that keeps the listeners the fixtures add, and fires an event at them. */
+  function fakeNetworkPage() {
     const handlers = new Map<string, Array<(arg?: unknown) => void>>();
     const rootLocator = { ariaSnapshot: async () => null };
     const factory = () => ({ click: async () => {}, evaluate: async () => null });
-    const fakePage = {
+    const page = {
       getByRole: factory,
       getByTestId: factory,
       getByText: factory,
@@ -1287,7 +1288,25 @@ describe('network capture (requestfinished, requestfailed)', () => {
       },
       evaluate: async () => null,
     };
-    const emit = (event: string, request: unknown) => (handlers.get(event) ?? []).forEach((h) => h(request));
+    const emit = (event: string, arg: unknown) => (handlers.get(event) ?? []).forEach((h) => h(arg));
+    return { page, emit };
+  }
+
+  /** Drive the fixtures against a fake page, fire network events, read the attachment. */
+  function runNetwork(
+    fire: (emit: (event: string, arg: unknown) => void) => void,
+    attachment: string = ATTACHMENT_NAMES.network,
+  ): Promise<Array<Record<string, unknown>> | null> {
+    return runNetworkOn(fakeNetworkPage(), fire, attachment);
+  }
+
+  /** Run one test through the fixtures on `target`, a page earlier tests may have used too. */
+  async function runNetworkOn(
+    target: ReturnType<typeof fakeNetworkPage>,
+    fire: (emit: (event: string, arg: unknown) => void) => void,
+    attachment: string = ATTACHMENT_NAMES.network,
+  ): Promise<Array<Record<string, unknown>> | null> {
+    const { page: fakePage, emit } = target;
     const testInfo = {
       status: 'failed',
       attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
@@ -1311,36 +1330,57 @@ describe('network capture (requestfinished, requestfailed)', () => {
       testInfo,
     );
 
-    const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.network);
+    const call = testInfo.attach.mock.calls.find((c) => c[0] === attachment);
     return call ? (JSON.parse(call[1].body.toString()) as Array<Record<string, unknown>>) : null;
   }
 
   const startTime = Date.now() - 2_000;
 
-  const fakeRequest = (opts: {
+  interface FakeExchangeOptions {
     url: string;
     method?: string;
     resourceType?: string;
+    responseStart?: number;
     responseEnd?: number;
     status?: number;
     errorText?: string;
     /** A response no server sent: no request start, no server address. */
     fulfilled?: boolean;
-  }) => ({
-    url: () => opts.url,
-    method: () => opts.method ?? 'GET',
-    resourceType: () => opts.resourceType ?? 'fetch',
-    timing: () => ({ startTime, requestStart: opts.fulfilled ? -1 : 5, responseEnd: opts.responseEnd ?? -1 }),
-    response: async () =>
+    headers?: Record<string, string>;
+  }
+
+  /** A request and its response (null without a status), the response pointing back at its request. */
+  const fakeExchange = (opts: FakeExchangeOptions) => {
+    const request = {
+      url: () => opts.url,
+      method: () => opts.method ?? 'GET',
+      resourceType: () => opts.resourceType ?? 'fetch',
+      timing: () => ({
+        startTime,
+        requestStart: opts.fulfilled ? -1 : 5,
+        responseStart: opts.responseStart ?? -1,
+        responseEnd: opts.responseEnd ?? -1,
+      }),
+      response: async () => response,
+      failure: () => (opts.errorText ? { errorText: opts.errorText } : null),
+    };
+    const response =
       opts.status != null
         ? {
             status: () => opts.status,
-            headers: () => ({ 'content-type': 'application/json' }),
+            headers: () => ({ 'content-type': 'application/json', ...opts.headers }),
             serverAddr: async () => (opts.fulfilled ? null : { ipAddress: '127.0.0.1', port: 443 }),
+            request: () => request,
           }
-        : null,
-    failure: () => (opts.errorText ? { errorText: opts.errorText } : null),
-  });
+        : null;
+    return { request, response };
+  };
+
+  const fakeRequest = (opts: FakeExchangeOptions) => fakeExchange(opts).request;
+
+  /** Backend logs as an instrumentation sends them in `X-Piwi-Logs`: gzipped JSON, base64 encoded. */
+  const backendLogs = [{ level: 'error', message: 'Unhandled exception', timestamp: startTime + 3 }];
+  const logsHeader = { 'x-piwi-logs': gzipSync(JSON.stringify(backendLogs)).toString('base64') };
 
   it('records a failed request with status 0 and its error text', async () => {
     const requests = await runNetwork((emit) => {
@@ -1391,7 +1431,7 @@ describe('network capture (requestfinished, requestfailed)', () => {
     });
   });
 
-  it('skips requests the page cancelled itself, in every browser', async () => {
+  it('skips requests the page cancelled before any response, in every browser', async () => {
     const requests = await runNetwork((emit) => {
       for (const errorText of ['net::ERR_ABORTED', 'NS_BINDING_ABORTED', 'Load request cancelled', 'cancelled']) {
         emit('requestfailed', fakeRequest({ url: `https://shop.test/api/search?q=${errorText}`, errorText }));
@@ -1399,6 +1439,146 @@ describe('network capture (requestfinished, requestfailed)', () => {
       emit('requestfailed', fakeRequest({ url: 'https://shop.test/api/cart', errorText: 'net::ERR_FAILED' }));
     });
     expect(requests!.map((r) => r.url)).toEqual(['https://shop.test/api/cart']);
+  });
+
+  it('records a response the page cancelled once it arrived, with its status and backend logs, timed to its headers', async () => {
+    const requests = await runNetwork((emit) => {
+      for (const [path, status] of [
+        ['/api/failing', 500],
+        ['/api/missing', 404],
+      ] as const) {
+        const { request, response } = fakeExchange({
+          url: `https://shop.test${path}`,
+          status,
+          responseStart: 25,
+          // The moment of the cancel, not the end of the response.
+          responseEnd: 1_800,
+          errorText: 'net::ERR_ABORTED',
+          headers: logsHeader,
+        });
+        emit('response', response);
+        emit('requestfailed', request);
+      }
+    });
+    expect(requests).toHaveLength(2);
+    for (const [path, status] of [
+      ['/api/failing', 500],
+      ['/api/missing', 404],
+    ] as const) {
+      const request = requests!.find((r) => r.url === `https://shop.test${path}`)!;
+      expect(request).toMatchObject({ method: 'GET', status, startTime, serverLogs: backendLogs, duration: 20 });
+      expect(request).not.toHaveProperty('failure');
+    }
+  });
+
+  it('records a response still open when the test ends, timed to its headers', async () => {
+    const requests = await runNetwork((emit) => {
+      const { response } = fakeExchange({
+        url: 'https://shop.test/api/failing',
+        status: 500,
+        responseStart: 25,
+        headers: { ...logsHeader, 'cache-control': 'no-store' },
+      });
+      emit('response', response);
+      // A static asset still loading is not tracked, open or not.
+      const logo = fakeExchange({ url: 'https://shop.test/logo.png', resourceType: 'image', status: 200 });
+      emit('response', logo.response);
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests![0]).toMatchObject({
+      url: 'https://shop.test/api/failing',
+      status: 500,
+      contentType: 'application/json',
+      serverLogs: backendLogs,
+      startTime,
+      duration: 20,
+    });
+    expect(requests![0]).not.toHaveProperty('failure');
+  });
+
+  it('records a response that finished once, timed to its end', async () => {
+    const requests = await runNetwork((emit) => {
+      const { request, response } = fakeExchange({
+        url: 'https://shop.test/api/products',
+        status: 200,
+        responseStart: 25,
+        responseEnd: 105,
+      });
+      emit('response', response);
+      emit('requestfinished', request);
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests![0]).toMatchObject({ status: 200, duration: 100 });
+  });
+
+  it('records a request still open at a test end in that test only, whatever arrives later', async () => {
+    const target = fakeNetworkPage();
+    const { request, response } = fakeExchange({
+      url: 'https://shop.test/api/stream',
+      status: 200,
+      responseStart: 25,
+      responseEnd: 4_000,
+    });
+    const first = await runNetworkOn(target, (emit) => emit('response', response));
+    expect(first).toHaveLength(1);
+    expect(first![0]).toMatchObject({ url: 'https://shop.test/api/stream', status: 200, duration: 20 });
+    expect(await runNetworkOn(target, (emit) => emit('requestfinished', request))).toBeNull();
+  });
+
+  it('keeps the coverage id of a response that never finished', async () => {
+    const saved = process.env.PIWI_COVERAGE_SERVER;
+    process.env.PIWI_COVERAGE_SERVER = 'lines';
+    try {
+      const ids = await runNetwork((emit) => {
+        const { response } = fakeExchange({
+          url: 'https://shop.test/api/failing',
+          status: 500,
+          responseStart: 25,
+          headers: { 'x-piwi-coverage': 'k1.9' },
+        });
+        emit('response', response);
+      }, ATTACHMENT_NAMES.serverCoverageRequests);
+      expect(ids).toEqual({ 'https://shop.test': ['k1.9'] });
+    } finally {
+      if (saved === undefined) delete process.env.PIWI_COVERAGE_SERVER;
+      else process.env.PIWI_COVERAGE_SERVER = saved;
+    }
+  });
+
+  describe('server coverage request ids', () => {
+    const saved = process.env.PIWI_COVERAGE_SERVER;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.PIWI_COVERAGE_SERVER;
+      else process.env.PIWI_COVERAGE_SERVER = saved;
+    });
+
+    const fireCoverage = (emit: (event: string, request: unknown) => void) => {
+      const finished = (url: string, id: string) =>
+        emit('requestfinished', fakeRequest({ url, responseEnd: 10, status: 200, headers: { 'x-piwi-coverage': id } }));
+      finished('https://shop.test/', 'k1.1');
+      finished('https://shop.test/api/basket', 'k1.2');
+      finished('https://shop.test/api/basket', 'k1.2');
+      finished('https://api.shop.test/orders', 'k2.7');
+      finished('https://shop.test/api/long', 'x'.repeat(129));
+      finished('https://shop.test/api/two', 'k1.3, k1.4');
+      emit('requestfinished', fakeRequest({ url: 'https://shop.test/api/plain', responseEnd: 10, status: 200 }));
+    };
+
+    it('keeps each id once, per origin, while server coverage is on', async () => {
+      process.env.PIWI_COVERAGE_SERVER = 'lines';
+      const requests = await runNetwork(fireCoverage, ATTACHMENT_NAMES.serverCoverageRequests);
+      expect(requests).toEqual({
+        'https://shop.test': ['k1.1', 'k1.2', 'k1.3', 'k1.4'],
+        'https://api.shop.test': ['k2.7'],
+      });
+    });
+
+    it('records nothing while server coverage is off', async () => {
+      delete process.env.PIWI_COVERAGE_SERVER;
+      expect(await runNetwork(fireCoverage, ATTACHMENT_NAMES.serverCoverageRequests)).toBeNull();
+      process.env.PIWI_COVERAGE_SERVER = 'off';
+      expect(await runNetwork(fireCoverage, ATTACHMENT_NAMES.serverCoverageRequests)).toBeNull();
+    });
   });
 
   it('skips failed static assets, as it does finished ones', async () => {
@@ -1409,6 +1589,152 @@ describe('network capture (requestfinished, requestfailed)', () => {
       );
     });
     expect(requests).toBeNull();
+  });
+});
+
+describe('network capture in Chromium', () => {
+  let browser: Browser | null = null;
+  let server: http.Server;
+  let origin = '';
+
+  const encoded = (value: unknown) => gzipSync(JSON.stringify(value)).toString('base64');
+  const logsOf = (path: string) => [{ level: 'error', message: `Request ${path} failed`, timestamp: 1 }];
+  const failingSpan = { name: 'GET /api/failing', kind: 'server', start: 1, end: 2, status: 'error' };
+
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      const path = (req.url ?? '/').split('?')[0]!;
+      if (path === '/') {
+        res.setHeader('Content-Type', 'text/html');
+        res.end('<!doctype html><title>Shop</title>');
+        return;
+      }
+      if (path === '/api/slow') {
+        setTimeout(() => res.end('{}'), 2_000);
+        return;
+      }
+      res.setHeader('X-Piwi-Logs', encoded(logsOf(path)));
+      if (path === '/api/failing') {
+        // An unhandled exception as ASP.NET Core answers it: a JSON problem no cache may keep.
+        res.statusCode = 500;
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Content-Type', 'application/problem+json');
+        res.setHeader('X-Piwi-Trace', encoded([failingSpan]));
+        res.end(JSON.stringify({ title: 'An error occurred while processing your request.', status: 500 }));
+        return;
+      }
+      res.statusCode = path === '/api/missing' ? 404 : 500;
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      browser = await chromium.launch();
+    } catch {
+      browser = null;
+    }
+  });
+
+  afterAll(async () => {
+    await browser?.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  /**
+   * Run one test through the capture fixtures on a new context: `body` drives
+   * the page, then the context closes, as Playwright's own fixture closes it
+   * before the capture fixture tears down. Returns the recorded requests.
+   */
+  async function captureTest(body: (page: Page) => Promise<void>): Promise<Array<Record<string, unknown>>> {
+    const context = await browser!.newContext();
+    const page = await context.newPage();
+    const testInfo = {
+      status: 'passed',
+      attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
+      annotations: [],
+    };
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: Page },
+      use: (page: Page) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+    await captureFixture(
+      {},
+      async () => {
+        await pageFixture({ page }, body);
+        await context.close();
+      },
+      testInfo,
+    );
+    const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.network);
+    return call ? (JSON.parse(call[1].body.toString()) as Array<Record<string, unknown>>) : [];
+  }
+
+  /** The recorded requests to `path`. */
+  const to = (requests: Array<Record<string, unknown>>, path: string) =>
+    requests.filter((r) => r.url === `${origin}${path}`);
+
+  it('records an unread no-store error response, which never finishes, with its logs and span', async (ctx) => {
+    if (!browser) return ctx.skip();
+    const requests = await captureTest(async (page) => {
+      await page.goto(origin);
+      await Promise.all([page.waitForResponse('**/api/failing'), page.evaluate("void fetch('/api/failing')")]);
+      // Long enough that a duration running to the test's end would show.
+      await page.waitForTimeout(500);
+    });
+    const failing = to(requests, '/api/failing');
+    expect(failing).toHaveLength(1);
+    expect(failing[0]).toMatchObject({
+      method: 'GET',
+      status: 500,
+      resourceType: 'fetch',
+      contentType: 'application/problem+json',
+      serverLogs: logsOf('/api/failing'),
+      serverTraces: [failingSpan],
+    });
+    expect(failing[0]).not.toHaveProperty('failure');
+    expect(failing[0]!.duration).toBeGreaterThanOrEqual(0);
+    expect(failing[0]!.duration).toBeLessThan(500);
+  });
+
+  it('records unread empty-bodied error responses, which Chromium fails as aborted, with their logs', async (ctx) => {
+    if (!browser) return ctx.skip();
+    const requests = await captureTest(async (page) => {
+      await page.goto(origin);
+      for (const path of ['/api/empty', '/api/missing']) {
+        await Promise.all([
+          page.waitForEvent('requestfailed', (request) => request.url().endsWith(path)),
+          page.evaluate(`void fetch('${path}')`),
+        ]);
+      }
+    });
+    for (const [path, status] of [
+      ['/api/empty', 500],
+      ['/api/missing', 404],
+    ] as const) {
+      const recorded = to(requests, path);
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]).toMatchObject({ method: 'GET', status, resourceType: 'fetch', serverLogs: logsOf(path) });
+      expect(recorded[0]).not.toHaveProperty('failure');
+    }
+  });
+
+  it('still drops a request the page cancelled before any response', async (ctx) => {
+    if (!browser) return ctx.skip();
+    const requests = await captureTest(async (page) => {
+      await page.goto(origin);
+      await Promise.all([
+        page.waitForEvent('requestfailed', (request) => request.url().endsWith('/api/slow')),
+        page.evaluate(
+          "const c = new AbortController(); fetch('/api/slow', { signal: c.signal }).catch(() => {}); setTimeout(() => c.abort(), 50)",
+        ),
+      ]);
+    });
+    expect(to(requests, '/api/slow')).toEqual([]);
+    expect(to(requests, '/')).toHaveLength(1);
   });
 });
 

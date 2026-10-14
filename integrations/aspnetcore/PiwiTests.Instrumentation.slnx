@@ -1,6 +1,9 @@
 <Solution>
+  <Project Path="../../examples/sample-app/backends/aspnetcore/SampleApp.AspNetCore.csproj" />
   <Project Path="../serilog/PiwiTests.Instrumentation.Serilog/PiwiTests.Instrumentation.Serilog.csproj" />
   <Project Path="PiwiTests.Instrumentation.AspNetCore/PiwiTests.Instrumentation.AspNetCore.csproj" />
   <Project Path="PiwiTests.Instrumentation.Core/PiwiTests.Instrumentation.Core.csproj" />
+  <Project Path="PiwiTests.Instrumentation.Coverage/PiwiTests.Instrumentation.Coverage.csproj" />
+  <Project Path="PiwiTests.Instrumentation.CoverageFixture/PiwiTests.Instrumentation.CoverageFixture.csproj" />
   <Project Path="PiwiTests.Instrumentation.Tests/PiwiTests.Instrumentation.Tests.csproj" />
 </Solution>

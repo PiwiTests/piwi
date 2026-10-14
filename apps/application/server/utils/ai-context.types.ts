@@ -45,6 +45,7 @@ export type SectionId =
   | 'baselineComparison'
   | 'retryProgression'
   | 'scmInvestigation'
+  | 'suspectLines'
   | 'selectedCommits'
   | 'priorDiagnosis'
   | 'previouslyFixed'

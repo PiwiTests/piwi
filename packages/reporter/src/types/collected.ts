@@ -18,6 +18,7 @@ import type {
   WireExecutionResources,
   WireNetworkRequest,
 } from './wire.js';
+import type { CoverageCapture } from '@piwitests/core/coverage';
 import type { LocatorSnapshot } from '../internal/capture/locator-healing.js';
 
 /**
@@ -115,6 +116,8 @@ export interface CollectedTestCase {
   locatorPages?: LocatorPageUse[];
   /** Parsed from `piwi-code-reach`: the repository-relative source files the test executed. */
   codeReach?: string[];
+  /** The test's coverage: its browser files and the server coverage collected from the backend. */
+  coverage?: CoverageCapture;
   /** What the execution cost its worker and browsers, from its resource census. */
   resources?: WireExecutionResources;
   /** Why a `didnotrun` case never executed; unset for tests that ran. */

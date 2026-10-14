@@ -8,7 +8,7 @@ lang: en-US
 
 A small package in your backend attaches to each HTTP response what the server did for that request, and the
 [capture fixtures](./capture-fixtures) read it from the response while your tests run. Nothing leaves your backend
-except in those response headers, and only outside production.
+except in those response headers, or from the coverage endpoints of a coverage build, and only outside production.
 
 | Use | What you get | ASP.NET Core | Nitro / Nuxt |
 |---|---|:---:|:---:|
@@ -16,6 +16,7 @@ except in those response headers, and only outside production.
 | [Server spans](#server-spans) | The server's time on a request, and the handler and dependencies it reached | | ✓ |
 | [Route manifest](#route-manifest) | The routes the server has, so the Test Map can name the ones no test reaches | ✓ | ✓ |
 | [Server probes](#server-probes) | A fault injected inside the server for one request (**Experimental**) | ✓ | ✓ |
+| [Server coverage](/features/code-reach#server-code) | The backend files, functions and lines each test ran, from a coverage build | ✓ | |
 
 **Active only in non-production environments by default.** The ASP.NET Core integration emits its headers in the Development and Test environments unless you [choose others](#choosing-the-environments); the Nitro/Nuxt integration whenever `NODE_ENV` is unset, `development` or `test`. Both honor `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
 
@@ -42,6 +43,8 @@ app.Run();
 ```
 
 `AddPiwiTestLogs()` registers a logger provider that collects Warning and Error entries per request; `UsePiwiTestLogs()` adds the middleware that writes them to the response, only in the active environments.
+
+An unhandled exception answered with a 5xx is recorded too, once, its type as the category. Outside Development, register `UseExceptionHandler()`: the server's bare 500 carries no header.
 
 The capture buffer is decoupled from the logging front-end, so it also works outside minimal hosting. Apps on the classic **Generic Host + `Startup`** model use the hosting-agnostic overloads: `services.AddPiwiTestLogs()` (or `ILoggingBuilder.AddPiwiTestLogs()`) in `ConfigureServices`, and `app.UsePiwiTestLogs(env)` on `IApplicationBuilder` in `Configure`.
 
@@ -80,6 +83,8 @@ Or, without touching code, set `PIWI_TEST_LOGS_ENVIRONMENTS=Development,Podman,I
 
 **Requirements:** .NET 8, 9, or 10.
 
+[`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app) runs an ASP.NET Core app with this package wired in, and a Playwright suite that checks what it sends.
+
 ### Nitro / Nuxt (npm)
 
 ```bash
@@ -98,7 +103,7 @@ The plugin is auto-loaded by Nitro. It captures `consola` Warning/Error entries 
 
 **Requirements:** Nuxt 3+ / Nitro 2+ (peer deps `nitropack ≥2`, `h3 ≥1`, `consola ≥3` — all included in any Nuxt project).
 
-A runnable end-to-end demo lives in [`examples/playwright-fixtures`](https://github.com/PiwiTests/platform/tree/main/examples/playwright-fixtures) — a standalone Nitro app instrumented with this package, with a Playwright spec (`backend-logs.spec.ts`) showing the captured logs in the dashboard.
+[`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app) runs a standalone Nitro app with this package wired in, and the same Playwright suite.
 
 ### Reporter setup
 
@@ -150,8 +155,8 @@ uploads it with the run, so a route or page nothing reaches becomes a
   file of its handler when the build has a PDB. Static files, fallbacks and endpoints marked `ExcludeFromDescription()` are left out. See
   the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore#route-manifest) for
   every rule.
-- **Nitro** has no route table to read at runtime, so the plugin lists the routes the server has matched since it
-  started.
+- **Nitro** reads its route table at build time through the package's module
+  (`modules: ['@piwitests/instrumentation-nitro/module']`, under `nitro` in Nuxt); without it, only matched routes.
 
 ## Server probes
 
@@ -183,4 +188,5 @@ Cap entries at a reasonable limit (50 is the default in the provided integration
 - [Capture fixtures](./capture-fixtures): the fixtures that read these headers
 - [Failure evidence](/features/evidence): where backend logs appear on a failing execution
 - [Scenario gaps & the Test Map](/features/scenario-gaps): what spans, the manifest and probes feed
+- [Code reach](/features/code-reach#server-code): turning on server coverage per test
 - [Configuration reference](/reference/configuration#backend-logs): `PIWI_TEST_LOGS_DISABLED` and `PIWI_TEST_LOGS_ENVIRONMENTS`

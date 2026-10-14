@@ -18,7 +18,7 @@ const DEFAULTS: PiwiDashboardOptions = {
   // Off by default: the page inventory reads control and link names from every
   // visited page, so it stays opt-in until a project turns it on.
   capturePageInventory: false,
-  // Off by default: JavaScript coverage slows the page, so a scheduled job opts in.
+  // Off by default: JavaScript coverage adds time to every test, so a scheduled job opts in.
   captureCodeReach: false,
   captureServerTraces: true,
   captureResources: true,
@@ -70,6 +70,8 @@ export const PIWI_ENV_KEYS = {
   capturePageInventory: 'PIWI_CAPTURE_PAGE_INVENTORY',
   captureCodeReach: 'PIWI_CAPTURE_CODE_REACH',
   codeReachRoots: 'PIWI_CODE_REACH_ROOTS',
+  coverageBrowser: 'PIWI_COVERAGE_BROWSER',
+  coverageServer: 'PIWI_COVERAGE_SERVER',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
   captureResources: 'PIWI_CAPTURE_RESOURCES',
   leakCheck: 'PIWI_LEAK_CHECK',
@@ -320,6 +322,16 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
     }
   }
 
+  // Coverage is nested, so each of its variables fills the member the options leave unset.
+  type CoverageOptions = NonNullable<PiwiDashboardOptions['coverage']>;
+  const coverage: CoverageOptions = { ...mergedRaw.coverage };
+  const coverageBrowser = env[PIWI_ENV_KEYS.coverageBrowser];
+  const coverageServer = env[PIWI_ENV_KEYS.coverageServer];
+  if (coverage.browser === undefined && coverageBrowser)
+    coverage.browser = coverageBrowser as CoverageOptions['browser'];
+  if (coverage.server === undefined && coverageServer) coverage.server = coverageServer as CoverageOptions['server'];
+  if (coverage.browser !== undefined || coverage.server !== undefined) mergedRaw.coverage = coverage;
+
   const opts: PiwiDashboardOptions = { ...DEFAULTS, ...mergedRaw };
 
   // PIWI_VERBOSE wins over both default and user option.
@@ -368,6 +380,15 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
     env[PIWI_ENV_KEYS.captureCodeReach] = 'false';
   else if (options.captureCodeReach === true) env[PIWI_ENV_KEYS.captureCodeReach] = 'true';
   if (options.codeReachRoots?.length) env[PIWI_ENV_KEYS.codeReachRoots] = JSON.stringify(options.codeReachRoots);
+  // Coverage rides the same bridge: both sides off when performance metrics
+  // are, each side's explicit value otherwise (unset keeps them off).
+  if (options.collectPerformanceMetrics === false) {
+    env[PIWI_ENV_KEYS.coverageBrowser] = 'off';
+    env[PIWI_ENV_KEYS.coverageServer] = 'off';
+  } else {
+    if (options.coverage?.browser !== undefined) env[PIWI_ENV_KEYS.coverageBrowser] = options.coverage.browser;
+    if (options.coverage?.server !== undefined) env[PIWI_ENV_KEYS.coverageServer] = options.coverage.server;
+  }
   // Server-trace capture rides the same bridge: off when either flag disables
   // it, explicit true otherwise (unset keeps the fixture's default-on).
   if (options.captureServerTraces === false || options.collectPerformanceMetrics === false)

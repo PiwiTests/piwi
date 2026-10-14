@@ -13,7 +13,14 @@
  * offers the commit browser where one can work, so a cluster without a baseline
  * is not a dead end: picking commits opens the card. Until the coverage
  * arrives, the line says it is looking.
+ *
+ * With a resolved diff, the line adds what the suspect lines say: how many of
+ * the changed lines the failing tests ran and the most suspect file, linked to
+ * the card's list. When the failing tests recorded no coverage, a help hint
+ * says that coverage gives the suspect lines; any other reason adds nothing.
  */
+import { suspectLinesSentence } from '~/utils/suspect-lines';
+
 const {
   clusterId,
   coverage,
@@ -23,7 +30,13 @@ const {
   contextLoading,
   contextLoaded,
   hasChangesToShow,
+  suspectLines,
+  loadSuspectLines,
 } = useClusterDiagnosis();
+
+onMounted(() => void loadSuspectLines());
+const suspectSentence = computed(() => suspectLinesSentence(suspectLines.value, 'cluster'));
+const noCoverage = computed(() => suspectLines.value?.reason === 'no-coverage');
 
 const emit = defineEmits<{
   /** "See the changes" — the page scrolls to the card below the block. */
@@ -71,10 +84,12 @@ const summary = computed(() => {
       <span>Looking for the change that broke this…</span>
     </template>
 
-    <!-- A resolved diff: the range in one clause, and the way to the card -->
+    <!-- A resolved diff: the range in one clause, what the suspect lines say, and the way to the card -->
     <template v-else-if="summary">
-      <span>{{ summary }}</span>
+      <span>{{ summary }}<template v-if="suspectSentence">.</template></span>
+      <SuspectLinesSentence v-if="suspectSentence" :sentence="suspectSentence" @open="emit('see')" />
       <button type="button" :class="SENTENCE_LINK_CLASS" @click="emit('see')">See the changes</button>
+      <HelpHint v-if="noCoverage" topic="cluster.suspect-lines-coverage" />
     </template>
 
     <!-- A hand-picked range whose diff did not resolve: the card holds the picker -->

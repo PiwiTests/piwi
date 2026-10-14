@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'List the tests that reach a source file',
     description:
-      'The tests whose execution reached one application source file: `client` when the file’s functions ran in the page (the reporter’s opt-in `captureCodeReach`, from Chromium’s JavaScript coverage), `server` when the test called a route the Test Map knows is handled by that file. `file` matches a stored repository-relative path or a path suffix of it. Each test carries its latest outcome on the branch. Observed reach, not line coverage.',
+      'The tests whose execution reached one application source file. Each test carries how: `runtime` (`browser` when the file’s code ran in the page, `server` when it ran in the backend) and `via` (`coverage` when the test’s coverage recorded the file, from the reporter’s opt-in `captureCodeReach` or coverage capture; `route` when the test called a route the Test Map knows is handled by that file), listed once with the first of browser coverage, server coverage and route that applies; `origin` names the same in two values, `client` for browser coverage and `server` for any server reach. `file` matches a stored repository-relative path or a path suffix of it. Each test carries its latest outcome on the branch. Observed reach, not line coverage.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -24,7 +24,7 @@ defineRouteMeta({
         required: false,
         schema: { type: 'string' },
         description:
-          'The branch to read: its tests’ own reach where they ran on it, the default branch’s for the others. The default branch when absent.',
+          'The branch to read: per runtime, its tests’ own reach where they ran on it, the default branch’s for the others. The default branch when absent.',
       },
     ],
     'x-required-permission': 'project:read',

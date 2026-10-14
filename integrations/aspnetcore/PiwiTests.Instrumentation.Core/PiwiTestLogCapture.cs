@@ -16,6 +16,10 @@ namespace PiwiTests.Instrumentation;
 /// other adapter. <see cref="TryAdd"/> centralizes the level filter (<see cref="MinimumLevel"/>),
 /// the entry cap and the message truncation, so every source captures the same way.
 /// </para>
+/// <para>
+/// The middleware also records an exception the request did not handle through
+/// <see cref="TryAddUnhandled"/>, once per exception instance.
+/// </para>
 /// </summary>
 public static class PiwiTestLogCapture
 {
@@ -28,7 +32,7 @@ public static class PiwiTestLogCapture
     private const int MaxEntries = 50;
     private const int MessageMaxLength = 500;
 
-    private static readonly AsyncLocal<List<PiwiTestLogEntry>?> Buffer = new();
+    private static readonly AsyncLocal<RequestBuffer?> Buffer = new();
 
     /// <summary>
     /// True when a capture buffer is active for the current async context. A log source can
@@ -37,7 +41,7 @@ public static class PiwiTestLogCapture
     public static bool IsCapturing => Buffer.Value is not null;
 
     /// <summary>Starts capturing for the current async context. Called by the middleware per request.</summary>
-    public static void Begin() => Buffer.Value = [];
+    public static void Begin() => Buffer.Value = new RequestBuffer();
 
     /// <summary>
     /// Stops capturing and returns the entries collected since <see cref="Begin"/>, or
@@ -45,9 +49,9 @@ public static class PiwiTestLogCapture
     /// </summary>
     public static List<PiwiTestLogEntry>? Stop()
     {
-        var logs = Buffer.Value;
+        var buffer = Buffer.Value;
         Buffer.Value = null;
-        return logs;
+        return buffer?.Entries;
     }
 
     /// <summary>
@@ -63,9 +67,9 @@ public static class PiwiTestLogCapture
         // bridges (e.g. Serilog's LoggerProviderCollectionSink) emit without checking, which
         // would otherwise over-capture Information/Debug.
         if (level < MinimumLevel) return;
-        if (Buffer.Value is not { } logs || logs.Count >= MaxEntries) return;
+        if (Buffer.Value is not { } buffer || buffer.Entries.Count >= MaxEntries) return;
 
-        logs.Add(new PiwiTestLogEntry(
+        buffer.Entries.Add(new PiwiTestLogEntry(
             Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Level: level.ToString(),
             Category: category,
@@ -73,6 +77,30 @@ public static class PiwiTestLogCapture
             ExceptionMessage: exception?.Message,
             StackTrace: ShrinkStackTrace(exception)
         ));
+        if (exception is not null)
+            (buffer.Exceptions ??= []).Add(exception);
+    }
+
+    /// <summary>
+    /// Adds an Error entry for an exception the request did not handle: the exception's type
+    /// name as the category, its message, and its shrunk stack trace. A no-op when an entry
+    /// carrying this exception instance was already captured for the request, so an exception
+    /// the application logged, or one recorded here before, appears once. Otherwise the rules of
+    /// <see cref="TryAdd"/> apply.
+    /// </summary>
+    public static void TryAddUnhandled(Exception exception)
+    {
+        if (Buffer.Value?.Exceptions?.Exists(e => ReferenceEquals(e, exception)) == true) return;
+
+        var type = exception.GetType();
+        TryAdd(LogLevel.Error, type.FullName ?? type.Name, exception.Message, exception);
+    }
+
+    /// <summary>One request's entries, and the exceptions they carry.</summary>
+    private sealed class RequestBuffer
+    {
+        public readonly List<PiwiTestLogEntry> Entries = [];
+        public List<Exception>? Exceptions;
     }
 
     private static string Truncate(string s, int maxLength) =>
@@ -92,9 +120,12 @@ public static class PiwiTestLogCapture
 
         foreach (var line in lines)
         {
-            // Skip framework / runtime frames
+            // Skip framework / runtime frames, the delegates compiled at run time (minimal API
+            // handlers) and the Piwi middleware every exception escaping a request passes through
             if (line.Contains(" System.") ||
                 line.Contains(" Microsoft.") ||
+                line.Contains(" lambda_method") ||
+                line.Contains(" PiwiTests.Instrumentation.AspNetCore.") ||
                 line.Contains(" in /usr/share/dotnet/") ||
                 line.Contains(" in /dotnet/shared/") ||
                 line.StartsWith("---") ||

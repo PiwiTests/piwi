@@ -1565,9 +1565,29 @@ export interface DiagnosisContextCoverage {
   appState?: {
     hasBaseline: boolean;
   } | null;
+  /**
+   * The changed lines the failing tests executed (suspect lines) the context carried: how many suspects it
+   * listed, of how many changed lines and how many of them the failing tests executed at line granularity.
+   * null when the cluster has none to join (no coverage, no diff).
+   */
+  suspectLines?: {
+    suspects: number;
+    changedLines: number;
+    executedLines: number;
+  } | null;
   /** Sections where data is not applicable (with reason), keyed by section id. Absent in coverage means "no data". */
   notApplicable?: Record<string, string>;
 }
+
+// Suspect lines: `GET /api/test-run-cases/:id/suspect-lines` and `GET /api/failure-clusters/:id/suspect-lines`.
+// The shapes live in `#shared/suspect-lines`, shared with the server, the demo mirror and the fix plan.
+export type {
+  ClusterSuspectLinesAnswer,
+  SuspectLine,
+  SuspectLinesAnswer,
+  SuspectLinesReason,
+  SuspectLinesSummary,
+} from '#shared/suspect-lines';
 
 /**
  * A commit as returned by the failure-cluster commit-list endpoints and rendered
@@ -1590,6 +1610,8 @@ export interface ScmChangedFile {
   additions: number;
   deletions: number;
   patch?: string;
+  /** The git blob id of the file at the head commit, where the host gives it. */
+  blob?: string;
 }
 
 /**

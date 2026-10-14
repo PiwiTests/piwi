@@ -1408,6 +1408,14 @@ export const FAILURE_STORIES = [
     },
     media: { screenshot: 'components-modal-stuck.png' },
     firing: { startAgo: 6, chance: 0.6 },
+    // The browser coverage of the newest run the cluster fails in: the modal
+    // tests run the modal controller, the button tests the button page. Of the
+    // two files changed since the oldest commit, the failing tests reached only
+    // the controller, so it is the cluster's one suspect.
+    coverage: {
+      'tests/ui/modal.spec.ts': ['src/components/modal-controller.ts'],
+      'tests/ui/button.spec.ts': ['src/pages/components/button.vue'],
+    },
   },
 
   {

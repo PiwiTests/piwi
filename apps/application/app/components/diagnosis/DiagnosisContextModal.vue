@@ -98,19 +98,20 @@ const sectionsByCategory = computed(() => {
     'browserDistribution',
     'affectedTests',
   ];
-  const scm = ['scmInvestigation', 'selectedCommits'];
-  const other = ['priorDiagnosis', 'tracePointers', 'artifacts'];
+  const scm = ['suspectLines', 'scmInvestigation', 'topSuspectedCommit', 'selectedCommits'];
+  const grouped = new Set([...primary, ...evidence, ...analysis, ...scm]);
 
-  const categorize = (ids: string[], label: string) => {
-    const items = props.sections.filter((s) => ids.includes(s.id));
+  const categorize = (label: string, keep: (id: string) => boolean) => {
+    const items = props.sections.filter((s) => keep(s.id));
     if (items.length > 0) categories.push({ label, items });
   };
 
-  categorize(primary, 'Primary');
-  categorize(evidence, 'Test Evidence');
-  categorize(analysis, 'Analysis');
-  categorize(scm, 'SCM');
-  categorize(other, 'Other');
+  categorize('Primary', (id) => primary.includes(id));
+  categorize('Test Evidence', (id) => evidence.includes(id));
+  categorize('Analysis', (id) => analysis.includes(id));
+  categorize('SCM', (id) => scm.includes(id));
+  // Every other section, so the preview shows all the context holds.
+  categorize('Other', (id) => !grouped.has(id));
   return categories;
 });
 

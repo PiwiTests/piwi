@@ -1,0 +1,17 @@
+{
+  "pages": [
+    { "pattern": "/", "name": "Home" },
+    { "pattern": "/form", "name": "Contact form" },
+    { "pattern": "/popup", "name": "Popup" },
+    { "pattern": "/child", "name": "Child window" },
+    { "pattern": "/slow", "name": "Slow page" },
+    { "pattern": "/backend", "name": "Backend logs" },
+    { "pattern": "/shop", "name": "Products" },
+    { "pattern": "/shop/login", "name": "Sign in" },
+    { "pattern": "/shop/products/:slug", "name": "Product" },
+    { "pattern": "/shop/cart", "name": "Cart" },
+    { "pattern": "/shop/checkout", "name": "Shipping" },
+    { "pattern": "/shop/done", "name": "Order placed" },
+    { "pattern": "/shop/orders", "name": "Order history" }
+  ]
+}

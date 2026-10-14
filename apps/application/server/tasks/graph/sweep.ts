@@ -11,6 +11,7 @@ import {
 } from '../../utils/graph-ingest';
 import { resolveDefaultBranch } from '../../utils/scm/default-branch';
 import { withProjectGraphLock } from '../../utils/project-graph-lock';
+import { pruneStaleBranchCoverageRows } from '../../utils/coverage';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
 /**
@@ -54,7 +55,7 @@ export default defineTask({
   meta: {
     name: 'graph:sweep',
     description:
-      'Keep the feature graph proportional to a project’s surface: prune changes edges older than 90 days, branch-tagged rows older than 30 days, and canonical nodes unseen for 30 runs whose surface-drift gap is closed. Backfill unknown default branches, then recompute scenario gaps. Independent of PIWI_RETENTION_DAYS.',
+      'Keep the feature graph proportional to a project’s surface: prune changes edges older than 90 days, branch-tagged rows (graph, code reach and test coverage) older than 30 days, and canonical nodes unseen for 30 runs whose surface-drift gap is closed. Backfill unknown default branches, then recompute scenario gaps. Independent of PIWI_RETENTION_DAYS.',
   },
   async run() {
     const db = await getDatabase();
@@ -65,6 +66,9 @@ export default defineTask({
 
     const branchRowsPruned = await pruneStaleBranchGraphRows(db);
     if (branchRowsPruned > 0) result.branchRowsPruned = branchRowsPruned;
+
+    const branchCoverageRowsPruned = await pruneStaleBranchCoverageRows(db);
+    if (branchCoverageRowsPruned > 0) result.branchCoverageRowsPruned = branchCoverageRowsPruned;
 
     const reachesEdgesPruned = await pruneStaleReachesEdges(db);
     if (reachesEdgesPruned > 0) result.reachesEdgesPruned = reachesEdgesPruned;

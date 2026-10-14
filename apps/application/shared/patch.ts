@@ -9,6 +9,9 @@
  * so the UI can badge a patch as verified rather than taking it on faith.
  */
 
+/** The line a patch cut short ends with (`truncatePatch`, the AI context's patch budget). */
+export const PATCH_TRUNCATED_NOTE = '[... patch truncated ...]';
+
 export interface PatchHunk {
   oldStart: number;
   oldLines: number;

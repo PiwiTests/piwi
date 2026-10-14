@@ -106,6 +106,11 @@ export interface TestCasePayload {
   locatorPages?: unknown;
   /** The repository-relative source files the test executed (`piwi-code-reach`), when code reach is on. */
   codeReach?: unknown;
+  /**
+   * The test's coverage (`@piwitests/core/coverage` `CoverageCapture`): per file and runtime, the functions and
+   * lines that ran. Read through `sanitizeCoverage`.
+   */
+  coverage?: unknown;
   /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
   resources?: WireExecutionResources | null;
   /** AI-step usage manifest (`{ entries: string[] }`): committed AI-step artifacts this test replayed. */
@@ -208,6 +213,7 @@ export interface StreamEventPayload {
   pageInventory?: unknown;
   locatorPages?: unknown;
   codeReach?: unknown;
+  coverage?: unknown;
   resources?: WireExecutionResources | null;
   aiUsage?: unknown;
   consoleLogs?: unknown;

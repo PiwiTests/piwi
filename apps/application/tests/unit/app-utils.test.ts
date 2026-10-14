@@ -390,6 +390,21 @@ describe('parsePatchLines', () => {
     expect(lines.map((l) => l.type)).toEqual(['hunk', 'add', 'remove', 'context', 'context', 'context']);
   });
 
+  test('inside a hunk, a removed `--` line and an added `++` line are changes, not file headers', () => {
+    const lines = parsePatchLines(
+      [
+        '--- a/q.sql',
+        '+++ b/q.sql',
+        '@@ -1,2 +1,2 @@',
+        '--- the old note',
+        '+++ the new note',
+        ' select 1;',
+        '--- a/next',
+      ].join('\n'),
+    );
+    expect(lines.map((l) => l.type)).toEqual(['context', 'context', 'hunk', 'remove', 'add', 'context', 'context']);
+  });
+
   test('patchLineClass has an entry for every line type', () => {
     expect(Object.keys(patchLineClass).sort()).toEqual(['add', 'context', 'hunk', 'remove']);
   });

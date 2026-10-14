@@ -287,9 +287,29 @@ no one feature, so it links none. See [how features group](/reference/gap-detect
 ### Code reach
 
 The application source files a test executed: those whose functions ran in the page, from Chromium's JavaScript
-coverage when [code reach](/features/code-reach) is on, and the handler files of the routes it called
+coverage when [code reach](/features/code-reach) is on, those it ran in an ASP.NET Core backend with
+[server coverage](/features/code-reach#server-code) on, and the handler files of the routes it called
 when the backend is instrumented. Observed reach at file level, never line coverage. It feeds
 [impact-from-diff](/features/test-selection#impact-from-diff) and [Uncovered changes](/features/uncovered-changes).
+
+### Coverage
+
+Which source code a test ran, per repository-relative file and **runtime** (`browser` or `server`), at a
+**granularity**: the files only, the functions that ran (their start and end lines), or the executed lines too, against
+the git blob of the file version. Code reach is its file-level view. A test's coverage is **incomplete** when part of it
+could not be collected.
+
+### Suspect lines
+
+The lines changed since a failing test's last passing run that the failing tests executed, read from their
+[coverage](#coverage) and the diff of the source control range: each changed hunk they executed, ranked by how many
+passing tests of the same run executed it too (the Ochiai score of spectrum-based fault localization, 1 when only
+failing tests did). Line coverage names the executed lines, function coverage the changed lines inside a function that
+ran, and file coverage the whole hunk. When the host names the file's version at the head (GitHub, or a local clone
+in the desktop app), coverage of another version counts as file coverage. The failure pages' **What changed** line names the first, the cluster's diff
+lists them and marks them ([cluster page](/features/failure-clusters#the-cluster-page)), the
+[AI diagnosis](/features/ai-diagnosis#scm-grounded-context) lists them and sends their files' patches first, and the
+[fix plan](/features/fix-plans) carries the top five.
 
 ### Locator index
 

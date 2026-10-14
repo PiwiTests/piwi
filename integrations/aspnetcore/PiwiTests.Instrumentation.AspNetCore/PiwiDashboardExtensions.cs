@@ -122,8 +122,19 @@ public static class PiwiDashboardExtensions
     {
         environment ??= app.ApplicationServices.GetRequiredService<IHostEnvironment>();
         var options = app.ApplicationServices.GetService<IOptions<PiwiTestLogsOptions>>()?.Value;
+        var coverage = options?.Coverage ?? new PiwiCoverageSettings();
         if (PiwiTestLogsGate.IsActive(environment, isActive, environments, options, Environment.GetEnvironmentVariable))
-            app.UseMiddleware<PiwiTestLogHeaderMiddleware>();
+        {
+            var serverCoverage = new PiwiServerCoverage(coverage);
+            app.Use(next => new PiwiTestLogHeaderMiddleware(next, serverCoverage).InvokeAsync);
+        }
+        else if (coverage.IsInstrumented())
+        {
+            app.ApplicationServices.GetService<ILoggerFactory>()?.CreateLogger("PiwiTests.Instrumentation")
+                .LogWarning(
+                    "This build records code coverage (built with -p:PiwiCoverage=true), but the Piwi middleware is not active in the {Environment} environment, so nothing serves it. Never deploy a coverage build to production.",
+                    environment.EnvironmentName);
+        }
 
         return app;
     }

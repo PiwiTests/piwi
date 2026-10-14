@@ -5,11 +5,12 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 
 namespace PiwiTests.Instrumentation.AspNetCore;
 
-public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
+public sealed class PiwiTestLogHeaderMiddleware
 {
     private const string HeaderName = "X-Piwi-Logs";
     private const string TraceHeaderName = "X-Piwi-Trace";
@@ -25,6 +26,20 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
     // The X-Piwi-Logs value of a response that captured nothing, encoded once.
     private static readonly string EmptyLogs = GzipBase64(PiwiTestLogJson.Serialize([]));
 
+    private readonly RequestDelegate _next;
+    private readonly PiwiServerCoverage _coverage;
+
+    public PiwiTestLogHeaderMiddleware(RequestDelegate next)
+        : this(next, new PiwiServerCoverage(new PiwiCoverageSettings()))
+    {
+    }
+
+    internal PiwiTestLogHeaderMiddleware(RequestDelegate next, PiwiServerCoverage coverage)
+    {
+        _next = next;
+        _coverage = coverage;
+    }
+
     public async Task InvokeAsync(HttpContext context)
     {
         // Serve the declared-surface route manifest: this middleware joins the pipeline only in
@@ -32,6 +47,15 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
         if (PiwiRouteManifest.IsRequest(context.Request))
         {
             await PiwiRouteManifest.WriteAsync(context);
+            return;
+        }
+
+        // Server coverage, once code built with coverage instrumentation runs in this process: the
+        // coverage endpoints, and each request's own coverage, named on its response.
+        var coverageActive = _coverage.IsActive;
+        if (coverageActive && _coverage.IsRequest(context.Request))
+        {
+            await _coverage.WriteAsync(context);
             return;
         }
 
@@ -49,6 +73,7 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
             context.Items["PiwiProbe"] = probe;
 
         PiwiTestLogCapture.Begin();
+        var coverage = coverageActive ? _coverage.Begin() : null;
 
         // The headers are written when the response starts, the last moment they can still be
         // added. A handler that writes a body starts the response inside this capture, so the
@@ -58,8 +83,16 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
         var captureEnded = false;
         context.Response.OnStarting(() =>
         {
+            // An exception handler inside this middleware answers an exception with a server error:
+            // record it now, as the framework may log it only after this response starts, or not at
+            // all. An exception it turns into a 4xx is the app's answer, not a server error.
+            if (!captureEnded && context.Response.StatusCode >= 500
+                && context.Features.Get<IExceptionHandlerFeature>()?.Error is { } handled)
+                PiwiTestLogCapture.TryAddUnhandled(handled);
             var logs = captureEnded ? endedLogs : PiwiTestLogCapture.Stop();
             WriteInstrumentationHeaders(context, probe, startMs, logs);
+            if (coverage is not null && _coverage.Name(coverage) is { } requestId)
+                context.Response.Headers[PiwiServerCoverage.HeaderName] = requestId;
             return Task.CompletedTask;
         });
 
@@ -103,13 +136,23 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
             }
 
             if (!faultEndedResponse)
-                await next(context);
+                await _next(context);
+        }
+        catch (Exception exception)
+        {
+            // The exception leaves the code this middleware wraps: the app's exception handling
+            // (the developer exception page, an outer UseExceptionHandler, the server) logs it
+            // after this capture ends, so it is recorded here, then rethrown unchanged.
+            PiwiTestLogCapture.TryAddUnhandled(exception);
+            throw;
         }
         finally
         {
             // Always end capture for this request's async context.
             endedLogs = PiwiTestLogCapture.Stop();
             captureEnded = true;
+            if (coverage is not null)
+                _coverage.End(coverage, context.Response.HasStarted);
         }
     }
 

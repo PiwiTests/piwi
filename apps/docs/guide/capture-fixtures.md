@@ -151,7 +151,7 @@ If that request fails, the set stays empty and **nothing is sampled**. Turn it o
 
 ## Try it
 
-A runnable example project exercising every capture path, a failing test included, lives in [`examples/playwright-fixtures`](https://github.com/PiwiTests/platform/tree/main/examples/playwright-fixtures).
+A runnable example project exercising every capture path, a failing test included, lives in [`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app).
 
 ## Related
 

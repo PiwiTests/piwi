@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact form · Piwi Sample</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f766e'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body data-page="form">
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="/">Piwi Sample</a>
+      <nav class="main-nav" aria-label="Main">
+        <a href="/">Home</a>
+        <a href="/form">Form</a>
+        <a href="/popup">Popup</a>
+        <a href="/slow">Slow</a>
+        <a href="/backend">Backend</a>
+        <a href="/shop">Shop</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <h1>Contact form</h1>
+    <p class="lead">Sends the message to <code>POST /api/submit</code> with an XHR. An empty email logs a console error instead.</p>
+    <form id="contact" class="card narrow">
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="message">Message</label>
+        <textarea id="message" name="message"></textarea>
+      </div>
+      <div class="field">
+        <label for="priority">Priority</label>
+        <select id="priority" name="priority">
+          <option value="low">Low</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <button type="submit" class="primary">Send</button>
+      <p id="result" class="message" role="status"></p>
+      <p id="form-error" class="message" role="alert"></p>
+    </form>
+  </main>
+</body>
+</html>

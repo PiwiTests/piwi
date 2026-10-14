@@ -545,6 +545,7 @@ export const testRunsCases = pgTable(
     pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
     locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
     codeReachPayloadId: integer('code_reach_payload_id').references(() => casePayloads.id), // Content-addressed list of the source files the test executed (piwi-code-reach)
+    coveragePayloadId: integer('coverage_payload_id').references(() => casePayloads.id), // Content-addressed list of the coverage fragments the execution recorded (coverage_fragments ids)
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -598,6 +599,9 @@ export const testRunsCases = pgTable(
     codeReachPayloadIdx: index('idx_trc_code_reach_payload')
       .on(table.codeReachPayloadId)
       .where(sql`code_reach_payload_id IS NOT NULL`),
+    coveragePayloadIdx: index('idx_trc_coverage_payload')
+      .on(table.coveragePayloadId)
+      .where(sql`coverage_payload_id IS NOT NULL`),
     // Partial indexes over the few rows the capability probes and the run list
     // look for, so finding one, or proving there is none, never reads every
     // execution. A query uses one only when it repeats the condition with
@@ -697,15 +701,91 @@ export const codeReach = pgTable(
       .notNull()
       .references(() => testCases.id, { onDelete: 'cascade' }),
     branch: text('branch').notNull().default(''),
+    runtime: text('runtime').notNull().default('browser'),
     file: text('file').notNull(),
     origin: text('origin').notNull().default('client'),
     lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
   },
   (table) => ({
-    uniqueReach: uniqueIndex('idx_code_reach_unique').on(table.testCaseId, table.branch, table.file),
+    uniqueReach: uniqueIndex('idx_code_reach_unique').on(table.testCaseId, table.branch, table.runtime, table.file),
     projectFileIdx: index('idx_code_reach_project_file').on(table.projectId, table.file),
     lastSeenRunIdx: index('idx_code_reach_last_seen_run').on(table.lastSeenRunId),
+  }),
+);
+
+// Coverage fragments: one file's coverage as one test recorded it (see schema.sqlite.ts).
+export const coverageFragments = pgTable(
+  'coverage_fragments',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    hash: text('hash').notNull(),
+    runtime: text('runtime').notNull(),
+    path: text('path').notNull(),
+    blob: text('blob'),
+    functions: text('functions'),
+    lines: text('lines'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    projectHashIdx: uniqueIndex('idx_coverage_fragments_project_hash').on(table.projectId, table.hash),
+    projectPathIdx: index('idx_coverage_fragments_project_path').on(table.projectId, table.path),
+  }),
+);
+
+// Test coverage: the fragments a test's latest run with coverage recorded on a branch (see schema.sqlite.ts).
+export const testCoverage = pgTable(
+  'test_coverage',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    branch: text('branch').notNull().default(''),
+    runtime: text('runtime').notNull(),
+    fragmentId: integer('fragment_id')
+      .notNull()
+      .references(() => coverageFragments.id, { onDelete: 'cascade' }),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    uniqueCoverage: uniqueIndex('idx_test_coverage_unique').on(table.testCaseId, table.branch, table.fragmentId),
+    fragmentIdx: index('idx_test_coverage_fragment').on(table.fragmentId),
+    projectBranchIdx: index('idx_test_coverage_project_branch').on(table.projectId, table.branch),
+    lastSeenRunIdx: index('idx_test_coverage_last_seen_run').on(table.lastSeenRunId),
+  }),
+);
+
+// Run coverage: the coverage of a whole run per file (see schema.sqlite.ts).
+export const runCoverage = pgTable(
+  'run_coverage',
+  {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id').notNull(), // the run's project
+    runtime: text('runtime').notNull(),
+    path: text('path').notNull(),
+    blob: text('blob'),
+    functions: text('functions'),
+    lines: text('lines'),
+    executable: text('executable'),
+  },
+  (table) => ({
+    uniqueFile: uniqueIndex('idx_run_coverage_unique').on(table.runId, table.runtime, table.path),
   }),
 );
 

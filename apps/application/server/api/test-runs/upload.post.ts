@@ -467,6 +467,7 @@ export default eventHandler(async (event) => {
         pageInventory: testCase.pageInventory,
         locatorPages: testCase.locatorPages,
         codeReach: testCase.codeReach,
+        coverage: testCase.coverage,
         resources: testCase.resources ?? null,
         aiUsage: testCase.aiUsage,
         consoleLogs: testCase.consoleLogs,

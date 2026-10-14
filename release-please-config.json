@@ -25,13 +25,17 @@
         { "type": "generic", "path": "apps/jetbrains/gradle.properties" },
         {
           "type": "json",
-          "path": "examples/playwright-fixtures/package.json",
+          "path": "examples/sample-app/package.json",
           "jsonpath": "$.devDependencies['@piwitests/reporter']"
         },
         {
           "type": "json",
-          "path": "examples/playwright-fixtures/package.json",
+          "path": "examples/sample-app/package.json",
           "jsonpath": "$.devDependencies['@piwitests/instrumentation-nitro']"
+        },
+        {
+          "type": "generic",
+          "path": "examples/sample-app/backends/aspnetcore/SampleApp.AspNetCore.csproj"
         },
         {
           "type": "generic",
@@ -40,6 +44,10 @@
         {
           "type": "generic",
           "path": "integrations/aspnetcore/PiwiTests.Instrumentation.Core/PiwiTests.Instrumentation.Core.csproj"
+        },
+        {
+          "type": "generic",
+          "path": "integrations/aspnetcore/PiwiTests.Instrumentation.Coverage/PiwiTests.Instrumentation.Coverage.csproj"
         },
         {
           "type": "generic",

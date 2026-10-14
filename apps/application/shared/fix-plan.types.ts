@@ -9,6 +9,7 @@
 import type { PatchValidation } from '#shared/patch';
 import type { LocatorEdit } from '#shared/locator-healing.types';
 import type { ReproRecipe, BisectResult, BisectedCommit, ReproduceDesktopContext } from '#shared/reproduce';
+import type { ClusterSuspectLinesAnswer } from '#shared/suspect-lines';
 
 export interface FixPlanEdit {
   filePath: string;
@@ -110,6 +111,11 @@ export interface FixPlan {
   bisectedCommit: BisectedCommit | null;
   /** Everything the desktop shell needs to reproduce and bisect this locally (desktop UI only). */
   reproduceDesktop: ReproduceDesktopContext;
+  /**
+   * The changed lines the cluster's failing tests executed, most suspect first
+   * (at most five): where to look first. Null when they were not computed.
+   */
+  suspectLines: ClusterSuspectLinesAnswer | null;
   /** Resolved clusters this one resembles, and how each was fixed. Empty when none match. */
   fixedBefore: FixedBeforeMatch[];
   /** The tracker issue this cluster is known by, when one exists. */

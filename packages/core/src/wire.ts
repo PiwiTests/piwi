@@ -8,6 +8,7 @@
  * `TestCasePayload` / `StreamEventPayload`. Those live on each side and are kept
  * field-compatible by `apps/application/tests/unit/wire-shared-drift.test.ts`.
  */
+import type { CoverageCapture, CoverageFile } from './coverage';
 
 /** One entry per level in a test's suite path (parallel to `suitePath`). */
 export interface SuiteConfigEntry {
@@ -142,7 +143,10 @@ export interface WireNetworkRequest {
   url: string;
   /** The HTTP status; 0 when no response arrived (the request failed, or finished without one). */
   status: number;
-  /** Milliseconds to the response end; for a failed request, to the moment it failed. */
+  /**
+   * Milliseconds to the response end; for a failed request, to the moment it failed; for a response whose body never
+   * finished loading (the page cancelled it, or it was still open as the test ended), to its headers.
+   */
   duration: number;
   /** Request start, Unix epoch milliseconds. */
   startTime?: number;
@@ -162,6 +166,14 @@ export interface WireNetworkRequest {
    */
   fulfilled?: boolean;
 }
+
+// ── Coverage ───────────────────────────────────────────────────────────────────
+
+/** One file's coverage on the wire: its path, runtime, blob, and the function and line ranges that ran. */
+export type WireCoverageFile = CoverageFile;
+
+/** A test attempt's coverage on the wire, read by the server through `sanitizeCoverage`. */
+export type WireCoverage = CoverageCapture;
 
 // ── Resources ──────────────────────────────────────────────────────────────────
 

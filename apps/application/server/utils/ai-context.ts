@@ -23,11 +23,14 @@ import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
 import { eligibleRunSql } from '#shared/run-eligibility';
 import { computeRegressionContext } from './regression-context';
+import { clusterSuspectLinesForChanges } from './suspect-lines';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { LocalGitProvider } from './scm/local-git';
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
+import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
+import { suspectLinesContext, suspectLinesReasonText } from '#shared/suspect-lines';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
 import type {
@@ -75,6 +78,12 @@ import type { DbClient } from '../database';
 
 type ScmCoverage = NonNullable<DiagnosisContextCoverage['scm']>;
 
+/** What the context says about suspect lines: the coverage metadata, or why the section is absent. */
+interface SuspectLinesContext {
+  coverage: DiagnosisContextCoverage['suspectLines'];
+  absentReason: string | null;
+}
+
 // ── Section wrapping helper ─────────────────────────────────────────────────
 
 function section(
@@ -114,6 +123,7 @@ const CLUSTER_ONLY_SECTIONS = new Set<SectionId>([
   'browserDistribution',
   'recurrenceFlakiness',
   'scmInvestigation',
+  'suspectLines',
   'selectedCommits',
   'topSuspectedCommit',
   'priorDiagnosis',
@@ -160,6 +170,7 @@ const SECTION_ORDER: SectionId[] = [
   'browserDistribution',
   'affectedTests',
   'passedPeers',
+  'suspectLines',
   'scmInvestigation',
   'topSuspectedCommit',
   'selectedCommits',
@@ -238,7 +249,7 @@ function renderBudgetedPatches(
       continue;
     }
     const patch =
-      f.patch.length > budget.remaining ? f.patch.slice(0, budget.remaining) + '\n[... patch truncated ...]' : f.patch;
+      f.patch.length > budget.remaining ? `${f.patch.slice(0, budget.remaining)}\n${PATCH_TRUNCATED_NOTE}` : f.patch;
     budget.remaining -= Math.min(f.patch.length, budget.remaining);
     patches.push(`--- ${f.filename}\n${patch}`);
   }
@@ -1953,6 +1964,13 @@ export function representativeExecutionSections(
   return out;
 }
 
+/** Titles of the sections the SCM investigation files. */
+const SCM_SECTION_TITLES: Partial<Record<SectionId, string>> = {
+  scmInvestigation: 'SCM Investigation',
+  suspectLines: 'Changed Lines the Failing Tests Executed',
+  topSuspectedCommit: 'Top Suspected Commit',
+};
+
 /** Human-readable section titles keyed by the ids emitted by `representativeExecutionSections`. */
 const REP_SECTION_TITLES: Partial<Record<SectionId, string>> = {
   representativeExecution: 'Representative Execution',
@@ -2349,9 +2367,17 @@ async function buildSourceFiles(
   }
 }
 
+/** One section of the SCM investigation, with the id it is filed under. */
+interface ScmSection {
+  id: SectionId;
+  markdown: string;
+}
+
 /**
  * "What changed since last green run" + the actual SCM diff (or a manual-baseline
- * diff when there is no last green run). Tracks SCM coverage for the UI status line.
+ * diff when there is no last green run), with the changed lines the cluster's
+ * failing tests executed when they recorded coverage. Tracks SCM coverage for
+ * the UI status line.
  */
 async function scmInvestigationSections(
   db: DbClient,
@@ -2361,13 +2387,14 @@ async function scmInvestigationSections(
   /** Signals about the failing test, used for changed-file relevance scoring. */
   signals: RelevanceSignals,
 ): Promise<{
-  sections: string[];
+  sections: ScmSection[];
   coverage: ScmCoverage | null;
   scmChanges: ScmChanges | null;
   topSuspectedCommit: string | null;
   sourceFiles: SourceFilesResult;
+  suspectLines: SuspectLinesContext;
 }> {
-  const sections: string[] = [];
+  const sections: ScmSection[] = [];
   let sourceFilesResult: SourceFilesResult = { text: null, files: [], coverage: null };
   const scmCov: ScmCoverage = {
     hasLastGreen: false,
@@ -2384,6 +2411,7 @@ async function scmInvestigationSections(
   };
   let scmReached = false;
   let scmChanges: ScmChanges | null = null;
+  let suspectLines: SuspectLinesContext = { coverage: null, absentReason: 'no SCM diff to join with coverage' };
 
   // The range compared, whether or not a provider can read it: the page links it
   // on the host and offers the local `git log` when the diff cannot be fetched.
@@ -2397,6 +2425,63 @@ async function scmInvestigationSections(
     scmCov.gitCommand = usable ? `git log --oneline ${fromSha}..${toSha}` : null;
   };
   scmCov.hasToken = (await resolveScmToken(db, cluster.projectId).catch(() => null)) != null;
+
+  /**
+   * Fetch the changes of `fromSha..toSha` and add them: the changed lines the
+   * failing tests executed, then every changed file with its patch (the files
+   * of those lines first), the top suspected change and the full source of the
+   * most suspect files at `toSha`.
+   */
+  const readDiff = async (repositoryUrl: string, fromSha: string, toSha: string, title: string) => {
+    try {
+      const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
+      scmCov.localGit = provider instanceof LocalGitProvider;
+      const changes = provider ? await provider.fetchChanges(fromSha, toSha) : null;
+      if (!changes || (changes.commits.length === 0 && changes.files.length === 0)) return;
+      // Score and sort files by relevance, then render with budget
+      const scored = scoreFilesByRelevance(changes.files, signals);
+      changes.files = scored.map((s) => s.file);
+      scmChanges = changes;
+      scmCov.filesCount = changes.files.length;
+      scmCov.commitsCount = changes.commits.length;
+      scmCov.patchesOmitted = Boolean(changes.patchesOmitted);
+
+      const suspects = await clusterSuspectLinesForChanges(db, cluster.id, changes, { from: fromSha, to: toSha }).catch(
+        () => null,
+      );
+      if (suspects?.available) {
+        const context = suspectLinesContext(suspects, changes.files, { from: fromSha, to: toSha });
+        changes.files = context.files;
+        sections.push({ id: 'suspectLines', markdown: context.markdown });
+        suspectLines = { coverage: context.coverage, absentReason: null };
+      } else if (suspects?.reason) {
+        suspectLines = { coverage: null, absentReason: suspectLinesReasonText(suspects.reason) };
+      }
+
+      const rendered = renderChangedFiles(changes, { title, budget: limits.scmPatchBudget });
+      scmCov.patchedFilesCount = rendered.patchedFilesCount;
+      scmCov.patchesTruncated = rendered.patchesTruncated;
+      sections.push({ id: 'scmInvestigation', markdown: rendered.text });
+
+      // Surface the most-suspect changed file (by relevance) + newest commit
+      const top = getTopSuspectedChange(scored, changes.commits);
+      if (top) sections.push({ id: 'topSuspectedCommit', markdown: formatTopSuspectedChange(top) });
+
+      // Full source of the suspect files + test imports at the failing commit.
+      if (provider) sourceFilesResult = await buildSourceFiles(provider, toSha, scored, signals, limits);
+    } catch (fetchErr) {
+      scmCov.error = (fetchErr instanceof Error ? fetchErr.message : String(fetchErr)).slice(0, 300);
+    }
+  };
+
+  const result = () => ({
+    sections,
+    coverage: scmReached ? scmCov : null,
+    scmChanges,
+    topSuspectedCommit: null,
+    sourceFiles: sourceFilesResult,
+    suspectLines,
+  });
 
   // Anchor the diff at firstSeenRunId (the earliest run where the failure appeared) so the
   // causal window [lastGreenCommit .. firstBadCommit] is as tight as possible.
@@ -2412,8 +2497,7 @@ async function scmInvestigationSections(
     .from(testRuns)
     .where(eq(testRuns.id, cluster.firstSeenRunId));
 
-  if (!firstSeenRunRows[0])
-    return { sections, coverage: null, scmChanges: null, topSuspectedCommit: null, sourceFiles: sourceFilesResult };
+  if (!firstSeenRunRows[0]) return result();
 
   try {
     const regression = await computeRegressionContext(db, firstSeenRunRows[0]);
@@ -2443,7 +2527,7 @@ async function scmInvestigationSections(
           lines.push(`  - ${d.label}: ${d.before ?? 'none'} → ${d.after ?? 'none'}`);
         }
       }
-      sections.push(lines.join('\n'));
+      sections.push({ id: 'scmInvestigation', markdown: lines.join('\n') });
 
       if (regression.commitRange) {
         setRange(
@@ -2460,47 +2544,13 @@ async function scmInvestigationSections(
       // Fetch actual changed files from SCM API
       if (regression.commitRange?.repositoryUrl) {
         scmCov.provider = detectScmProvider(regression.commitRange.repositoryUrl);
-        try {
-          const provider = await createScmProvider(regression.commitRange.repositoryUrl, db, cluster.projectId);
-          scmCov.localGit = provider instanceof LocalGitProvider;
-          const fromSha = baseCommitOverride ?? regression.commitRange.fromSha;
-          if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride;
-          const changes = provider ? await provider.fetchChanges(fromSha, regression.commitRange.toSha) : null;
-          if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
-            // Score and sort files by relevance, then render with budget
-            const scored = scoreFilesByRelevance(changes.files, signals);
-            changes.files = scored.map((s) => s.file);
-            scmChanges = changes;
-            scmCov.filesCount = changes.files.length;
-            scmCov.commitsCount = changes.commits.length;
-            scmCov.patchesOmitted = Boolean(changes.patchesOmitted);
-
-            const rendered = renderChangedFiles(changes, {
-              title: '## Changed Files Since Last Green Run',
-              budget: limits.scmPatchBudget,
-            });
-            scmCov.patchedFilesCount = rendered.patchedFilesCount;
-            scmCov.patchesTruncated = rendered.patchesTruncated;
-            sections.push(rendered.text);
-
-            // Surface the most-suspect changed file (by relevance) + newest commit
-            const top = getTopSuspectedChange(scored, changes.commits);
-            if (top) sections.push(formatTopSuspectedChange(top));
-
-            // Full source of the suspect files + test imports at the failing commit.
-            if (provider) {
-              sourceFilesResult = await buildSourceFiles(
-                provider,
-                regression.commitRange.toSha,
-                scored,
-                signals,
-                limits,
-              );
-            }
-          }
-        } catch (fetchErr) {
-          scmCov.error = (fetchErr instanceof Error ? fetchErr.message : String(fetchErr)).slice(0, 300);
-        }
+        if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride;
+        await readDiff(
+          regression.commitRange.repositoryUrl,
+          baseCommitOverride ?? regression.commitRange.fromSha,
+          regression.commitRange.toSha,
+          '## Changed Files Since Last Green Run',
+        );
       }
     } else if (baseCommitOverride) {
       // No last green run — user provided a manual baseline commit; try to fetch diff anyway
@@ -2523,54 +2573,26 @@ async function scmInvestigationSections(
 
         const fromShort = baseCommitOverride.slice(0, 7);
         const toShort = currentCommit.slice(0, 7);
-        sections.push(
-          [
+        sections.push({
+          id: 'scmInvestigation',
+          markdown: [
             `## What Changed (Manual Baseline)`,
             `- Baseline commit (user-provided): ${baseCommitOverride}`,
             `- Current commit: ${toShort}`,
             `- No previous passing run found; using manual baseline`,
             `- Git command: \`git log ${fromShort}..${toShort}\``,
           ].join('\n'),
-        );
+        });
 
-        try {
-          const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
-          scmCov.localGit = provider instanceof LocalGitProvider;
-          const changes = provider ? await provider.fetchChanges(baseCommitOverride, currentCommit) : null;
-          if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
-            // Score and sort files by relevance
-            const scored = scoreFilesByRelevance(changes.files, signals);
-            changes.files = scored.map((s) => s.file);
-            scmChanges = changes;
-            scmCov.filesCount = changes.files.length;
-            scmCov.commitsCount = changes.commits.length;
-            scmCov.patchesOmitted = Boolean(changes.patchesOmitted);
-
-            const rendered = renderChangedFiles(changes, {
-              title: '## Changed Files (Manual Baseline)',
-              budget: limits.scmPatchBudget,
-            });
-            scmCov.patchedFilesCount = rendered.patchedFilesCount;
-            scmCov.patchesTruncated = rendered.patchesTruncated;
-            sections.push(rendered.text);
-
-            const top = getTopSuspectedChange(scored, changes.commits);
-            if (top) sections.push(formatTopSuspectedChange(top));
-
-            if (provider) {
-              sourceFilesResult = await buildSourceFiles(provider, currentCommit, scored, signals, limits);
-            }
-          }
-        } catch (fetchErr) {
-          scmCov.error = (fetchErr instanceof Error ? fetchErr.message : String(fetchErr)).slice(0, 300);
-        }
+        await readDiff(repositoryUrl, baseCommitOverride, currentCommit, '## Changed Files (Manual Baseline)');
       } else {
-        sections.push(
-          [
+        sections.push({
+          id: 'scmInvestigation',
+          markdown: [
             `## What Changed (Manual Baseline)`,
             `> Note: baseline commit provided (${baseCommitOverride}) but could not determine current commit or repository URL from run metadata.`,
           ].join('\n'),
-        );
+        });
       }
     } else if (signals.testCaseId) {
       // No project-wide green run and no manual override — fall back to the last run where
@@ -2609,46 +2631,18 @@ async function scmInvestigationSections(
 
           const fromShort = lastPassCommit.slice(0, 7);
           const toShort = currentCommit.slice(0, 7);
-          sections.push(
-            [
+          sections.push({
+            id: 'scmInvestigation',
+            markdown: [
               `## What Changed (Per-Test Baseline)`,
               `- Last passing run for this test: run #${lastPassRows[0].testRunId}`,
               `- No project-wide green run found; using per-test last-pass as baseline`,
               `- Commit range: ${fromShort}..${toShort}`,
               `- Git command: \`git log ${fromShort}..${toShort}\``,
             ].join('\n'),
-          );
+          });
 
-          try {
-            const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
-            scmCov.localGit = provider instanceof LocalGitProvider;
-            const changes = provider ? await provider.fetchChanges(lastPassCommit, currentCommit) : null;
-            if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
-              const scored = scoreFilesByRelevance(changes.files, signals);
-              changes.files = scored.map((s) => s.file);
-              scmChanges = changes;
-              scmCov.filesCount = changes.files.length;
-              scmCov.commitsCount = changes.commits.length;
-              scmCov.patchesOmitted = Boolean(changes.patchesOmitted);
-
-              const rendered = renderChangedFiles(changes, {
-                title: '## Changed Files (Per-Test Baseline)',
-                budget: limits.scmPatchBudget,
-              });
-              scmCov.patchedFilesCount = rendered.patchedFilesCount;
-              scmCov.patchesTruncated = rendered.patchesTruncated;
-              sections.push(rendered.text);
-
-              const top = getTopSuspectedChange(scored, changes.commits);
-              if (top) sections.push(formatTopSuspectedChange(top));
-
-              if (provider) {
-                sourceFilesResult = await buildSourceFiles(provider, currentCommit, scored, signals, limits);
-              }
-            }
-          } catch (fetchErr) {
-            scmCov.error = (fetchErr instanceof Error ? fetchErr.message : String(fetchErr)).slice(0, 300);
-          }
+          await readDiff(repositoryUrl, lastPassCommit, currentCommit, '## Changed Files (Per-Test Baseline)');
         }
       }
     }
@@ -2656,13 +2650,7 @@ async function scmInvestigationSections(
     // omit section if regression context fails
   }
 
-  return {
-    sections,
-    coverage: scmReached ? scmCov : null,
-    scmChanges,
-    topSuspectedCommit: null,
-    sourceFiles: sourceFilesResult,
-  };
+  return result();
 }
 
 /** Diffs for commits the user explicitly picked, sharing one patch budget. */
@@ -2752,6 +2740,7 @@ export async function buildDiagnosisContext(
   let images: AiAttachedImage[] | undefined;
   let sourceFilesOut: BuiltDiagnosisContext['sourceFiles'];
   let clusterInfo: BuiltDiagnosisContext['cluster'];
+  let suspectLinesAbsentReason: string | null = null;
 
   const push = (cs: ContextSection | null | undefined) => {
     if (cs) contextSections.push(cs);
@@ -2966,16 +2955,12 @@ export async function buildDiagnosisContext(
         errorText: rep.error ?? cluster.sampleError,
         testCaseId: rep.testCaseId,
       });
-      for (const s of scm.sections) {
-        if (s.startsWith('## What Changed')) {
-          push(section('scmInvestigation', 'SCM Investigation', s));
-        }
-        // Top suspected change section
-        if (s.startsWith('### Top Suspected Change')) {
-          push(section('topSuspectedCommit', 'Top Suspected Commit', s));
-        }
-      }
-      coverage = { ...coverage, scm: scm.coverage };
+      // One section per id: the range and its changed files are one SCM investigation.
+      const scmParts = new Map<SectionId, string[]>();
+      for (const s of scm.sections) scmParts.set(s.id, [...(scmParts.get(s.id) ?? []), s.markdown]);
+      for (const [id, parts] of scmParts) push(section(id, SCM_SECTION_TITLES[id] ?? id, parts.join('\n\n')));
+      coverage = { ...coverage, scm: scm.coverage, suspectLines: scm.suspectLines.coverage };
+      suspectLinesAbsentReason = scm.suspectLines.absentReason;
       scmChanges = scm.scmChanges;
 
       // Full source files (suspect changed files + test imports) — grounds patch suggestions.
@@ -3021,6 +3006,9 @@ export async function buildDiagnosisContext(
   if (!sectionIds.has('traceNetwork')) {
     absentReasons.traceNetwork =
       'no trace network stream — enable trace recording in Playwright config to include every request the page made';
+  }
+  if (!sectionIds.has('suspectLines') && cluster) {
+    absentReasons.suspectLines = suspectLinesAbsentReason ?? 'no SCM diff to join with coverage';
   }
   if (!sectionIds.has('scmInvestigation') && cluster) {
     const scmError = coverage.scm?.error;

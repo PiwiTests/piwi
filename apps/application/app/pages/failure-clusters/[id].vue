@@ -555,6 +555,7 @@ const pageSections: Record<string, () => void> = {
   sampleError: () => factsLine.value?.revealRawError(),
   executionError: () => factsLine.value?.revealRawError(),
   scmInvestigation: scrollToScm,
+  suspectLines: scrollToScm,
   selectedCommits: scrollToScm,
   topSuspectedCommit: scrollToScm,
   failingAction: scrollToScm,
@@ -595,9 +596,23 @@ const { handle: handleNextStepAction } = useNextStepActions({
   reDiagnose: () => onDiagnosisPanel((panel) => panel.reDiagnose?.(), true),
 });
 
-// Deep link from the execution page's fix-plan link — open the fix-plan section.
+// Deep links from the execution page: its fix-plan link opens the fix-plan
+// section, its suspect lines scroll to the What changed card, now when it is
+// already there, else once it renders (it waits for the context, fetched after
+// mount).
 onMounted(() => {
   if (route.hash === '#fix-plan') nextTick(() => openFixPlan());
+  if (route.hash === '#what-changed') {
+    const stop = watch(
+      scmEl,
+      (el) => {
+        if (!el) return;
+        scrollToEl(el);
+        queueMicrotask(() => stop());
+      },
+      { flush: 'post', immediate: true },
+    );
+  }
 });
 
 // Breadcrumbs
@@ -788,8 +803,8 @@ const breadcrumbItems = computed(() => [
         <Toolbox ref="toolbox" lead :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
           <template #between>
             <!-- ── What changed, in full: the baseline picker, the commits and the diff — only with something to show ── -->
-            <div v-if="hasChangesToShow" ref="scmEl" class="scroll-mt-4">
-              <ClusterInvestigation />
+            <div v-if="hasChangesToShow" ref="scmEl" data-shot="what-changed-card" class="scroll-mt-4">
+              <ClusterInvestigation :project="cluster.project ?? null" />
             </div>
 
             <!-- ── Affected tests: the evidence selector, above the evidence, with several tests ── -->

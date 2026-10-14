@@ -132,6 +132,18 @@ export function getDemoChangesSince(projectId: number, baselineSha: string | nul
   return aggregateCommits(commits);
 }
 
+/**
+ * The range a demo cluster's What changed reads with no baseline picked, full
+ * SHAs: from the project's oldest commit, as if it were the last passing run's,
+ * to its newest. The diagnosis context diffs it and the suspect lines join it.
+ */
+export function getDemoDefaultRange(projectId: number): { from: string; to: string } | null {
+  const commits = getDemoScmProject(projectId)?.commits;
+  const newest = commits?.[0];
+  const oldest = commits?.[commits.length - 1];
+  return newest && oldest ? { from: oldest.sha, to: newest.sha } : null;
+}
+
 /** Aggregate an explicit set of selected commit SHAs. */
 export function getDemoChangesForShas(projectId: number, shas: string[]): ScmChanges | null {
   const proj = getDemoScmProject(projectId);

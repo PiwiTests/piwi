@@ -5,6 +5,7 @@ import {
   type CompiledCodeowners,
 } from '@piwitests/core/codeowners';
 import type { CiRerunSettings } from '#shared/ci-rerun';
+import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
 
 /** What a CI re-run dispatch carries besides the Playwright arguments. */
 export interface RerunDispatchRequest {
@@ -32,6 +33,17 @@ export interface ChangedFile {
   additions: number;
   deletions: number;
   patch?: string;
+  /**
+   * The git blob id of the file at the head commit, where the host gives it
+   * (GitHub and a local clone; never for a removed file). Suspect lines use it
+   * to tell whether a test's coverage refers to this version of the file.
+   */
+  blob?: string;
+}
+
+/** A git object id: 40 hex characters (SHA-1) or 64 (SHA-256). */
+export function isGitObjectId(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value);
 }
 
 export interface ScmCommit {
@@ -91,7 +103,7 @@ export const FETCH_TIMEOUT_MS = 10_000;
 
 export function truncatePatch(patch: string): string {
   if (patch.length <= MAX_PATCH_PER_FILE) return patch;
-  return patch.slice(0, MAX_PATCH_PER_FILE) + '\n[... patch truncated ...]';
+  return `${patch.slice(0, MAX_PATCH_PER_FILE)}\n${PATCH_TRUNCATED_NOTE}`;
 }
 
 /** FNV-1a 32-bit hash → 8 hex chars. Stable, dependency-free, good enough to namespace cache keys by token. */

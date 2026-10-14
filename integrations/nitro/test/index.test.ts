@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createApp, eventHandler, toNodeListener } from 'h3';
+import { createApp, createRouter, eventHandler, toNodeListener } from 'h3';
 
 /** Decode the root-span `piwi.probe.applied` attribute from an X-Piwi-Trace header. */
 function appliedFaultFromTrace(header: string | null): string | undefined {
@@ -158,5 +158,61 @@ describe('piwiTestLogs wrapped handler (through toNodeListener)', () => {
       expect(await res.json()).toEqual({ ok: true });
       expect(appliedFaultFromTrace(res.headers.get('x-piwi-trace'))).toBeUndefined();
     });
+  });
+});
+
+describe('the route manifest', () => {
+  it('records a route by the pattern h3 1.x matched it with, not by the requested path', async () => {
+    const mod = await loadWithEnv({ PIWI_TEST_LOGS_DISABLED: 'false', NODE_ENV: 'test' });
+    const app = createApp();
+    const router = createRouter().get(
+      '/api/products/:slug',
+      eventHandler(() => ({ ok: true })),
+    );
+    app.use(router);
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+    await withServer(app, async (base) => {
+      expect((await fetch(`${base}/api/products/trail-shoes`)).status).toBe(200);
+      const manifest = (await (await fetch(`${base}/__piwi/manifest`)).json()) as {
+        routes: Array<{ method: string; pattern: string }>;
+      };
+      expect(manifest.routes.map((r) => `${r.method} ${r.pattern}`)).toContain('GET /api/products/:slug');
+      expect(manifest.routes.map((r) => r.pattern)).not.toContain('/api/products/trail-shoes');
+    });
+  });
+
+  it('lists the routes the module declared, reached or not, before the observed ones', async () => {
+    const mod = await loadWithEnv({ PIWI_TEST_LOGS_DISABLED: 'false', NODE_ENV: 'test' });
+    (globalThis as Record<string, unknown>).__piwiDeclaredRoutes = [
+      { method: 'GET', pattern: '/shop/orders', handler: 'routes/shop/orders.get.ts' },
+      { method: 'GET', pattern: '/api/cart', handler: 'routes/api/cart.get.ts' },
+    ];
+    try {
+      const app = createApp();
+      app.use(
+        '/api/cart',
+        eventHandler(() => ({ items: 1 })),
+      );
+      mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+      await withServer(app, async (base) => {
+        await fetch(`${base}/api/cart`);
+        const manifest = (await (await fetch(`${base}/__piwi/manifest`)).json()) as {
+          routes: Array<{ method: string; pattern: string; handler?: string }>;
+        };
+        expect(manifest.routes).toContainEqual({
+          method: 'GET',
+          pattern: '/shop/orders',
+          handler: 'routes/shop/orders.get.ts',
+        });
+        // The route a request reached is listed once, with the file the module named.
+        expect(manifest.routes.filter((r) => r.pattern === '/api/cart')).toEqual([
+          { method: 'GET', pattern: '/api/cart', handler: 'routes/api/cart.get.ts' },
+        ]);
+      });
+    } finally {
+      delete (globalThis as Record<string, unknown>).__piwiDeclaredRoutes;
+    }
   });
 });

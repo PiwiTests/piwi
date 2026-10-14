@@ -3840,6 +3840,78 @@ const CODE_REACH = [];
   }
 }
 
+// ── Coverage (the suspect lines of a story's cluster) ─────────────────────────
+// A story with `coverage` gets it on every execution of the newest run its
+// cluster fails in: the browser files each test reached, by spec file, stored
+// as the reporter's ingest stores them (one fragment per file, a payload of
+// fragment ids per execution). Joined with the demo's canned changes, the
+// cluster and its executions get suspect lines.
+const COVERAGE_FRAGMENTS = [];
+{
+  const fragmentIds = new Map();
+  const fragmentId = (projectId, path, seenAt) => {
+    const key = `${projectId}\x00${path}`;
+    if (!fragmentIds.has(key)) {
+      const id = COVERAGE_FRAGMENTS.length + 1;
+      // The hash of `canonicalCoverageFile` for a file with no blob, functions or lines.
+      const canonical = JSON.stringify(['browser', path, '', '', '']);
+      COVERAGE_FRAGMENTS.push({
+        id,
+        project_id: projectId,
+        hash: createHash('sha256').update(canonical).digest('hex'),
+        runtime: 'browser',
+        path,
+        blob: null,
+        functions: null,
+        lines: null,
+        created_at: seenAt,
+        last_seen_at: seenAt,
+      });
+      fragmentIds.set(key, id);
+    }
+    return fragmentIds.get(key);
+  };
+  const coveragePayloadId = (projectId, ids, createdAt) => {
+    const content = JSON.stringify([...ids].sort((a, b) => a - b));
+    const key = `${projectId}\x00coverage\x00${content}`;
+    if (!casePayloadIds.has(key)) {
+      const id = CASE_PAYLOADS.length + 1;
+      CASE_PAYLOADS.push({
+        id,
+        project_id: projectId,
+        hash: createHash('sha256').update(content).digest('hex'),
+        content,
+        size: content.length,
+        created_at: createdAt,
+      });
+      casePayloadIds.set(key, id);
+    }
+    return casePayloadIds.get(key);
+  };
+  const fileOfCase = new Map(TEST_CASES.map((tc) => [tc.id, tc.file_path]));
+  for (const story of FAILURE_STORIES) {
+    if (!story.coverage) continue;
+    const failingRunIds = new Set(
+      TEST_RUNS_CASES.filter((trc) => trc.failure_cluster_id === story.clusterId && trc.status === 'failed').map(
+        (trc) => trc.test_run_id,
+      ),
+    );
+    // The generator numbers a project's runs newest first, so the newest is the latest start.
+    const run = TEST_RUNS.filter((r) => failingRunIds.has(r.id)).reduce(
+      (newest, r) => (!newest || r.start_time > newest.start_time ? r : newest),
+      null,
+    );
+    if (!run) continue;
+    for (const trc of TEST_RUNS_CASES) {
+      if (trc.test_run_id !== run.id || (trc.status !== 'failed' && trc.status !== 'passed')) continue;
+      const files = story.coverage[fileOfCase.get(trc.test_case_id)];
+      if (!files?.length) continue;
+      const ids = files.map((path) => fragmentId(story.projectId, path, run.start_time));
+      trc.coverage_payload_id = coveragePayloadId(story.projectId, ids, run.start_time);
+    }
+  }
+}
+
 function collectAnchorSec() {
   let max = 0;
   // Fold a candidate timestamp into the running max, normalizing to seconds.
@@ -4423,6 +4495,7 @@ const REBASE_SQL = [
   `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, kept_at = kept_at + ${D};`,
   `UPDATE files SET created_at = created_at + ${D};`,
   `UPDATE case_payloads SET created_at = created_at + ${D};`,
+  `UPDATE coverage_fragments SET created_at = created_at + ${D}, last_seen_at = last_seen_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
@@ -5368,6 +5441,9 @@ const lines = [
   '-- Content-addressed case payloads (referenced by test_runs_cases, so must come first)',
   insert('case_payloads', CASE_PAYLOADS),
   '',
+  '-- Coverage fragments (the files an execution coverage payload names)',
+  insert('coverage_fragments', COVERAGE_FRAGMENTS),
+  '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
   '',
@@ -5452,3 +5528,4 @@ console.log(`   DiagVersions: ${FAILURE_DIAGNOSIS_VERSIONS.length}`);
 console.log(`   Links      : ${ENTITY_LINKS.length}`);
 console.log(`   LocatorSnap: ${LOCATOR_SNAPSHOTS.length}`);
 console.log(`   CodeReach  : ${CODE_REACH.length}`);
+console.log(`   CovFrags   : ${COVERAGE_FRAGMENTS.length}`);

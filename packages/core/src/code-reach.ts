@@ -11,12 +11,13 @@
  * mapping of its own and would otherwise take that of whatever precedes it;
  * it runs when a module is imported, so it counts for no file.
  *
- * The reporter feeds this with `page.coverage` entries; this module holds the
- * pure part.
+ * The reporter feeds this with V8's function coverage, read over a CDP
+ * session; this module holds the pure part.
  */
+import { normalizeCoveragePath } from './coverage';
 import { lineStarts, offsetToPosition, type SourceMapLookup } from './source-map';
 
-/** One script of a JavaScript coverage report, as Playwright's `stopJSCoverage` returns it. */
+/** One script of a JavaScript coverage report: V8's `Profiler.takePreciseCoverage` entry, with its source when read. */
 export interface JsCoverageEntry {
   url: string;
   source?: string;
@@ -73,17 +74,16 @@ export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup): Se
 }
 
 /**
- * A reached file list as it goes on the wire: repository-relative POSIX
- * paths, `node_modules` and paths leaving the repository dropped, sorted,
- * capped at {@link MAX_CODE_REACH_FILES}.
+ * A reached file list as it goes on the wire: paths normalized by
+ * {@link normalizeCoveragePath} (repository-relative POSIX, `node_modules`
+ * and paths leaving the repository dropped), sorted, capped at
+ * {@link MAX_CODE_REACH_FILES}.
  */
 export function finalizeCodeReach(files: Iterable<string>): string[] {
   const out = new Set<string>();
   for (const raw of files) {
-    const file = raw.replace(/\\/g, '/').replace(/^\.\//, '');
-    if (!file || file.startsWith('../') || file.startsWith('/') || /^[A-Za-z]:\//.test(file)) continue;
-    if (/(^|\/)node_modules\//.test(file)) continue;
-    out.add(file);
+    const file = normalizeCoveragePath(raw);
+    if (file !== null) out.add(file);
   }
   return [...out].sort().slice(0, MAX_CODE_REACH_FILES);
 }

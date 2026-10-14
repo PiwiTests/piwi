@@ -36,6 +36,7 @@ import {
   type FileExposure,
 } from '#shared/handlers/scenario-gaps';
 import { ingestChangesEdges, deleteBranchGraphRows, ingestImportEdges } from '../graph-ingest';
+import { deleteBranchCoverageRows } from '../coverage';
 import { loadMutedDetectors } from '#shared/handlers/detector-precision';
 import { extractImports, type ImportPair } from '#shared/graph';
 import type { PrChangeCoverage, PrLocatorBreaks } from '#shared/pr-feedback';
@@ -351,13 +352,16 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
 
   // When the SCM flow can see the pull request has closed or merged, drop this
   // branch's tagged rows now instead of waiting for the thirty-day sweep, so its
-  // surface stops shadowing the default branch.
+  // surface, code reach and coverage stop shadowing the default branch.
   if (branchTag && prNumber != null) {
     await provider
       .fetchPullRequest(prNumber)
-      .then((pr) => {
+      .then(async (pr) => {
         if (pr && (pr.state === 'closed' || pr.state === 'merged')) {
-          return deleteBranchGraphRows(db, run.projectId, branchTag);
+          return (
+            (await deleteBranchGraphRows(db, run.projectId, branchTag)) +
+            (await deleteBranchCoverageRows(db, run.projectId, branchTag))
+          );
         }
         return 0;
       })

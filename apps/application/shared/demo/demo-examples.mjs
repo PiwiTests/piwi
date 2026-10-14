@@ -27,6 +27,9 @@
  * - `incident: true`: the run is flagged as an environment incident.
  * - `gaps: { detectors }`: the project has an open scenario gap (or finding)
  *   from each named detector.
+ * - `suspects: { path }`: the cluster's suspect lines start with that file:
+ *   its story's failing tests recorded coverage of it, and the demo's canned
+ *   changes change it.
  */
 
 /** @type {readonly import('./demo-examples.d.mts').DemoExample[]} */
@@ -48,6 +51,18 @@ export const DEMO_EXAMPLES = [
       'A stored diagnosis traces the 50 user rows (51 with the header) to the API’s default page size and suggests a patch; the fix has since landed.',
     route: '/failure-clusters/10',
     expect: { cluster: { id: 10, story: 'users-table-page-size' }, diagnosis: 'with-patch', fixLanded: true },
+  },
+  {
+    id: 'suspect-lines-cluster',
+    doc: 'features/ai-diagnosis',
+    title: 'UI Components › Modal opens and closes correctly',
+    shows:
+      'Of the two files changed in the range, the failing modal tests ran the modal controller and no passing test did: it heads the suspect lines on the What changed line, its card and the diagnosis context.',
+    route: '/failure-clusters/5',
+    expect: {
+      cluster: { id: 5, story: 'modal-never-opens' },
+      suspects: { path: 'src/components/modal-controller.ts' },
+    },
   },
   {
     id: 'issue-tracked-cluster',

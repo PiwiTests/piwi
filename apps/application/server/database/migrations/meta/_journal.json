@@ -813,6 +813,13 @@
       "when": 1791788789891,
       "tag": "0115_trace_blob_stored_size",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "6",
+      "when": 1791927954529,
+      "tag": "0116_coverage_storage",
+      "breakpoints": true
     }
   ]
 }

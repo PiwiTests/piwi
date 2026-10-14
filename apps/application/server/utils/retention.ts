@@ -6,6 +6,7 @@ import type { DbClient } from '../database';
 import {
   analyticsDashboards,
   casePayloads,
+  coverageFragments,
   entityLinks,
   failureClusters,
   failureDiagnoses,
@@ -18,6 +19,7 @@ import {
   networkRequests,
   notificationDeliveries,
   reportSnapshots,
+  runCoverage,
   runLocatorBreaks,
   shareLinks,
   subscriptions,
@@ -26,6 +28,7 @@ import {
 } from '../database/schema';
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { deleteGraphRowsForRuns } from './graph-ingest';
+import { unreferencedFragments } from './coverage';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/analytics/rollups';
 import { dayKey } from '#shared/handlers/analytics/common';
@@ -121,6 +124,7 @@ export async function deleteRunsByIds(
         inventory: testRunsCases.pageInventoryPayloadId,
         locatorPages: testRunsCases.locatorPagesPayloadId,
         codeReach: testRunsCases.codeReachPayloadId,
+        coverage: testRunsCases.coveragePayloadId,
       })
       .from(testRunsCases)
       .where(inArray(testRunsCases.id, batch));
@@ -132,6 +136,7 @@ export async function deleteRunsByIds(
       if (ref.inventory != null) candidatePayloadIds.add(ref.inventory);
       if (ref.locatorPages != null) candidatePayloadIds.add(ref.locatorPages);
       if (ref.codeReach != null) candidatePayloadIds.add(ref.codeReach);
+      if (ref.coverage != null) candidatePayloadIds.add(ref.coverage);
     }
   }
 
@@ -169,6 +174,7 @@ export async function deleteRunsByIds(
     await db.delete(networkRequests).where(inArray(networkRequests.testRunId, batch));
     await db.delete(entityLinks).where(inArray(entityLinks.testRunId, batch));
     await db.delete(runLocatorBreaks).where(inArray(runLocatorBreaks.runId, batch));
+    await db.delete(runCoverage).where(inArray(runCoverage.runId, batch));
   }
   for (const batch of batches(caseIds)) {
     await db.delete(entityLinks).where(inArray(entityLinks.testRunsCaseId, batch));
@@ -325,7 +331,7 @@ export async function deleteRunsOlderThan(
 
 /**
  * Predicate: no surviving `test_runs_cases` row references the payload
- * through any of the three ref columns. Three separate NOT EXISTS probes so
+ * through any of its payload columns. One NOT EXISTS probe per column, so
  * each hits its partial index.
  */
 function payloadUnreferenced(): SQL {
@@ -335,7 +341,8 @@ function payloadUnreferenced(): SQL {
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourceFramesPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.pageInventoryPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.locatorPagesPayloadId} = ${casePayloads.id})
-    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.codeReachPayloadId} = ${casePayloads.id})`;
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.codeReachPayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.coveragePayloadId} = ${casePayloads.id})`;
 }
 
 export interface OrphanSweepResult {
@@ -345,6 +352,7 @@ export interface OrphanSweepResult {
   diagnosisVersions: number;
   notificationDeliveries: number;
   casePayloads: number;
+  coverageFragments: number;
   shareLinks: number;
   dashboards: number;
 }
@@ -374,6 +382,8 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   // so a concurrent sweep must not reap rows from an in-flight ingest batch.
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const orphanedPayloads = and(lt(casePayloads.createdAt, oneHourAgo), payloadUnreferenced())!;
+  // Coverage fragments no test's coverage and no remaining execution can reference.
+  const orphanedFragments = unreferencedFragments();
   // `share_links.entity_id` is polymorphic over four tables and carries no FK,
   // so a link whose entity was pruned or deleted lingers until this sweep removes
   // it (a snapshot's and a dashboard's links go with them; this is the safety net).
@@ -392,6 +402,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
     diagnosisVersions: await countWhere(db, failureDiagnosisVersions, orphanedVersions),
     notificationDeliveries: await countWhere(db, notificationDeliveries, orphanedDeliveries),
     casePayloads: await countWhere(db, casePayloads, orphanedPayloads),
+    coverageFragments: await countWhere(db, coverageFragments, orphanedFragments),
     shareLinks: await countWhere(db, shareLinks, orphanedShareLinks),
     dashboards: await countWhere(db, analyticsDashboards, orphanedDashboards),
   };
@@ -405,6 +416,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   await db.delete(failureDiagnosisVersions).where(orphanedVersions);
   await db.delete(notificationDeliveries).where(orphanedDeliveries);
   await db.delete(casePayloads).where(orphanedPayloads);
+  await db.delete(coverageFragments).where(orphanedFragments);
   await db.delete(shareLinks).where(orphanedShareLinks);
   if (result.dashboards > 0) await deleteDashboardRows(db as unknown as DrizzleDB, orphanedDashboards);
 

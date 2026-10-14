@@ -28,7 +28,21 @@ export { default } from '@piwitests/instrumentation-nitro'
 
 That's all. Nitro auto-loads every file in that directory on startup (`server/plugins/` in a Nuxt app, `plugins/` under the Nitro `srcDir` in a standalone Nitro app).
 
-A runnable end-to-end demo lives in [`examples/playwright-fixtures`](../../examples/playwright-fixtures) — a standalone Nitro app instrumented with this package, with a Playwright spec showing the captured logs in the dashboard.
+[`examples/sample-app`](../../examples/sample-app) runs a standalone Nitro app with this package wired in (`backends/nitro/`), and a Playwright suite that checks what it sends: backend logs, the route manifest, server spans and server probes.
+
+## Route manifest
+
+Outside production, the plugin serves `GET /__piwi/manifest`: the routes the app declares. The Piwi reporter fetches it when a run starts and uploads it, so a declared route no test reaches becomes a **declared, never hit** gap in the Test Map. Nitro has no route table to read while it runs, so add the package's module, which reads it when the server is bundled (again on each rebuild in development):
+
+```typescript
+// Standalone Nitro: nitro.config.ts
+export default defineNitroConfig({ modules: ['@piwitests/instrumentation-nitro/module'] })
+
+// Nuxt: nuxt.config.ts
+export default defineNuxtConfig({ nitro: { modules: ['@piwitests/instrumentation-nitro/module'] } })
+```
+
+The manifest then lists every route Nitro scanned (`routes/`, `api/`) and every handler the config declares, middleware and a fallback catch-all (`/**`) left out, each with its method (`GET` for a route that answers any method), its pattern (`/api/orders/:id`) and its file relative to the git repository. Without the module, it lists only the routes the server has answered since it started, which the reporter, reading it before any test runs, rarely sees. Nuxt pages are rendered by one catch-all route, so they are not listed: name them in a `piwi.manifest.json`.
 
 ## What gets captured
 

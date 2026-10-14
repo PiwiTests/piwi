@@ -741,6 +741,16 @@ export const HELP_TOPICS = {
     text: 'Recent commits and diffs around when this failure started, so you can connect the break to the change that caused it.',
     doc: 'features/ai-diagnosis#scm-grounded-context',
   },
+  'cluster.suspect-lines': {
+    title: 'Suspect lines',
+    text: 'The changed lines the failing tests ran, read from their coverage, most suspect first: the fewer passing tests of the same run ran a hunk, the higher it ranks. The diff below marks them.\n\n- **lines it ran**: the executed changed lines\n- **a function it ran**: the changed lines inside a function that ran\n- **file reached**: code of the file ran, so every changed line of the hunk counts',
+    doc: 'guide/concepts#suspect-lines',
+  },
+  'cluster.suspect-lines-coverage': {
+    title: 'Suspect lines need coverage',
+    text: 'With coverage turned on, Piwi narrows these changes to the lines the failing tests ran, ranked by how few passing tests ran them too. Server coverage records the executed lines of an ASP.NET Core backend.',
+    doc: 'features/code-reach#server-code',
+  },
   'cluster.baseline': {
     title: 'Baseline commit',
     text: 'The last known-good commit. Diffs are computed from here forward to scope the search for the offending change.',

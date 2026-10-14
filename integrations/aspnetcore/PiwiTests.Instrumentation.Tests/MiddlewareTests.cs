@@ -62,8 +62,9 @@ public class MiddlewareTests
         var response = await app.Client.GetAsync("/throw");
 
         Assert.Equal(500, (int)response.StatusCode);
-        var entry = Assert.Single(TestApp.DecodeLogs(response)!);
-        Assert.Equal("Stock low for 42", entry.Message);
+        var logs = TestApp.DecodeLogs(response)!;
+        Assert.Equal(["Stock low for 42", "boom"], logs.Select(e => e.Message));
+        Assert.Equal("Error", logs[1].Level);
     }
 
     [Fact]

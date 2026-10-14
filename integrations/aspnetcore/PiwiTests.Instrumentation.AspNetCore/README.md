@@ -126,9 +126,22 @@ Each captured entry contains:
 |--------------------|------------------------------------------------------------------------------------------------------|
 | `timestamp`        | Unix timestamp in milliseconds                                                                       |
 | `level`            | `"Warning"`, `"Error"`, or `"Critical"`                                                              |
-| `category`         | Logger category name (e.g. `MyApp.Services.OrderService`)                                            |
-| `message`          | Formatted log message                                                                                |
+| `category`         | Logger category name (e.g. `MyApp.Services.OrderService`); the exception's type for an [unhandled exception](#unhandled-exceptions) |
+| `message`          | Formatted log message; the exception message for an unhandled exception                              |
 | `stack`            | Exception message, then the shrunk stack trace (5 frames max, framework frames removed, namespace parts shortened to first letter); omitted when no exception was logged |
+
+### Unhandled exceptions
+
+ASP.NET Core logs an unhandled exception too late for the header: the developer exception page `WebApplication` adds in Development, like any exception handler registered before `UsePiwiTestLogs()`, logs it once the middleware's capture has ended, and on .NET 10 an exception handler registered after it logs it once its response has started, or not at all when an `IExceptionHandler` handled it. So the middleware records the exception itself, as an Error entry: the exception's type as `category` (e.g. `System.InvalidOperationException`), its message as `message`, and its `stack`.
+
+| The exception is answered by                                                                                      | Recorded                                                                 |
+|-------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| A handler outside the middleware: the developer exception page, or `UseExceptionHandler()` before `UsePiwiTestLogs()` | As it leaves the middleware, which rethrows it unchanged               |
+| A handler inside the middleware: `UseExceptionHandler()` after `UsePiwiTestLogs()`, with or without an `IExceptionHandler` | As the handler's response starts, when it answers with a server error (5xx); an exception it turns into a 4xx is the app's answer and is not recorded |
+
+An exception is recorded once per request: when the application logs that same exception instance before the response starts (an `IExceptionHandler` that logs it, then answers, or a handler that logs it and rethrows), its own entry is kept and no other is added.
+
+With no exception handling at all (outside Development, a `WebApplication` without `UseExceptionHandler()`), the server answers with a bare 500 that keeps none of the response's headers, so nothing reaches the reporter, `X-Piwi-Logs` included. Register `AddProblemDetails()` and `UseExceptionHandler()` in the environments the middleware is active in. An exception thrown after the response has started (while a body streams) cannot ride on it either.
 
 ## Requirements
 
@@ -178,9 +191,24 @@ Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the ro
 
 - **Pattern.** Template syntax, with constraint names kept and their arguments dropped (`{id:int}`, `{ssn:regex}`, `{**path}`). Trailing optional and default-valued parameters are marked optional (`/archive/{page?}`, `/feed/{format?}`), except after a conventional route value equal to its default, where link generation leaves them all out (`/` for `Home/Index`). Literals are lower-cased when `RouteOptions.LowercaseUrls` is set, and the request's path base is prepended: for an application mounted below the origin, the reporter asks for the manifest under the base URL's path first. The dashboard reads `{id:guid}` as a uuid segment and any other parameter as an id segment.
 - **Method.** An endpoint that accepts any method is declared as `GET`, the method a navigation uses. `HEAD` is left out when the endpoint also accepts `GET`.
-- **Handler.** The source file of the controller action, minimal API delegate or hub, read from the assembly's portable PDB (embedded or next to the DLL). The path is relative to the repository root, or to the content root outside a Git checkout; it is left out when no PDB is found.
+- **Handler.** The source file of the controller action, minimal API delegate or hub, read from the assembly's portable PDB (embedded or next to the DLL). The path is relative to the repository root: the one above the content root, else the one above the source file on this machine; a deterministic build's `/_/` root is the repository root, and `PIWI_SOURCE_ROOT` names it for a build made where the sources no longer are (a Docker build that compiled them at `/src`). It is left out when no PDB is found.
 - **Left out.** Static files (`MapStaticAssets`), fallbacks (`MapFallback*`) and routes that are a lone catch-all, endpoints marked `ExcludeFromDescription()` (the OpenAPI document among them), link-generation-only endpoints, the framework's own paths (`/_framework`, `/_blazor`, `/_content`), and the connection endpoint next to a negotiate endpoint. To keep one of your endpoints out, mark it `ExcludeFromDescription()`; it then leaves the OpenAPI document too.
 - **Limit.** Up to 5000 routes and 5000 pages, the most the dashboard accepts in one upload.
+
+## Server coverage
+
+In a coverage build, the middleware also records which code each request executes, so the Piwi reporter can tell, per test, which server files, functions and lines ran. The recorder comes from [`PiwiTests.Instrumentation.Coverage`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Coverage), which this package depends on.
+
+1. Add `PiwiTests.Instrumentation.Coverage` to every class library whose code you want covered. A project that references this package already has it.
+2. Build the test environment with `-p:PiwiCoverage=true`, for example `dotnet build -c Release -p:PiwiCoverage=true`.
+3. Keep `app.UsePiwiTestLogs()`. Wherever the middleware is active, once instrumented code runs, it:
+   - names each request that ran instrumented code before its response started: `X-Piwi-Coverage: <process>.<sequence>`;
+   - serves `POST /__piwi/coverage/collect`, the coverage of the request ids a test received, merged per group, at `files`, `functions` or `lines` granularity, and `GET /__piwi/coverage/run`, the run-level coverage with each file's executable lines;
+   - keeps each named request until it is collected, up to 5,000 ended requests and about 64 MB, the oldest evicted first.
+
+`PIWI_COVERAGE_MODE=run` records run-level coverage only, at a lower cost, and names no request. File paths follow the handler rule of the route manifest, `PIWI_SOURCE_ROOT` included; a source file outside every repository it can find is left out, with a warning in the log. Without a coverage build nothing changes: no header, and the coverage paths reach the application. Never ship a coverage build to production; in one, `UsePiwiTestLogs()` logs a warning when the environment is one the middleware is not active in.
+
+Lambdas created at startup, such as inline minimal API handlers, and work outside a request count at run level only. The [coverage package's README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#readme) has the JSON shapes, how statements map to lines, the limits and the measured cost.
 
 ## License
 

@@ -61,6 +61,7 @@ const testCasePayloadFixture = {
   didNotRunReason: null,
   blockedBy: null,
   resources: null,
+  coverage: { v: 1, files: [{ path: 'src/Web/Program.cs', runtime: 'server', functions: [[10, 12]] }] },
 } satisfies TestCasePayload;
 
 const streamEventPayloadFixture = {
@@ -106,6 +107,7 @@ const streamEventPayloadFixture = {
   didNotRunReason: null,
   blockedBy: null,
   resources: null,
+  coverage: { v: 1, files: [{ path: 'src/Web/Program.cs', runtime: 'server', functions: [[10, 12]] }] },
 } satisfies StreamEventPayload;
 
 const wireTestCaseFixture = {
@@ -151,6 +153,7 @@ const wireTestCaseFixture = {
   didNotRunReason: null,
   blockedBy: null,
   resources: null,
+  coverage: { v: 1, files: [{ path: 'src/Web/Program.cs', runtime: 'server', functions: [[10, 12]] }] },
 } satisfies WireTestCase;
 
 describe('wire ↔ shared per-case contract drift guard', () => {

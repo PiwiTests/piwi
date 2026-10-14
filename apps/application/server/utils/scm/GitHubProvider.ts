@@ -7,6 +7,7 @@ import {
   MAX_SCM_FILES_TOTAL,
   MAX_FILE_BYTES,
   FETCH_TIMEOUT_MS,
+  isGitObjectId,
 } from './ScmProvider';
 import type {
   ChangedFile,
@@ -31,6 +32,28 @@ import type { CiRerunSettings } from '#shared/ci-rerun';
 async function githubError(res: Response, action: string): Promise<Error> {
   const body = (await res.json().catch(() => ({}))) as { message?: string };
   return new Error(`GitHub ${action} failed (${res.status}): ${body.message ?? res.statusText}`);
+}
+
+/** A changed file as the compare and commit endpoints list it; `sha` is the file's blob id at the head. */
+interface GitHubChangedFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+  sha?: string | null;
+}
+
+/** A changed file of GitHub's in the provider's shape, with its head blob unless it was removed. */
+function changedFileOf(f: GitHubChangedFile): ChangedFile {
+  return {
+    filename: f.filename,
+    status: f.status,
+    additions: f.additions,
+    deletions: f.deletions,
+    patch: f.patch ? truncatePatch(f.patch) : undefined,
+    ...(f.status !== 'removed' && isGitObjectId(f.sha) ? { blob: f.sha.toLowerCase() } : {}),
+  };
 }
 
 const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
@@ -134,7 +157,7 @@ export class GitHubProvider extends ScmProvider {
       }
       const data = (await res.json()) as {
         commits?: Array<{ sha: string; commit: { message: string } }>;
-        files?: Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>;
+        files?: GitHubChangedFile[];
       };
       if (page === 1) {
         commits = (data.commits ?? []).map((c) => ({
@@ -149,13 +172,7 @@ export class GitHubProvider extends ScmProvider {
           filesTruncated = true;
           break;
         }
-        files.push({
-          filename: f.filename,
-          status: f.status,
-          additions: f.additions,
-          deletions: f.deletions,
-          patch: f.patch ? truncatePatch(f.patch) : undefined,
-        });
+        files.push(changedFileOf(f));
       }
       // A short page is the last page; a full page that reached the cap is truncated.
       if (pageFiles.length < perPage) break;
@@ -184,17 +201,11 @@ export class GitHubProvider extends ScmProvider {
       throw new Error(body.message ?? `GitHub API error ${res.status}`);
     }
     const data = (await res.json()) as {
-      files?: Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>;
+      files?: GitHubChangedFile[];
     };
     const result: ScmChanges = {
       commits: [],
-      files: (data.files ?? []).slice(0, MAX_SCM_FILES).map((f) => ({
-        filename: f.filename,
-        status: f.status,
-        additions: f.additions,
-        deletions: f.deletions,
-        patch: f.patch ? truncatePatch(f.patch) : undefined,
-      })),
+      files: (data.files ?? []).slice(0, MAX_SCM_FILES).map(changedFileOf),
     };
     fetchCommitDiffCache.set(key, result);
     return result;

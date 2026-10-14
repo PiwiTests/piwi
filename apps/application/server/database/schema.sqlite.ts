@@ -512,6 +512,7 @@ export const testRunsCases = sqliteTable(
     pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
     locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
     codeReachPayloadId: integer('code_reach_payload_id').references(() => casePayloads.id), // Content-addressed list of the source files the test executed (piwi-code-reach)
+    coveragePayloadId: integer('coverage_payload_id').references(() => casePayloads.id), // Content-addressed list of the coverage fragments the execution recorded (coverage_fragments ids)
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -565,6 +566,9 @@ export const testRunsCases = sqliteTable(
     codeReachPayloadIdx: index('idx_trc_code_reach_payload')
       .on(table.codeReachPayloadId)
       .where(sql`code_reach_payload_id IS NOT NULL`),
+    coveragePayloadIdx: index('idx_trc_coverage_payload')
+      .on(table.coveragePayloadId)
+      .where(sql`coverage_payload_id IS NOT NULL`),
     // Partial indexes over the few rows the capability probes and the run list
     // look for, so finding one, or proving there is none, never reads every
     // execution. A query uses one only when it repeats the condition with
@@ -661,10 +665,11 @@ export const locatorUsages = sqliteTable(
 );
 
 // Code reach: the application source files each test executed, one row per
-// (test case, branch, file). Written on ingest from the reporter's opt-in
-// `codeReach` field (JavaScript coverage); the rows of a test's latest
-// execution on a branch replace the previous ones. Server reach (a route's
-// handler file) is read from the Test Map's edges instead of stored here.
+// (test case, branch, runtime, file). Written on ingest from the files of the
+// test's coverage, or from the reporter's `codeReach` list (browser files) when
+// it sent no coverage; per runtime, the rows of a test's latest execution on a
+// branch replace the previous ones. Route reach (a route's handler file) is
+// read from the Test Map's edges instead of stored here.
 export const codeReach = sqliteTable(
   'code_reach',
   {
@@ -676,15 +681,99 @@ export const codeReach = sqliteTable(
       .notNull()
       .references(() => testCases.id, { onDelete: 'cascade' }),
     branch: text('branch').notNull().default(''), // '' = the project's default branch (or a run with none); else the run's own branch
+    runtime: text('runtime').notNull().default('browser'), // where the file's code ran: 'browser' | 'server'
     file: text('file').notNull(), // repository-relative path
-    origin: text('origin').notNull().default('client'), // 'client' (JavaScript coverage)
+    origin: text('origin').notNull().default('client'), // 'client' for browser rows, 'server' for server rows
     lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (table) => ({
-    uniqueReach: uniqueIndex('idx_code_reach_unique').on(table.testCaseId, table.branch, table.file),
+    uniqueReach: uniqueIndex('idx_code_reach_unique').on(table.testCaseId, table.branch, table.runtime, table.file),
     projectFileIdx: index('idx_code_reach_project_file').on(table.projectId, table.file),
     lastSeenRunIdx: index('idx_code_reach_last_seen_run').on(table.lastSeenRunId),
+  }),
+);
+
+// Coverage fragments: one file's coverage as one test recorded it (runtime,
+// path, the git blob its lines refer to, the function and executed line
+// ranges as `encodeLineRanges` text), content-addressed per project, so every
+// test and execution that recorded the same coverage of a file shares one row.
+// `last_seen_at` moves forward on each ingest that references the fragment.
+export const coverageFragments = sqliteTable(
+  'coverage_fragments',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    hash: text('hash').notNull(), // SHA-256 hex of canonicalCoverageFile
+    runtime: text('runtime').notNull(), // 'browser' | 'server'
+    path: text('path').notNull(), // repository-relative path
+    blob: text('blob'), // git blob id of the file version the line numbers refer to
+    functions: text('functions'), // function ranges, `12-15,20`
+    lines: text('lines'), // executed line ranges, `12-15,20`
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    projectHashIdx: uniqueIndex('idx_coverage_fragments_project_hash').on(table.projectId, table.hash),
+    projectPathIdx: index('idx_coverage_fragments_project_path').on(table.projectId, table.path),
+  }),
+);
+
+// Test coverage: the fragments a test's latest run with coverage recorded on a
+// branch, per runtime, one row per (test case, branch, fragment). Replaced like
+// `code_reach`, whose rows are the files of these fragments.
+export const testCoverage = sqliteTable(
+  'test_coverage',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    branch: text('branch').notNull().default(''), // '' = the project's default branch (or a run with none); else the run's own branch
+    runtime: text('runtime').notNull(), // the fragment's runtime: 'browser' | 'server'
+    fragmentId: integer('fragment_id')
+      .notNull()
+      .references(() => coverageFragments.id, { onDelete: 'cascade' }),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => ({
+    uniqueCoverage: uniqueIndex('idx_test_coverage_unique').on(table.testCaseId, table.branch, table.fragmentId),
+    fragmentIdx: index('idx_test_coverage_fragment').on(table.fragmentId),
+    projectBranchIdx: index('idx_test_coverage_project_branch').on(table.projectId, table.branch),
+    lastSeenRunIdx: index('idx_test_coverage_last_seen_run').on(table.lastSeenRunId),
+  }),
+);
+
+// Run coverage: the coverage of a whole run per file, attributed to no test,
+// as the reporter collects it at run end (merged across shards), with the
+// executable line ranges of server files.
+export const runCoverage = sqliteTable(
+  'run_coverage',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id').notNull(), // the run's project
+    runtime: text('runtime').notNull(), // 'browser' | 'server'
+    path: text('path').notNull(), // repository-relative path
+    blob: text('blob'), // git blob id of the file version the line numbers refer to
+    functions: text('functions'), // function ranges, `12-15,20`
+    lines: text('lines'), // executed line ranges, `12-15,20`
+    executable: text('executable'), // executable line ranges (server files), `12-15,20`
+  },
+  (table) => ({
+    uniqueFile: uniqueIndex('idx_run_coverage_unique').on(table.runId, table.runtime, table.path),
   }),
 );
 

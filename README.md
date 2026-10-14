@@ -147,7 +147,7 @@ export { expect }
 
 Import `test` from this file in your specs instead of `@playwright/test` — that's the whole change.
 Details in the [capture fixtures guide](https://piwitests.dev/guide/capture-fixtures); a runnable
-project lives in [`examples/playwright-fixtures`](./examples/playwright-fixtures).
+project lives in [`examples/sample-app`](./examples/sample-app).
 
 Steps 2–4 are also one command, if you prefer:
 `npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project` — idempotent,
@@ -230,6 +230,9 @@ The instrumentation packages are optional and only needed for
 [backend log capture](https://piwitests.dev/guide/backend-logs). Both container registries carry the
 same images; use whichever your organization prefers. The browser extension and the JetBrains plugin
 reach their stores through each store's review, so a listed version can trail a release by a day or two.
+
+[`examples/sample-app`](./examples/sample-app) is one web app served by each supported backend with its
+instrumentation package wired in, and the Playwright suite that checks what the package sends.
 
 ## Project status
 

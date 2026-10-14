@@ -1,13 +1,13 @@
 import type { InjectionKey, Ref, ComputedRef } from 'vue';
 import type { FailureDiagnosis } from '~~/server/database/schema';
-import type { ContextSection, DiagnosisContextCoverage, ScmChanges } from '~~/types/api';
+import type { ClusterSuspectLinesAnswer, ContextSection, DiagnosisContextCoverage, ScmChanges } from '~~/types/api';
 
 /**
  * Shared state + actions for the failure-cluster diagnosis page, owned by the
- * page and consumed by `ClusterInvestigation` and `ClusterDiagnosis` via
- * provide/inject, so the `/context` and `/diagnosis` endpoints are each fetched
- * once for both panels, and the baseline/selected-commit state stays out of
- * page props/events.
+ * page and consumed by `WhatChangedLine`, `ClusterInvestigation` and
+ * `DiagnosisPanel` via provide/inject, so the `/context`, `/diagnosis` and
+ * `/suspect-lines` endpoints are each fetched once for every panel, and the
+ * baseline/selected-commit state stays out of page props/events.
  */
 
 export interface DiagnoseImage {
@@ -44,6 +44,12 @@ export interface ClusterDiagnosisStore {
   contextLoaded: Ref<boolean>;
   refreshContext: () => Promise<void>;
 
+  // Suspect lines (loaded on first use, never in the server render)
+  /** The changed lines the failing tests ran; null until loaded, or when the request failed. */
+  suspectLines: Ref<ClusterSuspectLinesAnswer | null>;
+  /** Fetch the suspect lines; once, unless `force`. */
+  loadSuspectLines: (force?: boolean) => Promise<void>;
+
   // Diagnosis state
   diagnosis: Ref<FailureDiagnosis | null>;
   posting: Ref<boolean>;
@@ -75,6 +81,10 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
   // diff, the situation block's line says why, and the first screen spends
   // nothing on a picker for a diff it does not have.
   const hasChangesToShow = computed(() => Boolean(scmChanges.value) || selectedCommitShas.value.length > 0);
+
+  const suspectLines = ref<ClusterSuspectLinesAnswer | null>(null);
+  let suspectLinesRequest: Promise<void> | null = null;
+  let suspectLinesAsked = 0;
 
   const diagnosis = ref<FailureDiagnosis | null>(null);
   const posting = ref(false);
@@ -125,6 +135,22 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
       contextLoading.value = false;
       contextLoaded.value = true;
     }
+  }
+
+  // The suspect lines read source control and coverage, which can take a while:
+  // the first component that shows them asks for them, after the page mounted.
+  // Only the latest request's answer is kept, whichever arrives first.
+  function loadSuspectLines(force = false): Promise<void> {
+    if (suspectLinesRequest && !force) return suspectLinesRequest;
+    const asked = ++suspectLinesAsked;
+    suspectLinesRequest = $fetch<ClusterSuspectLinesAnswer>(`/api/failure-clusters/${clusterId}/suspect-lines`)
+      .then((answer) => {
+        if (asked === suspectLinesAsked) suspectLines.value = answer;
+      })
+      .catch(() => {
+        if (asked === suspectLinesAsked) suspectLines.value = null;
+      });
+    return suspectLinesRequest;
   }
 
   async function persistBaseCommit(sha: string) {
@@ -267,6 +293,8 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     contextLoading,
     contextLoaded,
     refreshContext,
+    suspectLines,
+    loadSuspectLines,
     diagnosis,
     posting,
     runDiagnosis,

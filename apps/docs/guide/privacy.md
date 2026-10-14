@@ -29,8 +29,9 @@ Every outbound connection Piwi can make:
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
 
-The reporter sends your own instance what its options switch on. [Code reach](/features/code-reach), off by
-default, sends repository-relative file paths only: never source code, coverage counts or line numbers.
+The reporter sends your instance what its options switch on. [Code reach and server coverage](/features/code-reach),
+off by default, send repository-relative file paths; line numbers and each file's git blob id only with
+`coverage.server: 'functions'` or `'lines'`; source code and hit counts never.
 
 Two rows need no setting: the anonymous git-host reads happen whenever runs report a public-host remote,
 and a link's title is fetched when someone attaches it. Both fail quietly without network access.
@@ -131,8 +132,7 @@ by anything else. See [Storage → Data retention](/operate/storage#data-retenti
 
 ## Verifying any of this
 
-You don't have to take the page's word for it. The source is public and the outbound surface is
-small enough to audit: watch the container's egress, or read
+The source is public and the outbound surface is small enough to audit: watch the container's egress, or read
 [`server/utils/`](https://github.com/PiwiTests/platform/tree/main/apps/application/server/utils) — the AI
 provider, SCM, SMTP, notification, OAuth, Jira and link-unfurl clients are the only things there that open
 a socket; the S3 client is in `server/storage/`.

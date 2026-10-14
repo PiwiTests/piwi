@@ -64,8 +64,29 @@ function makePlan(overrides: Partial<FixPlan> = {}): FixPlan {
       repositoryUrl: 'https://github.com/acme/web',
       bisectedCommit: null,
     },
+    suspectLines: null,
     fixedBefore: [],
     ...overrides,
+  };
+}
+
+/** A cluster's suspect lines with the given suspects, as the server answers them. */
+function suspectLines(suspects: NonNullable<FixPlan['suspectLines']>['suspects'], executedHunks = suspects.length) {
+  return {
+    available: true,
+    range: { from: 'a'.repeat(40), to: 'b'.repeat(40) },
+    baselineRunId: 3,
+    runId: 9,
+    summary: {
+      changedFiles: 4,
+      changedLines: 13,
+      hunks: 5,
+      executedHunks,
+      executedLines: 3,
+      failingWithCoverage: 1,
+      passingWithCoverage: 13,
+    },
+    suspects,
   };
 }
 
@@ -82,6 +103,41 @@ describe('fixPlanToMarkdown', () => {
     expect(md).not.toContain('## Diagnosis');
     expect(md).not.toContain('## Suggested locator edits');
     expect(md).not.toContain('## Owner');
+  });
+
+  it('renders the suspect lines first among the evidence when the tests recorded coverage', () => {
+    const basket = {
+      path: 'src/Basket.cs',
+      runtime: 'server' as const,
+      hunk: [57, 59] as [number, number],
+      lines: [[57, 59]] as Array<[number, number]>,
+      granularity: 'lines' as const,
+      failing: 1,
+      passing: 2,
+      score: 0.577,
+    };
+    const md = fixPlanToMarkdown(makePlan({ suspectLines: suspectLines([basket], 2) }));
+    expect(md).toContain('## Suspect lines');
+    expect(md).toContain(
+      'Of 13 changed lines in 4 files (`aaaaaaa..bbbbbbb`), the failing tests executed 3 lines in 2 of 5 hunks.',
+    );
+    expect(md).toContain('Most suspect first, the top 1:');
+    expect(md).toContain(
+      '- `src/Basket.cs` 57-59 (server): executed lines, 1 failing test, 2 passing tests, score 0.58',
+    );
+    expect(md.indexOf('## Suspect lines')).toBeLessThan(md.indexOf('## Failing tests'));
+
+    const none = fixPlanToMarkdown(
+      makePlan({
+        suspectLines: { ...suspectLines([], 0), summary: { ...suspectLines([]).summary, executedHunks: 0 } },
+      }),
+    );
+    expect(none).toContain('The failing tests executed none of the 13 changed lines in 4 files (`aaaaaaa..bbbbbbb`).');
+
+    const unavailable = fixPlanToMarkdown(
+      makePlan({ suspectLines: { ...suspectLines([]), available: false, reason: 'no-coverage' } }),
+    );
+    expect(unavailable).not.toContain('## Suspect lines');
   });
 
   it('renders the reproduce recipe and the bisect', () => {

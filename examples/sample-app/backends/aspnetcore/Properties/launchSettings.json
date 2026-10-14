@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "sample": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:4173",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "PIWI_PROBE_SECRET": "piwi-sample-probe-secret",
+        "PIWI_SERVER_PROBES": "true"
+      }
+    }
+  }
+}

@@ -149,6 +149,7 @@ export default eventHandler(async (event) => {
             pageInventory: testCase.pageInventory,
             locatorPages: testCase.locatorPages,
             codeReach: testCase.codeReach,
+            coverage: testCase.coverage,
             resources: testCase.resources ?? null,
             aiUsage: testCase.aiUsage,
             consoleLogs: testCase.consoleLogs,
@@ -283,6 +284,7 @@ export default eventHandler(async (event) => {
         pageInventory?: unknown;
         locatorPages?: unknown;
         codeReach?: unknown;
+        coverage?: unknown;
         resources?: unknown;
         aiUsage?: unknown;
         consoleLogs?: unknown;
@@ -338,6 +340,7 @@ export default eventHandler(async (event) => {
           pageInventory: testCase.pageInventory,
           locatorPages: testCase.locatorPages,
           codeReach: testCase.codeReach,
+          coverage: testCase.coverage,
           resources: testCase.resources ?? null,
           aiUsage: testCase.aiUsage,
           consoleLogs: testCase.consoleLogs,

@@ -58,6 +58,59 @@ export function startServer(handler: RouteHandler): Promise<FakeServer> {
   });
 }
 
+/** The ports the tests that start their own servers on fixed ports may use. */
+const TEST_PORTS = { first: 5320, last: 5329 };
+
+/**
+ * Like `startServer`, listening on the first free port from 5320 to 5329, with
+ * no connection kept alive. Its `close` also ends the connections still open,
+ * an unanswered request included.
+ */
+export async function startServerOnTestPort(handler: RouteHandler): Promise<FakeServer> {
+  for (let port = TEST_PORTS.first; port <= TEST_PORTS.last; port++) {
+    const requests: RecordedReq[] = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+      req.on('end', () => {
+        const rec: RecordedReq = {
+          method: req.method ?? 'GET',
+          url: req.url ?? '/',
+          headers: req.headers,
+          body,
+          raw: req,
+        };
+        requests.push(rec);
+        // A port serves several tests in turn: no client may keep a connection to it.
+        res.setHeader('Connection', 'close');
+        handler(rec, res);
+      });
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', () => resolve());
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') continue;
+      throw error;
+    }
+    return {
+      server,
+      url: `http://127.0.0.1:${port}`,
+      requests,
+      close: () =>
+        new Promise<void>((resolve) => {
+          server.closeAllConnections();
+          server.close(() => resolve());
+        }),
+    };
+  }
+  throw new Error(`no free port from ${TEST_PORTS.first} to ${TEST_PORTS.last}`);
+}
+
 export function jsonRes(res: http.ServerResponse, status: number, body: unknown): void {
   const data = JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) });

@@ -192,6 +192,8 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     bisect,
     bisectedCommit: desktop.bisectedCommit,
     reproduceDesktop: desktop,
+    // Filled in from source control by `withFixPlanSuspectLines`, outside this demo-safe module.
+    suspectLines: null,
     fixedBefore,
     issue,
   };
