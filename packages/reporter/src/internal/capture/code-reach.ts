@@ -1,7 +1,15 @@
 /**
  * Code reach: the application source files whose functions ran during a test,
- * from Chromium's JavaScript coverage (`page.coverage`). Opt-in
- * (`captureCodeReach`), Chromium-only; other browsers record nothing.
+ * from V8's function coverage, read through a CDP session on the page.
+ * Opt-in (`captureCodeReach`), Chromium-only; other browsers record nothing.
+ *
+ * The session keeps the debugger on for the test, with every pause skipped, to
+ * learn each parsed script's URL and V8 content hash, and reads a script's
+ * source as soon as it is parsed, only for a version (URL and hash) the worker
+ * has not resolved yet: a script seen in an earlier test is never read again.
+ * Chromium reports no coverage for a document the page's main frame has left,
+ * so a test that navigates reaches the files of its last document; an
+ * iframe's earlier documents stay covered, their sources read before they go.
  *
  * Each covered script is resolved to original files in one of two ways:
  *
@@ -20,15 +28,15 @@
  * top-level code. Paths go out relative to the repository root; files outside
  * it and under `node_modules` are dropped, and so are the scripts React
  * evaluates in development to replay server component stacks
- * (`about://React/Server/…`), which stand for code that ran on the server. Decoded maps and resolved paths are
- * cached per worker by script URL, for the latest content hash seen at that URL only, and for at most
- * `MAX_CACHED_SCRIPTS` URLs, the least recently used going first.
+ * (`about://React/Server/…`), which stand for code that ran on the server. Decoded maps, resolved paths and the
+ * sources they are read against are cached per worker by script URL, for the latest version seen at that URL only,
+ * and for at most `MAX_CACHED_SCRIPTS` URLs, the least recently used going first.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import type { Page } from '@playwright/test';
+import type { CDPSession, Page } from '@playwright/test';
 import { finalizeCodeReach, reachedSources, scriptRan, type JsCoverageEntry } from '@piwitests/core/code-reach';
 import {
   decodeDataUrl,
@@ -59,10 +67,20 @@ export interface CodeReachRoots {
 /** Fetches a source map's text; null when it cannot. */
 export type MapFetcher = (url: string) => Promise<string | null>;
 
-/** What one script resolves to, cached per worker. */
+/**
+ * One covered script: its function coverage (one range per function), V8's
+ * content hash, and its source, which is left out when the worker has already
+ * resolved that version of the script.
+ */
+export interface CoveredScript extends JsCoverageEntry {
+  /** V8's content hash of the script; without it, the version is a hash of `source`. */
+  hash?: string;
+}
+
+/** What one script resolves to, cached per worker with the source its function offsets are read against. */
 type ScriptResolution =
-  | { kind: 'file'; file: string | null; lookup: SourceMapLookup | null }
-  | { kind: 'map'; lookup: SourceMapLookup; files: Array<string | null | undefined> }
+  | { kind: 'file'; file: string | null; lookup: SourceMapLookup | null; source: string | undefined }
+  | { kind: 'map'; lookup: SourceMapLookup; files: Array<string | null | undefined>; source: string | undefined }
   | { kind: 'none' };
 
 /** Script and map URLs cached per worker at most. */
@@ -184,15 +202,18 @@ function relativeToRepo(file: string, repoRoot: string): string {
   return path.relative(repoRoot, file).split(path.sep).join('/');
 }
 
-/** A script's version: the hash of its content. */
-function scriptHash(entry: JsCoverageEntry): string {
-  return crypto
-    .createHash('sha1')
-    .update(entry.source ?? '')
-    .digest('hex');
+/** A script's version: V8's content hash when known, else a hash of its source. */
+function scriptVersion(entry: CoveredScript): string {
+  return (
+    entry.hash ??
+    crypto
+      .createHash('sha1')
+      .update(entry.source ?? '')
+      .digest('hex')
+  );
 }
 
-async function loadMap(entry: JsCoverageEntry, fetchMap: MapFetcher): Promise<SourceMapLookup | null> {
+async function loadMap(entry: CoveredScript, fetchMap: MapFetcher): Promise<SourceMapLookup | null> {
   const ref = entry.source ? sourceMappingUrl(entry.source) : null;
   if (!ref) return null;
   if (ref.startsWith('data:')) {
@@ -206,7 +227,7 @@ async function loadMap(entry: JsCoverageEntry, fetchMap: MapFetcher): Promise<So
     return null;
   }
   // Versioned by the script's content: a rebuilt bundle keeps its map's URL but not its mappings.
-  const version = scriptHash(entry);
+  const version = scriptVersion(entry);
   let pending = mapCache.get(absolute, version);
   if (!pending) {
     pending = fetchMap(absolute).then((text) => (text ? parseMap(text) : null));
@@ -223,41 +244,54 @@ function parseMap(text: string): SourceMapLookup | null {
   }
 }
 
+/**
+ * Resolve a script, from the cache when the worker has resolved its version.
+ * A resolution is cached only when the script's source was read: without it,
+ * the URL is all there is to go on.
+ */
 async function resolveScript(
-  entry: JsCoverageEntry,
+  entry: CoveredScript,
   roots: CodeReachRoots,
   bases: ViteBases,
   fetchMap: MapFetcher,
 ): Promise<ScriptResolution> {
-  const version = scriptHash(entry);
+  const version = scriptVersion(entry);
   const cached = scriptCache.get(entry.url, version);
   if (cached) return cached;
-  let resolution: ScriptResolution;
   const file = fileForUrl(entry.url, roots.roots, bases);
-  if (file) resolution = { kind: 'file', file, lookup: await loadMap(entry, fetchMap) };
-  else {
-    const lookup = await loadMap(entry, fetchMap);
-    resolution = lookup ? { kind: 'map', lookup, files: [] } : { kind: 'none' };
-  }
-  scriptCache.set(entry.url, version, resolution);
+  const lookup = await loadMap(entry, fetchMap);
+  let resolution: ScriptResolution;
+  if (file) resolution = { kind: 'file', file, lookup, source: entry.source };
+  else resolution = lookup ? { kind: 'map', lookup, files: [], source: entry.source } : { kind: 'none' };
+  if (entry.source !== undefined) scriptCache.set(entry.url, version, resolution);
   return resolution;
+}
+
+/** The entry with the source its resolution was read against, when the capture left it out. */
+function withSource(entry: CoveredScript, resolution: { source: string | undefined }): CoveredScript {
+  if (entry.source !== undefined || resolution.source === undefined) return entry;
+  return { ...entry, source: resolution.source };
 }
 
 /** The repository-relative files the covered scripts reached, sorted and capped. */
 export async function resolveCodeReach(
-  entries: JsCoverageEntry[],
+  entries: CoveredScript[],
   roots: CodeReachRoots,
   fetchMap: MapFetcher,
 ): Promise<string[]> {
   const files = new Set<string>();
   const bases = viteBases(entries);
-  for (const entry of entries) {
-    if (!entry.url || !entry.functions?.length || REPLAYED_SCRIPT.test(entry.url)) continue;
-    const resolution = await resolveScript(entry, roots, bases, fetchMap);
+  const scripts = entries.filter((entry) => entry.url && entry.functions?.length && !REPLAYED_SCRIPT.test(entry.url));
+  // Every script is looked up before the first is resolved: caching one may evict another this test still needs.
+  const known = scripts.map((entry) => scriptCache.get(entry.url, scriptVersion(entry)));
+  for (const [i, covered] of scripts.entries()) {
+    const resolution = known[i] ?? (await resolveScript(covered, roots, bases, fetchMap));
     if (resolution.kind === 'file') {
+      const entry = withSource(covered, resolution);
       const ran = resolution.lookup ? reachedSources(entry, resolution.lookup).size > 0 : scriptRan(entry);
       if (resolution.file && ran) files.add(relativeToRepo(resolution.file, roots.repoRoot));
     } else if (resolution.kind === 'map') {
+      const entry = withSource(covered, resolution);
       for (const index of reachedSources(entry, resolution.lookup)) {
         if (resolution.files[index] === undefined) {
           const source = resolution.lookup.sources[index] ?? '';
@@ -305,25 +339,122 @@ function isChromiumPage(page: Page): boolean {
   }
 }
 
-/** Start JavaScript coverage on a page; false when the browser has none or it fails. */
-export async function startCodeReach(page: Page): Promise<boolean> {
-  if (!isChromiumPage(page) || !page.coverage) return false;
+/** A script the page parsed: its URL and V8's content hash. */
+interface ParsedScript {
+  url: string;
+  hash: string;
+}
+
+/** The function coverage running on one page, through its own CDP session. */
+interface CoverageCapture {
+  cdp: CDPSession;
+  /** The scripts parsed since the capture started, by script id. */
+  scripts: Map<string, ParsedScript>;
+  /** The sources read, by script version; a failed read is dropped, so a later parse of that version reads again. */
+  sources: Map<string, Promise<string | null>>;
+}
+
+const captures = new WeakMap<Page, CoverageCapture>();
+
+function versionKey(url: string, hash: string): string {
+  return `${hash} ${url}`;
+}
+
+/**
+ * Record a parsed script, and read its source now, while its document is
+ * still there, when the worker has not resolved this version of it yet.
+ * Scripts without a URL (the page's inline handlers, Playwright's own
+ * evaluations) are left out, and so are replayed server stacks.
+ */
+function onScriptParsed(
+  page: Page,
+  capture: CoverageCapture,
+  event: { scriptId: string; url: string; hash: string },
+): void {
+  if (!event.url || REPLAYED_SCRIPT.test(event.url)) return;
+  capture.scripts.set(event.scriptId, { url: event.url, hash: event.hash });
+  const key = versionKey(event.url, event.hash);
+  if (capture.sources.has(key) || scriptCache.get(event.url, event.hash)) return;
+  const source: Promise<string | null> = internalCall(page, () =>
+    capture.cdp.send('Debugger.getScriptSource', { scriptId: event.scriptId }),
+  ).then(
+    (response) => response.scriptSource,
+    () => {
+      if (capture.sources.get(key) === source) capture.sources.delete(key);
+      return null;
+    },
+  );
+  capture.sources.set(key, source);
+}
+
+async function detach(page: Page, cdp: CDPSession): Promise<void> {
   try {
+    await internalCall(page, () => cdp.detach());
+  } catch {
+    // The page or its context is already gone, and the session with it.
+  }
+}
+
+/**
+ * Start function coverage on a page, with the debugger on to learn each
+ * script's version; false when the browser has none or it fails.
+ */
+export async function startCodeReach(page: Page): Promise<boolean> {
+  if (!isChromiumPage(page) || captures.has(page)) return false;
+  let cdp: CDPSession | null = null;
+  try {
+    cdp = await internalCall(page, () => page.context().newCDPSession(page));
+    const capture: CoverageCapture = { cdp, scripts: new Map(), sources: new Map() };
+    cdp.on('Debugger.scriptParsed', (event) => onScriptParsed(page, capture, event));
+    // A pause that lands before the skip applies would hold the page: release it.
+    cdp.on('Debugger.paused', () => {
+      internalCall(page, () => capture.cdp.send('Debugger.resume')).catch(() => {});
+    });
     await internalCall(page, () =>
-      page.coverage.startJSCoverage({ resetOnNavigation: false, reportAnonymousScripts: false }),
+      Promise.all([
+        capture.cdp.send('Debugger.enable'),
+        capture.cdp.send('Debugger.setSkipAllPauses', { skip: true }),
+        capture.cdp.send('Profiler.enable'),
+        capture.cdp.send('Profiler.startPreciseCoverage', { callCount: false, detailed: false }),
+      ]),
     );
+    captures.set(page, capture);
     return true;
   } catch {
+    if (cdp) await detach(page, cdp);
     return false;
   }
 }
 
-/** Stop JavaScript coverage and return its entries; null when it cannot be read. */
-export async function stopCodeReach(page: Page): Promise<JsCoverageEntry[] | null> {
+/**
+ * Stop the page's coverage and return the scripts parsed since it started,
+ * each with its functions and version; null when it cannot be read.
+ */
+export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null> {
+  const capture = captures.get(page);
+  if (!capture) return null;
+  captures.delete(page);
+  const { cdp } = capture;
   try {
-    return (await internalCall(page, () => page.coverage.stopJSCoverage())) as JsCoverageEntry[];
+    const coverage = await internalCall(page, async () => {
+      const taken = await cdp.send('Profiler.takePreciseCoverage');
+      await cdp.send('Profiler.stopPreciseCoverage');
+      return taken;
+    });
+    const entries: CoveredScript[] = [];
+    for (const script of coverage.result) {
+      const parsed = capture.scripts.get(script.scriptId);
+      if (!parsed) continue;
+      const entry: CoveredScript = { url: parsed.url, hash: parsed.hash, functions: script.functions };
+      const source = await capture.sources.get(versionKey(parsed.url, parsed.hash));
+      if (source != null) entry.source = source;
+      entries.push(entry);
+    }
+    return entries;
   } catch {
     return null;
+  } finally {
+    await detach(page, cdp);
   }
 }
 

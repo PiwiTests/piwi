@@ -18,7 +18,7 @@ const DEFAULTS: PiwiDashboardOptions = {
   // Off by default: the page inventory reads control and link names from every
   // visited page, so it stays opt-in until a project turns it on.
   capturePageInventory: false,
-  // Off by default: JavaScript coverage slows the page, so a scheduled job opts in.
+  // Off by default: JavaScript coverage adds time to every test, so a scheduled job opts in.
   captureCodeReach: false,
   captureServerTraces: true,
   captureResources: true,

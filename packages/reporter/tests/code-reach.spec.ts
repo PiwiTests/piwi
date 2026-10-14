@@ -252,6 +252,21 @@ describe('in Chromium', () => {
     );
     write('src/pay.js', "export function pay() {\n  document.body.dataset.paid = 'yes';\n}\n");
     write('src/idle.js', 'export function idle() {}\n');
+    // An iframe that leaves its first document for a second one, each running a bundle with an inline source map:
+    // a bundle resolves only through its source, which has to be read before its document goes.
+    write('frame.html', '<iframe src="/first.html"></iframe>');
+    for (const name of ['first', 'second']) {
+      write(`${name}.html`, `<button id="go">Go</button><script src="/dist/${name}.js"></script>`);
+      const code =
+        `function ${name}() {\n  document.body.dataset.done = '${name}';\n}\n` +
+        `document.querySelector('#go').addEventListener('click', () => ${name}());\n` +
+        `document.body.dataset.ready = '${name}';\n`;
+      write(`src/${name}.js`, code);
+      // Each generated line maps to the same line of the source.
+      const map = { version: 3, sources: [`src/${name}.js`], mappings: 'AAAA;AACA;AACA;AACA;AACA' };
+      const inline = Buffer.from(JSON.stringify(map)).toString('base64');
+      write(`dist/${name}.js`, `${code}//# sourceMappingURL=data:application/json;base64,${inline}\n`);
+    }
     server = http.createServer((req, res) => {
       const file = path.join(dir, (req.url ?? '/').split('?')[0] === '/' ? 'index.html' : req.url!.split('?')[0]!);
       if (!fs.existsSync(file)) {
@@ -289,6 +304,38 @@ describe('in Chromium', () => {
     const files = await resolveCodeReach(entries ?? [], { roots: [dir], repoRoot: dir }, async () => null);
     // main.js ran its click handler and pay.js its function; idle.js was never loaded.
     expect(files).toEqual(['src/main.js', 'src/pay.js']);
+  });
+
+  /** An iframe that runs its first document, then leaves it for the second; returns what the capture read. */
+  async function iframeJourney(): Promise<{ read: string[]; files: string[] }> {
+    const page = await browser!.newPage();
+    expect(await startCodeReach(page)).toBe(true);
+    await page.goto(`${url}frame.html`);
+    const frame = page.frameLocator('iframe');
+    await frame.locator('body[data-ready="first"] #go').click();
+    await frame.locator('body[data-done="first"]').waitFor();
+    await page.evaluate("document.querySelector('iframe').src = '/second.html'");
+    await frame.locator('body[data-ready="second"] #go').click();
+    await frame.locator('body[data-done="second"]').waitFor();
+    const entries = (await stopCodeReach(page)) ?? [];
+    await page.close();
+    return {
+      read: entries.filter((entry) => entry.source !== undefined).map((entry) => new URL(entry.url).pathname),
+      files: await resolveCodeReach(entries, { roots: [dir], repoRoot: dir }, async () => null),
+    };
+  }
+
+  it("keeps the files of an iframe's earlier document", async (ctx) => {
+    if (!browser) return ctx.skip();
+    expect((await iframeJourney()).files).toEqual(['src/first.js', 'src/second.js']);
+  });
+
+  it('reads a script once per worker, and resolves it the same in a later test', async (ctx) => {
+    if (!browser) return ctx.skip();
+    const first = await iframeJourney();
+    expect(first.read).toEqual(expect.arrayContaining(['/dist/first.js', '/dist/second.js']));
+    expect(first.files).toEqual(['src/first.js', 'src/second.js']);
+    expect(await iframeJourney()).toEqual({ read: [], files: ['src/first.js', 'src/second.js'] });
   });
 });
 

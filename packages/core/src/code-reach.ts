@@ -11,13 +11,13 @@
  * mapping of its own and would otherwise take that of whatever precedes it;
  * it runs when a module is imported, so it counts for no file.
  *
- * The reporter feeds this with `page.coverage` entries; this module holds the
- * pure part.
+ * The reporter feeds this with V8's function coverage, read over a CDP
+ * session; this module holds the pure part.
  */
 import { normalizeCoveragePath } from './coverage';
 import { lineStarts, offsetToPosition, type SourceMapLookup } from './source-map';
 
-/** One script of a JavaScript coverage report, as Playwright's `stopJSCoverage` returns it. */
+/** One script of a JavaScript coverage report: V8's `Profiler.takePreciseCoverage` entry, with its source when read. */
 export interface JsCoverageEntry {
   url: string;
   source?: string;

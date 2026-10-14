@@ -23,7 +23,7 @@ the cost of that layer alone:
 | `page-state` | the end-of-test page/storage/cookie read |
 | `full` | locator healing capture |
 | `resources` | the resource ledger and the per-test worker reads (`PIWI_CAPTURE_RESOURCES`) — the shipped default |
-| `code-reach` | Chromium JavaScript coverage for code reach (`PIWI_CAPTURE_CODE_REACH`), opt-in |
+| `code-reach` | Chromium JavaScript coverage for code reach (`PIWI_CAPTURE_CODE_REACH`), opt-in, on top of `resources` |
 
 Variants are selected through the same `PIWI_*` env vars users set (`PIWI_CAPTURE_LOCATORS`,
 `PIWI_CAPTURE_PAGE_STATE`, `PIWI_CAPTURE_RESOURCES`), and the spec imports `dist/` — the built package is what users install, so that is what
@@ -101,9 +101,13 @@ The resource ledger and the per-test worker reads (`resources`), on the same wor
 noise. Timed directly, a worker's reads take about 2 ms at each test's end, and a page that outlives its test about
 2 ms more per test over CDP.
 
-Code reach, measured separately on the same workload, adds 122 ms per test over `full` (887 → 1,009 ms). The page runs
-little JavaScript, so that is its floor: coverage slows script execution, and on Piwi's own Nuxt dev server (about 940
-scripts per page) it added 1.8 s to a 10 s test.
+Code reach (`code-reach`, which sits on top of `resources`) reads V8's function coverage through a CDP session. On the
+same workload with Playwright 1.63 and the pinned Chromium 141, it added 103 ms per test over `resources` in four
+rounds (1,140 → 1,242 ms), and 61 ms in six rounds run against a build that read Playwright's block coverage
+(`page.coverage`) instead, the two alternating round by round (1,215 → 1,276 ms); `page.coverage` added 176 ms and
+209 ms in the same runs. The page runs little JavaScript, so that is close to the floor.
+On a script-heavy page (Vue's development build and 400 ES modules), function coverage added 8% to a test where
+`page.coverage` added 50%; the Code reach docs page has the details.
 
 The pieces of one capture, timed directly against a single page (medians over tens of alternating samples, which is
 how to measure anything this small — see above):

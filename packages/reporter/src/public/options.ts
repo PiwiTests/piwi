@@ -94,7 +94,7 @@ export interface PiwiDashboardOptions {
    * dev server's module URLs or the bundle's source maps. It answers "which
    * tests reach this file?" for test selection, change coverage and
    * `piwi preflight`. Only repository-relative file paths are sent. Chromium only;
-   * other browsers record nothing. It slows the page's JavaScript, so run it on
+   * other browsers record nothing. It adds time to every test, so run it on
    * one scheduled job rather than every run. **Defaults to `false`** — opt in
    * with `captureCodeReach: true` (or `PIWI_CAPTURE_CODE_REACH=true`).
    * Automatically disabled when `collectPerformanceMetrics` is `false`.

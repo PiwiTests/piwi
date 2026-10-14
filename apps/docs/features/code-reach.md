@@ -13,7 +13,7 @@ component or a module maps to the tests that execute it.
 ## Turn it on
 
 Set `captureCodeReach: true` in the reporter options, or `PIWI_CAPTURE_CODE_REACH=true`, with the
-[capture fixtures](/guide/capture-fixtures) in place. Coverage slows the page's JavaScript and reach changes slowly, so
+[capture fixtures](/guide/capture-fixtures) in place. Coverage adds time to every test and reach changes slowly, so
 turn it on in one scheduled job, a nightly run, rather than on every run. A run without it keeps the reach the last one
 recorded.
 
@@ -68,16 +68,23 @@ nothing.
 
 ## Cost
 
-Chromium's block coverage slows the page's JavaScript, so the option stays off by default. Measured on a 4-core
-sandbox with headless Chromium:
+Code reach reads V8's function coverage, which records only whether each function ran, so the page's own JavaScript
+runs at nearly its usual speed. Each test pays for a CDP session with the debugger on, which reports every script's
+version, and for one coverage read at the end. A script's source is read once per worker, the first time a test loads
+that version of it. Measured on a 4-core sandbox (Xeon at 2.10 GHz, Ubuntu 24.04, Node 22, Playwright 1.63, headless
+Chromium), each configuration run in turn, round after round, medians:
 
+- **A script-heavy page** (Vue's development build rendering a 1,000-row table of components 30 times, plus 400 small
+  ES modules; a new browser context per test, 15 rounds): a test goes from 1,128 ms to 1,220 ms, 8% more, and 16% more
+  for a worker's first test, which reads all 403 sources. With two documents per test, 17% more. Playwright's
+  `page.coverage`, which records block coverage and reads every script's source in every test, adds 50% and 54% on the
+  same page, and reaches the same 137 files. Over three runs on a machine shared with other work, code reach added 5% to
+  23% to a test, `page.coverage` 44% to 55%.
 - **A light page** (the reporter's capture benchmark, `npm run reporter:bench`, 12 tests of 20 actions and
-  assertions): 122 ms more per test on top of the default capture, 887 ms to 1,009 ms (median over three rounds).
-- **A script-heavy app** (40 tests of Piwi's own suite against its Nuxt dev server, about 940 scripts per page, run
-  alternately with the option off and on): 1.8 seconds more per test on average, a median test going from 10.1 to 12.3
-  seconds, about 20% more for the run.
+  assertions): 61 ms and 103 ms more per test on top of the default capture in two runs, a median test going from 1,215
+  to 1,276 ms in one and from 1,140 to 1,242 ms in the other; `page.coverage` added 209 ms and 176 ms.
 
-The extra time is spent in the browser, and it grows with the amount of JavaScript the page runs.
+The extra time grows with the number of scripts the page loads and the number of documents a test opens.
 
 ## Where it is used
 
@@ -98,6 +105,9 @@ The dashboard's API serves the tests reaching one file and the whole map of a br
   React server components included.
 - A module whose top-level code calls its own functions, a table built on import, counts for every test that loads it.
 - A function a minifier inlines into another as plain statements counts for the file it was inlined into.
+- A test that loads a new document in its page reaches the files of the last document only: Chromium keeps no
+  coverage of a document the page has left. Client-side navigation stays in one document, and an iframe's earlier
+  documents stay covered.
 - Reach is per branch: a branch's own runs replace its tests' reach, and the default branch's stands in for the rest.
 
 ## Related
