@@ -25,7 +25,8 @@
     "e2e",
     "locators",
     "flaky tests",
-    "test history"
+    "test history",
+    "coverage"
   ],
   "main": "./dist/extension.cjs",
   "activationEvents": [
@@ -172,6 +173,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.toggleCoverage",
+        "title": "Toggle the coverage marks",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.reproduceInDesktop",
         "title": "Reproduce in the desktop app",
         "category": "Piwi"
@@ -283,6 +289,10 @@
         {
           "command": "piwi.stopFollowingEditor",
           "when": "piwi.followEditor"
+        },
+        {
+          "command": "piwi.toggleCoverage",
+          "when": "piwi.hasCoverage"
         },
         {
           "command": "piwi.record",
@@ -482,6 +492,16 @@
           "light": "#f8514933",
           "highContrast": "#f8514966",
           "highContrastLight": "#f8514940"
+        }
+      },
+      {
+        "id": "piwi.coverageChangedBorder",
+        "description": "The mark at the left of a line changed since the coverage run Piwi shows: what runs it is not known until a run records it again.",
+        "defaults": {
+          "dark": "#d29922",
+          "light": "#9a6700",
+          "highContrast": "#e3b341",
+          "highContrastLight": "#7d4e00"
         }
       },
       {

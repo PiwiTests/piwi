@@ -77,8 +77,8 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * expression typed that was not among those offered; how the failures tool window groups
  * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
  * at the IDE's breakpoints, and whether they run in the IDE's Playwright runner; when a run started from the IDE says what it changed (`always`,
- * `failures`, `never`); and the baseline chosen with **Compare With…** for each Playwright
- * config folder (`Glue.encodeBaseline`; the ladder is no entry).
+ * `failures`, `never`); the baseline chosen with **Compare With…** for each Playwright
+ * config folder (`Glue.encodeBaseline`; the ladder is no entry); and whether the coverage marks are shown.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -95,6 +95,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var playwrightRunner: Boolean = false,
         var runNotifications: String = "always",
         var baselines: MutableMap<String, String> = mutableMapOf(),
+        var coverageMarks: Boolean = true,
     )
 
     private var state = State()
@@ -478,7 +479,10 @@ class PiwiProjectService(private val project: Project) : Disposable {
         }
     }
 
-    /** The status `piwi/statusChanged` carries: the connection of each context, and the desktop app. */
+    /**
+     * The status `piwi/statusChanged` carries: the connection of each context, and the desktop app. The open files'
+     * coverage is asked again, from the service as it is now connected.
+     */
     fun statusChanged(result: StatusResult) {
         synchronized(lock) {
             status = result
@@ -486,6 +490,17 @@ class PiwiProjectService(private val project: Project) : Disposable {
         }
         changed()
         offerDesktop(result)
+        project.getServiceIfCreated(PiwiCoverageMarks::class.java)?.askOpen()
+    }
+
+    /** A file's coverage changed (`piwi/coverageChanged`): its Code Vision lines are asked again. On any thread. */
+    fun coverageChanged(file: VirtualFile) {
+        pushed.incrementAndGet()
+        ApplicationManager.getApplication().invokeLater({
+            ApplicationManager.getApplication().runReadAction {
+                PsiManager.getInstance(project).findFile(file)?.let { DaemonCodeAnalyzer.getInstance(project).restart(it) }
+            }
+        }, gone)
     }
 
     /** The runs `piwi/runStatusChanged` carries: the latest run of each context, and the run in progress. */
@@ -685,6 +700,7 @@ class PiwiStartupActivity : ProjectActivity {
         val service = project.service<PiwiProjectService>()
         service.findPlaywright()
         service.watchConfigs()
+        project.service<PiwiCoverageMarks>().start()
     }
 }
 

@@ -103,6 +103,18 @@ export async function committedTextAt(repoRoot: string, commit: string, relative
   return git(repoRoot, ['show', `${commit}:${relativePath.split(path.sep).join('/')}`]);
 }
 
+/** A git blob id: 40 hexadecimal characters, or 64 in a SHA-256 repository. */
+const BLOB = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * A file's text as git stores it, by its blob id (`git cat-file blob`); null when the local repository lacks the blob,
+ * or when `blob` is not a blob id.
+ */
+export async function blobText(repoRoot: string, blob: string): Promise<string | null> {
+  if (!BLOB.test(blob)) return null;
+  return git(repoRoot, ['cat-file', 'blob', blob]);
+}
+
 /**
  * The version of `@piwitests/reporter` a Playwright config's folder installs: its `node_modules`, else that of a
  * folder above it, up to the repository root, as Node resolves it. Null when none is found or its `package.json` has

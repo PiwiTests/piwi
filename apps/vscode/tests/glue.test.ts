@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type {
+  CoverageResult,
   DesktopJobUpdate,
   DesktopResult,
   FailuresResult,
@@ -9,7 +10,10 @@ import type {
   StatusResult,
 } from '@piwitests/editor/protocol';
 import {
+  DOCUMENT_PATTERN,
   baselinePicks,
+  coverageDecorations,
+  hasCoverageMarks,
   pickNotice,
   configTestDir,
   connectChoices,
@@ -404,6 +408,54 @@ describe('the desktop app beside another instance', () => {
     expect(statusBarView(team, run({})).tooltip).toMatch(/desktop app runs on this machine: Piwi: Connect to use it/);
     expect(statusBarView(connected, run({}), true).tooltip).toMatch(/chosen with Piwi: Connect, is not running/);
     expect(statusBarView(connected, run({})).tooltip).not.toMatch(/desktop/);
+  });
+});
+
+describe('the coverage marks of a file', () => {
+  const mapped: CoverageResult = {
+    uri: 'file:///shop/src/Web/Services/BasketService.cs',
+    state: 'mapped',
+    executed: [
+      { start: 8, end: 9, tests: 2 },
+      { start: 17, end: 30, tests: 1 },
+    ],
+    notRun: [{ start: 11, end: 11 }],
+    changed: [{ start: 13, end: 13 }],
+    tests: 2,
+    executedLines: 6,
+    executableLines: 7,
+    blob: 'a'.repeat(40),
+    label: '6 of 7 lines run by 2 tests · 1 line changed since the coverage run',
+  };
+
+  test('are the lines run, not run and changed since the coverage run, within the file', () => {
+    expect(coverageDecorations(mapped, 20, true)).toEqual({
+      run: [
+        { start: 8, end: 9 },
+        { start: 17, end: 19 },
+      ],
+      notRun: [{ start: 11, end: 11 }],
+      changed: [{ start: 13, end: 13 }],
+    });
+    // Lines past the end of the file as it stands now are not drawn.
+    expect(coverageDecorations(mapped, 10, true).run).toEqual([{ start: 8, end: 9 }]);
+  });
+
+  test('are none while hidden, and none for a file whose coverage marks no line', () => {
+    const none = { run: [], notRun: [], changed: [] };
+    expect(coverageDecorations(mapped, 20, false)).toEqual(none);
+    expect(coverageDecorations(null, 20, true)).toEqual(none);
+    const other = { ...mapped, state: 'other-version' as const, executed: [], notRun: [], changed: [], blob: null };
+    expect(coverageDecorations(other, 20, true)).toEqual(none);
+    expect(hasCoverageMarks(mapped)).toBe(true);
+    expect(hasCoverageMarks(other)).toBe(false);
+    expect(hasCoverageMarks({ ...other, state: 'none' })).toBe(false);
+  });
+
+  test('are read in C# files too', () => {
+    expect(DOCUMENT_PATTERN).toMatch(/[{,]cs[,}]/);
+    expect(DOCUMENT_PATTERN).toContain('cshtml');
+    expect(DOCUMENT_PATTERN).toContain('razor');
   });
 });
 

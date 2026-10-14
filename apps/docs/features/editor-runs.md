@@ -12,9 +12,10 @@ in the status bar while it executes, and its results over the latest CI run's fa
 ## Run tests
 
 - The lines above a locator line, an application file or a page file (CodeLens in VS Code, Code Vision in a JetBrains
-  IDE) run the tests they name when clicked.
-- **Piwi: Run the tests that reach this file** runs every test that reaches the active file through
-  [code reach](/features/code-reach); it is also in the editor's context menu.
+  IDE) run the tests they name when clicked; those of a server file record its
+  [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
+- **Piwi: Run the tests that reach this file** runs every test reaching the active file through
+  [code reach](/features/code-reach); also in the editor's context menu.
 - **Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
 
 The command is the one `piwi run` would build, run from the Playwright config's folder: in a terminal in VS Code, in
@@ -34,13 +35,12 @@ started it.
 ## After a run
 
 The editor listens to the instance's event stream: within a second of a run of the project ending, it reads the
-branch's latest run and its failures again. It also reads them every five minutes with the stream, every minute
-without.
+branch's latest run and its failures again, and every five minutes with the stream, every minute without.
 
 A run started from the editor is its own wherever it runs: the status bar follows it as it runs, and its failures
 read *your run #124* once it ends. When the command ends and no run on the instance carries its ref, the editor says
 so: `The run ended (exit code 1) but did not reach https://piwi.example.com: is the Piwi reporter in the Playwright
-config?` VS Code learns that a command ended through shell integration (1.93 and later), and gives each run a terminal
+config?` VS Code learns a command ended through shell integration (1.93 and later), and gives each run a terminal
 of its own; without it, a folder's runs share one terminal, and a run that never arrived goes unmentioned.
 
 ## When your run ends

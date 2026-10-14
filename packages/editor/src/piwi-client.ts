@@ -8,6 +8,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-index';
+import type { CoverageFile, CoverageRuntime, LineRange } from '@piwitests/core/coverage';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult, RankedLocator } from '@piwitests/core/locator-healing-types';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
@@ -29,13 +30,42 @@ export class PiwiHttpError extends Error {
   }
 }
 
-/** The code index: the source files the project's tests reach. */
+/**
+ * The code index: the source files the project's tests reach. Each reach names where the code ran (`runtime`) and how
+ * the reach is known (`via`: `coverage` when the tests' coverage recorded the file, `route` when inferred from the
+ * routes they called); an older instance sends `origin` alone.
+ */
 export interface CodeIndex {
   files: string[];
   tests: LocatorIndexTest[];
-  reach: Array<{ file: number; tests: number[]; origin: 'client' | 'server' }>;
+  reach: Array<{
+    file: number;
+    tests: number[];
+    origin: 'client' | 'server';
+    runtime?: 'browser' | 'server';
+    via?: 'coverage' | 'route';
+  }>;
   builtAt: string | null;
   truncated: boolean;
+}
+
+/** One coverage of a file as tests recorded it, and the tests that recorded it: positions in `FileCoverage.tests`. */
+export interface CoverageFragment extends CoverageFile {
+  tests: number[];
+}
+
+/**
+ * A file's coverage on a branch (`GET /api/projects/:id/coverage?file=`): each distinct coverage of the file the tests
+ * recorded (a version of the file, by its git blob id, and the functions and lines that ran), the tests, with their
+ * latest outcome, and the executable lines of each version a run recorded them for, which an older instance does not
+ * send.
+ */
+export interface FileCoverage {
+  file: string;
+  branch: string;
+  fragments: CoverageFragment[];
+  tests: LocatorIndexTest[];
+  executable?: Array<{ path: string; runtime: CoverageRuntime; blob: string; lines: LineRange[] }>;
 }
 
 /** One test case of the catalog. */
@@ -385,6 +415,20 @@ export class PiwiClient {
     return this.getConditional(
       `/api/projects/${projectId}/code-index${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
     );
+  }
+
+  /**
+   * A file's coverage (`file` repository-relative) on `branch`, the default branch when null, asked with the `ETag` of
+   * `known`: `known` itself, the same object, when the instance answers 304.
+   */
+  fileCoverage(
+    projectId: number,
+    file: string,
+    branch: string | null,
+    known: { etag: string; value: FileCoverage } | null,
+  ): Promise<{ value: FileCoverage; etag: string | null }> {
+    const query = new URLSearchParams(branch ? { file, branch } : { file });
+    return this.askKnown(`/api/projects/${projectId}/coverage?${query}`, known);
   }
 
   async testCases(projectId: number, file: string): Promise<CatalogCase[]> {

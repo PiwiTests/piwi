@@ -38,7 +38,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
         assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
         assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
-        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker")) {
+        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
     }
@@ -280,6 +280,61 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /** A file's coverage answer is drawn as marks in the gutter, one per span, hidden and shown again with the action. */
+    fun testCoverageMarksAreDrawnAndHidden() {
+        val base = File(project.basePath!!)
+        File(base, "src").mkdirs()
+        val io = File(base, "src/BasketService.cs").apply { writeText("a\nb\nc\nd\ne\nf\n") }
+        val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(io)!!
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)!!
+        val marks = project.service<PiwiCoverageMarks>()
+        val wasShown = marks.shown
+        fun drawn() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
+            .filter { it.lineMarkerRenderer != null && it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
+            .map { Triple(it.textAttributesKey?.externalName, document.getLineNumber(it.startOffset), document.getLineNumber(it.endOffset)) }
+            .sortedBy { it.second }
+        try {
+            marks.shown = true
+            // No service runs here: the file is kept, and its answer drawn as it comes.
+            marks.ask(file)
+            val uri = file.toNioPath().toUri().toString()
+            val result = CoverageResult(
+                uri = uri,
+                state = "mapped",
+                executed = listOf(LineSpan(0, 1, 2)),
+                notRun = listOf(LineSpan(3, 3)),
+                changed = listOf(LineSpan(4, 4)),
+                tests = 2,
+            )
+            assertSame(file, marks.arrived(result))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(
+                listOf(
+                    Triple("PIWI_COVERAGE_RUN", 0, 1),
+                    Triple("PIWI_COVERAGE_NOT_RUN", 3, 3),
+                    Triple("PIWI_COVERAGE_CHANGED", 4, 4),
+                ),
+                drawn(),
+            )
+            assertTrue(marks.known)
+            marks.shown = false
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(emptyList<Any>(), drawn())
+            marks.shown = true
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(3, drawn().size)
+            // Coverage of another version of the file: no mark.
+            marks.arrived(result.copy(state = "other-version", executed = emptyList(), notRun = emptyList(), changed = emptyList()))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(emptyList<Any>(), drawn())
+            // A file never asked about is not drawn.
+            assertNull(marks.arrived(result.copy(uri = "file:///elsewhere/Other.cs")))
+        } finally {
+            marks.shown = wasShown
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
     /** A read action waiting on the service gives way as soon as the platform cancels it: typing never waits on it. */
     fun testAWaitOnTheServiceEndsWhenCanceled() {
         val never = CompletableFuture<String>()
@@ -415,6 +470,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val dir = FileUtil.createTempDirectory("piwi-jetbrains", null, true)
         try {
             writeFixture(dir)
+            stub.coverageOf(git(dir, "hash-object", "src/BasketService.cs").trim())
             val commandLine = PiwiLspServerDescriptor(project).createCommandLine()
                 .withWorkDirectory(dir)
                 .withEnvironment(
@@ -497,6 +553,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
                 val mcp = server.mcp().get(5, TimeUnit.SECONDS)?.servers?.single()
                 assertEquals("${stub.url}/mcp", mcp?.url)
+
+                // A C# file's coverage: its marks, and its lenses, whose runs record the backend's coverage.
+                val basket = File(dir, "src/BasketService.cs").toURI().toString().replace("file:/", "file:///")
+                val coverage = server.coverage(UriParams(basket)).get(10, TimeUnit.SECONDS)
+                assertEquals("exact", coverage?.state)
+                assertEquals(listOf(LineSpan(2, 3, 1)), coverage?.executed)
+                assertEquals(listOf(LineSpan(4, 4)), coverage?.notRun)
+                assertEquals("2 of 3 lines run by 1 test", coverage?.label)
+                assertEquals(
+                    listOf(Glue.CoverageKind.RUN to 2..3, Glue.CoverageKind.NOT_RUN to 4..4),
+                    Glue.coverageMarks(coverage, 8, shown = true).map { it.kind to it.start..it.end },
+                )
+                val lenses = server.fileSummary(UriParams(basket)).get(10, TimeUnit.SECONDS)
+                assertEquals("Reached by 1 test · 1 failing · 2 of 3 lines run", lenses?.file?.title)
+                assertEquals(listOf(2 to "Reached by 1 test · 1 failing"), lenses?.lines?.map { it.line to it.title })
+                val args = com.google.gson.Gson().let { it.fromJson(it.toJson(lenses?.file?.command?.arguments?.single()), RunTestsArgs::class.java) }
+                assertEquals("server", args.coverage)
+                val run = server.runArgs(args).get(10, TimeUnit.SECONDS)
+                assertEquals("lines", run?.env?.get("PIWI_COVERAGE_SERVER"))
                 assertTrue(client.runStatusChanges > 0)
             } finally {
                 process.destroy()
@@ -533,15 +608,32 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 "",
             ).joinToString("\n"),
         )
-        fun git(vararg args: String) {
-            val p = ProcessBuilder(listOf("git", "-c", "user.email=t@example.com", "-c", "user.name=t") + args)
-                .directory(dir).redirectErrorStream(true).start()
-            p.inputStream.readAllBytes()
-            assertEquals(0, p.waitFor())
-        }
-        git("init", "-q", "-b", "main")
-        git("add", ".")
-        git("commit", "-q", "-m", "init")
+        write(
+            "src/BasketService.cs",
+            listOf(
+                "public class BasketService",
+                "{",
+                "    public int Add(int a)",
+                "    {",
+                "        if (a < 0) throw new System.ArgumentException();",
+                "        return a + 1;",
+                "    }",
+                "}",
+                "",
+            ).joinToString("\n"),
+        )
+        git(dir, "init", "-q", "-b", "main")
+        git(dir, "add", ".")
+        git(dir, "commit", "-q", "-m", "init")
+    }
+
+    /** What a git command prints in `dir`; it must succeed. */
+    private fun git(dir: File, vararg args: String): String {
+        val p = ProcessBuilder(listOf("git", "-c", "user.email=t@example.com", "-c", "user.name=t") + args)
+            .directory(dir).redirectErrorStream(true).start()
+        val out = p.inputStream.readAllBytes().toString(Charsets.UTF_8)
+        assertEquals(out, 0, p.waitFor())
+        return out
     }
 
     class TestClient : LanguageClient {
@@ -576,7 +668,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
                        "callSites":["tests/pages/checkout.page.ts:5:21"],"projects":["chromium"],"branches":["main"]}]}],
                      "truncated":false}
                 """.trimIndent(),
-                "/api/projects/7/code-index" to """{"files":[],"tests":[],"reach":[],"builtAt":null,"truncated":false}""",
+                "/api/projects/7/code-index" to """
+                    {"files":["src/BasketService.cs"],
+                     "tests":[{"id":3,"title":"removes a row","file":"tests/checkout.spec.ts","suite":[],"status":"failed"}],
+                     "reach":[{"file":0,"tests":[0],"origin":"server","runtime":"server","via":"coverage"}],
+                     "builtAt":null,"truncated":false}
+                """.trimIndent(),
+                "/api/projects/7/selections/preview" to """{"materialization":{"args":["tests/checkout.spec.ts:4"],"command":"npx playwright test tests/checkout.spec.ts:4"}}""",
                 "/api/projects/7/branch-failures" to """
                     {"run":{"id":41,"status":"failed","branch":"main","startTime":"2026-09-27T10:00:00.000Z","totalTests":2,
                       "passedTests":1,"failedTests":1,"flakyTests":0,"skippedTests":0},
@@ -594,13 +692,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 "/api/projects/7/locator-alternatives" to """{"items":[]}""",
             )
             server.createContext("/") { exchange ->
-                val body = routes[exchange.requestURI.path]
+                val body = if (exchange.requestURI.path == "/api/projects/7/coverage") coverage else routes[exchange.requestURI.path]
                 val bytes = (body ?: "{}").toByteArray()
                 exchange.responseHeaders.add("Content-Type", "application/json")
                 exchange.sendResponseHeaders(if (body != null) 200 else 404, bytes.size.toLong())
                 exchange.responseBody.use { it.write(bytes) }
             }
             server.start()
+        }
+
+        /** The coverage of `src/BasketService.cs`, recorded on the version whose blob id is `blob`; none until set. */
+        @Volatile private var coverage: String? = null
+
+        fun coverageOf(blob: String) {
+            coverage = """
+                {"file":"src/BasketService.cs","branch":"main",
+                 "fragments":[{"path":"src/BasketService.cs","runtime":"server","blob":"$blob","functions":[[3,7]],"lines":[[3,4]],"tests":[0]}],
+                 "tests":[{"id":3,"title":"removes a row","file":"tests/checkout.spec.ts","suite":[],"status":"failed"}],
+                 "executable":[{"path":"src/BasketService.cs","runtime":"server","blob":"$blob","lines":[[3,5]]}]}
+            """.trimIndent()
         }
 
         fun stop() = server.stop(0)

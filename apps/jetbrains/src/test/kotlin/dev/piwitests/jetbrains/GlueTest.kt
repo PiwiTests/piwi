@@ -1149,4 +1149,56 @@ class GlueTest {
         assertEquals(false, Glue.isPlaywrightConfig("/w/vitest.config.ts"))
         assertEquals(false, Glue.isPlaywrightConfig(null))
     }
+
+    private val mappedCoverage = CoverageResult(
+        uri = "file:///w/src/Web/Services/BasketService.cs",
+        state = "mapped",
+        executed = listOf(LineSpan(8, 9, 2), LineSpan(17, 30, 1)),
+        notRun = listOf(LineSpan(11, 11)),
+        changed = listOf(LineSpan(13, 14)),
+        tests = 2,
+        executedLines = 6,
+        executableLines = 7,
+        blob = "a".repeat(40),
+        label = "6 of 7 lines run by 2 tests · 2 lines changed since the coverage run",
+    )
+
+    @Test
+    fun `the coverage marks are the lines run, not run and changed since the coverage run, within the file`() {
+        assertEquals(
+            listOf(
+                Glue.CoverageMark(Glue.CoverageKind.RUN, 8, 9, "Piwi: run by 2 tests"),
+                Glue.CoverageMark(Glue.CoverageKind.RUN, 17, 19, "Piwi: run by 1 test"),
+                Glue.CoverageMark(Glue.CoverageKind.NOT_RUN, 11, 11, "Piwi: no test runs this line"),
+                Glue.CoverageMark(Glue.CoverageKind.CHANGED, 13, 14, "Piwi: changed since the coverage run"),
+            ),
+            Glue.coverageMarks(mappedCoverage, 20, shown = true),
+        )
+    }
+
+    @Test
+    fun `no coverage mark while hidden, nor for a file whose coverage marks no line`() {
+        assertEquals(emptyList<Glue.CoverageMark>(), Glue.coverageMarks(mappedCoverage, 20, shown = false))
+        assertEquals(emptyList<Glue.CoverageMark>(), Glue.coverageMarks(null, 20, shown = true))
+        val other = mappedCoverage.copy(state = "other-version", executed = emptyList(), notRun = emptyList(), changed = emptyList())
+        assertEquals(emptyList<Glue.CoverageMark>(), Glue.coverageMarks(other, 20, shown = true))
+        assertEquals(true, Glue.hasCoverageMarks(mappedCoverage))
+        assertEquals(false, Glue.hasCoverageMarks(other))
+        assertEquals(false, Glue.hasCoverageMarks(other.copy(state = "none")))
+    }
+
+    @Test
+    fun `the coverage answer reads as the service sends it, and C# files are read`() {
+        val result = Gson().fromJson(
+            """{"uri":"file:///w/a.cs","state":"exact","executed":[{"start":3,"end":4,"tests":2}],"notRun":[{"start":6,"end":6}],""" +
+                """"changed":[],"tests":2,"executedLines":2,"executableLines":3,"blob":"b","label":"2 of 3 lines run by 2 tests"}""",
+            CoverageResult::class.java,
+        )
+        assertEquals(LineSpan(3, 4, 2), result.executed?.single())
+        assertEquals(LineSpan(6, 6, null), result.notRun?.single())
+        assertEquals(3, result.executableLines)
+        assertEquals(true, "cs" in Glue.SUPPORTED_EXTENSIONS)
+        val args = Gson().fromJson("""{"uri":"file:///w/a.cs","testIds":[1,2],"coverage":"server"}""", RunTestsArgs::class.java)
+        assertEquals("server", args.coverage)
+    }
 }

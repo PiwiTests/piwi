@@ -53,20 +53,44 @@ data class EditorTest(
 
 data class TestsForFile(val tests: List<EditorTest>? = null, val basis: String? = null)
 
+/** Lines `start` to `end`, 0-based and inclusive; for lines the tests ran, `tests` is how many ran each. */
+data class LineSpan(val start: Int = 0, val end: Int = 0, val tests: Int? = null)
+
+/**
+ * `piwi/coverage` and `piwi/coverageChanged`: the coverage marks of the file at `uri` as it stands. `state` is `exact`
+ * (recorded on the file as it stands), `mapped` (on a version the repository holds, placed through the diff),
+ * `other-version` (on versions the repository lacks: no mark) or `none`. `executed` are the lines tests ran, `notRun`
+ * the executable lines none runs, `changed` the lines changed since the coverage run; `label` says so in a few words,
+ * null with `none`.
+ */
+data class CoverageResult(
+    val uri: String? = null,
+    val state: String? = null,
+    val executed: List<LineSpan>? = null,
+    val notRun: List<LineSpan>? = null,
+    val changed: List<LineSpan>? = null,
+    val tests: Int = 0,
+    val executedLines: Int = 0,
+    val executableLines: Int? = null,
+    val blob: String? = null,
+    val label: String? = null,
+)
+
 /** A line breakpoint of the IDE: the file's URI and its 0-based line. */
 data class EditorBreakpoint(val uri: String, val line: Int)
 
 /**
  * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a locator
  * action or assertion on their line, headed, with Piwi's pause bar, when their file is under the Playwright config's
- * folder.
+ * folder. `root` names the Playwright config's folder to run them with; without it, the config of `uri`. `coverage`
+ * `server`, set by a server file's coverage lens, has the run record the backend's coverage by line.
  */
-/** `root` names the Playwright config's folder to run them with; without it, the config of `uri`. */
 data class RunTestsArgs(
     val uri: String,
     val testIds: List<Int>,
     val breakpoints: List<EditorBreakpoint>? = null,
     val root: String? = null,
+    val coverage: String? = null,
 )
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
@@ -493,6 +517,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/testsForFile")
     fun testsForFile(params: UriParams): CompletableFuture<TestsForFile?>
+
+    @JsonRequest("piwi/coverage")
+    fun coverage(params: UriParams): CompletableFuture<CoverageResult?>
 
     @JsonRequest("piwi/runArgs")
     fun runArgs(params: RunTestsArgs): CompletableFuture<RunCommand?>

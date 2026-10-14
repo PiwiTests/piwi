@@ -22,6 +22,7 @@ import {
   type CodeIndex,
   type BranchFailure,
   type EntityLink,
+  type FileCoverage,
   type FixPlan,
   type FlakeLabEntry,
   type FlakyTest,
@@ -52,6 +53,9 @@ const MAX_SELECTIONS = 20;
 /** How long per-file answers (catalog, alternatives) are reused. */
 const FILE_CACHE_MS = 5 * 60_000;
 
+/** The files whose coverage a context keeps at most; the least recently asked goes first. */
+const MAX_COVERAGES = 200;
+
 /** The origins of CI runs, as `branch-failures` names them. */
 export const CI_ORIGINS = new Set(['ci', 'ci-rerun']);
 
@@ -60,6 +64,19 @@ const LOCAL_ORIGINS = new Set(['local', 'desktop', 'editor']);
 
 /** The answer of a baseline that found no run. */
 const noRun = (): BranchFailures => ({ run: null, overlays: [], failures: [], resolved: [] });
+
+/**
+ * A file's coverage as last read: the answer (null for none: the instance has no coverage route, or refused the
+ * request), the `ETag` it came with, and the read on its way. `stale` reads it again on the next ask; `again` reads it
+ * once more after the read on its way, which started before what made it stale.
+ */
+interface CoverageEntry {
+  value: FileCoverage | null;
+  etag: string | null;
+  read: Promise<FileCoverage | null> | null;
+  stale: boolean;
+  again: boolean;
+}
 
 /** A file as a commit holds it: the commit, its text once read (null when the repository has none), and the read. */
 interface CommitText {
@@ -376,6 +393,10 @@ export class PiwiContext {
    * machine, a commit the repository lacks). Kept while the latest run stays the same and the failure is listed.
    */
   readonly failureAnchors = new Map<number, Map<string, string>>();
+  /** Whether the instance serves coverage: false once it answered the route with a 404, until the next refresh. */
+  coverageRoute = true;
+  /** Each file's coverage, by the branch read and the file's repository-relative path, the latest asked last. */
+  private readonly coverages = new Map<string, CoverageEntry>();
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
   private words: { at: number; value: { tags: string[]; features: string[] } } | null = null;
   private readonly issues = new Map<number, Promise<EntityLink[]>>();
@@ -440,6 +461,7 @@ export class PiwiContext {
     }
     this.client = new PiwiClient(connection, this.answers);
     this.source = connection.source;
+    this.coverageRoute = true;
     try {
       if (!connection.project) {
         this.fail(
@@ -567,6 +589,7 @@ export class PiwiContext {
     this.branches = [];
     this.functions = null;
     this.words = null;
+    this.coverages.clear();
     for (const cache of [
       this.issues,
       this.fixPlans,
@@ -651,6 +674,93 @@ export class PiwiContext {
       return changed;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Read the code index again, with its `ETag`: a run that ended may have recorded the coverage of files it did not
+   * list. Keeps what it held when the read fails.
+   */
+  async refreshCodeIndex(): Promise<void> {
+    const client = this.client;
+    const project = this.project;
+    if (!client || !project) return;
+    const codeIndex = await client.codeIndex(project.id, this.branch).catch(() => null);
+    if (codeIndex && this.client === client) this.codeIndex = codeIndex;
+  }
+
+  /** The branch whose coverage is read: the checked-out one, which the instance completes with the default branch's. */
+  coverageBranch(): string | null {
+    return this.checkedOutBranch ?? this.branch;
+  }
+
+  /**
+   * A file's coverage (repository-relative): read when first asked, then kept and asked again with its `ETag` once
+   * stale (`staleCoverage`), the read on its way shared by the asks meanwhile. Null when there is none, or the instance
+   * has no coverage route. A read that fails without the instance refusing it keeps what was read before, and is asked
+   * again next time.
+   */
+  coverage(repoRelative: string): Promise<FileCoverage | null> {
+    const key = `${this.coverageBranch() ?? ''}\n${repoRelative}`;
+    const entry: CoverageEntry = this.coverages.get(key) ?? {
+      value: null,
+      etag: null,
+      read: null,
+      stale: true,
+      again: false,
+    };
+    this.coverages.delete(key);
+    this.coverages.set(key, entry);
+    for (const oldest of [...this.coverages.keys()].slice(0, Math.max(0, this.coverages.size - MAX_COVERAGES)))
+      this.coverages.delete(oldest);
+    if (entry.read) return entry.read;
+    if (!entry.stale) return Promise.resolve(entry.value);
+    const branch = this.coverageBranch();
+    entry.read = (async () => {
+      do {
+        entry.again = false;
+        entry.stale = false;
+        await this.readCoverage(entry, repoRelative, branch);
+      } while (entry.again);
+      return entry.value;
+    })().finally(() => {
+      entry.read = null;
+    });
+    return entry.read;
+  }
+
+  /**
+   * Mark every file's coverage to be read again on its next ask, and once more after a read on its way: a refresh, or a
+   * run that ended, may have recorded new coverage.
+   */
+  staleCoverage(): void {
+    for (const entry of this.coverages.values()) {
+      entry.stale = true;
+      if (entry.read) entry.again = true;
+    }
+  }
+
+  private async readCoverage(entry: CoverageEntry, repoRelative: string, branch: string | null): Promise<void> {
+    const client = this.client;
+    const project = this.project;
+    if (!client || !project || !this.coverageRoute) return;
+    const known = entry.etag && entry.value ? { etag: entry.etag, value: entry.value } : null;
+    try {
+      const answer = await client.fileCoverage(project.id, repoRelative, branch, known);
+      // Read from an instance the context no longer reads: its ids name other things.
+      if (this.client !== client) return;
+      entry.value = answer.value;
+      entry.etag = answer.etag;
+    } catch (e) {
+      const status = e instanceof PiwiHttpError ? e.status : 0;
+      if (this.client !== client) return;
+      if (status === 404) this.coverageRoute = false;
+      if (status >= 400 && status < 500 && ![408, 429].includes(status)) {
+        entry.value = null;
+        entry.etag = null;
+      } else {
+        entry.stale = true;
+      }
     }
   }
 
