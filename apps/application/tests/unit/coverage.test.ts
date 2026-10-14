@@ -348,7 +348,28 @@ describe('coverage reads', () => {
     expect(coverage.fragments).toEqual([
       { path: BASKET, runtime: 'server', blob: BLOB_B, functions: [[50, 80]], lines: [[51, 53]], tests: [0, 1] },
     ]);
+    expect(coverage.executable).toEqual([]);
     expect((await getFileCoverage(db as never, 1, 'Other.cs')).fragments).toEqual([]);
+  });
+
+  test('a file’s executable lines come from the newest run coverage of each version', async () => {
+    const other = await freshDb();
+    await run(other, 40, 'main', T0);
+    await run(other, 41, 'feature/basket', T0 + 1000);
+    await run(other, 42, 'main', T0 + 2000);
+    await persistRunCases(other as never, 1, 40, [execution('pays', capture(basket([[51, 53]])))]);
+    await storeRunCoverage(other as never, 40, 1, [
+      { path: BASKET, runtime: 'server', blob: BLOB_B, executable: [[50, 70]] },
+    ]);
+    await storeRunCoverage(other as never, 41, 1, [
+      { path: BASKET, runtime: 'server', blob: BLOB_B, executable: [[50, 80]] },
+    ]);
+    await storeRunCoverage(other as never, 42, 1, [
+      { path: BASKET, runtime: 'server', blob: BLOB_A, executable: [[1, 9]] },
+    ]);
+    const coverage = await getFileCoverage(other as never, 1, 'BasketService.cs');
+    // The version no fragment names is left out; the newest run's lines win for the one they do.
+    expect(coverage.executable).toEqual([{ path: BASKET, runtime: 'server', blob: BLOB_B, lines: [[50, 80]] }]);
   });
 
   test('a branch reads its tests’ own coverage per runtime, the default branch’s for the rest', async () => {

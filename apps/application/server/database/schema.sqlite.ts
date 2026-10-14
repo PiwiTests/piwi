@@ -774,6 +774,7 @@ export const runCoverage = sqliteTable(
   },
   (table) => ({
     uniqueFile: uniqueIndex('idx_run_coverage_unique').on(table.runId, table.runtime, table.path),
+    projectPathIdx: index('idx_run_coverage_project_path').on(table.projectId, table.path),
   }),
 );
 

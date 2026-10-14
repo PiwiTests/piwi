@@ -827,6 +827,13 @@
       "when": 1791927956541,
       "tag": "0117_coverage_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1792014055652,
+      "tag": "0118_run_coverage_path_index",
+      "breakpoints": true
     }
   ]
 }

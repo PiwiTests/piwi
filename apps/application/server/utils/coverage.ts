@@ -399,6 +399,14 @@ export async function getExecutionsCoverage(
   return out;
 }
 
+/** The executable lines of one version of a file, as the latest run coverage holding that version recorded them. */
+export interface FileExecutableLines {
+  path: string;
+  runtime: CoverageRuntime;
+  blob: string;
+  lines: LineRange[];
+}
+
 /** The coverage of one file on a branch, and the tests that recorded it. */
 export interface FileCoverage {
   file: string;
@@ -406,6 +414,57 @@ export interface FileCoverage {
   /** Each distinct coverage of the file the tests in view recorded; `tests` are positions in `tests`. */
   fragments: Array<CoverageFile & { tests: number[] }>;
   tests: LocatorIndexTest[];
+  /** The executable lines of each version of the file the fragments name, where a run's coverage recorded them. */
+  executable: FileExecutableLines[];
+}
+
+/**
+ * The executable lines of the given versions of a file: per runtime, path and
+ * blob, those of the newest run whose coverage recorded them. A file version's
+ * executable lines depend on its content alone, so any branch's run answers.
+ */
+export async function getExecutableLines(
+  db: DrizzleDB,
+  projectId: number,
+  versions: Array<{ path: string; runtime: CoverageRuntime; blob: string }>,
+): Promise<FileExecutableLines[]> {
+  if (versions.length === 0) return [];
+  const wanted = new Set(versions.map((v) => `${v.runtime}\x00${v.path}\x00${v.blob}`));
+  const paths = [...new Set(versions.map((v) => v.path))];
+  const blobs = [...new Set(versions.map((v) => v.blob))];
+  const rows = await db
+    .select({
+      runId: runCoverage.runId,
+      runtime: runCoverage.runtime,
+      path: runCoverage.path,
+      blob: runCoverage.blob,
+      executable: runCoverage.executable,
+    })
+    .from(runCoverage)
+    .where(
+      and(
+        eq(runCoverage.projectId, projectId),
+        inArray(runCoverage.path, paths),
+        inArray(runCoverage.blob, blobs),
+        sql`${runCoverage.executable} IS NOT NULL`,
+      ),
+    );
+  const newest = new Map<string, { runId: number; entry: FileExecutableLines }>();
+  for (const row of rows) {
+    const key = `${row.runtime}\x00${row.path}\x00${row.blob}`;
+    if (!wanted.has(key) || !row.blob) continue;
+    const lines = decodeLineRanges(row.executable);
+    if (lines.length === 0) continue;
+    const known = newest.get(key);
+    if (known && known.runId > row.runId) continue;
+    newest.set(key, {
+      runId: row.runId,
+      entry: { path: row.path, runtime: asRuntime(row.runtime), blob: row.blob, lines },
+    });
+  }
+  return [...newest.values()]
+    .map((n) => n.entry)
+    .sort((a, b) => compareFiles(a, b) || (a.blob < b.blob ? -1 : a.blob > b.blob ? 1 : 0));
 }
 
 /**
@@ -420,7 +479,13 @@ export async function getFileCoverage(
   branch?: string | null,
 ): Promise<FileCoverage> {
   const view = await resolveBranchView(db, projectId, branch);
-  const answer: FileCoverage = { file, branch: view.name ?? view.defaultBranch, fragments: [], tests: [] };
+  const answer: FileCoverage = {
+    file,
+    branch: view.name ?? view.defaultBranch,
+    fragments: [],
+    tests: [],
+    executable: [],
+  };
   const tag = view.tag ?? '';
   const fragments = (
     await db
@@ -491,6 +556,11 @@ export async function getFileCoverage(
     }))
     .sort((a, b) => compareFiles(a.file, b.file) || a.fragment.id - b.fragment.id)
     .map(({ file: covered, tests: positions }) => ({ ...covered, tests: positions }));
+  answer.executable = await getExecutableLines(
+    db,
+    projectId,
+    answer.fragments.flatMap((f) => (f.blob ? [{ path: f.path, runtime: f.runtime, blob: f.blob }] : [])),
+  );
   return answer;
 }
 
