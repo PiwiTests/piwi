@@ -16,7 +16,16 @@ import {
 import { createConnection } from 'vscode-languageserver/node';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { PiwiContext } from '../src/context';
-import { BlobTexts, chooseVersion, coverageVersions, gitBlobId, mayHaveCoverage, textBlobIds } from '../src/coverage';
+import {
+  BlobTexts,
+  chooseVersion,
+  coverageIndexFor,
+  coverageMarks,
+  coverageVersions,
+  gitBlobId,
+  mayHaveCoverage,
+  textBlobIds,
+} from '../src/coverage';
 import type { CodeIndex, FileCoverage } from '../src/piwi-client';
 import { startServer } from '../src/server';
 import type { CoverageResult, FileSummary, RunCommand, StatusResult, TestsForFile } from '../src/protocol';
@@ -436,6 +445,43 @@ describe('the version the marks come from', () => {
       reach: CODE_INDEX.reach.map(({ file, tests, origin }) => ({ file, tests, origin })),
     };
     expect(mayHaveCoverage(older, 'src/Web/Program.cs')).toBe(true);
+  });
+
+  test('is gated by a code index of the branch the coverage is read for only', () => {
+    expect(coverageIndexFor(CODE_INDEX, null, null, 'main')).toBe(CODE_INDEX);
+    expect(coverageIndexFor(CODE_INDEX, null, 'main', 'main')).toBe(CODE_INDEX);
+    expect(coverageIndexFor(CODE_INDEX, 'feature/x', 'feature/x', 'main')).toBe(CODE_INDEX);
+    // The default branch's index may lack a file only the checked-out branch's coverage reaches: the instance is asked.
+    expect(mayHaveCoverage(coverageIndexFor(CODE_INDEX, null, 'feature/x', 'main'), UNREACHED_FILE)).toBe(true);
+  });
+});
+
+describe('the marks of a version', () => {
+  test('recorded by function count the lines of the functions that ran', () => {
+    const text = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n');
+    const blob = gitBlobId(text);
+    const coverage = {
+      file: BASKET_FILE,
+      branch: 'main',
+      fragments: [
+        {
+          path: BASKET_FILE,
+          runtime: 'server' as const,
+          blob,
+          functions: [[5, 8]] as Array<[number, number]>,
+          tests: [0],
+        },
+      ],
+      tests: [],
+      executable: [
+        { path: BASKET_FILE, runtime: 'server' as const, blob, lines: [[5, 12]] as Array<[number, number]> },
+      ],
+    };
+    const versions = coverageVersions(coverage);
+    const marks = coverageMarks(coverage, versions, { state: 'exact', version: versions[0]!, base: null }, text);
+    expect([...marks.executed.keys()]).toEqual([5, 6, 7, 8]);
+    expect([...marks.notRun].sort((a, b) => a - b)).toEqual([9, 10, 11, 12]);
+    expect(marks.executableLines).toBe(8);
   });
 });
 

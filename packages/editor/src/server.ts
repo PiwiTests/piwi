@@ -85,6 +85,7 @@ import {
 import {
   BlobTexts,
   chooseVersion,
+  coverageIndexFor,
   coverageMarks,
   coverageNote,
   coverageResult,
@@ -1087,7 +1088,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * route, or the code index says no coverage reaches the file.
    */
   const coverageOfTarget = (target: { context: PiwiContext; repoRelative: string }): Promise<FileCoverage | null> =>
-    target.context.coverageRoute && mayHaveCoverage(target.context.codeIndex, target.repoRelative)
+    target.context.coverageRoute &&
+    mayHaveCoverage(
+      coverageIndexFor(
+        target.context.codeIndex,
+        target.context.branch,
+        target.context.coverageBranch(),
+        target.context.index?.defaultBranch ?? null,
+      ),
+      target.repoRelative,
+    )
       ? target.context.coverage(target.repoRelative)
       : Promise.resolve(null);
 

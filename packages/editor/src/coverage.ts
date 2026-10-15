@@ -57,6 +57,20 @@ export function mayHaveCoverage(codeIndex: CodeIndex | null, repoRelative: strin
   return reach.some((r) => r.via === undefined || r.via === 'coverage');
 }
 
+/**
+ * The code index that can say whether the instance holds coverage of a file read for `coverageBranch`: the one read for
+ * `indexBranch` when it is the same branch, null standing for `defaultBranch` on either side; null otherwise, since a
+ * file the coverage of another branch reaches may be missing from it.
+ */
+export function coverageIndexFor(
+  codeIndex: CodeIndex | null,
+  indexBranch: string | null,
+  coverageBranch: string | null,
+  defaultBranch: string | null,
+): CodeIndex | null {
+  return (indexBranch ?? defaultBranch) === (coverageBranch ?? defaultBranch) ? codeIndex : null;
+}
+
 /** One version of a file the coverage names: its blob, its fragments and the tests that recorded them. */
 export interface CoverageVersion {
   blob: string;
@@ -250,7 +264,9 @@ export function coverageMarks(
   const { place, hunks, changed } = placement(chosen, text);
   const ran = new Map<number, Set<number>>();
   for (const fragment of version.fragments) {
-    for (const line of linesOf(normalizeLineRanges(fragment.lines ?? []))) {
+    // A fragment recorded by function counts the lines of the functions that ran, as the dashboard does.
+    const ranges = fragment.lines?.length ? fragment.lines : (fragment.functions ?? []);
+    for (const line of linesOf(normalizeLineRanges(ranges))) {
       const tests = ran.get(line) ?? new Set<number>();
       for (const t of fragment.tests) tests.add(t);
       ran.set(line, tests);
