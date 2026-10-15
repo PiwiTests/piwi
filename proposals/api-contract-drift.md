@@ -67,8 +67,10 @@ API · Acme Mugs · main · 37 endpoints the suite calls
 - **Endpoint keys agree.** The Test Map's route nodes (`routeNodeKey` in `shared/graph.ts`), slow endpoints
   (`shared/handlers/analytics/slow-endpoints.ts`) and the run's endpoint aggregation all key on method plus
   `normalized_url`.
-- **API tests are not observed.** The capture fixtures override `page` only; Playwright's `request` fixture
-  (`APIRequestContext`) emits no events and is not wrapped, so API tests leave no network rows.
+- **API tests are observed.** Since 2026-10-14 the capture fixtures hand out every `APIRequestContext` behind a proxy
+  (`packages/reporter/src/internal/capture/api-requests.ts`): those `playwright.request.newContext()` creates, the
+  `request` fixture's among them, and each browser context's own `page.request`. Each call is a `piwi-network` entry
+  without a `resourceType`, with its response's `X-Piwi-Logs`, `X-Piwi-Trace` and `X-Piwi-Coverage` read.
 - **Per-execution payloads.** Large per-execution data goes through `case_payloads` (content-addressed per project),
   with a payload column on `test_runs_cases`; `apps/application/AGENTS.md` has the checklist, and `piwi-page-inventory`
   and `piwi-locator-pages` follow it.
@@ -158,9 +160,10 @@ shape functions so the dashboard's own suite exercises them.
 
 ### 1.3 Capture in API tests
 
-The fixtures also override `request`: the `APIRequestContext` methods (`fetch`, `get`, `post`, `put`, `patch`,
-`delete`, `head`) are wrapped so that each returned `APIResponse` with a JSON content type is shaped the same way
-(`response.body()` is buffered by Playwright, so reading it does not consume it for the test). The request body is
+The proxy that records API calls (`api-requests.ts`, built for coverage) already wraps the `APIRequestContext` methods
+(`fetch`, `get`, `post`, `put`, `patch`, `delete`, `head`) and hands each call's `APIResponse` to `recordApiCall` in
+`capture-fixtures.ts`, where each response with a JSON content type is shaped the same way (`response.body()` is
+buffered by Playwright, so reading it does not consume it for the test); the call's `data` option is added to `ApiCall`. The request body is
 shaped from the `data` option when it is an object. API tests then get shapes, and nothing else changes for them.
 
 ### 1.4 Wire and storage
@@ -294,7 +297,7 @@ Each PR carries its docs. PR 6 can land any time after PR 2.
 - `get_api_contract` MCP tool. Docs: `features/api-drift.md`.
 
 ### PR 6 — API tests
-- `capture-fixtures.ts` (`request` override), `internal/capture/api-shapes.ts`.
+- `capture-fixtures.ts` (`recordApiCall`, on the existing proxy), `internal/capture/api-shapes.ts`.
 - Docs: `guide/capture-fixtures.md`. Tests: a spec using `request.get` and `request.post` against the fixture server.
 
 ### PR 7 — declared against observed
