@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/extension",
-  "version": "0.53.0",
+  "version": "0.54.0",
   "description": "Piwi Picker — a browser extension for ranked, stable Playwright locators, picked from the live page",
   "private": true,
   "type": "module",
