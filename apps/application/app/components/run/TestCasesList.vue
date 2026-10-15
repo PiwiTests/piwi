@@ -525,8 +525,8 @@ const { quarantineMany } = useQuarantine(() => props.projectKey ?? null);
 const canQuarantine = computed(() => can('quarantine:write', props.projectKey));
 const canTriage = computed(() => can('triage:write', props.projectKey));
 // What quarantining the selection leaves uncovered, beside its button and in its confirmation, where the project
-// records coverage.
-const coverageActive = useCoverageActive(props.projectKey);
+// records coverage: read once a test is selected, so the page's render reads nothing for it.
+const { active: coverageActive, resolve: resolveCoverageActive } = useLazyCoverageActive(() => props.projectKey);
 
 const selectionEnabled = computed(() => (canQuarantine.value || canTriage.value) && failedCount.value > 0);
 const selectedIds = ref<Set<number>>(new Set());
@@ -534,6 +534,9 @@ const selectedIds = ref<Set<number>>(new Set());
 const selectableRows = computed(() => filteredTestCases.value.filter((tc) => isFailedStatus(tc.status)));
 const selectedRows = computed(() => selectableRows.value.filter((tc) => selectedIds.value.has(tc.executionId)));
 const selectedCount = computed(() => selectedRows.value.length);
+watch(selectedCount, (count) => {
+  if (count > 0 && canQuarantine.value) void resolveCoverageActive();
+});
 const allSelectableSelected = computed(
   () => selectableRows.value.length > 0 && selectableRows.value.every((tc) => selectedIds.value.has(tc.executionId)),
 );

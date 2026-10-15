@@ -1,4 +1,5 @@
 import type { CapabilityId, CapabilityState } from '#shared/capabilities';
+import type { CapabilityStates } from '#shared/handlers/capabilities';
 import type { ApiResponse } from '~~/types/api';
 import { coverageLossKey } from '~/utils/coverage-insights';
 
@@ -58,4 +59,28 @@ export function useCoverageActive(projectId: string | number | null | undefined)
     void useProjectCapabilities(Number(projectId)).then((capabilities) => (state.value = capabilities.state));
   }
   return computed(() => state.value?.('coverage') === 'active');
+}
+
+/**
+ * Whether a project's coverage capability is active, for a page that offers a
+ * quarantine only after an interaction (a selection): false until `resolve`
+ * read the project's capability states, in the browser, once. The page's own
+ * render reads nothing.
+ */
+export function useLazyCoverageActive(projectId: MaybeRefOrGetter<string | number | null | undefined>) {
+  const active = shallowRef(false);
+  let reading: Promise<void> | null = null;
+
+  function resolve(): Promise<void> {
+    const project = toValue(projectId);
+    if (reading || project == null || project === '') return reading ?? Promise.resolve();
+    reading = $fetch<CapabilityStates>(`/api/projects/${project}/capabilities`)
+      .then((states) => {
+        active.value = states.items.some((item) => item.id === 'coverage' && item.state === 'active');
+      })
+      .catch(() => {});
+    return reading;
+  }
+
+  return { active: computed(() => active.value), resolve };
 }
