@@ -748,8 +748,9 @@ test.describe('Situation block on seeded cases', () => {
     await expect(
       page.getByRole('group', { name: 'Attempts of this test in this run' }).getByRole('link', { name: /1\/2/ }),
     ).toHaveAttribute('href', `/test-run-cases/${failedId}`);
+    // The seed's order-dependent flake: the next step reproduces it under the test that ran before it.
     await expect(page.locator('[data-shot="next-step"]')).toContainText(
-      'Compare the failing attempt with the passing one',
+      'Reproduce this flake under updates the organization name alongside',
     );
   });
 
