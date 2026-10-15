@@ -26,10 +26,17 @@ export const COVERAGE_ROWS_SHOWN = 20;
 
 /**
  * The route of a file's coverage view, the page that lists the tests running
- * the file: `/projects/:id/coverage?file=<path>`.
+ * the file: `/projects/:id/coverage?file=<path>`, with `&line=` selecting a
+ * line and bringing it into view.
  */
-export function coverageFileRoute(projectId: number | string, path: string): { path: string; query: { file: string } } {
-  return { path: `/projects/${projectId}/coverage`, query: { file: path } };
+export function coverageFileRoute(
+  projectId: number | string,
+  path: string,
+  line?: number | null,
+): { path: string; query: { file: string; line?: string } } {
+  const query: { file: string; line?: string } = { file: path };
+  if (line != null && line > 0) query.line = String(line);
+  return { path: `/projects/${projectId}/coverage`, query };
 }
 
 /** What a row says about a file the failure's What changed card concerns. */

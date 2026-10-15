@@ -54,7 +54,9 @@ watch(tests, (list) => emit('count', list?.length ?? 0));
 // The top suspect of each listed test and its latest Flake Lab result, read
 // after the list so the list never waits on them. Hidden when the project
 // declines flake suspects.
-const { isHidden: capabilityHidden } = await useProjectCapabilities(Number(props.projectId));
+const { isHidden: capabilityHidden, state: capabilityState } = await useProjectCapabilities(Number(props.projectId));
+// What quarantining a test leaves uncovered, beside its Quarantine button, where the project records coverage.
+const coverageActive = computed(() => capabilityState('coverage') === 'active');
 const topSuspects = ref(new Map<number, TopFlakeSuspect & { lab: FlakeLabSummary | null }>());
 watch(
   tests,
@@ -267,17 +269,24 @@ function flakyBadges(test: FlakyTest) {
             proposal="quarantine"
             @dismissed="loadProposals"
           />
-          <UButton
+          <CoverageLossPopover
             v-if="canQuarantine"
-            size="xs"
-            variant="outline"
-            color="warning"
-            icon="i-lucide-shield-alert"
-            :loading="quarantiningId === test.testCaseId"
-            @click="quarantineTest(test)"
+            :project-id="projectId"
+            :project-name="projectName"
+            :test-case-ids="[test.testCaseId]"
+            :active="coverageActive"
           >
-            Quarantine
-          </UButton>
+            <UButton
+              size="xs"
+              variant="outline"
+              color="warning"
+              icon="i-lucide-shield-alert"
+              :loading="quarantiningId === test.testCaseId"
+              @click="quarantineTest(test)"
+            >
+              Quarantine
+            </UButton>
+          </CoverageLossPopover>
         </template>
 
         <template #subline>

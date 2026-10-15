@@ -2,8 +2,10 @@
 /**
  * "Quarantine all affected" for a cluster — quarantines every affected test that
  * is not already quarantined, in one action. A confirmation step guards against
- * quarantining more than a few tests at once; a single test skips it. One toast
- * summarizes how many were quarantined and how many failed.
+ * quarantining more than a few tests at once; a single test skips it. Where the
+ * project records coverage, the confirmation says what the quarantine leaves to
+ * no other trusted test once that is read. One toast summarizes how many were
+ * quarantined and how many failed.
  */
 interface QuarantinableCase {
   testCaseId: number;
@@ -29,6 +31,13 @@ const { quarantineMany } = useQuarantine(() => props.projectId ?? null);
 const pending = computed(() => props.cases.filter((c) => !c.quarantined));
 const confirmOpen = ref(false);
 const busy = ref(false);
+
+const coverageActive = useCoverageActive(props.projectId);
+const { load: loadLoss, answerFor: lossFor } = useCoverageLoss(() => props.projectId, coverageActive);
+const pendingIds = computed(() => pending.value.map((c) => c.testCaseId));
+watch(confirmOpen, (open) => {
+  if (open) void loadLoss(pendingIds.value);
+});
 
 async function run() {
   const ids = pending.value.map((c) => c.testCaseId);
@@ -85,6 +94,12 @@ defineExpose({ trigger: onClick });
           This quarantines {{ pending.length }} tests. Each keeps running and reporting but is excluded from the CI
           gate's verdict until released.
         </p>
+        <CoverageLossPreview
+          v-if="coverageActive && projectId != null"
+          class="mt-3"
+          :answer="lossFor(pendingIds)"
+          :project-id="projectId"
+        />
       </template>
       <template #footer>
         <div class="flex items-center gap-3 w-full justify-end">

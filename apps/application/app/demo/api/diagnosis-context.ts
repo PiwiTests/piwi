@@ -58,6 +58,7 @@ import { getDemoScmProject, getDemoChangesSince, getDemoChangesForShas, getDemoD
 import { suspectLinesContext } from '#shared/suspect-lines';
 import { storyByClusterId } from '#shared/demo/failure-stories.mjs';
 import { demoClusterSuspectLines } from './suspect-lines';
+import { coverageDivergenceContext } from '#shared/handlers/coverage-insights';
 
 // ── Section plumbing ────────────────────────────────────────────────────────
 
@@ -98,6 +99,7 @@ const SECTION_ORDER = [
   'webVitals',
   'appState',
   'environmentDiff',
+  'coverageDivergence',
   'recurrenceFlakiness',
   'browserDistribution',
   'affectedTests',
@@ -680,6 +682,11 @@ async function assemble(
         },
       };
     }
+
+    // The code paths this execution took that the last passing one did not — the server's shared builder
+    const divergence = await coverageDivergenceContext(db, rep.id);
+    push(section('coverageDivergence', 'Code Paths vs the Last Passing Run', divergence.section));
+    if (divergence.coverage) coverage = { ...coverage, coverageDivergence: divergence.coverage };
 
     // App state at test end (+ diff vs last pass) — same shared renderer + baseline loader as the server
     const appStateBaseline =

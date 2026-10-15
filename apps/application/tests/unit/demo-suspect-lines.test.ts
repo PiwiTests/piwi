@@ -109,7 +109,8 @@ describe('demo suspect lines', () => {
     ]);
     // The pagination commit's constant and parameters are not statements, and
     // the stylesheet is no code coverage reads; package.json and the reports
-    // page changed with no patch.
+    // page changed with no patch. The run's two settings tests recorded
+    // coverage too, of other files.
     expect(answer.summary).toEqual({
       changedFiles: 2,
       changedLines: 13,
@@ -117,7 +118,7 @@ describe('demo suspect lines', () => {
       executedHunks: 1,
       executedLines: 3,
       failingWithCoverage: 1,
-      passingWithCoverage: 2,
+      passingWithCoverage: 4,
     });
     expect(answer.unreadFiles).toBe(2);
   });

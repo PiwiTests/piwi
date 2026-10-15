@@ -7,7 +7,9 @@
  * above it, each a link that brings its first line into view. Without the
  * source, the line numbers alone say what ran and what did not. The
  * `annotation` slot adds a narrow column after each line number (a count of
- * tests, for instance).
+ * tests, for instance). With `selectable`, a click on a line emits
+ * `select-line` (with whether Shift was held), and the `selected` lines carry
+ * the neutral selected-row mark (`data-selected`).
  */
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
 import { highlightLines, languageForPath } from '#shared/highlight';
@@ -32,6 +34,12 @@ const props = withDefaults(
     executedTitle?: string;
     /** Hover text of an executable line that did not run. */
     notExecutedTitle?: string;
+    /** Whether a click on a line emits `select-line`. */
+    selectable?: boolean;
+    /** The selected lines, normalized. */
+    selected?: LineRange[];
+    /** The height cap of the scrolling source. */
+    scrollClass?: string;
   }>(),
   {
     notExecuted: null,
@@ -39,8 +47,16 @@ const props = withDefaults(
     focusLine: null,
     executedTitle: 'Ran',
     notExecutedTitle: 'Executable, did not run',
+    selectable: false,
+    selected: () => [],
+    scrollClass: 'max-h-[28rem]',
   },
 );
+
+const emit = defineEmits<{
+  /** A line was clicked; `extend` when Shift was held. */
+  'select-line': [line: number, extend: boolean];
+}>();
 
 defineSlots<{
   /** A narrow column after the line number of each line. */
@@ -62,7 +78,13 @@ const rows = computed(() => {
   return lines.map((_, i) => {
     const line = i + 1;
     const executed = lineInRanges(props.executed, line);
-    return { line, html: html[i] ?? '', executed, notExecuted: !executed && lineInRanges(gaps, line) };
+    return {
+      line,
+      html: html[i] ?? '',
+      executed,
+      notExecuted: !executed && lineInRanges(gaps, line),
+      selected: lineInRanges(props.selected, line),
+    };
   });
 });
 
@@ -139,7 +161,8 @@ defineExpose({ reveal });
       </p>
       <div
         ref="scroller"
-        class="relative max-h-[28rem] overflow-auto rounded-md border border-default text-xs font-mono"
+        class="relative overflow-auto rounded-md border border-default text-xs font-mono"
+        :class="scrollClass"
         :aria-label="`Source of ${path}`"
         tabindex="0"
       >
@@ -150,12 +173,16 @@ defineExpose({ reveal });
             :data-line="row.line"
             :data-executed="row.executed ? '' : undefined"
             :data-not-executed="row.notExecuted ? '' : undefined"
+            :data-selected="row.selected ? '' : undefined"
             :title="row.executed ? executedTitle : row.notExecuted ? notExecutedTitle : undefined"
             class="flex leading-5 transition-colors"
             :class="[
               row.executed ? SUSPECT_ROW_CLASS : row.notExecuted ? NOT_RUN_ROW_CLASS : '',
-              flashed === row.line ? 'bg-elevated' : '',
+              row.selected ? SELECTED_ROW_CLASS : flashed === row.line ? 'bg-elevated' : '',
+              selectable ? 'cursor-pointer hover:bg-elevated/60' : '',
             ]"
+            @mousedown="selectable && $event.shiftKey && $event.preventDefault()"
+            @click="selectable && emit('select-line', row.line, $event.shiftKey)"
           >
             <span class="shrink-0 select-none pl-3 pr-3 text-right text-muted" :style="{ minWidth: gutterWidth }">
               {{ row.line }}

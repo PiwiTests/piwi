@@ -48,6 +48,10 @@ export const EN_COPY = {
           title: 'An AI diagnosis, checked against your code',
           body: 'With an AI provider set, Piwi diagnoses a cluster from its evidence and the commits since it last passed. This one traces the users table’s 51 rows to the API’s default page size and suggests this patch, marked **Applies cleanly** against the code. A fix has since landed and held.',
         },
+        coverage: {
+          title: 'The server lines this test ran',
+          body: 'Where a project records coverage, the **Source** tab lists the code a test ran. This failing test ran five files of the ASP.NET Core API, the users endpoints first with the suspect lines; open one to read the lines it ran. A file’s **tests** link opens every test that runs it, line by line.',
+        },
         mcp: {
           title: 'Ask from your editor',
           body: 'Piwi is also an MCP server: Claude Code, Cursor or Copilot in VS Code can read failure clusters, their evidence and fix plans, and triage them without leaving the editor. **Client setup** has each client’s configuration; this demo’s endpoint is not live.',

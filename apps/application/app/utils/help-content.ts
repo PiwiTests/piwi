@@ -410,6 +410,11 @@ export const HELP_TOPICS = {
     text: 'A quarantined test still runs and still reports — it is only excluded from the CI gate’s verdict. Passing runs accumulate as a streak, so a test that recovers is flagged ready to release instead of staying quarantined forever.',
     doc: 'features/flaky-tests#quarantine-with-a-way-out',
   },
+  'quarantine.coverage-loss': {
+    title: 'Code only these tests run',
+    text: 'The lines of the tests’ latest coverage on the default branch that no other trusted test runs: trusted means not quarantined. Quarantining the tests leaves those lines to no test the CI gate counts; releasing a quarantined test covers them again. Lines only flaky tests run besides them are counted apart, and a file other tests ran only at another version is not compared.',
+    doc: 'features/coverage-insights#what-quarantining-or-deleting-tests-leaves-uncovered',
+  },
   'project.performance': {
     title: 'Performance',
     text: 'Duration trends for the suite — average and P90 (the slowest 10% threshold). Use it to catch tests getting steadily slower.',
@@ -671,10 +676,39 @@ export const HELP_TOPICS = {
     text: 'This project records coverage, but this test recorded none. Browser files are recorded in Chromium only, and backend lines only for the requests that reached a backend built for coverage; a run from before coverage was turned on, or with the reporter option off, records none.',
     doc: 'features/code-reach',
   },
+  'case.coverage-divergence': {
+    title: 'Compared with the last passing run',
+    text: [
+      'The code this failing execution ran that the test’s last passing execution with coverage did not, and the reverse: the same browser project on the same branch first, else the default branch, else another browser project.',
+      '',
+      '- **Only in this execution** — an error path, a fallback or a retry branch shows here first.',
+      '- **Here / in the pass** — a file both ran at the same version, with the lines only each side ran; open it to see both marked.',
+      '- **Another version** — a file whose version differs between the two runs is counted, never compared line by line.',
+      '- **Incomplete** — a capture that missed part of what ran never says something did not run.',
+    ].join('\n'),
+    doc: 'features/coverage-insights#a-failure-s-path-against-its-last-pass',
+  },
   'case.coverage-backend-none': {
     title: 'No backend coverage for this test',
     text: 'The run recorded backend coverage, but none for this test. Its requests may not have reached the instrumented backend (a page served from elsewhere, a mocked route, a request that failed), or the backend may no longer have held the coverage when the reporter asked.',
     doc: 'features/code-reach#server-code',
+  },
+  'coverage.file': {
+    title: 'Which tests run this file',
+    text: [
+      'The tests that run this file, each from its latest run with coverage on the branch.',
+      '',
+      '- **Counts** — beside each line, how many tests ran it; a lighter bar marks an executable line no test runs, when a run recorded the executable lines.',
+      '- **Select** — click a line, or Shift-click a range, to list the tests that ran it with their latest outcome. On a line no test runs, the nearest test to copy runs the most of the function around it.',
+      '- **Version** — line numbers belong to one version of the file, its git blob; when the tests ran several, pick one.',
+      '- **Precision** — a file recorded by function marks its functions, and one recorded by file lists its tests only.',
+    ].join('\n'),
+    doc: 'features/code-reach#which-tests-run-a-file',
+  },
+  'coverage.file-source': {
+    title: 'Source not available',
+    text: 'Piwi reads a version of a file by its git blob through the project’s source control: a linked clone in the desktop app, GitHub or GitLab with a token, else the file at a run’s commit when its blob matches. Without one, the lines show as numbers.',
+    doc: 'features/code-reach#which-tests-run-a-file',
   },
   'export.offline': {
     // Deliberately avoids the word "Export": the hint sits beside a button with
@@ -727,6 +761,18 @@ export const HELP_TOPICS = {
     title: 'Attempts',
     text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt or was much slower on the failing one, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from, and a request that is one of the test’s flake suspects links to it. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
     doc: 'features/flaky-tests#flaky-test-detection',
+  },
+
+  'case.path-variation': {
+    title: 'Path variation',
+    text: [
+      'How this test’s code path varies across its last 30 executions with coverage, in the browser project that ran most of them, compared on the files every execution that ran them ran at one version.',
+      '',
+      '- **Varying code** — the lines (or functions, or files) some executions ran and others did not, grouped by the executions that ran them, the most evenly split first.',
+      '- **Earlier test** — the test whose having finished earlier in the run, or on the same worker, predicts which executions ran the code: at least 90% of them, with 3 executions on each side.',
+      '- **Order** — when its failures follow that code too, the test depends on what an earlier test leaves behind, and its flaky root cause is `order`.',
+    ].join('\n'),
+    doc: 'features/coverage-insights#a-path-that-depends-on-the-tests-before-it',
   },
 
   'case.flakiness': {

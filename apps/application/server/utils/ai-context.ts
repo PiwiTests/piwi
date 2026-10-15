@@ -31,8 +31,7 @@ import { LocalGitProvider } from './scm/local-git';
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
 import { suspectLinesContext, suspectLinesReasonText } from '#shared/suspect-lines';
-import { divergenceMarkdown, divergenceReasonText } from '#shared/coverage-insights';
-import { getCoverageDivergence } from '#shared/handlers/coverage-insights';
+import { coverageDivergenceContext } from '#shared/handlers/coverage-insights';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
 import type {
@@ -756,42 +755,6 @@ async function environmentDiffSection(
       changedKeys: (result.entries ?? []).filter((e) => !e.informational).length,
       baselineRunId: result.baseline.runId,
     },
-  };
-}
-
-/**
- * The code the execution ran that the test's last passing execution with
- * coverage did not, and the reverse, from its coverage divergence; with the
- * reason it is absent when there is none to show.
- */
-async function coverageDivergenceSection(
-  db: DbClient,
-  executionId: number,
-): Promise<{
-  section: string | null;
-  coverage: DiagnosisContextCoverage['coverageDivergence'];
-  absentReason: string | null;
-}> {
-  const answer = await getCoverageDivergence(db, executionId).catch(() => null);
-  if (!answer) return { section: null, coverage: null, absentReason: null };
-  if (!answer.available) {
-    return { section: null, coverage: null, absentReason: divergenceReasonText(answer.reason ?? 'no-coverage') };
-  }
-  const markdown = divergenceMarkdown(answer);
-  if (!markdown) {
-    return { section: null, coverage: null, absentReason: 'it ran the same code as the last passing run' };
-  }
-  const { summary } = answer;
-  return {
-    section: markdown,
-    coverage: {
-      baselineExecutionId: answer.baseline!.executionId,
-      filesOnlyHere: summary.filesOnlyHere,
-      linesOnlyHere: summary.linesOnlyHere,
-      filesOnlyBaseline: summary.filesOnlyBaseline,
-      linesOnlyBaseline: summary.linesOnlyBaseline,
-    },
-    absentReason: null,
   };
 }
 
@@ -2894,7 +2857,7 @@ export async function buildDiagnosisContext(
     coverage = { ...coverage, environmentDiff: envDiffResult.coverage };
 
     // The code paths this execution took that the last passing one did not (coverage)
-    const divergenceResult = await coverageDivergenceSection(db, rep.id);
+    const divergenceResult = await coverageDivergenceContext(db, rep.id);
     push(section('coverageDivergence', 'Code Paths vs the Last Passing Run', divergenceResult.section));
     coverage = { ...coverage, coverageDivergence: divergenceResult.coverage };
     coverageDivergenceAbsentReason = divergenceResult.absentReason;

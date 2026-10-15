@@ -141,6 +141,11 @@ describe('coverage rows', () => {
       path: '/projects/5/coverage',
       query: { file: 'api/Users/UsersEndpoints.cs' },
     });
+    expect(coverageFileRoute(5, 'api/Users/UsersEndpoints.cs', 35)).toEqual({
+      path: '/projects/5/coverage',
+      query: { file: 'api/Users/UsersEndpoints.cs', line: '35' },
+    });
+    expect(coverageFileRoute(5, 'src/pages/users.vue', null).query).toEqual({ file: 'src/pages/users.vue' });
   });
 });
 

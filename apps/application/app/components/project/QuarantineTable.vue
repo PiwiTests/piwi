@@ -68,6 +68,10 @@ const { data, status, error, refresh } = await useFetch<QuarantineResponse>(
 
 watch(data, (d) => emit('count', d?.debt.active ?? 0));
 
+// What a quarantine leaves uncovered, or a release covers again, beside its button, where the project records coverage.
+const { state: capabilityState } = await useProjectCapabilities(Number(props.projectId));
+const coverageActive = computed(() => capabilityState('coverage') === 'active');
+
 function formatAge(ms: number): string {
   const hours = Math.round(ms / 3_600_000);
   if (hours < 48) return `${Math.max(1, hours)}h`;
@@ -184,16 +188,24 @@ async function release(testCaseId: number) {
                 proposal="release"
                 @dismissed="refresh()"
               />
-              <UButton
+              <CoverageLossPopover
                 v-if="canQuarantine"
-                size="xs"
-                :color="entry.releaseProposed && !entry.releaseDismissed ? 'primary' : 'neutral'"
-                variant="soft"
-                :loading="busy === entry.testCaseId"
-                @click="release(entry.testCaseId)"
+                :project-id="projectId"
+                :project-name="projectName"
+                :test-case-ids="[entry.testCaseId]"
+                action="release"
+                :active="coverageActive"
               >
-                Release
-              </UButton>
+                <UButton
+                  size="xs"
+                  :color="entry.releaseProposed && !entry.releaseDismissed ? 'primary' : 'neutral'"
+                  variant="soft"
+                  :loading="busy === entry.testCaseId"
+                  @click="release(entry.testCaseId)"
+                >
+                  Release
+                </UButton>
+              </CoverageLossPopover>
             </template>
 
             <template v-if="entry.reason" #subline>
@@ -234,16 +246,23 @@ async function release(testCaseId: number) {
                   proposal="quarantine"
                   @dismissed="refresh()"
                 />
-                <UButton
+                <CoverageLossPopover
                   v-if="canQuarantine"
-                  size="xs"
-                  color="neutral"
-                  variant="soft"
-                  :loading="busy === candidate.testCaseId"
-                  @click="quarantine(candidate.testCaseId, candidate.rationale)"
+                  :project-id="projectId"
+                  :project-name="projectName"
+                  :test-case-ids="[candidate.testCaseId]"
+                  :active="coverageActive"
                 >
-                  Quarantine
-                </UButton>
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="soft"
+                    :loading="busy === candidate.testCaseId"
+                    @click="quarantine(candidate.testCaseId, candidate.rationale)"
+                  >
+                    Quarantine
+                  </UButton>
+                </CoverageLossPopover>
               </td>
             </tr>
           </tbody>

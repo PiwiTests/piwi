@@ -28,6 +28,7 @@ import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { hasHealingAlternatives } from '#shared/locator-healing';
 import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 import { suspectLinesSentence } from '~/utils/suspect-lines';
+import { coverageLossPreview } from '~/utils/coverage-insights';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -465,6 +466,21 @@ const canEditLinks = computed(() => can('link:write', executionProjectId.value))
 
 // ── Quarantine ──────────────────────────────────────────────────────────────
 const { quarantineOne, releaseOne } = useQuarantine(() => executionProjectId.value);
+// What quarantining the test leaves to no other trusted test, or releasing it covers again: read when the More
+// menu opens, where the project records coverage, and said under the menu's action.
+const { load: loadQuarantineLoss, answerFor: quarantineLossFor } = useCoverageLoss(
+  () => executionProjectId.value,
+  () => projectCapState('coverage') === 'active',
+);
+function onMoreMenu(open: boolean) {
+  const stableId = testCase.value?.testCaseId;
+  if (open && canQuarantine.value && stableId) void loadQuarantineLoss([stableId]);
+}
+const quarantineLossText = computed(() => {
+  const stableId = testCase.value?.testCaseId;
+  if (!stableId) return undefined;
+  return coverageLossPreview(quarantineLossFor([stableId]), quarantined.value ? 'release' : 'quarantine')?.headline;
+});
 const quarantineBusy = ref(false);
 async function toggleQuarantine() {
   const stableId = testCase.value?.testCaseId;
@@ -582,12 +598,14 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
       quarantined.value
         ? {
             label: 'Release from quarantine',
+            description: quarantineLossText.value,
             icon: 'i-lucide-shield-check',
             color: 'warning',
             onSelect: toggleQuarantine,
           }
         : {
             label: 'Quarantine this test',
+            description: quarantineLossText.value,
             icon: 'i-lucide-shield-alert',
             color: 'warning',
             onSelect: toggleQuarantine,
@@ -774,7 +792,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :base-name="`piwi-execution-${testCase.id}`"
               class="mr-1"
             />
-            <UDropdownMenu :items="moreMenuItems">
+            <UDropdownMenu :items="moreMenuItems" @update:open="onMoreMenu">
               <UButton
                 size="sm"
                 color="neutral"

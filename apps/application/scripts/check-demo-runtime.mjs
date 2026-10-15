@@ -491,6 +491,28 @@ async function main() {
       'the project’s Flake Lab tab lists its experiments',
     );
 
+    // A file's coverage page reads the file at its blob from the canned repository,
+    // and lists the one test of three that ran line 37.
+    await page.goto(`${ORIGIN}${BASE}projects/5/coverage?file=api/Users/UsersEndpoints.cs&line=37`, {
+      waitUntil: 'domcontentloaded',
+    });
+    const fileView = page.locator('[data-shot="coverage-file"]');
+    await fileView
+      .locator('[data-line="37"][data-selected]')
+      .waitFor({ timeout: 60000 })
+      .catch(() => {});
+    check(
+      (await fileView
+        .locator('[data-line="35"] [data-tests]')
+        .getAttribute('data-tests')
+        .catch(() => null)) === '3',
+      'a file’s coverage page shows its source with the tests of each line',
+    );
+    check(
+      (await fileView.locator('[data-coverage-test]').count()) === 1,
+      'a file’s coverage page lists the tests of the selected line',
+    );
+
     await checkGuidedTour(browser, watch);
 
     check(

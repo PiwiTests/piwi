@@ -34,6 +34,8 @@ const FILES = [
   'app/components/test-case/TestCasePerformancePanel.vue',
   'app/components/test-case/ExecutionCoverageSection.vue',
   'app/components/test-case/CoverageFileSource.vue',
+  'app/components/test-case/CoverageDivergencePart.vue',
+  'app/components/test-case/CoverageDivergenceSource.vue',
   'app/components/shared/CoverageSourceView.vue',
   'app/components/cluster/ClusterAffectedTests.vue',
   'app/components/shared/TestRow.vue',

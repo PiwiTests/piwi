@@ -1231,14 +1231,14 @@
     "class": "blind-spot",
     "key": "GET /api/me/preferences",
     "title": "GET /api/me/preferences: no error path under test",
-    "evidence": ["Observed 13 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "evidence": ["Observed 15 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
     "factors": {
       "churn": 0.1,
       "age": 0.1,
       "escapeHistory": 0.1,
       "priority": 0.1
     },
-    "score": 0.065,
+    "score": 0.07500000000000001,
     "test": null
   },
   {
@@ -1246,7 +1246,7 @@
     "class": "blind-spot",
     "key": "GET /api/orgs/current",
     "title": "GET /api/orgs/current: no error path under test",
-    "evidence": ["Observed 36 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "evidence": ["Observed 38 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
     "factors": {
       "churn": 0.1,
       "age": 0.1,
@@ -1307,7 +1307,7 @@
     "key": "GET /api/session",
     "title": "GET /api/session: documented 401 never tested",
     "evidence": [
-      "Observed 107 times over the last 30 runs, always 200 — observed reach, no error path exercised.",
+      "Observed 109 times over the last 30 runs, always 200 — observed reach, no error path exercised.",
       "Documents 401 — never returned under test."
     ],
     "factors": {
@@ -1441,14 +1441,14 @@
     "class": "blind-spot",
     "key": "PUT /api/me/preferences",
     "title": "PUT /api/me/preferences: no error path under test",
-    "evidence": ["Observed 13 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "evidence": ["Observed 15 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
     "factors": {
       "churn": 0.1,
       "age": 0.1,
       "escapeHistory": 0.1,
       "priority": 0.1
     },
-    "score": 0.065,
+    "score": 0.07500000000000001,
     "test": null
   },
   {

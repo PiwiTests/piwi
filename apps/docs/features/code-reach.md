@@ -15,8 +15,7 @@ to the tests that execute it.
 
 Set `captureCodeReach: true` in the reporter options, or `PIWI_CAPTURE_CODE_REACH=true`, with the
 [capture fixtures](/guide/capture-fixtures) in place. Coverage adds time to every test and reach changes slowly, so
-turn it on in one scheduled job, a nightly run, rather than on every run. A run without it keeps the reach the last one
-recorded.
+turn it on in one scheduled job, a nightly run. A run without it keeps the reach the last one recorded.
 
 ```ts
 // playwright.config.ts, in the nightly job
@@ -43,8 +42,7 @@ server's root when it is elsewhere; for Nuxt that is `app/`:
 reporter: [['@piwitests/reporter', { captureCodeReach: true, codeReachRoots: ['app'] }]],
 ```
 
-Code a bundler or dev server adds (module wrappers, preload helpers, hot-reload hooks) maps to no source of its own and
-counts for no file.
+Code a bundler or dev server adds (module wrappers, hot-reload hooks) counts for no file.
 
 When the backend is instrumented (the [Nitro or ASP.NET Core packages](/guide/backend-logs)), the handler file of each
 route a test called also counts as reached, with no capture of its own.
@@ -62,18 +60,18 @@ route a test called also counts as reached, with no capture of its own.
 The map must be linked from the bundle: `sourcemap: 'hidden'` and webpack's `hidden-source-map` write the map but
 not the comment that names it, so they record nothing.
 
-Each was checked on a React app with Vite 8, webpack 5.111 and Next.js 16.3, and Nuxt dev on Piwi's own suite: every
-test recorded exactly the files it ran. The same builds without source maps record nothing.
+Each was checked on a React app (Vite 8, webpack 5.111, Next.js 16.3) and on Piwi's own suite in Nuxt dev: every
+test recorded exactly the files it ran.
 
 ## Cost
 
-Code reach reads V8's function coverage, which records only whether each function ran, so the page's own JavaScript
-runs at nearly its usual speed. Each test pays for a CDP session with the debugger on and one coverage read at the
-end; a script's source is read once per worker. Medians on a 4-core sandbox, headless Chromium:
+Code reach reads V8's function coverage, which records only whether each function ran, so the page's JavaScript runs
+at nearly its usual speed: each test pays for a CDP session and one coverage read, and a script's source is read once
+per worker. Medians on a 4-core sandbox, headless Chromium:
 
 - **A script-heavy page** (Vue's development build rendering a 1,000-row table 30 times, plus 400 small ES modules): a
   test goes from 1,128 ms to 1,220 ms, 8% more, and 16% more for a worker's first test. Playwright's `page.coverage`
-  (block coverage, every source read in every test) adds 50%.
+  adds 50%.
 - **A light page** (the reporter's capture benchmark, `npm run reporter:bench`): 61 ms and 103 ms more per test in two
   runs, where `page.coverage` added 209 ms and 176 ms.
 
@@ -93,9 +91,8 @@ With an ASP.NET Core backend built for coverage, each test also records the back
 reporter: [['@piwitests/reporter', { coverage: { server: 'lines' } }]],
 ```
 
-The backend names each request's coverage on its response. The fixtures keep the names a test's responses carried,
-its pages' and its API calls'; once the test ends, the reporter asks the backend for their coverage, several tests per
-call, outside the test's time, and the test's result reaches the dashboard with it.
+The backend names each request's coverage on its response; once the test ends, the reporter asks the backend for the
+coverage its pages' and API calls' responses named, several tests per call, outside the test's time.
 
 | `coverage.server` | Records per test |
 | --- | --- |
@@ -103,9 +100,8 @@ call, outside the test's time, and the test's result reaches the dashboard with 
 | `functions` | also the start and end line of each function that ran |
 | `lines` | also the executed lines |
 
-With `functions` and `lines`, each file names its git blob, as `git hash-object` gives it, which its line numbers
-refer to. At the end of the run the reporter also sends the run's coverage of the backend, attributed to no test, with each
-file's executable lines at `lines` granularity. A test whose coverage the backend no longer held, or that could not be collected, is marked incomplete.
+With `functions` and `lines`, each file names the git blob its line numbers refer to. At the end of the run the
+reporter also sends the run's coverage of the backend, attributed to no test, with each file's executable lines at `lines` granularity. A test whose coverage the backend no longer held, or that could not be collected, is marked incomplete.
 `coverage.browser: 'files'` is the same as `captureCodeReach: true`.
 
 - **Run level only:** lambdas created at startup (inline minimal API handlers, inline middleware, DI factory lambdas)
@@ -121,31 +117,41 @@ Functions cost about what lines cost.
 ## On the execution page
 
 Where its project records coverage, an execution's **Source** tab lists what the test ran: server files by executed
-lines, then browser files, each opening in your editor. A file the failure's
-[suspect lines](/guide/concepts#suspect-lines) name, or that changed since the last pass, links to the cluster's What
-changed card. A server file unfolds to its source at the version the test ran, marking the lines it ran and, from the
-run's own coverage, the executable lines it did not.
+lines, then browser files. A file the failure's [suspect lines](/guide/concepts#suspect-lines) name, or that changed
+since the last pass, is marked. A server file unfolds to its source at the version the test ran, marking the lines it
+ran and, from the run's own coverage, the executable lines it did not.
 
 <figure>
   <img src="/screenshots/execution-coverage.png" alt="The Coverage section of an execution's Source tab">
   <figcaption>What a failing test ran.</figcaption>
 </figure>
 
+## Which tests run a file
+
+A file's **tests** link, on an execution or a cluster's suspect lines, and a file of the [Test Map](./scenario-gaps)
+open its coverage page: its source at the version most tests ran, each line with how many tests ran it, the executable
+lines none runs marked. Select a line, or Shift-click a range, for its tests and their latest outcome; on a line no
+test runs, the nearest test to copy.
+
+<figure>
+  <img src="/screenshots/coverage-file.png" alt="A file's coverage page">
+  <figcaption>Which tests run each line.</figcaption>
+</figure>
+
 ## Where it is used
 
 - **[Impact-from-diff](./test-selection#impact-from-diff)** maps a changed file to the tests that executed it. Code
-  reach only adds tests: a changed source file that no test reached still widens the run to the whole suite, since
-  code reach does not see module top-level code, server code without [server coverage](#server-code), or type-only
-  modules.
+  reach only adds tests: a changed source file no test reached still widens the run to the whole suite, since code
+  reach misses top-level code, server code without [server coverage](#server-code) and type-only modules.
 - **[Uncovered changes](./uncovered-changes)** counts a changed file as reached when a test executed it.
 - **[Locator preflight](./preflight)** calls a break *likely* only when one of its tests reaches the changed file.
-- **[Coverage in the editor](./editor-coverage)** marks the lines tests ran, the executable lines none runs and the
-  lines changed since the coverage run, with the tests behind each function and line, in VS Code and the JetBrains IDEs.
+- **[Coverage in the editor](./editor-coverage)** marks the lines tests ran and the executable lines none runs, with
+  the tests behind each line, in VS Code and the JetBrains IDEs.
 - **[Suspect lines](/guide/concepts#suspect-lines)**: the changed lines a failure's tests executed, ranked against the
   passing tests, on the failure pages' [What changed](./failure-clusters#the-cluster-page) line and diff, in the
   [AI diagnosis](./ai-diagnosis#scm-grounded-context) and the [fix plan](./fix-plans).
 
-The dashboard's API serves the tests reaching one file and the whole map of a branch; see the
+The API serves the tests reaching one file and the whole map of a branch: see the
 [API docs](https://piwitests.dev/demo/docs) (`/docs` on your instance).
 
 ## Limits
@@ -158,8 +164,7 @@ The dashboard's API serves the tests reaching one file and the whole map of a br
 - A module whose top-level code calls its own functions, a table built on import, counts for every test that loads it.
 - A function a minifier inlines into another as plain statements counts for the file it was inlined into.
 - A test that loads a new document in its page reaches the files of the last document only: Chromium keeps no
-  coverage of a document the page has left. Client-side navigation stays in one document, and an iframe's earlier
-  documents stay covered.
+  coverage of a document the page has left. Client-side navigation and an iframe's earlier documents stay covered.
 - Reach is per branch: a branch's own runs replace its tests' reach, and the default branch's stands in for the rest.
 
 ## Try it in the demo

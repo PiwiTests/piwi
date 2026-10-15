@@ -686,6 +686,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :project-name="projectName ?? null"
           :suspects="suspectLines ?? null"
           :what-changed-to="whatChangedTo ?? null"
+          :status="status"
         />
       </div>
 

@@ -10,8 +10,8 @@ lang: en-US
 
 Once tests record [coverage](/guide/concepts#coverage), Piwi compares it in four ways: a failing execution against
 the test's last passing one, a test's recent runs against each other, a set of tests against every other test, and a
-test against the lines it was written to reach. Each answer is in the API, in an MCP tool for coding agents, and, for
-a failure, in the AI diagnosis.
+test against the lines it was written to reach. Each answer is in the dashboard, the API, an MCP tool for coding
+agents and, for a failure, the AI diagnosis.
 
 ## Turn it on
 
@@ -45,8 +45,14 @@ and file:
 | `changed` | They ran different versions of the file, not compared |
 
 The failing side comes first: "the code this run took that the last passing run did not" is where an error path, a
-fallback or a retry branch shows. The [AI diagnosis](./ai-diagnosis) carries the same comparison as its
-**Code paths vs last pass** section, at most twelve files each way, when there is one.
+fallback or a retry branch shows. A failed execution's **Source** tab shows it in its Coverage section, under
+*Compared with the last passing run*; a file both ran at one version opens on the lines each ran. The
+[AI diagnosis](./ai-diagnosis) carries it as its **Code paths vs last pass** section, at most twelve files each way.
+
+<figure>
+  <img src="/screenshots/coverage-divergence.png" alt="A failed execution compared with its last passing run">
+  <figcaption>The lines only the failure ran, and only the pass.</figcaption>
+</figure>
 
 ## A path that depends on the tests before it
 
@@ -68,7 +74,12 @@ When at least two executions failed and 90% of them fall on one side of a group,
 that code. When they follow the code the earlier test predicts, the test is marked **order-dependent**: it depends on
 state another test leaves behind, and the [flaky root-cause classification](./flaky-tests#root-cause-classification)
 names it `order`, ahead of every other category. That check runs only for a test with at least two recent failures
-that recorded coverage.
+that recorded coverage. A test's page shows the answer in its **Path variation** card.
+
+<figure>
+  <img src="/screenshots/path-variation.png" alt="The Path variation card of an order-dependent test">
+  <figcaption>The earlier test that predicts the path, and the failures that follow it.</figcaption>
+</figure>
 
 ## What quarantining or deleting tests leaves uncovered
 
@@ -83,8 +94,14 @@ tests asked about are left out of the others.
 | `partial` | Other tests run the file, not every line: the lines no other trusted test runs, and the lines only flaky ones run |
 | `uncertain` | The other tests recorded the file only at another version, or without lines, so no line is claimed |
 
-The MCP tools that quarantine or release tests add the same summary to their answer when the project records coverage:
-what the quarantine leaves uncovered, or what the release covers again.
+Where the project records coverage, the dashboard's quarantine actions preview it: beside the Quarantine and Release
+buttons, in the More menus and in the confirmations. The MCP tools that quarantine or release tests add the same
+summary to their answer.
+
+<figure>
+  <img src="/screenshots/quarantine-coverage-loss.png" alt="A Quarantine button with the code quarantining the test leaves uncovered">
+  <figcaption>What quarantining a flaky test leaves to no other trusted test.</figcaption>
+</figure>
 
 ## Did a new test reach its target lines
 
@@ -126,6 +143,10 @@ instance).
 - **Coverage loss reads each test's latest coverage as stored**: another test whose own capture was incomplete can
   make a line look run by these tests only.
 - **What the capture cannot see** stays unseen: see the limits of [code reach](./code-reach#limits).
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

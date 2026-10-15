@@ -32,7 +32,7 @@ export const COVERAGE_SCENE_SUSPECT_LINES = {
     executedHunks: 1,
     executedLines: 3,
     failingWithCoverage: 1,
-    passingWithCoverage: 2,
+    passingWithCoverage: 4,
   },
   unreadFiles: 2,
   suspects: [

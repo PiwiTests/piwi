@@ -177,7 +177,10 @@ deflates and exists for trace-blob reconstruction.
 `/` dashboard home · `/projects` + `/projects/[id]` · `/projects/[id]/test-functions` (the browser extension's
 function catalog — add by hand, via AI extraction from pasted code, or — with no AI configured — copy a prompt for
 your own AI chat and paste its reply back in) · `/projects/[id]/selections` (test selections — builder with live
-preview and the runnable command) · `/test-runs/[id]` · `/test-cases/[id]` (stable
+preview and the runnable command) · `/projects/[id]/coverage` (a file's coverage, `?file=`: its source with how many
+tests ran each line, the tests of a selected line or range and the nearest test to copy for a line none runs, a
+version selector; worded by `app/utils/file-coverage.ts`, linked from the execution page's Coverage rows, the
+suspect lines and the Test Map's file nodes) · `/test-runs/[id]` · `/test-cases/[id]` (stable
 case across runs) · `/test-run-cases/[id]` (one execution) · `/failure-clusters/[id]` · `/analytics` (the viewer's default dashboard) + `/analytics/d/[id]` (one dashboard, `?tv=1` for TV mode) + `/analytics/dashboards` · `/settings/*` ·
 `/docs` (in-app API reference) · `/mcp` · `/login`, `/forgot-password`, `/reset-password` (public, layout-free).
 
@@ -227,7 +230,7 @@ Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: f
 | `cluster/`                                                              | Failure-cluster detail: the state, what-changed and facts lines, the occurrence sparkline and trend, the affected-tests selector, investigation + baseline picker, commit browser, activity, fixed-before matches               |
 | `diagnosis/`                                                            | AI diagnosis panel: context preview + coverage strip, result with evidence citations, export                                                                                                                                    |
 | `integrations/`                                                         | Issue trackers: the Issue line both failure pages share, the create and link dialogs, the Jira connection, the project binding and its field defaults, the integration activity                                                 |
-| `project/`                                                              | Project detail charts, flaky list, cluster list, SCM changes, subscribe bell                                                                                                                                                    |
+| `project/`                                                              | Project detail charts, flaky list, cluster list, SCM changes, subscribe bell, the tests panel of a file's coverage page                                                                                                         |
 | `analytics/`                                                            | Cross-project widgets (component map in `app/utils/analytics-widgets.ts`), and the dashboard page: `DashboardPage`, `DashboardBody` (view, editor, TV mode), `DashboardSwitcher`, `AddWidgetSlideover`, `WidgetConfigSlideover` |
 | `bug-reports/`                                                          | Bug report detail (Piwi Picker): the reported steps, the evidence, the generated spec                                                                                                                                           |
 | `gaps/`                                                                 | Test Map: the feature graph and map views, the node inspector, the scenario gaps panel                                                                                                                                          |
@@ -321,6 +324,15 @@ diff via `shared/heal-edit.ts` (`buildHealEdit` / `buildUnifiedLineDiff`), and `
 (`parseCallsiteLocation`) parses a captured `file:line:col` (drive-letter-safe). `app/utils/demo-tour/` holds the
 demo's guided tour as data: the tours (`TOUR_PROFILES`), their words (one `copy.<code>.ts` per language, registered in
 `TOUR_COPY`), the tour languages, the `**bold**` markup and the prompt's stored state.
+
+The coverage insights (`#shared/coverage-insights`) reach the UI where the project's coverage capability is active,
+and render nothing elsewhere: a failed execution's Coverage section compares it with the test's last passing run
+(`CoverageDivergencePart`, a file both ran at one version unfolding to `CoverageDivergenceSource`), the test page's
+`PathVariationCard` names the earlier test a path depends on, and every quarantine action previews the code only its
+tests run (`CoverageLossPreview`; beside a bare button, `CoverageLossPopover` on hover or focus), read through
+`useCoverageLoss` when the action is about to be taken. Their wording is `app/utils/coverage-insights.ts`. Both AI
+contexts, the server's and the demo's, carry the divergence through `coverageDivergenceContext`
+(`#shared/handlers/coverage-insights`).
 
 ## Demo SPA
 

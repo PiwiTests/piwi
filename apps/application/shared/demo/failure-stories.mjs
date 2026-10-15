@@ -1212,10 +1212,32 @@ const USERS_REQUEST_COVERAGE = [
 ];
 
 /**
+ * `listUsersCoverage` with what the invitation's role update records of
+ * `UpdateUser`: the method, its role check and the update, without the lookup
+ * between them, which no test of the suite runs.
+ *
+ * @param {import('./failure-stories.d.mts').StoryServerCoverage} coverage
+ * @returns {import('./failure-stories.d.mts').StoryServerCoverage}
+ */
+function withRoleUpdateCoverage(coverage) {
+  const line = (needle) => lineOf(USERS_ENDPOINTS, needle);
+  return {
+    ...coverage,
+    functions: [...coverage.functions, methodRange(USERS_ENDPOINTS, 'UpdateUser(')],
+    lines: [
+      ...coverage.lines,
+      [line('if (request.Role is not null'), line('return TypedResults.ValidationProblem')],
+      [line('user.Name = request.Name'), line('return TypedResults.Ok(new UserRow')],
+    ],
+  };
+}
+
+/**
  * The coverage of the users story's covered run, per test: the users pages'
  * browser files for each test of the spec (recorded in Chromium), and for each
  * of the three tests that request `GET /api/users`, the endpoint's lines and
- * the rest of the API the request runs.
+ * the rest of the API the request runs; the invitation also updates the
+ * invited user's role.
  *
  * @type {import('./failure-stories.d.mts').StoryCoverage}
  */
@@ -1229,7 +1251,10 @@ const USERS_STORY_COVERAGE = {
     listUsersCoverage(),
     ...USERS_REQUEST_COVERAGE,
   ],
-  'tests/admin/users.spec.ts › invites a user by email': [listUsersCoverage(), ...USERS_REQUEST_COVERAGE],
+  'tests/admin/users.spec.ts › invites a user by email': [
+    withRoleUpdateCoverage(listUsersCoverage()),
+    ...USERS_REQUEST_COVERAGE,
+  ],
   'tests/admin/users.spec.ts › filters users by role': [listUsersCoverage({ role: true }), ...USERS_REQUEST_COVERAGE],
 };
 
@@ -1259,6 +1284,265 @@ function apiRunCoverage(coverage) {
     };
   });
 }
+
+// ── The settings race behind `toggles dark mode` ─────────────────────────────
+// Two more files of the API: the current organization, which `updates the
+// organization name` saves, and the signed-in user's preferences, which
+// `toggles dark mode` saves. Both save the signed-in admin's user row: the
+// organization save stamps who changed it last, and the theme lives on the
+// row. When the organization save lands while the theme save is in flight, the
+// theme save conflicts on the row's version, and the handler keeps what is
+// stored: the theme stays light.
+
+const ORGANIZATION_ENDPOINTS_PATH = 'api/Organizations/OrganizationEndpoints.cs';
+const ORGANIZATION_ENDPOINTS = [
+  'using System.Security.Claims;',
+  'using AdminDashboard.Api.Audit;',
+  'using AdminDashboard.Api.Data;',
+  'using Microsoft.AspNetCore.Http.HttpResults;',
+  'using Microsoft.EntityFrameworkCore;',
+  '',
+  'namespace AdminDashboard.Api.Organizations;',
+  '',
+  'public sealed record OrganizationDto(int Id, string Name, string Plan);',
+  '',
+  'public sealed record UpdateOrganizationRequest(string Name);',
+  '',
+  'public static class OrganizationEndpoints',
+  '{',
+  '    public static RouteGroupBuilder MapOrganizationEndpoints(this IEndpointRouteBuilder app)',
+  '    {',
+  '        var orgs = app.MapGroup("/api/orgs").RequireAuthorization();',
+  '        orgs.MapGet("/current", GetCurrentOrganization);',
+  '        orgs.MapPatch("/current", UpdateCurrentOrganization).RequireAuthorization("admin");',
+  '        return orgs;',
+  '    }',
+  '',
+  '    public static async Task<Ok<OrganizationDto>> GetCurrentOrganization(',
+  '        ClaimsPrincipal principal,',
+  '        AdminDb db,',
+  '        CancellationToken ct = default)',
+  '    {',
+  '        var id = int.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);',
+  '        var user = await db.Users.AsNoTracking().Include(u => u.Organization).SingleAsync(u => u.Id == id, ct);',
+  '        var org = user.Organization;',
+  '        return TypedResults.Ok(new OrganizationDto(org.Id, org.Name, org.Plan));',
+  '    }',
+  '',
+  '    public static async Task<Results<Ok<OrganizationDto>, ValidationProblem>> UpdateCurrentOrganization(',
+  '        UpdateOrganizationRequest request,',
+  '        ClaimsPrincipal principal,',
+  '        AdminDb db,',
+  '        IAuditLog audit,',
+  '        TimeProvider clock,',
+  '        ILogger<OrganizationDto> logger,',
+  '        CancellationToken ct = default)',
+  '    {',
+  '        var name = request.Name.Trim();',
+  '        if (name.Length is 0 or > 80)',
+  '            return TypedResults.ValidationProblem(new Dictionary<string, string[]>',
+  '            {',
+  '                ["name"] = ["The name is 1 to 80 characters."],',
+  '            });',
+  '',
+  '        var id = int.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);',
+  '        var user = await db.Users.Include(u => u.Organization).SingleAsync(u => u.Id == id, ct);',
+  '        user.Organization.Name = name;',
+  '        user.LastActiveAt = clock.GetUtcNow();',
+  '        await db.SaveChangesAsync(ct);',
+  '',
+  '        try',
+  '        {',
+  '            await audit.WriteAsync(new AuditEvent("organization.renamed", user.Id, name), ct);',
+  '        }',
+  '        catch (Exception error)',
+  '        {',
+  '            logger.LogError(error, "audit event write failed: {Reason}", error.Message);',
+  '        }',
+  '',
+  '        var org = user.Organization;',
+  '        return TypedResults.Ok(new OrganizationDto(org.Id, org.Name, org.Plan));',
+  '    }',
+  '}',
+];
+
+/** The git blob id of the organization endpoints, as `git hash-object` gives it for `sourceText`; `demo-coverage-insights.test.ts` recomputes it. */
+const ORGANIZATION_ENDPOINTS_BLOB = 'fa0ce4c86906c0399337498c802d7428f16c37ee';
+
+const PREFERENCES_ENDPOINTS_PATH = 'api/Preferences/PreferencesEndpoints.cs';
+const PREFERENCES_ENDPOINTS = [
+  'using System.Security.Claims;',
+  'using AdminDashboard.Api.Data;',
+  'using Microsoft.AspNetCore.Http.HttpResults;',
+  'using Microsoft.EntityFrameworkCore;',
+  '',
+  'namespace AdminDashboard.Api.Preferences;',
+  '',
+  'public sealed record PreferencesDto(string Theme);',
+  '',
+  'public sealed record UpdatePreferencesRequest(string Theme);',
+  '',
+  'public static class PreferencesEndpoints',
+  '{',
+  '    private static readonly string[] Themes = ["light", "dark"];',
+  '',
+  '    public static RouteGroupBuilder MapPreferencesEndpoints(this IEndpointRouteBuilder app)',
+  '    {',
+  '        var preferences = app.MapGroup("/api/me/preferences").RequireAuthorization();',
+  '        preferences.MapGet("", GetPreferences);',
+  '        preferences.MapPut("", UpdatePreferences);',
+  '        return preferences;',
+  '    }',
+  '',
+  '    public static async Task<Ok<PreferencesDto>> GetPreferences(',
+  '        ClaimsPrincipal principal,',
+  '        AdminDb db,',
+  '        CancellationToken ct = default)',
+  '    {',
+  '        var id = int.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);',
+  '        var user = await db.Users.AsNoTracking().SingleAsync(u => u.Id == id, ct);',
+  '        return TypedResults.Ok(new PreferencesDto(user.Theme ?? "light"));',
+  '    }',
+  '',
+  '    public static async Task<Results<Ok<PreferencesDto>, ValidationProblem>> UpdatePreferences(',
+  '        UpdatePreferencesRequest request,',
+  '        ClaimsPrincipal principal,',
+  '        AdminDb db,',
+  '        IPreferenceEvents events,',
+  '        ILogger<PreferencesDto> logger,',
+  '        CancellationToken ct = default)',
+  '    {',
+  '        if (!Themes.Contains(request.Theme))',
+  '            return TypedResults.ValidationProblem(new Dictionary<string, string[]>',
+  '            {',
+  '                ["theme"] = [$"Theme must be one of {string.Join(", ", Themes)}."],',
+  '            });',
+  '',
+  '        var id = int.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);',
+  '        var user = await db.Users.SingleAsync(u => u.Id == id, ct);',
+  '        user.Theme = request.Theme;',
+  '        try',
+  '        {',
+  '            await db.SaveChangesAsync(ct);',
+  '            await events.PublishAsync(new ThemeChanged(user.Id, user.Theme), ct);',
+  '        }',
+  '        catch (DbUpdateConcurrencyException conflict)',
+  '        {',
+  '            await conflict.Entries.Single().ReloadAsync(ct);',
+  '            logger.LogWarning("User {UserId} changed during the theme save; kept the stored theme", user.Id);',
+  '        }',
+  '',
+  '        return TypedResults.Ok(new PreferencesDto(user.Theme ?? "light"));',
+  '    }',
+  '}',
+];
+
+/** The git blob id of the preferences endpoints, as `git hash-object` gives it for `sourceText`; `demo-coverage-insights.test.ts` recomputes it. */
+const PREFERENCES_ENDPOINTS_BLOB = 'ed6673c241155316546d61aa6c81f7c11c8dce75';
+
+/** @type {ApiFile} */
+const ORGANIZATION_ENDPOINTS_FILE = {
+  path: ORGANIZATION_ENDPOINTS_PATH,
+  lines: ORGANIZATION_ENDPOINTS,
+  blob: ORGANIZATION_ENDPOINTS_BLOB,
+  statements: [],
+};
+
+/** @type {ApiFile} */
+const PREFERENCES_ENDPOINTS_FILE = {
+  path: PREFERENCES_ENDPOINTS_PATH,
+  lines: PREFERENCES_ENDPOINTS,
+  blob: PREFERENCES_ENDPOINTS_BLOB,
+  statements: [],
+};
+
+/** What any signed-in request records besides its endpoint: the session sign-in, the organization scope and the user set. */
+const SIGNED_IN_REQUEST_COVERAGE = USERS_REQUEST_COVERAGE.filter((entry) => entry.path !== ADMIN_REQUIREMENT_PATH);
+
+/** `GET /api/orgs/current`: the signed-in user's organization. */
+const GET_ORGANIZATION_RAN = {
+  methods: ['GetCurrentOrganization('],
+  statements: [
+    ['var id = int.Parse(', 0],
+    'var user = await db.Users.AsNoTracking()',
+    ['var org = user.Organization;', 0],
+    ['return TypedResults.Ok(new OrganizationDto', 0],
+  ],
+};
+
+/** `GET /api/me/preferences`, then `PUT /api/me/preferences` up to the save. */
+const PREFERENCES_RAN = {
+  methods: ['GetPreferences(', 'UpdatePreferences('],
+  statements: [
+    ['var id = int.Parse(', 0],
+    'var user = await db.Users.AsNoTracking()',
+    ['return TypedResults.Ok(new PreferencesDto', 0],
+    'if (!Themes.Contains(request.Theme))',
+    ['var id = int.Parse(', 1],
+    'var user = await db.Users.SingleAsync(',
+    'user.Theme = request.Theme;',
+    'await db.SaveChangesAsync(ct);',
+    ['return TypedResults.Ok(new PreferencesDto', 1],
+  ],
+};
+
+/**
+ * The web dashboard's order-dependent flake: `toggles dark mode` fails its
+ * first attempt in the runs where `updates the organization name` had not
+ * finished when it started, and its retry, after the organization save,
+ * passes. The coverage each records, as a run with server coverage stores it:
+ * the organization test's, the toggle's when its theme save went through, and
+ * the toggle's when the save conflicted (the reload and the warning in place
+ * of the event the save publishes).
+ *
+ * @type {import('./failure-stories.d.mts').OrderFlake}
+ */
+export const ORDER_FLAKE = {
+  projectId: 5,
+  specFile: 'tests/admin/settings.spec.ts',
+  test: 'toggles dark mode',
+  earlier: 'updates the organization name',
+  conflictPath: PREFERENCES_ENDPOINTS_PATH,
+  minRaces: 3,
+  coverage: {
+    earlier: [
+      ...USERS_REQUEST_COVERAGE,
+      requestCoverage(ORGANIZATION_ENDPOINTS_FILE, {
+        methods: ['GetCurrentOrganization(', 'UpdateCurrentOrganization('],
+        statements: [
+          ...GET_ORGANIZATION_RAN.statements,
+          'var name = request.Name.Trim();',
+          'if (name.Length is 0',
+          ['var id = int.Parse(', 1],
+          'var user = await db.Users.Include(',
+          'user.Organization.Name = name;',
+          'user.LastActiveAt = clock.GetUtcNow();',
+          'await db.SaveChangesAsync(ct);',
+          'await audit.WriteAsync(',
+          'logger.LogError(',
+          ['var org = user.Organization;', 1],
+          ['return TypedResults.Ok(new OrganizationDto', 1],
+        ],
+      }),
+    ],
+    saved: [
+      ...SIGNED_IN_REQUEST_COVERAGE,
+      requestCoverage(ORGANIZATION_ENDPOINTS_FILE, GET_ORGANIZATION_RAN),
+      requestCoverage(PREFERENCES_ENDPOINTS_FILE, {
+        methods: PREFERENCES_RAN.methods,
+        statements: [...PREFERENCES_RAN.statements, 'await events.PublishAsync('],
+      }),
+    ],
+    conflicted: [
+      ...SIGNED_IN_REQUEST_COVERAGE,
+      requestCoverage(ORGANIZATION_ENDPOINTS_FILE, GET_ORGANIZATION_RAN),
+      requestCoverage(PREFERENCES_ENDPOINTS_FILE, {
+        methods: PREFERENCES_RAN.methods,
+        statements: [...PREFERENCES_RAN.statements, 'await conflict.Entries.Single()', 'logger.LogWarning('],
+      }),
+    ],
+  },
+};
 
 /** @param {number} start @param {number} end @returns {number[]} */
 function rangeLines(start, end) {
@@ -1334,6 +1618,8 @@ export const SOURCE_FILES = {
   [ORGANIZATION_SCOPE_PATH]: ORGANIZATION_SCOPE,
   [ADMIN_REQUIREMENT_PATH]: ADMIN_REQUIREMENT,
   [ADMIN_DB_PATH]: ADMIN_DB,
+  [ORGANIZATION_ENDPOINTS_PATH]: ORGANIZATION_ENDPOINTS,
+  [PREFERENCES_ENDPOINTS_PATH]: PREFERENCES_ENDPOINTS,
   'tests/admin/login.spec.ts': LOGIN_SPEC,
   'tests/admin/settings.spec.ts': SETTINGS_SPEC,
 };
@@ -3660,20 +3946,23 @@ export const SCM_REPOS = {
 };
 
 /**
- * The authored files a project's stories' coverage names (the files its tests
- * and its runs ran), which its canned repository serves by git blob.
+ * The authored files a project's coverage names (the files its stories' tests,
+ * its runs and the order-dependent flake's tests ran), which its canned
+ * repository serves by git blob.
  *
  * @param {number} projectId @returns {string[]}
  */
 export function projectCoveredFilePaths(projectId) {
   const paths = new Set();
+  const entries = [];
   for (const s of FAILURE_STORIES) {
     if (s.projectId !== projectId) continue;
-    const entries = [...Object.values(s.coverage ?? {}).flat(), ...(s.runCoverage ?? [])];
-    for (const entry of entries) {
-      const path = typeof entry === 'string' ? entry : entry.path;
-      if (SOURCE_FILES[path]) paths.add(path);
-    }
+    entries.push(...Object.values(s.coverage ?? {}).flat(), ...(s.runCoverage ?? []));
+  }
+  if (ORDER_FLAKE.projectId === projectId) entries.push(...Object.values(ORDER_FLAKE.coverage).flat());
+  for (const entry of entries) {
+    const path = typeof entry === 'string' ? entry : entry.path;
+    if (SOURCE_FILES[path]) paths.add(path);
   }
   return [...paths];
 }

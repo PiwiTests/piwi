@@ -5,10 +5,12 @@
  * its lines, its granularity in words, and how many failing and passing tests
  * ran it; the score is on hover. A meta line says whose coverage it read, the
  * range when the diff below is not of the same commits, and how many changed
- * files had no patch to check. The first five show; the rest unfold.
+ * files had no patch to check. Each file links its coverage page, which lists
+ * the tests running each of its lines. The first five show; the rest unfold.
  */
 import type { ClusterSuspectLinesAnswer } from '~~/types/api';
 import { lineRangesText, suspectGranularityLabel, suspectLinesSentence, testCountText } from '~/utils/suspect-lines';
+import { coverageFileRoute } from '~/utils/coverage-view';
 
 const props = defineProps<{
   answer: ClusterSuspectLinesAnswer;
@@ -75,6 +77,15 @@ const scoreTitle = (score: number) =>
         <span class="text-xs text-muted sm:shrink-0" :title="scoreTitle(suspect.score)">
           {{ suspectGranularityLabel(suspect.granularity) }} · {{ testCountText(suspect.failing, 'failing') }},
           {{ testCountText(suspect.passing, 'passing') }}
+          <template v-if="project">
+            ·
+            <NuxtLink
+              :to="coverageFileRoute(project.id, suspect.path, suspect.lines[0]?.[0] ?? suspect.hunk[0])"
+              :class="SENTENCE_LINK_CLASS"
+              title="Every test that runs this file, line by line"
+              >tests</NuxtLink
+            >
+          </template>
         </span>
       </li>
     </ol>

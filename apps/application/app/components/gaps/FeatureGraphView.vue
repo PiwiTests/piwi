@@ -8,8 +8,13 @@
  * hundred routes still draws as a readable star. Every edge runs from the
  * center to one neighbor, so nothing crosses. Nodes are colored by their worst
  * open gap and edges by kind; clicking a node recenters. Plain SVG, no library.
+ * A file node whose tests recorded coverage of it links its coverage page,
+ * where the project records coverage.
  */
+import { sameFilePath } from '@piwitests/core/locator-break';
+import type { FileCoverage } from '~~/server/utils/coverage';
 import { compareBySeverity, gapClassBadgeColor, gapClassFill, graphEdgeStroke } from '~/utils/gap-classes';
+import { coverageFileRoute } from '~/utils/coverage-view';
 import { errorMessage } from '~/utils';
 
 interface GraphNode {
@@ -36,6 +41,8 @@ interface FeatureGraph {
 
 const props = defineProps<{ projectId: number; seedNode: string }>();
 const emit = defineEmits<{ (e: 'select', node: { kind: string; key: string }): void }>();
+
+const { state: capabilityState } = await useProjectCapabilities(props.projectId);
 
 const graph = ref<FeatureGraph | null>(null);
 const loading = ref(false);
@@ -91,6 +98,23 @@ const seed = computed<GraphNode | null>(() => {
   return g.nodes.find((n) => n.depth === 0) ?? { kind: g.seed.kind, key: g.seed.key, class: null, depth: 0, tests: [] };
 });
 const neighbors = computed(() => graph.value?.nodes.filter((n) => n.depth > 0) ?? []);
+
+/** The seed's path when it is a file whose tests recorded coverage of it, for its coverage page. */
+const coveredFile = ref<string | null>(null);
+watch(
+  () => [seed.value?.kind, seed.value?.key, capabilityState('coverage')] as const,
+  async ([kind, key, coverage], _old, onCleanup) => {
+    let stale = false;
+    onCleanup(() => (stale = true));
+    coveredFile.value = null;
+    if (kind !== 'file' || !key || coverage !== 'active') return;
+    const read = await $fetch<FileCoverage>(`/api/projects/${props.projectId}/coverage`, {
+      query: { file: key },
+    }).catch(() => null);
+    if (!stale && read?.fragments.some((f) => sameFilePath(f.path, key))) coveredFile.value = key;
+  },
+  { immediate: true },
+);
 
 // Layout: one column each side of the seed; kinds stacked within a column.
 const KIND_ORDER = ['test', 'feature', 'page', 'control', 'link', 'route', 'handler', 'dependency', 'file'];
@@ -290,6 +314,16 @@ function select(node: { kind: string; key: string }) {
         }}</UBadge>
         <span v-if="reachable(seed)" class="text-xs text-muted"
           >reached by {{ seed.tests.length }} test{{ seed.tests.length === 1 ? '' : 's' }}</span
+        >
+        <span v-if="coveredFile" class="text-xs text-muted"
+          >·
+          <NuxtLink
+            :to="coverageFileRoute(projectId, coveredFile)"
+            :class="SENTENCE_LINK_CLASS"
+            title="Which tests run each line of this file"
+            data-coverage-link
+            >the lines they run</NuxtLink
+          ></span
         >
         <span class="text-xs text-muted"
           >· what leads here on the left, what it leads to on the right · click to recenter</span

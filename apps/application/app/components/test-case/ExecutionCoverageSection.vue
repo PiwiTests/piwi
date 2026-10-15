@@ -11,8 +11,9 @@
  * changed card), and links the file's coverage view; a server file with line
  * numbers unfolds to its source (`CoverageFileSource`). A test that recorded
  * nothing says so in one line, and one whose run recorded backend coverage
- * but none for it says that. The page renders it only where the project's
- * coverage capability is active.
+ * but none for it says that. A failed or timed-out execution also says how its
+ * path differs from the test's last passing run (`CoverageDivergencePart`). The
+ * page renders it only where the project's coverage capability is active.
  */
 import type { CoverageCapture } from '@piwitests/core/coverage';
 import type { ApiResponse } from '~~/types/api';
@@ -28,6 +29,7 @@ import {
   type CoverageRow,
 } from '~/utils/coverage-view';
 import { lineRangesText } from '~/utils/suspect-lines';
+import { isFailedStatus } from '#shared/utils/test-counts';
 
 type RunCoverageResponse = ApiResponse<typeof import('~~/server/api/test-runs/[id]/coverage.get').default>;
 
@@ -42,7 +44,11 @@ const props = defineProps<{
   suspects?: SuspectLinesAnswer | null;
   /** Where a mark leads: the cluster's What changed card. */
   whatChangedTo?: string | null;
+  /** The execution's status: a failed one is compared with the test's last passing run. */
+  status?: string | null;
 }>();
+
+const failing = computed(() => Boolean(props.status && isFailedStatus(props.status)));
 
 const capture = ref<CoverageCapture | null>(null);
 const pending = ref(true);
@@ -122,7 +128,7 @@ function markText(row: CoverageRow): string {
 </script>
 
 <template>
-  <section data-shot="execution-coverage" class="border-t border-default pt-4">
+  <section data-shot="execution-coverage" data-tour="execution-coverage" class="border-t border-default pt-4">
     <SectionCard embedded title="Coverage" icon="i-lucide-scan-line" help="case.coverage">
       <p v-if="pending && !capture" class="text-xs text-muted">Reading the coverage…</p>
       <p v-else-if="failed" class="text-xs text-muted">The coverage of this execution could not be read.</p>
@@ -151,6 +157,14 @@ function markText(row: CoverageRow): string {
           The backend recorded no coverage for this test.
           <HelpHint topic="case.coverage-backend-none" />
         </p>
+
+        <CoverageDivergencePart
+          v-if="failing"
+          :execution-id="testRunsCaseId"
+          :run-id="runId"
+          :project-id="projectId"
+          :project-name="projectName"
+        />
 
         <div v-for="section in sections" :key="section.runtime" :data-coverage-group="section.runtime">
           <h4 class="mb-1 text-sm font-semibold text-highlighted">{{ section.label }}</h4>
@@ -201,7 +215,7 @@ function markText(row: CoverageRow): string {
                   <template v-if="projectId != null">
                     ·
                     <NuxtLink
-                      :to="coverageFileRoute(projectId, row.file.path)"
+                      :to="coverageFileRoute(projectId, row.file.path, row.firstLine)"
                       :class="SENTENCE_LINK_CLASS"
                       title="The tests that run this file"
                       >tests</NuxtLink

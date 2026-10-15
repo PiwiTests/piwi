@@ -43,6 +43,8 @@ const { can } = useAuth();
 const canMove = computed(() => can('triage:write', props.projectId));
 const canQuarantine = computed(() => can('quarantine:write', props.projectId));
 const canSelect = computed(() => canMove.value || canQuarantine.value);
+// What quarantining the selection leaves uncovered, beside its button, where the project records coverage.
+const coverageActive = useCoverageActive(props.projectId);
 
 // A cluster is a set of same-way failures, so each affected test reads as a
 // failing row linking to its latest execution.
@@ -171,17 +173,24 @@ async function quarantineSelected() {
       >
         Move to a new cluster
       </UButton>
-      <UButton
+      <CoverageLossPopover
         v-if="canQuarantine"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-shield-alert"
-        :loading="quarantining"
-        @click="quarantineSelected"
+        :project-id="projectId ?? 0"
+        :project-name="projectName"
+        :test-case-ids="[...selected]"
+        :active="coverageActive"
       >
-        Quarantine
-      </UButton>
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-shield-alert"
+          :loading="quarantining"
+          @click="quarantineSelected"
+        >
+          Quarantine
+        </UButton>
+      </CoverageLossPopover>
       <UButton size="xs" color="neutral" variant="ghost" @click="clearSelection">Clear</UButton>
     </div>
   </SectionCard>

@@ -35,6 +35,14 @@
  *   recorded coverage of that many server files, each with executed lines, and
  *   that many browser files; with `runCoverage`, its run's own coverage holds
  *   each of those server files with its executable lines.
+ * - `fileCoverage: { path, tests, executable? }`: on the project's default
+ *   branch, that many tests recorded coverage of the file, every one by line
+ *   at a git blob; with `executable`, a run's coverage holds the file's
+ *   executable lines at that blob.
+ * - `insight: 'divergence' | 'path-variation'`: the coverage insight the route
+ *   shows holds: the execution failed with coverage and its test has an
+ *   earlier passing execution with coverage; or the test has at least 8
+ *   executions with coverage.
  */
 
 /** @type {readonly import('./demo-examples.d.mts').DemoExample[]} */
@@ -92,6 +100,40 @@ export const DEMO_EXAMPLES = [
       execution: { id: 711, title: 'Users table paginates 25 rows per page' },
       coverage: { serverFiles: 5, browserFiles: 3, runCoverage: true },
     },
+  },
+  {
+    id: 'file-coverage-server',
+    doc: 'features/code-reach',
+    title: 'Web Dashboard › UsersEndpoints.cs: which tests run each line',
+    shows:
+      'The users endpoints of the ASP.NET Core API at the version its tests ran, each line marked with how many of the three users tests ran it and the executable lines none runs; select a line to list the tests that ran it, with their latest outcome.',
+    route: '/projects/5/coverage?file=api/Users/UsersEndpoints.cs',
+    expect: {
+      project: { id: 5, name: 'web-dashboard' },
+      fileCoverage: { path: 'api/Users/UsersEndpoints.cs', tests: 3, executable: true },
+    },
+  },
+  {
+    id: 'coverage-divergence-order-flake',
+    doc: 'features/coverage-insights',
+    title: 'Web Dashboard › toggles dark mode: a failed attempt against its last pass',
+    shows:
+      'The Source tab compares the failed first attempt with the test’s last passing run: in the preferences endpoints, only the failure ran the conflict handler that keeps the stored theme, and only the pass published the change; open the file to see both marked.',
+    route: '/test-run-cases/830?evidence=source',
+    expect: {
+      execution: { id: 830, title: 'toggles dark mode' },
+      coverage: { serverFiles: 5, browserFiles: 0 },
+      insight: 'divergence',
+    },
+  },
+  {
+    id: 'path-variation-order',
+    doc: 'features/coverage-insights',
+    title: 'Web Dashboard › toggles dark mode: a path that depends on the tests before it',
+    shows:
+      'Its Path variation card: in the 3 executions that started before updates the organization name finished, it ran the conflict handler, and only those failed, so its flaky root cause is order.',
+    route: '/test-cases/53',
+    expect: { testCase: { id: 53, title: 'toggles dark mode' }, insight: 'path-variation' },
   },
   {
     id: 'issue-tracked-cluster',

@@ -33,6 +33,7 @@ import { createHash } from 'crypto';
 import {
   FAILURE_STORIES,
   DEMO_PROJECTS,
+  ORDER_FLAKE,
   SCM_REPOS,
   SOURCE_FILES,
   lineOf,
@@ -483,9 +484,11 @@ const FLAKY_CASES = {
   2: { title: 'GET /search handles empty query', rootCause: 'network' },
   3: { title: 'Table pagination works correctly', rootCause: 'timing' },
   4: { title: 'Pull to refresh triggers reload', rootCause: 'timing' },
+  // Its failures follow `updates the organization name` having not finished
+  // when it started (ORDER_FLAKE): the order root cause its classification reads.
   5: {
     title: 'toggles dark mode',
-    rootCause: 'other',
+    rootCause: 'order',
     error: buildWebAssertionError({
       matcher: 'expect(locator).toHaveAttribute(expected)',
       locator: "locator('html')",
@@ -1836,6 +1839,69 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   }
 }
 
+// ── An order-dependent flake (post-processing, rng-free) ────────────────────
+// Web Dashboard's `toggles dark mode` saves the theme on the signed-in admin's
+// row, and `updates the organization name` stamps that row as it saves the
+// organization (ORDER_FLAKE in the story fixtures). A run where the
+// organization test had not finished when the toggle started is a race: the
+// theme save conflicts, the toggle's first attempt fails, and its retry, once
+// the organization save is over, passes. The Playwright project most of the
+// toggle's executions ran in, whose executions its path variation compares,
+// holds at least ORDER_FLAKE.minRaces races: its closest calls become races,
+// the organization test then ending just after the toggle started (moved once
+// the worker lanes are packed, below). Every race has the toggle flaky, and no
+// other run does.
+/** What the coverage below needs from this block: the two tests, and how far each closest call's organization test moves. */
+const ORDER_DEMO = { caseId: null, earlierCaseId: null, delays: new Map() };
+{
+  const { projectId, specFile, test, earlier, minRaces } = ORDER_FLAKE;
+  const caseId = caseIdByKey.get(`${projectId}\x00${specFile}\x00${test}`);
+  const earlierCaseId = caseIdByKey.get(`${projectId}\x00${specFile}\x00${earlier}`);
+  if (!caseId || !earlierCaseId) throw new Error('ORDER_FLAKE names a test its project does not have');
+  ORDER_DEMO.caseId = caseId;
+  ORDER_DEMO.earlierCaseId = earlierCaseId;
+  const rowOf = (run, id) =>
+    TEST_RUNS_CASES.find((row) => row.test_run_id === run.id && row.test_case_id === id && row.started_at !== null);
+  const pairs = TEST_RUNS.filter((run) => run.project_id === projectId)
+    .sort((a, b) => a.id - b.id)
+    .flatMap((run) => {
+      const row = rowOf(run, caseId);
+      const other = rowOf(run, earlierCaseId);
+      // How long before the toggle started the organization test finished: negative when it had not.
+      return row && other ? [{ run, row, other, margin: row.started_at - (other.started_at + other.duration) }] : [];
+    });
+  const races = new Set(pairs.filter((p) => p.margin < 0).map((p) => p.run.id));
+  const perProject = new Map();
+  for (const { row } of pairs) perProject.set(row.browser_name, (perProject.get(row.browser_name) ?? 0) + 1);
+  const compared = [...perProject.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const comparedRaces = () => pairs.filter((p) => p.row.browser_name === compared && races.has(p.run.id)).length;
+  const closest = pairs
+    .filter((p) => p.row.browser_name === compared && p.margin >= 0)
+    .sort((a, b) => a.margin - b.margin);
+  for (const { run, other, margin } of closest) {
+    if (comparedRaces() >= minRaces) break;
+    races.add(run.id);
+    ORDER_DEMO.delays.set(other.id, margin + SEED_WORKER_GAP_MS);
+  }
+  for (const { run, row } of pairs) {
+    const race = races.has(run.id);
+    if (race && row.status === 'passed' && row.retries === 0) {
+      row.retries = 1;
+      row.attempts = JSON.stringify([
+        { retry: 0, status: 'failed', duration: Math.round(row.duration / 2), startedAt: row.started_at },
+        { retry: 1, status: 'passed', duration: row.duration, startedAt: row.started_at + row.duration },
+      ]);
+      run.flaky_tests += 1;
+    } else if (!race && row.retries > 0) {
+      row.retries = 0;
+      row.attempts = JSON.stringify([
+        { retry: 0, status: row.status, duration: row.duration, startedAt: row.started_at },
+      ]);
+      run.flaky_tests -= 1;
+    }
+  }
+}
+
 // ── Failed attempts of the other retry passes (post-processing, rng-free) ───
 // The reporter stores every attempt as its own execution. Each remaining test
 // that passed on retry gets its failed first attempt as its own row, with the
@@ -1862,6 +1928,25 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   }
 }
 
+/**
+ * Move an execution `delta` ms in time, with every timestamp it carries and
+ * its `requests`' (by default, every request it made).
+ */
+function shiftExecution(row, delta, requests = NETWORK_REQUESTS.filter((req) => req.test_runs_case_id === row.id)) {
+  const shiftAll = (list, key) => (list ? list.map((e) => ({ ...e, [key]: e[key] + delta })) : list);
+  row.started_at += delta;
+  row.created_at += delta;
+  row.attempts = JSON.stringify(shiftAll(JSON.parse(row.attempts), 'startedAt'));
+  row.steps = shiftAll(row.steps, 'startTime');
+  row.step_events = shiftAll(row.step_events, 'startedAt');
+  row.console_logs = shiftAll(row.console_logs, 'timestamp');
+  row.dialogs = shiftAll(row.dialogs, 'closedAt');
+  for (const req of requests) {
+    req.start_time += delta;
+    req.server_logs = shiftAll(req.server_logs, 'timestamp');
+  }
+}
+
 // ── Worker lanes without holes (post-processing, rng-free) ──────────────────
 // A skipped or did-not-run test never ran on a worker — Playwright reports it
 // with no worker index — so it leaves its lane, and the tests after it on that
@@ -1874,20 +1959,7 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
     if (list) list.push(req);
     else requestsByCase.set(req.test_runs_case_id, [req]);
   }
-  const shiftAll = (list, key, delta) => (list ? list.map((e) => ({ ...e, [key]: e[key] + delta })) : list);
-  const shiftCase = (row, delta) => {
-    row.started_at += delta;
-    row.created_at += delta;
-    row.attempts = JSON.stringify(shiftAll(JSON.parse(row.attempts), 'startedAt', delta));
-    row.steps = shiftAll(row.steps, 'startTime', delta);
-    row.step_events = shiftAll(row.step_events, 'startedAt', delta);
-    row.console_logs = shiftAll(row.console_logs, 'timestamp', delta);
-    row.dialogs = shiftAll(row.dialogs, 'closedAt', delta);
-    for (const req of requestsByCase.get(row.id) ?? []) {
-      req.start_time += delta;
-      req.server_logs = shiftAll(req.server_logs, 'timestamp', delta);
-    }
-  };
+  const shiftCase = (row, delta) => shiftExecution(row, delta, requestsByCase.get(row.id) ?? []);
 
   const lanes = new Map();
   const runStart = new Map();
@@ -1912,6 +1984,18 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
       cursor = row.started_at + (row.duration ?? 0) + SEED_WORKER_GAP_MS;
     }
   }
+}
+
+// ── The order-dependent flake's closest calls (post-processing, rng-free) ───
+// In each run the order-dependent flake's block made a race, the organization
+// test moves later on its worker, with the tests after it, to end just after
+// the toggle started.
+for (const [rowId, delta] of ORDER_DEMO.delays) {
+  const row = TEST_RUNS_CASES.find((r) => r.id === rowId);
+  const lane = TEST_RUNS_CASES.filter(
+    (r) => r.test_run_id === row.test_run_id && r.worker_index === row.worker_index && r.started_at >= row.started_at,
+  );
+  for (const r of lane) shiftExecution(r, delta);
 }
 
 // ── Resources: a leaky run and its history (post-processing, rng-free) ──────
@@ -3960,6 +4044,58 @@ const RUN_COVERAGE = [];
         lines: ranges(entry.lines) || null,
         executable: ranges(entry.executable) || null,
       });
+    }
+  }
+
+  // The order-dependent flake: every execution of the toggle and of the
+  // organization test records its coverage. A toggle execution that started
+  // before the organization test finished saved the theme into a conflict,
+  // which only its failed first attempts did; each test's latest run gives
+  // its test coverage, from its last execution there.
+  {
+    const { projectId, coverage } = ORDER_FLAKE;
+    const project = PROJECTS.find((p) => p.id === projectId);
+    const latest = new Map();
+    const runs = TEST_RUNS.filter((r) => r.project_id === projectId).sort((a, b) => a.id - b.id);
+    for (const run of runs) {
+      const rows = TEST_RUNS_CASES.filter(
+        (trc) =>
+          trc.test_run_id === run.id &&
+          trc.started_at !== null &&
+          (trc.test_case_id === ORDER_DEMO.caseId || trc.test_case_id === ORDER_DEMO.earlierCaseId),
+      ).sort((a, b) => a.started_at - b.started_at);
+      const other = rows.find((trc) => trc.test_case_id === ORDER_DEMO.earlierCaseId);
+      for (const trc of rows) {
+        let entries = coverage.earlier;
+        if (trc.test_case_id === ORDER_DEMO.caseId) {
+          const conflicted = Boolean(other) && other.started_at + other.duration > trc.started_at;
+          if (conflicted !== (trc.status === 'failed')) {
+            throw new Error(
+              `Execution ${trc.id}: the toggle fails exactly when the organization test has not finished`,
+            );
+          }
+          entries = conflicted ? coverage.conflicted : coverage.saved;
+        }
+        const ids = entries.map((entry) => fragmentId(projectId, entry, run.start_time));
+        trc.coverage_payload_id = coveragePayloadId(projectId, ids, run.start_time);
+        if (!latest.has(trc.test_case_id) || latest.get(trc.test_case_id).run === run) {
+          latest.set(trc.test_case_id, { run, ids });
+        }
+      }
+    }
+    for (const [testCaseId, { run, ids }] of latest) {
+      for (const id of ids) {
+        TEST_COVERAGE.push({
+          id: TEST_COVERAGE.length + 1,
+          project_id: projectId,
+          test_case_id: testCaseId,
+          branch: run.branch && run.branch !== project?.default_branch ? run.branch : '',
+          runtime: COVERAGE_FRAGMENTS[id - 1].runtime,
+          fragment_id: id,
+          last_seen_run_id: run.id,
+          last_seen_at: run.start_time * 1000,
+        });
+      }
     }
   }
 }

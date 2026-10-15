@@ -42,6 +42,8 @@ import {
   bestExplanation,
   coverageLoss,
   divergeCaptures,
+  divergenceMarkdown,
+  divergenceReasonText,
   emptyLossSummary,
   explainableGroups,
   failuresFollow,
@@ -256,6 +258,51 @@ export async function getCoverageDivergence(
   const known = { baseline, ...(incomplete.execution || incomplete.baseline ? { incomplete } : {}) };
   if (incomplete.execution && incomplete.baseline) return unavailableDivergence(executionId, 'incomplete', known);
   return { available: true, executionId, ...known, ...divergeCaptures(here, baselineCapture) };
+}
+
+/** A failing execution's divergence as a diagnosis context carries it. */
+export interface DivergenceContext {
+  /** The "Code Paths vs the Last Passing Run" section; null when there is none to show. */
+  section: string | null;
+  /** The baseline execution and the counts the section carried; null without a section. */
+  coverage: {
+    baselineExecutionId: number;
+    filesOnlyHere: number;
+    linesOnlyHere: number;
+    filesOnlyBaseline: number;
+    linesOnlyBaseline: number;
+  } | null;
+  /** Why the section is absent, as a clause; null when it is present or the execution is unknown. */
+  absentReason: string | null;
+}
+
+/**
+ * The code an execution ran that the test's last passing execution with
+ * coverage did not, and the reverse, as the server's and the demo's diagnosis
+ * contexts carry it, with the reason it is absent when there is none to show.
+ */
+export async function coverageDivergenceContext(db: DrizzleDB, executionId: number): Promise<DivergenceContext> {
+  const answer = await getCoverageDivergence(db, executionId).catch(() => null);
+  if (!answer) return { section: null, coverage: null, absentReason: null };
+  if (!answer.available) {
+    return { section: null, coverage: null, absentReason: divergenceReasonText(answer.reason ?? 'no-coverage') };
+  }
+  const markdown = divergenceMarkdown(answer);
+  if (!markdown) {
+    return { section: null, coverage: null, absentReason: 'it ran the same code as the last passing run' };
+  }
+  const { summary } = answer;
+  return {
+    section: markdown,
+    coverage: {
+      baselineExecutionId: answer.baseline!.executionId,
+      filesOnlyHere: summary.filesOnlyHere,
+      linesOnlyHere: summary.linesOnlyHere,
+      filesOnlyBaseline: summary.filesOnlyBaseline,
+      linesOnlyBaseline: summary.linesOnlyBaseline,
+    },
+    absentReason: null,
+  };
 }
 
 // ── Path variation ───────────────────────────────────────────────────────────

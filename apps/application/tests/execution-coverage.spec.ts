@@ -136,7 +136,7 @@ test.describe('Execution coverage', () => {
     await expect(server.first()).toContainText('by line · 4 lines, 1 function');
     await expect(server.first().getByRole('link', { name: 'tests' })).toHaveAttribute(
       'href',
-      /\/projects\/\d+\/coverage\?file=src(%2F|\/)Orders(%2F|\/)OrdersEndpoints\.cs$/,
+      /\/projects\/\d+\/coverage\?file=src(%2F|\/)Orders(%2F|\/)OrdersEndpoints\.cs&line=10$/,
     );
     const browser = section.locator('[data-coverage-group="browser"] [data-coverage-file]');
     expect(await browser.evaluateAll((rows) => rows.map((r) => r.getAttribute('data-coverage-file')))).toEqual([
