@@ -26,6 +26,9 @@ export interface DemoExampleExpect {
   incident?: true;
   gaps?: { detectors: string[] };
   suspects?: { path: string; granularity?: 'lines' | 'functions' | 'files' };
+  coverage?: { serverFiles: number; browserFiles: number; runCoverage?: true };
+  fileCoverage?: { path: string; tests: number; executable?: true };
+  insight?: 'divergence' | 'path-variation';
 }
 
 export interface DemoExample {

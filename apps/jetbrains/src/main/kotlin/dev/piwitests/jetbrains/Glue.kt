@@ -18,10 +18,10 @@ import java.util.concurrent.ConcurrentHashMap
  * platform API, so it is tested without an IDE.
  */
 object Glue {
-    /** The files the editor service reads: test and application code, translations, and Razor views. */
+    /** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
     val SUPPORTED_EXTENSIONS = setOf(
         "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "vue", "svelte", "astro", "html",
-        "json", "yaml", "yml", "properties", "po", "resx", "cshtml", "razor",
+        "json", "yaml", "yml", "properties", "po", "resx", "cs", "cshtml", "razor",
     )
 
     val PLAYWRIGHT_CONFIGS = listOf(
@@ -650,6 +650,31 @@ object Glue {
         if (run.branch == checkedOut) return ""
         if (run.baseline?.choice?.kind.let { it != null && it != "ladder" }) return ""
         return " ($checkedOut has no run yet)"
+    }
+
+    /** What a coverage mark says of its lines: the tests ran them, no test runs them, or they changed since the run. */
+    enum class CoverageKind { RUN, NOT_RUN, CHANGED }
+
+    /** A coverage mark over lines `start` to `end` (0-based, inclusive) and its tooltip in the scroll bar. */
+    data class CoverageMark(val kind: CoverageKind, val start: Int, val end: Int, val tooltip: String)
+
+    /** Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it. */
+    fun hasCoverageMarks(result: CoverageResult?): Boolean = result?.state == "exact" || result?.state == "mapped"
+
+    /**
+     * The marks to draw for a file's `piwi/coverage` answer within its `lineCount` lines: none while they are hidden,
+     * and none for a file without line coverage.
+     */
+    fun coverageMarks(result: CoverageResult?, lineCount: Int, shown: Boolean): List<CoverageMark> {
+        if (!shown || result == null || !hasCoverageMarks(result)) return emptyList()
+        fun marks(spans: List<LineSpan>?, kind: CoverageKind, tooltip: (LineSpan) -> String) = spans.orEmpty()
+            .filter { it.start in 0 until lineCount && it.end >= it.start }
+            .map { CoverageMark(kind, it.start, minOf(it.end, lineCount - 1), tooltip(it)) }
+        return marks(result.executed, CoverageKind.RUN) { "Piwi: run by ${plural(it.tests ?: 0, "test")}" } +
+            marks(result.notRun, CoverageKind.NOT_RUN) {
+                if (it.start == it.end) "Piwi: no test runs this line" else "Piwi: no test runs these lines"
+            } +
+            marks(result.changed, CoverageKind.CHANGED) { "Piwi: changed since the coverage run" }
     }
 
     /** A test's gutter tooltip: its latest result, then its history as the service sums it up. */

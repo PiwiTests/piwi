@@ -36,6 +36,8 @@ export const PROJECT = {
   CLUSTER_SUGGEST: 'cluster-suggest-test',
   CLUSTER_WHAT_CHANGED_SETUP: 'cluster-what-changed-setup-test',
   CODE_REACH: 'code-reach-test',
+  COVERAGE_INSIGHTS: 'coverage-insights-test',
+  COVERAGE_INSIGHTS_OFF: 'coverage-insights-off-test',
   // Deliberately does not contain "projects" (case-insensitive substring) — the
   // sidebar's static "Projects" nav link is matched with getByRole('link', {
   // name: 'Projects' }) (no exact:true) elsewhere in the suite, which matches
@@ -75,6 +77,8 @@ export const PROJECT = {
   ENV_STREAM_START: 'env-stream-start-test',
   ENV_UI: 'env-ui-test',
   ENV_UPLOAD: 'env-upload-test',
+  EXECUTION_COVERAGE: 'execution-coverage-test',
+  EXECUTION_COVERAGE_OFF: 'execution-coverage-off-test',
   EXECUTION_STATES: 'execution-states-test',
   EXPECTED_FAILURE: 'expected-failure-test',
   EXPORT_OFFLINE: 'export-offline-test',
@@ -85,6 +89,8 @@ export const PROJECT = {
   EXTRACT_CASES: 'extract-cases-test',
   FAILURE_CLUSTERS: 'failure-clusters-test',
   FAILURE_PAGE_ACCENT: 'failure-page-accent-test',
+  FILE_COVERAGE: 'file-coverage-test',
+  FILE_COVERAGE_OFF: 'file-coverage-off-test',
   FIXED_BEFORE: 'fixed-before-test',
   FIX_PLAN: 'fix-plan-test',
   FIX_VERIFICATION: 'fix-verification-test',

@@ -10,7 +10,8 @@ import javax.swing.Icon
 
 /**
  * **Settings → Editor → Color Scheme → Piwi**: the background of a failing test, of the line it failed at, and of the
- * lines a recording writes.
+ * lines a recording writes; and the coverage marks, whose error stripe color is the mark in the gutter and the scroll
+ * bar, with no background by default.
  */
 class PiwiColorSettingsPage : ColorSettingsPage {
     override fun getDisplayName(): String = "Piwi"
@@ -22,6 +23,9 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             AttributesDescriptor("Failing test", PiwiTestAnnotator.FAILING_TEST),
             AttributesDescriptor("Line it failed at", PiwiTestAnnotator.FAILING_LINE),
             AttributesDescriptor("Lines being recorded", PiwiRecordings.BLOCK),
+            AttributesDescriptor("Coverage//Lines the tests ran", PiwiCoverageMarks.RUN),
+            AttributesDescriptor("Coverage//Lines no test runs", PiwiCoverageMarks.NOT_RUN),
+            AttributesDescriptor("Coverage//Lines changed since the coverage run", PiwiCoverageMarks.CHANGED),
         )
 
     override fun getColorDescriptors(): Array<ColorDescriptor> = ColorDescriptor.EMPTY_ARRAY
@@ -39,8 +43,21 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             "test('adds a coupon', async ({ page }) => {\n" +
             "<recording>  await page.goto('/cart');\n" +
             "  await page.getByRole('textbox', { name: 'Coupon' }).fill('WELCOME10');</recording>\n" +
-            "});\n"
+            "});\n\n" +
+            "public int AddItem(int basketId, int quantity)\n" +
+            "{\n" +
+            "<run>    if (quantity <= 0)</run>\n" +
+            "<notrun>        throw new ArgumentException(nameof(quantity));</notrun>\n" +
+            "<changed>    return basketId + quantity * 2;</changed>\n" +
+            "}\n"
 
     override fun getAdditionalHighlightingTagToDescriptorMap(): Map<String, TextAttributesKey> =
-        mapOf("failing" to PiwiTestAnnotator.FAILING_TEST, "line" to PiwiTestAnnotator.FAILING_LINE, "recording" to PiwiRecordings.BLOCK)
+        mapOf(
+            "failing" to PiwiTestAnnotator.FAILING_TEST,
+            "line" to PiwiTestAnnotator.FAILING_LINE,
+            "recording" to PiwiRecordings.BLOCK,
+            "run" to PiwiCoverageMarks.RUN,
+            "notrun" to PiwiCoverageMarks.NOT_RUN,
+            "changed" to PiwiCoverageMarks.CHANGED,
+        )
 }

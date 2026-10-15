@@ -3,6 +3,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { FullConfig, FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
 import { RunSampler } from '../../src/internal/collect/process-sampler.js';
+import { CoverageCollection } from '../../src/internal/collect/test-coverage.js';
+import type { CollectedTestCase } from '../../src/types/collected.js';
 import type { ResourceCensus } from '../../src/internal/capture/resource-ledger.js';
 import { PIWI_RESOURCES_RESULTS_ENV } from '../../src/internal/config/env.js';
 import {
@@ -12,6 +14,7 @@ import {
   parseResourceResults,
   type ResourceFinding,
 } from '../../src/internal/collect/resource-verdicts.js';
+import { API_BACKEND_ENV, API_BACKEND_FILES, backendLogsOf } from './api-backend.js';
 
 /** Every step of a result, depth first. */
 function allSteps(steps: TestStep[]): TestStep[] {
@@ -45,6 +48,8 @@ function siteMarkers(): Map<string, string> {
  *   - title starting `assertion-only` → the assertion-capture test (`_expect`);
  *   - title starting `seeded probe` → the in-page probe install (asserts in the test itself);
  *   - title starting `resources:` → the resource ledger (`resources.spec.ts`), checked in `onEnd`;
+ *   - title starting `api:` → the API tests (in `capture.spec.ts`), whose server coverage is collected as
+ *     the reporter collects it and checked in `onEnd`;
  *   - otherwise → the main capture test (locators + network + console + web vitals).
  *
  * Every test, whatever its role, must attach its `piwi-resources` census. The
@@ -60,6 +65,14 @@ export default class VerifyCaptureReporter implements Reporter {
   private sawSeededProbe = false;
   private stressRuns = 0;
   private resourceTests = 0;
+  private apiTests = 0;
+  /** The API tests' coverage, collected from the stub backend as the reporter collects it. */
+  private readonly coverage = new CoverageCollection({
+    settings: { browser: 'off', server: 'files' },
+    baseUrls: [],
+    configDir: __dirname,
+  });
+  private apiCoverage: Array<{ title: string; testCase: CollectedTestCase }> = [];
   private censuses: ResourceCensus[] = [];
   private censusByTitle = new Map<string, ResourceCensus>();
   private resourcesFile = path.join(os.tmpdir(), `piwi-resources-verify-${process.pid}.jsonl`);
@@ -70,7 +83,8 @@ export default class VerifyCaptureReporter implements Reporter {
     // Workers start after this hook and inherit the variable.
     fs.rmSync(this.resourcesFile, { force: true });
     process.env[PIWI_RESOURCES_RESULTS_ENV] = this.resourcesFile;
-    this.sampler = new RunSampler({ outputDirs: config.projects.map((project) => project.outputDir) });
+    // Memory is read on every sample, so a worker that lives a few seconds is read too.
+    this.sampler = new RunSampler({ outputDirs: config.projects.map((project) => project.outputDir), heavyEvery: 1 });
     this.sampler.start();
   }
 
@@ -91,6 +105,10 @@ export default class VerifyCaptureReporter implements Reporter {
     if (test.title.startsWith('resources:')) {
       assert(result.status === 'passed', `expected to pass, got ${result.status}`);
       this.resourceTests += 1;
+      return;
+    }
+    if (test.title.startsWith('api:')) {
+      this.checkApiTest(test, result);
       return;
     }
 
@@ -298,6 +316,8 @@ export default class VerifyCaptureReporter implements Reporter {
     if (!this.sawAssertionCapture) this.fail('the assertion-capture test did not run — _expect capture unverified');
     if (!this.sawSeededProbe) this.fail('the seeded-probe test did not run — the in-page probe install is unverified');
     if (this.stressRuns < 1) this.fail('the teardown-race stress tests did not run');
+    if (this.apiTests < 2) this.fail('the API tests did not run — the capture of API calls is unverified');
+    await this.checkApiCoverage();
     this.checkResources();
     await this.checkSampler();
 
@@ -309,6 +329,97 @@ export default class VerifyCaptureReporter implements Reporter {
       return { status: 'failed' };
     }
     console.log(`\n[verify-reporter] all capture-fixtures integration checks passed (${this.stressRuns} stress runs).`);
+  }
+
+  /**
+   * An API test (`api:`): its calls in the network capture, with the
+   * backend's logs and no resource type, the coverage ids of their responses
+   * under the backend's origin, and each call's step at the spec's line. A call
+   * Playwright fails for its status keeps its name and line, and is recorded
+   * with that status. The passing test's server coverage is then collected.
+   */
+  private checkApiTest(test: TestCase, result: TestResult): void {
+    const assert = (cond: boolean, msg: string) => {
+      if (!cond) this.fail(`[${test.title}] ${msg}`);
+    };
+    this.apiTests += 1;
+    const backend = process.env[API_BACKEND_ENV] ?? '';
+    assert(backend !== '', `the stub backend should have set ${API_BACKEND_ENV} in the runner`);
+    const attachment = (name: string) => result.attachments.find((a) => a.name === name)?.body?.toString('utf8');
+    const network = JSON.parse(attachment('piwi-network') ?? '[]') as Array<Record<string, unknown>>;
+
+    if (test.expectedStatus === 'failed') {
+      assert(result.status === 'failed', `expected the call to fail the test, got ${result.status}`);
+      const error = result.errors[0];
+      assert(
+        !!error?.message?.includes('apiRequestContext.get: 404 Not Found'),
+        `the call's error should keep its name, got: ${error?.message?.split('\n')[0]}`,
+      );
+      assert(
+        !!error?.location?.file.endsWith('capture.spec.ts'),
+        `the error should point at the spec, got ${error?.location?.file}`,
+      );
+      const missing = network.find((entry) => entry.url === `${backend}/api/missing`);
+      assert(
+        missing?.status === 404 && !('failure' in missing),
+        `expected the call with its 404 status: ${JSON.stringify(network)}`,
+      );
+      return;
+    }
+
+    assert(result.status === 'passed', `expected to pass, got ${result.status}`);
+    const expected = [
+      ['GET', '/api/items', 200],
+      ['POST', '/api/orders', 201],
+      ['GET', '/api/items?via=own', 200],
+    ] as const;
+    assert(network.length === expected.length, `expected ${expected.length} calls: ${JSON.stringify(network)}`);
+    for (const [method, path, status] of expected) {
+      const entry = network.find((e) => e.url === `${backend}${path}`);
+      assert(
+        entry?.method === method &&
+          entry.status === status &&
+          entry.contentType === 'application/json' &&
+          typeof entry.duration === 'number' &&
+          typeof entry.startTime === 'number' &&
+          !('resourceType' in entry) &&
+          JSON.stringify(entry.serverLogs) === JSON.stringify(backendLogsOf(path.split('?')[0]!)),
+        `${method} ${path}: ${JSON.stringify(entry)}`,
+      );
+    }
+
+    const ids = (JSON.parse(attachment('piwi-server-coverage-requests') ?? '{}') as Record<string, string[]>)[backend];
+    assert(
+      ids?.length === 3,
+      `expected the three responses' coverage ids under ${backend}, got ${JSON.stringify(ids)}`,
+    );
+
+    const calls = allSteps(result.steps).filter(
+      (step) => step.category === 'pw:api' && /^(GET|POST)\b/.test(step.title),
+    );
+    assert(
+      calls.length === 3 && calls.every((step) => step.location?.file.endsWith('capture.spec.ts')),
+      `each call's step should be located in the spec: ${JSON.stringify(calls.map((s) => [s.title, s.location?.file]))}`,
+    );
+
+    const testCase = {} as CollectedTestCase;
+    assert(this.coverage.apply(testCase, result.attachments) !== null, 'the test should wait for its server coverage');
+    this.apiCoverage.push({ title: test.title, testCase });
+  }
+
+  /** The server coverage of the API tests, collected from the stub backend: the files their calls ran. */
+  private async checkApiCoverage(): Promise<void> {
+    await this.coverage.settle();
+    this.coverage.close();
+    const expected = [...new Set(Object.values(API_BACKEND_FILES))].sort();
+    for (const { title, testCase } of this.apiCoverage) {
+      const paths = (testCase.coverage?.files ?? []).map((file) => file.path).sort();
+      if (JSON.stringify(paths) !== JSON.stringify(expected) || testCase.coverage?.incomplete) {
+        this.fail(
+          `[${title}] expected the server coverage of ${expected.join(', ')}: ${JSON.stringify(testCase.coverage)}`,
+        );
+      }
+    }
   }
 
   /**

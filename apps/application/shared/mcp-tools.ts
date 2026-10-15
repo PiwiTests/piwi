@@ -930,7 +930,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     permission: ['triage:write', 'quarantine:write'],
     description:
-      "Triage one or more failure clusters at once, as the failure inbox does: set their status (open, resolved, ignored) with an optional note, assign them, snooze or unsnooze them, quarantine every test in them or release those tests from quarantine. Clusters you cannot reach or that do not exist are skipped and listed in `skippedIds`. `quarantine` and `release` report how many of the clusters' tests changed. Use list_open_clusters (queue quarantine-ready, mine, regressions…) to pick them. Requires `triage:write`, or `quarantine:write` for quarantine and release (Maintainer and above on the project).",
+      "Triage one or more failure clusters at once, as the failure inbox does: set their status (open, resolved, ignored) with an optional note, assign them, snooze or unsnooze them, quarantine every test in them or release those tests from quarantine. Clusters you cannot reach or that do not exist are skipped and listed in `skippedIds`. `quarantine` and `release` report how many of the clusters' tests changed and, when their project records coverage, `uniqueCoverage`: the code only those tests run among the other non-quarantined tests. Use list_open_clusters (queue quarantine-ready, mine, regressions…) to pick them. Requires `triage:write`, or `quarantine:write` for quarantine and release (Maintainer and above on the project).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1053,7 +1053,7 @@ export const MCP_TOOL_DEFS = [
     capability: 'quarantine',
     permission: 'quarantine:write',
     description:
-      "Quarantine one test, or release it from quarantine, as the dashboard's Quarantine and Release do. A quarantined test keeps running and reporting: quarantine only removes it from the CI gate's verdict, so its passing streak can earn it a release. Pass `quarantined: true` with an optional `reason`, or `quarantined: false` to release it (the quarantine is kept in its history). Quarantining a test already in quarantine changes nothing and keeps its streak; releasing a test not in quarantine fails. Use triage_cluster to quarantine every test of a cluster. Requires `quarantine:write` (Maintainer and above on the project).",
+      "Quarantine one test, or release it from quarantine, as the dashboard's Quarantine and Release do. A quarantined test keeps running and reporting: quarantine only removes it from the CI gate's verdict, so its passing streak can earn it a release. Pass `quarantined: true` with an optional `reason`, or `quarantined: false` to release it (the quarantine is kept in its history). Quarantining a test already in quarantine changes nothing and keeps its streak; releasing a test not in quarantine fails. When the project records coverage, `uniqueCoverage` summarizes the code only this test runs among the other non-quarantined tests: what its quarantine leaves uncovered, or its release covers again (get_coverage_loss lists it all). Use triage_cluster to quarantine every test of a cluster. Requires `quarantine:write` (Maintainer and above on the project).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1366,6 +1366,61 @@ export const MCP_TOOL_DEFS = [
         head: { type: 'string', description: 'Head commit SHA (use with base instead of run)' },
       },
       required: ['projectId'],
+    },
+  },
+  {
+    name: 'get_coverage',
+    module: 'core',
+    capability: 'coverage',
+    description:
+      'Read coverage: which code ran and which tests run it (lines 1-based, ranges like `12-15,20`). With `projectId` and `file`: the file’s versions on a branch, each with its executable lines and its executed ranges grouped by the tests that ran them (positions in `tests`); add `lines` for the test running most of the function around them, the one to copy. With an execution (`executionId`, or `testCaseId` for its latest execution with coverage, or `projectId` + `testFile` + `testTitle`): its files; with `file`, that file’s ranges; with `file` and `lines`, which target lines ran, did not run or cannot be told (an incomplete capture never says "did not run"), the target lines that cannot run, and the nearest test when one did not run. Use it after running a new test with server coverage to check it reaches its target.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: {
+          type: 'number',
+          description: 'Project ID: with file for the file view, or with testFile and testTitle',
+        },
+        file: { type: 'string', description: 'Repository-relative source path, or a path suffix' },
+        lines: { type: 'string', description: 'Target lines, e.g. "57-59,63"' },
+        branch: { type: 'string', description: 'File view: the branch to read (default branch when absent)' },
+        executionId: { type: 'number', description: 'An execution (test run case ID)' },
+        testCaseId: { type: 'number', description: 'A test: its latest execution with coverage' },
+        testFile: { type: 'string', description: 'With projectId and testTitle: the test’s spec file (or a suffix)' },
+        testTitle: {
+          type: 'string',
+          description: 'With projectId and testFile: the test’s title, without describe blocks',
+        },
+      },
+    },
+  },
+  {
+    name: 'compare_coverage',
+    module: 'core',
+    capability: 'coverage',
+    description:
+      'Compare the code a test ran across executions. `executionId` (a failure): the files, lines and functions it ran that the test’s last passing execution with coverage did not, and the reverse, with the baseline used (execution, run, branch, commit); a file at another version is marked changed, not compared. `testCaseId`: how its coverage varies across its last 30 executions, the code that ran in some only, and the earlier test whose having run before (in the same run, or on the same worker) predicts it, with the agreement and counts; `orderDependent` when its failures follow that code, a sign it depends on state another test leaves. Incomplete captures never yield "did not run" claims.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        executionId: { type: 'number', description: 'A failed execution to compare with its last passing one' },
+        testCaseId: { type: 'number', description: 'A test whose recent executions to compare with each other' },
+      },
+    },
+  },
+  {
+    name: 'get_coverage_loss',
+    module: 'core',
+    capability: 'coverage',
+    description:
+      'What quarantining, skipping or deleting tests would leave uncovered: from the latest coverage on the default branch, per file, the lines and functions no other trusted (not quarantined) test runs, those only flaky tests run besides them, and files no other test reaches. A file other tests ran only at another version is `uncertain`, never claimed. Use it before quarantining or deleting a test.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        testCaseIds: { type: 'array', items: { type: 'number' }, description: 'The tests (testCaseId), 1 to 50' },
+      },
+      required: ['projectId', 'testCaseIds'],
     },
   },
   {

@@ -264,6 +264,40 @@ const tests = {
     }
   },
 
+  async 'a C# file shows the lines its tests ran, its functions’ tests, and the marks hide and show again'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const basket = vscode.Uri.file(path.join(workspace, 'src', 'Web', 'Services', 'BasketService.cs'));
+    await vscode.window.showTextDocument(basket);
+    const held = await waitFor(() => {
+      const found = api.coverage(basket.toString());
+      return found?.result.state === 'exact' ? found : null;
+    }, 'the coverage marks');
+    assert.equal(held.shown, true);
+    assert.deepEqual(held.result.executed, [
+      { start: 3, end: 4, tests: 2 },
+      { start: 8, end: 9, tests: 2 },
+    ]);
+    assert.deepEqual(held.result.notRun, [{ start: 6, end: 6 }]);
+    const lenses = await waitFor(async () => {
+      const found = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', basket);
+      return found?.length >= 2 ? found : null;
+    }, 'the coverage lenses');
+    const titles = lenses.map((l) => l.command?.title);
+    assert.ok(titles.includes('Reached by 2 tests · 1 failing · 4 of 5 lines run'), titles.join(' | '));
+    assert.ok(titles.includes('Reached by 2 tests · 1 failing'), titles.join(' | '));
+    const hover = await vscode.commands.executeCommand(
+      'vscode.executeHoverProvider',
+      basket,
+      new vscode.Position(3, 8),
+    );
+    const text = hover.map((h) => h.contents.map((c) => c.value ?? c).join('\n')).join('\n');
+    assert.match(text, /run by 2 tests/);
+    await vscode.commands.executeCommand('piwi.toggleCoverage');
+    assert.equal(api.coverage(basket.toString()).shown, false);
+    await vscode.commands.executeCommand('piwi.toggleCoverage');
+    assert.equal(api.coverage(basket.toString()).shown, true);
+  },
+
   async 'the commands are registered'() {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
@@ -282,6 +316,7 @@ const tests = {
       'piwi.groupFailuresBy',
       'piwi.compareWith',
       'piwi.toggleFollowEditor',
+      'piwi.toggleCoverage',
       'piwi.copyAgentContext',
       'piwi.copyMcpConfiguration',
       'piwi.pairPicker',

@@ -29,8 +29,8 @@ account for most of the total.
 
 ## 2. Filter by root cause and fix a class at once
 
-Every flaky test carries one of five root-cause categories, `timing`, `network`, `assertion`, `environment` or
-`other`; [Flaky tests](/features/flaky-tests#root-cause-classification) explains the signals behind each.
+Every flaky test carries one of six root-cause categories, `timing`, `network`, `assertion`, `environment`,
+`order` or `other`; [Flaky tests](/features/flaky-tests#root-cause-classification) explains the signals behind each.
 
 Filtering by category is the trick that makes an afternoon enough, because a class usually shares one fix: eight
 `timing` flakes usually share one bad wait helper to replace with a real wait condition, a `network` class wants a

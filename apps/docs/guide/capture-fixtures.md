@@ -42,7 +42,7 @@ That's the entire setup: nothing to start, wrap, or await inside your tests.
 
 | Data | Captured | Powers |
 |------|----------|--------|
-| **Network requests**: method, URL, status, duration, start time, content type, for fetch, XHR, document and `other` traffic only (static assets are skipped); one that failed without a response keeps the browser's error (`net::ERR_CONNECTION_RESET`) | per request | [Slow endpoints](/features/slow-tests); [backend log correlation](./backend-logs) via the `X-Piwi-Logs` response header; the [failure timeline](/features/evidence#one-execution-diagnosis-first) |
+| **Network requests**: method, URL, status, duration, start time, content type, for fetch, XHR, document and `other` traffic only (static assets are skipped), and API calls; one that failed without a response keeps its error (`net::ERR_CONNECTION_RESET`) | per request | [Slow endpoints](/features/slow-tests); [backend log correlation](./backend-logs) via the `X-Piwi-Logs` response header; the [failure timeline](/features/evidence#one-execution-diagnosis-first) |
 | **Console entries**: `warning`, `error` and `assert` messages with source location and a timestamp (not `console.log`) | as they happen | The console card and the failure timeline on the [execution page](/features/evidence#one-execution-diagnosis-first); [AI diagnosis](/features/ai-diagnosis) evidence |
 | **Web Vitals**: TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint, plus LCP, CLS and INP (Chromium-only) | at test teardown | Web vitals card with color-coded thresholds; [performance trends](/features/slow-tests) |
 | **ARIA snapshot** of the final page state: the YAML dump, plus the JSON aria tree on Playwright 1.63 or later; its **screenshot** when Playwright keeps failure screenshots | on failure | Failure evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages; [AI diagnosis](/features/ai-diagnosis) context; the JSON tree feeds [locator healing](/features/locator-healing)'s rename matching and the page diff |
@@ -76,17 +76,19 @@ Nothing breaks without the fixtures. This is what you give up:
 
 ## Where capture works
 
-The fixtures wire capture at the **browser** level, so it works however your tests create pages:
+Capture works however your tests create pages or call an API:
 
 - the standard `page` fixture,
-- `browser.newPage()` and `browser.newContext().newPage()` — including inside your own custom fixtures,
-- popups (`window.open`) and pages a context opens on its own.
+- `browser.newPage()` and `browser.newContext().newPage()`, in your own fixtures too,
+- popups (`window.open`) and pages a context opens on its own,
+- the `request` fixture, `page.request` and `playwright.request.newContext()`, each call with its
+  [backend logs](./backend-logs) and [server coverage](/features/code-reach#server-code).
 
 Semantics worth knowing:
 
 - **`beforeAll` / `afterAll` activity is not captured**: only a test's own activity is attributed to it.
 - **Multi-page tests** attribute Web Vitals, the failure ARIA snapshot and screenshot to the most recently active page.
-- **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per call site per test. If a probe fails, the next run of that line tries again.
+- **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per test; a failed probe is retried on the line's next run.
 - **Assertion capture is positive-presence only** — negated (`.not.…`), absence (`toBeHidden`), multi-element (`toHaveCount`) and page-level (`toHaveURL`) assertions never probe.
 
 ## Composing with your own fixtures
@@ -140,7 +142,7 @@ To power the [page diff](/features/evidence#page-diff), the fixtures also sample
 - A passing test is sampled only when it is in that set, so in steady state nothing is captured.
 - The server keeps at most one green snapshot per test per day.
 
-If that request fails, the set stays empty and **nothing is sampled**. Turn it off with `sampleAriaOnPass: false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`). With the fixtures off, no snapshot is taken regardless.
+If that request fails, the set stays empty and **nothing is sampled**. Turn it off with `sampleAriaOnPass: false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`).
 
 ## Troubleshooting
 

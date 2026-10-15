@@ -1,0 +1,352 @@
+<script setup lang="ts">
+/**
+ * A file's coverage: which of the project's tests run it, line by line
+ * (`/projects/:id/coverage?file=<path>`). It reads the file's coverage
+ * (`GET /api/projects/:id/coverage`, each test's latest run with coverage on
+ * the branch) and shows the version of the file the most tests recorded, or
+ * the one `?blob=` names, with a selector when the tests recorded several. The
+ * source at that version (`GET /api/projects/:id/source`) marks each line with
+ * how many tests ran it, and the executable lines no test runs when a run
+ * recorded them; without the source, the lines show as numbers grouped by the
+ * tests that ran them. A click on a line (`?line=40`), or a Shift-click for a
+ * range (`?line=40-42`), lists the tests that ran it with their latest
+ * outcome; on lines no test runs, the nearest test to copy. A file recorded
+ * by function marks its functions, and one recorded by file lists its tests
+ * only. `?branch=` reads another branch than the default one. On a project
+ * that records no coverage the page says so in one sentence.
+ */
+import { decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
+import type { ApiResponse, ProjectDetails } from '~~/types/api';
+import type { FileCoverage } from '~~/server/utils/coverage';
+import { compactFileCoverage, nearestTest } from '#shared/coverage-insights';
+import { COVERAGE_PRECISION_LABEL, COVERAGE_PRECISION_TITLE, functionNameAt } from '~/utils/coverage-view';
+import {
+  fileCoverageSentence,
+  fileCoverageVersions,
+  fileVersionLabel,
+  lineSelectionQuery,
+  lineTestCounts,
+  nearestTestSentence,
+  parseLineSelection,
+  testsOnLines,
+} from '~/utils/file-coverage';
+import { lineRangesText } from '~/utils/suspect-lines';
+
+type SourceResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/source.get').default>;
+
+const route = useRoute();
+const router = useRouter();
+const projectId = Number(route.params.id);
+
+const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+const { state: capabilityState } = await useProjectCapabilities(projectId);
+const coverageActive = computed(() => capabilityState('coverage') === 'active');
+
+const file = computed(() => (typeof route.query.file === 'string' ? route.query.file.trim() : ''));
+const branch = computed(() =>
+  typeof route.query.branch === 'string' && route.query.branch ? route.query.branch : undefined,
+);
+const fileName = computed(() => file.value.split('/').pop() || 'Coverage');
+
+useHead(
+  computed(() => ({
+    title: `Coverage of ${fileName.value} — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+  })),
+);
+
+// Client-side only: a file many tests run has a large answer, with no place in the SSR payload.
+const {
+  data: coverage,
+  status,
+  error,
+} = useFetch<FileCoverage>(`/api/projects/${projectId}/coverage`, {
+  server: false,
+  lazy: true,
+  query: computed(() => ({ file: file.value, branch: branch.value })),
+  immediate: coverageActive.value && file.value !== '',
+});
+const loading = computed(() => status.value === 'idle' || status.value === 'pending');
+
+const versions = computed(() => (coverage.value ? fileCoverageVersions(coverage.value) : []));
+/** `?blob=` value of a version whose coverage names no lines. */
+const NO_BLOB = 'none';
+const version = computed(() => {
+  const wanted = typeof route.query.blob === 'string' ? route.query.blob : null;
+  const named = wanted
+    ? versions.value.find((v) => (wanted === NO_BLOB ? v.blob === null : v.blob?.startsWith(wanted)))
+    : undefined;
+  return named ?? versions.value[0] ?? null;
+});
+const severalPaths = computed(() => new Set(versions.value.map((v) => v.path)).size > 1);
+const versionItems = computed(() =>
+  versions.value.map((v) => ({ label: fileVersionLabel(v, severalPaths.value), value: v.key })),
+);
+/** The selected line or range, kept in `?line=`. */
+const selection = ref<LineRange | null>(parseLineSelection(route.query.line));
+let anchor: number | null = selection.value?.[0] ?? null;
+const testsPanel = ref<HTMLElement | null>(null);
+// A link to this page with another file or line, followed from the page itself, selects what it names.
+watch(
+  () => [file.value, route.query.line] as const,
+  ([, raw]) => {
+    const named = parseLineSelection(raw);
+    if (named?.[0] === selection.value?.[0] && named?.[1] === selection.value?.[1]) return;
+    selection.value = named;
+    anchor = named?.[0] ?? null;
+  },
+);
+
+function setSelection(next: LineRange | null) {
+  selection.value = next;
+  void router.replace({ query: { ...route.query, line: next ? lineSelectionQuery(next) : undefined } });
+  if (!next) return;
+  // Below `lg` the tests sit under the source: bring them into view.
+  nextTick(() => {
+    const panel = testsPanel.value;
+    if (!panel || window.matchMedia('(min-width: 1024px)').matches) return;
+    const box = panel.getBoundingClientRect();
+    if (box.top > window.innerHeight - 80 || box.bottom < 0)
+      panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
+}
+
+function pickVersion(key: string) {
+  const picked = versions.value.find((v) => v.key === key);
+  if (!picked || picked.key === version.value?.key) return;
+  selection.value = null;
+  void router.replace({ query: { ...route.query, blob: picked.blob ?? NO_BLOB, line: undefined } });
+}
+
+/** Select a range of the line groups shown without the source. */
+function selectRange(range: LineRange) {
+  anchor = range[0];
+  setSelection(range);
+}
+
+function selectLine(line: number, extend: boolean) {
+  if (extend && anchor != null) {
+    setSelection([Math.min(anchor, line), Math.max(anchor, line)]);
+    return;
+  }
+  anchor = line;
+  const current = selection.value;
+  setSelection(current && current[0] === line && current[1] === line ? null : [line, line]);
+}
+
+const counts = computed(() => (version.value ? lineTestCounts(version.value) : new Map<number, number>()));
+const firstLine = computed(() => selection.value?.[0] ?? version.value?.executed[0]?.[0] ?? null);
+
+// The source at the version shown, read when the version changes.
+const source = ref<string | null>(null);
+const sourcePending = ref(false);
+watch(
+  () => [version.value?.path, version.value?.blob] as const,
+  async ([path, blob], _old, onCleanup) => {
+    let stale = false;
+    onCleanup(() => (stale = true));
+    source.value = null;
+    if (!path || !blob) {
+      sourcePending.value = false;
+      return;
+    }
+    sourcePending.value = true;
+    const read = await $fetch<SourceResponse>(`/api/projects/${projectId}/source`, { query: { path, blob } }).catch(
+      () => null,
+    );
+    if (stale) return;
+    source.value = read?.content ?? null;
+    sourcePending.value = false;
+  },
+  { immediate: true },
+);
+const sourceLines = computed(() => source.value?.split('\n') ?? null);
+
+/**
+ * Without the source: the version's lines grouped by the exact tests that ran
+ * them, most tests first, then the executable lines no test runs.
+ */
+const lineGroups = computed(() => {
+  const v = version.value;
+  const view = coverage.value;
+  if (!v || !view || source.value !== null) return [];
+  const [compact] = compactFileCoverage({ ...view, fragments: v.fragments, executable: [] }).versions;
+  const groups = (compact?.lines ?? compact?.functions ?? []).map((group) => ({
+    ranges: decodeLineRanges(group.lines),
+    tests: group.tests.length,
+  }));
+  if (v.notExecuted?.length) groups.push({ ranges: v.notExecuted, tests: 0 });
+  return groups;
+});
+const groupTestsText = (n: number) => (n === 0 ? 'run by no test' : `${n} test${n === 1 ? '' : 's'}`);
+
+/** On lines no test runs, the test that runs most of the code around them. */
+const nearest = computed(() => {
+  const v = version.value;
+  const view = coverage.value;
+  const picked = selection.value;
+  if (!v?.blob || !view || !picked || testsOnLines(v, picked).length > 0) return null;
+  const fragments = view.fragments.filter((f) => f.path === v.path && f.runtime === v.runtime);
+  return nearestTest({ fragments, tests: view.tests }, [picked], { blob: v.blob });
+});
+const nearestSentence = computed(() => {
+  if (!nearest.value || !selection.value) return null;
+  const start = nearest.value.function?.[0];
+  const name = start ? functionNameAt(sourceLines.value?.[start - 1]) : null;
+  return nearestTestSentence(nearest.value, selection.value, name);
+});
+</script>
+
+<template>
+  <UDashboardPanel id="project-coverage">
+    <template #header>
+      <UDashboardNavbar>
+        <template #leading>
+          <UDashboardSidebarCollapse />
+          <BreadcrumbNav
+            :items="[
+              { label: 'Home', icon: 'i-lucide-house', to: '/' },
+              { label: 'Projects', to: '/projects' },
+              { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
+              { label: fileName },
+            ]"
+          />
+        </template>
+      </UDashboardNavbar>
+    </template>
+
+    <template #body>
+      <div class="p-4 space-y-4" data-shot="coverage-file">
+        <EmptyState v-if="!coverageActive" text="This project records no coverage." />
+        <EmptyState v-else-if="!file" text="No file named: add ?file= and a repository-relative path to the address." />
+        <LoadingState v-else-if="loading" text="Reading the file’s coverage…" />
+        <ErrorState v-else-if="error" text="The coverage of this file could not be read." />
+        <EmptyState
+          v-else-if="!version || !coverage"
+          :text="`No test recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`"
+        />
+
+        <template v-else>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div class="min-w-0 space-y-1">
+              <p class="text-sm text-highlighted break-words" data-testid="coverage-file-path">
+                <OpenInIdeLink
+                  :file-path="version.path"
+                  :line="firstLine"
+                  :project-key="projectId"
+                  :project-name="project?.name"
+                  >{{ version.path }}</OpenInIdeLink
+                >
+              </p>
+              <p class="text-sm text-highlighted leading-relaxed" data-testid="coverage-file-summary">
+                {{ fileCoverageSentence(version, coverage.branch) }}
+              </p>
+              <p class="text-xs text-muted inline-flex flex-wrap items-center gap-x-1">
+                <span>{{ version.runtime === 'server' ? 'Server file' : 'Browser file' }}</span>
+                ·
+                <span :title="COVERAGE_PRECISION_TITLE[version.granularity]"
+                  >recorded {{ COVERAGE_PRECISION_LABEL[version.granularity] }}</span
+                >
+                <template v-if="version.blob">
+                  · version <span class="font-mono">{{ version.blob.slice(0, 7) }}</span>
+                </template>
+                <HelpHint topic="coverage.file" />
+              </p>
+            </div>
+            <USelect
+              v-if="versions.length > 1"
+              :model-value="version.key"
+              :items="versionItems"
+              color="neutral"
+              size="sm"
+              icon="i-lucide-git-commit-horizontal"
+              class="w-full sm:w-64 shrink-0"
+              aria-label="Version"
+              title="The tests recorded several versions of this file; line numbers belong to one"
+              data-testid="coverage-file-version"
+              @update:model-value="pickVersion(String($event))"
+            />
+          </div>
+
+          <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+            <div v-if="version.blob" class="min-w-0">
+              <LoadingState v-if="sourcePending" text="Reading the source…" />
+              <CoverageSourceView
+                v-else-if="source !== null"
+                :key="version.key"
+                :path="version.path"
+                :content="source"
+                :executed="version.executed"
+                :not-executed="version.notExecuted"
+                :functions="version.functions"
+                :focus-line="firstLine"
+                :selected="selection ? [selection] : []"
+                selectable
+                scroll-class="max-h-[60vh] lg:max-h-[calc(100vh-14rem)]"
+                :executed-title="version.granularity === 'lines' ? 'Run by a test' : 'In a function a test ran'"
+                not-executed-title="Run by no test"
+                @select-line="selectLine"
+              >
+                <template #annotation="{ line, executed, notExecuted }">
+                  <button
+                    v-if="executed || notExecuted"
+                    type="button"
+                    class="inline-block min-w-6 rounded text-right tabular-nums focus-visible:outline-2 focus-visible:outline-offset-1"
+                    :class="executed ? 'text-highlighted' : 'text-muted'"
+                    :data-tests="counts.get(line) ?? 0"
+                    :aria-label="`Line ${line}: ${counts.get(line) ?? 0} test${counts.get(line) === 1 ? '' : 's'}`"
+                    @click.stop="selectLine(line, $event.shiftKey)"
+                  >
+                    {{ counts.get(line) ?? 0 }}
+                  </button>
+                  <span v-else class="inline-block min-w-6" />
+                </template>
+              </CoverageSourceView>
+              <div v-else class="space-y-3" data-testid="coverage-file-no-source">
+                <p class="text-xs text-muted inline-flex items-center gap-1">
+                  The repository could not serve this version of the file, so its lines show as numbers.
+                  <HelpHint topic="coverage.file-source" />
+                </p>
+                <ul class="rounded-md border border-default divide-y divide-default">
+                  <li v-for="group in lineGroups" :key="group.ranges[0]![0]">
+                    <button
+                      type="button"
+                      class="flex w-full flex-wrap items-baseline gap-x-3 px-3 py-1.5 text-left hover:bg-elevated/60"
+                      :class="
+                        selection && selection[0] === group.ranges[0]![0] && selection[1] === group.ranges[0]![1]
+                          ? 'bg-elevated'
+                          : ''
+                      "
+                      :data-line-group="lineRangesText(group.ranges)"
+                      :title="`Show the tests of ${lineRangesText(group.ranges.slice(0, 1))}`"
+                      @click="selectRange(group.ranges[0]!)"
+                    >
+                      <span class="text-sm text-highlighted">{{ lineRangesText(group.ranges) }}</span>
+                      <span class="text-xs text-muted">{{ groupTestsText(group.tests) }}</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div
+              ref="testsPanel"
+              class="min-w-0 lg:sticky lg:top-0 scroll-mt-4"
+              :class="version.blob ? '' : 'lg:col-span-2'"
+            >
+              <FileCoverageTests
+                :project-id="projectId"
+                :project-name="project?.name"
+                :tests="coverage.tests"
+                :version="version"
+                :selection="selection"
+                :nearest="nearest"
+                :nearest-sentence="nearestSentence"
+                @clear="setSelection(null)"
+              />
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+  </UDashboardPanel>
+</template>

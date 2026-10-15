@@ -61,7 +61,13 @@ const TABS = [
 ] as const;
 type TabValue = (typeof TABS)[number]['value'];
 
-const { isHidden: capabilityHidden } = await useProjectCapabilities(testCase.value?.project?.id ?? 0);
+const { isHidden: capabilityHidden, state: capabilityState } = await useProjectCapabilities(
+  testCase.value?.project?.id ?? 0,
+);
+// How the test's path varies across its executions, where the project records coverage.
+const showPathVariation = computed(
+  () => Boolean(testCase.value?.project?.id) && capabilityState('coverage') === 'active',
+);
 const showFlakiness = computed(() => (testCase.value?.flakyRuns ?? 0) > 0 && !capabilityHidden('flake-lab'));
 const visibleTabs = computed(() => TABS.filter((t) => t.value !== 'flakiness' || showFlakiness.value));
 
@@ -271,6 +277,13 @@ const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.valu
             </div>
             <EmptyState v-else icon="i-lucide-inbox" text="No executions yet" />
           </SectionCard>
+
+          <PathVariationCard
+            v-if="showPathVariation"
+            :test-case-id="Number(testCaseId)"
+            :project-id="testCase!.project!.id"
+            :project-name="testCase?.project?.name"
+          />
 
           <!-- Locators of the latest execution, each with who else uses it -->
           <SectionCard

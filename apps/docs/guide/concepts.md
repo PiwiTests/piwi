@@ -210,7 +210,7 @@ they disagree the state line offers the one action that closes the gap, unless t
 
 A test case's **composite score** from two signals — retry passes (weighted 60%) and status alternation
 across runs (40%), shown next to its overall failure rate — plus a **root-cause class** (timing, network, assertion,
-environment, other) and an **impact ranking** in wasted CI minutes. It's a property of the test case,
+environment, order, other) and an **impact ranking** in wasted CI minutes. It's a property of the test case,
 computed over its execution history, which is why a test needs a few runs of history before it can be
 called flaky. See [Flaky tests](/features/flaky-tests).
 

@@ -20,6 +20,7 @@ import type { RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi } from '~/utils';
 import { stripAnsi } from '~/utils/text-format';
 import { buildRetryCommand } from '~/utils/retry-command';
+import { coverageLossPreview } from '~/utils/coverage-insights';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import { relativeTimeAgo, durationApprox, toEpochMs } from '#shared/relative-time';
@@ -42,7 +43,12 @@ const { can } = useAuth();
 // instance. The page keeps what it renders on: whether the What changed card
 // has anything to show, and the commit coverage behind the More menu's Copy git
 // log.
-const { hasChangesToShow, coverage: contextCoverage, scmChanges } = provideClusterDiagnosis(clusterId);
+const {
+  hasChangesToShow,
+  coverage: contextCoverage,
+  scmChanges,
+  suspectLines: clusterSuspectLines,
+} = provideClusterDiagnosis(clusterId);
 
 const { data: cluster, refresh: refreshCluster } = await useFetch<FailureClusterDetail>(
   `/api/failure-clusters/${clusterId}`,
@@ -436,6 +442,17 @@ const { copy: copyGitLog } = useCopy();
 // ── Bulk actions (More menu) ─────────────────────────────────────────────────
 const quarantineAll = ref<{ trigger: () => void } | null>(null);
 const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.quarantined));
+// What quarantining them leaves to no other trusted test, read when the menu opens, where the project records coverage.
+const pendingQuarantineIds = computed(() => pendingQuarantine.value.map((c) => c.testCaseId));
+const { load: loadQuarantineLoss, answerFor: quarantineLossFor } = useCoverageLoss(
+  () => cluster.value?.project?.id,
+  () => clusterCapState('coverage') === 'active',
+);
+function onMoreMenu(open: boolean) {
+  if (open && canQuarantine.value && pendingQuarantineIds.value.length > 0) {
+    void loadQuarantineLoss(pendingQuarantineIds.value);
+  }
+}
 
 // Grouped as on the execution page: the ticket, the test actions, the copies,
 // then Refresh.
@@ -466,6 +483,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
   if (canQuarantine.value && pendingQuarantine.value.length > 0)
     testActions.push({
       label: 'Quarantine all affected tests',
+      description: coverageLossPreview(quarantineLossFor(pendingQuarantineIds.value), 'quarantine')?.headline,
       icon: 'i-lucide-shield-alert',
       color: 'warning',
       onSelect: () => quarantineAll.value?.trigger(),
@@ -650,7 +668,7 @@ const breadcrumbItems = computed(() => [
             :endpoint="`/api/failure-clusters/${cluster.id}/export`"
             :base-name="`piwi-cluster-${cluster.id}`"
           />
-          <UDropdownMenu v-if="cluster" :items="moreMenuItems">
+          <UDropdownMenu v-if="cluster" :items="moreMenuItems" @update:open="onMoreMenu">
             <UButton
               size="sm"
               color="neutral"
@@ -790,7 +808,11 @@ const breadcrumbItems = computed(() => [
 
           <!-- Line 8: what changed, the commits since the last passing run in one line -->
           <template #whatChanged>
-            <WhatChangedLine ref="whatChangedLine" @see="scrollToEl(scmEl)" />
+            <WhatChangedLine
+              ref="whatChangedLine"
+              :coverage-active="clusterCapState('coverage') === 'active'"
+              @see="scrollToEl(scmEl)"
+            />
           </template>
 
           <!-- Line 9: the facts line: Details, Raw error, Copy summary -->
@@ -829,6 +851,8 @@ const breadcrumbItems = computed(() => [
                 :has-trace="hasTrace"
                 :default-hint="defaultHint"
                 :fixtures-state="clusterCapState('fixtures')"
+                :coverage-state="clusterCapState('coverage')"
+                :suspect-lines="clusterSuspectLines"
                 :can-decide-fixtures="canDecideClusterCap"
                 help="case.evidence"
                 @decline-fixtures="declineClusterFixtures"

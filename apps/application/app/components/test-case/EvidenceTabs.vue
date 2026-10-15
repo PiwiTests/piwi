@@ -9,12 +9,15 @@
  * default tab is the one the strongest clue cites, else Timeline when it can
  * place two or more items, else Screen. The Screen tab is one strip of views of
  * the page at the failure (`FailingStepSnapshot`), over the execution's files.
- * The tabs holding what the Most likely line cites carry a mark, and so do its
- * rows on the Timeline. A clue or diagnosis citation switches to the tab (and
- * the Screen view) that holds the evidence and scrolls the card so its tab strip
- * stays in view; a citation of one request or console entry rings that row for a
- * moment. The Playwright trace opens from the card's header, whichever tab is
- * showing. A test that never ran and left nothing behind shows no card at all.
+ * The Source tab adds what the test ran (`ExecutionCoverageSection`) where the
+ * project's coverage capability is active. The tabs holding what the Most
+ * likely line cites carry a mark, and so do its rows on the Timeline. A clue or
+ * diagnosis citation switches to the tab (and the Screen view) that holds the
+ * evidence and scrolls the card so its tab strip stays in view; a citation of
+ * one request or console entry rings that row for a moment. A link opens
+ * another tab with `?evidence=<tab>`. The Playwright trace opens from the
+ * card's header, whichever tab is showing. A test that never ran and left
+ * nothing behind shows no card at all.
  */
 import type { AttachmentInfo, NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
 import type { WireExecutionResources } from '#shared/types';
@@ -27,6 +30,7 @@ import { EVIDENCE_SECTION_TAB, type EvidenceTabValue } from '~/utils/evidence-se
 import type { TimelineCitation } from '~/utils/timeline-rows';
 import { extractStepLocatorUses } from '#shared/locator-chain';
 import type { LightboxSubject } from '~/utils/lightbox';
+import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 
 const props = defineProps<{
   /** The fetched execution — every tab reads its evidence off this object. */
@@ -57,6 +61,15 @@ const props = defineProps<{
   fixturesState?: CapabilityState;
   /** Whether the viewer may write the footer's decline decisions. */
   canDecideFixtures?: boolean;
+  /**
+   * The project's resolved coverage state: the Source tab lists what the test
+   * ran only when it is active, and says nothing of coverage otherwise.
+   */
+  coverageState?: CapabilityState;
+  /** The execution's suspect lines, fetched by the page: they mark the covered files they name. */
+  suspectLines?: SuspectLinesAnswer | null;
+  /** Where a covered file's suspect mark leads: the cluster's What changed card. */
+  whatChangedTo?: string | null;
 }>();
 
 // The footer's decline controls are the page's to write (it owns the capability
@@ -301,7 +314,13 @@ function computeDefault(): TabValue {
   return 'source';
 }
 
-const activeTab = ref<TabValue>(computeDefault());
+// A link may name the tab to open (`?evidence=source`); one the strip does not show is ignored.
+const route = useRoute();
+const requestedTab = computed(() => {
+  const asked = route.query.evidence;
+  return tabs.value.find((tab) => tab.value === asked)?.value ?? null;
+});
+const activeTab = ref<TabValue>(requestedTab.value ?? computeDefault());
 
 // A fixture-backed default can be filtered out (the clue cited a source the
 // project never captured); fall back to the first tab that is actually shown.
@@ -645,7 +664,8 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       </div>
 
       <!-- ── Source ───────────────────────────────────────────────── -->
-      <div v-else-if="activeTab === 'source'" ref="sourceWrap" class="scroll-mt-4">
+      <!-- The test's source, then what it ran where the project records coverage. -->
+      <div v-else-if="activeTab === 'source'" ref="sourceWrap" class="scroll-mt-4 space-y-6">
         <TestSourceCard
           v-if="sourceHasData"
           embedded
@@ -658,6 +678,16 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :project-name="projectName"
         />
         <EmptyState v-else icon="i-lucide-file-code-2" text="No test source captured for this execution" />
+        <ExecutionCoverageSection
+          v-if="coverageState === 'active'"
+          :test-runs-case-id="testRunsCaseId"
+          :run-id="runId"
+          :project-id="projectKey ?? null"
+          :project-name="projectName ?? null"
+          :suspects="suspectLines ?? null"
+          :what-changed-to="whatChangedTo ?? null"
+          :status="status"
+        />
       </div>
 
       <!-- ── Network ──────────────────────────────────────────────── -->

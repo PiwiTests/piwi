@@ -18,6 +18,8 @@
           Piwi pauses at your breakpoints in the browser, where a locator you pick replaces the one on that line;</li>
       <li>each test's latest result in the gutter, a failing test's body tinted, and the tests behind each locator
           line and each application file;</li>
+      <li>with coverage recorded, the lines your tests ran, in TypeScript, JavaScript and C# alike: marks in the gutter,
+          the tests behind each function and line, and the lines changed since the coverage run;</li>
       <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>
       <li>the latest run in the status bar, with the run you started as it runs, its tests in the gutter as they end,
           and what it changed once it ended; read again on a click; and Piwi's MCP server for your AI assistant;</li>
@@ -84,6 +86,9 @@
             <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare With…"
                     icon="AllIcons.Actions.Diff"
                     description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
+            <action id="Piwi.ToggleCoverageMarks" class="dev.piwitests.jetbrains.ToggleCoverageMarksAction"
+                    text="Show Coverage Marks"
+                    description="Mark the lines the tests ran, the executable lines none runs and the lines changed since the coverage run"/>
             <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
                     icon="AllIcons.General.Web"
                     text="Open in Dashboard" description="Open this file's test, or the latest run"/>

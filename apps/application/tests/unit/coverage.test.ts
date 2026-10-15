@@ -25,8 +25,11 @@ const {
   deleteBranchCoverageRows,
   getExecutionCoverage,
   getFileCoverage,
+  getRunCoverage,
   parseCoveragePayload,
   parseRunCoverage,
+  parseRunCoverageQuery,
+  parseSourceQuery,
   pruneStaleBranchCoverageRows,
   storeRunCoverage,
   upsertCoverageFragments,
@@ -348,7 +351,28 @@ describe('coverage reads', () => {
     expect(coverage.fragments).toEqual([
       { path: BASKET, runtime: 'server', blob: BLOB_B, functions: [[50, 80]], lines: [[51, 53]], tests: [0, 1] },
     ]);
+    expect(coverage.executable).toEqual([]);
     expect((await getFileCoverage(db as never, 1, 'Other.cs')).fragments).toEqual([]);
+  });
+
+  test('a file’s executable lines come from the newest run coverage of each version', async () => {
+    const other = await freshDb();
+    await run(other, 40, 'main', T0);
+    await run(other, 41, 'feature/basket', T0 + 1000);
+    await run(other, 42, 'main', T0 + 2000);
+    await persistRunCases(other as never, 1, 40, [execution('pays', capture(basket([[51, 53]])))]);
+    await storeRunCoverage(other as never, 40, 1, [
+      { path: BASKET, runtime: 'server', blob: BLOB_B, executable: [[50, 70]] },
+    ]);
+    await storeRunCoverage(other as never, 41, 1, [
+      { path: BASKET, runtime: 'server', blob: BLOB_B, executable: [[50, 80]] },
+    ]);
+    await storeRunCoverage(other as never, 42, 1, [
+      { path: BASKET, runtime: 'server', blob: BLOB_A, executable: [[1, 9]] },
+    ]);
+    const coverage = await getFileCoverage(other as never, 1, 'BasketService.cs');
+    // The version no fragment names is left out; the newest run's lines win for the one they do.
+    expect(coverage.executable).toEqual([{ path: BASKET, runtime: 'server', blob: BLOB_B, lines: [[50, 80]] }]);
   });
 
   test('a branch reads its tests’ own coverage per runtime, the default branch’s for the rest', async () => {
@@ -362,6 +386,24 @@ describe('coverage reads', () => {
     // `pays` recorded no browser coverage on the branch, so its default-branch browser coverage stands.
     const browser = await getFileCoverage(db as never, 1, CART, 'feature/basket');
     expect(browser.tests.map((t) => t.title)).toEqual(['browses', 'pays']);
+  });
+});
+
+describe('coverage read queries', () => {
+  test('a source read takes a repository-relative path and a git object id', () => {
+    expect(parseSourceQuery(' src/A.cs ', BLOB_A)).toEqual({ path: 'src/A.cs', blob: BLOB_A });
+    expect(parseSourceQuery('../outside.cs', BLOB_A)).toHaveProperty('error');
+    expect(parseSourceQuery('src/A.cs', 'not-a-blob')).toEqual({ error: 'blob must be a git object id' });
+  });
+
+  test('a run coverage read clamps its limit and refuses one that is no integer', () => {
+    expect(parseRunCoverageQuery(undefined, undefined)).toEqual({ file: null, limit: undefined });
+    expect(parseRunCoverageQuery(' Basket.cs ', '50000')).toEqual({ file: 'Basket.cs', limit: 20_000 });
+    expect(parseRunCoverageQuery(undefined, ['-3', '4'])).toEqual({ file: null, limit: 0 });
+    expect(parseRunCoverageQuery(undefined, '1.5')).toEqual({
+      error: 'Invalid query parameter "limit": expected an integer',
+    });
+    expect(parseRunCoverageQuery('x'.repeat(501), undefined)).toEqual({ error: 'file is at most 500 characters' });
   });
 });
 
@@ -443,6 +485,46 @@ describe('run coverage', () => {
       ['server', 'src/B.cs', null, null, '7,9', null],
       ['browser', 'src/a.ts', null, '1-4', null, null],
     ]);
+  });
+
+  test('reads a run’s coverage back, every file or the ones matching a path, with its counts', async () => {
+    await persistRunCases(db as never, 1, 30, [execution('pays', capture(layout)), execution('browses')]);
+    const all = await getRunCoverage(db as never, 30);
+    expect(all).toMatchObject({ runId: 30, executionsWithCoverage: 1, fileCounts: { browser: 1, server: 2 } });
+    expect(all!.files).toEqual([
+      {
+        path: 'src/A.cs',
+        runtime: 'server',
+        blob: BLOB_A,
+        lines: [
+          [1, 3],
+          [5, 6],
+        ],
+        executable: [
+          [1, 10],
+          [12, 14],
+        ],
+      },
+      {
+        path: 'src/B.cs',
+        runtime: 'server',
+        lines: [
+          [7, 7],
+          [9, 9],
+        ],
+      },
+      { path: 'src/a.ts', runtime: 'browser', functions: [[1, 4]] },
+    ]);
+    // A path suffix matches as for a file's coverage; the counts stay the run's.
+    const one = await getRunCoverage(db as never, 30, { file: 'A.cs' });
+    expect(one!.files.map((f) => f.path)).toEqual(['src/A.cs']);
+    expect(one!.fileCounts).toEqual({ browser: 1, server: 2 });
+    expect((await getRunCoverage(db as never, 30, { file: 'src/Other/A.cs' }))!.files).toEqual([]);
+    const counts = await getRunCoverage(db as never, 30, { limit: 0 });
+    expect(counts!.files).toEqual([]);
+    expect(counts!.fileCounts).toEqual({ browser: 1, server: 2 });
+    expect((await getRunCoverage(db as never, 30, { limit: 1 }))!.files).toHaveLength(1);
+    expect(await getRunCoverage(db as never, 999)).toBeNull();
   });
 });
 

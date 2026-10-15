@@ -17,10 +17,21 @@
  *    (app/demo/api/diagnosis-context.ts)
  *  - the diagnosis `autoSelectedCommits` and the verifiable suggested-fix patch
  *    (app/demo/api/ai.ts and scripts/generate-demo-seed.mjs)
+ *  - a covered file's source at the git blob its coverage names (the execution
+ *    page's Coverage section)
  */
 
+import { sameFilePath } from '@piwitests/core/locator-break';
 import type { ScmChangedFile, ScmChanges, CommitListItem } from '~~/types/api';
-import { FAILURE_STORIES, SCM_REPOS, projectSourceFilePaths, sourceText } from '#shared/demo/failure-stories.mjs';
+import type { SourceAtBlob } from '~~/server/utils/source-at-blob';
+import { gitBlobId } from '#shared/utils/hash';
+import {
+  FAILURE_STORIES,
+  SCM_REPOS,
+  projectCoveredFilePaths,
+  projectSourceFilePaths,
+  sourceText,
+} from '#shared/demo/failure-stories.mjs';
 
 export interface DemoCommit {
   sha: string;
@@ -80,6 +91,26 @@ export function allDemoSourceFiles(): Map<string, string> {
     for (const f of proj.sourceFiles) map.set(f.path, f.content);
   }
   return map;
+}
+
+/**
+ * The source of a file of a project's canned repository at a git blob: the
+ * authored file, among its source files and the files its coverage names,
+ * whose path matches `path` and whose git blob id is `blob`. Null when the
+ * repository holds no such version.
+ */
+export async function getDemoSourceAtBlob(projectId: number, path: string, blob: string): Promise<SourceAtBlob | null> {
+  if (!getDemoScmProject(projectId)) return null;
+  const wanted = blob.toLowerCase();
+  const candidates = new Set([...projectSourceFilePaths(projectId), ...projectCoveredFilePaths(projectId)]);
+  for (const candidate of candidates) {
+    if (!sameFilePath(candidate, path)) continue;
+    const content = sourceText(candidate);
+    if ((await gitBlobId(content, wanted.length === 64 ? 'sha256' : 'sha1')) === wanted) {
+      return { path, blob: wanted, content };
+    }
+  }
+  return null;
 }
 
 // ── Lookups ─────────────────────────────────────────────────────────────────

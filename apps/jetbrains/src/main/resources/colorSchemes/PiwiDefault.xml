@@ -17,4 +17,19 @@
       <option name="ERROR_STRIPE_COLOR" value="7aa2e3"/>
     </value>
   </option>
+  <option name="PIWI_COVERAGE_RUN">
+    <value>
+      <option name="ERROR_STRIPE_COLOR" value="4fa457"/>
+    </value>
+  </option>
+  <option name="PIWI_COVERAGE_NOT_RUN">
+    <value>
+      <option name="ERROR_STRIPE_COLOR" value="e06c6c"/>
+    </value>
+  </option>
+  <option name="PIWI_COVERAGE_CHANGED">
+    <value>
+      <option name="ERROR_STRIPE_COLOR" value="c7922a"/>
+    </value>
+  </option>
 </list>

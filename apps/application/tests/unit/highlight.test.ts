@@ -148,12 +148,19 @@ describe('languageForPath', () => {
     ['playwright.config.TS', 'typescript'],
     ['tests/checkout.spec.ts:16', 'typescript'],
     ['tests/checkout.spec.ts:16:7', 'typescript'],
+    ['api/Users/UsersEndpoints.cs', 'csharp'],
   ])('reads %s as %s', (path, lang) => {
     expect(languageForPath(path)).toBe(lang);
   });
 
-  it.each(['Program.cs', 'Makefile', '', null, undefined])('has no language for %s', (path) => {
+  it.each(['Program.fs', 'Makefile', '', null, undefined])('has no language for %s', (path) => {
     expect(languageForPath(path)).toBeNull();
+  });
+
+  it('highlights C# only when a path or a fence names it', () => {
+    const code = 'public static int Count(string s) { return s.Length; }';
+    expect(highlightLines([code], languageForPath('api/Count.cs'))[0]).toContain('hljs-keyword');
+    expect(highlightCode(code).language).not.toBe('csharp');
   });
 });
 

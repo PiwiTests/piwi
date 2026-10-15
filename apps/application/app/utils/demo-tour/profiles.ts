@@ -47,6 +47,18 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
         align: 'start',
         doc: 'features/ai-diagnosis',
       },
+      {
+        id: 'coverage',
+        route: '/test-run-cases/711?evidence=source',
+        expect: {
+          execution: { id: 711, title: 'Users table paginates 25 rows per page' },
+          coverage: { serverFiles: 5, browserFiles: 3, runCoverage: true },
+        },
+        target: 'execution-coverage',
+        side: 'top',
+        align: 'start',
+        doc: 'features/code-reach#on-the-execution-page',
+      },
       { id: 'mcp', route: '/mcp', target: 'mcp-setup', side: 'bottom', align: 'start', doc: 'features/mcp' },
       {
         id: 'simulate',

@@ -524,6 +524,9 @@ const { quarantineMany } = useQuarantine(() => props.projectKey ?? null);
 // Each bulk action shows to the holders of its permission on the run's project.
 const canQuarantine = computed(() => can('quarantine:write', props.projectKey));
 const canTriage = computed(() => can('triage:write', props.projectKey));
+// What quarantining the selection leaves uncovered, beside its button and in its confirmation, where the project
+// records coverage: read once a test is selected, so the page's render reads nothing for it.
+const { active: coverageActive, resolve: resolveCoverageActive } = useLazyCoverageActive(() => props.projectKey);
 
 const selectionEnabled = computed(() => (canQuarantine.value || canTriage.value) && failedCount.value > 0);
 const selectedIds = ref<Set<number>>(new Set());
@@ -531,6 +534,9 @@ const selectedIds = ref<Set<number>>(new Set());
 const selectableRows = computed(() => filteredTestCases.value.filter((tc) => isFailedStatus(tc.status)));
 const selectedRows = computed(() => selectableRows.value.filter((tc) => selectedIds.value.has(tc.executionId)));
 const selectedCount = computed(() => selectedRows.value.length);
+watch(selectedCount, (count) => {
+  if (count > 0 && canQuarantine.value) void resolveCoverageActive();
+});
 const allSelectableSelected = computed(
   () => selectableRows.value.length > 0 && selectableRows.value.every((tc) => selectedIds.value.has(tc.executionId)),
 );
@@ -574,6 +580,13 @@ const allSelectedInCluster = computed(
 
 const bulkBusy = ref(false);
 const quarantineConfirmOpen = ref(false);
+const { load: loadQuarantineLoss, answerFor: quarantineLossFor } = useCoverageLoss(
+  () => props.projectKey,
+  coverageActive,
+);
+watch(quarantineConfirmOpen, (open) => {
+  if (open) void loadQuarantineLoss(selectedTestCaseIds.value);
+});
 
 async function runBulkQuarantine() {
   const ids = selectedTestCaseIds.value;
@@ -753,17 +766,24 @@ defineExpose({ scrollToCase });
     >
       <span class="text-sm font-medium" aria-live="polite">{{ selectedCount }} selected</span>
       <div class="flex flex-wrap items-center gap-2 ml-auto">
-        <UButton
+        <CoverageLossPopover
           v-if="canQuarantine"
-          size="xs"
-          color="warning"
-          variant="soft"
-          icon="i-lucide-shield-alert"
-          :loading="bulkBusy"
-          @click="onBulkQuarantine"
+          :project-id="projectKey ?? 0"
+          :project-name="projectName"
+          :test-case-ids="selectedTestCaseIds"
+          :active="coverageActive"
         >
-          Quarantine selected
-        </UButton>
+          <UButton
+            size="xs"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-shield-alert"
+            :loading="bulkBusy"
+            @click="onBulkQuarantine"
+          >
+            Quarantine selected
+          </UButton>
+        </CoverageLossPopover>
         <UDropdownMenu
           v-if="canTriage && allSelectedInCluster"
           :items="[
@@ -935,6 +955,13 @@ defineExpose({ scrollToCase });
           This quarantines {{ selectedTestCaseIds.length }} tests. Each keeps running and reporting but is excluded from
           the CI gate's verdict until released.
         </p>
+        <CoverageLossPreview
+          v-if="coverageActive && projectKey != null"
+          class="mt-3"
+          :answer="quarantineLossFor(selectedTestCaseIds)"
+          :project-id="projectKey"
+          :project-name="projectName"
+        />
       </template>
       <template #footer>
         <div class="flex items-center gap-3 w-full justify-end">

@@ -47,6 +47,10 @@ export const DE_COPY = {
           title: 'Eine KI-Diagnose, an Ihrem Code geprüft',
           body: 'Mit einem konfigurierten KI-Anbieter diagnostiziert Piwi einen Fehlercluster aus seinen Belegen und den Commits seit dem letzten Erfolg. Diese Diagnose führt die 51 Zeilen der Benutzertabelle auf die Standard-Seitengröße der API zurück und schlägt diesen Patch vor, am Code geprüft: **Applies cleanly**. Inzwischen ist ein Fix gelandet und hält.',
         },
+        coverage: {
+          title: 'Die Serverzeilen, die dieser Test ausführte',
+          body: 'Wenn ein Projekt Coverage aufzeichnet, listet der Tab **Source** den Code, den ein Test ausgeführt hat. Dieser fehlgeschlagene Test lief durch fünf Dateien der ASP.NET-Core-API, zuerst die Users-Endpoints mit den verdächtigen Zeilen; öffnen Sie eine für ihre ausgeführten Zeilen. Der Link **tests** einer Datei öffnet alle Tests, die sie ausführen, Zeile für Zeile.',
+        },
         mcp: {
           title: 'Fragen Sie aus Ihrem Editor',
           body: 'Piwi ist auch ein MCP-Server: Claude Code, Cursor oder Copilot in VS Code können Fehlercluster, ihre Belege und Fix-Pläne lesen und sie triagieren, ohne den Editor zu verlassen. **Client setup** enthält die Konfiguration jedes Clients; der Endpunkt dieser Demo ist nicht aktiv.',

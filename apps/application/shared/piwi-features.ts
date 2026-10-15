@@ -333,8 +333,16 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Which tests execute each application source file, from JavaScript coverage and, with an ASP.NET Core coverage build, server coverage on a scheduled run: feeds impact-from-diff, uncovered changes and preflight.',
         needs: ['fixtures'],
-        where: 'Reporter options captureCodeReach and coverage',
+        where: 'Reporter options captureCodeReach and coverage; Execution → Source; a file’s coverage page',
         doc: 'features/code-reach',
+      },
+      {
+        title: 'Coverage insights',
+        summary:
+          'From the coverage tests record: the code a failure ran that its last pass did not, a path that depends on which tests ran first, the code only some tests run before you quarantine them, and whether a new test reaches its target lines.',
+        needs: ['fixtures', 'backend'],
+        where: 'API and MCP tools; the AI diagnosis',
+        doc: 'features/coverage-insights',
       },
       {
         title: 'Probes',
@@ -501,6 +509,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: [],
         where: 'Piwi: Run the tests that reach this file, Piwi: Run selection…; the status bar',
         doc: 'features/editor-runs',
+      },
+      {
+        title: 'Coverage in the editor',
+        summary:
+          'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
+        needs: ['fixtures', 'backend'],
+        where: 'Application files in the editor; Piwi: Toggle the coverage marks, Tools → Piwi → Show Coverage Marks',
+        doc: 'features/editor-coverage',
       },
       {
         title: 'Breakpoints in the browser',

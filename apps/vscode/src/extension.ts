@@ -20,6 +20,8 @@ import {
   APPLY_PICK_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
   COMMAND_STARTED_NOTIFICATION,
+  COVERAGE_NOTIFICATION,
+  COVERAGE_REQUEST,
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
   FAILURES_NOTIFICATION,
@@ -33,6 +35,8 @@ import {
   type ApplyPickResult,
   type CommandEndedParams,
   type CommandStartedParams,
+  type CoverageParams,
+  type CoverageResult,
   type DesktopJobParams,
   type DesktopJobResult,
   type DesktopJobUpdate,
@@ -99,6 +103,8 @@ import {
 import {
   DOCUMENT_PATTERN,
   connectChoices,
+  coverageDecorations,
+  hasCoverageMarks,
   desktopJobNotice,
   testDecorations,
   type TestDecoration,
@@ -153,6 +159,8 @@ const DESKTOP_PROJECT = 'piwi.desktopProject';
 const DESKTOP_OFFERED = 'piwi.desktopOffered';
 /** The baseline chosen with Compare with… for each context, by its root: workspace state, on this machine only. */
 const BASELINES = 'piwi.baseline';
+/** Whether the coverage marks are shown (the default) or hidden with Toggle the coverage marks: workspace state. */
+const COVERAGE_SHOWN = 'piwi.coverageShown';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -194,6 +202,8 @@ export interface PiwiApi {
   lastRun(): RunCommand | null;
   /** The tests last drawn in the gutter of a file, by its URI. */
   gutter(uri: string): TestDecoration[];
+  /** The `piwi/coverage` answer last held for a file, by its URI, and whether its marks are shown; null before one. */
+  coverage(uri: string): { result: CoverageResult; shown: boolean } | null;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -385,6 +395,68 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     { dispose: () => gutterEdits.forEach((t) => clearTimeout(t)) },
   );
+  // The coverage the project's tests recorded of the visible files, as whole-line marks at their left edge: the lines
+  // tests ran, the executable lines none runs, and the lines changed since the coverage run. The service's hover says
+  // which tests ran a line. Drawn from the answer each file's `piwi/coverage` gave, then from what
+  // `piwi/coverageChanged` pushes: an edit moves them there, the service placing the lines.
+  const leftMark = (color: string, style: 'solid' | 'dashed', ruler: boolean) =>
+    vscode.window.createTextEditorDecorationType({
+      isWholeLine: true,
+      borderStyle: style,
+      borderWidth: '0 0 0 3px',
+      borderColor: new vscode.ThemeColor(color),
+      ...(ruler
+        ? { overviewRulerColor: new vscode.ThemeColor(color), overviewRulerLane: vscode.OverviewRulerLane.Center }
+        : {}),
+    });
+  const coverageRun = leftMark('testing.coveredGutterBackground', 'solid', false);
+  const coverageNotRun = leftMark('testing.uncoveredGutterBackground', 'solid', true);
+  const coverageChanged = leftMark('piwi.coverageChangedBorder', 'dashed', true);
+  context.subscriptions.push(coverageRun, coverageNotRun, coverageChanged);
+  /** Each file's `piwi/coverage` answer, by URI: the one the service pushes changes against. */
+  const coverage = new Map<string, CoverageResult>();
+  let coverageShown = context.workspaceState.get<boolean>(COVERAGE_SHOWN, true);
+  /** Whether a file shows coverage marks: the command that hides them is offered from then on. */
+  let coverageKnown = false;
+  const drawCoverage = (document: vscode.TextDocument) => {
+    const marks = coverageDecorations(coverage.get(document.uri.toString()), document.lineCount, coverageShown);
+    const ranges = (spans: Array<{ start: number; end: number }>) =>
+      spans.map((s) => new vscode.Range(s.start, 0, s.end, 0));
+    for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
+      editor.setDecorations(coverageRun, ranges(marks.run));
+      editor.setDecorations(coverageNotRun, ranges(marks.notRun));
+      editor.setDecorations(coverageChanged, ranges(marks.changed));
+    }
+  };
+  /** Keep a file's coverage answer and draw it; the first one with marks offers the command that hides them. */
+  const coverageArrived = (result: CoverageResult) => {
+    coverage.set(result.uri, result);
+    if (!coverageKnown && hasCoverageMarks(result)) {
+      coverageKnown = true;
+      void vscode.commands.executeCommand('setContext', 'piwi.hasCoverage', true);
+    }
+    const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === result.uri);
+    if (document) drawCoverage(document);
+  };
+  /** Ask the coverage of the visible files the service reads, every one or those it was not asked for yet. */
+  const askCoverage = (all = false) => {
+    for (const editor of vscode.window.visibleTextEditors) {
+      const uri = editor.document.uri.toString();
+      if (!piwiFile(editor.document) || (!all && coverage.has(uri))) continue;
+      void lc
+        .sendRequest<CoverageResult>(COVERAGE_REQUEST, { uri } satisfies CoverageParams)
+        .then(coverageArrived)
+        .catch(() => null);
+    }
+  };
+  context.subscriptions.push(
+    vscode.window.onDidChangeVisibleTextEditors(() => {
+      askCoverage();
+      for (const editor of vscode.window.visibleTextEditors) drawCoverage(editor.document);
+    }),
+    vscode.workspace.onDidCloseTextDocument((d) => coverage.delete(d.uri.toString())),
+  );
+
   const mcpChanged = new vscode.EventEmitter<void>();
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
   statusItem.name = 'Piwi';
@@ -461,6 +533,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       drawFiles();
     }
     if (!full) return;
+    // A connection that changed: the visible files' coverage is asked again.
+    askCoverage(true);
     void vscode.commands.executeCommand('setContext', 'piwi.active', !!status?.contexts.some((c) => c.connected));
     if (status) void offerDesktop(context, lc, status);
     const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST).catch(() => null);
@@ -755,6 +829,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await lc.sendNotification(SET_BASELINE_NOTIFICATION, { root: target.root, choice } satisfies SetBaselineParams);
     }),
     vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
+    vscode.commands.registerCommand('piwi.toggleCoverage', async () => {
+      coverageShown = !coverageShown;
+      await context.workspaceState.update(COVERAGE_SHOWN, coverageShown);
+      for (const editor of vscode.window.visibleTextEditors) drawCoverage(editor.document);
+    }),
     vscode.commands.registerCommand('piwi.stopFollowingEditor', () => failuresView.toggleFollow()),
     // From the failures view, a failure; from a quick fix, the failure it names.
     vscode.commands.registerCommand('piwi.copyAgentContext', async (target: FailureNode | AgentContextParams) => {
@@ -945,6 +1024,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       filesChanged();
       failuresView.show(failures);
     }),
+    // A file's coverage marks moved with an edit, or its coverage was read again: the marks, the lenses and the gutter.
+    lc.onNotification(COVERAGE_NOTIFICATION, (result: CoverageResult) => {
+      coverageArrived(result);
+      filesChanged();
+    }),
     // A run started here ended and was read: what it changed, as `piwi.runNotifications` allows.
     lc.onNotification(RUN_ENDED_NOTIFICATION, async (ended: RunEnded) => {
       const setting = vscode.workspace.getConfiguration('piwi').get<RunNotifications>('runNotifications');
@@ -979,6 +1063,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     },
     lastRun: () => lastRun,
     gutter: (uri) => gutter.get(uri) ?? [],
+    coverage: (uri) => {
+      const result = coverage.get(uri);
+      return result ? { result, shown: coverageShown } : null;
+    },
   };
 }
 

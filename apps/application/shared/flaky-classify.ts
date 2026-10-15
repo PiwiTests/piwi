@@ -1,11 +1,12 @@
 /**
  * Flaky-test root-cause classification — pure keyword scoring over recent
- * failure evidence (error messages, step titles/errors, browser spread). No
- * DB/network access, so it works identically on the server and in the demo's
- * in-browser handler (`shared/handlers/flaky-classify.ts`).
+ * failure evidence (error messages, step titles/errors, browser spread), and
+ * the order dependency coverage measures. No DB/network access, so it works
+ * identically on the server and in the demo's in-browser handler
+ * (`shared/handlers/flaky-classify.ts`).
  */
 
-export type FlakyRootCause = 'timing' | 'network' | 'assertion' | 'environment' | 'other';
+export type FlakyRootCause = 'timing' | 'network' | 'assertion' | 'environment' | 'order' | 'other';
 
 interface ClassifyInput {
   errorMessages: string[];
@@ -22,6 +23,12 @@ interface ClassifyInput {
   attemptDiffNetworkVotes?: number;
   /** Per browser (Playwright project), how many of the recent attempts passed and failed. */
   browserDistribution: Record<string, BrowserOutcomes>;
+  /**
+   * The test's coverage varies with whether another test finished before it in
+   * the same run, and its failures follow that variation (a path variation's
+   * `orderDependent`): it depends on state an earlier test leaves behind.
+   */
+  orderDependent?: boolean;
 }
 
 export interface BrowserOutcomes {
@@ -90,6 +97,9 @@ function hasAnyKeyword(texts: string[], keywords: string[]): boolean {
 const hasTimingOrNetwork = (texts: string[]) => hasAnyKeyword(texts, TIMING_NETWORK_MARKERS);
 
 export function classifyFlakyRootCause(input: ClassifyInput): FlakyRootCause {
+  // An order dependency, measured from coverage, outranks every other signal.
+  if (input.orderDependent) return 'order';
+
   const allTexts = [...input.errorMessages, ...input.stepErrors, ...input.stepNames];
 
   if (allTexts.length === 0) return 'other';

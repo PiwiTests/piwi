@@ -138,6 +138,14 @@ export interface StoryServerCoverage {
   lines: Array<[number, number]>;
 }
 
+/**
+ * A server file of a run's coverage, attributed to no test: what the run's
+ * tests and the app's startup ran, with the file's executable lines.
+ */
+export interface StoryRunCoverageFile extends StoryServerCoverage {
+  executable: Array<[number, number]>;
+}
+
 /** A file of a story's coverage: a browser file at file granularity, by its path, or a server file. */
 export type StoryCoverageFile = string | StoryServerCoverage;
 
@@ -169,6 +177,36 @@ export interface FailureStory {
   firing: StoryFiring;
   /** Gives the cluster suspect lines: the coverage its newest failing run recorded. */
   coverage?: StoryCoverage;
+  /** The run coverage the same run sent at its end. */
+  runCoverage?: StoryRunCoverageFile[];
+}
+
+/**
+ * A flaky test whose failures follow another test of its spec having not
+ * finished when it started: the two tests by title, the file whose code the
+ * failing executions ran apart, the races the seed holds at least in the
+ * Playwright project most of the test's executions ran in, and the coverage
+ * each records.
+ */
+export interface OrderFlake {
+  projectId: number;
+  specFile: string;
+  /** The flaky test. */
+  test: string;
+  /** The test whose having finished earlier in the run predicts the flaky test's path. */
+  earlier: string;
+  /** The file the failing executions ran other lines of. */
+  conflictPath: string;
+  /** Runs where the earlier test had not finished, at least, in the compared Playwright project. */
+  minRaces: number;
+  coverage: {
+    /** What the earlier test records. */
+    earlier: StoryServerCoverage[];
+    /** What the flaky test records when it passes. */
+    saved: StoryServerCoverage[];
+    /** What the flaky test records when it fails. */
+    conflicted: StoryServerCoverage[];
+  };
 }
 
 export interface DemoCase {
@@ -259,6 +297,7 @@ export declare const SOURCE_FILES: Record<string, string[]>;
 export declare const FAILURE_STORIES: FailureStory[];
 export declare const DEMO_PROJECTS: DemoProject[];
 export declare const SCM_REPOS: Record<number, ScmRepo>;
+export declare const ORDER_FLAKE: OrderFlake;
 export declare const SIMULATOR_ERRORS: {
   checkoutPayTimeout: string;
   checkoutPayTimeoutPaypal: string;
@@ -336,4 +375,6 @@ export declare function storyEvidenceTimes(
 export declare function storyByClusterId(clusterId: number): FailureStory | null;
 export declare function storyForCase(projectId: number, filePath: string, title: string): FailureStory | null;
 export declare function projectSourceFilePaths(projectId: number): string[];
+/** The authored files a project's stories' coverage names, which its canned repository serves by git blob. */
+export declare function projectCoveredFilePaths(projectId: number): string[];
 export declare function storyCoverageFiles(story: FailureStory, file: string, title: string): StoryCoverageFile[];

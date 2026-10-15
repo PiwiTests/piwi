@@ -106,7 +106,7 @@ import {
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import { browserCoverageInWorker, serverCoverageInWorker } from '../collect/coverage-settings.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
-import { boxCaptureFrames, internalCall } from './quiet-capture.js';
+import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
 import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach } from './code-reach.js';
 import {
   activeResourceLedger,
@@ -116,13 +116,20 @@ import {
   stopResourceLedger,
 } from './resource-ledger.js';
 import { readPageInteraction } from './page-interaction.js';
+import {
+  apiCallEntry,
+  observeApiRequestContext,
+  observeApiRequests,
+  type ApiCall,
+  type ApiCallRecorder,
+} from './api-requests.js';
 
 // Re-exported: probeElementAttrs now lives in @piwitests/picker-dom (shared
 // with the dashboard's snapshot picker), but the dogfood mirror
 // (`application/tests/fixtures.ts`) and this package's own tests import it
 // from here, as the mirror does the quiet-capture helpers and the page
 // interaction read.
-export { probeElementAttrs, internalCall, boxCaptureFrames, readPageInteraction };
+export { probeElementAttrs, internalCall, boxCaptureFrames, callMethod, readPageInteraction };
 export { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach };
 // The dogfood mirror runs the same resource ledger from its own fixtures.
 export { activeResourceLedger, noteResourceUse, recordResourceCensus, startResourceLedger, stopResourceLedger };
@@ -309,6 +316,9 @@ interface CaptureSink {
   // The server coverage request ids (`X-Piwi-Coverage`) the test's responses
   // carried, by origin, when server coverage is on.
   serverCoverage: Map<string, Set<string>>;
+  // The test's `baseURL` option, which Playwright gives every request context
+  // created during the test that names none of its own.
+  baseURL: string | null;
 }
 
 function createSink(): CaptureSink {
@@ -342,6 +352,7 @@ function createSink(): CaptureSink {
     locatorPages: new LocatorPageLog(),
     codeReach: null,
     serverCoverage: new Map(),
+    baseURL: null,
   };
 }
 
@@ -1130,16 +1141,6 @@ function startElementCapture(
   sink.capturePromises.push(resolveAttrs);
 }
 
-/**
- * Call a Playwright method on its own receiver. Playwright names an API call
- * after the method frame the call enters, so the call keeps its real name
- * (`locator.fill: Timeout …`); a call through `Function.prototype.apply` is
- * named `apply`.
- */
-export function callMethod(target: object, prop: string | symbol, args: unknown[]): unknown {
-  return (target as Record<string | symbol, (...a: unknown[]) => unknown>)[prop]!(...args);
-}
-
 // Chain methods that take args and define a new locator scope (not just narrow).
 // Origin method/args update to the chain call, e.g. .locator('.item') → locator('.item').
 // Positional/filter chains that narrow but don't change locator identity.
@@ -1400,6 +1401,7 @@ function instrumentPage(page: Page): void {
   if (!page || INSTRUMENTED_PAGES.has(page)) return;
   INSTRUMENTED_PAGES.add(page);
   void maybeStartCodeReach(page);
+  observeOwnApiRequests(page);
 
   // Probe mode: install the fault interception for this test's plan item on the
   // first page, before the test navigates. Fire-and-forget — page.route
@@ -1650,38 +1652,7 @@ function recordRequest(sink: CaptureSink, request: Request, end: RequestEnd, res
         if (timing.requestStart < 0 && typeof response.serverAddr === 'function') {
           if ((await response.serverAddr().catch(() => undefined)) === null) entry.fulfilled = true;
         }
-
-        const headers = response.headers();
-        // Response content type (without charset/boundary params) — relevant
-        // per-request metadata for distinguishing API/JSON vs document/HTML calls.
-        const contentType = headers['content-type'];
-        if (contentType) entry.contentType = contentType.split(';')[0]!.trim();
-
-        const logHeader = headers['x-piwi-logs'];
-        if (logHeader) {
-          try {
-            entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));
-          } catch {
-            /* ignore malformed header */
-          }
-        }
-
-        // The id the backend gave this request's server coverage, kept per
-        // origin for the reporter to collect once the test ends.
-        const coverageHeader = headers['x-piwi-coverage'];
-        if (coverageHeader && serverCoverageInWorker()) recordServerCoverageIds(sink, url, coverageHeader);
-
-        // Server-side spans emitted by a Piwi instrumentation plugin, in the
-        // same gzip+base64 form as the logs header. Skipped when trace capture
-        // is disabled; absent header (no instrumentation) is a no-op.
-        const traceHeader = headers['x-piwi-trace'];
-        if (traceHeader && process.env.PIWI_CAPTURE_SERVER_TRACES !== 'false') {
-          try {
-            entry.serverTraces = JSON.parse(gunzipSync(Buffer.from(traceHeader, 'base64')).toString('utf-8'));
-          } catch {
-            /* ignore malformed header */
-          }
-        }
+        readResponseHeaders(sink, entry, url, response.headers());
       }
 
       sink.networkRequests.push(entry);
@@ -1690,6 +1661,88 @@ function recordRequest(sink: CaptureSink, request: Request, end: RequestEnd, res
     }
   })();
   sink.pendingHandlers.push(p);
+}
+
+/**
+ * Read a response's headers into its network entry: its content type, and
+ * what an instrumented backend said about the request (its logs, its spans,
+ * the id of its server coverage). Shared by the page's requests and the
+ * calls through an API request context.
+ */
+function readResponseHeaders(
+  sink: CaptureSink,
+  entry: Record<string, unknown>,
+  url: string,
+  headers: Record<string, string>,
+): void {
+  // Response content type (without charset/boundary params) — relevant
+  // per-request metadata for distinguishing API/JSON vs document/HTML calls.
+  const contentType = headers['content-type'];
+  if (contentType) entry.contentType = contentType.split(';')[0]!.trim();
+
+  const logHeader = headers['x-piwi-logs'];
+  if (logHeader) {
+    try {
+      entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));
+    } catch {
+      /* ignore malformed header */
+    }
+  }
+
+  // The id the backend gave this request's server coverage, kept per
+  // origin for the reporter to collect once the test ends.
+  const coverageHeader = headers['x-piwi-coverage'];
+  if (coverageHeader && serverCoverageInWorker()) recordServerCoverageIds(sink, url, coverageHeader);
+
+  // Server-side spans emitted by a Piwi instrumentation plugin, in the
+  // same gzip+base64 form as the logs header. Skipped when trace capture
+  // is disabled; absent header (no instrumentation) is a no-op.
+  const traceHeader = headers['x-piwi-trace'];
+  if (traceHeader && process.env.PIWI_CAPTURE_SERVER_TRACES !== 'false') {
+    try {
+      entry.serverTraces = JSON.parse(gunzipSync(Buffer.from(traceHeader, 'base64')).toString('utf-8'));
+    } catch {
+      /* ignore malformed header */
+    }
+  }
+}
+
+/**
+ * Record a call the running test made through an API request context
+ * (`api-requests.ts`), as a network entry with what the backend said on its
+ * response. Never throws.
+ */
+function recordApiCall(sink: CaptureSink, call: ApiCall): void {
+  try {
+    const entry = apiCallEntry(call, sink.baseURL);
+    if (!entry) return;
+    if (call.response) readResponseHeaders(sink, entry, String(entry.url), call.response.headers());
+    sink.networkRequests.push(entry);
+  } catch {
+    /* the record is a side channel: it never affects the test */
+  }
+}
+
+/** The running test's API call recorder; null between tests, which leaves a call untouched. */
+function apiCallRecorder(): ApiCallRecorder | null {
+  const sink = currentSink;
+  return sink ? (call) => recordApiCall(sink, call) : null;
+}
+
+/**
+ * Hand out a browser context's API request context (`context.request`, which
+ * its pages share as `page.request`) behind the call proxy. A Playwright whose
+ * property cannot be set keeps the context's own, its calls unrecorded.
+ */
+function observeOwnApiRequests(owner: BrowserContext | Page): void {
+  try {
+    const holder = owner as unknown as { request?: unknown };
+    if (holder.request && typeof holder.request === 'object') {
+      holder.request = observeApiRequestContext(holder.request, apiCallRecorder);
+    }
+  } catch {
+    /* the context keeps its own */
+  }
 }
 
 /**
@@ -1717,6 +1770,7 @@ async function awaitFlakeConditions(): Promise<void> {
 function instrumentContext(context: BrowserContext): void {
   if (!context || INSTRUMENTED_CONTEXTS.has(context)) return;
   INSTRUMENTED_CONTEXTS.add(context);
+  observeOwnApiRequests(context);
 
   // Seed the probe for every document this context loads, so a capture ships a
   // stub call instead of the probe's source. Best-effort: `probeElement` falls
@@ -2125,9 +2179,11 @@ export interface PiwiFixtures {
  * The worker fixture `piwiFixtures` / `extendPiwiFixtures` contribute:
  * `piwiResources`, an auto, worker-scoped fixture that keeps the worker's
  * resource ledger (the browsers, contexts, pages and API request contexts its
- * tests open) from before the first hook to the worker's shutdown. Its name is
- * **reserved** like `piwiCapture`'s: a fixture of your own with that name
- * replaces it and turns the ledger off.
+ * tests open) from before the first hook to the worker's shutdown, and records
+ * the calls tests make through the API request contexts `playwright.request`
+ * creates, the `request` fixture's among them. Its name is **reserved** like
+ * `piwiCapture`'s: a fixture of your own with that name replaces it and turns
+ * the ledger and those calls' capture off.
  */
 export interface PiwiWorkerFixtures {
   piwiResources: void;
@@ -2139,8 +2195,11 @@ export interface PiwiWorkerFixtures {
  *
  * Capture is wired at the `browser` level, so it works whether a test uses the
  * standard `page` fixture or builds its own pages from `browser` /
- * `browser.newContext()`. Collected data is attached as `piwi-*`
- * test-info attachments which the Piwi Dashboard reporter parses on `onTestEnd`.
+ * `browser.newContext()`. The calls a test makes through an API request
+ * context (the `request` fixture, `playwright.request.newContext()`,
+ * `page.request`) are recorded with its network requests. Collected data is
+ * attached as `piwi-*` test-info attachments which the Piwi Dashboard reporter
+ * parses on `onTestEnd`.
  */
 export const piwiFixtures: Fixtures<
   PiwiFixtures,
@@ -2148,16 +2207,19 @@ export const piwiFixtures: Fixtures<
   PlaywrightTestArgs & PlaywrightTestOptions,
   PlaywrightWorkerArgs & PlaywrightWorkerOptions
 > = {
-  // Auto, worker-scoped: the worker's resource ledger. Set up before any hook
-  // (worker fixtures come first), so a `beforeAll` context is in it too, and
-  // torn down after the browser closed, so its census sees what only the
-  // worker's shutdown closed. Depends on `playwright` alone, which launches nothing.
+  // Auto, worker-scoped: the worker's resource ledger, and the API request
+  // contexts its tests create, handed out behind the call proxy. Set up before
+  // any hook (worker fixtures come first), so a `beforeAll` context is in the
+  // ledger and records the calls the tests make through it, and torn down after
+  // the browser closed, so its census sees what only the worker's shutdown
+  // closed. Depends on `playwright` alone, which launches nothing.
   piwiResources: [
     async ({ playwright }: PlaywrightWorkerArgs, use: UseFn<void>, workerInfo: WorkerInfo) => {
       // A browser launched in the first `beforeAll` goes through the ledger's
       // wrapper: box it before any hook runs so the step names the spec's line.
       boxCaptureFrames();
       startResourceLedger(playwright, workerInfo.workerIndex);
+      observeApiRequests(playwright, apiCallRecorder);
       try {
         await use();
       } finally {
@@ -2191,12 +2253,17 @@ export const piwiFixtures: Fixtures<
   // (attach the collected data) at teardown. Runs for every test without being
   // requested, so suites that never destructure `page` are still captured.
   piwiCapture: [
-    async ({ screenshot }: PlaywrightWorkerOptions, use: UseFn<void>, testInfo: TestInfo) => {
+    async (
+      { screenshot, baseURL }: PlaywrightWorkerOptions & PlaywrightTestOptions,
+      use: UseFn<void>,
+      testInfo: TestInfo,
+    ) => {
       boxCaptureFrames();
       const conflict = labModeConflict();
       if (conflict) throw new Error(conflict);
       const sink = createSink();
       sink.testInfo = testInfo;
+      sink.baseURL = baseURL ?? null;
       if (keepsFailureScreenshots(screenshot, testInfo.retry)) sink.failureScreenshot = screenshot;
       const pauseSet = currentPauseSet();
       if (pauseSet.size) {

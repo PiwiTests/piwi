@@ -95,6 +95,15 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     doc: 'guide/backend-logs',
   },
   {
+    id: 'coverage',
+    title: 'Coverage',
+    summary:
+      'The browser files and backend lines each test ran, listed under its source on the execution page, with the changed lines a failing test ran ranked as suspect lines.',
+    how: "Set the reporter's `coverage` option (`browser: 'files'`, `server: 'lines'`) in a scheduled run; the server side needs an ASP.NET Core build with Piwi's coverage package.",
+    icon: 'i-lucide-scan-line',
+    doc: 'features/code-reach',
+  },
+  {
     id: 'clustering',
     title: 'Failure clustering',
     summary: 'Forty red tests collapsed into the three root causes behind them, each triaged once.',

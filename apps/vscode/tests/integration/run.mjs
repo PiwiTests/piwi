@@ -83,6 +83,10 @@ const HEALING = {
   },
 };
 
+const BASKET_FILE = 'src/Web/Services/BasketService.cs';
+/** Its blob id, once the fixture repository is committed. */
+let basketBlob = '';
+
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
   const u = req.url ?? '';
@@ -90,7 +94,45 @@ const server = http.createServer((req, res) => {
   if (u === '/api/projects/menu') return answer({ items: [{ id: 7, name: 'Acme Mugs' }] });
   if (u.startsWith('/api/projects/7/locator-index')) return answer(INDEX);
   if (u.startsWith('/api/projects/7/code-index'))
-    return answer({ files: [], tests: [], reach: [], builtAt: null, truncated: false });
+    return answer({
+      files: [BASKET_FILE],
+      tests: INDEX.tests,
+      reach: [{ file: 0, tests: [0, 1], origin: 'server', runtime: 'server', via: 'coverage' }],
+      builtAt: null,
+      truncated: false,
+    });
+  // The C# service's coverage: both tests ran `AddItem` but its throw.
+  if (u.startsWith('/api/projects/7/coverage?') && new URL(u, 'http://stub').searchParams.get('file') === BASKET_FILE)
+    return answer({
+      file: BASKET_FILE,
+      branch: 'main',
+      fragments: [
+        {
+          path: BASKET_FILE,
+          runtime: 'server',
+          blob: basketBlob,
+          functions: [[3, 10]],
+          lines: [
+            [4, 5],
+            [9, 10],
+          ],
+          tests: [0, 1],
+        },
+      ],
+      tests: INDEX.tests,
+      executable: [
+        {
+          path: BASKET_FILE,
+          runtime: 'server',
+          blob: basketBlob,
+          lines: [
+            [4, 5],
+            [7, 7],
+            [9, 10],
+          ],
+        },
+      ],
+    });
   if (u.startsWith('/api/projects/7/test-cases'))
     return answer({
       items: [
@@ -143,14 +185,32 @@ write(
     '',
   ].join('\n'),
 );
+write(
+  BASKET_FILE,
+  [
+    'public class BasketService',
+    '{',
+    '    public int AddItem(int basketId, int quantity)',
+    '    {',
+    '        if (quantity <= 0)',
+    '        {',
+    '            throw new System.ArgumentException("quantity");',
+    '        }',
+    '        return basketId + quantity;',
+    '    }',
+    '}',
+    '',
+  ].join('\n'),
+);
 const git = (...args) =>
   execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], {
     cwd: workspace,
-    stdio: 'ignore',
+    encoding: 'utf-8',
   });
 git('init', '-q', '-b', 'main');
 git('add', '.');
 git('commit', '-q', '-m', 'init');
+basketBlob = git('hash-object', BASKET_FILE).trim();
 
 let code = 0;
 try {

@@ -21,6 +21,7 @@ export type CapabilityId =
   | 'green-samples'
   | 'locator-healing'
   | 'backend-logs'
+  | 'coverage'
   | 'scm'
   | 'ai'
   | 'mcp'
@@ -112,6 +113,15 @@ export const CAPABILITIES: CapabilityDef[] = [
     detection: 'backend-logs',
     since: '0.3.0',
     doc: 'guide/backend-logs',
+  },
+  {
+    id: 'coverage',
+    module: 'core',
+    levels: ['instance', 'project'],
+    needs: ['fixtures'],
+    detection: 'coverage',
+    since: '0.54.0',
+    doc: 'features/code-reach',
   },
   {
     id: 'scm',

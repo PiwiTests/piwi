@@ -52,6 +52,13 @@ import { drawAnnotations, clearAnnotations } from './screenshot-annotations.mjs'
 import { resolveChromium, startServer, waitForPortFree } from './lib/dev-server.mjs';
 import { waitForHydration, settlePage } from './lib/page-waits.mjs';
 import { SUSPECT_SCENE_CLUSTER, SUSPECT_SCENE_EXECUTION, withSceneChanges } from './lib/suspect-lines-scene.mjs';
+import {
+  COVERAGE_SCENE_EXECUTION,
+  COVERAGE_SCENE_PROJECT,
+  COVERAGE_SCENE_SUSPECT_LINES,
+  coverageSceneSource,
+} from './lib/coverage-scene.mjs';
+import { ORDER_SCENE, orderSceneSource } from './lib/coverage-insights-scene.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -3665,12 +3672,169 @@ const SCENES = [
     },
     outputs: [`cluster-suspect-lines${suffix}-line.png`, `cluster-suspect-lines${suffix}-card.png`],
   })),
+  // The execution page's Coverage section: execution 711, whose run carries
+  // server coverage of the web dashboard's ASP.NET Core API. A dev server
+  // cannot read the demo's canned repositories, so these scenes serve the
+  // demo's own suspect lines and sources (`lib/coverage-scene.mjs`, checked
+  // against the demo handlers by a unit test). The users endpoints open on
+  // their source, the lines the test ran marked and the executable lines it
+  // did not run in the lighter mark.
+  {
+    name: 'execution-coverage',
+    description:
+      'Execution page, Source tab: the Coverage section with the users endpoints unfolded to their source, the lines the test ran and the executable lines it did not run marked',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 2800 },
+    async run({ page, goto, settle, shoot }) {
+      await openCoverageScene(page, goto, settle);
+      await shoot(undefined, { of: '[data-shot="execution-coverage"]', pad: 12 });
+    },
+  },
+  ...[
+    { suffix: 'wide', viewport: { width: 1280, height: 2800 }, pad: 12 },
+    { suffix: 'mobile', viewport: { width: 390, height: 4400 }, pad: 8 },
+  ].map(({ suffix, viewport, pad }) => ({
+    name: `execution-coverage-${suffix}`,
+    description: `Execution page at ${viewport.width} px with the Source tab's Coverage section, the users endpoints unfolded: the section, then the whole page`,
+    route: '/',
+    viewport,
+    async run({ page, goto, settle, shoot }) {
+      await openCoverageScene(page, goto, settle);
+      await shoot('section', { of: '[data-shot="execution-coverage"]', pad });
+      await shoot('page');
+    },
+    outputs: [`execution-coverage-${suffix}-section.png`, `execution-coverage-${suffix}-page.png`],
+  })),
+  // The coverage insights, on the demo seed's order-dependent flake: Web
+  // Dashboard's `toggles dark mode` fails its first attempt when `updates the
+  // organization name` has not finished (`lib/coverage-insights-scene.mjs`).
+  // Its failed attempt in run 68 against its last passing run, the preferences
+  // endpoints unfolded to the lines only each ran; a dev server cannot read the
+  // demo's canned repositories, so the scenes serve that source.
+  {
+    name: 'coverage-divergence',
+    description:
+      'Execution page, Source tab: a failed attempt compared with the test’s last passing run, the preferences endpoints unfolded to the lines only each run ran',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 1800 },
+    async run({ page, goto, settle, shoot }) {
+      await openDivergenceScene(page, goto, settle);
+      await shoot(undefined, { of: '[data-shot="execution-coverage-divergence"]', pad: 12 });
+    },
+  },
+  ...[
+    { suffix: 'wide', viewport: { width: 1280, height: 2000 }, pad: 12 },
+    { suffix: 'mobile', viewport: { width: 390, height: 3600 }, pad: 8 },
+  ].map(({ suffix, viewport, pad }) => ({
+    name: `coverage-divergence-${suffix}`,
+    description: `Execution page at ${viewport.width} px: the comparison with the last passing run, then the whole Coverage section`,
+    route: '/',
+    viewport,
+    async run({ page, goto, settle, shoot }) {
+      await openDivergenceScene(page, goto, settle);
+      await shoot('part', { of: '[data-shot="execution-coverage-divergence"]', pad });
+      await shoot('section', { of: '[data-shot="execution-coverage"]', pad });
+    },
+    outputs: [`coverage-divergence-${suffix}-part.png`, `coverage-divergence-${suffix}-section.png`],
+  })),
+  // The flake's test page: the Path variation card, which names the
+  // organization test whose having finished first predicts the toggle's path.
+  {
+    name: 'path-variation',
+    description:
+      'Test page: the Path variation card of an order-dependent test, the earlier test that predicts its path and the varying code',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, goto, settle, shoot }) {
+      await openPathVariationScene(page, goto, settle);
+      await shoot(undefined, { of: '[data-shot="test-path-variation"]', pad: 12 });
+    },
+  },
+  ...[
+    { suffix: 'wide', viewport: { width: 1280, height: 2400 }, pad: 12 },
+    { suffix: 'mobile', viewport: { width: 390, height: 4400 }, pad: 8 },
+  ].map(({ suffix, viewport, pad }) => ({
+    name: `path-variation-${suffix}`,
+    description: `Test page at ${viewport.width} px: the Path variation card`,
+    route: '/',
+    viewport,
+    async run({ page, goto, settle, shoot }) {
+      await openPathVariationScene(page, goto, settle);
+      await shoot(undefined, { of: '[data-shot="test-path-variation"]', pad });
+    },
+  })),
+  // The flaky list's Quarantine button on the toggle, hovered: what
+  // quarantining it leaves to no other trusted test, its preferences endpoints.
+  {
+    name: 'quarantine-coverage-loss',
+    description:
+      'Flaky tests list: the Quarantine button of an order-dependent test with the code quarantining it leaves to no other trusted test',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, goto, settle, shoot }) {
+      const clip = await openQuarantineLossScene(page, goto, settle, 'hover');
+      await shoot(undefined, { of: false, clip });
+    },
+  },
+  ...[
+    { suffix: 'wide', viewport: { width: 1280, height: 1000 }, reach: 'hover' },
+    { suffix: 'mobile', viewport: { width: 390, height: 1400 }, reach: 'focus' },
+  ].map(({ suffix, viewport, reach }) => ({
+    name: `quarantine-coverage-loss-${suffix}`,
+    description: `Flaky tests list at ${viewport.width} px, the toggle's Quarantine button reached by ${reach}: its coverage-loss preview`,
+    route: '/',
+    viewport,
+    async run({ page, goto, settle, shoot }) {
+      const clip = await openQuarantineLossScene(page, goto, settle, reach);
+      await shoot(undefined, { of: false, clip });
+    },
+  })),
+  // A file's coverage page: the web dashboard's users endpoints, which the
+  // three users tests ran at one version. A dev server cannot read the demo's
+  // canned repositories, so the scenes serve the demo's own source
+  // (`lib/coverage-scene.mjs`). Line 37, which one test of the three ran, is
+  // selected, so the tests panel lists that test.
+  {
+    name: 'coverage-file',
+    description:
+      'A file’s coverage page: the users endpoints with how many tests ran each line, the executable lines no test runs, and the test that ran the selected line',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, goto, settle, shoot }) {
+      await openFileCoverageScene(page, goto, settle);
+      await shoot(undefined, { of: '[data-shot="coverage-file"]', pad: 12 });
+    },
+  },
+  ...[
+    { suffix: 'wide', viewport: { width: 1280, height: 1000 } },
+    { suffix: 'mobile', viewport: { width: 390, height: 2200 } },
+  ].map(({ suffix, viewport }) => ({
+    name: `coverage-file-${suffix}`,
+    description: `A file’s coverage page at ${viewport.width} px, line 37 selected: the whole page`,
+    route: '/',
+    viewport,
+    async run({ page, goto, settle, shoot }) {
+      await openFileCoverageScene(page, goto, settle);
+      await shoot();
+    },
+  })),
   {
     name: 'what-changed-coverage-hint',
     description:
-      'Cluster What changed line for failing tests with no coverage: the diff summary, then the help hint on turning coverage on',
-    // Cluster 6 shares cluster 5's project and records no coverage; the demo's
-    // canned diff gives its line the summary the hint sits on.
+      'Cluster What changed line for failing tests with no coverage in a project that records some: the diff summary, then the help hint on why',
+    // Cluster 6 shares cluster 5's project, which records coverage, and its
+    // tests recorded none; the demo's canned diff gives its line the summary
+    // the hint sits on.
     route: '/',
     viewport: { width: 1280, height: 1100 },
     of: '[data-shot="situation-block"]',
@@ -4927,6 +5091,111 @@ async function serveSuspectLinesScene(page, clusterId = SUSPECT_SCENE_CLUSTER.id
       await route.fulfill({ response, json: withSceneChanges(await response.json()) });
     },
   );
+}
+
+/**
+ * Open the order-dependent flake's failed attempt on its Source tab, with the
+ * demo's source of the flake's files served, and unfold the preferences
+ * endpoints in the comparison with the last passing run.
+ */
+async function openDivergenceScene(page, goto, settle) {
+  await page.route(
+    (url) => url.pathname === `/api/projects/${ORDER_SCENE.projectId}/source`,
+    (route) => {
+      const url = new URL(route.request().url());
+      const source = orderSceneSource(url.searchParams.get('path'), url.searchParams.get('blob'));
+      return source
+        ? route.fulfill({ json: source })
+        : route.fulfill({ status: 404, json: { message: 'Source not available' } });
+    },
+  );
+  await goto(`/test-run-cases/${ORDER_SCENE.executionId}?evidence=source`);
+  const part = page.locator('[data-shot="execution-coverage-divergence"]');
+  await part.waitFor({ timeout: 60_000 });
+  await part.getByRole('button', { name: `Show what each run ran in ${ORDER_SCENE.path}` }).click();
+  await part.locator('[data-coverage-source] [data-executed]').first().waitFor({ timeout: 30_000 });
+  await settle();
+}
+
+/** Open the order-dependent flake's test page and wait for its Path variation card's explanation. */
+async function openPathVariationScene(page, goto, settle) {
+  await goto(`/test-cases/${ORDER_SCENE.testCaseId}`);
+  await page.locator('[data-shot="test-path-variation"] [data-testid="path-variation-explanation"]').waitFor({
+    timeout: 60_000,
+  });
+  await settle();
+}
+
+/**
+ * Open the project's flaky tests, reach the toggle's Quarantine button by
+ * `hover` or `focus`, and wait for its coverage-loss preview; returns the clip
+ * around the button's row and the preview.
+ */
+async function openQuarantineLossScene(page, goto, settle, reach) {
+  await goto(`/projects/${ORDER_SCENE.projectId}?tab=flaky-tests`);
+  const row = page
+    .locator('[data-shot="flaky-table"] [data-tour="flaky-test-row"]')
+    .filter({ hasText: 'toggles dark mode' })
+    .first();
+  await row.waitFor({ timeout: 60_000 });
+  await settle();
+  const button = row.getByRole('button', { name: 'Quarantine', exact: true });
+  if (reach === 'focus') await button.focus();
+  else await button.hover();
+  const preview = page.locator('[data-shot="coverage-loss-preview"]').first();
+  await preview.waitFor({ timeout: 30_000 });
+  await page.waitForTimeout(300);
+  const boxes = [await row.boundingBox(), await preview.boundingBox()];
+  const viewport = page.viewportSize();
+  const x = Math.max(0, Math.min(...boxes.map((b) => b.x)) - 12);
+  const y = Math.max(0, Math.min(...boxes.map((b) => b.y)) - 24);
+  const right = Math.min(viewport.width, Math.max(...boxes.map((b) => b.x + b.width)) + 12);
+  const bottom = Math.min(viewport.height, Math.max(...boxes.map((b) => b.y + b.height)) + 24);
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+/** Serve the demo's sources of the web dashboard's covered server files, by blob. */
+async function serveCoverageSceneSource(page) {
+  await page.route(
+    (url) => url.pathname === `/api/projects/${COVERAGE_SCENE_PROJECT}/source`,
+    (route) => {
+      const url = new URL(route.request().url());
+      const source = coverageSceneSource(url.searchParams.get('path'), url.searchParams.get('blob'));
+      return source
+        ? route.fulfill({ json: source })
+        : route.fulfill({ status: 404, json: { message: 'Source not available' } });
+    },
+  );
+}
+
+/**
+ * Open the users endpoints' coverage page with the demo's source served and
+ * line 37 selected: the one line a single test of the three ran.
+ */
+async function openFileCoverageScene(page, goto, settle) {
+  await serveCoverageSceneSource(page);
+  await goto(`/projects/${COVERAGE_SCENE_PROJECT}/coverage?file=api/Users/UsersEndpoints.cs&line=37`);
+  const view = page.locator('[data-shot="coverage-file"]');
+  await view.locator('[data-coverage-source] [data-line="37"][data-selected]').waitFor({ timeout: 60_000 });
+  await view.locator('[data-coverage-test]').first().waitFor({ timeout: 30_000 });
+  await settle();
+}
+
+/**
+ * Open execution 711 on its Source tab with the demo's suspect lines and
+ * sources served, and unfold the users endpoints to their source.
+ */
+async function openCoverageScene(page, goto, settle) {
+  await page.route(`**/api/test-run-cases/${COVERAGE_SCENE_EXECUTION}/suspect-lines`, (route) =>
+    route.fulfill({ json: COVERAGE_SCENE_SUSPECT_LINES }),
+  );
+  await serveCoverageSceneSource(page);
+  await goto(`/test-run-cases/${COVERAGE_SCENE_EXECUTION}?evidence=source`);
+  const section = page.locator('[data-shot="execution-coverage"]');
+  await section.locator('[data-coverage-mark="suspect"]').waitFor({ timeout: 60_000 });
+  await section.getByRole('button', { name: 'Show the source of api/Users/UsersEndpoints.cs' }).click();
+  await section.locator('[data-coverage-source] [data-not-executed]').first().waitFor({ timeout: 30_000 });
+  await settle();
 }
 
 /** Mocked Tauri IPC bridge, shaped per scene. Mirrors the real shell's commands. */

@@ -29,6 +29,15 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
+- Coverage marks: each visible file the service reads (C# among them) is asked `piwi/coverage` once, again after a
+  `piwi/statusChanged`, and drawn as whole-line left borders (`coverageDecorations` in `src/glue.ts`): the lines tests
+  ran in `testing.coveredGutterBackground`, the executable lines none runs in `testing.uncoveredGutterBackground`, both
+  VS Code's own testing colors, and the lines changed since the coverage run dashed in `piwi.coverageChangedBorder`;
+  the last two also in the overview ruler. `piwi/coverageChanged` replaces a file's answer and draws it again with its
+  lenses; an edit asks nothing, the service pushes the marks it placed. The service's hover names the tests behind a
+  line. **Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`, kept in `workspaceState` as
+  `piwi.coverageShown`, shown by default) is in the palette only once a file showed marks (`piwi.hasCoverage`): a
+  workspace without coverage shows nothing of it.
 - `src/failures-view.ts` is the **Failures** view of the **Piwi** panel (`viewsContainers.panel`): a `TreeView` over
   the failures `piwi/failuresChanged` pushes (`show`), read from `piwi/failures` 200 ms after the extension starts or a
   `piwi/statusChanged`, and drawn again when a `piwi/runStatusChanged` moves the editor's own run in progress
@@ -137,4 +146,5 @@ npm run vscode:package            # dist/piwi.vsix
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
 API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's
-nodes, `lastRun`, the command a breakpoint's run was given, and `gutter`, the tests last drawn in a file's gutter).
+nodes, `lastRun`, the command a breakpoint's run was given, `gutter`, the tests last drawn in a file's gutter, and
+`coverage`, a file's coverage answer and whether its marks are shown).

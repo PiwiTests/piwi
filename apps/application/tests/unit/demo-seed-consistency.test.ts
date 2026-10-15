@@ -936,11 +936,14 @@ const EXPECT_KEYS = new Set([
   'incident',
   'gaps',
   'suspects',
+  'coverage',
+  'fileCoverage',
+  'insight',
 ]);
 const ROUTE_ENTITIES = [
   { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
   { pattern: /^\/test-run-cases\/(\d+)(?:[?#]|$)/, key: 'execution' },
-  { pattern: /^\/projects\/(\d+)(?:[?#]|$)/, key: 'project' },
+  { pattern: /^\/projects\/(\d+)(?:\/coverage)?(?:[?#]|$)/, key: 'project' },
   { pattern: /^\/failure-clusters\/(\d+)(?:[?#]|$)/, key: 'cluster' },
   { pattern: /^\/test-runs\/(\d+)(?:[?#]|$)/, key: 'run' },
 ] as const;
@@ -1072,6 +1075,79 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       where failure_cluster_id = ${want.cluster!.id} and coverage_payload_id is not null
     `);
     expect(recorded.length, `${label}: the cluster's executions recorded coverage`).toBeGreaterThan(0);
+  }
+  if (want.coverage) {
+    expect(want.execution, `${label}: coverage needs an execution`).toBeTruthy();
+    const [execution] = q(`
+      select trc.test_run_id as runId, cp.content as content from test_runs_cases trc
+      join case_payloads cp on cp.id = trc.coverage_payload_id
+      where trc.id = ${want.execution!.id}
+    `);
+    expect(execution, `${label}: the execution recorded coverage`).toBeTruthy();
+    const ids = (JSON.parse(String(execution!.content)) as number[]).join(',');
+    const fragments = q(`select runtime, path, lines from coverage_fragments where id in (${ids})`);
+    const server = fragments.filter((f) => f.runtime === 'server');
+    expect(server.length, `${label}: server files`).toBe(want.coverage.serverFiles);
+    expect(
+      server.every((f) => f.lines),
+      `${label}: every server file names its lines`,
+    ).toBe(true);
+    expect(fragments.filter((f) => f.runtime === 'browser').length, `${label}: browser files`).toBe(
+      want.coverage.browserFiles,
+    );
+    if (want.coverage.runCoverage) {
+      const run = new Set(
+        q(`select path from run_coverage where run_id = ${execution!.runId} and executable is not null`).map((r) =>
+          String(r.path),
+        ),
+      );
+      for (const f of server) expect(run.has(String(f.path)), `${label}: run coverage of ${f.path}`).toBe(true);
+    }
+  }
+  if (want.fileCoverage) {
+    expect(want.project, `${label}: fileCoverage needs a project`).toBeTruthy();
+    const { path, tests, executable } = want.fileCoverage;
+    const fragments = q(
+      `select id, blob, lines from coverage_fragments where project_id = ${want.project!.id} and path = '${path}'`,
+    );
+    expect(fragments.length, `${label}: coverage of ${path}`).toBeGreaterThan(0);
+    expect(
+      fragments.every((f) => f.blob && f.lines),
+      `${label}: every coverage of ${path} names lines at a blob`,
+    ).toBe(true);
+    const [row] = q(`
+      select count(distinct test_case_id) as tests from test_coverage
+      where branch = '' and fragment_id in (${fragments.map((f) => f.id).join(',')})
+    `);
+    expect(Number(row?.tests), `${label}: the tests that recorded ${path}`).toBe(tests);
+    if (executable) {
+      const blobs = [...new Set(fragments.map((f) => `'${String(f.blob)}'`))].join(',');
+      const recorded = q(`
+        select run_id from run_coverage
+        where project_id = ${want.project!.id} and path = '${path}' and blob in (${blobs}) and executable is not null
+      `);
+      expect(recorded.length, `${label}: a run recorded the executable lines of ${path}`).toBeGreaterThan(0);
+    }
+  }
+  if (want.insight === 'divergence') {
+    expect(want.execution, `${label}: divergence needs an execution`).toBeTruthy();
+    const [row] = q(`
+      select trc.test_case_id as testCaseId, trc.status, trc.started_at as startedAt from test_runs_cases trc
+      where trc.id = ${want.execution!.id} and trc.coverage_payload_id is not null
+    `);
+    expect(row?.status, `${label}: the execution failed with coverage`).toBe('failed');
+    const passes = q(`
+      select id from test_runs_cases where test_case_id = ${row!.testCaseId} and status = 'passed'
+        and coverage_payload_id is not null and started_at < ${row!.startedAt}
+    `);
+    expect(passes.length, `${label}: an earlier passing execution with coverage`).toBeGreaterThan(0);
+  }
+  if (want.insight === 'path-variation') {
+    expect(want.testCase, `${label}: path-variation needs a test case`).toBeTruthy();
+    const covered = q(`
+      select id from test_runs_cases where test_case_id = ${want.testCase!.id} and coverage_payload_id is not null
+    `);
+    expect(covered.length, `${label}: executions with coverage`).toBeGreaterThanOrEqual(8);
   }
   if (want.lab) {
     expect(want.testCase, `${label}: lab needs a test case`).toBeTruthy();

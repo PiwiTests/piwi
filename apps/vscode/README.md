@@ -15,6 +15,9 @@ Your Playwright suite's history where you change the code, from a [Piwi](https:/
 - **The tests behind each line.** Beside each test, its latest result in the gutter, a failing test's body tinted, and
   its history on hover; above each locator line, the tests that use it; above an application file, the tests that
   reach it (with code reach on).
+- **The lines your tests ran.** With coverage recorded, an application file, C# included, marks the lines tests ran,
+  the executable lines none runs and the lines changed since the coverage run; a line above each function names the
+  tests that ran it and runs them, and the hover on a line lists them. **Piwi: Toggle the coverage marks** hides them.
 - **Brittle locators and breaking changes.** A warning on a brittle locator, with the stable alternative stored at that
   call site; a warning on the line of an unsaved change that renames a string tests find elements by, with a quick fix
   that updates every call site.

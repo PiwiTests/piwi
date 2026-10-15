@@ -40,7 +40,7 @@ import { sameFilePath } from '@piwitests/core/locator-break';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import { codeReach, coverageFragments, runCoverage, testCoverage, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { sha256Hex } from '#shared/utils/hash';
+import { isGitObjectId, sha256Hex } from '#shared/utils/hash';
 import { resolveCasePayloadContents } from './case-payloads';
 import {
   asRuntime,
@@ -399,6 +399,14 @@ export async function getExecutionsCoverage(
   return out;
 }
 
+/** The executable lines of one version of a file, as the latest run coverage holding that version recorded them. */
+export interface FileExecutableLines {
+  path: string;
+  runtime: CoverageRuntime;
+  blob: string;
+  lines: LineRange[];
+}
+
 /** The coverage of one file on a branch, and the tests that recorded it. */
 export interface FileCoverage {
   file: string;
@@ -406,6 +414,71 @@ export interface FileCoverage {
   /** Each distinct coverage of the file the tests in view recorded; `tests` are positions in `tests`. */
   fragments: Array<CoverageFile & { tests: number[] }>;
   tests: LocatorIndexTest[];
+  /** The executable lines of each version of the file the fragments name, where a run's coverage recorded them. */
+  executable: FileExecutableLines[];
+}
+
+/**
+ * The executable lines of the given versions of a file: per runtime, path and
+ * blob, those of the newest run whose coverage recorded them. A file version's
+ * executable lines depend on its content alone, so any branch's run answers.
+ */
+export async function getExecutableLines(
+  db: DrizzleDB,
+  projectId: number,
+  versions: Array<{ path: string; runtime: CoverageRuntime; blob: string }>,
+): Promise<FileExecutableLines[]> {
+  if (versions.length === 0) return [];
+  const wanted = new Set(versions.map((v) => `${v.runtime}\x00${v.path}\x00${v.blob}`));
+  const paths = [...new Set(versions.map((v) => v.path))];
+  const blobs = [...new Set(versions.map((v) => v.blob))];
+  const inView = and(
+    eq(runCoverage.projectId, projectId),
+    inArray(runCoverage.path, paths),
+    inArray(runCoverage.blob, blobs),
+    sql`${runCoverage.executable} IS NOT NULL`,
+  );
+  // The newest run per version first, so only its row's lines are read and decoded.
+  const latest = await db
+    .select({
+      runtime: runCoverage.runtime,
+      path: runCoverage.path,
+      blob: runCoverage.blob,
+      runId: sql<number>`max(${runCoverage.runId})`.mapWith(Number),
+    })
+    .from(runCoverage)
+    .where(inView)
+    .groupBy(runCoverage.runtime, runCoverage.path, runCoverage.blob);
+  const newestRun = new Map<string, number>();
+  for (const row of latest) {
+    const key = `${row.runtime}\x00${row.path}\x00${row.blob}`;
+    if (wanted.has(key)) newestRun.set(key, row.runId);
+  }
+  if (newestRun.size === 0) return [];
+  const rows = await db
+    .select({
+      runId: runCoverage.runId,
+      runtime: runCoverage.runtime,
+      path: runCoverage.path,
+      blob: runCoverage.blob,
+      executable: runCoverage.executable,
+    })
+    .from(runCoverage)
+    .where(and(inView, inArray(runCoverage.runId, [...new Set(newestRun.values())])));
+  const newest = new Map<string, { runId: number; entry: FileExecutableLines }>();
+  for (const row of rows) {
+    const key = `${row.runtime}\x00${row.path}\x00${row.blob}`;
+    if (!row.blob || newestRun.get(key) !== row.runId) continue;
+    const lines = decodeLineRanges(row.executable);
+    if (lines.length === 0) continue;
+    newest.set(key, {
+      runId: row.runId,
+      entry: { path: row.path, runtime: asRuntime(row.runtime), blob: row.blob, lines },
+    });
+  }
+  return [...newest.values()]
+    .map((n) => n.entry)
+    .sort((a, b) => compareFiles(a, b) || (a.blob < b.blob ? -1 : a.blob > b.blob ? 1 : 0));
 }
 
 /**
@@ -420,7 +493,13 @@ export async function getFileCoverage(
   branch?: string | null,
 ): Promise<FileCoverage> {
   const view = await resolveBranchView(db, projectId, branch);
-  const answer: FileCoverage = { file, branch: view.name ?? view.defaultBranch, fragments: [], tests: [] };
+  const answer: FileCoverage = {
+    file,
+    branch: view.name ?? view.defaultBranch,
+    fragments: [],
+    tests: [],
+    executable: [],
+  };
   const tag = view.tag ?? '';
   const fragments = (
     await db
@@ -491,6 +570,11 @@ export async function getFileCoverage(
     }))
     .sort((a, b) => compareFiles(a.file, b.file) || a.fragment.id - b.fragment.id)
     .map(({ file: covered, tests: positions }) => ({ ...covered, tests: positions }));
+  answer.executable = await getExecutableLines(
+    db,
+    projectId,
+    answer.fragments.flatMap((f) => (f.blob ? [{ path: f.path, runtime: f.runtime, blob: f.blob }] : [])),
+  );
   return answer;
 }
 
@@ -565,6 +649,81 @@ export function parseRunCoverage(body: unknown): RunCoverageFile[] | string {
     files.set(key, known ? mergeRunFiles(known, file) : file);
   }
   return [...files.values()].sort(compareFiles);
+}
+
+/** A run's coverage as `GET /api/test-runs/:id/coverage` answers it. */
+export interface RunCoverage {
+  runId: number;
+  /** The run's executions that recorded coverage of their own. */
+  executionsWithCoverage: number;
+  /** The files of the run's coverage per runtime, whatever `file` and `limit` keep. */
+  fileCounts: Record<CoverageRuntime, number>;
+  /** The run's coverage per file, sorted by path then runtime: those matching `file`, at most `limit`. */
+  files: RunCoverageFile[];
+}
+
+/**
+ * A run's coverage, attributed to no test (`run_coverage`): every file, or
+ * those whose path matches `file` (`sameFilePath`), at most `limit`; with the
+ * number of the run's executions that recorded coverage of their own. Null
+ * when there is no such run.
+ */
+export async function getRunCoverage(
+  db: DrizzleDB,
+  runId: number,
+  opts: { file?: string | null; limit?: number } = {},
+): Promise<RunCoverage | null> {
+  const [run] = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!run) return null;
+  const [withCoverage, counted, rows] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(testRunsCases)
+      .where(and(eq(testRunsCases.testRunId, runId), sql`${testRunsCases.coveragePayloadId} IS NOT NULL`)),
+    db
+      .select({ runtime: runCoverage.runtime, n: sql<number>`count(*)` })
+      .from(runCoverage)
+      .where(eq(runCoverage.runId, runId))
+      .groupBy(runCoverage.runtime),
+    opts.limit === 0
+      ? Promise.resolve([])
+      : db
+          .select({
+            runtime: runCoverage.runtime,
+            path: runCoverage.path,
+            blob: runCoverage.blob,
+            functions: runCoverage.functions,
+            lines: runCoverage.lines,
+            executable: runCoverage.executable,
+          })
+          .from(runCoverage)
+          .where(
+            opts.file
+              ? and(eq(runCoverage.runId, runId), sameBaseName(runCoverage.path, opts.file))
+              : eq(runCoverage.runId, runId),
+          ),
+  ]);
+  const fileCounts: Record<CoverageRuntime, number> = { browser: 0, server: 0 };
+  for (const row of counted) fileCounts[asRuntime(row.runtime)] += Number(row.n);
+  const files = rows
+    .filter((row) => !opts.file || sameFilePath(row.path, opts.file))
+    .map((row) =>
+      runFileEntry(
+        row.path,
+        asRuntime(row.runtime),
+        row.blob ?? undefined,
+        decodeFunctionRanges(row.functions),
+        decodeLineRanges(row.lines),
+        decodeLineRanges(row.executable),
+      ),
+    )
+    .sort(compareFiles);
+  return {
+    runId,
+    executionsWithCoverage: Number(withCoverage[0]?.n ?? 0),
+    fileCounts,
+    files: opts.limit != null ? files.slice(0, opts.limit) : files,
+  };
 }
 
 const runLocks = new Map<number, Promise<unknown>>();
@@ -708,4 +867,40 @@ export async function pruneStaleBranchCoverageRows(db: DrizzleDB, now: Date = ne
     .where(and(ne(testCoverage.branch, ''), lt(testCoverage.lastSeenAt, cutoff)))
     .returning({ id: testCoverage.id });
   return reach.length + coverage.length;
+}
+
+/**
+ * The `path` and `blob` of a read of a file's source at a blob
+ * (`GET /api/projects/:id/source`), checked; an error message when one is not
+ * valid.
+ */
+export function parseSourceQuery(path: unknown, blob: unknown): { path: string; blob: string } | { error: string } {
+  const file = normalizeCoveragePath(typeof path === 'string' ? path.trim() : '');
+  if (!file || file.split('/').includes('..')) {
+    return { error: 'path must be a repository-relative path (at most 500 characters)' };
+  }
+  const id = typeof blob === 'string' ? blob.trim() : '';
+  if (!isGitObjectId(id)) return { error: 'blob must be a git object id' };
+  return { path: file, blob: id };
+}
+
+/**
+ * The `file` and `limit` of a read of a run's coverage
+ * (`GET /api/test-runs/:id/coverage`), checked: a present `limit` that is no
+ * integer is an error, any other clamped to `0` to {@link MAX_RUN_COVERAGE_FILES}.
+ */
+export function parseRunCoverageQuery(
+  file: unknown,
+  limit: unknown,
+): { file: string | null; limit: number | undefined } | { error: string } {
+  const first = (value: unknown) => (Array.isArray(value) ? value[0] : value);
+  file = first(file);
+  limit = first(limit);
+  const path = typeof file === 'string' && file.trim() ? file.trim() : null;
+  if (path && path.length > 500) return { error: 'file is at most 500 characters' };
+  const raw = typeof limit === 'string' ? limit.trim() : '';
+  if (!raw) return { file: path, limit: undefined };
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return { error: 'Invalid query parameter "limit": expected an integer' };
+  return { file: path, limit: Math.min(Math.max(n, 0), MAX_RUN_COVERAGE_FILES) };
 }

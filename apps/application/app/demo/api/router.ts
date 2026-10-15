@@ -70,8 +70,24 @@ import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
 import { publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
-import { getExecutionCoverage, getFileCoverage, parseRunCoverage, storeRunCoverage } from '~~/server/utils/coverage';
+import {
+  getExecutionCoverage,
+  getFileCoverage,
+  getRunCoverage,
+  parseRunCoverage,
+  parseRunCoverageQuery,
+  parseSourceQuery,
+  storeRunCoverage,
+} from '~~/server/utils/coverage';
 import { demoClusterSuspectLines, demoExecutionSuspectLines } from './suspect-lines';
+import {
+  CoverageInsightInputError,
+  getCoverageDivergence,
+  getCoverageLoss,
+  getCoverageReach,
+  getPathVariation,
+} from '#shared/handlers/coverage-insights';
+import { parseCoverageReachQuery, parseLossTestIds } from '#shared/coverage-insights';
 import { fixPlanSuspectLines } from '#shared/suspect-lines';
 import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
 import { branchFailuresOrError } from '~~/server/utils/branch-failures';
@@ -271,6 +287,7 @@ import {
 } from '#shared/handlers/failure-clusters';
 import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
 import { getClusterCommits, getClusterCommitDiff, getClusterBranches } from './scm';
+import { getDemoSourceAtBlob } from '../demo-scm';
 import { getTimeoutThresholds } from '~~/server/utils/timeout-thresholds';
 import { getAppSetting } from '~~/server/utils/app-settings';
 import { parseTagFilter } from '#shared/utils/tag-filter';
@@ -1115,6 +1132,18 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/coverage$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const parsed = parseRunCoverageQuery(q?.get('file'), q?.get('limit'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const coverage = await getRunCoverage(await getDemoDb(), +m[1]!, parsed);
+      if (!coverage) throw demoHttpError(404, 'Test run not found');
+      return coverage;
+    },
+  },
+  {
     method: 'PUT',
     pattern: /^\/api\/test-runs\/(\d+)\/coverage$/,
     permission: 'run:submit',
@@ -1849,6 +1878,59 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/coverage-divergence$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      const answer = await getCoverageDivergence(await getDemoDb(), +m[1]!);
+      if (!answer) throw demoHttpError(404, 'Test run case not found');
+      return answer;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/path-variation$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const answer = await getPathVariation(await getDemoDb(), +m[1]!);
+      if (!answer) throw demoHttpError(404, 'Test case not found');
+      return answer;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/coverage-reach$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const query = parseCoverageReachQuery({
+        file: q?.get('file'),
+        lines: q?.get('lines'),
+        executionId: q?.get('executionId'),
+      });
+      if ('error' in query) throw demoHttpError(400, query.error);
+      try {
+        const answer = await getCoverageReach(await getDemoDb(), +m[1]!, query);
+        if (!answer) throw demoHttpError(404, 'Test case not found');
+        return answer;
+      } catch (error) {
+        if (error instanceof CoverageInsightInputError) throw demoHttpError(400, error.message);
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/coverage-loss$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const tests = parseLossTestIds(q?.get('tests'));
+      if (!tests) throw demoHttpError(400, 'tests must list 1 to 50 test case ids, such as 12,15,40');
+      const answer = await getCoverageLoss(await getDemoDb(), +m[1]!, tests);
+      if (!answer) throw demoHttpError(404, 'None of these tests is in the project');
+      return answer;
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/test-run-cases\/(\d+)\/locator-pick$/,
     handler: async (m, body, _q, ctx) => {
@@ -2172,6 +2254,18 @@ const routes: RouteEntry[] = [
       const branch = parseLocatorBranchQuery(q?.get('branch'));
       if ('error' in branch) throw demoHttpError(400, branch.error);
       return getFileCoverage(await getDemoDb(), +m[1]!, file, branch.branch);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/source$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = parseSourceQuery(q?.get('path'), q?.get('blob'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const source = await getDemoSourceAtBlob(+m[1]!, parsed.path, parsed.blob);
+      if (!source) throw demoHttpError(404, 'Source not available');
+      return source;
     },
   },
   {

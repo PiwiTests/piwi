@@ -39,6 +39,11 @@ export interface SuspectLinesAnswer {
   unreadFiles?: number;
   /** Most suspect first, at most 50. */
   suspects: SuspectLine[];
+  /**
+   * The files the range changes that exist at its head (removed files left
+   * out), as the host listed them; present when the answer is available.
+   */
+  changedPaths?: string[];
 }
 
 /** The suspect lines of a failure cluster. */
@@ -47,12 +52,13 @@ export interface ClusterSuspectLinesAnswer extends SuspectLinesAnswer {
   runId: number | null;
 }
 
-/** Suspects the fix plan carries. */
+/** Suspects the fix plan carries; it leaves out the changed paths, which its diff lists. */
 const FIX_PLAN_SUSPECTS = 5;
 
 /** A cluster's answer cut to the suspects a fix plan carries. */
 export function fixPlanSuspectLines(answer: ClusterSuspectLinesAnswer): ClusterSuspectLinesAnswer {
-  return { ...answer, suspects: answer.suspects.slice(0, FIX_PLAN_SUSPECTS) };
+  const { changedPaths: _changed, ...rest } = answer;
+  return { ...rest, suspects: answer.suspects.slice(0, FIX_PLAN_SUSPECTS) };
 }
 
 /** A summary with nothing counted, for an answer that could not join anything. */

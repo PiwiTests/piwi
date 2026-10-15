@@ -21,6 +21,7 @@ const toast = useToast();
 const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
   fixtures: 'Capture fixtures',
   'backend-logs': 'Backend logs',
+  coverage: 'Coverage',
   'locator-healing': 'Locator healing',
   'green-samples': 'Green page samples',
   scm: 'Source control',

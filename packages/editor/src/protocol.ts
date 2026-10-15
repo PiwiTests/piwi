@@ -73,7 +73,10 @@ export interface TestFailure {
   state?: 'failing' | 'edited';
 }
 
-/** `piwi/fileSummary`: what to show above a file and above its test and locator lines. */
+/**
+ * `piwi/fileSummary`: what to show above a file and above its test and locator lines, and above each function of an
+ * application file its tests ran.
+ */
 export interface FileSummaryParams {
   uri: string;
 }
@@ -109,6 +112,64 @@ export interface TestsForFile {
 
 export const TESTS_FOR_FILE_REQUEST = 'piwi/testsForFile';
 
+/** `piwi/coverage`: the lines of an application file the project's tests ran, placed on the file as it stands. */
+export interface CoverageParams {
+  uri: string;
+}
+
+/** Lines `start` to `end`, 0-based and inclusive. */
+export interface LineSpan {
+  start: number;
+  end: number;
+}
+
+/** Lines the tests ran, and how many tests ran each. */
+export interface ExecutedSpan extends LineSpan {
+  tests: number;
+}
+
+/**
+ * Where the marks come from: `exact`, the coverage was recorded on the file as it stands (its git blob id); `mapped`,
+ * on another version, the file as saved or one the repository holds, whose lines are placed on the file through the
+ * diff between the two; `other-version`, only on versions the repository does not hold, so no line is marked; `none`,
+ * no coverage names lines of this file (a test file, coverage turned off, file-level coverage only, or an instance
+ * without coverage).
+ */
+export type CoverageState = 'exact' | 'mapped' | 'other-version' | 'none';
+
+export interface CoverageResult {
+  uri: string;
+  state: CoverageState;
+  /** The lines the tests ran; consecutive lines run by as many tests are one span. */
+  executed: ExecutedSpan[];
+  /** The executable lines no test ran; empty unless a run recorded the executable lines of the version shown. */
+  notRun: LineSpan[];
+  /** The lines changed since the version the coverage was recorded on, with `mapped`: what runs them is not known. */
+  changed: LineSpan[];
+  /** The tests whose coverage the marks show: those that recorded the version shown, or with `other-version`, any. */
+  tests: number;
+  /** The lines marked as run. */
+  executedLines: number;
+  /** The executable lines of the version shown, as placed on the file; null when no run recorded them. */
+  executableLines: number | null;
+  /** The git blob id of the version the marks come from; null with `other-version` and `none`. */
+  blob: string | null;
+  /**
+   * The marks in a few words, for a tooltip: `41 of 63 lines run by 6 tests · 3 lines changed since the coverage run`,
+   * `6 tests ran another version of this file`; null with `none`.
+   */
+  label: string | null;
+}
+
+export const COVERAGE_REQUEST = 'piwi/coverage';
+
+/**
+ * `piwi/coverageChanged` (notification, server to client): the marks of a file the client asked `piwi/coverage` about
+ * changed: an edit moved them, the coverage was read again (a refresh, a run that ended), or it arrived after the
+ * request was answered. Carries `CoverageResult`, which replaces what the client holds for its `uri`.
+ */
+export const COVERAGE_NOTIFICATION = 'piwi/coverageChanged';
+
 /** A line breakpoint of the editor: the file and its 0-based line. */
 export interface EditorBreakpoint {
   uri: string;
@@ -127,6 +188,12 @@ export interface RunTestsArgs {
    * locator action or assertion on their line, headed, with Piwi's pause bar (`PIWI_PAUSE_AT` in `RunCommand.env`).
    */
   breakpoints?: EditorBreakpoint[];
+  /**
+   * `server`: the run records the backend's coverage by line (`PIWI_COVERAGE_SERVER=lines` in `RunCommand.env`, which
+   * the reporter reads when the Playwright config leaves `coverage.server` unset), so it refreshes the marks of the
+   * server file whose coverage lens started it. Set by those lenses; absent otherwise.
+   */
+  coverage?: 'server';
 }
 
 export interface RunCommand {

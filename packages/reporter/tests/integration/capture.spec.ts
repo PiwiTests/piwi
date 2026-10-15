@@ -1,6 +1,7 @@
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, request } from '@playwright/test';
 import * as http from 'node:http';
 import { extendPiwiFixtures } from '../../dist/index.js';
+import { API_BACKEND_ENV } from './api-backend.js';
 
 /**
  * Drives the REAL, built `@piwitests/reporter` package (not a mock) against a
@@ -129,6 +130,31 @@ test('captures the failure-time ARIA snapshot and a locator suggestion', async (
   test.fail();
   await page.goto(baseUrl);
   await page.getByRole('button', { name: 'Nonexistent button' }).click({ timeout: 2000 });
+});
+
+// API tests: no page, only Playwright's `request` fixture and a request
+// context of the test's own, against the stub instrumented backend
+// `api-backend.ts` starts. verify-reporter checks that their calls are in the
+// network capture with the backend's logs, that the coverage ids of their
+// responses are kept and their server coverage collected once the test ended,
+// and that a call keeps its name and its line.
+test('api: records the calls of an API-only test with their backend logs and server coverage', async ({
+  request: api,
+}) => {
+  const backend = process.env[API_BACKEND_ENV]!;
+  const items = await api.get(`${backend}/api/items`);
+  expect(items.status()).toBe(200);
+  expect(await items.json()).toEqual({ path: '/api/items' });
+  expect((await api.post(`${backend}/api/orders`, { data: { sku: 'A1' } })).status()).toBe(201);
+
+  const own = await request.newContext({ baseURL: backend });
+  expect((await own.get('/api/items?via=own')).ok()).toBe(true);
+  await own.dispose();
+});
+
+test('api: a call Playwright fails for its status keeps its name and its line', async ({ request: api }) => {
+  test.fail();
+  await api.get(`${process.env[API_BACKEND_ENV]!}/api/missing`, { failOnStatusCode: true });
 });
 
 // Teardown-race guard: a locator action immediately followed by test end closes

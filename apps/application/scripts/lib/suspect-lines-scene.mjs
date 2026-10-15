@@ -16,6 +16,17 @@ const oldest = commits[commits.length - 1];
 /** The demo's default range for project 3: its oldest commit to its newest. */
 export const SUSPECT_SCENE_RANGE = { from: oldest.sha, to: newest.sha };
 
+/** The files the range changes that exist at its head, in the order the demo's aggregate lists them. */
+const changedPaths = [
+  ...new Set(
+    commits
+      .slice(0, -1)
+      .flatMap((c) => c.files)
+      .filter((f) => f.status !== 'removed' && f.status !== 'deleted')
+      .map((f) => f.filename),
+  ),
+];
+
 const suspect = (failing) => ({
   path: 'src/components/modal-controller.ts',
   runtime: 'browser',
@@ -40,13 +51,20 @@ const summary = (failingWithCoverage) => ({
 /** `GET /api/failure-clusters/5/suspect-lines` in the demo. */
 export const SUSPECT_SCENE_CLUSTER = {
   id: 5,
-  answer: { available: true, range: SUSPECT_SCENE_RANGE, summary: summary(2), suspects: [suspect(2)], runId: 39 },
+  answer: {
+    available: true,
+    range: SUSPECT_SCENE_RANGE,
+    summary: summary(2),
+    suspects: [suspect(2)],
+    changedPaths,
+    runId: 39,
+  },
 };
 
 /** `GET /api/test-run-cases/496/suspect-lines` in the demo. */
 export const SUSPECT_SCENE_EXECUTION = {
   id: 496,
-  answer: { available: true, range: SUSPECT_SCENE_RANGE, summary: summary(1), suspects: [suspect(1)] },
+  answer: { available: true, range: SUSPECT_SCENE_RANGE, summary: summary(1), suspects: [suspect(1)], changedPaths },
 };
 
 /**

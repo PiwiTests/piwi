@@ -1,0 +1,1 @@
+CREATE INDEX "idx_run_coverage_project_path" ON "run_coverage" USING btree ("project_id","path");

@@ -11,9 +11,17 @@ estimated; [Appendix A](#appendix-a-measurements) gives the method and the raw n
 coverage, the dashboard's storage and endpoints, the .NET coverage package, and the reporter's collection of server
 coverage, checked end to end on eShopOnWeb (each test's server files, functions and lines stored with their git blob
 ids, and the run-level coverage with executable lines). Suspect lines (part 6) are built too: the API, the AI
-context, the fix plan and the failure pages, checked on eShopOnWeb with a planted bug. Not built yet: browser
-functions and lines, the Istanbul adapter (D13), the consumers of part 4, the rest of part 6, and the editors. A
-view of each test's coverage on the execution page is planned in [`test-coverage-view.md`](test-coverage-view.md). The study's measurements came from
+context, the fix plan and the failure pages, checked on eShopOnWeb with a planted bug. The editors (part 5, delivery
+PR 8) are built on 2026-10-14: line marks, a lens per function, the tests behind a line on hover, `.cs` files and
+local runs that record server coverage, in VS Code and the JetBrains IDEs, reading `GET /api/projects/:id/coverage`
+(which gained the executable lines and an ETag). So are, from part 4, the MCP tool `get_coverage`, and from part 6 a
+failure's path against its last pass, a test's path varying with the tests before it (the `order` flaky root cause),
+what quarantining tests leaves uncovered and whether a new test reached its target lines, with the missing-test skill
+checking them (see [`test-coverage-view.md`](test-coverage-view.md), "Built beyond the plan"). API tests through the
+`request` fixture record server coverage. Not built yet: browser functions and lines, the Istanbul adapter (D13), the
+rest of part 4 (line-level impact, uncovered changed lines, the gate's line form, LCOV and Cobertura) and the rest of
+part 6. Each test's coverage is shown on the execution page and per file on a page of its own
+([`test-coverage-view.md`](test-coverage-view.md)). The study's measurements came from
 a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
 written to spend its CPU in business logic (the **pricing application**). New wire fields, options and endpoints
 freeze at 1.0 and need an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -188,8 +196,9 @@ file count.
   counts at run level only.
 - **Requests the browser never sees**: server-to-server calls behind a front-end server (BFF) are attributed only if
   that server forwards the `X-Piwi-Coverage` header, which nothing does today.
-- **API tests** through Playwright's `request` fixture: the fixtures do not wrap it yet; the wrapper planned in
-  [`api-contract-drift.md`](api-contract-drift.md) (part 1.3) is the place to read the header there.
+- **API tests** through Playwright's `request` fixture keep their last response's coverage only: a redirect's earlier
+  responses, and a response `failOnStatusCode` turns into an error, name none. (Closed 2026-10-14: the fixtures record
+  every `APIRequestContext` call and read its header, as they do a page's.)
 - **SignalR and WebSocket** traffic runs inside the connection's request, so it is attributed to the test that opened
   the connection, and collected even while the connection is still open.
 
@@ -586,7 +595,7 @@ surface: the code of each feature, executed or not. Two consequences:
   and the assertion detectors are for.
 - **Coverage is as fresh as the last run that captured it.** On a scheduled job, a test's coverage can be a day old;
   suspect lines and impact say which run the coverage came from.
-- **What the capture cannot see**: API tests through the `request` fixture until it is wrapped, calls behind a
+- **What the capture cannot see**: calls behind a
   front-end server that does not forward the header, other browsers than Chromium, Node backends until they implement
   the same contract, and the startup lambdas of part 3.
 
@@ -639,7 +648,8 @@ its docs (`code-reach.md`, `backend-logs.md`, `privacy.md`, the reporter options
 3. Is the startup-lambda gap acceptable? If minimal API applications with inline handlers lose too much, a post-build
    IL rewriter (Mono.Cecil) that adds a request lookup to each lambda is the fallback, at the cost of owning PDB
    rewriting.
-4. Should a per-test `request` fixture wrapper (API tests) land with PR 5, or with the API shapes plan?
+4. ~~Should a per-test `request` fixture wrapper (API tests) land with PR 5, or with the API shapes plan?~~ Answered
+   2026-10-14: neither; it shipped on its own, before the API shapes plan, which builds on it.
 5. Node backends (Nitro): V8's own coverage is per process, so per-request attribution needs a build-time transform
    whose counters read `AsyncLocalStorage`. The model, the header and the endpoints of this plan are runtime-neutral;
    should the Nitro package follow the same contract?

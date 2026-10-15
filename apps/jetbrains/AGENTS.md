@@ -41,6 +41,17 @@ while it does not run.
   whole daemon) as `Glue.redraw` says: every file Piwi reads when the run as the files show it changes
   (`Glue.runsInFiles`), only the files whose tests show a result (`showsTests`), at most once a second, when only the
   run's `liveTests` moved, none when only the run in progress moves.
+- `PiwiCoverageMarks.kt` draws `piwi/coverage` on each open file the service reads (C# among them, for Rider), asked
+  when the file opens and again after each `piwi/statusChanged`: range highlighters on the document's markup model
+  (`DocumentMarkupModel`), one per span of `Glue.coverageMarks`, with a `LineMarkerRendererEx` painting a bar at the
+  left of the gutter in the error stripe color of `PIWI_COVERAGE_RUN`, `PIWI_COVERAGE_NOT_RUN` or, dashed,
+  `PIWI_COVERAGE_CHANGED` (**Coverage** in `PiwiColorSettingsPage.kt`, no background by default), which marks the
+  scroll bar too, its tooltip saying what the lines are. The highlighters follow the edits; `piwi/coverageChanged`
+  replaces a file's answer, draws it again and has its Code Vision asked again (`PiwiProjectService.coverageChanged`).
+  **Show Coverage Marks** (`Piwi.ToggleCoverageMarks`, a `ToggleAction` under **Tools → Piwi**, kept in
+  `PiwiLocalSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks; a file
+  without line coverage draws nothing. The service's hover names the tests behind a line; its function lines come in
+  `piwi/fileSummary`, through Code Vision.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus` (with the run in
   progress, `live`), the **Piwi** tool window from `piwi/failures` (the LSP client highlights open files only) with
   the connection from `piwi/status` and the run (`Glue.runHeader`), and the actions under **Tools → Piwi**, all

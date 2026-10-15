@@ -410,6 +410,11 @@ export const HELP_TOPICS = {
     text: 'A quarantined test still runs and still reports — it is only excluded from the CI gate’s verdict. Passing runs accumulate as a streak, so a test that recovers is flagged ready to release instead of staying quarantined forever.',
     doc: 'features/flaky-tests#quarantine-with-a-way-out',
   },
+  'quarantine.coverage-loss': {
+    title: 'Code only these tests run',
+    text: 'The lines of the tests’ latest coverage on the default branch that no other trusted test runs: trusted means not quarantined. Quarantining the tests leaves those lines to no test the CI gate counts; releasing a quarantined test covers them again. Lines only flaky tests run besides them are counted apart, and a file other tests ran only at another version is not compared.',
+    doc: 'features/coverage-insights#what-quarantining-or-deleting-tests-leaves-uncovered',
+  },
   'project.performance': {
     title: 'Performance',
     text: 'Duration trends for the suite — average and P90 (the slowest 10% threshold). Use it to catch tests getting steadily slower.',
@@ -614,7 +619,7 @@ export const HELP_TOPICS = {
   'case.evidence': {
     title: 'Evidence',
     text: [
-      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the attempts of a test that retried, the page at the failure, the test source, the locators it used, the network requests, the console output, the app state at the end, and the browser performance. It opens on the tab a strong or medium clue cites when that is the source or the performance, else on the Timeline when it can place two or more items; a test that passed on retry opens on Attempts. On a cluster, the line above the tabs names the test and the run it shows.',
+      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the attempts of a test that retried, the page at the failure, the test source with what the test ran where the project records coverage, the locators it used, the network requests, the console output, the app state at the end, and the browser performance. It opens on the tab a strong or medium clue cites when that is the source or the performance, else on the Timeline when it can place two or more items; a test that passed on retry opens on Attempts. On a cluster, the line above the tabs names the test and the run it shows.',
       '',
       '- **Timeline** colors a step’s or a request’s duration only when it stands out, and **Network** a request’s by the same rule: at least 1 s, and either a third of the test or more, or twice its usual time and 1 s more, the usual time being the median over the last five passing runs on the same browser (shown under it). A step with parameters opens them from its title, and an arrow at the edge of the axis marks a bar that runs on outside the window.',
       '- **Screen** shows the page as views: its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video. **Open in picker** finds a locator on that DOM; the failing step on the timeline carries the same first three.',
@@ -648,6 +653,62 @@ export const HELP_TOPICS = {
     title: 'Test source',
     text: 'The source around the failing line and the callers above it — captured from the failure’s call stack — so you can read where it broke, and the code that led there, without opening your editor. When the execution has a trace, this deepens into the complete call stack with the real source of every frame, read from the trace’s embedded files.',
     doc: 'features/evidence#trace-powered-deep-views',
+  },
+  'case.coverage': {
+    title: 'Coverage',
+    text: [
+      'The code this test ran, as its coverage recorded it: the backend files with their lines, and the browser files.',
+      '',
+      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core today), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked, and the executable lines it did not run in a lighter mark when the run sent its own coverage.',
+      '- **Browser** — the application files whose functions ran in Chromium, by path.',
+      '- **Precision** — by line, by function, or by file, as the reporter’s `coverage` option recorded it.',
+      '- **suspect lines** — the changed lines this failing test ran, and **changed** a file changed since the last passing run; both open the cluster’s What changed card.',
+    ].join('\n'),
+    doc: 'features/code-reach#on-the-execution-page',
+  },
+  'case.coverage-incomplete': {
+    title: 'Incomplete coverage',
+    text: 'Part of this test’s coverage is missing: the backend no longer held the coverage of one of its requests when the reporter asked for it, a collection failed, a cap was reached, or part of it is no longer stored. The files listed ran; others may have too.',
+    doc: 'features/code-reach#server-code',
+  },
+  'case.coverage-none': {
+    title: 'No coverage for this test',
+    text: 'This project records coverage, but this test recorded none. Browser files are recorded in Chromium only, and backend lines only for the requests that reached a backend built for coverage; a run from before coverage was turned on, or with the reporter option off, records none.',
+    doc: 'features/code-reach',
+  },
+  'case.coverage-divergence': {
+    title: 'Compared with the last passing run',
+    text: [
+      'The code this failing execution ran that the test’s last passing execution with coverage did not, and the reverse: the same browser project on the same branch first, else the default branch, else another browser project.',
+      '',
+      '- **Only in this execution** — an error path, a fallback or a retry branch shows here first.',
+      '- **Here / in the pass** — a file both ran at the same version, with the lines only each side ran; open it to see both marked.',
+      '- **Another version** — a file whose version differs between the two runs is counted, never compared line by line.',
+      '- **Incomplete** — a capture that missed part of what ran never says something did not run.',
+    ].join('\n'),
+    doc: 'features/coverage-insights#a-failure-s-path-against-its-last-pass',
+  },
+  'case.coverage-backend-none': {
+    title: 'No backend coverage for this test',
+    text: 'The run recorded backend coverage, but none for this test. Its requests may not have reached the instrumented backend (a page served from elsewhere, a mocked route, a request that failed), or the backend may no longer have held the coverage when the reporter asked.',
+    doc: 'features/code-reach#server-code',
+  },
+  'coverage.file': {
+    title: 'Which tests run this file',
+    text: [
+      'The tests that run this file, each from its latest run with coverage on the branch.',
+      '',
+      '- **Counts** — beside each line, how many tests ran it; a lighter bar marks an executable line no test runs, when a run recorded the executable lines.',
+      '- **Select** — click a line, or Shift-click a range, to list the tests that ran it with their latest outcome. On a line no test runs, the nearest test to copy runs the most of the function around it.',
+      '- **Version** — line numbers belong to one version of the file, its git blob; when the tests ran several, pick one.',
+      '- **Precision** — a file recorded by function marks its functions, and one recorded by file lists its tests only.',
+    ].join('\n'),
+    doc: 'features/code-reach#which-tests-run-a-file',
+  },
+  'coverage.file-source': {
+    title: 'Source not available',
+    text: 'Piwi reads a version of a file by its git blob through the project’s source control: a linked clone in the desktop app, GitHub or GitLab with a token, else the file at a run’s commit when its blob matches. Without one, the lines show as numbers.',
+    doc: 'features/code-reach#which-tests-run-a-file',
   },
   'export.offline': {
     // Deliberately avoids the word "Export": the hint sits beside a button with
@@ -702,6 +763,18 @@ export const HELP_TOPICS = {
     doc: 'features/flaky-tests#flaky-test-detection',
   },
 
+  'case.path-variation': {
+    title: 'Path variation',
+    text: [
+      'How this test’s code path varies across its last 30 executions with coverage, in the browser project that ran most of them, compared on the files every execution that ran them ran at one version.',
+      '',
+      '- **Varying code** — the lines (or functions, or files) some executions ran and others did not, grouped by the executions that ran them, the most evenly split first.',
+      '- **Earlier test** — the test whose having finished earlier in the run, or on the same worker, predicts which executions ran the code: at least 90% of them, with 3 executions on each side.',
+      '- **Order** — when its failures follow that code too, the test depends on what an earlier test leaves behind, and its flaky root cause is `order`.',
+    ].join('\n'),
+    doc: 'features/coverage-insights#a-path-that-depends-on-the-tests-before-it',
+  },
+
   'case.flakiness': {
     title: 'Flake suspects',
     text: 'What this test’s failures share and its passes do not, over its last 30 days (at most 200 attempts): a route that is slower or fails, another test running alongside or just before on the same worker, load, a browser. Failures and passes count the attempts showing the factor, out of all. A suspect needs 3 failures and to be at least twice as common among failures as among passes; at most 5 are listed. The condition is what a lab would apply to test it.',
@@ -748,7 +821,7 @@ export const HELP_TOPICS = {
   },
   'cluster.suspect-lines-coverage': {
     title: 'Suspect lines need coverage',
-    text: 'With coverage turned on, Piwi narrows these changes to the lines the failing tests ran, ranked by how few passing tests ran them too. Server coverage records the executed lines of an ASP.NET Core backend.',
+    text: 'This project records coverage, but the failing tests of this run recorded none, so the changes are not narrowed to the lines they ran. A test records browser files in Chromium only, and backend lines only when its requests reach a backend built for coverage; the run may also predate coverage being turned on.',
     doc: 'features/code-reach#server-code',
   },
   'cluster.baseline': {

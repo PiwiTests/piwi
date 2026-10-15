@@ -9,7 +9,7 @@ lang: en-US
 <Needs reporter />
 
 A single run tells you what failed; a few dozen tell you what's *unreliable*. This page covers what Piwi computes
-for one project once it has history: flaky scoring, suspects, regression signals and spec health.
+for one project from its history.
 
 For the same signals aggregated across every project, see [Analytics](./analytics).
 
@@ -22,18 +22,18 @@ A test is flaky when its result isn't deterministic. Piwi computes a **flakiness
 
 The **failure rate** is shown but not scored.
 
-The project's **Failures** tab has a **Flaky** view with a **configurable lookback window** so you can focus on recent behavior or a longer baseline. Each flaky test links to its history and carries a **Quarantine** action.
+The project's **Failures** tab has a **Flaky** view with a **configurable lookback window**. Each flaky test links to its history and carries a **Quarantine** action.
 
 **Scoping**: only runs within the project's **Filters** count: environment (the [reporter](/guide/reporter)'s `environment` option), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
-  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored by retry passes and status flips (failure rate alongside), ranked by impact, filterable by root-cause category, each with its top suspect.</figcaption>
+  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored, ranked by impact, filterable by root-cause category, with its top suspect.</figcaption>
 </figure>
 
 ### Root-cause classification
 
-Every flaky test is automatically tagged with one of five categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the [attempt diff](./evidence#attempts). It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
+Every flaky test is automatically tagged with one of six categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the [attempt diff](./evidence#attempts). It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
 
 | Category | Typical signals |
 |----------|-----------------|
@@ -41,6 +41,7 @@ Every flaky test is automatically tagged with one of five categories, using keyw
 | `network` | `net::` / `ERR_` errors, 5xx responses, `ECONNREFUSED`, `waitForResponse` — plus the count of failed and 5xx requests captured on the failing attempts, and any request that failed on the failing attempt but not the passing one |
 | `assertion` | `expect(...)`, "Expected:", snapshot/screenshot comparison — with no timing/network noise |
 | `environment` | Fails at least 3 times on exactly one browser while another browser passed at least 3 times without failing |
+| `order` | Its code path changes with whether another test ran before it in the run, and its failures follow that change ([coverage insights](./coverage-insights#a-path-that-depends-on-the-tests-before-it)) |
 | `other` | No clear signal |
 
 A test is classified when it passes on retry in a finished run, and a listed test still without a category when the

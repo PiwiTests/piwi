@@ -34,6 +34,7 @@ import {
   graphNodes,
   probes,
   bugReports,
+  coverageFragments,
   testRunResourceReports,
   failureDiagnoses,
   mcpToolCalls,
@@ -64,6 +65,7 @@ export type SetupCapabilityId =
   | 'fixtures'
   | 'locator-healing'
   | 'backend-logs'
+  | 'coverage'
   | 'clustering'
   | 'ai'
   | 'mcp'
@@ -220,6 +222,18 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
               .where(and(eq(testRuns.projectId, pid), SERVER_TRACE))
               .limit(1)
           : db.select({ id: networkRequests.id }).from(networkRequests).where(SERVER_TRACE).limit(1),
+      ),
+    // Coverage: active once a test's coverage of a file is stored for the project.
+    coverage: () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: coverageFragments.id })
+              .from(coverageFragments)
+              .where(eq(coverageFragments.projectId, pid))
+              .limit(1)
+          : db.select({ id: coverageFragments.id }).from(coverageFragments).limit(1),
       ),
     clustering: () =>
       exists(
@@ -398,6 +412,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'fixtures',
   'locator-healing',
   'backend-logs',
+  'coverage',
   'clustering',
   'ai',
   'mcp',

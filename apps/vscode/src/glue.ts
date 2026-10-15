@@ -8,9 +8,11 @@
 import type {
   BaselineChoice,
   ConnectionSource,
+  CoverageResult,
   DesktopJobUpdate,
   DesktopResult,
   FailuresResult,
+  LineSpan,
   LiveRun,
   McpServerDefinition,
   RecordingPlacement,
@@ -25,9 +27,9 @@ import type {
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
 
-/** The files the editor service reads: test and application code, and translations. */
+/** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
 export const DOCUMENT_PATTERN =
-  '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,vue,svelte,astro,html,json,yaml,yml,properties,po,resx,cshtml,razor}';
+  '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,vue,svelte,astro,html,json,yaml,yml,properties,po,resx,cs,cshtml,razor}';
 
 export interface StatusBarView {
   text: string;
@@ -679,6 +681,35 @@ export function testResultHover(status: TestLineStatus, title: string, edited = 
     unknown: 'no recent result',
   }[status];
   return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', md(title)].filter(Boolean).join(' · ');
+}
+
+/** The coverage marks of a file, as whole lines: those the tests ran, the executable ones none runs, those changed since. */
+export interface CoverageDecorations {
+  run: LineSpan[];
+  notRun: LineSpan[];
+  changed: LineSpan[];
+}
+
+/**
+ * The marks to draw for a file's `piwi/coverage` answer, within its `lineCount` lines: none while they are hidden, and
+ * none for a file without line coverage.
+ */
+export function coverageDecorations(
+  result: CoverageResult | null | undefined,
+  lineCount: number,
+  shown: boolean,
+): CoverageDecorations {
+  const within = (spans: LineSpan[] | undefined) =>
+    (spans ?? [])
+      .filter((s) => s.start >= 0 && s.start < lineCount && s.end >= s.start)
+      .map((s) => ({ start: s.start, end: Math.min(s.end, lineCount - 1) }));
+  if (!shown || !result || !hasCoverageMarks(result)) return { run: [], notRun: [], changed: [] };
+  return { run: within(result.executed), notRun: within(result.notRun), changed: within(result.changed) };
+}
+
+/** Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it. */
+export function hasCoverageMarks(result: CoverageResult | null | undefined): boolean {
+  return result?.state === 'exact' || result?.state === 'mapped';
 }
 
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */

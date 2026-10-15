@@ -7,7 +7,9 @@ cannot answer the first question a reader has about it: what did this test run? 
 execution page, then a file view that answers the reverse question (which tests run this file), and shows both in the
 demo.
 
-**Status.** Proposed 2026-10-14. Not built.
+**Status.** Proposed 2026-10-14. Built 2026-10-14 and 15: every rollout PR (0 to 3), with the recommended answer to
+each decision, and the editors' coverage the study's part 5 describes. What changed on the way, and what was built
+beyond the plan, is under [As built](#as-built).
 
 ## Why
 
@@ -129,6 +131,53 @@ Sizes are relative (1 small, 3 large), as in the study's delivery table.
    lines only otherwise. It turns the view into a gap finder, at the price of one more read.
 4. **The file view as a page or a drawer.** Recommended: a page, so it can be linked from the Test Map, a pull request
    comment or a chat.
+
+## As built
+
+- **Decisions.** The recommended answer each time: a section in the Source tab, source by blob with line numbers as the
+  fallback, executable lines that did not run shown when the run sent run coverage, and the file view as a page.
+- **No pollution.** Coverage is a capability (`coverage`, module `core`, detected from the project's stored coverage).
+  The Coverage section, the file view's entry points, the coverage hints of the cluster page and every insight below
+  render nothing for a project that records no coverage; the Setup ladder is the one place that offers it. The section's
+  planned empty states for "coverage off" and "no instrumented backend" were dropped for that reason; with coverage
+  active, an execution that recorded none says so in one line.
+- **Section 1.** As planned. A suspect mark on the execution page links to the cluster's What changed card; on the
+  cluster page it is plain text, the card being on the same page. `?evidence=source` opens the tab.
+- **Section 2.** `GET /api/projects/:id/source?path=&blob=&run=` reads a blob through `ScmProvider.fetchBlob` (a local
+  clone, GitHub, GitLab; Bitbucket has none), else the file at a run's commit when its blob id matches, kept an hour
+  per blob. Run coverage is its own read, `GET /api/test-runs/:id/coverage`.
+- **Section 3.** `/projects/:id/coverage?file=&branch=&line=&blob=`. No branch picker (none was cheap to reuse): the
+  page reads `?branch=` and names it. Tests link to their test page: the coverage answer names no latest execution.
+  The dashboard has no code index view, so the entry points are the Coverage section's rows, the cluster's suspect
+  lines and the Test Map's file nodes. `GET /api/projects/:id/coverage` gained the versions' executable lines and an
+  ETag, which the editors use too.
+- **Section 4.** The demo seeds five C# files of the Web Dashboard API with their run and test coverage; the tour stop
+  "The server lines this test ran" is in the developer tour.
+- **Section 5.** The capture fixtures record every `APIRequestContext` call, not only the `request` fixture's: a
+  context from `playwright.request.newContext()` and `page.request` too. An API call is a `piwi-network` entry without a
+  `resourceType`; API calls therefore also reach the Test Map's routes and the slow endpoints.
+- **The editors** (the study's part 5, a non-goal here, built alongside): line marks, a lens per function, the tests
+  behind a line on hover, `.cs` files and runs that record server coverage, in VS Code and the JetBrains IDEs.
+
+### Built beyond the plan: what coverage answers
+
+Four reads over the stored coverage, each with an endpoint, an MCP tool and a place on the dashboard
+([`features/coverage-insights`](../apps/docs/features/coverage-insights.md)):
+
+- **A failure's path against its last pass** (`coverage-divergence`, MCP `compare_coverage`): the code the failure ran
+  that the test's last passing execution did not, and the reverse, on the same file versions only. Shown in the
+  Coverage section of a failed execution and given to the AI diagnosis as a section of its context. It explains a
+  failure no change explains: a data problem, a configuration, a fallback.
+- **A path that depends on the tests before it** (`path-variation`, MCP `compare_coverage`): a test whose coverage
+  varies across its last 30 executions, and the earlier test whose having run before predicts it (3 executions per
+  side, 90% agreement). When the failures follow that difference, the flaky root cause is the new `order`. Shown on
+  the test page.
+- **What quarantining tests leaves uncovered** (`coverage-loss`, MCP `get_coverage_loss` and the quarantine tools'
+  `uniqueCoverage`): the code only these tests run among the other non-quarantined tests. Shown before a quarantine is
+  confirmed.
+- **Whether a new test reached its target** (`coverage-reach`, MCP `get_coverage`): the target lines that ran, did not
+  run, or cannot be told, and the nearest test to copy. The missing-test skill runs the new test with server coverage
+  and checks its target lines until they run.
 
 ## Non-goals
 

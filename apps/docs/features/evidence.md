@@ -42,9 +42,10 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
   the focus. **Open in picker** finds a
   locator on that DOM.
 - **Source**: the test source as a call stack (the line that threw plus its callers), deepened
-  [with a trace](#trace-powered-deep-views).
-- **Network**: the requests with inline [backend logs](/guide/backend-logs); one with no response shows the browser's
-  error (`net::ERR_CONNECTION_RESET`). **Console**: the console output.
+  [with a trace](#trace-powered-deep-views), then, with [coverage](./code-reach#on-the-execution-page), what the test
+  ran.
+- **Network**: the requests, API calls through Playwright's `request` fixture included, with inline
+  [backend logs](/guide/backend-logs); one with no response shows the browser's error (`net::ERR_CONNECTION_RESET`). **Console**: the console output.
   **State**: the app state at test end and the environment diff against the last green run. **Performance**:
   performance hints and Web Vitals.
 
@@ -143,8 +144,8 @@ and last run, a duration trend, a status-history strip, and the recent execution
 A flaky test adds a **Flakiness** tab with its [suspects](./flaky-tests#suspects).
 
 <figure>
-  <img src="/screenshots/test-case-detail.png" alt="Test case page with run stats above a duration trend chart, a status history strip, and a table of recent executions">
-  <figcaption>The test case page: pass rate and duration stats, a duration trend, and every recent execution of this test.</figcaption>
+  <img src="/screenshots/test-case-detail.png" alt="Test case page: run stats, a duration trend, a status strip and recent executions">
+  <figcaption>The test case page: stats, a duration trend and every recent execution.</figcaption>
 </figure>
 
 ## Related

@@ -47,6 +47,10 @@ export const ES_COPY = {
           title: 'Un diagnóstico de IA, contrastado con tu código',
           body: 'Con un proveedor de IA configurado, Piwi diagnostica un grupo de fallos a partir de sus evidencias y de los commits desde su último éxito. Este atribuye las 51 filas de la tabla de usuarios al tamaño de página por defecto de la API y propone este parche, marcado **Applies cleanly** sobre el código. Desde entonces llegó una corrección, y se mantiene.',
         },
+        coverage: {
+          title: 'Las líneas del servidor que ejecutó esta prueba',
+          body: 'Cuando un proyecto registra la cobertura, la pestaña **Source** lista el código que ejecutó una prueba. Esta prueba fallida ejecutó cinco archivos de la API ASP.NET Core, primero los endpoints de usuarios con las líneas sospechosas; abre uno para leer las líneas que ejecutó. El enlace **tests** de un archivo abre todas las pruebas que lo ejecutan, línea por línea.',
+        },
         mcp: {
           title: 'Pregunta desde tu editor',
           body: 'Piwi también es un servidor MCP: Claude Code, Cursor o Copilot en VS Code pueden leer los grupos de fallos, sus evidencias y sus planes de corrección, y hacer su triaje sin salir del editor. **Client setup** tiene la configuración de cada cliente; el endpoint de esta demo no está activo.',

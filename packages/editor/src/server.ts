@@ -16,7 +16,10 @@
  *   a run ends (`run-watch.ts`);
  * - custom requests (`protocol.ts`) for the summary lines each editor draws
  *   natively above a file, a test and a locator line, the run status, a trace
- *   to open, and the MCP server to register.
+ *   to open, and the MCP server to register;
+ * - the lines of an application file the tests ran, placed on the file as it
+ *   stands (`coverage.ts`), as marks the editors draw, a line above each
+ *   function that ran, and the tests behind a line on hover.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -80,6 +83,17 @@ import {
   type LineState,
 } from './analysis.js';
 import {
+  BlobTexts,
+  chooseVersion,
+  coverageIndexFor,
+  coverageMarks,
+  coverageNote,
+  coverageResult,
+  coverageVersions,
+  mayHaveCoverage,
+  type CoverageMarks,
+} from './coverage.js';
+import {
   CI_ORIGINS,
   PiwiContext,
   desktopConfigPath,
@@ -94,6 +108,7 @@ import {
   type ResponseCache,
   type BranchFailure,
   type BranchResolved,
+  type FileCoverage,
   type FixPlan,
   type FlakeLabEntry,
 } from './piwi-client.js';
@@ -124,6 +139,8 @@ import {
   APPLY_PICK_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
   COMMAND_STARTED_NOTIFICATION,
+  COVERAGE_NOTIFICATION,
+  COVERAGE_REQUEST,
   FAILURES_NOTIFICATION,
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
@@ -157,6 +174,8 @@ import {
   type ApplyPickResult,
   type CommandEndedParams,
   type CommandStartedParams,
+  type CoverageParams,
+  type CoverageResult,
   type DesktopResult,
   type EditorBreakpoint,
   type EditorCredentials,
@@ -424,6 +443,32 @@ function testCounts(tests: Array<{ status: string | null }>): string {
   const failing = tests.filter((t) => t.status === 'failed').length;
   const flaky = tests.filter((t) => t.status === 'flaky').length;
   return [failing ? `${failing} failing` : null, flaky ? `${flaky} flaky` : null].filter(Boolean).join(' · ');
+}
+
+/** A test's latest result as a hover lists it. */
+function statusIcon(status: string | null): string {
+  return status === 'passed'
+    ? '✓'
+    : status === 'failed'
+      ? '✗'
+      : status === 'flaky'
+        ? '~'
+        : status === 'skipped'
+          ? '−'
+          : '·';
+}
+
+/** A hover's Markdown, empty without one. */
+function hoverText(hover: Hover | null): string {
+  return hover && typeof hover.contents === 'object' && 'value' in hover.contents ? hover.contents.value : '';
+}
+
+/**
+ * The environment a test run adds for the coverage its lens asks for: the backend's coverage by line for a server
+ * file's lens (`RunTestsArgs.coverage`), which the reporter reads when the Playwright config leaves it unset.
+ */
+function coverageRunEnv(coverage: RunTestsArgs['coverage']): Record<string, string> {
+  return coverage === 'server' ? { PIWI_COVERAGE_SERVER: 'lines' } : {};
 }
 
 /**
@@ -1014,6 +1059,182 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
   };
 
+  /** The texts of the versions of the files the coverage names, beside the repository's. */
+  const blobTexts = new BlobTexts();
+  /**
+   * The `piwi/coverage` answer the client holds for each document it asked about, serialized: a change is pushed
+   * against it (`piwi/coverageChanged`).
+   */
+  const coverageHeld = new Map<string, string>();
+  /** How many computations of each document's answer started: only the latest one is pushed. */
+  const coverageTurns = new Map<string, number>();
+  /** The latest marks of each file, by URI, for the text and the coverage they were computed from. */
+  const marksKept = new Map<string, { text: string; coverage: FileCoverage; marks: Promise<CoverageMarks> }>();
+  /** The URIs whose marks are kept at most; the least recently computed goes first. */
+  const MAX_MARKS = 100;
+
+  /** An application file the coverage may name: its context and repository-relative path; null for test code. */
+  const coverageTarget = (uri: string): { file: string; context: PiwiContext; repoRelative: string } | null => {
+    const file = uriToPath(uri);
+    const context = file ? contextFor(file) : null;
+    if (!file || !context?.client || !context.project || isTestCode(context, relativeTo(context.root, file)))
+      return null;
+    const repoRelative = relativeTo(context.repoRoot, file);
+    return repoRelative ? { file, context, repoRelative } : null;
+  };
+
+  /**
+   * A file's coverage as its context reads it; null without asking the instance when the instance has no coverage
+   * route, or the code index says no coverage reaches the file.
+   */
+  const coverageOfTarget = (target: { context: PiwiContext; repoRelative: string }): Promise<FileCoverage | null> =>
+    target.context.coverageRoute &&
+    mayHaveCoverage(
+      coverageIndexFor(
+        target.context.codeIndex,
+        target.context.branch,
+        target.context.coverageBranch(),
+        target.context.index?.defaultBranch ?? null,
+      ),
+      target.repoRelative,
+    )
+      ? target.context.coverage(target.repoRelative)
+      : Promise.resolve(null);
+
+  /**
+   * The coverage of a file and its marks on the file as it stands, open or saved, computed once per text and coverage;
+   * null when no coverage names the file.
+   */
+  const coverageMarksOf = async (uri: string): Promise<{ coverage: FileCoverage; marks: CoverageMarks } | null> => {
+    const target = coverageTarget(uri);
+    if (!target) return null;
+    const coverage = await coverageOfTarget(target);
+    const text = readText(target.file);
+    if (!coverage?.fragments.length || text === null) return null;
+    const kept = marksKept.get(uri);
+    if (kept && kept.text === text && kept.coverage === coverage) return { coverage, marks: await kept.marks };
+    const versions = coverageVersions(coverage);
+    const marks = chooseVersion(
+      versions,
+      text,
+      () => readSaved(target.file),
+      (blob) => blobTexts.textOf(target.context.repoRoot, blob),
+      (seen, blob) => blobTexts.remember(seen, blob),
+    ).then((chosen) => coverageMarks(coverage, versions, chosen, text));
+    marksKept.delete(uri);
+    marksKept.set(uri, { text, coverage, marks });
+    for (const oldest of [...marksKept.keys()].slice(0, Math.max(0, marksKept.size - MAX_MARKS)))
+      marksKept.delete(oldest);
+    return { coverage, marks: await marks };
+  };
+
+  /** A document's `piwi/coverage` answer as it stands, computed in full. */
+  const coverageNow = async (uri: string): Promise<CoverageResult> =>
+    coverageResult(uri, (await coverageMarksOf(uri).catch(() => null))?.marks ?? null);
+
+  const nextCoverageTurn = (uri: string): number => {
+    const turn = (coverageTurns.get(uri) ?? 0) + 1;
+    coverageTurns.set(uri, turn);
+    return turn;
+  };
+
+  /** Tell the client a document's marks changed from the answer it holds, when no later computation started. */
+  const pushCoverage = (uri: string, turn: number, result: CoverageResult) => {
+    const held = coverageHeld.get(uri);
+    if (coverageTurns.get(uri) !== turn || held === undefined) return;
+    const serialized = JSON.stringify(result);
+    if (serialized === held) return;
+    coverageHeld.set(uri, serialized);
+    void connection.sendNotification(COVERAGE_NOTIFICATION, result);
+  };
+
+  /**
+   * The URIs the client holds an answer for that name the file of `uri`, whatever form of its URI each was asked with
+   * (`file:///c%3A/…` and `file:///C:/…` on Windows), `uri` first.
+   */
+  const urisOf = (uri: string): string[] => {
+    const file = uriToPath(uri);
+    const held = [...coverageHeld.keys()].filter((other) => {
+      const path = other === uri ? null : uriToPath(other);
+      return !!file && !!path && samePath(path, file);
+    });
+    return [uri, ...held];
+  };
+
+  /** Compute the answers of `uris` again, and push those that changed from what the client holds. */
+  const coverageAgain = (uris: string[]) => {
+    for (const uri of uris) {
+      const turn = nextCoverageTurn(uri);
+      if (coverageHeld.has(uri)) void coverageNow(uri).then((result) => pushCoverage(uri, turn, result));
+    }
+  };
+
+  /** The run each context's coverage was last read after, by the ids of its latest run and the runs laid over it. */
+  const coverageRuns = new WeakMap<PiwiContext, string>();
+  const rereading = new Set<PiwiContext>();
+  const rereadAgain = new Set<PiwiContext>();
+  /**
+   * A run of the context ended: its code index and the coverage of the files the client holds are read again, with
+   * their `ETag`, and the marks that changed are pushed. A run that ends meanwhile reads them once more after.
+   */
+  const coverageAfterRun = async (context: PiwiContext): Promise<void> => {
+    if (rereading.has(context)) {
+      rereadAgain.add(context);
+      return;
+    }
+    rereading.add(context);
+    try {
+      do {
+        rereadAgain.delete(context);
+        await context.refreshCodeIndex();
+        context.staleCoverage();
+        coverageAgain([...coverageHeld.keys()].filter((uri) => coverageTarget(uri)?.context === context));
+      } while (rereadAgain.has(context));
+    } finally {
+      rereading.delete(context);
+    }
+  };
+
+  /** Read the coverage again after each context whose latest run or the runs laid over it changed since. */
+  const coverageAfterRuns = () => {
+    for (const c of contexts) {
+      const key = JSON.stringify([c.failures?.run?.id ?? null, (c.failures?.overlays ?? []).map((o) => o.id)]);
+      const before = coverageRuns.get(c);
+      coverageRuns.set(c, key);
+      if (before !== undefined && before !== key) void coverageAfterRun(c);
+    }
+  };
+
+  /** What the coverage says of a line (0-based): the tests that ran it, that none does, or that it changed since. */
+  const coverageHover = async (uri: string, line: number): Promise<string | null> => {
+    const target = coverageTarget(uri);
+    const found = target
+      ? await within(
+          coverageMarksOf(uri).catch(() => null),
+          null,
+        )
+      : null;
+    const marks = found?.marks;
+    if (!target || !found || !marks || (marks.state !== 'exact' && marks.state !== 'mapped')) return null;
+    const at = line + 1;
+    if (marks.changed.has(at)) {
+      return '**Piwi coverage** · changed since the coverage run: no test has run this line as it stands yet';
+    }
+    const tests = (marks.executed.get(at) ?? []).flatMap((i) => found.coverage.tests[i] ?? []);
+    if (tests.length) {
+      const list = tests
+        .slice(0, 10)
+        .map(
+          (t) =>
+            `- ${statusIcon(t.status)} [${t.title.replace(/[[\]]/g, '')}](${target.context.client?.testUrl(t.id) ?? ''}) · \`${t.file}\``,
+        );
+      if (tests.length > 10) list.push(`- and ${tests.length - 10} more`);
+      const where = marks.state === 'mapped' ? ' · recorded on another version of this file' : '';
+      return `**Piwi coverage** · run by ${plural(tests.length, 'test')}${where}\n\n${list.join('\n')}`;
+    }
+    return marks.notRun.has(at) ? '**Piwi coverage** · no test runs this line' : null;
+  };
+
   const runStatus = (): RunStatusResult => ({
     contexts: contexts
       .filter((c) => c.client && c.project)
@@ -1065,10 +1286,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
   };
 
-  /** Publish the failures and tell the client when the run status changed. */
+  /** Publish the failures, tell the client when the run status changed, and read the coverage again after a run. */
   const runChanged = () => {
     publishFailures();
     sendRunStatus();
+    coverageAfterRuns();
   };
 
   /**
@@ -1131,7 +1353,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       pollRuns();
     },
     notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
-    runEnded: (ended) => void connection.sendNotification(RUN_ENDED_NOTIFICATION, ended),
+    runEnded: (ended) => {
+      void connection.sendNotification(RUN_ENDED_NOTIFICATION, ended);
+      // The run may have recorded coverage: the files the client holds show it.
+      const context = contextOfRoot(ended.root);
+      if (context) void coverageAfterRun(context);
+    },
     ownRunPollMs: options.ownRunPollMs,
     commandEndWaitMs: options.commandEndWaitMs,
   });
@@ -1344,6 +1571,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         });
       }
     } else {
+      // Read once the file is open, so its marks and lenses have it when the client asks.
+      const target = coverageTarget(document.uri);
+      if (target) void coverageOfTarget(target);
       const repoRelative = relativeTo(context.repoRoot, file);
       const before = repoRelative ? await context.committed(repoRelative) : null;
       if (repoRelative && before !== null) {
@@ -1390,8 +1620,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       document.uri,
       setTimeout(() => {
         timers.delete(document.uri);
-        // The failures follow the edit: placed again on the edited buffer.
+        // The failures and the coverage marks follow the edit: placed again on the edited buffer.
         placeAgainSoon(document);
+        coverageAgain(urisOf(document.uri));
         void validate(document).catch((e) => connection.console.error(`Piwi: ${(e as Error).message}`));
       }, delay),
     );
@@ -1472,7 +1703,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     runWatch.retryRefused();
     runChanged();
     statusChanged();
+    // The coverage is asked again with its `ETag`: the open documents' marks as they are analyzed again, the others now.
+    // A version the repository lacked may have been fetched since: the marks are placed again.
+    void blobTexts.forgetMissing();
+    marksKept.clear();
+    for (const c of contexts) c.staleCoverage();
     for (const document of documents.all()) schedule(document, 0);
+    coverageAgain([...coverageHeld.keys()].filter((uri) => !documents.get(uri)));
     retryUnreachable();
   }
 
@@ -1544,6 +1781,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     timers.delete(e.document.uri);
     appAnalyses.delete(e.document.uri);
     analysisDiagnostics.delete(e.document.uri);
+    for (const uri of urisOf(e.document.uri)) {
+      coverageHeld.delete(uri);
+      coverageTurns.delete(uri);
+      marksKept.delete(uri);
+    }
     publish(e.document.uri);
     // Its failures, on the file as saved.
     placeAgainSoon();
@@ -1882,7 +2124,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (through && !found.has(failure.executionId)) found.set(failure.executionId, { context: context!, failure });
     }
     const analysis = await hoverOfAnalysis(params);
-    if (!found.size) return analysis;
+    const covered = file ? await coverageHover(params.textDocument.uri, params.position.line) : null;
+    if (token.isCancellationRequested) return null;
+    if (!found.size) {
+      const value = [hoverText(analysis), covered].filter(Boolean).join('\n\n---\n\n');
+      return value ? { contents: { kind: 'markdown', value } } : null;
+    }
     const parts: string[] = [];
     // Asked together; each waited for a while at most.
     const lookups = [...found.values()].map(({ context, failure }) => ({
@@ -1918,9 +2165,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           .join('\n\n'),
       );
     }
-    const analysisText =
-      analysis && typeof analysis.contents === 'object' && 'value' in analysis.contents ? analysis.contents.value : '';
-    const value = [...parts, analysisText].filter(Boolean).join('\n\n---\n\n');
+    const value = [...parts, hoverText(analysis), covered].filter(Boolean).join('\n\n---\n\n');
     return value ? { contents: { kind: 'markdown', value } } : null;
   });
 
@@ -1953,21 +2198,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   const hoverFor = (context: PiwiContext, l: LineLocator): string => {
-    const icon = (status: string | null) =>
-      status === 'passed'
-        ? '✓'
-        : status === 'failed'
-          ? '✗'
-          : status === 'flaky'
-            ? '~'
-            : status === 'skipped'
-              ? '−'
-              : '·';
     const tests = l.tests
       .slice(0, 10)
       .map(
         (t) =>
-          `- ${icon(t.status)} [${t.title.replace(/[[\]]/g, '')}](${context.client?.testUrl(t.id) ?? ''}) · \`${t.file}\``,
+          `- ${statusIcon(t.status)} [${t.title.replace(/[[\]]/g, '')}](${context.client?.testUrl(t.id) ?? ''}) · \`${t.file}\``,
       )
       .join('\n');
     const pages = [
@@ -1995,10 +2230,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const text = document ? document.getText() : fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
     const lines = text.split(/\r?\n/);
     const pass = placer({ file, text });
-    const run = (testIds: number[]) => ({
+    const run = (testIds: number[], coverage?: RunTestsArgs['coverage']) => ({
       title: 'Run them',
       command: 'piwi.runTests' as const,
-      arguments: [{ uri: params.uri, testIds } satisfies RunTestsArgs],
+      arguments: [{ uri: params.uri, testIds, ...(coverage ? { coverage } : {}) } satisfies RunTestsArgs],
     });
 
     if (isTestCode(context, relative)) {
@@ -2133,18 +2368,50 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
 
     const repoRelative = relativeTo(context.repoRoot, file);
-    const tests = repoRelative ? testsReaching(context.codeIndex, repoRelative) : [];
+    const covered = await within(
+      coverageMarksOf(params.uri).catch(() => null),
+      null,
+    );
+    const reached = new Map((repoRelative ? testsReaching(context.codeIndex, repoRelative) : []).map((t) => [t.id, t]));
+    for (const t of covered?.coverage.tests ?? []) if (!reached.has(t.id)) reached.set(t.id, t);
+    const tests = [...reached.values()];
+    // A run from a server file's coverage lens records the backend's coverage, so it refreshes the marks.
+    const recordCoverage = covered?.coverage.fragments.some((f) => f.runtime === 'server') ? 'server' : undefined;
     const page = repoRelative
       ? (pageSummary(context.index, repoRelative) ?? pageSummary(context.index, relative ?? ''))
       : null;
     const reachLine: SummaryLine | null = tests.length
       ? {
           line: 0,
-          title: [`Reached by ${plural(tests.length, 'test')}`, testCounts(tests)].filter(Boolean).join(' · '),
-          command: run(tests.map((t) => t.id)),
+          title: [
+            `Reached by ${plural(tests.length, 'test')}`,
+            testCounts(tests),
+            covered ? coverageNote(covered.marks) : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          command: run(
+            tests.map((t) => t.id),
+            recordCoverage,
+          ),
         }
       : null;
-    if (!page) return reachLine ? { file: reachLine, lines: [] } : empty;
+    /** Each function its tests ran, at its first line as the file stands. */
+    const functionLines = (covered?.marks.functions ?? []).flatMap((f): SummaryLine[] => {
+      const ran = f.tests.flatMap((i) => covered!.coverage.tests[i] ?? []);
+      if (!ran.length) return [];
+      return [
+        {
+          line: f.line - 1,
+          title: [`Reached by ${plural(ran.length, 'test')}`, testCounts(ran)].filter(Boolean).join(' · '),
+          command: run(
+            ran.map((t) => t.id),
+            recordCoverage,
+          ),
+        },
+      ];
+    });
+    if (!page) return reachLine || functionLines.length ? { file: reachLine, lines: functionLines } : empty;
     const pageLine: SummaryLine = {
       line: 0,
       title: [
@@ -2157,7 +2424,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         .join(' · '),
       command: run(page.tests.map((t) => t.id)),
     };
-    return { file: pageLine, lines: reachLine ? [reachLine] : [] };
+    return { file: pageLine, lines: [...(reachLine ? [reachLine] : []), ...functionLines] };
   });
 
   connection.onRequest(TESTS_FOR_FILE_REQUEST, async (params: TestsForFileParams): Promise<TestsForFile> => {
@@ -2186,8 +2453,30 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return { basis: 'locators', tests: [...tests.values()].map((t) => toEditorTest(context, t)) };
     }
     const repoRelative = relativeTo(context.repoRoot, file);
-    const reached = repoRelative ? testsReaching(context.codeIndex, repoRelative) : [];
-    return { basis: reached.length ? 'reach' : 'none', tests: reached.map((t) => toEditorTest(context, t)) };
+    const reached = new Map((repoRelative ? testsReaching(context.codeIndex, repoRelative) : []).map((t) => [t.id, t]));
+    const covered = await within(
+      coverageMarksOf(params.uri).catch(() => null),
+      null,
+    );
+    for (const t of covered?.coverage.tests ?? []) if (!reached.has(t.id)) reached.set(t.id, t);
+    return {
+      basis: reached.size ? 'reach' : 'none',
+      tests: [...reached.values()].map((t) => toEditorTest(context, t)),
+    };
+  });
+
+  connection.onRequest(COVERAGE_REQUEST, async (params: CoverageParams): Promise<CoverageResult> => {
+    const uri = params.uri;
+    const turn = nextCoverageTurn(uri);
+    const full = coverageNow(uri);
+    // Waited for a while at most: what arrives later is pushed.
+    const answer = await within(full, null);
+    const result = answer ?? coverageResult(uri, null);
+    coverageHeld.set(uri, JSON.stringify(result));
+    if (!answer) void full.then((later) => pushCoverage(uri, turn, later));
+    // An edit or a read that started meanwhile is computed against what the client now holds.
+    else if (coverageTurns.get(uri) !== turn) coverageAgain([uri]);
+    return result;
   });
 
   /**
@@ -2225,7 +2514,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       cwd: commandFolder(context),
       args,
       command: command || `npx playwright test ${args.join(' ')}`,
-      env: editorRunEnv(ref),
+      env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
     return withBreakpoints(context, run, params.breakpoints);

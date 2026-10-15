@@ -11,11 +11,11 @@ clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
-  `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/refreshRun`,
+  `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
   `piwi/pageCandidates`, `piwi/applyPick`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
-  `piwi/desktopJobChanged` and `piwi/recordingChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/desktopJobChanged`, `piwi/recordingChanged` and `piwi/coverageChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
   owner, project, duration and whether it is new, and the answer the latest complete run of the first context that has
@@ -117,6 +117,27 @@ clients stay thin and both editors give the same answers.
   place of the locator chain its line holds now (`pickEditOnLine`: the chain `replaceLocatorOnLine` replaces), in the
   file at `uri`, else at `file` relative to a Playwright config's folder, open or saved; null when the line holds
   none, and the client inserts the locator at the cursor.
+- Coverage (`src/coverage.ts`): the lines, functions and files each test ran, which the reporter records per test,
+  each file version by its git blob id. An application file's coverage (`GET /api/projects/:id/coverage?file=&branch=`,
+  the checked-out branch, which the instance completes with the default branch's) is read when the file is first
+  opened or asked about, kept per file (`PiwiContext.coverage`, at most 200) and asked again with its `ETag` on a
+  refresh and after a run of the context ended (its latest run or the runs laid over it changed, or `piwi/runEnded`),
+  with the code index, which says which files coverage reaches. A file the code index says no coverage reaches
+  (`mayHaveCoverage`: none listed, or reached through routes only) is not asked for, nor is any file once the instance
+  answered the route with a 404 (`coverageRoute`, until the next refresh); either shows nothing. The marks come from the
+  version whose blob id is the file's as it stands, open or saved (`textBlobIds`: as git stores it, CRLF as LF, with or
+  without a byte order mark), else the version the file as saved is, for a document edited since, else the version the
+  most tests recorded whose text is known (`BlobTexts`: a text seen with that blob id, else `git cat-file`), placed
+  through `diffLines` and `placeLine`: a line a hunk added is `changed` (changed since the coverage run), a line it
+  removed has no mark; with none of them, `other-version` and no mark. `piwi/coverage` answers the marks of a file as it
+  stands (`executed` with how many tests ran each, `notRun` from the executable lines a run recorded for that version,
+  `changed`, the counts and a `label`), within `LOOKUP_WAIT_MS`; `piwi/coverageChanged` pushes them, against the answer
+  the client holds, when an edit, a read or a late answer changes them, only for a document it asked about. On an
+  application file, `piwi/fileSummary` adds the coverage's tests to the file's `Reached by N tests` line, with
+  `41 of 63 lines run` when the executable lines are known, and gives each function that ran a line at its first line;
+  on a server file their `piwi.runTests` carries `coverage: 'server'`, which `piwi/runArgs` turns into
+  `PIWI_COVERAGE_SERVER=lines`, so the run records the lines again. The hover of a line names the tests that ran it, or
+  says that none runs it or that it changed since the coverage run.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it
   too; never re-implement a core function.
@@ -192,15 +213,18 @@ needs the extension's sources, and a change to the recorder there changes what t
   week are deleted when the service starts (`pruneEvidence`). A
   failure's files at its run's commit are read once too, as many as the failures go through, and its diagnostics wait
   for nothing: the files as saved stand in until they are read. The translation values of `HEAD` are read once per
-  `HEAD`, those of the working tree once per refresh, each once for every document that asks meanwhile.
+  `HEAD`, those of the working tree once per refresh, each once for every document that asks meanwhile. An edit costs
+  the coverage no request: its marks are placed again on the text from what is kept.
 - **A change is pushed against what the client holds**: `piwi/statusChanged`, `piwi/runStatusChanged` and
   `piwi/failuresChanged` are sent when the answer differs from the last one sent or answered to `piwi/status`,
-  `piwi/runStatus` or `piwi/failures`, so a client keeps the pushed answers and never reads one again on a push.
+  `piwi/runStatus` or `piwi/failures`, and `piwi/coverageChanged` when a document's marks differ from the last ones
+  sent or answered to `piwi/coverage` for it, so a client keeps the pushed answers and never reads one again on a push.
 - **An index the instance says did not change is not read again**: the locator and code indexes are asked with the
   `ETag` they came with (`If-None-Match`), and a 304 keeps the same object, so what is computed once per index stays.
   The contexts of one service share these answers (`ResponseCache`, created in `startServer`), the same request on its
   way included: a repository with eight Playwright configs reading one project holds and downloads its index once, not
-  eight times.
+  eight times. A file's coverage is asked the same way, kept by the context that reads the file rather than in the
+  shared answers, which hold the indexes, and its marks are computed once per coverage and text.
 - **A failure shows once, from the config its spec belongs to**: the configs of a repository that read one project each
   list all its failures, and each would find their files from the repository's root; a context places a failure only
   when its config folder holds the failure's spec, or when no config folder does (`placedElsewhere`). So a failure's

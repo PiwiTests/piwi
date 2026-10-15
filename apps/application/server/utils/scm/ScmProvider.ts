@@ -41,10 +41,7 @@ export interface ChangedFile {
   blob?: string;
 }
 
-/** A git object id: 40 hex characters (SHA-1) or 64 (SHA-256). */
-export function isGitObjectId(value: unknown): value is string {
-  return typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value);
-}
+export { isGitObjectId } from '#shared/utils/hash';
 
 export interface ScmCommit {
   sha: string;
@@ -100,6 +97,21 @@ export const MAX_RAW_DIFF_BYTES = 200_000;
 /** Cap on a single file's content fetched via fetchFileAtRef. */
 export const MAX_FILE_BYTES = 200_000;
 export const FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * A blob response's text, or null when it is longer than {@link MAX_FILE_BYTES}
+ * characters: a blob is served whole or not at all. A body whose declared size
+ * is past four bytes a character is not read.
+ */
+export async function readBlobText(res: Response): Promise<string | null> {
+  const declared = Number(res.headers.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > MAX_FILE_BYTES * 4) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
+  const text = await res.text();
+  return text.length > MAX_FILE_BYTES ? null : text;
+}
 
 export function truncatePatch(patch: string): string {
   if (patch.length <= MAX_PATCH_PER_FILE) return patch;
@@ -237,6 +249,17 @@ export abstract class ScmProvider {
    * immutable per SHA, so implementations may cache aggressively.
    */
   abstract fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null>;
+
+  /**
+   * The content of a git blob, read by its id, when it is at most
+   * {@link MAX_FILE_BYTES} characters. Null when the host cannot read a blob by
+   * id (this default), the blob is larger, or the fetch fails. A blob never
+   * changes, so a caller may keep the answer under its id.
+   */
+  async fetchBlob(_blob: string): Promise<string | null> {
+    return null;
+  }
+
   /**
    * Recursive list of repo-relative file paths at a ref. Used to normalize
    * reporter paths to repo-relative and to validate patch paths. Returns null

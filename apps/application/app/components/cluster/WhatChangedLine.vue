@@ -16,8 +16,9 @@
  *
  * With a resolved diff, the line adds what the suspect lines say: how many of
  * the changed lines the failing tests ran and the most suspect file, linked to
- * the card's list. When the failing tests recorded no coverage, a help hint
- * says that coverage gives the suspect lines; any other reason adds nothing.
+ * the card's list. When the project records coverage and the failing tests
+ * recorded none, a help hint says why that can be; a project that records no
+ * coverage hears nothing of it, and any other reason adds nothing.
  */
 import { suspectLinesSentence } from '~/utils/suspect-lines';
 
@@ -36,7 +37,11 @@ const {
 
 onMounted(() => void loadSuspectLines());
 const suspectSentence = computed(() => suspectLinesSentence(suspectLines.value, 'cluster'));
-const noCoverage = computed(() => suspectLines.value?.reason === 'no-coverage');
+const props = defineProps<{
+  /** Whether the project records coverage (its `coverage` capability is active). */
+  coverageActive?: boolean;
+}>();
+const noCoverage = computed(() => props.coverageActive === true && suspectLines.value?.reason === 'no-coverage');
 
 const emit = defineEmits<{
   /** "See the changes" — the page scrolls to the card below the block. */
