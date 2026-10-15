@@ -19,7 +19,12 @@ const router = useRouter();
 const projectId = route.params.id as string;
 
 // === MAIN PROJECT DATA ===
-const { data: project, refresh } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
+const {
+  data: project,
+  error: projectError,
+  refresh,
+} = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
+if (projectError.value) showPageLoadError(projectError.value, 'project');
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
 

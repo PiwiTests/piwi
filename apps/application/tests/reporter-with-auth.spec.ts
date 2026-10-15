@@ -803,6 +803,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
   // ---------------------------------------------------------------------------
 
   let membersProjectId: number;
+  let membersRunId: number;
   let ciUserId: number;
   let ciReporterId: number;
 
@@ -863,6 +864,28 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
     membersProjectId = data.projectId;
+    membersRunId = data.runId;
+  });
+
+  test('a member with no role on a project gets a 403 page for it and its runs', async ({ page }) => {
+    const login = await page.request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'ci-user', password: 'userpassword123' },
+    });
+    expect(login.ok()).toBeTruthy();
+
+    for (const { path, heading } of [
+      { path: `/projects/${membersProjectId}`, heading: 'No access to this project' },
+      { path: `/test-runs/${membersRunId}`, heading: 'No access to this test run' },
+    ]) {
+      const response = await page.goto(`${AUTH_SERVER_URL}${path}`);
+      expect(response?.status()).toBe(403);
+      await expect(
+        page.locator('[data-shot="error-page"]').getByRole('heading', { level: 1, name: heading }),
+      ).toBeVisible();
+    }
+    await expect(page.locator('[data-shot="error-page"]')).toContainText(
+      'An administrator, or a Project admin of that project',
+    );
   });
 
   test('GET /api/projects/:id/members is rejected without the Project admin role', async ({ request }) => {

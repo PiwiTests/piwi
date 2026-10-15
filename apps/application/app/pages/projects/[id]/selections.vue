@@ -26,7 +26,8 @@ const route = useRoute();
 const projectId = route.params.id as string;
 const toast = useToast();
 
-const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+const { data: project, error: projectError } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+if (projectError.value) showPageLoadError(projectError.value, 'project');
 const { data: list, refresh, status } = await useFetch<{ items: Selection[] }>(`/api/projects/${projectId}/selections`);
 
 useHead(

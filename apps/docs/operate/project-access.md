@@ -117,7 +117,8 @@ there, or none to remove it.
 A new Member, added in **Settings → Users** or created by an [OAuth](./authentication#oauth-google-github) sign-in,
 holds no role and sees an empty dashboard until you grant one, as does an account whose last role you remove. A
 project the user has no role on is left out of the project list, sidebar, home dashboard, recent runs and search, and
-its runs, test cases and clusters return **403**.
+its runs, test cases and clusters return **403**. A link to one of its pages opens a _No access_ page, answered with the
+same 403, that says an administrator or a Project admin of that project can grant a role.
 
 ## CI accounts
 

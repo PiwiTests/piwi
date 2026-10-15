@@ -1380,6 +1380,21 @@ const SCENES = [
     outputs: ['sidebar-latest-run-hover.png', 'sidebar-latest-run-run.png'],
   },
   {
+    name: 'page-not-found',
+    description: 'The error page a link to a run that does not exist opens, inside the dashboard, wide then narrow',
+    route: '/test-runs/2000000000',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="error-page"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('wide');
+      await page.setViewportSize({ width: 390, height: 800 });
+      await settle();
+      await shoot('narrow');
+    },
+    outputs: ['page-not-found-wide.png', 'page-not-found-narrow.png'],
+  },
+  {
     name: 'user-menu-piwi-tools',
     description:
       "The user menu's Piwi tools submenu: where to get Piwi Picker, the JetBrains plugin, the desktop app and the reporter, and the docs",

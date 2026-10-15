@@ -19,7 +19,8 @@ const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 const { can } = useAuth();
 
-const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
+const { data: testRun, error: testRunError, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
+if (testRunError.value) showPageLoadError(testRunError.value, 'test run');
 
 // Lightweight poll for latest run info — avoids reloading full page data on run events
 const projectId = testRun.value?.projectId;
