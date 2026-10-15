@@ -28,6 +28,8 @@ const {
   getRunCoverage,
   parseCoveragePayload,
   parseRunCoverage,
+  parseRunCoverageQuery,
+  parseSourceQuery,
   pruneStaleBranchCoverageRows,
   storeRunCoverage,
   upsertCoverageFragments,
@@ -384,6 +386,24 @@ describe('coverage reads', () => {
     // `pays` recorded no browser coverage on the branch, so its default-branch browser coverage stands.
     const browser = await getFileCoverage(db as never, 1, CART, 'feature/basket');
     expect(browser.tests.map((t) => t.title)).toEqual(['browses', 'pays']);
+  });
+});
+
+describe('coverage read queries', () => {
+  test('a source read takes a repository-relative path and a git object id', () => {
+    expect(parseSourceQuery(' src/A.cs ', BLOB_A)).toEqual({ path: 'src/A.cs', blob: BLOB_A });
+    expect(parseSourceQuery('../outside.cs', BLOB_A)).toHaveProperty('error');
+    expect(parseSourceQuery('src/A.cs', 'not-a-blob')).toEqual({ error: 'blob must be a git object id' });
+  });
+
+  test('a run coverage read clamps its limit and refuses one that is no integer', () => {
+    expect(parseRunCoverageQuery(undefined, undefined)).toEqual({ file: null, limit: undefined });
+    expect(parseRunCoverageQuery(' Basket.cs ', '50000')).toEqual({ file: 'Basket.cs', limit: 20_000 });
+    expect(parseRunCoverageQuery(undefined, ['-3', '4'])).toEqual({ file: null, limit: 0 });
+    expect(parseRunCoverageQuery(undefined, '1.5')).toEqual({
+      error: 'Invalid query parameter "limit": expected an integer',
+    });
+    expect(parseRunCoverageQuery('x'.repeat(501), undefined)).toEqual({ error: 'file is at most 500 characters' });
   });
 });
 

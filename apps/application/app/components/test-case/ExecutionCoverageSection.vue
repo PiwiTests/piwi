@@ -83,6 +83,8 @@ watch(
   (id) => {
     expanded.value = new Set();
     showAll.value = { server: false, browser: false };
+    // The section shows its loading state, not the previous execution's files, until this one's arrive.
+    capture.value = null;
     void load(id);
   },
 );

@@ -333,6 +333,34 @@ describe('coverageLoss', () => {
     expect(result.files).toEqual([]);
     expect(result.summary.filesCovered).toBe(1);
   });
+
+  test('a function other tests ran a line of, recorded by line, is not lost', () => {
+    const functionsOnly = {
+      path: BASKET,
+      runtime: 'server',
+      blob: A,
+      functions: [
+        [1, 10],
+        [20, 30],
+      ],
+    } as CoverageFile;
+    const result = coverageLoss(
+      [functionsOnly],
+      [{ ...server(BASKET, A, [[4, 6]]), steady: 1, flaky: 0 }],
+      counts([[BASKET, 1, 0]]),
+    );
+    expect(result.files).toMatchObject([{ path: BASKET, status: 'partial', functions: [[20, 30]] }]);
+    expect(result.summary.functions).toBe(1);
+  });
+
+  test('a file these tests recorded both by line and by file alone counts once', () => {
+    const result = coverageLoss(
+      [server(BASKET, A, [[1, 5]]), { path: BASKET, runtime: 'server' } as CoverageFile],
+      [{ ...server(BASKET, A, [[1, 9]]), steady: 1, flaky: 0 }],
+      counts([[BASKET, 1, 0]]),
+    );
+    expect(result.summary).toMatchObject({ files: 1, filesCovered: 1 });
+  });
 });
 
 describe('reachOfTargets', () => {

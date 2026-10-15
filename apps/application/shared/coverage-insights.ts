@@ -94,12 +94,6 @@ export function subtractFunctionRanges(a: LineRange[], b: LineRange[]): LineRang
   return a.filter(([s, e]) => !known.has(`${s}-${e}`));
 }
 
-/** The function ranges of `a` that `b` names too. */
-function intersectFunctionRanges(a: LineRange[], b: LineRange[]): LineRange[] {
-  const known = new Set(b.map(([s, e]) => `${s}-${e}`));
-  return a.filter(([s, e]) => known.has(`${s}-${e}`));
-}
-
 /** Ranges cut to {@link MAX_RANGES_PER_FILE}, with how many were left out. */
 function capRanges(ranges: LineRange[]): { ranges: LineRange[]; more: number } {
   return ranges.length > MAX_RANGES_PER_FILE
@@ -960,6 +954,11 @@ export function emptyLossSummary(): CoverageLossSummary {
   };
 }
 
+/** The functions none of whose lines `lines` names: a line that ran inside a function means it ran. */
+function functionsNotRunIn(functions: LineRange[], lines: LineRange[]): LineRange[] {
+  return functions.filter(([start, end]) => !lines.some(([from, to]) => from <= end && to >= start));
+}
+
 const LOSS_ORDER: Record<LossFile['status'], number> = { 'only-these': 0, 'only-flaky': 1, partial: 2, uncertain: 3 };
 
 /**
@@ -983,6 +982,11 @@ export function coverageLoss(
     if (file.lines) version.lines.push(file.lines);
     if (file.functions) version.functions.push(file.functions);
     versions.set(key, version);
+  }
+  // A file these tests also recorded with ranges is that version, not a second file without them.
+  const ranged = new Set([...versions.values()].filter((v) => v.file.blob).map((v) => fileKey(v.file)));
+  for (const [key, version] of versions) {
+    if (!version.file.blob && ranged.has(fileKey(version.file))) versions.delete(key);
   }
   const othersByFile = new Map<string, OtherFragment[]>();
   for (const other of others) {
@@ -1031,9 +1035,12 @@ export function coverageLoss(
         const notSteady = subtractLineRanges(subtractLineRanges(lines, steady.lines), steady.functionLines);
         const lost = subtractLineRanges(subtractLineRanges(notSteady, flaky.lines), flaky.functionLines);
         const onlyFlaky = subtractLineRanges(notSteady, lost);
-        const functionsNotSteady = subtractFunctionRanges(functions, steady.functions);
-        const functionsLost = subtractFunctionRanges(functionsNotSteady, flaky.functions);
-        const functionsOnlyFlaky = intersectFunctionRanges(functionsNotSteady, flaky.functions);
+        const functionsNotSteady = functionsNotRunIn(subtractFunctionRanges(functions, steady.functions), steady.lines);
+        const functionsLost = functionsNotRunIn(
+          subtractFunctionRanges(functionsNotSteady, flaky.functions),
+          flaky.lines,
+        );
+        const functionsOnlyFlaky = subtractFunctionRanges(functionsNotSteady, functionsLost);
         if (lost.length + onlyFlaky.length + functionsLost.length + functionsOnlyFlaky.length > 0) {
           entry = { ...base, status: steadyAny ? 'partial' : 'only-flaky', otherTests: counts };
           if (lost.length > 0) entry.lines = lost;

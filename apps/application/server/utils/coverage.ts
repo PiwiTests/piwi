@@ -40,7 +40,7 @@ import { sameFilePath } from '@piwitests/core/locator-break';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import { codeReach, coverageFragments, runCoverage, testCoverage, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { sha256Hex } from '#shared/utils/hash';
+import { isGitObjectId, sha256Hex } from '#shared/utils/hash';
 import { resolveCasePayloadContents } from './case-payloads';
 import {
   asRuntime,
@@ -432,6 +432,29 @@ export async function getExecutableLines(
   const wanted = new Set(versions.map((v) => `${v.runtime}\x00${v.path}\x00${v.blob}`));
   const paths = [...new Set(versions.map((v) => v.path))];
   const blobs = [...new Set(versions.map((v) => v.blob))];
+  const inView = and(
+    eq(runCoverage.projectId, projectId),
+    inArray(runCoverage.path, paths),
+    inArray(runCoverage.blob, blobs),
+    sql`${runCoverage.executable} IS NOT NULL`,
+  );
+  // The newest run per version first, so only its row's lines are read and decoded.
+  const latest = await db
+    .select({
+      runtime: runCoverage.runtime,
+      path: runCoverage.path,
+      blob: runCoverage.blob,
+      runId: sql<number>`max(${runCoverage.runId})`.mapWith(Number),
+    })
+    .from(runCoverage)
+    .where(inView)
+    .groupBy(runCoverage.runtime, runCoverage.path, runCoverage.blob);
+  const newestRun = new Map<string, number>();
+  for (const row of latest) {
+    const key = `${row.runtime}\x00${row.path}\x00${row.blob}`;
+    if (wanted.has(key)) newestRun.set(key, row.runId);
+  }
+  if (newestRun.size === 0) return [];
   const rows = await db
     .select({
       runId: runCoverage.runId,
@@ -441,22 +464,13 @@ export async function getExecutableLines(
       executable: runCoverage.executable,
     })
     .from(runCoverage)
-    .where(
-      and(
-        eq(runCoverage.projectId, projectId),
-        inArray(runCoverage.path, paths),
-        inArray(runCoverage.blob, blobs),
-        sql`${runCoverage.executable} IS NOT NULL`,
-      ),
-    );
+    .where(and(inView, inArray(runCoverage.runId, [...new Set(newestRun.values())])));
   const newest = new Map<string, { runId: number; entry: FileExecutableLines }>();
   for (const row of rows) {
     const key = `${row.runtime}\x00${row.path}\x00${row.blob}`;
-    if (!wanted.has(key) || !row.blob) continue;
+    if (!row.blob || newestRun.get(key) !== row.runId) continue;
     const lines = decodeLineRanges(row.executable);
     if (lines.length === 0) continue;
-    const known = newest.get(key);
-    if (known && known.runId > row.runId) continue;
     newest.set(key, {
       runId: row.runId,
       entry: { path: row.path, runtime: asRuntime(row.runtime), blob: row.blob, lines },
@@ -853,4 +867,40 @@ export async function pruneStaleBranchCoverageRows(db: DrizzleDB, now: Date = ne
     .where(and(ne(testCoverage.branch, ''), lt(testCoverage.lastSeenAt, cutoff)))
     .returning({ id: testCoverage.id });
   return reach.length + coverage.length;
+}
+
+/**
+ * The `path` and `blob` of a read of a file's source at a blob
+ * (`GET /api/projects/:id/source`), checked; an error message when one is not
+ * valid.
+ */
+export function parseSourceQuery(path: unknown, blob: unknown): { path: string; blob: string } | { error: string } {
+  const file = normalizeCoveragePath(typeof path === 'string' ? path.trim() : '');
+  if (!file || file.split('/').includes('..')) {
+    return { error: 'path must be a repository-relative path (at most 500 characters)' };
+  }
+  const id = typeof blob === 'string' ? blob.trim() : '';
+  if (!isGitObjectId(id)) return { error: 'blob must be a git object id' };
+  return { path: file, blob: id };
+}
+
+/**
+ * The `file` and `limit` of a read of a run's coverage
+ * (`GET /api/test-runs/:id/coverage`), checked: a present `limit` that is no
+ * integer is an error, any other clamped to `0` to {@link MAX_RUN_COVERAGE_FILES}.
+ */
+export function parseRunCoverageQuery(
+  file: unknown,
+  limit: unknown,
+): { file: string | null; limit: number | undefined } | { error: string } {
+  const first = (value: unknown) => (Array.isArray(value) ? value[0] : value);
+  file = first(file);
+  limit = first(limit);
+  const path = typeof file === 'string' && file.trim() ? file.trim() : null;
+  if (path && path.length > 500) return { error: 'file is at most 500 characters' };
+  const raw = typeof limit === 'string' ? limit.trim() : '';
+  if (!raw) return { file: path, limit: undefined };
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return { error: 'Invalid query parameter "limit": expected an integer' };
+  return { file: path, limit: Math.min(Math.max(n, 0), MAX_RUN_COVERAGE_FILES) };
 }

@@ -75,9 +75,10 @@ import {
   getFileCoverage,
   getRunCoverage,
   parseRunCoverage,
+  parseRunCoverageQuery,
+  parseSourceQuery,
   storeRunCoverage,
 } from '~~/server/utils/coverage';
-import { normalizeCoveragePath } from '@piwitests/core/coverage';
 import { demoClusterSuspectLines, demoExecutionSuspectLines } from './suspect-lines';
 import {
   CoverageInsightInputError,
@@ -1135,17 +1136,9 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-runs\/(\d+)\/coverage$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
-      const file = q?.get('file')?.trim() || null;
-      if (file && file.length > 500) throw demoHttpError(400, 'file is at most 500 characters');
-      const rawLimit = q?.get('limit')?.trim();
-      const limit = rawLimit ? Number(rawLimit) : undefined;
-      if (limit !== undefined && !Number.isInteger(limit)) {
-        throw demoHttpError(400, 'Invalid query parameter "limit": expected an integer');
-      }
-      const coverage = await getRunCoverage(await getDemoDb(), +m[1]!, {
-        file,
-        limit: limit === undefined ? undefined : Math.min(Math.max(limit, 0), 20_000),
-      });
+      const parsed = parseRunCoverageQuery(q?.get('file'), q?.get('limit'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const coverage = await getRunCoverage(await getDemoDb(), +m[1]!, parsed);
       if (!coverage) throw demoHttpError(404, 'Test run not found');
       return coverage;
     },
@@ -2268,13 +2261,9 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/source$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const path = normalizeCoveragePath(q?.get('path')?.trim() ?? '');
-      if (!path || path.split('/').includes('..')) {
-        throw demoHttpError(400, 'path must be a repository-relative path (at most 500 characters)');
-      }
-      const blob = q?.get('blob')?.trim() ?? '';
-      if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(blob)) throw demoHttpError(400, 'blob must be a git object id');
-      const source = await getDemoSourceAtBlob(+m[1]!, path, blob);
+      const parsed = parseSourceQuery(q?.get('path'), q?.get('blob'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const source = await getDemoSourceAtBlob(+m[1]!, parsed.path, parsed.blob);
       if (!source) throw demoHttpError(404, 'Source not available');
       return source;
     },

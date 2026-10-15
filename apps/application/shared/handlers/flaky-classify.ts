@@ -28,10 +28,17 @@ const READ_CLASSIFY_LIMIT = 10;
 /** Recent failed attempts with coverage needed before the test's path variation is read for an order dependency. */
 const ORDER_MIN_FAILURES_WITH_COVERAGE = 2;
 
+/**
+ * Classify a test's root cause and store it. `order: false` leaves out the
+ * order dependency, the one signal that reads the test's coverage across its
+ * executions; a run's finalize, which classifies every test that passed on
+ * retry, reads it.
+ */
 export async function classifyAndPersistFlakyRootCause(
   db: DrizzleDB,
   projectId: number,
   testCaseId: number,
+  opts: { order?: boolean } = {},
 ): Promise<{ testCaseId: number; rootCause: FlakyRootCause }> {
   const tcRows = await db
     .select({ id: testCases.id })
@@ -39,7 +46,7 @@ export async function classifyAndPersistFlakyRootCause(
     .where(and(eq(testCases.id, testCaseId), eq(testCases.projectId, projectId)));
   if (tcRows.length === 0) throw new Error('Test case not found');
 
-  const rootCause = await classifyFromRecentAttempts(db, testCaseId);
+  const rootCause = await classifyFromRecentAttempts(db, testCaseId, opts.order ?? true);
 
   await db
     .update(testCases)
@@ -49,7 +56,7 @@ export async function classifyAndPersistFlakyRootCause(
   return { testCaseId, rootCause };
 }
 
-async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Promise<FlakyRootCause> {
+async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, order: boolean): Promise<FlakyRootCause> {
   // The test's recent failed attempts and its recent passes, read apart so a
   // rare flake keeps its failures however many passes came since. Both come
   // from green runs as well as red ones: a retry-pass leaves its failed attempt
@@ -152,7 +159,7 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
   // Only a test whose recent failures recorded coverage has its path variation read.
   const failuresWithCoverage = recentFailures.filter((r) => r.coveragePayloadId != null).length;
   const orderDependent =
-    failuresWithCoverage >= ORDER_MIN_FAILURES_WITH_COVERAGE && (await isOrderDependent(db, testCaseId));
+    order && failuresWithCoverage >= ORDER_MIN_FAILURES_WITH_COVERAGE && (await isOrderDependent(db, testCaseId));
 
   return classifyFlakyRootCause({
     errorMessages,
@@ -167,11 +174,11 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
 }
 
 /** Classify the cases one after another; a case that fails is logged and skipped. */
-async function classifyEach(db: DrizzleDB, projectId: number, testCaseIds: number[]) {
+async function classifyEach(db: DrizzleDB, projectId: number, testCaseIds: number[], opts: { order?: boolean } = {}) {
   const classified = new Map<number, FlakyRootCause>();
   for (const testCaseId of testCaseIds) {
     try {
-      classified.set(testCaseId, (await classifyAndPersistFlakyRootCause(db, projectId, testCaseId)).rootCause);
+      classified.set(testCaseId, (await classifyAndPersistFlakyRootCause(db, projectId, testCaseId, opts)).rootCause);
     } catch (e) {
       console.error('[flaky-classify] classifyAndPersistFlakyRootCause failed', testCaseId, e);
     }
@@ -199,7 +206,8 @@ export async function classifyRunFlakyTests(db: DrizzleDB, projectId: number, ru
 /**
  * Flaky-list items with the root cause of the first few that have none
  * classified in. Each classification is stored, so a test is classified once
- * and the rest follow on the next reads.
+ * and the rest follow on the next reads. The list answers without the order
+ * dependency, which the next finalize of a run the test flaked in adds.
  */
 export async function withFlakyRootCauses<T extends { testCaseId: number; rootCause: string | null }>(
   db: DrizzleDB,
@@ -211,7 +219,7 @@ export async function withFlakyRootCauses<T extends { testCaseId: number; rootCa
     .slice(0, READ_CLASSIFY_LIMIT)
     .map((i) => i.testCaseId);
   if (unclassified.length === 0) return items;
-  const classified = await classifyEach(db, projectId, unclassified);
+  const classified = await classifyEach(db, projectId, unclassified, { order: false });
   return items.map((i) => {
     const rootCause = classified.get(i.testCaseId);
     return rootCause ? { ...i, rootCause } : i;

@@ -64,8 +64,9 @@ export function useCoverageActive(projectId: string | number | null | undefined)
 /**
  * Whether a project's coverage capability is active, for a page that offers a
  * quarantine only after an interaction (a selection): false until `resolve`
- * read the project's capability states, in the browser, once. The page's own
- * render reads nothing.
+ * read the project's capability states, in the browser, once; a read that
+ * failed is tried again on the next `resolve`. The page's own render reads
+ * nothing.
  */
 export function useLazyCoverageActive(projectId: MaybeRefOrGetter<string | number | null | undefined>) {
   const active = shallowRef(false);
@@ -78,7 +79,9 @@ export function useLazyCoverageActive(projectId: MaybeRefOrGetter<string | numbe
       .then((states) => {
         active.value = states.items.some((item) => item.id === 'coverage' && item.state === 'active');
       })
-      .catch(() => {});
+      .catch(() => {
+        reading = null;
+      });
     return reading;
   }
 

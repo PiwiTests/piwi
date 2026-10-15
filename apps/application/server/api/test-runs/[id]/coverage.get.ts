@@ -1,5 +1,4 @@
-import { getRunCoverage } from '../../../utils/coverage';
-import { optionalIntQuery } from '../../../utils/query-params';
+import { getRunCoverage, parseRunCoverageQuery } from '../../../utils/coverage';
 import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -32,11 +31,10 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
-  const raw = getQuery(event).file;
-  const file = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
-  if (file && file.length > 500) throw apiError({ statusCode: 400, message: 'file is at most 500 characters' });
-  const limit = optionalIntQuery(event, 'limit', { min: 0, max: 20_000 });
-  const coverage = await getRunCoverage(db, id, { file, limit });
+  const query = getQuery(event);
+  const parsed = parseRunCoverageQuery(query.file, query.limit);
+  if ('error' in parsed) throw apiError({ statusCode: 400, message: parsed.error });
+  const coverage = await getRunCoverage(db, id, parsed);
   if (!coverage) throw apiError({ statusCode: 404, message: 'Test run not found' });
   return coverage;
 });

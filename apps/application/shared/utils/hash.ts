@@ -28,6 +28,11 @@ export async function sha256Hex(input: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** A git object id: 40 hex characters (SHA-1) or 64 (SHA-256). */
+export function isGitObjectId(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value);
+}
+
 /**
  * The git blob id of a text file's content, as `git hash-object` gives it for
  * the file stored as its UTF-8 bytes: the SHA-1 of `blob <byte length>\0`

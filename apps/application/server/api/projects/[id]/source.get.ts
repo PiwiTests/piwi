@@ -1,8 +1,7 @@
-import { normalizeCoveragePath } from '@piwitests/core/coverage';
 import { getDatabase } from '../../../database';
+import { parseSourceQuery } from '../../../utils/coverage';
 import { optionalIntQuery } from '../../../utils/query-params';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
-import { isGitObjectId } from '../../../utils/scm/ScmProvider';
 import { getSourceAtBlob } from '../../../utils/source-at-blob';
 
 defineRouteMeta({
@@ -44,14 +43,10 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
   await requireProjectAccess(event, id);
   const query = getQuery(event);
-  const path = normalizeCoveragePath(typeof query.path === 'string' ? query.path.trim() : '');
-  if (!path || path.split('/').includes('..')) {
-    throw apiError({ statusCode: 400, message: 'path must be a repository-relative path (at most 500 characters)' });
-  }
-  const blob = typeof query.blob === 'string' ? query.blob.trim() : '';
-  if (!isGitObjectId(blob)) throw apiError({ statusCode: 400, message: 'blob must be a git object id' });
+  const parsed = parseSourceQuery(query.path, query.blob);
+  if ('error' in parsed) throw apiError({ statusCode: 400, message: parsed.error });
   const runId = optionalIntQuery(event, 'run', { min: 1 }) ?? null;
-  const source = await getSourceAtBlob(await getDatabase(), id, { path, blob, runId });
+  const source = await getSourceAtBlob(await getDatabase(), id, { ...parsed, runId });
   if (!source) throw apiError({ statusCode: 404, message: 'Source not available' });
   setResponseHeader(event, 'Cache-Control', 'private, max-age=3600');
   return source;
