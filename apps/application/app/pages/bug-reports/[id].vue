@@ -21,6 +21,7 @@ function onIssueCreated() {
 const reportId = Number(route.params.id);
 
 const { data: report, error, refresh } = await useFetch<BugReportDetail>(`/api/bug-reports/${reportId}`);
+if (error.value) showPageLoadError(error.value, 'bug report');
 
 useHead(computed(() => ({ title: `${report.value?.title ?? 'Bug report'} — Piwi Dashboard` })));
 

@@ -33,9 +33,14 @@ import { coverageLossPreview } from '~/utils/coverage-insights';
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const { data: testCase, refresh } = await useFetch<
-  ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>
->(`/api/test-run-cases/${testCaseId}`);
+const {
+  data: testCase,
+  error: testCaseError,
+  refresh,
+} = await useFetch<ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>>(
+  `/api/test-run-cases/${testCaseId}`,
+);
+if (testCaseError.value) showPageLoadError(testCaseError.value, 'execution');
 
 // Server-rendered fetches carry the viewer's session.
 const requestFetch = useRequestFetch();

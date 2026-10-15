@@ -50,9 +50,12 @@ const {
   suspectLines: clusterSuspectLines,
 } = provideClusterDiagnosis(clusterId);
 
-const { data: cluster, refresh: refreshCluster } = await useFetch<FailureClusterDetail>(
-  `/api/failure-clusters/${clusterId}`,
-);
+const {
+  data: cluster,
+  error: clusterError,
+  refresh: refreshCluster,
+} = await useFetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`);
+if (clusterError.value) showPageLoadError(clusterError.value, 'failure cluster');
 const clusterProjectId = computed(() => cluster.value?.project?.id ?? null);
 const canTriage = computed(() => can('triage:write', clusterProjectId.value));
 const canQuarantine = computed(() => can('quarantine:write', clusterProjectId.value));

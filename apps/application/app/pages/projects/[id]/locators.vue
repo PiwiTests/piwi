@@ -20,7 +20,8 @@ const route = useRoute();
 const router = useRouter();
 const projectId = route.params.id as string;
 
-const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+const { data: project, error: projectError } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+if (projectError.value) showPageLoadError(projectError.value, 'project');
 
 /** The select's value for the default branch: a colon is never part of a git branch name. */
 const DEFAULT_BRANCH = ':default';

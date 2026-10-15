@@ -11,7 +11,8 @@ const route = useRoute();
 const router = useRouter();
 const projectId = route.params.id as string;
 
-const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+const { data: project, error: projectError } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+if (projectError.value) showPageLoadError(projectError.value, 'project');
 
 const status = ref(typeof route.query.status === 'string' && route.query.status ? route.query.status : 'all');
 watch(

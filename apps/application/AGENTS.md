@@ -493,7 +493,9 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
   `$fetch<ApiResponse<typeof import('~~/server/api/…').default>>(…)` with `ApiResponse` from `types/api.ts`, or a
   type of that file or of the shared handler. A call without one is `unknown`, never inferred.
 - **Page** — a Vue file in `app/pages/` built on `<UDashboardPanel>`; register it in the nav links array in
-  `app/layouts/default.vue` if it belongs in the sidebar.
+  `app/layouts/default.vue` if it belongs in the sidebar. A page showing one entity (`[id].vue`) calls
+  `showPageLoadError(error.value, '<entity>')` (`app/utils/page-error.ts`) right after fetching it, so a missing or
+  forbidden id renders the error page and answers 404 or 403, never an empty page with a 200.
 - **Component** — a Vue file in the matching `app/components/` subfolder. Auto-import has no folder prefix, so the name
   must be unique repo-wide; follow the reuse and responsive rules below.
 - **Unit test** — `tests/unit/*.test.ts` (Vitest). **E2E test** — `tests/*.spec.ts` (Playwright), with any project name
