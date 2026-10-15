@@ -46,7 +46,7 @@ jobs:
           java-version: 21
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Test and build
         working-directory: apps/jetbrains
@@ -86,7 +86,7 @@ jobs:
           java-version: 21
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Verify on ${{ matrix.ide }}
         working-directory: apps/jetbrains
