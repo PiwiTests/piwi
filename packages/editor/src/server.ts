@@ -464,11 +464,14 @@ function hoverText(hover: Hover | null): string {
 }
 
 /**
- * The environment a test run adds for the coverage its lens asks for: the backend's coverage by line for a server
- * file's lens (`RunTestsArgs.coverage`), which the reporter reads when the Playwright config leaves it unset.
+ * The environment a test run adds for the coverage its lens asks for (`RunTestsArgs.coverage`): the backend's coverage
+ * by line for a server file's lens, the browser's by function for a browser file's, which the reporter reads when the
+ * Playwright config leaves it unset.
  */
 function coverageRunEnv(coverage: RunTestsArgs['coverage']): Record<string, string> {
-  return coverage === 'server' ? { PIWI_COVERAGE_SERVER: 'lines' } : {};
+  if (coverage === 'server') return { PIWI_COVERAGE_SERVER: 'lines' };
+  if (coverage === 'browser') return { PIWI_COVERAGE_BROWSER: 'functions' };
+  return {};
 }
 
 /**
@@ -2375,8 +2378,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const reached = new Map((repoRelative ? testsReaching(context.codeIndex, repoRelative) : []).map((t) => [t.id, t]));
     for (const t of covered?.coverage.tests ?? []) if (!reached.has(t.id)) reached.set(t.id, t);
     const tests = [...reached.values()];
-    // A run from a server file's coverage lens records the backend's coverage, so it refreshes the marks.
-    const recordCoverage = covered?.coverage.fragments.some((f) => f.runtime === 'server') ? 'server' : undefined;
+    // A run from a file's coverage lens records the coverage of its runtime, so it refreshes the marks.
+    const fragments = covered?.coverage.fragments ?? [];
+    const recordCoverage = fragments.some((f) => f.runtime === 'server')
+      ? 'server'
+      : fragments.some((f) => f.runtime === 'browser')
+        ? 'browser'
+        : undefined;
     const page = repoRelative
       ? (pageSummary(context.index, repoRelative) ?? pageSummary(context.index, relative ?? ''))
       : null;

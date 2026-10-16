@@ -81,7 +81,8 @@ file's lens says `coverage recorded on another version`. Fetching it brings the 
 A run started from a lens of a server file records the backend's coverage by line: the editor adds
 `PIWI_COVERAGE_SERVER=lines` to the run's environment, which the reporter reads when your Playwright config leaves
 `coverage.server` unset. The backend the run calls must be the coverage build, as for any run that records server
-coverage. When the run ends, the editor reads the file's coverage again, and the marks show what your run recorded:
+coverage. From a browser file's lens, the run records the browser's coverage by function instead
+(`PIWI_COVERAGE_BROWSER=functions`). When the run ends, the editor reads the file's coverage again, and the marks show what your run recorded:
 exactly, as long as the file is as you saved it for the run, since the reporter takes blob ids from the files on disk.
 
 A run started anywhere else (a test's lens, the failures view, a selection) changes nothing of your config's coverage

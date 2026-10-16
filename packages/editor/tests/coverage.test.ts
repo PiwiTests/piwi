@@ -535,6 +535,13 @@ describe('coverage in the editor', () => {
     expect(recording.env).toMatchObject({ PIWI_ORIGIN: 'editor', PIWI_COVERAGE_SERVER: 'lines' });
     const plain = (await client.sendRequest('piwi/runArgs', { uri: uri(BASKET_FILE), testIds: [11] })) as RunCommand;
     expect(plain.env).not.toHaveProperty('PIWI_COVERAGE_SERVER');
+    const browser = (await client.sendRequest('piwi/runArgs', {
+      uri: uri(BASKET_FILE),
+      testIds: [11],
+      coverage: 'browser',
+    })) as RunCommand;
+    expect(browser.env).toMatchObject({ PIWI_COVERAGE_BROWSER: 'functions' });
+    expect(browser.env).not.toHaveProperty('PIWI_COVERAGE_SERVER');
 
     const reached = (await client.sendRequest('piwi/testsForFile', { uri: uri(BASKET_FILE) })) as TestsForFile;
     expect(reached).toMatchObject({ basis: 'reach', tests: [{ id: 11 }, { id: 12 }] });
