@@ -84,6 +84,7 @@ import {
 } from './analysis.js';
 import {
   BlobTexts,
+  COVERAGE_MARKS_EXPLAINED,
   chooseVersion,
   coverageIndexFor,
   coverageMarks,
@@ -1208,7 +1209,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
   };
 
-  /** What the coverage says of a line (0-based): the tests that ran it, that none does, or that it changed since. */
+  /**
+   * What the coverage says of a line (0-based): the tests that ran it, that none does, or that it changed since, then
+   * what the marks mean.
+   */
   const coverageHover = async (uri: string, line: number): Promise<string | null> => {
     const target = coverageTarget(uri);
     const found = target
@@ -1221,7 +1225,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!target || !found || !marks || (marks.state !== 'exact' && marks.state !== 'mapped')) return null;
     const at = line + 1;
     if (marks.changed.has(at)) {
-      return '**Piwi coverage** · changed since the coverage run: no test has run this line as it stands yet';
+      return `**Piwi coverage** · changed since the coverage run: no test has run this line as it stands yet\n\n${COVERAGE_MARKS_EXPLAINED}`;
     }
     const tests = (marks.executed.get(at) ?? []).flatMap((i) => found.coverage.tests[i] ?? []);
     if (tests.length) {
@@ -1233,9 +1237,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         );
       if (tests.length > 10) list.push(`- and ${tests.length - 10} more`);
       const where = marks.state === 'mapped' ? ' · recorded on another version of this file' : '';
-      return `**Piwi coverage** · run by ${plural(tests.length, 'test')}${where}\n\n${list.join('\n')}`;
+      return `**Piwi coverage** · run by ${plural(tests.length, 'test')}${where}\n\n${list.join('\n')}\n\n${COVERAGE_MARKS_EXPLAINED}`;
     }
-    return marks.notRun.has(at) ? '**Piwi coverage** · no test runs this line' : null;
+    return marks.notRun.has(at) ? `**Piwi coverage** · no test runs this line\n\n${COVERAGE_MARKS_EXPLAINED}` : null;
   };
 
   const runStatus = (): RunStatusResult => ({

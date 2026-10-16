@@ -27,6 +27,13 @@ export function gitBlobId(content: string | Uint8Array): string {
 const BOM = '\uFEFF';
 
 /**
+ * What the coverage marks mean, as the hover on a marked line ends: the bar at the left of the line in the colors the
+ * dashboard marks it in by default.
+ */
+export const COVERAGE_MARKS_EXPLAINED =
+  '_The bar at the left of a line: teal, a test ran it; slate, it is executable and no test runs it; dashed amber, it changed since the coverage run._';
+
+/**
  * The blob ids a text can have in git: its bytes as they are, and with CRLF line endings stored as LF (`core.autocrlf`,
  * `eol=lf`, which the reporter's `git hash-object` applies); each with and without the UTF-8 byte order mark an editor
  * keeps out of a document's text.

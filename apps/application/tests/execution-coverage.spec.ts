@@ -211,6 +211,16 @@ test.describe('Execution coverage', () => {
     await expect(source).toContainText('Functions that ran: ListOrders');
     await expect(source).toContainText('Ran in this test');
     await expect(source).toContainText('Did not run in this test');
+    // The bars are in the colors the editors mark the lines in, and the help hint says what they mean.
+    const bar = (selector: string) =>
+      source
+        .locator(selector)
+        .first()
+        .evaluate((row) => getComputedStyle(row).boxShadow);
+    expect(await bar('[data-executed]')).toContain('rgb(13, 148, 136)');
+    expect(await bar('[data-not-executed]')).toContain('rgb(148, 163, 184)');
+    await source.getByRole('button', { name: 'Help: Coverage marks' }).click();
+    await expect(page.getByRole('dialog', { name: 'Help: Coverage marks' })).toContainText('a test ran the line');
   });
 
   test('without the source, the line numbers say what ran and what did not', async ({ page }) => {

@@ -50,6 +50,16 @@ export const MAX_COVERAGE_FILES = 2000;
 /** Line ranges plus function ranges per capture at most. */
 export const MAX_COVERAGE_RANGES = 10_000;
 
+/**
+ * The colors of the coverage marks, the same in the dashboard and in the editors: a line the tests ran, and an
+ * executable line no test runs. Neither is a test outcome color. The dashboard's `--color-coverage-*` tokens, the VS
+ * Code extension's `piwi.coverage*Border` colors and the JetBrains color schemes' `PIWI_COVERAGE_*` keys restate them.
+ */
+export const COVERAGE_MARK_COLORS = {
+  light: { run: '#0d9488', notRun: '#94a3b8' },
+  dark: { run: '#14b8a6', notRun: '#64748b' },
+} as const;
+
 /** Highest line number accepted. */
 const MAX_LINE = 1_000_000;
 

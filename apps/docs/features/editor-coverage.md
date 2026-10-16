@@ -36,16 +36,19 @@ locally.
 
 | Mark | Meaning |
 |---|---|
-| Solid, green | A test ran the line. The hover names the tests. |
-| Solid, red | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
+| Solid, teal | A test ran the line. The hover names the tests. |
+| Solid, slate | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
 | Dashed, amber | The line changed since the coverage run: what runs it is not known until a run records it again. |
 
-In VS Code the marks are a bar at the left edge of each line, drawn in the theme's own testing colors
-(`testing.coveredGutterBackground`, `testing.uncoveredGutterBackground`) and in `piwi.coverageChangedBorder`, which a
-theme or `workbench.colorCustomizations` can restyle; the lines no test runs and the changed lines also show in the
-overview ruler. In a JetBrains IDE they are at the left of the gutter and in the scroll bar, with their meaning as the
-scroll bar mark's tooltip; restyle them under **Settings → Editor → Color Scheme → Piwi → Coverage**, where the error
-stripe color is the mark's, and a background, none by default, tints the lines too.
+Teal and slate are the colors the dashboard marks a file's source in. The hover on a marked line ends by saying what
+the marks mean.
+
+In VS Code the marks are a bar at the left edge of each line, in `piwi.coverageRunBorder`, `piwi.coverageNotRunBorder`
+and `piwi.coverageChangedBorder`, which a theme or `workbench.colorCustomizations` can restyle; the lines no test runs
+and the changed lines also show in the overview ruler. In a JetBrains IDE they are at the left of the gutter and in the
+scroll bar, and hovering either shows what the lines are and what the marks mean. Restyle them under **Settings →
+Editor → Color Scheme → Piwi → Coverage**, where the error stripe color is the mark's, and a background, none by
+default, tints the lines too.
 
 ## Changed since the coverage run
 

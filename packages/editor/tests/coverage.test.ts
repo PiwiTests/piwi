@@ -21,6 +21,7 @@ import {
   chooseVersion,
   coverageIndexFor,
   coverageMarks,
+  COVERAGE_MARKS_EXPLAINED,
   coverageVersions,
   gitBlobId,
   mayHaveCoverage,
@@ -604,7 +605,10 @@ describe('coverage in the editor', () => {
     expect(ran).toContain('**Piwi coverage** · run by 2 tests');
     expect(ran).toContain(`- ✓ [adds an item](${url}/test-cases/11) · \`tests/basket.spec.ts\``);
     expect(ran).toContain(`- ✗ [removes an item](${url}/test-cases/12)`);
-    expect(await hover(BASKET_FILE, 10)).toBe('**Piwi coverage** · no test runs this line');
+    expect(ran).toContain(COVERAGE_MARKS_EXPLAINED);
+    expect(await hover(BASKET_FILE, 10)).toBe(
+      `**Piwi coverage** · no test runs this line\n\n${COVERAGE_MARKS_EXPLAINED}`,
+    );
     expect(await hover(BASKET_FILE, 0)).toBe('');
   });
 

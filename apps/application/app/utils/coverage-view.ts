@@ -19,8 +19,11 @@ import {
 import { sameFilePath } from '@piwitests/core/locator-break';
 import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 
-/** A row of the left bar the source view draws on an executable line that did not run: lighter than a line that ran. */
-export const NOT_RUN_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--ui-border-accented)]';
+/** A row of the left bar the source view draws on a line that ran, in the coverage color the editors draw it in. */
+export const RAN_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--color-coverage-run)]';
+
+/** A row of the left bar the source view draws on an executable line that did not run. */
+export const NOT_RUN_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--color-coverage-not-run)]';
 
 /** Rows a group shows before "Show all". */
 export const COVERAGE_ROWS_SHOWN = 20;

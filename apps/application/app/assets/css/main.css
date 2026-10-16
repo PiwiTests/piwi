@@ -33,6 +33,15 @@
   --color-status-fixme: var(--color-zinc-600);
   --color-status-didnotrun: var(--color-amber-500);
   --color-status-running: var(--color-blue-500);
+
+  /*
+   * Coverage marks: the bar of a line the tests ran and of an executable line
+   * no test runs, in the colors the editors draw them in
+   * (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`; redefined for dark
+   * mode below). Not test outcomes, so never a status color.
+   */
+  --color-coverage-run: #0d9488;
+  --color-coverage-not-run: #94a3b8;
 }
 
 /*
@@ -61,6 +70,8 @@
   /* On the dark zinc-700 bar track the fixme grey is the lighter of the two
      skipped greys, so it stays the more visible one. */
   --color-status-fixme: var(--color-zinc-300);
+  --color-coverage-run: #14b8a6;
+  --color-coverage-not-run: #64748b;
 }
 
 /* Deliberately unlayered so it beats Nuxt UI's `@layer base` body rule. */
