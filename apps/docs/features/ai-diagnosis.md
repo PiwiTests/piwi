@@ -94,7 +94,7 @@ run where this test passed; the context preview names which one it used. With th
 helpers, fixtures), capped by `PIWI_AI_MAX_SOURCE_FILES` (default 4) and `PIWI_AI_MAX_SOURCE_FILE_CHARS`. The
 repository connection is set up on [Source control](/guide/source-control).
 
-When the failing tests recorded [coverage](./code-reach#server-code), the context lists their
+When the failing tests recorded [coverage](./server-coverage), the context lists their
 [suspect lines](/guide/concepts#suspect-lines): the changed lines they executed, ranked by how many passing tests of the same run executed them too. Their files' patches
 come first within the patch budget.
 

@@ -1,5 +1,6 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.codeInsight.hint.HintManager
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -10,6 +11,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.impl.DocumentMarkupModel
+import com.intellij.openapi.editor.markup.ActiveGutterRenderer
 import com.intellij.openapi.editor.markup.HighlighterLayer
 import com.intellij.openapi.editor.markup.HighlighterTargetArea
 import com.intellij.openapi.editor.markup.LineMarkerRendererEx
@@ -24,13 +26,15 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.ui.JBUI
 import java.awt.Graphics
 import java.awt.Rectangle
+import java.awt.event.MouseEvent
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The coverage the project's tests recorded of the open files (`piwi/coverage`), as marks at the left of the gutter
  * and in the scroll bar: the lines tests ran, the executable lines none runs, and, dashed, the lines changed since the
  * coverage run. They are range highlighters on each file's document, which follow its edits until the service pushes
- * the marks it placed again (`piwi/coverageChanged`); the service's hover names the tests behind a line. A file without
+ * the marks it placed again (`piwi/coverageChanged`); the service's hover names the tests behind a line, and a mark's
+ * tooltip, in the gutter and the scroll bar, says what the marks mean. A file without
  * line coverage shows none. **Tools → Piwi → Show Coverage Marks** hides them, on this machine only
  * (`PiwiLocalSettings.coverageMarks`), and is offered once a file showed some.
  */
@@ -129,8 +133,9 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
                 HighlighterLayer.SELECTION - 1,
                 HighlighterTargetArea.LINES_IN_RANGE,
             ).apply {
-                lineMarkerRenderer = CoverageGutterMark(key, dashed = mark.kind == Glue.CoverageKind.CHANGED)
-                errorStripeTooltip = mark.tooltip
+                val tooltip = Glue.coverageMarkTooltip(mark)
+                lineMarkerRenderer = CoverageGutterMark(key, dashed = mark.kind == Glue.CoverageKind.CHANGED, tooltip)
+                errorStripeTooltip = tooltip
             }
         }
     }
@@ -165,10 +170,24 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
 
 /**
  * A coverage mark at the left of the gutter, in the error stripe color of its key (else its background), so a color
- * scheme restyles it; dashed for the lines changed since the coverage run.
+ * scheme restyles it; dashed for the lines changed since the coverage run. Hovered, it shows its tooltip: what it says
+ * of its lines and what the marks mean; clicked, the same as a hint.
  */
-private class CoverageGutterMark(private val key: TextAttributesKey, private val dashed: Boolean) : LineMarkerRendererEx {
+private class CoverageGutterMark(
+    private val key: TextAttributesKey,
+    private val dashed: Boolean,
+    private val tooltip: String,
+) : LineMarkerRendererEx, ActiveGutterRenderer {
     override fun getPosition(): LineMarkerRendererEx.Position = LineMarkerRendererEx.Position.LEFT
+
+    override fun getTooltipText(): String = tooltip
+
+    override fun canDoAction(e: MouseEvent): Boolean = true
+
+    override fun doAction(editor: Editor, e: MouseEvent) {
+        HintManager.getInstance().showInformationHint(editor, tooltip)
+        e.consume()
+    }
 
     override fun paint(editor: Editor, g: Graphics, r: Rectangle) {
         val attributes = editor.colorsScheme.getAttributes(key) ?: return

@@ -36,6 +36,13 @@ const CREATE_META_PAGE_SIZE = 100;
 const CREATE_META_MAX_PAGES = 10;
 
 /**
+ * Project search is paged too, and Jira may serve fewer per page than asked; a
+ * site past this many pages is read no further.
+ */
+const PROJECT_SEARCH_PAGE_SIZE = 100;
+const PROJECT_SEARCH_MAX_PAGES = 50;
+
+/**
  * Cloud ids resolved for scoped-token credentials, so only the first request for
  * a given credential pays the detection cost. Keyed by site URL plus a hash of the
  * credential: a classic token never triggers detection, so it is never routed
@@ -289,11 +296,24 @@ export class JiraClient implements IssueTracker {
     }
   }
 
+  /** Every project the credential can browse, paged through. */
   async listProjects(): Promise<TrackerProject[]> {
-    const data = await this.request<{ values?: { id?: string; key?: string; name?: string }[] }>(
-      '/rest/api/3/project/search?maxResults=100',
-    );
-    return (data.values ?? []).map((p) => ({ id: p.id ?? '', key: p.key ?? '', name: p.name ?? '' }));
+    const projects: TrackerProject[] = [];
+    let startAt = 0;
+    for (let page = 0; page < PROJECT_SEARCH_MAX_PAGES; page++) {
+      const data = await this.request<{
+        values?: { id?: string; key?: string; name?: string }[];
+        total?: number;
+        isLast?: boolean;
+      }>(`/rest/api/3/project/search?startAt=${startAt}&maxResults=${PROJECT_SEARCH_PAGE_SIZE}`);
+      const items = data.values ?? [];
+      for (const p of items) projects.push({ id: p.id ?? '', key: p.key ?? '', name: p.name ?? '' });
+      startAt += items.length;
+      const more =
+        data.isLast === false || (data.isLast == null && typeof data.total === 'number' && startAt < data.total);
+      if (items.length === 0 || !more) break;
+    }
+    return projects;
   }
 
   async listIssueTypes(projectKey: string): Promise<TrackerIssueType[]> {

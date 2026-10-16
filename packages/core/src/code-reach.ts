@@ -14,7 +14,7 @@
  * The reporter feeds this with V8's function coverage, read over a CDP
  * session; this module holds the pure part.
  */
-import { normalizeCoveragePath } from './coverage';
+import { normalizeCoveragePath, type LineRange } from './coverage';
 import { lineStarts, offsetToPosition, type SourceMapLookup } from './source-map';
 
 /** One script of a JavaScript coverage report: V8's `Profiler.takePreciseCoverage` entry, with its source when read. */
@@ -32,11 +32,29 @@ export interface JsCoverageEntry {
 const MAX_CODE_REACH_FILES = 2000;
 
 /**
+ * What the offsets of a script's coverage are read against: its length and the
+ * offset each line starts at. Kept instead of the source by a caller that reads a
+ * script once and resolves its coverage in many tests.
+ */
+export interface ScriptText {
+  length: number;
+  starts: ArrayLike<number>;
+}
+
+/** A script's text as its coverage offsets are read against it. */
+export function scriptText(source: string): ScriptText {
+  return { length: source.length, starts: Uint32Array.from(lineStarts(source)) };
+}
+
+const textOf = (entry: JsCoverageEntry, text: ScriptText | undefined): ScriptText | undefined =>
+  text ?? (entry.source === undefined ? undefined : scriptText(entry.source));
+
+/**
  * The ranges of the functions that ran in a script, without its top-level
  * function (the one spanning the whole script).
  */
-function executedFunctionRanges(entry: JsCoverageEntry): Array<{ start: number; end: number }> {
-  const length = entry.source?.length ?? Number.POSITIVE_INFINITY;
+function executedFunctionRanges(entry: JsCoverageEntry, length?: number): Array<{ start: number; end: number }> {
+  length ??= entry.source?.length ?? Number.POSITIVE_INFINITY;
   const out: Array<{ start: number; end: number }> = [];
   entry.functions.forEach((fn, i) => {
     const whole = fn.ranges[0];
@@ -53,17 +71,21 @@ export function executedFunctionOffsets(entry: JsCoverageEntry): number[] {
   return executedFunctionRanges(entry).map((range) => range.start);
 }
 
-/** Whether any function of the script other than its top level ran. */
-export function scriptRan(entry: JsCoverageEntry): boolean {
-  return executedFunctionOffsets(entry).length > 0;
+/** Whether any function of the script other than its top level ran; `text` stands for its source when given. */
+export function scriptRan(entry: JsCoverageEntry, text?: ScriptText): boolean {
+  return executedFunctionRanges(entry, text?.length).length > 0;
 }
 
-/** The sources (indexes into `map.sources`) of the functions that ran, through the script's source map. */
-export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup): Set<number> {
-  const ranges = executedFunctionRanges(entry);
+/**
+ * The sources (indexes into `map.sources`) of the functions that ran, through the script's source map; `text`
+ * stands for its source when given.
+ */
+export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup, text?: ScriptText): Set<number> {
+  const read = textOf(entry, text);
+  const ranges = executedFunctionRanges(entry, read?.length);
   const reached = new Set<number>();
-  if (!ranges.length || entry.source === undefined) return reached;
-  const starts = lineStarts(entry.source);
+  if (!ranges.length || !read) return reached;
+  const starts = read.starts;
   for (const range of ranges) {
     const start = offsetToPosition(starts, range.start);
     const source = map.sourceAt(start.line, start.column);
@@ -71,6 +93,51 @@ export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup): Se
     if (map.mapsBetween(source, start, offsetToPosition(starts, range.end))) reached.add(source);
   }
   return reached;
+}
+
+/**
+ * The 1-based start and end line of each function that ran, not counting the
+ * script's top-level code: through a source map, by the index of the source the
+ * function starts in, from the original lines its code maps to there; without
+ * one, lines of the script's own text, under index -1. `text` stands for the
+ * source when given.
+ */
+export function reachedFunctionLines(
+  entry: JsCoverageEntry,
+  map: SourceMapLookup | null,
+  text?: ScriptText,
+): Map<number, LineRange[]> {
+  const out = new Map<number, LineRange[]>();
+  const read = textOf(entry, text);
+  const ranges = executedFunctionRanges(entry, read?.length);
+  if (!ranges.length || !read) return out;
+  const add = (source: number, range: LineRange) => {
+    const list = out.get(source);
+    if (list) list.push(range);
+    else out.set(source, [range]);
+  };
+  const starts = read.starts;
+  for (const range of ranges) {
+    const start = offsetToPosition(starts, range.start);
+    if (!map) {
+      const last = offsetToPosition(starts, Math.max(range.start, range.end - 1));
+      add(-1, [start.line + 1, last.line + 1]);
+      continue;
+    }
+    // The function starts on its header and ends on the last line its own code maps to; code mapped above the header
+    // was inlined from elsewhere. The header is the line the code the function begins in maps to, when its own code
+    // starts there or on the next line. Otherwise that mapping is the code before it on its generated line, the
+    // function's beginning having no segment of its own, and the header is where its own code starts.
+    const at = map.originalAt(start.line, start.column);
+    if (at === null) continue;
+    const end = offsetToPosition(starts, range.end);
+    const first = map.firstOriginalLineBetween(at.source, start, end);
+    if (first === null) continue;
+    const header = first === at.line || first === at.line + 1 ? at.line : first;
+    const lines = map.originalLinesBetween(at.source, start, end, header);
+    if (lines) add(at.source, [header + 1, lines[1] + 1]);
+  }
+  return out;
 }
 
 /**

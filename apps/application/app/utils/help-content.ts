@@ -659,17 +659,29 @@ export const HELP_TOPICS = {
     text: [
       'The code this test ran, as its coverage recorded it: the backend files with their lines, and the browser files.',
       '',
-      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core today), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked, and the executable lines it did not run in a lighter mark when the run sent its own coverage.',
-      '- **Browser** — the application files whose functions ran in Chromium, by path.',
+      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core today), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
+      '- **Browser** — the application files whose functions ran in Chromium, by path, or with the functions that ran when the reporter recorded them; such a file opens to its source too.',
       '- **Precision** — by line, by function, or by file, as the reporter’s `coverage` option recorded it.',
       '- **suspect lines** — the changed lines this failing test ran, and **changed** a file changed since the last passing run; both open the cluster’s What changed card.',
     ].join('\n'),
     doc: 'features/code-reach#on-the-execution-page',
   },
+  'coverage.marks': {
+    title: 'Coverage marks',
+    text: [
+      'The bar at the left of a line says what the recorded coverage holds for it:',
+      '',
+      '- **Teal** — a test ran the line. A file recorded by function marks every line of each function that ran.',
+      '- **Slate** — the line is executable and no test ran it, shown when the run recorded the file’s executable lines (server coverage at `lines`).',
+      '',
+      'An unmarked line ran in no recorded test, or is not code. Your editor marks the file in the same colors, on the file as it stands.',
+    ].join('\n'),
+    doc: 'features/editor-coverage#the-marks',
+  },
   'case.coverage-incomplete': {
     title: 'Incomplete coverage',
     text: 'Part of this test’s coverage is missing: the backend no longer held the coverage of one of its requests when the reporter asked for it, a collection failed, a cap was reached, or part of it is no longer stored. The files listed ran; others may have too.',
-    doc: 'features/code-reach#server-code',
+    doc: 'features/server-coverage',
   },
   'case.coverage-none': {
     title: 'No coverage for this test',
@@ -691,14 +703,14 @@ export const HELP_TOPICS = {
   'case.coverage-backend-none': {
     title: 'No backend coverage for this test',
     text: 'The run recorded backend coverage, but none for this test. Its requests may not have reached the instrumented backend (a page served from elsewhere, a mocked route, a request that failed), or the backend may no longer have held the coverage when the reporter asked.',
-    doc: 'features/code-reach#server-code',
+    doc: 'features/server-coverage',
   },
   'coverage.file': {
     title: 'Which tests run this file',
     text: [
       'The tests that run this file, each from its latest run with coverage on the branch.',
       '',
-      '- **Counts** — beside each line, how many tests ran it; a lighter bar marks an executable line no test runs, when a run recorded the executable lines.',
+      '- **Counts** — beside each line, how many tests ran it; a slate bar marks an executable line no test runs, when a run recorded the executable lines, and a teal one a line a test ran.',
       '- **Select** — click a line, or Shift-click a range, to list the tests that ran it with their latest outcome. On a line no test runs, the nearest test to copy runs the most of the function around it.',
       '- **Version** — line numbers belong to one version of the file, its git blob; when the tests ran several, pick one.',
       '- **Precision** — a file recorded by function marks its functions, and one recorded by file lists its tests only.',
@@ -822,7 +834,7 @@ export const HELP_TOPICS = {
   'cluster.suspect-lines-coverage': {
     title: 'Suspect lines need coverage',
     text: 'This project records coverage, but the failing tests of this run recorded none, so the changes are not narrowed to the lines they ran. A test records browser files in Chromium only, and backend lines only when its requests reach a backend built for coverage; the run may also predate coverage being turned on.',
-    doc: 'features/code-reach#server-code',
+    doc: 'features/server-coverage',
   },
   'cluster.baseline': {
     title: 'Baseline commit',

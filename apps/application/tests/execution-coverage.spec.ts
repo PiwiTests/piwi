@@ -5,16 +5,20 @@ import { PROJECT } from '#shared/test-project-names';
 
 /**
  * The Coverage section of the execution page's Source tab: what the test ran,
- * server files by executed lines and browser files by path; a server file
- * unfolds to its source at the blob its coverage names, marking the lines the
- * test ran and the executable lines it did not, or to the line numbers alone
- * when the repository cannot serve the source. A test with no coverage says so
+ * server files by executed lines and browser files recorded by file by path; a
+ * server file unfolds to its source at the blob its coverage names, marking the
+ * lines the test ran and the executable lines it did not, or to the line numbers alone
+ * when the repository cannot serve the source. A browser file recorded by function
+ * unfolds to its source too, naming the functions that ran, without asking the
+ * run coverage, which names server files only. A test with no coverage says so
  * in one line, and a project that records no coverage shows no section at all.
  */
 
 const BLOB = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const ENDPOINTS = 'src/Orders/OrdersEndpoints.cs';
 const SESSION = 'src/Auth/Session.cs';
+const BROWSER_BLOB = 'f0e1d2c3b4a5968778695a4b3c2d1e0f12345678';
+const CART = 'src/stores/cart.ts';
 
 /** The endpoints' source: `ListOrders` from line 8 to 20. */
 const ENDPOINTS_SOURCE = [
@@ -38,6 +42,25 @@ const ENDPOINTS_SOURCE = [
   '',
   '    public static void Unused() { }',
   '}',
+]
+  .join('\n')
+  .concat('\n');
+
+/** The cart store's source: the store from line 3 to 13, its `add` action from 6 to 8. */
+const CART_SOURCE = [
+  "import { defineStore } from 'pinia';",
+  '',
+  "export const useCart = defineStore('cart', {",
+  '  state: () => ({ items: [] as string[] }),',
+  '  actions: {',
+  '    add(item: string) {',
+  '      this.items.push(item);',
+  '    },',
+  '    clear() {',
+  '      this.items = [];',
+  '    },',
+  '  },',
+  '});',
 ]
   .join('\n')
   .concat('\n');
@@ -82,6 +105,7 @@ test.describe('Execution coverage', () => {
   let lists: number;
   let opens: number;
   let health: number;
+  let adds: number;
   let uncovered: number;
 
   test.beforeAll(async ({ request }) => {
@@ -106,6 +130,21 @@ test.describe('Execution coverage', () => {
       }),
       passed('opens an order', 9, { v: 1, files: [{ path: 'src/pages/order.vue', runtime: 'browser' }] }),
       passed('checks the health', 15),
+      // As the reporter sends a browser file with `coverage.browser: 'functions'`.
+      passed('adds to the cart', 21, {
+        v: 1,
+        files: [
+          {
+            path: CART,
+            runtime: 'browser',
+            blob: BROWSER_BLOB,
+            functions: [
+              [3, 13],
+              [6, 8],
+            ],
+          },
+        ],
+      }),
     ]);
     const put = await request.put(`/api/test-runs/${runId}/coverage`, {
       data: { v: 1, files: [{ path: ENDPOINTS, runtime: 'server', blob: BLOB, executable: [[10, 16]] }] },
@@ -115,6 +154,7 @@ test.describe('Execution coverage', () => {
     lists = ids['lists the orders']!;
     opens = ids['opens an order']!;
     health = ids['checks the health']!;
+    adds = ids['adds to the cart']!;
 
     const offRun = await submit(request, PROJECT.EXECUTION_COVERAGE_OFF, [passed('lists the orders', 3)]);
     uncovered = (await executionIds(request, offRun))['lists the orders']!;
@@ -144,7 +184,7 @@ test.describe('Execution coverage', () => {
       'src/pages/orders.vue',
     ]);
     await expect(browser.first()).toContainText('by file');
-    // A browser file has no source to unfold.
+    // A browser file recorded by file has no line to show in its source, so it does not unfold.
     await expect(section.getByRole('button', { name: /^Show the source of src\/pages/ })).toHaveCount(0);
   });
 
@@ -171,6 +211,16 @@ test.describe('Execution coverage', () => {
     await expect(source).toContainText('Functions that ran: ListOrders');
     await expect(source).toContainText('Ran in this test');
     await expect(source).toContainText('Did not run in this test');
+    // The bars are in the colors the editors mark the lines in, and the help hint says what they mean.
+    const bar = (selector: string) =>
+      source
+        .locator(selector)
+        .first()
+        .evaluate((row) => getComputedStyle(row).boxShadow);
+    expect(await bar('[data-executed]')).toContain('rgb(13, 148, 136)');
+    expect(await bar('[data-not-executed]')).toContain('rgb(148, 163, 184)');
+    await source.getByRole('button', { name: 'Help: Coverage marks' }).click();
+    await expect(page.getByRole('dialog', { name: 'Help: Coverage marks' })).toContainText('a test ran the line');
   });
 
   test('without the source, the line numbers say what ran and what did not', async ({ page }) => {
@@ -190,6 +240,36 @@ test.describe('Execution coverage', () => {
     await expect(section.getByTestId('coverage-no-backend')).toHaveText(
       'The backend recorded no coverage for this test.',
     );
+  });
+
+  test('unfolds a browser file recorded by function to its source, without asking the run coverage', async ({
+    page,
+  }) => {
+    await page.route(
+      (url) => url.pathname.endsWith('/source') && url.searchParams.get('blob') === BROWSER_BLOB,
+      (route) => route.fulfill({ json: { path: CART, blob: BROWSER_BLOB, content: CART_SOURCE } }),
+    );
+    const runCoverageOfFile: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === `/api/test-runs/${runId}/coverage` && url.searchParams.has('file')) {
+        runCoverageOfFile.push(url.searchParams.get('file')!);
+      }
+    });
+    await page.goto(`/test-run-cases/${adds}?evidence=source`);
+    await waitForHydration(page);
+    const section = page.locator('[data-shot="execution-coverage"]');
+    await expect(section.getByTestId('coverage-summary')).toHaveText('Ran 1 browser file (2 functions).');
+    await expect(section.locator(`[data-coverage-group="browser"] [data-coverage-file="${CART}"]`)).toContainText(
+      'by function · 2 functions',
+    );
+    await section.getByRole('button', { name: `Show the source of ${CART}` }).click();
+    const source = section.locator('[data-coverage-source]');
+    await expect(source.locator('[data-line]')).toHaveCount(13);
+    await expect(source).toContainText('Functions that ran: useCart, add');
+    await expect(source.getByRole('button', { name: 'add', exact: true })).toHaveAttribute('title', 'Show line 6');
+    await expect(source).toContainText('Ran in this test');
+    expect(runCoverageOfFile).toEqual([]);
   });
 
   test('a test that recorded none says so in one line', async ({ page }) => {

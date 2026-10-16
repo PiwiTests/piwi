@@ -661,6 +661,13 @@ object Glue {
     /** Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it. */
     fun hasCoverageMarks(result: CoverageResult?): Boolean = result?.state == "exact" || result?.state == "mapped"
 
+    /** What the coverage marks mean, in the colors the dashboard marks them in by default; the service's hover says it too. */
+    const val COVERAGE_MARKS_EXPLAINED = "The bar at the left of a line: teal, a test ran it; slate, it is executable " +
+        "and no test runs it; dashed amber, it changed since the coverage run."
+
+    /** A coverage mark's tooltip, in the gutter and the scroll bar: what it says of its lines, then what the marks mean. */
+    fun coverageMarkTooltip(mark: CoverageMark): String = "<html>${mark.tooltip}<br>$COVERAGE_MARKS_EXPLAINED</html>"
+
     /**
      * The marks to draw for a file's `piwi/coverage` answer within its `lineCount` lines: none while they are hidden,
      * and none for a file without line coverage.

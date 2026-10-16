@@ -18,10 +18,11 @@ a line lists them.
 The marks show what the reporter records, per test:
 
 - **Server code**: an ASP.NET Core backend built for coverage, with the reporter's `coverage.server` set to `lines`, or
-  `PIWI_COVERAGE_SERVER=lines`: [Code reach → Server code](./code-reach#server-code) has the steps. With `functions`,
-  the lenses show and no line is marked.
+  `PIWI_COVERAGE_SERVER=lines`: [Server coverage](./server-coverage) has the steps. With `functions`,
+  every line of a function that ran is marked run, and no line is marked as not run.
 - **Browser code**: recorded per file ([code reach](./code-reach#turn-it-on)), so such a file lists its tests in its
-  top lens, with no line marks.
+  top lens, with no line marks; with `coverage.browser: 'functions'`, every line of a function that ran is marked run,
+  with its lens above it. No line of a browser file is marked as not run.
 
 Nothing else is needed in the editor. A test file, a file no recorded coverage names lines of, and a project without
 coverage show nothing of it: no mark, no lens line, no command, no hover text.
@@ -35,16 +36,19 @@ locally.
 
 | Mark | Meaning |
 |---|---|
-| Solid, green | A test ran the line. The hover names the tests. |
-| Solid, red | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
+| Solid, teal | A test ran the line. The hover names the tests. |
+| Solid, slate | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
 | Dashed, amber | The line changed since the coverage run: what runs it is not known until a run records it again. |
 
-In VS Code the marks are a bar at the left edge of each line, drawn in the theme's own testing colors
-(`testing.coveredGutterBackground`, `testing.uncoveredGutterBackground`) and in `piwi.coverageChangedBorder`, which a
-theme or `workbench.colorCustomizations` can restyle; the lines no test runs and the changed lines also show in the
-overview ruler. In a JetBrains IDE they are at the left of the gutter and in the scroll bar, with their meaning as the
-scroll bar mark's tooltip; restyle them under **Settings → Editor → Color Scheme → Piwi → Coverage**, where the error
-stripe color is the mark's, and a background, none by default, tints the lines too.
+Teal and slate are the colors the dashboard marks a file's source in. The hover on a marked line ends by saying what
+the marks mean.
+
+In VS Code the marks are a bar at the left edge of each line, in `piwi.coverageRunBorder`, `piwi.coverageNotRunBorder`
+and `piwi.coverageChangedBorder`, which a theme or `workbench.colorCustomizations` can restyle; the lines no test runs
+and the changed lines also show in the overview ruler. In a JetBrains IDE they are at the left of the gutter and in the
+scroll bar, and hovering either shows what the lines are and what the marks mean. Restyle them under **Settings →
+Editor → Color Scheme → Piwi → Coverage**, where the error stripe color is the mark's, and a background, none by
+default, tints the lines too.
 
 ## Changed since the coverage run
 
@@ -80,7 +84,8 @@ file's lens says `coverage recorded on another version`. Fetching it brings the 
 A run started from a lens of a server file records the backend's coverage by line: the editor adds
 `PIWI_COVERAGE_SERVER=lines` to the run's environment, which the reporter reads when your Playwright config leaves
 `coverage.server` unset. The backend the run calls must be the coverage build, as for any run that records server
-coverage. When the run ends, the editor reads the file's coverage again, and the marks show what your run recorded:
+coverage. From a browser file's lens, the run records the browser's coverage by function instead
+(`PIWI_COVERAGE_BROWSER=functions`). When the run ends, the editor reads the file's coverage again, and the marks show what your run recorded:
 exactly, as long as the file is as you saved it for the run, since the reporter takes blob ids from the files on disk.
 
 A run started anywhere else (a test's lens, the failures view, a selection) changes nothing of your config's coverage
@@ -104,11 +109,11 @@ finds a Playwright config in the solution's folder or its Git repository.
 
 ## Limits
 
-- **Lines for server code only.** Browser code is recorded per file, so a browser file lists its tests without line
-  marks.
+- **Lines for server code only.** Browser code is recorded per file or per function; recorded per function, a function
+  that ran marks all its lines run, the branches it skipped included.
 - **The latest coverage of each test**: on your branch where its tests ran with coverage, else on the default branch.
-- **Pages only**: an API test through Playwright's `request` fixture records no server coverage
-  ([Code reach](./code-reach#server-code)).
+- **API calls** through Playwright's `request` fixture keep their last response's server coverage only
+  ([Server coverage](./server-coverage#limits)).
 - An instance without coverage shows nothing, and is asked again only on a refresh.
 
 ## Related

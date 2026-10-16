@@ -107,8 +107,14 @@ export interface PiwiDashboardOptions {
    * repository root, which is always tried last. Defaults to the Playwright
    * config's directory. Set it to the dev server's root when that is not the
    * config's directory (Nuxt: `['app']`).
+   *
+   * An object gives directories per origin instead, for an application whose
+   * tests reach several dev servers that serve modules at the same paths (one per
+   * portal): a script resolves against the directories of its own origin, else
+   * of the origin of the page that loaded it, then those under `'*'`
+   * (`{ 'http://localhost:3001': 'portals/admin', '*': ['app'] }`).
    */
-  codeReachRoots?: string[];
+  codeReachRoots?: string[] | Record<string, string | string[]>;
   /**
    * Record, per test, which source code ran, in the browser and in the
    * backend, and send it with the test as its coverage. Rides the capture
@@ -119,10 +125,13 @@ export interface PiwiDashboardOptions {
     /**
      * What the browser side records: `'files'`, the application files whose
      * functions ran, from Chromium's JavaScript coverage, which is what
-     * `captureCodeReach: true` records; `'off'` records nothing. Only paths are
-     * sent. Defaults to `'off'`. Can also be set with `PIWI_COVERAGE_BROWSER`.
+     * `captureCodeReach: true` records; `'functions'` adds the start and end
+     * line of each function that ran, read through the dev server's modules or
+     * the bundle's source maps; `'off'` records nothing. Paths, and line numbers
+     * with `'functions'`, are sent, never source code or hit counts. Defaults to
+     * `'off'`. Can also be set with `PIWI_COVERAGE_BROWSER`.
      */
-    browser?: 'off' | 'files';
+    browser?: 'off' | 'files' | 'functions';
     /**
      * What the server side records, from a backend built with Piwi's coverage
      * instrumentation (ASP.NET Core: `-p:PiwiCoverage=true`), which names each
@@ -187,10 +196,11 @@ export interface PiwiDashboardOptions {
    */
   sampleAriaOnPass?: boolean;
   /**
-   * Upload the application's declared surface at run start: a committed
-   * `piwi.manifest.json` next to the Playwright config, and — when the base URL's
-   * first response carries an instrumentation header — the instrumentation
-   * package's `/__piwi/manifest`. A route or page the manifest declares that no
+   * Upload the application's declared surface: at run start, a committed
+   * `piwi.manifest.json` next to the Playwright config and the instrumentation
+   * package's `/__piwi/manifest` of each `baseURL` whose first response carries an
+   * instrumentation header; as the run's last test ends, the manifest of every
+   * other origin whose responses carried one. A route or page the manifest declares that no
    * test reaches becomes a "declared, never hit" gap. Defaults to `true`; set to
    * `false` (or `PIWI_UPLOAD_MANIFEST=false`) to never upload.
    */

@@ -153,6 +153,37 @@ describe('JiraClient write methods', () => {
     expect(urls[2]).toContain('startAt=1');
   });
 
+  test('listProjects pages through project search until the last page', async () => {
+    const page = (startAt: number, count: number, isLast: boolean) =>
+      response({
+        startAt,
+        maxResults: 50,
+        total: 120,
+        isLast,
+        values: Array.from({ length: count }, (_, i) => ({ id: `${startAt + i}`, key: `P${startAt + i}`, name: 'P' })),
+      });
+    // Jira serves 50 a page even when asked for 100.
+    fetchMock
+      .mockResolvedValueOnce(page(0, 50, false))
+      .mockResolvedValueOnce(page(50, 50, false))
+      .mockResolvedValueOnce(page(100, 20, true));
+    const projects = await client.listProjects();
+    expect(projects).toHaveLength(120);
+    expect(projects.at(-1)).toEqual({ id: '119', key: 'P119', name: 'P' });
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls).toEqual([
+      'https://acme.atlassian.net/rest/api/3/project/search?startAt=0&maxResults=100',
+      'https://acme.atlassian.net/rest/api/3/project/search?startAt=50&maxResults=100',
+      'https://acme.atlassian.net/rest/api/3/project/search?startAt=100&maxResults=100',
+    ]);
+  });
+
+  test('listProjects stops after one page when the response has no paging fields', async () => {
+    fetchMock.mockResolvedValueOnce(response({ values: [{ id: '1', key: 'ABC', name: 'Abc' }] }));
+    expect(await client.listProjects()).toEqual([{ id: '1', key: 'ABC', name: 'Abc' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test('listCreateFields refuses an issue type the project does not have', async () => {
     fetchMock.mockResolvedValueOnce(response({ issueTypes: [{ id: '10004', name: 'Bug' }] }));
     await expect(client.listCreateFields('PROJ', 'Epic')).rejects.toMatchObject({ status: 404 });

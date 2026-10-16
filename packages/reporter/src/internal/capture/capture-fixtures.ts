@@ -84,6 +84,7 @@ import {
 } from '../flake/mode.js';
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
+import { finalizeCodeReach } from '@piwitests/core/code-reach';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -104,10 +105,25 @@ import {
   type PauseSet,
 } from './pause-at.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
-import { browserCoverageInWorker, serverCoverageInWorker } from '../collect/coverage-settings.js';
+import {
+  browserCoverageInWorker,
+  browserFunctionCoverage,
+  browserFunctionsInWorker,
+  serverCoverageInWorker,
+} from '../collect/coverage-settings.js';
+import type { LineRange } from '@piwitests/core/coverage';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
-import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach } from './code-reach.js';
+import {
+  codeReachRoots,
+  pageMapFetcher,
+  resolveCodeReach,
+  resolveCodeReachFunctions,
+  startCodeReach,
+  stopCodeReach,
+  type CodeReachRoots,
+  type CodeReachRootsOption,
+} from './code-reach.js';
 import {
   activeResourceLedger,
   noteResourceUse,
@@ -310,9 +326,9 @@ interface CaptureSink {
   pause: { set: PauseSet; next: boolean; finished: boolean } | null;
   // The page each locator call ran on, keyed by call site and chain.
   locatorPages: LocatorPageLog;
-  // JavaScript coverage of the test's first page, when code reach is on, and
-  // the source files it resolved to once stopped.
-  codeReach: { page: Page; started: Promise<boolean>; stopped: boolean; files: string[] | null } | null;
+  // JavaScript coverage of each page the test has, when code reach is on, and
+  // the source files they resolved to once stopped.
+  codeReach: { sessions: Map<Page, CodeReachSession>; files: Map<string, LineRange[]> };
   // The server coverage request ids (`X-Piwi-Coverage`) the test's responses
   // carried, by origin, when server coverage is on.
   serverCoverage: Map<string, Set<string>>;
@@ -350,34 +366,77 @@ function createSink(): CaptureSink {
     userPick: null,
     pause: null,
     locatorPages: new LocatorPageLog(),
-    codeReach: null,
+    codeReach: { sessions: new Map(), files: new Map() },
     serverCoverage: new Map(),
     baseURL: null,
   };
 }
 
+/** The JavaScript coverage of one page during one test. */
+interface CodeReachSession {
+  started: Promise<boolean>;
+  stopped: boolean;
+  /** Settles once the page's coverage is stopped and resolved into the sink's files. */
+  stopping?: Promise<void>;
+}
+
 /**
- * Start JavaScript coverage on the running test's first page when code reach
- * is on (`PIWI_CAPTURE_CODE_REACH=true` or `PIWI_COVERAGE_BROWSER=files`).
- * Resolves once coverage is running, so a caller can await it before the test
- * navigates.
+ * Pages already open as a test starts that it records JavaScript coverage on at
+ * most, with those still recording: a worker may hold many pages a test never
+ * drives. A page the test opens always records.
  */
-function maybeStartCodeReach(page: Page): Promise<boolean> {
+const MAX_CODE_REACH_PAGES = 16;
+
+/** How long the start of a test waits for coverage to run on the pages already open, in ms. */
+const CODE_REACH_START_WAIT_MS = 2000;
+
+/**
+ * Start JavaScript coverage on a page of the running test when code reach is on
+ * (`PIWI_CAPTURE_CODE_REACH=true` or `PIWI_COVERAGE_BROWSER=files`): each page
+ * the test opens, and each page already open as it starts. Resolves once
+ * coverage is running, so a caller can await it before the test navigates.
+ */
+function maybeStartCodeReach(page: Page, alreadyOpen = false): Promise<boolean> {
   const sink = currentSink;
-  if (!sink || !browserCoverageInWorker()) return Promise.resolve(false);
-  if (sink.codeReach) return sink.codeReach.page === page ? sink.codeReach.started : Promise.resolve(false);
+  if (!sink || !browserCoverageInWorker() || isPageClosed(page)) return Promise.resolve(false);
+  const known = sink.codeReach.sessions.get(page);
+  if (known) return known.started;
+  if (alreadyOpen) {
+    let recording = 0;
+    for (const [other, session] of sink.codeReach.sessions) if (!session.stopped && !isPageClosed(other)) recording++;
+    if (recording >= MAX_CODE_REACH_PAGES) return Promise.resolve(false);
+  }
   const started = startCodeReach(page);
-  sink.codeReach = { page, started, stopped: false, files: null };
+  sink.codeReach.sessions.set(page, { started, stopped: false });
   return started;
 }
 
-/** The code reach roots from `PIWI_CODE_REACH_ROOTS` (a JSON array or a path list). */
-export function configuredCodeReachRoots(): string[] | null {
+/**
+ * Start coverage on the pages open as a test begins: a page a `beforeAll` or an
+ * earlier test opened, which the test drives without creating. Waits a bounded
+ * time, so a page that does not answer never holds the test.
+ */
+async function startCodeReachOnOpenPages(): Promise<void> {
+  if (!browserCoverageInWorker() || OPEN_PAGES.size === 0) return;
+  const started = Promise.all([...OPEN_PAGES].map((page) => maybeStartCodeReach(page, true)));
+  await Promise.race([started, new Promise((resolve) => setTimeout(resolve, CODE_REACH_START_WAIT_MS).unref())]);
+}
+
+/**
+ * The code reach roots from `PIWI_CODE_REACH_ROOTS`: a JSON array, a JSON object
+ * of directories per origin (`*` for every other origin), or a path list.
+ */
+export function configuredCodeReachRoots(): CodeReachRootsOption | null {
   const raw = process.env.PIWI_CODE_REACH_ROOTS?.trim();
   if (!raw) return null;
+  const dirs = (value: unknown): string[] =>
+    (Array.isArray(value) ? value : [value]).filter((r): r is string => typeof r === 'string' && r !== '');
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter((r): r is string => typeof r === 'string' && r !== '');
+    if (Array.isArray(parsed)) return dirs(parsed);
+    if (parsed && typeof parsed === 'object') {
+      return Object.fromEntries(Object.entries(parsed).map(([origin, value]) => [origin, dirs(value)]));
+    }
   } catch {
     // Not JSON: a path list.
   }
@@ -385,32 +444,54 @@ export function configuredCodeReachRoots(): string[] | null {
 }
 
 /**
- * Stop the test's coverage and resolve it to source files, while its page can
- * still fetch source maps. With `closing`, only when that page or its context
- * is the one closing. Never throws.
+ * Stop the test's coverage and resolve it to source files, while each page can
+ * still fetch source maps. With `closing`, only on that page, or on the pages of
+ * that context; without it, also waits for the stops a closing page or context
+ * started. Never throws.
  */
 async function stopSinkCodeReach(
   sink: CaptureSink,
   closing?: { page?: Page; context?: BrowserContext },
 ): Promise<void> {
-  const session = sink.codeReach;
-  if (!session || session.stopped) return;
-  if (closing && closing.page !== session.page && (!closing.context || pageContext(session.page) !== closing.context)) {
-    return;
+  const stopping: Array<[Page, CodeReachSession]> = [];
+  const underway: Array<Promise<void>> = [];
+  for (const [page, session] of sink.codeReach.sessions) {
+    if (session.stopped) {
+      if (!closing && session.stopping) underway.push(session.stopping);
+      continue;
+    }
+    if (closing && closing.page !== page && (!closing.context || pageContext(page) !== closing.context)) continue;
+    session.stopped = true;
+    stopping.push([page, session]);
   }
-  session.stopped = true;
-  try {
-    if (!(await session.started) || isPageClosed(session.page)) return;
-    const entries = await stopCodeReach(session.page);
-    if (!entries) return;
+  if (stopping.length > 0) {
     const info = sink.testInfo;
     const configFile = info?.config.configFile;
     const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
-    session.files = await resolveCodeReach(
-      entries,
-      codeReachRoots(configDir, configuredCodeReachRoots()),
-      pageMapFetcher(session.page),
-    );
+    const roots = codeReachRoots(configDir, configuredCodeReachRoots());
+    for (const [page, session] of stopping) {
+      session.stopping = stopPageCodeReach(sink, page, session, roots);
+      underway.push(session.stopping);
+    }
+  }
+  await Promise.all(underway);
+}
+
+/** Stop one page's coverage and add the files it resolves to the sink's. Never throws. */
+async function stopPageCodeReach(
+  sink: CaptureSink,
+  page: Page,
+  session: CodeReachSession,
+  roots: CodeReachRoots,
+): Promise<void> {
+  try {
+    if (!(await session.started) || isPageClosed(page)) return;
+    const entries = await stopCodeReach(page);
+    if (!entries) return;
+    const reached = await resolveCodeReachFunctions(entries, roots, pageMapFetcher(page), page.url());
+    for (const [file, functions] of reached) {
+      sink.codeReach.files.set(file, [...(sink.codeReach.files.get(file) ?? []), ...functions]);
+    }
   } catch {
     /* code reach is best-effort and must never affect the test */
   }
@@ -908,6 +989,8 @@ async function maybeOpenPicker(sink: CaptureSink, closing?: { page?: Page; conte
 // paths (browser patch, context patch, the `page` fixture, popup events), and
 // must be wrapped exactly once.
 const INSTRUMENTED_PAGES = new WeakSet<Page>();
+/** The instrumented pages still open in this worker, whichever test or hook opened them. */
+const OPEN_PAGES = new Set<Page>();
 const INSTRUMENTED_CONTEXTS = new WeakSet<BrowserContext>();
 const PATCHED_BROWSERS = new WeakSet<Browser>();
 
@@ -1400,6 +1483,10 @@ const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABO
 function instrumentPage(page: Page): void {
   if (!page || INSTRUMENTED_PAGES.has(page)) return;
   INSTRUMENTED_PAGES.add(page);
+  if (typeof page.once === 'function') {
+    OPEN_PAGES.add(page);
+    page.once('close', () => OPEN_PAGES.delete(page));
+  }
   void maybeStartCodeReach(page);
   observeOwnApiRequests(page);
 
@@ -1955,11 +2042,19 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // The source files the test executed, whatever the outcome.
   await stopSinkCodeReach(sink);
-  if (sink.codeReach?.files?.length) {
+  if (sink.codeReach.files.size > 0) {
     await testInfo.attach(ATTACHMENT_NAMES.codeReach, {
       contentType: 'application/json',
-      body: Buffer.from(JSON.stringify(sink.codeReach.files)),
+      body: Buffer.from(JSON.stringify(finalizeCodeReach(sink.codeReach.files.keys()))),
     });
+    // With `coverage.browser: 'functions'`, the line ranges of the functions that ran in each file.
+    const functions = browserFunctionsInWorker() ? browserFunctionCoverage(sink.codeReach.files) : null;
+    if (functions) {
+      await testInfo.attach(ATTACHMENT_NAMES.browserCoverage, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(functions)),
+      });
+    }
   }
 
   // The server coverage request ids, per origin, for the reporter to collect.
@@ -2293,6 +2388,7 @@ export const piwiFixtures: Fixtures<
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
       try {
+        await startCodeReachOnOpenPages();
         await use();
       } finally {
         currentSink = null;

@@ -19,12 +19,12 @@
   </option>
   <option name="PIWI_COVERAGE_RUN">
     <value>
-      <option name="ERROR_STRIPE_COLOR" value="4fa457"/>
+      <option name="ERROR_STRIPE_COLOR" value="0d9488"/>
     </value>
   </option>
   <option name="PIWI_COVERAGE_NOT_RUN">
     <value>
-      <option name="ERROR_STRIPE_COLOR" value="e06c6c"/>
+      <option name="ERROR_STRIPE_COLOR" value="94a3b8"/>
     </value>
   </option>
   <option name="PIWI_COVERAGE_CHANGED">
