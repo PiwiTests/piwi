@@ -341,7 +341,7 @@ export class PiwiDashboardReporter {
     }
     if (coverage.server !== 'off' || this.manifests) this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
     if (coverage.browser !== 'off' || coverage.server !== 'off') {
-      if (coverage.browser === 'files') process.env[PIWI_ENV_KEYS.coverageBrowser] = 'files';
+      if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
       if (coverage.server !== 'off') {
         process.env[PIWI_ENV_KEYS.coverageServer] = coverage.server;
       }
@@ -576,7 +576,7 @@ export class PiwiDashboardReporter {
 
     // The source files the test executed, when code reach is on.
     const reachAttachment =
-      this.coverageSettings.browser === 'files'
+      this.coverageSettings.browser !== 'off'
         ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.codeReach)
         : undefined;
     if (reachAttachment?.body) {

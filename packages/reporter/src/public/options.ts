@@ -125,10 +125,13 @@ export interface PiwiDashboardOptions {
     /**
      * What the browser side records: `'files'`, the application files whose
      * functions ran, from Chromium's JavaScript coverage, which is what
-     * `captureCodeReach: true` records; `'off'` records nothing. Only paths are
-     * sent. Defaults to `'off'`. Can also be set with `PIWI_COVERAGE_BROWSER`.
+     * `captureCodeReach: true` records; `'functions'` adds the start and end
+     * line of each function that ran, read through the dev server's modules or
+     * the bundle's source maps; `'off'` records nothing. Paths, and line numbers
+     * with `'functions'`, are sent, never source code or hit counts. Defaults to
+     * `'off'`. Can also be set with `PIWI_COVERAGE_BROWSER`.
      */
-    browser?: 'off' | 'files';
+    browser?: 'off' | 'files' | 'functions';
     /**
      * What the server side records, from a backend built with Piwi's coverage
      * instrumentation (ASP.NET Core: `-p:PiwiCoverage=true`), which names each

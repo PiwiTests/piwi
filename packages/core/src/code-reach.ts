@@ -14,7 +14,7 @@
  * The reporter feeds this with V8's function coverage, read over a CDP
  * session; this module holds the pure part.
  */
-import { normalizeCoveragePath } from './coverage';
+import { normalizeCoveragePath, type LineRange } from './coverage';
 import { lineStarts, offsetToPosition, type SourceMapLookup } from './source-map';
 
 /** One script of a JavaScript coverage report: V8's `Profiler.takePreciseCoverage` entry, with its source when read. */
@@ -71,6 +71,38 @@ export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup): Se
     if (map.mapsBetween(source, start, offsetToPosition(starts, range.end))) reached.add(source);
   }
   return reached;
+}
+
+/**
+ * The 1-based start and end line of each function that ran, not counting the
+ * script's top-level code: through a source map, by the index of the source the
+ * function starts in, from the original lines its code maps to there; without
+ * one, lines of the script's own text, under index -1.
+ */
+export function reachedFunctionLines(entry: JsCoverageEntry, map: SourceMapLookup | null): Map<number, LineRange[]> {
+  const out = new Map<number, LineRange[]>();
+  const ranges = executedFunctionRanges(entry);
+  if (!ranges.length || entry.source === undefined) return out;
+  const add = (source: number, range: LineRange) => {
+    const list = out.get(source);
+    if (list) list.push(range);
+    else out.set(source, [range]);
+  };
+  const starts = lineStarts(entry.source);
+  for (const range of ranges) {
+    const start = offsetToPosition(starts, range.start);
+    if (!map) {
+      const last = offsetToPosition(starts, Math.max(range.start, range.end - 1));
+      add(-1, [start.line + 1, last.line + 1]);
+      continue;
+    }
+    // The function starts on the line the code it begins in maps to, and ends on the last line its own code maps to.
+    const at = map.originalAt(start.line, start.column);
+    if (at === null) continue;
+    const lines = map.originalLinesBetween(at.source, start, offsetToPosition(starts, range.end));
+    if (lines) add(at.source, [Math.min(at.line, lines[0]) + 1, Math.max(at.line, lines[1]) + 1]);
+  }
+  return out;
 }
 
 /**

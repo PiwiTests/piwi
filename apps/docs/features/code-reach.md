@@ -36,6 +36,11 @@ count: otherwise every eagerly loaded file would be reached by every test. Paths
 files under `node_modules` or outside the repository are dropped, and at most 2,000 files are kept per test. Only the
 paths leave the machine, never code, counts or line numbers.
 
+With `coverage.browser: 'functions'` (or `PIWI_COVERAGE_BROWSER=functions`), each file also names the start and end
+line of each function that ran, read through the module's or the bundle's source map (the file's own text when it
+has none), and the git blob of the version they refer to, as server files do at `functions` granularity. Line numbers
+then leave the machine, still never code or counts.
+
 Paths resolve against the Playwright config's directory, then the repository root. Set `codeReachRoots` to the dev
 server's root when it is elsewhere; for Nuxt that is `app/`:
 
@@ -116,7 +121,8 @@ coverage its pages' and API calls' responses named, several tests per call, outs
 
 With `functions` and `lines`, each file names the git blob its line numbers refer to. At the end of the run the
 reporter also sends the run's coverage of the backend, attributed to no test, with each file's executable lines at `lines` granularity. A test whose coverage the backend no longer held, or that could not be collected, is marked incomplete.
-`coverage.browser: 'files'` is the same as `captureCodeReach: true`.
+`coverage.browser: 'files'` is the same as `captureCodeReach: true`; `'functions'` adds the lines of each function
+that ran in the browser.
 
 - **Run level only:** lambdas created at startup (inline minimal API handlers, inline middleware, DI factory lambdas)
   and work outside a request (hosted services, timers). The methods they call count normally.
@@ -172,7 +178,8 @@ The API serves the tests reaching one file and the whole map of a branch: see th
 
 - **Chromium only** in the browser: other browsers have no JavaScript coverage and record no browser files. Server
   coverage works with every browser.
-- **Browser files are reached, not covered:** a reached file may hide an untested branch.
+- **Browser files are reached, not covered:** a reached file, or a function at `functions` granularity, may hide an
+  untested branch: V8 reports the functions that ran, not their lines.
 - A build with neither per-module URLs nor source maps yields nothing, and so does code rendered on the server only,
   React server components included.
 - A module whose top-level code calls its own functions, a table built on import, counts for every test that loads it.

@@ -1,6 +1,7 @@
 /**
  * A test's coverage in a reader's words: the rows of the execution page's
- * Coverage section (server files by executed lines, browser files by path),
+ * Coverage section (server files by executed lines, browser files by the
+ * functions that ran, then by path),
  * the summary sentence over them, each file's precision and counts, the
  * mark on a file the suspect lines name or the range changed, the names of
  * the functions that ran, and the route of a file's coverage view. Pure, so
@@ -73,7 +74,7 @@ function markOf(path: string, suspects: SuspectLinesAnswer | null | undefined): 
 /**
  * A capture's files as the section's rows: server files by executed lines,
  * most first (then by functions that ran, then by path), browser files by
- * path. `suspects` marks the files the suspect lines name or the range
+ * the functions that ran, most first, then by path. `suspects` marks the files the suspect lines name or the range
  * changed.
  */
 export function coverageGroups(
@@ -98,7 +99,9 @@ export function coverageGroups(
     server: rows
       .filter((r) => r.file.runtime === 'server')
       .sort((a, b) => b.executedLines - a.executedLines || b.functionCount - a.functionCount || byPath(a, b)),
-    browser: rows.filter((r) => r.file.runtime === 'browser').sort(byPath),
+    browser: rows
+      .filter((r) => r.file.runtime === 'browser')
+      .sort((a, b) => b.functionCount - a.functionCount || byPath(a, b)),
   };
 }
 
@@ -106,8 +109,9 @@ const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 /**
  * The summary sentence over the groups: "Ran 12 server files (184 lines) and
- * 5 browser files." The server count names the executed lines when any file
- * has them, else the functions that ran. Null when there is no file.
+ * 5 browser files (31 functions)." The server count names the executed lines
+ * when any file has them, else the functions that ran; the browser count names
+ * the functions that ran when its files have them. Null when there is no file.
  */
 export function coverageSummary(groups: CoverageGroups): string | null {
   const parts: string[] = [];
@@ -118,7 +122,11 @@ export function coverageSummary(groups: CoverageGroups): string | null {
       lines > 0 ? ` (${plural(lines, 'line')})` : functions > 0 ? ` (${plural(functions, 'function')})` : '';
     parts.push(`${plural(groups.server.length, 'server file')}${detail}`);
   }
-  if (groups.browser.length > 0) parts.push(plural(groups.browser.length, 'browser file'));
+  if (groups.browser.length > 0) {
+    const functions = groups.browser.reduce((n, r) => n + r.functionCount, 0);
+    const detail = functions > 0 ? ` (${plural(functions, 'function')})` : '';
+    parts.push(`${plural(groups.browser.length, 'browser file')}${detail}`);
+  }
   return parts.length > 0 ? `Ran ${parts.join(' and ')}.` : null;
 }
 

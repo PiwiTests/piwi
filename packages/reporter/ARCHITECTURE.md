@@ -111,7 +111,9 @@ All HTTP to the dashboard goes through `internal/transport/http-client.ts`, whic
 
 ## Coverage (`internal/collect/test-coverage.ts`)
 
-A test's `coverage` is its browser files (code reach) and, with `coverage.server`
+A test's `coverage` is its browser files (code reach; at `coverage.browser:
+'functions'`, the lines of each function that ran, from `piwi-browser-coverage`,
+with the blob ids the reporter reads from the checkout) and, with `coverage.server`
 on, the server coverage the reporter collects from the backend after the test
 ends, never in the worker. `onTestEnd` queues the result event of such a test only
 once its coverage is in, or after 30 seconds; every other event keeps its place.

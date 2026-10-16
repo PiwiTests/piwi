@@ -105,13 +105,20 @@ import {
   type PauseSet,
 } from './pause-at.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
-import { browserCoverageInWorker, serverCoverageInWorker } from '../collect/coverage-settings.js';
+import {
+  browserCoverageInWorker,
+  browserFunctionCoverage,
+  browserFunctionsInWorker,
+  serverCoverageInWorker,
+} from '../collect/coverage-settings.js';
+import type { LineRange } from '@piwitests/core/coverage';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
 import {
   codeReachRoots,
   pageMapFetcher,
   resolveCodeReach,
+  resolveCodeReachFunctions,
   startCodeReach,
   stopCodeReach,
   type CodeReachRootsOption,
@@ -320,7 +327,7 @@ interface CaptureSink {
   locatorPages: LocatorPageLog;
   // JavaScript coverage of each page the test has, when code reach is on, and
   // the source files they resolved to once stopped.
-  codeReach: { sessions: Map<Page, CodeReachSession>; files: Set<string> };
+  codeReach: { sessions: Map<Page, CodeReachSession>; files: Map<string, LineRange[]> };
   // The server coverage request ids (`X-Piwi-Coverage`) the test's responses
   // carried, by origin, when server coverage is on.
   serverCoverage: Map<string, Set<string>>;
@@ -358,7 +365,7 @@ function createSink(): CaptureSink {
     userPick: null,
     pause: null,
     locatorPages: new LocatorPageLog(),
-    codeReach: { sessions: new Map(), files: new Set() },
+    codeReach: { sessions: new Map(), files: new Map() },
     serverCoverage: new Map(),
     baseURL: null,
   };
@@ -452,8 +459,9 @@ async function stopSinkCodeReach(
         if (!(await session.started) || isPageClosed(page)) return;
         const entries = await stopCodeReach(page);
         if (!entries) return;
-        for (const file of await resolveCodeReach(entries, roots, pageMapFetcher(page), page.url())) {
-          sink.codeReach.files.add(file);
+        const reached = await resolveCodeReachFunctions(entries, roots, pageMapFetcher(page), page.url());
+        for (const [file, functions] of reached) {
+          sink.codeReach.files.set(file, [...(sink.codeReach.files.get(file) ?? []), ...functions]);
         }
       } catch {
         /* code reach is best-effort and must never affect the test */
@@ -2010,8 +2018,16 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   if (sink.codeReach.files.size > 0) {
     await testInfo.attach(ATTACHMENT_NAMES.codeReach, {
       contentType: 'application/json',
-      body: Buffer.from(JSON.stringify(finalizeCodeReach(sink.codeReach.files))),
+      body: Buffer.from(JSON.stringify(finalizeCodeReach(sink.codeReach.files.keys()))),
     });
+    // With `coverage.browser: 'functions'`, the line ranges of the functions that ran in each file.
+    const functions = browserFunctionsInWorker() ? browserFunctionCoverage(sink.codeReach.files) : null;
+    if (functions) {
+      await testInfo.attach(ATTACHMENT_NAMES.browserCoverage, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(functions)),
+      });
+    }
   }
 
   // The server coverage request ids, per origin, for the reporter to collect.

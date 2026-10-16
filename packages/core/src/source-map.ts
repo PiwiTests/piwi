@@ -1,11 +1,12 @@
 /**
- * Source maps, read just far enough to answer one question: which original
- * file does a position in a generated script come from? Code reach uses it to
- * turn the functions Chromium's JavaScript coverage reports as executed into
- * the application source files they were compiled from.
+ * Source maps, read just far enough to answer two questions: which original
+ * file, and which of its lines, does a position in a generated script come
+ * from? Code reach uses them to turn the functions Chromium's JavaScript
+ * coverage reports as executed into the application source files they were
+ * compiled from, and the lines those functions span.
  *
  * Supports version 3 maps (`mappings` with Base64 VLQ segments) and index maps
- * (`sections`). Names and original lines are decoded but not kept.
+ * (`sections`). Names and original columns are decoded but not kept.
  */
 
 /** A source map as JSON. */
@@ -23,8 +24,15 @@ export interface SourceMapLookup {
   sources: string[];
   /** The index in `sources` of the source a 0-based generated line and column map to; null when unmapped. */
   sourceAt(line: number, column: number): number | null;
+  /** The source and original 0-based line a generated line and column map to; null when unmapped. */
+  originalAt(line: number, column: number): { source: number; line: number } | null;
   /** Whether a segment at or after a generated position and before an end position maps to a source index. */
   mapsBetween(source: number, start: GeneratedPosition, end: GeneratedPosition): boolean;
+  /**
+   * The first and last original 0-based lines of the segments at or after a generated position and before an end
+   * position that map to a source index; null when none does.
+   */
+  originalLinesBetween(source: number, start: GeneratedPosition, end: GeneratedPosition): [number, number] | null;
 }
 
 /** A 0-based position in generated code. */
@@ -37,18 +45,20 @@ const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
 const BASE64_VALUE = new Int8Array(128).fill(-1);
 for (let i = 0; i < BASE64.length; i++) BASE64_VALUE[BASE64.charCodeAt(i)] = i;
 
-/** One line's segments: generated columns ascending, each with its source index (-1: unmapped). */
+/** One line's segments: generated columns ascending, each with its source index (-1: unmapped) and original line. */
 interface LineSegments {
   columns: number[];
   sources: number[];
+  originalLines: number[];
 }
 
 /** Decode a `mappings` string into per-line segments, source indexes offset by `sourceBase`. */
 function decodeMappings(mappings: string, sourceBase: number): LineSegments[] {
   const lines: LineSegments[] = [];
-  let current: LineSegments = { columns: [], sources: [] };
+  let current: LineSegments = { columns: [], sources: [], originalLines: [] };
   let column = 0;
   let source = 0;
+  let originalLine = 0;
   const fields: number[] = [];
   let value = 0;
   let shift = 0;
@@ -57,11 +67,14 @@ function decodeMappings(mappings: string, sourceBase: number): LineSegments[] {
     column += fields[0]!;
     if (fields.length >= 4) {
       source += fields[1]!;
+      originalLine += fields[2]!;
       current.columns.push(column);
       current.sources.push(sourceBase + source);
+      current.originalLines.push(originalLine);
     } else {
       current.columns.push(column);
       current.sources.push(-1);
+      current.originalLines.push(-1);
     }
     fields.length = 0;
   };
@@ -71,7 +84,7 @@ function decodeMappings(mappings: string, sourceBase: number): LineSegments[] {
       flush();
       if (ch === 59) {
         lines.push(current);
-        current = { columns: [], sources: [] };
+        current = { columns: [], sources: [], originalLines: [] };
         column = 0;
       }
       continue;
@@ -93,6 +106,7 @@ function decodeMappings(mappings: string, sourceBase: number): LineSegments[] {
     const order = line.columns.map((_, i) => i).sort((a, b) => line.columns[a]! - line.columns[b]!);
     line.columns = order.map((i) => line.columns[i]!);
     line.sources = order.map((i) => line.sources[i]!);
+    line.originalLines = order.map((i) => line.originalLines[i]!);
   }
   return lines;
 }
@@ -121,10 +135,11 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
       const at = lineOffset + i;
       const shifted = i === 0 && columnOffset ? segments.columns.map((c) => c + columnOffset) : segments.columns;
       const existing = lines[at];
-      if (!existing) lines[at] = { columns: shifted, sources: segments.sources };
+      if (!existing) lines[at] = { columns: shifted, sources: segments.sources, originalLines: segments.originalLines };
       else {
         existing.columns.push(...shifted);
         existing.sources.push(...segments.sources);
+        existing.originalLines.push(...segments.originalLines);
       }
     });
     return true;
@@ -132,45 +147,80 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
   if (raw.version !== undefined && raw.version !== 3) return null;
   if (!add(raw, 0, 0)) return null;
 
+  const originalAt = (line: number, column: number): { source: number; line: number } | null => {
+    const segments = lines[line];
+    if (!segments || segments.columns.length === 0) return null;
+    // The last segment starting at or before the column.
+    let lo = 0;
+    let hi = segments.columns.length - 1;
+    if (segments.columns[0]! > column) return null;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (segments.columns[mid]! <= column) lo = mid;
+      else hi = mid - 1;
+    }
+    const source = segments.sources[lo]!;
+    return source < 0 ? null : { source, line: segments.originalLines[lo]! };
+  };
+
   return {
     sources,
     sourceAt(line, column) {
-      const segments = lines[line];
-      if (!segments || segments.columns.length === 0) return null;
-      // The last segment starting at or before the column.
-      let lo = 0;
-      let hi = segments.columns.length - 1;
-      if (segments.columns[0]! > column) return null;
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1;
-        if (segments.columns[mid]! <= column) lo = mid;
-        else hi = mid - 1;
-      }
-      const source = segments.sources[lo]!;
-      return source < 0 ? null : source;
+      return originalAt(line, column)?.source ?? null;
     },
+    originalAt,
     mapsBetween(source, start, end) {
-      for (let line = start.line; line <= end.line && line < lines.length; line++) {
-        const segments = lines[line];
-        if (!segments) continue;
-        // The first segment at or after the start column on the start line.
-        let i = 0;
-        if (line === start.line) {
-          let hi = segments.columns.length;
-          while (i < hi) {
-            const mid = (i + hi) >> 1;
-            if (segments.columns[mid]! < start.column) i = mid + 1;
-            else hi = mid;
-          }
+      let found = false;
+      eachSegmentBetween(lines, start, end, (segments, i) => {
+        found = segments.sources[i] === source;
+        return found;
+      });
+      return found;
+    },
+    originalLinesBetween(source, start, end) {
+      let first = Number.POSITIVE_INFINITY;
+      let last = -1;
+      eachSegmentBetween(lines, start, end, (segments, i) => {
+        const line = segments.originalLines[i]!;
+        if (segments.sources[i] === source && line >= 0) {
+          if (line < first) first = line;
+          if (line > last) last = line;
         }
-        for (; i < segments.columns.length; i++) {
-          if (line === end.line && segments.columns[i]! >= end.column) return false;
-          if (segments.sources[i] === source) return true;
-        }
-      }
-      return false;
+        return false;
+      });
+      return last < 0 ? null : [first, last];
     },
   };
+}
+
+/**
+ * Visit the segments at or after a generated position and before an end
+ * position, in order, until `visit` returns true.
+ */
+function eachSegmentBetween(
+  lines: LineSegments[],
+  start: GeneratedPosition,
+  end: GeneratedPosition,
+  visit: (segments: LineSegments, index: number) => boolean,
+): void {
+  for (let line = start.line; line <= end.line && line < lines.length; line++) {
+    const segments = lines[line];
+    if (!segments) continue;
+    // The first segment at or after the start column on the start line.
+    let i = 0;
+    if (line === start.line) {
+      let hi = segments.columns.length;
+      while (i < hi) {
+        const mid = (i + hi) >> 1;
+        if (segments.columns[mid]! < start.column) i = mid + 1;
+        else hi = mid;
+      }
+    }
+    for (; i < segments.columns.length; i++) {
+      if (line === end.line && segments.columns[i]! >= end.column) return;
+      if (visit(segments, i)) return;
+    }
+  }
 }
 
 /** The offsets at which each line of a text starts. */

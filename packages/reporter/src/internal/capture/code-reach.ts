@@ -41,7 +41,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { CDPSession, Page } from '@playwright/test';
-import { finalizeCodeReach, reachedSources, scriptRan, type JsCoverageEntry } from '@piwitests/core/code-reach';
+import { finalizeCodeReach, reachedFunctionLines, scriptRan, type JsCoverageEntry } from '@piwitests/core/code-reach';
+import type { LineRange } from '@piwitests/core/coverage';
 import {
   decodeDataUrl,
   decodeSourceMap,
@@ -327,7 +328,37 @@ export async function resolveCodeReach(
   fetchMap: MapFetcher,
   pageUrl?: string,
 ): Promise<string[]> {
-  const files = new Set<string>();
+  return finalizeCodeReach((await resolveReach(entries, roots, fetchMap, pageUrl)).keys());
+}
+
+/**
+ * The repository-relative files the covered scripts reached, each with the
+ * start and end line of every function that ran in it (none when the lines are
+ * not known: a script whose source was not read).
+ */
+export async function resolveCodeReachFunctions(
+  entries: CoveredScript[],
+  roots: CodeReachRoots,
+  fetchMap: MapFetcher,
+  pageUrl?: string,
+): Promise<Map<string, LineRange[]>> {
+  return resolveReach(entries, roots, fetchMap, pageUrl);
+}
+
+/** The files the covered scripts reached, repository-relative, with the line ranges of their functions that ran. */
+async function resolveReach(
+  entries: CoveredScript[],
+  roots: CodeReachRoots,
+  fetchMap: MapFetcher,
+  pageUrl: string | undefined,
+): Promise<Map<string, LineRange[]>> {
+  const files = new Map<string, LineRange[]>();
+  const add = (file: string, functions: LineRange[]) => {
+    const path = relativeToRepo(file, roots.repoRoot);
+    const known = files.get(path);
+    if (known) known.push(...functions);
+    else files.set(path, [...functions]);
+  };
   const bases = viteBases(entries);
   const scripts = entries.filter((entry) => entry.url && entry.functions?.length && !REPLAYED_SCRIPT.test(entry.url));
   // Every script is looked up before the first is resolved: caching one may evict another this test still needs.
@@ -337,11 +368,17 @@ export async function resolveCodeReach(
     const resolution = known[i] ?? (await resolveScript(covered, dirs, bases, fetchMap));
     if (resolution.kind === 'file') {
       const entry = withSource(covered, resolution);
-      const ran = resolution.lookup ? reachedSources(entry, resolution.lookup).size > 0 : scriptRan(entry);
-      if (resolution.file && ran) files.add(relativeToRepo(resolution.file, roots.repoRoot));
+      if (!resolution.file) continue;
+      if (resolution.lookup) {
+        // A module with its own map counts for the functions that map to its source, at the lines they map to.
+        const reached = reachedFunctionLines(entry, resolution.lookup);
+        if (reached.size > 0) add(resolution.file, [...reached.values()].flat());
+      } else if (scriptRan(entry)) {
+        add(resolution.file, reachedFunctionLines(entry, null).get(-1) ?? []);
+      }
     } else if (resolution.kind === 'map') {
       const entry = withSource(covered, resolution);
-      for (const index of reachedSources(entry, resolution.lookup)) {
+      for (const [index, functions] of reachedFunctionLines(entry, resolution.lookup)) {
         if (resolution.files[index] === undefined) {
           const source = resolution.lookup.sources[index] ?? '';
           let absolute = resolveSourcePath(source, dirs);
@@ -356,11 +393,11 @@ export async function resolveCodeReach(
           resolution.files[index] = absolute;
         }
         const file = resolution.files[index];
-        if (file) files.add(relativeToRepo(file, roots.repoRoot));
+        if (file) add(file, functions);
       }
     }
   }
-  return finalizeCodeReach(files);
+  return files;
 }
 
 /** A map fetcher through the page's request context, bounded in size and time. */

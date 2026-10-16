@@ -21,7 +21,8 @@ The marks show what the reporter records, per test:
   `PIWI_COVERAGE_SERVER=lines`: [Code reach → Server code](./code-reach#server-code) has the steps. With `functions`,
   the lenses show and no line is marked.
 - **Browser code**: recorded per file ([code reach](./code-reach#turn-it-on)), so such a file lists its tests in its
-  top lens, with no line marks.
+  top lens, with no line marks; with `coverage.browser: 'functions'`, the lenses above each function that ran show
+  too, and still no line is marked.
 
 Nothing else is needed in the editor. A test file, a file no recorded coverage names lines of, and a project without
 coverage show nothing of it: no mark, no lens line, no command, no hover text.
@@ -104,8 +105,8 @@ finds a Playwright config in the solution's folder or its Git repository.
 
 ## Limits
 
-- **Lines for server code only.** Browser code is recorded per file, so a browser file lists its tests without line
-  marks.
+- **Lines for server code only.** Browser code is recorded per file, or per function, so a browser file lists its
+  tests without line marks.
 - **The latest coverage of each test**: on your branch where its tests ran with coverage, else on the default branch.
 - **Pages only**: an API test through Playwright's `request` fixture records no server coverage
   ([Code reach](./code-reach#server-code)).

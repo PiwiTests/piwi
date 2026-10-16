@@ -105,7 +105,7 @@ const sections = computed(() =>
     .filter((section) => section.rows.length > 0),
 );
 
-/** The server files whose source is unfolded, by path. */
+/** The files whose source is unfolded, by path. */
 const expanded = ref(new Set<string>());
 function toggle(path: string) {
   const next = new Set(expanded.value);
@@ -114,9 +114,9 @@ function toggle(path: string) {
   expanded.value = next;
 }
 
-/** A server file with line numbers and a version unfolds to its source. */
+/** A file with line numbers and a version unfolds to its source, server or browser. */
 const canUnfold = (row: CoverageRow) =>
-  row.file.runtime === 'server' && Boolean(row.file.blob) && row.granularity !== 'files' && props.projectId != null;
+  Boolean(row.file.blob) && row.granularity !== 'files' && props.projectId != null;
 
 /** A path cut after each slash, where a narrow row may wrap it. */
 const pathParts = (path: string) => path.split(/(?<=\/)/);
