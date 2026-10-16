@@ -43,6 +43,7 @@
     "./source-map": "./src/source-map.ts",
     "./code-reach": "./src/code-reach.ts",
     "./coverage": "./src/coverage.ts",
+    "./coverage-formats": "./src/coverage-formats.ts",
     "./suspect-lines": "./src/suspect-lines.ts",
     "./line-diff": "./src/line-diff.ts",
     "./editor-send": "./src/editor-send.ts",

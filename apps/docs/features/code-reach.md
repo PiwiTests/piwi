@@ -36,7 +36,9 @@ files under `node_modules` or outside the repository are dropped, and at most 2,
 paths leave the machine, never code, counts or line numbers.
 
 `coverage.browser: 'files'` is the same as `captureCodeReach: true`; `'functions'` adds each function's start and end
-line, through the source map, and the file's git blob: line numbers then leave the machine.
+line, through the source map, and the file's git blob: line numbers then leave the machine. With `'functions'`, the
+run also records every function the pages' scripts declare, run or not, so the run's coverage can say how many of a
+file's functions ran. A function declared inside a function that never ran is not listed: V8 has not seen it.
 
 Paths resolve against the Playwright config's directory, then the repository root. Set `codeReachRoots` to the dev
 server's root when it is elsewhere; for Nuxt that is `app/`:

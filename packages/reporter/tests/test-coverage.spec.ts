@@ -8,6 +8,7 @@ import { BlobIds, gitBlobId } from '../src/internal/collect/blob-ids.js';
 import {
   browserFunctionCoverage,
   coverageSettings,
+  newKnownFunctions,
   type CoverageSettings,
 } from '../src/internal/collect/coverage-settings.js';
 import {
@@ -178,10 +179,52 @@ describe('coverageSettings', () => {
   });
 });
 
+describe('newKnownFunctions', () => {
+  it('names each function of a file once per worker, and nothing once all are named', () => {
+    const sent = new Map<string, Set<string>>();
+    const known = new Map<string, Array<[number, number]>>([
+      [
+        'src/pay.ts',
+        [
+          [5, 9],
+          [1, 3],
+          [1, 3],
+        ],
+      ],
+      ['node_modules/x/index.js', [[1, 2]]],
+    ]);
+    expect(newKnownFunctions(known, sent)).toEqual({
+      v: 1,
+      files: [
+        {
+          path: 'src/pay.ts',
+          allFunctions: [
+            [1, 3],
+            [5, 9],
+          ],
+        },
+      ],
+    });
+    expect(newKnownFunctions(known, sent)).toBeNull();
+    known.set('src/pay.ts', [
+      [1, 3],
+      [11, 12],
+    ]);
+    expect(newKnownFunctions(known, sent)).toEqual({ v: 1, files: [{ path: 'src/pay.ts', allFunctions: [[11, 12]] }] });
+  });
+});
+
 describe('browserFunctionCoverage', () => {
   it('keeps the repository files, with their function ranges merged', () => {
     const files = new Map([
-      ['src/pay.ts', [[4, 9], [1, 2], [4, 9]] as Array<[number, number]>],
+      [
+        'src/pay.ts',
+        [
+          [4, 9],
+          [1, 2],
+          [4, 9],
+        ] as Array<[number, number]>,
+      ],
       ['node_modules/vue/index.js', [[1, 1]] as Array<[number, number]>],
       ['src/cart.ts', [] as Array<[number, number]>],
     ]);
@@ -189,7 +232,14 @@ describe('browserFunctionCoverage', () => {
       v: 1,
       files: [
         { path: 'src/cart.ts', runtime: 'browser' },
-        { path: 'src/pay.ts', runtime: 'browser', functions: [[1, 2], [4, 9]] },
+        {
+          path: 'src/pay.ts',
+          runtime: 'browser',
+          functions: [
+            [1, 2],
+            [4, 9],
+          ],
+        },
       ],
     });
     expect(browserFunctionCoverage(new Map())).toBeNull();
@@ -336,7 +386,9 @@ describe('CoverageCollection', () => {
       });
       const tc = testCase(['src/pay.ts']);
       const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
-      const ready = collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) }]);
+      const ready = collection.apply(tc, [
+        { name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) },
+      ]);
       expect(ready).not.toBeNull();
       await collection.settle();
       expect(tc.coverage).toEqual({
@@ -350,6 +402,71 @@ describe('CoverageCollection', () => {
           },
         ],
       });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends the run's browser functions at its end: those the tests ran and every one the pages declared", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-browser-run-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'src'));
+      fs.writeFileSync(path.join(dir, 'src', 'pay.ts'), 'export function pay() {}\nexport function refund() {}\n');
+      fs.writeFileSync(path.join(dir, 'src', 'idle.ts'), 'export function later() {}\n');
+      const collection = new CoverageCollection({
+        settings: { browser: 'functions', server: 'off' },
+        baseUrls: [],
+        configDir: dir,
+      });
+      const attach = (functions: number[][], known: Array<{ path: string; allFunctions: number[][] }>) => [
+        {
+          name: ATTACHMENT_NAMES.browserCoverage,
+          body: Buffer.from(JSON.stringify({ v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions }] })),
+        },
+        { name: ATTACHMENT_NAMES.browserFunctions, body: Buffer.from(JSON.stringify({ v: 1, files: known })) },
+      ];
+      collection.apply(
+        testCase(['src/pay.ts']),
+        attach(
+          [[1, 1]],
+          [
+            {
+              path: 'src/pay.ts',
+              allFunctions: [
+                [1, 1],
+                [2, 2],
+              ],
+            },
+          ],
+        ),
+      );
+      collection.apply(testCase(['src/pay.ts']), attach([[1, 1]], [{ path: 'src/idle.ts', allFunctions: [[1, 1]] }]));
+      await collection.settle();
+      const sent: unknown[] = [];
+      const client = { putJSON: async (url: string, body: unknown) => void sent.push([url, body]) };
+      await collection.sendRunCoverage(client as never, 7, null);
+      const blob = (name: string) => gitBlobId(fs.readFileSync(path.join(dir, 'src', name)));
+      expect(sent).toEqual([
+        [
+          '/api/test-runs/7/coverage',
+          {
+            v: 1,
+            files: [
+              { path: 'src/idle.ts', runtime: 'browser', blob: blob('idle.ts'), allFunctions: [[1, 1]] },
+              {
+                path: 'src/pay.ts',
+                runtime: 'browser',
+                blob: blob('pay.ts'),
+                functions: [[1, 1]],
+                allFunctions: [
+                  [1, 1],
+                  [2, 2],
+                ],
+              },
+            ],
+          },
+        ],
+      ]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

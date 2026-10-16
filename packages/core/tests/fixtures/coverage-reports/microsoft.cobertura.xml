@@ -1,0 +1,65 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<coverage line-rate="0.5" branch-rate="0.5" complexity="3" version="1.9" timestamp="1792188955" lines-covered="5" lines-valid="10" branches-covered="1" branches-valid="2">
+  <packages>
+    <package line-rate="1" branch-rate="1" complexity="1" name="Lib.Tests">
+      <classes>
+        <class line-rate="1" branch-rate="1" complexity="1" name="PricesTests" filename="/home/ci/repo/src/Lib.Tests/PricesTests.cs">
+          <methods>
+            <method line-rate="1" branch-rate="1" complexity="1" name="Totals" signature="()">
+              <lines>
+                <line number="6" hits="1" branch="False" />
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="6" hits="1" branch="False" />
+          </lines>
+        </class>
+      </classes>
+    </package>
+    <package line-rate="0.4444444444444444" branch-rate="0.5" complexity="2" name="Lib">
+      <classes>
+        <class line-rate="0.4444444444444444" branch-rate="0.5" complexity="2" name="Lib.Prices" filename="/home/ci/repo/src/Lib/Prices.cs">
+          <methods>
+            <method line-rate="0.6666666666666666" branch-rate="0.5" complexity="2" name="Total" signature="(decimal, int)">
+              <lines>
+                <line number="6" hits="1" branch="False" />
+                <line number="7" hits="1" branch="True" condition-coverage="50% (1/2)">
+                  <conditions>
+                    <condition number="0" type="jump" coverage="50%" />
+                  </conditions>
+                </line>
+                <line number="8" hits="0" branch="False" />
+                <line number="9" hits="0" branch="False" />
+                <line number="12" hits="1" branch="False" />
+                <line number="13" hits="1" branch="False" />
+              </lines>
+            </method>
+            <method line-rate="0" branch-rate="1" complexity="1" name="Discount" signature="(decimal)">
+              <lines>
+                <line number="16" hits="0" branch="False" />
+                <line number="17" hits="0" branch="False" />
+                <line number="18" hits="0" branch="False" />
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="6" hits="1" branch="False" />
+            <line number="7" hits="1" branch="True" condition-coverage="50% (1/2)">
+              <conditions>
+                <condition number="0" type="jump" coverage="50%" />
+              </conditions>
+            </line>
+            <line number="8" hits="0" branch="False" />
+            <line number="9" hits="0" branch="False" />
+            <line number="12" hits="1" branch="False" />
+            <line number="13" hits="1" branch="False" />
+            <line number="16" hits="0" branch="False" />
+            <line number="17" hits="0" branch="False" />
+            <line number="18" hits="0" branch="False" />
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

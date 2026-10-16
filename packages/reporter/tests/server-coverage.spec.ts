@@ -315,8 +315,19 @@ describe('ServerCoverageCollector', () => {
     const sha256 = (text: string) => `sha256:${crypto.createHash('sha256').update(text).digest('hex')}`;
     const files = [
       // Built on Windows from the same file: its checksum is of the CRLF form.
-      { path: 'src/Web/Program.cs', runtime: 'server', lines: [[1, 2]], checksums: [sha256('class Program\r\n{\r\n}\r\n')] },
-      { path: 'src/Web/Basket.cs', runtime: 'server', lines: [[1, 2]], executable: [[1, 3]], checksums: [sha256('class Basket {}\n')] },
+      {
+        path: 'src/Web/Program.cs',
+        runtime: 'server',
+        lines: [[1, 2]],
+        checksums: [sha256('class Program\r\n{\r\n}\r\n')],
+      },
+      {
+        path: 'src/Web/Basket.cs',
+        runtime: 'server',
+        lines: [[1, 2]],
+        executable: [[1, 3]],
+        checksums: [sha256('class Basket {}\n')],
+      },
     ];
     const server = await backend({
       respond: (req, res) => {

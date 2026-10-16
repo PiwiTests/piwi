@@ -1,4 +1,8 @@
 import {
+  MAX_COVERAGE_FILES,
+  MAX_COVERAGE_RANGES,
+  normalizeCoveragePath,
+  normalizeFunctionRanges,
   sanitizeCoverage,
   type CoverageCapture,
   type CoverageGranularity,
@@ -66,6 +70,38 @@ export function browserFunctionCoverage(files: ReadonlyMap<string, LineRange[]>)
     v: 1,
     files: [...files].map(([path, functions]) => ({ path, runtime: 'browser', functions })),
   });
+}
+
+/** The functions a worker's tests found in the browser files, run or not, as the `piwi-browser-functions` attachment holds them. */
+export interface BrowserKnownFunctions {
+  v: 1;
+  files: Array<{ path: string; allFunctions: LineRange[] }>;
+}
+
+/**
+ * The functions of the browser files the worker has not named yet, run or
+ * not, and records them in `sent`: paths normalized, ranges normalized as
+ * function ranges, capped as any coverage is. A worker names each function
+ * once; the reporter adds every test's up for the run. Null when none is new.
+ */
+export function newKnownFunctions(
+  known: ReadonlyMap<string, LineRange[]>,
+  sent: Map<string, Set<string>>,
+): BrowserKnownFunctions | null {
+  const files: BrowserKnownFunctions['files'] = [];
+  let budget = MAX_COVERAGE_RANGES;
+  for (const [raw, ranges] of known) {
+    const path = normalizeCoveragePath(raw);
+    if (path === null || files.length >= MAX_COVERAGE_FILES) continue;
+    let named = sent.get(path);
+    const fresh = normalizeFunctionRanges(ranges).filter((range) => !named?.has(`${range[0]}:${range[1]}`));
+    if (fresh.length === 0 || fresh.length > budget) continue;
+    budget -= fresh.length;
+    if (!named) sent.set(path, (named = new Set()));
+    for (const range of fresh) named.add(`${range[0]}:${range[1]}`);
+    files.push({ path, allFunctions: fresh });
+  }
+  return files.length > 0 ? { v: 1, files: files.sort((a, b) => (a.path < b.path ? -1 : 1)) } : null;
 }
 
 /** In a test worker: whether the server side records, from `PIWI_COVERAGE_SERVER`. */

@@ -49,9 +49,13 @@ export interface ServerCoverage {
   incomplete: boolean;
 }
 
-/** One file of a backend's run-level coverage, with its executable lines at `lines` granularity. */
+/**
+ * One file of a run's coverage: a backend's, with its executable lines at `lines` granularity, or the browser's, with
+ * every function the tests' pages declared in it, run or not (`allFunctions`).
+ */
 export interface RunCoverageFile extends CoverageFile {
   executable?: LineRange[];
+  allFunctions?: LineRange[];
 }
 
 /** The bounds collection keeps to. */

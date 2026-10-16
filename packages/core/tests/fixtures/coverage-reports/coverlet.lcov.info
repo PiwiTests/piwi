@@ -1,0 +1,23 @@
+SF:/home/ci/repo/src/Lib/Prices.cs
+FN:5,System.Decimal Lib.Prices::Total(System.Decimal,System.Int32)
+FNDA:1,System.Decimal Lib.Prices::Total(System.Decimal,System.Int32)
+DA:6,1
+DA:7,1
+DA:8,0
+DA:9,0
+DA:12,1
+DA:13,1
+BRDA:7,10,0,0
+BRDA:7,10,1,1
+FN:15,System.Decimal Lib.Prices::Discount(System.Decimal)
+FNDA:0,System.Decimal Lib.Prices::Discount(System.Decimal)
+DA:16,0
+DA:17,0
+DA:18,0
+LF:9
+LH:4
+BRF:2
+BRH:1
+FNF:2
+FNH:1
+end_of_record

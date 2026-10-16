@@ -1,9 +1,12 @@
 import {
   mergeCoverage,
+  normalizeCoveragePath,
+  normalizeFunctionRanges,
   reduceCoverage,
   sanitizeCoverage,
   type CoverageCapture,
   type CoverageFile,
+  type LineRange,
 } from '@piwitests/core/coverage';
 import { ATTACHMENT_NAMES } from '../capture/attachments.js';
 import { repositoryRoot } from '../capture/code-reach.js';
@@ -28,7 +31,8 @@ import {
  * configured granularity per runtime, and sanitized with the core caps. A
  * test whose responses named server coverage waits for it, within a bound;
  * the run-level coverage of each backend goes to the dashboard once the run
- * id is known.
+ * id is known, and so, at `coverage.browser: 'functions'`, does the browser's:
+ * per file, the functions any test ran and every function the pages declared.
  */
 
 /** How long a test waits for its server coverage at most, in ms. */
@@ -81,6 +85,17 @@ export function composeTestCoverage(
       : null;
   const merged = mergeCoverage(serverCapture, browserCapture);
   return merged ? sanitizeCoverage(merged) : null;
+}
+
+/** Function ranges by file, each range once. */
+type RangesByFile = Map<string, Map<string, LineRange>>;
+
+/** Add function ranges to a file's, each once. */
+function addRanges(into: RangesByFile, filePath: string, ranges: LineRange[]): void {
+  if (ranges.length === 0) return;
+  let known = into.get(filePath);
+  if (!known) into.set(filePath, (known = new Map()));
+  for (const range of ranges) known.set(`${range[0]}:${range[1]}`, range);
 }
 
 /** Run coverage files in requests the dashboard takes. */
@@ -163,6 +178,10 @@ export class CoverageCollection {
   private readonly browserBlobs: BlobIds | null;
   /** The tests whose browser files are getting their blob ids, so the end of the run waits for them. */
   private readonly browserPending = new Set<Promise<void>>();
+  /** The browser functions the run's tests ran, by file. */
+  private readonly browserRan: RangesByFile = new Map();
+  /** Every browser function the workers found, run or not, by file. */
+  private readonly browserKnown: RangesByFile = new Map();
 
   constructor(private readonly options: CoverageCollectionOptions) {
     this.logger = options.logger ?? new Logger();
@@ -200,6 +219,8 @@ export class CoverageCollection {
     const attachment = this.browserBlobs
       ? attachments?.find((a) => a.name === ATTACHMENT_NAMES.browserCoverage)
       : undefined;
+    if (this.browserBlobs)
+      this.addKnownFunctions(attachments?.find((a) => a.name === ATTACHMENT_NAMES.browserFunctions));
     if (!this.browserBlobs || !attachment?.body) return paths;
     let files: CoverageFile[] = [];
     try {
@@ -209,7 +230,51 @@ export class CoverageCollection {
     }
     const browser = files.filter((file) => file.runtime === 'browser');
     if (browser.length === 0) return paths;
+    for (const file of browser) addRanges(this.browserRan, file.path, file.functions ?? []);
     return this.browserBlobs.withBlobs(browser).catch(() => browser);
+  }
+
+  /** Add the functions of a `piwi-browser-functions` attachment to the run's. */
+  private addKnownFunctions(attachment: { body?: Buffer } | undefined): void {
+    if (!attachment?.body) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(attachment.body.toString('utf8'));
+    } catch {
+      return;
+    }
+    const files = (parsed as { v?: unknown; files?: unknown })?.v === 1 ? (parsed as { files: unknown }).files : null;
+    if (!Array.isArray(files)) return;
+    for (const item of files as Array<{ path?: unknown; allFunctions?: unknown }>) {
+      const filePath = normalizeCoveragePath(item?.path);
+      if (filePath !== null) addRanges(this.browserKnown, filePath, normalizeFunctionRanges(item.allFunctions));
+    }
+  }
+
+  /**
+   * The browser side of the run's coverage, at `coverage.browser: 'functions'`:
+   * per file, the functions the tests ran and every function the pages
+   * declared, run or not, with the file's blob id.
+   */
+  private async browserRunFiles(): Promise<RunCoverageFile[]> {
+    if (!this.browserBlobs) return [];
+    const paths = [...new Set([...this.browserKnown.keys(), ...this.browserRan.keys()])].sort();
+    const files: RunCoverageFile[] = paths.map((filePath) => {
+      const functions = normalizeFunctionRanges([...(this.browserRan.get(filePath)?.values() ?? [])]);
+      const allFunctions = normalizeFunctionRanges([
+        ...(this.browserKnown.get(filePath)?.values() ?? []),
+        ...functions,
+      ]);
+      const file: RunCoverageFile = { path: filePath, runtime: 'browser' };
+      if (functions.length > 0) file.functions = functions;
+      if (allFunctions.length > 0) file.allFunctions = allFunctions;
+      return file;
+    });
+    try {
+      return await this.browserBlobs.withBlobs(files);
+    } catch {
+      return files;
+    }
   }
 
   /**
@@ -307,18 +372,20 @@ export class CoverageCollection {
   }
 
   /**
-   * Send the run-level coverage of every origin to the dashboard run, in
-   * requests within its limits. A failure is logged once, never thrown.
+   * Send the run-level coverage of every origin, and the browser's, to the
+   * dashboard run, in requests within its limits. A failure is logged once,
+   * never thrown.
    */
   async sendRunCoverage(httpClient: HttpClient, runId: number | string, auth: string | null): Promise<void> {
-    if (!this.collector) return;
+    if (!this.collector && !this.browserBlobs) return;
     this.fetchRunCoverage();
-    const files: RunCoverageFile[] = (await Promise.all(this.runFiles.values())).flatMap((result) => result ?? []);
+    const server: RunCoverageFile[] = (await Promise.all(this.runFiles.values())).flatMap((result) => result ?? []);
+    const files = [...server, ...(await this.browserRunFiles())];
     for (const chunk of chunkRunCoverage(files)) {
       try {
         await httpClient.putJSON(`/api/test-runs/${runId}/coverage`, { v: 1, files: chunk }, auth);
       } catch (error) {
-        this.logger.warn(`Could not send the run's server coverage to the dashboard: ${errorMessage(error)}`);
+        this.logger.warn(`Could not send the run's coverage to the dashboard: ${errorMessage(error)}`);
         return;
       }
     }
