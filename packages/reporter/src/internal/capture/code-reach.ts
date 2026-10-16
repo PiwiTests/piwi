@@ -33,15 +33,22 @@
  * it and under `node_modules` are dropped, and so are the scripts React
  * evaluates in development to replay server component stacks
  * (`about://React/Server/…`), which stand for code that ran on the server. Decoded maps, resolved paths and the
- * sources they are read against are cached per worker by script URL, for the latest version seen at that URL only,
- * and for at most `MAX_CACHED_SCRIPTS` URLs, the least recently used going first.
+ * length and line starts of the scripts they are read against are cached per worker by script URL, for the latest
+ * version seen at that URL only, and for at most `MAX_CACHED_SCRIPTS` URLs, the least recently used going first.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { CDPSession, Page } from '@playwright/test';
-import { finalizeCodeReach, reachedFunctionLines, scriptRan, type JsCoverageEntry } from '@piwitests/core/code-reach';
+import {
+  finalizeCodeReach,
+  reachedFunctionLines,
+  scriptRan,
+  scriptText,
+  type JsCoverageEntry,
+  type ScriptText,
+} from '@piwitests/core/code-reach';
 import type { LineRange } from '@piwitests/core/coverage';
 import {
   decodeDataUrl,
@@ -58,6 +65,8 @@ const MAP_TIMEOUT_MS = 5000;
 const SOURCE_EXTENSIONS = /\.(?:[cm]?[jt]sx?|vue|svelte|astro|marko|html?)$/i;
 /** Script URLs that stand for code run elsewhere: React's replayed server component stacks. */
 const REPLAYED_SCRIPT = /^(?:about|rsc):/i;
+/** Script URLs whose code counts for no file: dependencies and a Vite dev server's own client. */
+const NEVER_REACHED = /\/node_modules\/|\/@vite\//;
 /** Directories a served file is build output in, not source: a bundle there is resolved through its map. */
 const BUILD_DIRS = /(?:^|\/)(?:dist|build|out|\.output|\.next|\.nuxt|\.svelte-kit|public|static|wwwroot)\//;
 
@@ -91,14 +100,20 @@ export interface CoveredScript extends JsCoverageEntry {
   hash?: string;
 }
 
-/** What one script resolves to, cached per worker with the source its function offsets are read against. */
+/**
+ * What one script resolves to, cached per worker with the text its function offsets are read against (its length
+ * and line starts, not the source itself).
+ */
 type ScriptResolution =
-  | { kind: 'file'; file: string | null; lookup: SourceMapLookup | null; source: string | undefined }
-  | { kind: 'map'; lookup: SourceMapLookup; files: Array<string | null | undefined>; source: string | undefined }
+  | { kind: 'file'; file: string | null; lookup: SourceMapLookup | null; text: ScriptText | undefined }
+  | { kind: 'map'; lookup: SourceMapLookup; files: Array<string | null | undefined>; text: ScriptText | undefined }
   | { kind: 'none' };
 
-/** Script and map URLs cached per worker at most. */
-export const MAX_CACHED_SCRIPTS = 500;
+/**
+ * Script and map URLs cached per worker at most: more than the modules a large application's dev server serves to
+ * one page, so a test that navigates between its pages finds every script it has already resolved.
+ */
+export const MAX_CACHED_SCRIPTS = 4000;
 
 /**
  * A per-worker cache holding, for each URL, the value of the latest version
@@ -305,16 +320,16 @@ async function resolveScript(
   const file = fileForUrl(entry.url, roots, bases);
   const lookup = await loadMap(entry, fetchMap);
   let resolution: ScriptResolution;
-  if (file) resolution = { kind: 'file', file, lookup, source: entry.source };
-  else resolution = lookup ? { kind: 'map', lookup, files: [], source: entry.source } : { kind: 'none' };
-  if (entry.source !== undefined) scriptCache.set(entry.url, version, resolution);
+  const text = entry.source === undefined ? undefined : scriptText(entry.source);
+  if (file) resolution = { kind: 'file', file, lookup, text };
+  else resolution = lookup ? { kind: 'map', lookup, files: [], text } : { kind: 'none' };
+  if (text) scriptCache.set(entry.url, version, resolution);
   return resolution;
 }
 
-/** The entry with the source its resolution was read against, when the capture left it out. */
-function withSource(entry: CoveredScript, resolution: { source: string | undefined }): CoveredScript {
-  if (entry.source !== undefined || resolution.source === undefined) return entry;
-  return { ...entry, source: resolution.source };
+/** The text a script's offsets are read against: its resolution's, else its own source's. */
+function textOf(entry: CoveredScript, resolution: { text: ScriptText | undefined }): ScriptText | undefined {
+  return resolution.text ?? (entry.source === undefined ? undefined : scriptText(entry.source));
 }
 
 /**
@@ -367,18 +382,18 @@ async function resolveReach(
     const dirs = scriptRoots(roots, covered.url, pageUrl);
     const resolution = known[i] ?? (await resolveScript(covered, dirs, bases, fetchMap));
     if (resolution.kind === 'file') {
-      const entry = withSource(covered, resolution);
       if (!resolution.file) continue;
+      const text = textOf(covered, resolution);
       if (resolution.lookup) {
         // A module with its own map counts for the functions that map to its source, at the lines they map to.
-        const reached = reachedFunctionLines(entry, resolution.lookup);
+        const reached = reachedFunctionLines(covered, resolution.lookup, text);
         if (reached.size > 0) add(resolution.file, [...reached.values()].flat());
-      } else if (scriptRan(entry)) {
-        add(resolution.file, reachedFunctionLines(entry, null).get(-1) ?? []);
+      } else if (scriptRan(covered, text)) {
+        add(resolution.file, reachedFunctionLines(covered, null, text).get(-1) ?? []);
       }
     } else if (resolution.kind === 'map') {
-      const entry = withSource(covered, resolution);
-      for (const [index, functions] of reachedFunctionLines(entry, resolution.lookup)) {
+      const entry = covered;
+      for (const [index, functions] of reachedFunctionLines(covered, resolution.lookup, textOf(covered, resolution))) {
         if (resolution.files[index] === undefined) {
           const source = resolution.lookup.sources[index] ?? '';
           let absolute = resolveSourcePath(source, dirs);
@@ -459,7 +474,8 @@ const MARK_WORLD = 'piwi-code-reach';
  * read during the pause. A command sent once the navigation started would only
  * reach the next document.
  */
-const MARK_SOURCE = "addEventListener('beforeunload', function piwiCodeReachMark() {});";
+const MARK_FUNCTION = 'piwiCodeReachMark';
+const MARK_SOURCE = `addEventListener('beforeunload', function ${MARK_FUNCTION}() {});`;
 
 /** The documents of each page that carry the mark, by loader id; a document keeps it from one test to the next. */
 const markedDocuments = new WeakMap<Page, Set<string>>();
@@ -495,10 +511,16 @@ async function markCurrentDocument(page: Page, cdp: CDPSession): Promise<void> {
  * Release every pause: the debugger runs only to learn the scripts and to stop
  * as a document is left, when the coverage is read first.
  */
-function onPaused(page: Page, capture: CoverageCapture, event: { reason: string; data?: unknown }): void {
+function onPaused(
+  page: Page,
+  capture: CoverageCapture,
+  event: { reason: string; data?: unknown; callFrames?: Array<{ functionName: string }> },
+): void {
+  // The page's own `beforeunload` listeners stop the debugger too: only the mark's stop reads.
   const leaving =
     event.reason === 'EventListener' &&
-    (event.data as { eventName?: string } | undefined)?.eventName === 'listener:beforeunload';
+    (event.data as { eventName?: string } | undefined)?.eventName === 'listener:beforeunload' &&
+    (event.callFrames?.[0]?.functionName ?? MARK_FUNCTION) === MARK_FUNCTION;
   const read = leaving ? readCoverage(page, capture.cdp) : null;
   if (read) capture.reads.push(read);
   void (read ?? Promise.resolve()).finally(() => {
@@ -514,7 +536,9 @@ function versionKey(url: string, hash: string): string {
  * Record a parsed script, and read its source now, while its document is
  * still there, when the worker has not resolved this version of it yet.
  * Scripts without a URL (the page's inline handlers, Playwright's own
- * evaluations) are left out, and so are replayed server stacks.
+ * evaluations) are left out, and so are replayed server stacks. The source of a
+ * dependency (`node_modules`, a dev server's own client) is never read: it counts
+ * for no file.
  */
 function onScriptParsed(
   page: Page,
@@ -523,6 +547,7 @@ function onScriptParsed(
 ): void {
   if (!event.url || REPLAYED_SCRIPT.test(event.url)) return;
   capture.scripts.set(event.scriptId, { url: event.url, hash: event.hash });
+  if (NEVER_REACHED.test(event.url)) return;
   const key = versionKey(event.url, event.hash);
   if (capture.sources.has(key) || scriptCache.get(event.url, event.hash)) return;
   const source: Promise<string | null> = internalCall(page, () =>

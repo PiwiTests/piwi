@@ -32,11 +32,29 @@ export interface JsCoverageEntry {
 const MAX_CODE_REACH_FILES = 2000;
 
 /**
+ * What the offsets of a script's coverage are read against: its length and the
+ * offset each line starts at. Kept instead of the source by a caller that reads a
+ * script once and resolves its coverage in many tests.
+ */
+export interface ScriptText {
+  length: number;
+  starts: ArrayLike<number>;
+}
+
+/** A script's text as its coverage offsets are read against it. */
+export function scriptText(source: string): ScriptText {
+  return { length: source.length, starts: Uint32Array.from(lineStarts(source)) };
+}
+
+const textOf = (entry: JsCoverageEntry, text: ScriptText | undefined): ScriptText | undefined =>
+  text ?? (entry.source === undefined ? undefined : scriptText(entry.source));
+
+/**
  * The ranges of the functions that ran in a script, without its top-level
  * function (the one spanning the whole script).
  */
-function executedFunctionRanges(entry: JsCoverageEntry): Array<{ start: number; end: number }> {
-  const length = entry.source?.length ?? Number.POSITIVE_INFINITY;
+function executedFunctionRanges(entry: JsCoverageEntry, length?: number): Array<{ start: number; end: number }> {
+  length ??= entry.source?.length ?? Number.POSITIVE_INFINITY;
   const out: Array<{ start: number; end: number }> = [];
   entry.functions.forEach((fn, i) => {
     const whole = fn.ranges[0];
@@ -53,17 +71,21 @@ export function executedFunctionOffsets(entry: JsCoverageEntry): number[] {
   return executedFunctionRanges(entry).map((range) => range.start);
 }
 
-/** Whether any function of the script other than its top level ran. */
-export function scriptRan(entry: JsCoverageEntry): boolean {
-  return executedFunctionOffsets(entry).length > 0;
+/** Whether any function of the script other than its top level ran; `text` stands for its source when given. */
+export function scriptRan(entry: JsCoverageEntry, text?: ScriptText): boolean {
+  return executedFunctionRanges(entry, text?.length).length > 0;
 }
 
-/** The sources (indexes into `map.sources`) of the functions that ran, through the script's source map. */
-export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup): Set<number> {
-  const ranges = executedFunctionRanges(entry);
+/**
+ * The sources (indexes into `map.sources`) of the functions that ran, through the script's source map; `text`
+ * stands for its source when given.
+ */
+export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup, text?: ScriptText): Set<number> {
+  const read = textOf(entry, text);
+  const ranges = executedFunctionRanges(entry, read?.length);
   const reached = new Set<number>();
-  if (!ranges.length || entry.source === undefined) return reached;
-  const starts = lineStarts(entry.source);
+  if (!ranges.length || !read) return reached;
+  const starts = read.starts;
   for (const range of ranges) {
     const start = offsetToPosition(starts, range.start);
     const source = map.sourceAt(start.line, start.column);
@@ -77,18 +99,24 @@ export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup): Se
  * The 1-based start and end line of each function that ran, not counting the
  * script's top-level code: through a source map, by the index of the source the
  * function starts in, from the original lines its code maps to there; without
- * one, lines of the script's own text, under index -1.
+ * one, lines of the script's own text, under index -1. `text` stands for the
+ * source when given.
  */
-export function reachedFunctionLines(entry: JsCoverageEntry, map: SourceMapLookup | null): Map<number, LineRange[]> {
+export function reachedFunctionLines(
+  entry: JsCoverageEntry,
+  map: SourceMapLookup | null,
+  text?: ScriptText,
+): Map<number, LineRange[]> {
   const out = new Map<number, LineRange[]>();
-  const ranges = executedFunctionRanges(entry);
-  if (!ranges.length || entry.source === undefined) return out;
+  const read = textOf(entry, text);
+  const ranges = executedFunctionRanges(entry, read?.length);
+  if (!ranges.length || !read) return out;
   const add = (source: number, range: LineRange) => {
     const list = out.get(source);
     if (list) list.push(range);
     else out.set(source, [range]);
   };
-  const starts = lineStarts(entry.source);
+  const starts = read.starts;
   for (const range of ranges) {
     const start = offsetToPosition(starts, range.start);
     if (!map) {

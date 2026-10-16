@@ -52,6 +52,13 @@ interface LineSegments {
   originalLines: number[];
 }
 
+/** A decoded line's segments, as the lookup keeps them. */
+interface CompactSegments {
+  columns: Int32Array;
+  sources: Int32Array;
+  originalLines: Int32Array;
+}
+
 /** Decode a `mappings` string into per-line segments, source indexes offset by `sourceBase`. */
 function decodeMappings(mappings: string, sourceBase: number): LineSegments[] {
   const lines: LineSegments[] = [];
@@ -119,7 +126,7 @@ function joinRoot(root: string | undefined, source: string): string {
 /** Parse a source map. Null when it is not a version 3 map. */
 export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
   const sources: string[] = [];
-  const lines: LineSegments[] = [];
+  const decoded: LineSegments[] = [];
 
   const add = (map: RawSourceMap, lineOffset: number, columnOffset: number): boolean => {
     if (map.sections) {
@@ -134,8 +141,9 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
     decodeMappings(map.mappings, base).forEach((segments, i) => {
       const at = lineOffset + i;
       const shifted = i === 0 && columnOffset ? segments.columns.map((c) => c + columnOffset) : segments.columns;
-      const existing = lines[at];
-      if (!existing) lines[at] = { columns: shifted, sources: segments.sources, originalLines: segments.originalLines };
+      const existing = decoded[at];
+      if (!existing)
+        decoded[at] = { columns: shifted, sources: segments.sources, originalLines: segments.originalLines };
       else {
         existing.columns.push(...shifted);
         existing.sources.push(...segments.sources);
@@ -146,6 +154,12 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
   };
   if (raw.version !== undefined && raw.version !== 3) return null;
   if (!add(raw, 0, 0)) return null;
+  // Kept in typed arrays: a caller may hold the decoded maps of thousands of scripts.
+  const lines: Array<CompactSegments | undefined> = decoded.map((line) => ({
+    columns: Int32Array.from(line.columns),
+    sources: Int32Array.from(line.sources),
+    originalLines: Int32Array.from(line.originalLines),
+  }));
 
   const originalAt = (line: number, column: number): { source: number; line: number } | null => {
     const segments = lines[line];
@@ -198,10 +212,10 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
  * position, in order, until `visit` returns true.
  */
 function eachSegmentBetween(
-  lines: LineSegments[],
+  lines: Array<CompactSegments | undefined>,
   start: GeneratedPosition,
   end: GeneratedPosition,
-  visit: (segments: LineSegments, index: number) => boolean,
+  visit: (segments: CompactSegments, index: number) => boolean,
 ): void {
   for (let line = start.line; line <= end.line && line < lines.length; line++) {
     const segments = lines[line];
@@ -231,7 +245,7 @@ export function lineStarts(text: string): number[] {
 }
 
 /** The 0-based line and column of a character offset, given the text's line starts. */
-export function offsetToPosition(starts: number[], offset: number): { line: number; column: number } {
+export function offsetToPosition(starts: ArrayLike<number>, offset: number): { line: number; column: number } {
   let lo = 0;
   let hi = starts.length - 1;
   while (lo < hi) {

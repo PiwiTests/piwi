@@ -400,6 +400,8 @@ describe('in Chromium', () => {
     await page.goto(`${url}first.html`);
     await page.click('body[data-ready="first"] #go');
     await page.waitForFunction("document.body.dataset.done === 'first'");
+    // The page's own beforeunload listener stops the debugger too, before the mark's.
+    await page.evaluate("addEventListener('beforeunload', function appGuard() {})");
     await page.evaluate("location.href = '/second.html'");
     await page.click('body[data-ready="second"] #go');
     await page.waitForFunction("document.body.dataset.done === 'second'");
