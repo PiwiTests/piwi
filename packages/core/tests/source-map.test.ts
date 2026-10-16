@@ -99,6 +99,32 @@ describe('decodeSourceMap', () => {
     expect(indexed.sources).toEqual(['a.ts', 'b.ts']);
     expect(indexed.sourceAt(0, 3)).toBe(0);
     expect(indexed.sourceAt(5, 3)).toBe(1);
+    // The lines between two sections have no segment.
+    expect(indexed.sourceAt(3, 0)).toBeNull();
+    expect(indexed.mapsBetween(1, { line: 0, column: 1 }, { line: 6, column: 0 })).toBe(true);
+    expect(indexed.originalLinesBetween(0, { line: 1, column: 0 }, { line: 6, column: 0 })).toBeNull();
+  });
+
+  test('sorts a line whose segments come out of column order, with their original lines', () => {
+    const unsorted = decodeSourceMap({
+      version: 3,
+      sources: ['a.ts', 'b.ts'],
+      mappings: encode([
+        [
+          [20, 1, 9],
+          [0, 0, 3],
+        ],
+      ]),
+    })!;
+    expect(unsorted.originalAt(0, 5)).toEqual({ source: 0, line: 3 });
+    expect(unsorted.originalAt(0, 25)).toEqual({ source: 1, line: 9 });
+    expect(unsorted.originalLinesBetween(1, { line: 0, column: 0 }, { line: 0, column: 30 })).toEqual([9, 9]);
+  });
+
+  test('answers nothing outside the generated lines', () => {
+    expect(map.originalAt(-1, 0)).toBeNull();
+    expect(map.originalAt(3, 0)).toBeNull();
+    expect(map.mapsBetween(0, { line: -2, column: 0 }, { line: 0, column: 5 })).toBe(true);
   });
 
   test('refuses another version', () => {

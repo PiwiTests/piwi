@@ -52,8 +52,14 @@ interface LineSegments {
   originalLines: number[];
 }
 
-/** A decoded line's segments, as the lookup keeps them. */
+/**
+ * Every line's segments end to end, as the lookup keeps them: line `n`'s are at
+ * indexes `lineStarts[n]` to `lineStarts[n + 1]` (excluded). Four typed arrays
+ * per map, whatever its line count: a caller may hold the maps of thousands of
+ * scripts, and arrays per line would cost more in headers than in segments.
+ */
 interface CompactSegments {
+  lineStarts: Int32Array;
   columns: Int32Array;
   sources: Int32Array;
   originalLines: Int32Array;
@@ -123,10 +129,10 @@ function joinRoot(root: string | undefined, source: string): string {
   return root.endsWith('/') ? root + source : `${root}/${source}`;
 }
 
-/** Parse a source map. Null when it is not a version 3 map. */
-export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
+/** A map's sources and per-line segments, its sections merged; null when a section is not a map. */
+function decodeLines(raw: RawSourceMap): { sources: string[]; lines: Array<LineSegments | undefined> } | null {
   const sources: string[] = [];
-  const decoded: LineSegments[] = [];
+  const decoded: Array<LineSegments | undefined> = [];
 
   const add = (map: RawSourceMap, lineOffset: number, columnOffset: number): boolean => {
     if (map.sections) {
@@ -152,22 +158,48 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
     });
     return true;
   };
+  return add(raw, 0, 0) ? { sources, lines: decoded } : null;
+}
+
+function compactSegments(lines: ReadonlyArray<LineSegments | undefined>): CompactSegments {
+  let total = 0;
+  for (const line of lines) total += line?.columns.length ?? 0;
+  const segments: CompactSegments = {
+    lineStarts: new Int32Array(lines.length + 1),
+    columns: new Int32Array(total),
+    sources: new Int32Array(total),
+    originalLines: new Int32Array(total),
+  };
+  let at = 0;
+  for (let n = 0; n < lines.length; n++) {
+    segments.lineStarts[n] = at;
+    const line = lines[n];
+    if (!line) continue;
+    segments.columns.set(line.columns, at);
+    segments.sources.set(line.sources, at);
+    segments.originalLines.set(line.originalLines, at);
+    at += line.columns.length;
+  }
+  segments.lineStarts[lines.length] = at;
+  return segments;
+}
+
+/** Parse a source map. Null when it is not a version 3 map. */
+export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
   if (raw.version !== undefined && raw.version !== 3) return null;
-  if (!add(raw, 0, 0)) return null;
-  // Kept in typed arrays: a caller may hold the decoded maps of thousands of scripts.
-  const lines: Array<CompactSegments | undefined> = decoded.map((line) => ({
-    columns: Int32Array.from(line.columns),
-    sources: Int32Array.from(line.sources),
-    originalLines: Int32Array.from(line.originalLines),
-  }));
+  // Decoded apart, so the lookup's closures hold the compact segments only.
+  const decoded = decodeLines(raw);
+  if (!decoded) return null;
+  const { sources } = decoded;
+  const segments = compactSegments(decoded.lines);
+  const lineCount = segments.lineStarts.length - 1;
 
   const originalAt = (line: number, column: number): { source: number; line: number } | null => {
-    const segments = lines[line];
-    if (!segments || segments.columns.length === 0) return null;
+    if (line < 0 || line >= lineCount) return null;
     // The last segment starting at or before the column.
-    let lo = 0;
-    let hi = segments.columns.length - 1;
-    if (segments.columns[0]! > column) return null;
+    let lo = segments.lineStarts[line]!;
+    let hi = segments.lineStarts[line + 1]! - 1;
+    if (lo > hi || segments.columns[lo]! > column) return null;
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
       if (segments.columns[mid]! <= column) lo = mid;
@@ -185,7 +217,7 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
     originalAt,
     mapsBetween(source, start, end) {
       let found = false;
-      eachSegmentBetween(lines, start, end, (segments, i) => {
+      eachSegmentBetween(segments, start, end, (i) => {
         found = segments.sources[i] === source;
         return found;
       });
@@ -194,7 +226,7 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
     originalLinesBetween(source, start, end) {
       let first = Number.POSITIVE_INFINITY;
       let last = -1;
-      eachSegmentBetween(lines, start, end, (segments, i) => {
+      eachSegmentBetween(segments, start, end, (i) => {
         const line = segments.originalLines[i]!;
         if (segments.sources[i] === source && line >= 0) {
           if (line < first) first = line;
@@ -208,31 +240,31 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
 }
 
 /**
- * Visit the segments at or after a generated position and before an end
- * position, in order, until `visit` returns true.
+ * Visit the indexes of the segments at or after a generated position and before
+ * an end position, in order, until `visit` returns true.
  */
 function eachSegmentBetween(
-  lines: Array<CompactSegments | undefined>,
+  segments: CompactSegments,
   start: GeneratedPosition,
   end: GeneratedPosition,
-  visit: (segments: CompactSegments, index: number) => boolean,
+  visit: (index: number) => boolean,
 ): void {
-  for (let line = start.line; line <= end.line && line < lines.length; line++) {
-    const segments = lines[line];
-    if (!segments) continue;
+  const lineCount = segments.lineStarts.length - 1;
+  for (let line = Math.max(start.line, 0); line <= end.line && line < lineCount; line++) {
+    let i = segments.lineStarts[line]!;
+    const stop = segments.lineStarts[line + 1]!;
     // The first segment at or after the start column on the start line.
-    let i = 0;
     if (line === start.line) {
-      let hi = segments.columns.length;
+      let hi = stop;
       while (i < hi) {
         const mid = (i + hi) >> 1;
         if (segments.columns[mid]! < start.column) i = mid + 1;
         else hi = mid;
       }
     }
-    for (; i < segments.columns.length; i++) {
+    for (; i < stop; i++) {
       if (line === end.line && segments.columns[i]! >= end.column) return;
-      if (visit(segments, i)) return;
+      if (visit(i)) return;
     }
   }
 }
