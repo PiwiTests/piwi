@@ -136,7 +136,8 @@ clients stay thin and both editors give the same answers.
   application file, `piwi/fileSummary` adds the coverage's tests to the file's `Reached by N tests` line, with
   `41 of 63 lines run` when the executable lines are known, and gives each function that ran a line at its first line;
   on a server file their `piwi.runTests` carries `coverage: 'server'`, which `piwi/runArgs` turns into
-  `PIWI_COVERAGE_SERVER=lines`, so the run records the lines again. The hover of a line names the tests that ran it, or
+  `PIWI_COVERAGE_SERVER=lines`, so the run records the lines again; on a browser file, `coverage: 'browser'`, turned
+  into `PIWI_COVERAGE_BROWSER=functions`. The hover of a line names the tests that ran it, or
   says that none runs it or that it changed since the coverage run.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it

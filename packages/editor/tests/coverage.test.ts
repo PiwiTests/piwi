@@ -66,6 +66,10 @@ const ORDER = 'namespace Web.Services;\n\npublic class OrderService\n{\n    publ
 const BASKET_FILE = 'src/Web/Services/BasketService.cs';
 const ORDER_FILE = 'src/Web/Services/OrderService.cs';
 const UNREACHED_FILE = 'src/Web/Services/Unreached.cs';
+/** A front-end module whose coverage the browser recorded by function. */
+const CART_FILE = 'web/src/cart.ts';
+const CART =
+  'export function add(item: string) {\n  items.push(item);\n  return items.length;\n}\nconst items: string[] = [];\n';
 /** A blob no repository holds: a version of the order service recorded elsewhere. */
 const FOREIGN_BLOB = 'ab'.repeat(20);
 
@@ -90,18 +94,20 @@ const INDEX: LocatorIndex = {
 };
 
 const CODE_INDEX: CodeIndex = {
-  files: [BASKET_FILE, ORDER_FILE, 'src/Web/Program.cs'],
+  files: [BASKET_FILE, ORDER_FILE, 'src/Web/Program.cs', CART_FILE],
   tests: TESTS,
   reach: [
     { file: 0, tests: [0, 1], origin: 'server', runtime: 'server', via: 'coverage' },
     { file: 1, tests: [0], origin: 'server', runtime: 'server', via: 'coverage' },
     { file: 2, tests: [0], origin: 'server', runtime: 'server', via: 'route' },
+    { file: 3, tests: [0], origin: 'client', runtime: 'browser', via: 'coverage' },
   ],
   builtAt: null,
   truncated: false,
 };
 
 let basketBlob = '';
+let cartBlob = '';
 
 /** The basket service's coverage: two tests ran `AddItem` but its throw, the second `RemoveItem` too. */
 function basketCoverage(executable = true): FileCoverage {
@@ -154,6 +160,16 @@ function basketCoverage(executable = true): FileCoverage {
           ],
         }
       : {}),
+  };
+}
+
+/** The cart module's coverage: the first test ran `add`, recorded by function in the browser. */
+function cartCoverage(): FileCoverage {
+  return {
+    file: CART_FILE,
+    branch: 'main',
+    fragments: [{ path: CART_FILE, runtime: 'browser', blob: cartBlob, functions: [[1, 4]], tests: [0] }],
+    tests: [TESTS[0]!],
   };
 }
 
@@ -284,7 +300,9 @@ beforeAll(async () => {
             ? basket
             : file === ORDER_FILE
               ? { body: ORDER_COVERAGE, etag: '"order-1"' }
-              : { body: { file, branch: 'main', fragments: [], tests: [] }, etag: '"none"' };
+              : file === CART_FILE
+                ? { body: cartCoverage(), etag: '"cart-1"' }
+                : { body: { file, branch: 'main', fragments: [], tests: [] }, etag: '"none"' };
       const status = !answer ? 404 : etag === answer.etag ? 304 : 200;
       coverageAsks.push({ file, key, etag, status });
       res.statusCode = status;
@@ -322,9 +340,11 @@ beforeAll(async () => {
   write(BASKET_FILE, BASKET);
   write(ORDER_FILE, ORDER);
   write(UNREACHED_FILE, 'namespace Web.Services;\n');
+  write(CART_FILE, CART);
   git('add', '.');
   git('commit', '-q', '-m', 'init');
   basketBlob = git('hash-object', BASKET_FILE).trim();
+  cartBlob = git('hash-object', CART_FILE).trim();
   basket = { body: basketCoverage(), etag: '"basket-1"' };
 
   ({ client, stop } = await startService());
@@ -545,6 +565,25 @@ describe('coverage in the editor', () => {
 
     const reached = (await client.sendRequest('piwi/testsForFile', { uri: uri(BASKET_FILE) })) as TestsForFile;
     expect(reached).toMatchObject({ basis: 'reach', tests: [{ id: 11 }, { id: 12 }] });
+  });
+
+  test('a browser file recorded by function marks the lines its functions span, and its lenses record by function', async () => {
+    await open(client, CART_FILE, CART);
+    expect(await coverageOf(client, CART_FILE)).toMatchObject({
+      state: 'exact',
+      executed: [{ start: 0, end: 3, tests: 1 }],
+      notRun: [],
+    });
+    const summary = (await client.sendRequest('piwi/fileSummary', { uri: uri(CART_FILE) })) as FileSummary;
+    expect(summary.file).toMatchObject({
+      command: { command: 'piwi.runTests', arguments: [{ testIds: [11], coverage: 'browser' }] },
+    });
+    expect(summary.lines).toEqual([
+      expect.objectContaining({
+        line: 0,
+        command: expect.objectContaining({ arguments: [{ uri: uri(CART_FILE), testIds: [11], coverage: 'browser' }] }),
+      }),
+    ]);
   });
 
   test('the hover lists the tests behind a line, or says no test runs it', async () => {
