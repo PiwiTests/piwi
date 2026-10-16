@@ -374,6 +374,9 @@ describe('in Chromium', () => {
       const inline = Buffer.from(JSON.stringify(map)).toString('base64');
       write(`dist/${name}.js`, `${code}//# sourceMappingURL=data:application/json;base64,${inline}\n`);
     }
+    // A page with a same-process iframe, whose module only adds a beforeunload listener of its own.
+    write('guarded.html', '<iframe src="/first.html"></iframe><script type="module" src="/src/guard.js"></script>');
+    write('src/guard.js', "addEventListener('beforeunload', function guard() {\n  document.title = 'leaving';\n});\n");
     server = http.createServer((req, res) => {
       const file = path.join(dir, (req.url ?? '/').split('?')[0] === '/' ? 'index.html' : req.url!.split('?')[0]!);
       if (!fs.existsSync(file)) {
@@ -455,6 +458,20 @@ describe('in Chromium', () => {
     expect(await resolveCodeReach(entries, { roots: [dir], repoRoot: dir }, async () => null)).toEqual([
       'src/first.js',
       'src/second.js',
+    ]);
+  });
+
+  it("keeps what the page's own beforeunload listener ran, read at its iframe's mark as the main frame leaves", async (ctx) => {
+    if (!browser) return ctx.skip();
+    const page = await browser.newPage();
+    expect(await startCodeReach(page)).toBe(true);
+    await page.goto(`${url}guarded.html`);
+    await page.frameLocator('iframe').locator('body[data-ready="first"]').waitFor();
+    await page.goto(url);
+    const entries = (await stopCodeReach(page)) ?? [];
+    await page.close();
+    expect(await resolveCodeReach(entries, { roots: [dir], repoRoot: dir }, async () => null)).toEqual([
+      'src/guard.js',
     ]);
   });
 

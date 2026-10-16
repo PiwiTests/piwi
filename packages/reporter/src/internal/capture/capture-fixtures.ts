@@ -121,6 +121,7 @@ import {
   resolveCodeReachFunctions,
   startCodeReach,
   stopCodeReach,
+  type CodeReachRoots,
   type CodeReachRootsOption,
 } from './code-reach.js';
 import {
@@ -375,6 +376,8 @@ function createSink(): CaptureSink {
 interface CodeReachSession {
   started: Promise<boolean>;
   stopped: boolean;
+  /** Settles once the page's coverage is stopped and resolved into the sink's files. */
+  stopping?: Promise<void>;
 }
 
 /**
@@ -443,39 +446,55 @@ export function configuredCodeReachRoots(): CodeReachRootsOption | null {
 /**
  * Stop the test's coverage and resolve it to source files, while each page can
  * still fetch source maps. With `closing`, only on that page, or on the pages of
- * that context. Never throws.
+ * that context; without it, also waits for the stops a closing page or context
+ * started. Never throws.
  */
 async function stopSinkCodeReach(
   sink: CaptureSink,
   closing?: { page?: Page; context?: BrowserContext },
 ): Promise<void> {
   const stopping: Array<[Page, CodeReachSession]> = [];
+  const underway: Array<Promise<void>> = [];
   for (const [page, session] of sink.codeReach.sessions) {
-    if (session.stopped) continue;
+    if (session.stopped) {
+      if (!closing && session.stopping) underway.push(session.stopping);
+      continue;
+    }
     if (closing && closing.page !== page && (!closing.context || pageContext(page) !== closing.context)) continue;
     session.stopped = true;
     stopping.push([page, session]);
   }
-  if (stopping.length === 0) return;
-  const info = sink.testInfo;
-  const configFile = info?.config.configFile;
-  const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
-  const roots = codeReachRoots(configDir, configuredCodeReachRoots());
-  await Promise.all(
-    stopping.map(async ([page, session]) => {
-      try {
-        if (!(await session.started) || isPageClosed(page)) return;
-        const entries = await stopCodeReach(page);
-        if (!entries) return;
-        const reached = await resolveCodeReachFunctions(entries, roots, pageMapFetcher(page), page.url());
-        for (const [file, functions] of reached) {
-          sink.codeReach.files.set(file, [...(sink.codeReach.files.get(file) ?? []), ...functions]);
-        }
-      } catch {
-        /* code reach is best-effort and must never affect the test */
-      }
-    }),
-  );
+  if (stopping.length > 0) {
+    const info = sink.testInfo;
+    const configFile = info?.config.configFile;
+    const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
+    const roots = codeReachRoots(configDir, configuredCodeReachRoots());
+    for (const [page, session] of stopping) {
+      session.stopping = stopPageCodeReach(sink, page, session, roots);
+      underway.push(session.stopping);
+    }
+  }
+  await Promise.all(underway);
+}
+
+/** Stop one page's coverage and add the files it resolves to the sink's. Never throws. */
+async function stopPageCodeReach(
+  sink: CaptureSink,
+  page: Page,
+  session: CodeReachSession,
+  roots: CodeReachRoots,
+): Promise<void> {
+  try {
+    if (!(await session.started) || isPageClosed(page)) return;
+    const entries = await stopCodeReach(page);
+    if (!entries) return;
+    const reached = await resolveCodeReachFunctions(entries, roots, pageMapFetcher(page), page.url());
+    for (const [file, functions] of reached) {
+      sink.codeReach.files.set(file, [...(sink.codeReach.files.get(file) ?? []), ...functions]);
+    }
+  } catch {
+    /* code reach is best-effort and must never affect the test */
+  }
 }
 
 /**
