@@ -12,6 +12,7 @@ import { errorMessage } from '../support/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
 import type { CollectedTestCase } from '../../types/collected.js';
 import { BlobIds } from './blob-ids.js';
+import { SourceChecksums } from './source-checksums.js';
 import type { CoverageSettings } from './coverage-settings.js';
 import {
   ServerCoverageCollector,
@@ -177,6 +178,8 @@ export class CoverageCollection {
             baseUrls: options.baseUrls,
             // Line numbers refer to a file version: name it by its blob id in the checkout.
             blobs: granularity === 'files' ? null : new BlobIds(() => repositoryRoot(options.configDir)),
+            // A backend built from other sources than the checkout has line numbers of another version.
+            checksums: granularity === 'files' ? null : new SourceChecksums(() => repositoryRoot(options.configDir)),
             ignoreHttpsErrors: options.ignoreHttpsErrors,
             logger: this.logger,
             limits: options.limits,

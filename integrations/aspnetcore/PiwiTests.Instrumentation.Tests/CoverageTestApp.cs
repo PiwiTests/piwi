@@ -125,7 +125,7 @@ internal sealed class CoverageTestApp : IAsyncDisposable
     }
 }
 
-internal sealed record WireCoverageFile(string Path, string Runtime, int[][]? Functions, int[][]? Lines, int[][]? Executable);
+internal sealed record WireCoverageFile(string Path, string Runtime, int[][]? Functions, int[][]? Lines, int[][]? Executable, string[]? Checksums = null);
 
 internal sealed record WireCoverageGroup(string Key, List<WireCoverageFile> Files, List<string> Missing)
 {
@@ -191,6 +191,9 @@ internal static class FixtureSource
 
         return [.. ranges];
     }
+
+    /// <summary>The absolute path of the repository-relative path <paramref name="path"/>.</summary>
+    public static string RepositoryFile(string path) => System.IO.Path.Combine(RepositoryRoot, path);
 
     private static string[] Read(string name) => File.ReadAllLines(System.IO.Path.Combine(RepositoryRoot, Directory, name));
 

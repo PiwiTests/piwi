@@ -1,4 +1,8 @@
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
 import type * as http from 'node:http';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CoverageFile } from '@piwitests/core/coverage';
 import {
@@ -7,6 +11,7 @@ import {
   parseServerCoverageRequests,
   type CollectorLimits,
 } from '../src/internal/collect/server-coverage.js';
+import { SourceChecksums, contentChecksums } from '../src/internal/collect/source-checksums.js';
 import { Logger } from '../src/internal/support/logger.js';
 import { jsonRes, startServerOnTestPort, textRes, type FakeServer, type RecordedReq } from './_helpers.js';
 
@@ -302,6 +307,56 @@ describe('ServerCoverageCollector', () => {
     ]);
   });
 
+  it('drops the line numbers of a file built from other sources than the checkout, and marks the test incomplete', async () => {
+    const checkout = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-checksums-'));
+    fs.mkdirSync(path.join(checkout, 'src/Web'), { recursive: true });
+    fs.writeFileSync(path.join(checkout, 'src/Web/Program.cs'), 'class Program\n{\n}\n');
+    fs.writeFileSync(path.join(checkout, 'src/Web/Basket.cs'), 'class Basket\n{\n}\n');
+    const sha256 = (text: string) => `sha256:${crypto.createHash('sha256').update(text).digest('hex')}`;
+    const files = [
+      // Built on Windows from the same file: its checksum is of the CRLF form.
+      { path: 'src/Web/Program.cs', runtime: 'server', lines: [[1, 2]], checksums: [sha256('class Program\r\n{\r\n}\r\n')] },
+      { path: 'src/Web/Basket.cs', runtime: 'server', lines: [[1, 2]], executable: [[1, 3]], checksums: [sha256('class Basket {}\n')] },
+    ];
+    const server = await backend({
+      respond: (req, res) => {
+        if (req.method === 'POST') {
+          const body = JSON.parse(req.body) as CollectBody;
+          jsonRes(res, 200, { v: 1, groups: body.groups.map((g) => ({ key: g.key, files, missing: [] })) });
+        } else {
+          jsonRes(res, 200, { v: 1, files });
+        }
+        return true;
+      },
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = new ServerCoverageCollector({
+      granularity: 'lines',
+      baseUrls: [server.url],
+      blobs: null,
+      checksums: new SourceChecksums(() => checkout),
+      logger: new Logger(),
+      limits: { batchDelayMs: 20 },
+    });
+    try {
+      expect(await c.collect({ [server.url]: ['p.1'] })).toEqual({
+        files: [
+          { path: 'src/Web/Basket.cs', runtime: 'server' },
+          { path: 'src/Web/Program.cs', runtime: 'server', lines: [[1, 2]] },
+        ],
+        incomplete: true,
+      });
+      expect(await c.fetchRun(server.url)).toEqual([
+        { path: 'src/Web/Program.cs', runtime: 'server', lines: [[1, 2]] },
+        { path: 'src/Web/Basket.cs', runtime: 'server' },
+      ]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toContain('src/Web/Basket.cs differs');
+    } finally {
+      fs.rmSync(checkout, { recursive: true, force: true });
+    }
+  });
+
   it('answers null for the run-level coverage of an origin without it', async () => {
     const server = await backend({
       respond: (_req, res) => {
@@ -351,5 +406,23 @@ describe('baseUrlsFromConfig', () => {
         ],
       }),
     ).toEqual(['http://localhost:5000/shop', 'http://localhost:3000']);
+  });
+});
+
+describe('contentChecksums', () => {
+  it('names the SHA-1 and SHA-256 of the content as is, with LF and with CRLF line endings', () => {
+    const checksums = contentChecksums(Buffer.from('a\r\nb\n'));
+    const sha = (algorithm: string, text: string) =>
+      `${algorithm}:${crypto.createHash(algorithm).update(text).digest('hex')}`;
+    expect(checksums).toEqual(
+      new Set([
+        sha('sha1', 'a\r\nb\n'),
+        sha('sha256', 'a\r\nb\n'),
+        sha('sha1', 'a\nb\n'),
+        sha('sha256', 'a\nb\n'),
+        sha('sha1', 'a\r\nb\r\n'),
+        sha('sha256', 'a\r\nb\r\n'),
+      ]),
+    );
   });
 });

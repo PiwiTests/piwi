@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Built with coverage instrumentation and copied next to the tests, whose code never calls it: an assembly
+       the recorder reads from disk, never loaded. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <IsPackable>false</IsPackable>
+    <Instrument>TestCoverage</Instrument>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PiwiTests.Instrumentation.Coverage/PiwiTests.Instrumentation.Coverage.csproj" />
+  </ItemGroup>
+</Project>

@@ -39,8 +39,12 @@ the option costs nothing: it can stay on, and the build decides.
 
 With `functions` and `lines`, each file names the git blob its line numbers refer to. At the end of the run the
 reporter also sends each backend's run-level coverage, attributed to no test, with each file's executable lines at
-`lines`: the lines no test runs. A test whose coverage the backend no longer held, or that could not be collected,
-is marked incomplete.
+`lines`: the lines no test runs, in every assembly built with coverage, including those whose code never ran. A test
+whose coverage the backend no longer held, or that could not be collected, is marked incomplete.
+
+The backend names the checksum of the source each file was compiled from. When the file in the reporter's checkout
+differs (the backend was built from another commit), the reporter keeps the file's path but drops its line numbers,
+which would point at the wrong lines, and marks the test incomplete; the run-level coverage drops them the same way.
 
 ## How it is collected
 
