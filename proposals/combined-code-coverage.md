@@ -12,7 +12,8 @@ numbers.
 exporting its own coverage for Sonar or Codecov to combine), reports are keyed by commit, and the browser end-to-end
 suite counts by functions first and by lines later. The unit tools to support first are coverlet, Microsoft code
 coverage and Vitest. The plan builds on browser function coverage (`coverage.browser: 'functions'`) and coverage on
-every page and document a test opens, both built and not merged at the time of writing. New wire fields, options and
+every page and document a test opens, both on main since 2026-10-16. How .NET lines are counted on a large solution,
+and what it costs, is [Part 6](#part-6-net-lines-on-a-large-solution). New wire fields, options and
 endpoints freeze at 1.0 and need an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** The arithmetic is a union of line ranges; the work is in agreeing on which lines count. On the same 71
@@ -25,7 +26,9 @@ of Piwi's 704 files ran no line), and both .NET tools list every line of each as
 report names are counted from the commit's file inventory (its tracked files), outside the percentage. On the browser, V8's function coverage
 already reports the functions that did not run, so a browser function ratio costs nothing beyond
 `coverage.browser: 'functions'`. Storage is small: Piwi's 704-file Vitest report (1.48 MB of LCOV) is 350 KB in
-Piwi's model, 67 KB gzipped, and a commit a day later shared 94.2% of its file records with it.
+Piwi's model, 67 KB gzipped, and a commit a day later shared 94.2% of its file records with it. On a synthetic
+solution of 1.35 million lines of C#, reading every span table takes 0.3 s and the backend's run-level report 0.5 s,
+while Microsoft code coverage and coverlet add 42 to 93 s to a one-test run and write 176 to 185 MB of Cobertura.
 
 ## What the reader gets
 
@@ -112,8 +115,9 @@ instrumentation built with the .NET 10.0.402 SDK:
 | D9 | One scope per project (include and exclude patterns), applied when totals are computed; a change recomputes the totals of the reports still kept. Default excludes: test files (`*.test.*`, `*.spec.*`, `tests/`, projects named `*Tests`), `obj/`, `bin/`, generated sources. | Each tool has its own excludes; one scope keeps the suites comparable. |
 | D10 | No gate fails a build on coverage. `--min-patch-coverage` warns only, like `--max-uncovered-changes`. | The study's rule, unchanged: the number informs, it is not a target. |
 | D11 | A report carries coverage only: no test names, no results, no hit counts. | Piwi stays Playwright-only ([`ROADMAP.md`](../ROADMAP.md), Non-goals): unit tests are an input to coverage, never results Piwi keeps. |
-| D12 | `run_coverage` stays as the end-to-end storage; uploaded reports get their own tables, sharing `coverage_fragments`. | No migration of shipped data; the uploads, repeated on every commit, are the volume content addressing saves. |
+| D12 | `run_coverage` stays as the end-to-end storage of the executed lines; uploaded reports get their own tables, sharing `coverage_fragments`. Executable lines are stored once per file version, in their own table, not on every run. | No migration of the executed lines; the uploads, repeated on every commit, are the volume content addressing saves. Executable lines depend on a file's content alone: on 1.35 million lines of C#, they are 1.4 MB that every run would otherwise store again (Part 6). |
 | D13 | The CLI sends paths, line numbers and blob ids, never source code. | The privacy page's promise for the `functions` and `lines` granularities, extended to uploads. |
+| D14 | No solution or project file is read. A .NET file's executable lines come from the span table the compiler wrote into its assembly; which projects count is which projects reference the coverage package; files outside them come from the file inventory and the scope. | The span table lists exactly what each assembly compiled (linked files, Razor views at their `.cshtml` lines, no `obj/` output), which a `.sln` or `.csproj` tells only through an MSBuild evaluation: the .NET SDK on the uploading machine, and seconds per project (Part 6). |
 
 ## Part 1: the upload
 
@@ -157,6 +161,8 @@ In `@piwitests/core/coverage-formats`, pure and without dependencies (the MIT si
 - A function known by its start line only is matched with the other suites' functions by that line.
 - A line with a hit count above zero ran; every listed line is executable. Measured: 4.4 MB of Cobertura scanned in
   0.1 s.
+- Reports are read as a stream, never whole: on a 1.35-million-line solution, one test's Cobertura is 176 to 185 MB
+  (Part 6).
 
 ### 1.4 The endpoint
 
@@ -172,7 +178,8 @@ limits of run coverage apply (16 MB and 20,000 files per request); the CLI split
 |---|---|---|
 | `coverage_reports` | One suite's report for one commit: `project_id, commit, branch, suite, kind, tool, incomplete, created_at`, the inventory as a `case_payloads` row | unique `(project_id, commit, suite)` |
 | `coverage_report_files` | Which fragment each file of a report has | unique `(report_id, path)` |
-| `coverage_fragments` (exists) | Gains `executable`; the canonical string gains a sixth element only when executable lines exist, so existing fragment hashes stay valid | unique `(project_id, hash)` |
+| `coverage_fragments` (exists) | Gains `executable`, for uploaded reports; the canonical string gains a sixth element only when executable lines exist, so existing fragment hashes stay valid | unique `(project_id, hash)` |
+| `coverage_executable` | The executable lines of one file version, from the span table: `project_id, runtime, path, blob, lines`. Written by the first run that sends them, read by `getExecutableLines`; `run_coverage.executable` is no longer filled | unique `(project_id, runtime, path, blob)` |
 | `coverage_totals` | Per project, commit and suite, plus `combined`: executable, executed and undetermined lines, known and run functions, files without data, files carried forward, the scope version | unique `(project_id, commit, suite)` |
 | `coverage_daily` | Per project, day, branch and suite: the totals of the day's last commit with coverage | unique `(project_id, day, branch, suite)` |
 | `test_runs.commit` (new column) | The run's commit as a column, from `metadata.scm.commit`, indexed with the project | |
@@ -250,25 +257,97 @@ ratios compare.
 5. **Later, browser lines**: V8 block coverage converted by `ast-v8-to-istanbul`, the converter Vitest 4 uses, so
    browser lines count like Vitest's. It costs what block coverage costs (+29% to +35% of test time, study), so it
    belongs in a nightly job. Until then the browser end-to-end suite gives functions and undetermined lines.
-6. **Optional, .NET unit tests through Piwi's instrumentation**: a unit-test build with `-p:PiwiCoverage=true` and
-   `PIWI_COVERAGE_MODE=run`, whose recorder writes its run-level report at process exit (`PIWI_COVERAGE_OUTPUT`),
-   uploaded with `--format piwi`. Checked: a `ProcessExit` handler in the test host wrote the report of the 71 tests.
-   Lines then match the end-to-end suite exactly; coverlet and Microsoft code coverage stay supported with the
-   difference measured.
+6. **.NET unit tests through Piwi's instrumentation**, recommended for a large solution (Part 6): a unit-test build
+   with `-p:PiwiCoverage=true` and `PIWI_COVERAGE_MODE=run`, whose recorder writes its run-level report at process
+   exit (`PIWI_COVERAGE_OUTPUT`), uploaded with `--format piwi`. Checked: a `ProcessExit` handler in the test host
+   wrote the report of the 71 tests. Lines then match the end-to-end suite exactly; coverlet and Microsoft code
+   coverage stay supported with the difference measured.
+
+## Part 6: .NET lines on a large solution
+
+How the ratio counts a C# file's lines, from which component, and what it costs on a solution far larger than the
+applications measured so far.
+
+### 6.1 Where each number comes from
+
+| Number | Comes from | When |
+|---|---|---|
+| **Executable lines**, the denominator | The span table the C# compiler writes into each assembly built with `-p:PiwiCoverage=true`, read by `PiwiTests.Instrumentation.Coverage` | When the backend serves its run-level coverage; with prerequisite 1, for every instrumented assembly in its directory, read from disk without loading it |
+| **Executed lines, end to end** | The same package's recorder, in the backend | Per test and per run, as today |
+| **Executed lines, unit tests** | coverlet's or Microsoft code coverage's Cobertura, their hits counted on the span table's lines (D5); or the same recorder in the test host (prerequisite 6) | At upload |
+| **Executable lines of a version no coverage build ran** | The unit report's own lines (D5) | Until a coverage build runs that version |
+
+Nothing in Piwi parses C#: the compiler decided which lines are statements when it built the assembly, and Piwi reads
+its table.
+
+### 6.2 What it costs
+
+A synthetic solution: 20 class libraries, 10,000 files, 1.35 million lines of C# (methods with loops, branches,
+`async`, `try` and `catch`, `switch` expressions, LINQ lambdas, auto-properties), 560,000 executable lines in their
+span tables. .NET 10 SDK, Release builds, a 4-core sandbox, each step run two or three times.
+
+| Step | Cost |
+|---|---|
+| Build with `-p:PiwiCoverage=true` | 49 to 54 s, against 42 s without (+15% to +27%), after a warm-up build |
+| Assemblies | 55 MB against 32 MB (+73%), of which 5.3 MB of span tables |
+| Reading an assembly's span table, at the first call into it | 9 to 10 ms (median), 0.3 s for the 20 |
+| Reading every span table from disk, without loading the assemblies (prerequisite 1) | 0.3 s |
+| The backend's run-level report with executable lines | 0.5 s, 3.5 MB of JSON, 90 MB allocated while it is written |
+| Blob ids of the 10,000 files | 0.3 s with `git hash-object --stdin-paths`, 0.02 s with `git ls-tree -r` |
+| The dashboard reading that report (parse and normalize) | 0.2 s |
+| Executable lines to store | 320,000 ranges, 1.4 MB as text |
+
+The unit tools on the same solution, with one test calling one method per library: the fixed cost of instrumenting
+and reporting, not the cost per test.
+
+| | Test run | Cobertura | Executable lines | Read by the CLI, as a stream |
+|---|---|---|---|---|
+| No coverage | 2.1 to 2.3 s | | | |
+| Microsoft code coverage | 44 to 48 s | 185 MB | 580,021 (+3.6% against the span tables) | 2.9 s, 333 MB of memory |
+| coverlet | 95 s | 176 MB | 610,379 (+9%) | 2.7 s, 344 MB |
+
+- **The span table is not the slow part.** Reading it takes well under a second for 1.35 million lines, at startup or
+  at the run's end. The build is: a coverage build compiles 15% to 27% slower and its assemblies are 73% larger.
+- **Executable lines are stored once per file version (D12).** At this size they are 1.4 MB, the same on every run
+  of an unchanged file.
+- **Cobertura is read as a stream.** The prototype kept each file's lines in sets (333 to 344 MB); two bits per
+  source line, executable and executed, are about 340 KB for this solution.
+- **For a large solution, unit tests through Piwi's recorder cost less** (prerequisite 6). When the pipeline already
+  builds the coverage build for the end-to-end environment, the unit tests run on those binaries, and the report adds
+  0.5 s and 3.5 MB at the test host's exit. Otherwise it costs that build, 49 to 54 s here: about what Microsoft code
+  coverage adds, half what coverlet adds. The cost per call during a long suite was not measured here: in the study,
+  `run` mode added 6% backend CPU on the pricing application, coverlet with hit counts 19%.
+- **The gap between line counts depends on the code.** On this synthetic code, mostly expression-bodied members,
+  which have no braces, the unit tools count 3.6% and 9% more lines than the span tables; on the real code of
+  Appendix A, 40% more. Real code is closer to the second, so D5 matters.
+
+### 6.3 Why not the solution file (D14)
+
+- A `.sln` or `.slnx` file names projects. Which files a project compiles comes from evaluating it with MSBuild: SDK
+  globs, `Compile Remove`, conditions per target framework, linked files, source generators. That needs the .NET SDK
+  on the machine that uploads, and seconds per project.
+- The span table already holds the result of that evaluation for each instrumented assembly. The
+  `Directory.Build.props` item that adds the package (with `IsTestProject != true`) is where a team already says
+  which projects count.
+- A project left without the package still shows: its files are in the file inventory and in no span table, so they
+  count among the files without coverage data, which the totals name.
+- An assembly the end-to-end backend does not ship (a worker, a library only the unit tests reference) has no span
+  table there. Its files take the unit report's lines (D5), or their own span table when the unit tests run through
+  Piwi's recorder, which reads every instrumented assembly in the test host's directory.
 
 ## Delivery
 
 | PR | Content | Needs | Size |
 |---|---|---|---|
-| 1 | .NET: executable lines of every instrumented assembly; source checksums served; the reporter drops the lines of a file whose checksum differs | none | 2 |
-| 2 | Core: Cobertura and LCOV parsers, path resolution, `allFunctions`; reporter: browser functions that did not run, sent at run end | browser function coverage | 2 |
-| 3 | Dashboard: `test_runs.commit`, `coverage_reports`, report files, fragments' executable lines, the upload endpoint, retention, the scope setting, the privacy page | 2 | 2 |
+| 1 | .NET: executable lines of every instrumented assembly, read from disk; source checksums served; the reporter drops the lines of a file whose checksum differs | none | 2 |
+| 2 | Core: Cobertura and LCOV parsers, read as streams, path resolution, `allFunctions`; reporter: browser functions that did not run, sent at run end | none | 2 |
+| 3 | Dashboard: `test_runs.commit`, `coverage_executable`, `coverage_reports`, report files, fragments' executable lines, the upload endpoint, retention, the scope setting, the privacy page | 2 | 2 |
 | 4 | CLI: `piwi coverage upload`, the file inventory, splitting; a docs page with CI steps for GitHub Actions, Bitbucket Pipelines and Azure DevOps | 2, 3 | 1 |
 | 5 | The calculation: reference lines, undetermined lines, functions, carry forward, totals, `coverage_daily`; `GET /api/projects/:id/coverage-summary?commit=`; MCP `get_coverage_summary` | 3 | 2 |
 | 6 | Screens: the run summary line, the project's coverage page and folder tree, suite marks in the file view; demo seed, a tour stop, screenshots | 5 | 3 |
 | 7 | Pull requests and the gate: patch coverage, uncovered changes counting unit suites, `--min-patch-coverage` (warn-only) | 5 | 2 |
 | 8 | Analytics widget, quality report line, LCOV and Cobertura export | 5 | 1 |
-| 9 | Optional: .NET unit tests through Piwi's recorder (`PIWI_COVERAGE_OUTPUT`, `--format piwi`) | 1, 4 | 1 |
+| 9 | .NET unit tests through Piwi's recorder (`PIWI_COVERAGE_OUTPUT`, `--format piwi`), recommended for large solutions | 1, 4 | 1 |
 | 10 | Later: browser lines through `ast-v8-to-istanbul` | 2 | 2 |
 
 Sizes are relative (1 small, 3 large), as in the study's delivery table. PRs 1 and 2 are worth shipping alone: they
@@ -308,6 +387,8 @@ fix the denominator and the version check of what Piwi already records.
 - The share of fragments consecutive commits share on a back-end suite (coverlet or Microsoft code coverage), where a
   test change moves more lines than in Piwi's pure-logic unit tests, to size retention.
 - Vitest's v8 lines against Piwi's browser lines once PR 10 lands, on the same files.
+- The recorder's cost per call over a long unit-test suite, against coverlet and Microsoft code coverage on the same
+  suite: Part 6 measured only their fixed cost.
 
 ## Not in this plan
 
