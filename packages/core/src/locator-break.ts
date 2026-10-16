@@ -296,11 +296,24 @@ function slotMatches(slot: ChainSlot, text: string): boolean {
   }
 }
 
+const filePath = (path: string): string => path.replace(/\\/g, '/').replace(/^\.\//, '');
+
 /** Two paths name the same file when equal or one ends with the other at a directory boundary. */
 export function sameFilePath(a: string, b: string): boolean {
-  const x = a.replace(/\\/g, '/').replace(/^\.\//, '');
-  const y = b.replace(/\\/g, '/').replace(/^\.\//, '');
+  const x = filePath(a);
+  const y = filePath(b);
   return x === y || x.endsWith('/' + y) || y.endsWith('/' + x);
+}
+
+/**
+ * The items whose path names `file` by {@link sameFilePath}: only those with `file`'s own path when any has it,
+ * since another file can end with the same path (`apps/admin/src/App.vue` for `src/App.vue`).
+ */
+export function itemsOfFile<T extends { path: string }>(items: readonly T[], file: string): T[] {
+  const matching = items.filter((item) => sameFilePath(item.path, file));
+  const own = filePath(file);
+  const exact = matching.filter((item) => filePath(item.path) === own);
+  return exact.length > 0 ? exact : matching;
 }
 
 /** The parts of a code index (`GET /api/projects/:id/code-index`) that say which test reaches which file. */

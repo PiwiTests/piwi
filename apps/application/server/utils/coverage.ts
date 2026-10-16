@@ -36,7 +36,7 @@ import {
   type CoverageRuntime,
   type LineRange,
 } from '@piwitests/core/coverage';
-import { sameFilePath } from '@piwitests/core/locator-break';
+import { itemsOfFile, sameFilePath } from '@piwitests/core/locator-break';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import { codeReach, coverageFragments, runCoverage, testCoverage, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -484,7 +484,7 @@ export async function getExecutableLines(
 /**
  * The coverage of one file on a branch: per runtime, a test with rows on the
  * branch reads them, the others the default branch's. `file` matches a stored
- * path or a path suffix of it (`sameFilePath`).
+ * path, else a path it is a suffix of or that is a suffix of it (`itemsOfFile`).
  */
 export async function getFileCoverage(
   db: DrizzleDB,
@@ -501,19 +501,18 @@ export async function getFileCoverage(
     executable: [],
   };
   const tag = view.tag ?? '';
-  const fragments = (
-    await db
-      .select({
-        id: coverageFragments.id,
-        runtime: coverageFragments.runtime,
-        path: coverageFragments.path,
-        blob: coverageFragments.blob,
-        functions: coverageFragments.functions,
-        lines: coverageFragments.lines,
-      })
-      .from(coverageFragments)
-      .where(and(eq(coverageFragments.projectId, projectId), sameBaseName(coverageFragments.path, file)))
-  ).filter((f) => sameFilePath(f.path, file));
+  const candidates = await db
+    .select({
+      id: coverageFragments.id,
+      runtime: coverageFragments.runtime,
+      path: coverageFragments.path,
+      blob: coverageFragments.blob,
+      functions: coverageFragments.functions,
+      lines: coverageFragments.lines,
+    })
+    .from(coverageFragments)
+    .where(and(eq(coverageFragments.projectId, projectId), sameBaseName(coverageFragments.path, file)));
+  const fragments = itemsOfFile(candidates, file);
   if (fragments.length === 0) return answer;
 
   const branches = tag === '' ? [''] : ['', tag];
@@ -664,7 +663,7 @@ export interface RunCoverage {
 
 /**
  * A run's coverage, attributed to no test (`run_coverage`): every file, or
- * those whose path matches `file` (`sameFilePath`), at most `limit`; with the
+ * those whose path matches `file` (`itemsOfFile`), at most `limit`; with the
  * number of the run's executions that recorded coverage of their own. Null
  * when there is no such run.
  */
@@ -705,8 +704,7 @@ export async function getRunCoverage(
   ]);
   const fileCounts: Record<CoverageRuntime, number> = { browser: 0, server: 0 };
   for (const row of counted) fileCounts[asRuntime(row.runtime)] += Number(row.n);
-  const files = rows
-    .filter((row) => !opts.file || sameFilePath(row.path, opts.file))
+  const files = (opts.file ? itemsOfFile(rows, opts.file) : rows)
     .map((row) =>
       runFileEntry(
         row.path,

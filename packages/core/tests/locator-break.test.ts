@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { DiffAnchor } from '../src/diff-anchors';
 import { buildLiteralEdit } from '../src/locator-edit';
-import { predictLocatorBreaks, reachOfIndex, renameValue, sameFilePath } from '../src/locator-break';
+import { itemsOfFile, predictLocatorBreaks, reachOfIndex, renameValue, sameFilePath } from '../src/locator-break';
 import type { LocatorIndex } from '../src/locator-index';
 
 function index(locators: string[], extra: Partial<LocatorIndex> = {}): LocatorIndex {
@@ -243,6 +243,13 @@ describe('helpers', () => {
     expect(sameFilePath('src/a.ts', 'app/src/a.ts')).toBe(true);
     expect(sameFilePath('./src/a.ts', 'src/a.ts')).toBe(true);
     expect(sameFilePath('rc/a.ts', 'src/a.ts')).toBe(false);
+  });
+
+  test('itemsOfFile keeps the file’s own path when any item has it', () => {
+    const items = [{ path: 'apps/admin/src/App.vue' }, { path: 'src/App.vue' }, { path: 'src/Other.vue' }];
+    expect(itemsOfFile(items, './src/App.vue')).toEqual([{ path: 'src/App.vue' }]);
+    expect(itemsOfFile(items, 'App.vue')).toEqual([{ path: 'apps/admin/src/App.vue' }, { path: 'src/App.vue' }]);
+    expect(itemsOfFile(items, 'web/src/App.vue')).toEqual([{ path: 'src/App.vue' }]);
   });
 
   test('buildLiteralEdit keeps the quote the author used', () => {

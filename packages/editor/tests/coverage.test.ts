@@ -386,6 +386,19 @@ describe('the version the marks come from', () => {
     });
   const none = () => {};
 
+  test('leaves out the versions of another file whose path ends with the same path', () => {
+    const recorded = coverageVersions({
+      file: BASKET_FILE,
+      branch: 'main',
+      fragments: [
+        { path: `apps/admin/${BASKET_FILE}`, runtime: 'server', blob: 'c'.repeat(40), lines: [[1, 1]], tests: [0, 1] },
+        { path: BASKET_FILE, runtime: 'server', blob: basketBlob, lines: [[1, 1]], tests: [2] },
+      ],
+      tests: [],
+    });
+    expect(recorded.map((v) => v.blob)).toEqual([basketBlob]);
+  });
+
   test('is the file as it stands, else the version the most tests recorded that the repository holds', async () => {
     const recorded = versions([
       ['c'.repeat(40), 5],

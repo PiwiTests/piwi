@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto';
 import { normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
-import { sameFilePath } from '@piwitests/core/locator-break';
+import { itemsOfFile, sameFilePath } from '@piwitests/core/locator-break';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { placeLine } from './analysis.js';
@@ -81,10 +81,13 @@ export interface CoverageVersion {
   executable: LineRange[] | null;
 }
 
-/** The versions the coverage names lines of, the one the most tests recorded first. */
+/**
+ * The versions the coverage names lines of, the one the most tests recorded first. Fragments of another file whose
+ * path ends with the same path are left out when the file has fragments of its own.
+ */
 export function coverageVersions(coverage: FileCoverage): CoverageVersion[] {
   const byBlob = new Map<string, CoverageFragment[]>();
-  for (const fragment of coverage.fragments) {
+  for (const fragment of itemsOfFile(coverage.fragments, coverage.file)) {
     if (!fragment.blob || !(fragment.lines?.length || fragment.functions?.length)) continue;
     byBlob.set(fragment.blob, [...(byBlob.get(fragment.blob) ?? []), fragment]);
   }
