@@ -102,7 +102,7 @@ describe('checkJiraCredentials', () => {
     });
     expect(result.auth).toMatchObject({ ok: true, tokenKind: 'scoped' });
     expect(fetchMock.mock.calls[3]![0]).toBe(
-      'https://api.atlassian.com/ex/jira/cloud-9/rest/api/3/project/search?maxResults=100',
+      'https://api.atlassian.com/ex/jira/cloud-9/rest/api/3/project/search?startAt=0&maxResults=100',
     );
     expect(result.projects).toMatchObject({ ok: true, count: 0 });
     expect(result.projects?.hint).toMatch(/Browse Projects/);
