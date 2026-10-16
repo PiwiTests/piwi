@@ -138,6 +138,38 @@ npx @piwitests/reporter report --project checkout --period 7d --format md
 | `--fail-on <tone>` | `bad`: exit 1 on a bad verdict; `mixed`: on a mixed or bad one |
 | `-h`, `--help` | Show help |
 
+## `coverage`
+
+Upload another tool's coverage report of a commit to the dashboard, for [combined coverage](/features/combined-coverage):
+the unit tests of a front end or a back end, from Cobertura or LCOV. The command reads each report as a stream,
+resolves its paths against the checkout, keeps the files in the project's coverage scope and sends paths, line numbers
+and git blob ids, with the commit's tracked files in scope. Uploads of one commit and suite merge, so shards upload
+separately.
+
+```bash
+npx @piwitests/reporter coverage upload "**/coverage.cobertura.xml" --suite unit-back
+```
+
+**Exit codes:** `0` uploaded · `1` nothing to upload (no report, or no file of the reports in the checkout) · `2` the upload could not be made.
+
+| Flag | Description |
+|---|---|
+| `--suite <name>` | The suite the report covers, e.g. `unit-back` |
+| `--kind <kind>` | `unit` (default) or `e2e`, for a backend's own run-level report |
+| `--format <format>` | `cobertura` or `lcov`; detected from the content when absent |
+| `--root <dir>` | The directory the reports' relative paths start from |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--branch <name>` | The branch (env `PIWI_BRANCH`, the CI's, else git's) |
+| `--dry-run` | Read and resolve the reports, print the summary, send nothing |
+| `--json` | Print the summary as JSON |
+| `-h`, `--help` | Show help |
+
+Patterns are expanded by the command, so a quoted `**` works the same in every shell. Without `--root`, a relative path
+is tried against the report's `<source>`, the current directory, the report's directory and its parent, and the
+repository root; the first that names a file of the checkout wins, and the summary counts the paths none did.
+
 ## `select` / `run` {#select-run}
 
 Resolve a saved [test selection](/features/test-selection) to the tests it matches. `select` prints the Playwright args (so you can compose them yourself); `run` executes `playwright test` with them. `run impact --base <ref>` runs the tests your working-tree diff impacts.

@@ -299,6 +299,14 @@ Which source code a test ran, per repository-relative file and **runtime** (`bro
 the git blob of the file version. Code reach is its file-level view. A test's coverage is **incomplete** when part of it
 could not be collected.
 
+### Coverage report and suite
+
+A **coverage report** is one tool's coverage of one suite's whole run at one commit, uploaded with
+[`piwi coverage upload`](/features/combined-coverage): per file, its **executable lines** (the lines that tool can mark
+as run), the lines that ran and the functions it knows, attributed to no test. A **suite** is the tests a report comes
+from, named when uploading (`unit-back`), of kind `unit` or `e2e`; not Playwright's `describe` block. The **coverage
+scope** is the include and exclude patterns that decide which files a project's coverage counts.
+
 ### Suspect lines
 
 The lines changed since a failing test's last passing run that the failing tests executed, read from their

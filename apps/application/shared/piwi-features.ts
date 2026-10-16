@@ -345,6 +345,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/server-coverage',
       },
       {
+        title: 'Combined coverage',
+        summary:
+          'The coverage reports of your unit tests (Vitest, coverlet, Microsoft code coverage), uploaded per commit and suite, next to the coverage the Playwright suite records.',
+        needs: [],
+        where: 'CLI (`piwi coverage upload`)',
+        doc: 'features/combined-coverage',
+      },
+      {
         title: 'Coverage insights',
         summary:
           'From the coverage tests record: the code a failure ran that its last pass did not, a path that depends on which tests ran first, the code only some tests run before you quarantine them, and whether a new test reaches its target lines.',
