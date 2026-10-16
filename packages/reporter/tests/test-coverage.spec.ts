@@ -355,6 +355,57 @@ describe('CoverageCollection', () => {
     }
   });
 
+  it('falls back to the code reach paths when the browser coverage attachment is corrupt', () => {
+    const collection = new CoverageCollection({
+      settings: { browser: 'functions', server: 'off' },
+      baseUrls: [],
+      configDir: os.tmpdir(),
+    });
+    const tc = testCase(['src/pay.ts']);
+    const ready = collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from('{"v":1,"fil') }]);
+    expect(ready).toBeNull();
+    expect(tc.coverage).toEqual({ v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser' }] });
+  });
+
+  it('merges the server files and the browser functions of one test', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-browser-blobs-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'src'));
+      fs.writeFileSync(path.join(dir, 'src', 'pay.ts'), 'export function pay() {}\n');
+      const server = await backend();
+      const collection = new CoverageCollection({
+        settings: { browser: 'functions', server: 'files' },
+        baseUrls: [server.url],
+        configDir: dir,
+        limits: { batchDelayMs: 10 },
+      });
+      const tc = testCase(['src/pay.ts']);
+      const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
+      const ready = collection.apply(tc, [
+        requestsAttachment(server.url, ['a.1']),
+        { name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) },
+      ]);
+      expect(ready).not.toBeNull();
+      await ready;
+      expect(tc.coverage).toEqual({
+        v: 1,
+        files: expect.arrayContaining([
+          { path: 'src/a.1.cs', runtime: 'server' },
+          {
+            path: 'src/pay.ts',
+            runtime: 'browser',
+            blob: gitBlobId(Buffer.from('export function pay() {}\n')),
+            functions: [[1, 1]],
+          },
+        ]),
+      });
+      expect(tc.coverage?.files).toHaveLength(2);
+      collection.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('sets the coverage once the server coverage is collected', async () => {
     const server = await backend();
     const collection = new CoverageCollection({
@@ -407,5 +458,23 @@ describe('CoverageCollection', () => {
     // Sent at once by the settle, not after the batch delay.
     expect(server.requests).toHaveLength(1);
     collection.close();
+  });
+
+  it('settles a test waiting for the blob ids of its browser files within its bound', async () => {
+    vi.spyOn(BlobIds.prototype, 'withBlobs').mockReturnValue(new Promise(() => {}));
+    const collection = new CoverageCollection({
+      settings: { browser: 'functions', server: 'off' },
+      baseUrls: [],
+      configDir: os.tmpdir(),
+    });
+    const tc = testCase(['src/pay.ts']);
+    const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
+    expect(
+      collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) }]),
+    ).not.toBeNull();
+    const started = Date.now();
+    await collection.settle(100);
+    expect(Date.now() - started).toBeLessThan(1500);
+    expect(tc.coverage).toBeUndefined();
   });
 });

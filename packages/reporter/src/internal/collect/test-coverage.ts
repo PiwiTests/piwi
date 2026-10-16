@@ -269,17 +269,18 @@ export class CoverageCollection {
   }
 
   /**
-   * Collect what is queued and wait for the tests still waiting, at most
-   * `boundMs`; a test still waiting then goes without its server coverage,
-   * marked incomplete.
+   * Collect what is queued and wait for the tests still waiting, for their
+   * server coverage or the blob ids of their browser files, at most `boundMs`;
+   * a test still waiting for its server coverage then goes without it, marked
+   * incomplete, and one still waiting for blob ids goes without its browser files.
    */
   async settle(boundMs = SETTLE_WAIT_MS): Promise<void> {
     this.collector?.flush();
-    await Promise.all(this.browserPending);
-    if (this.pending.size > 0) {
+    const waiting = [...this.browserPending, ...[...this.pending].map((entry) => entry.done)];
+    if (waiting.length > 0) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
-        Promise.all([...this.pending].map((entry) => entry.done)),
+        Promise.all(waiting),
         new Promise((resolve) => {
           timer = setTimeout(resolve, boundMs);
         }),
