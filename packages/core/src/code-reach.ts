@@ -124,11 +124,18 @@ export function reachedFunctionLines(
       add(-1, [start.line + 1, last.line + 1]);
       continue;
     }
-    // The function starts on the line the code it begins in maps to, and ends on the last line its own code maps to.
+    // The function starts on its header and ends on the last line its own code maps to; code mapped above the header
+    // was inlined from elsewhere. The header is the line the code the function begins in maps to, when its own code
+    // starts there or on the next line. Otherwise that mapping is the code before it on its generated line, the
+    // function's beginning having no segment of its own, and the header is where its own code starts.
     const at = map.originalAt(start.line, start.column);
     if (at === null) continue;
-    const lines = map.originalLinesBetween(at.source, start, offsetToPosition(starts, range.end));
-    if (lines) add(at.source, [Math.min(at.line, lines[0]) + 1, Math.max(at.line, lines[1]) + 1]);
+    const end = offsetToPosition(starts, range.end);
+    const first = map.firstOriginalLineBetween(at.source, start, end);
+    if (first === null) continue;
+    const header = first === at.line || first === at.line + 1 ? at.line : first;
+    const lines = map.originalLinesBetween(at.source, start, end, header);
+    if (lines) add(at.source, [header + 1, lines[1] + 1]);
   }
   return out;
 }

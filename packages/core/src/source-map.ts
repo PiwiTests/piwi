@@ -29,10 +29,20 @@ export interface SourceMapLookup {
   /** Whether a segment at or after a generated position and before an end position maps to a source index. */
   mapsBetween(source: number, start: GeneratedPosition, end: GeneratedPosition): boolean;
   /**
-   * The first and last original 0-based lines of the segments at or after a generated position and before an end
-   * position that map to a source index; null when none does.
+   * The original 0-based line of the first segment, in generated order, at or after a generated position and before
+   * an end position that maps to a source index; null when none does.
    */
-  originalLinesBetween(source: number, start: GeneratedPosition, end: GeneratedPosition): [number, number] | null;
+  firstOriginalLineBetween(source: number, start: GeneratedPosition, end: GeneratedPosition): number | null;
+  /**
+   * The first and last original 0-based lines, from `fromLine` on, of the segments at or after a generated position
+   * and before an end position that map to a source index; null when none does.
+   */
+  originalLinesBetween(
+    source: number,
+    start: GeneratedPosition,
+    end: GeneratedPosition,
+    fromLine?: number,
+  ): [number, number] | null;
 }
 
 /** A 0-based position in generated code. */
@@ -223,12 +233,21 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
       });
       return found;
     },
-    originalLinesBetween(source, start, end) {
+    firstOriginalLineBetween(source, start, end) {
+      let first: number | null = null;
+      eachSegmentBetween(segments, start, end, (i) => {
+        if (segments.sources[i] !== source || segments.originalLines[i]! < 0) return false;
+        first = segments.originalLines[i]!;
+        return true;
+      });
+      return first;
+    },
+    originalLinesBetween(source, start, end, fromLine = 0) {
       let first = Number.POSITIVE_INFINITY;
       let last = -1;
       eachSegmentBetween(segments, start, end, (i) => {
         const line = segments.originalLines[i]!;
-        if (segments.sources[i] === source && line >= 0) {
+        if (segments.sources[i] === source && line >= fromLine) {
           if (line < first) first = line;
           if (line > last) last = line;
         }

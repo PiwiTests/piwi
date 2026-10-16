@@ -61,6 +61,98 @@ describe('reachedFunctionLines', () => {
     expect([...reachedSources(withoutSource, map, cached)]).toEqual([0]);
   });
 
+  /** `mappings` for one generated line, from its segments: generated column and original 0-based line, source 0. */
+  function lineMappings(segments: Array<[column: number, line: number]>): string {
+    let column = 0;
+    let line = 0;
+    return segments
+      .map(([c, l]) => {
+        const out = `${vlq(c - column)}A${vlq(l - line)}A`;
+        column = c;
+        line = l;
+        return out;
+      })
+      .join(',');
+  }
+
+  /** A one-line script with its functions' ranges, from the text each function starts and ends with. */
+  function oneLine(script: string, functions: Array<[start: string, end: string]>): JsCoverageEntry {
+    return {
+      url: 'http://localhost:5173/assets/index.js',
+      source: script,
+      functions: [
+        { functionName: '', ranges: [{ startOffset: 0, endOffset: script.length, count: 1 }] },
+        ...functions.map(([from, to]) => {
+          const startOffset = script.indexOf(from);
+          return {
+            functionName: '',
+            ranges: [{ startOffset, endOffset: script.indexOf(to, startOffset) + to.length, count: 1 }],
+          };
+        }),
+      ],
+    };
+  }
+
+  test('takes the lines of its own code for a function whose start borrows a later line', () => {
+    // A template compiled after its script: the render function's start has no segment and takes the mapping of the
+    // script's last statement, on original line 30.
+    const script = 'function a(){x()}let r=(t)=>(y(),z());';
+    const at = (text: string) => script.indexOf(text);
+    const mappings = lineMappings([
+      [at('function a'), 29],
+      [at('x()'), 30],
+      [at('}let'), 31],
+      [at('y()'), 2],
+      [at('z()'), 7],
+    ]);
+    const map = decodeSourceMap({ version: 3, sources: ['src/App.vue'], mappings })!;
+    const entry = oneLine(script, [
+      ['function a', '}'],
+      ['(t)=>', 'z())'],
+    ]);
+    expect([...reachedFunctionLines(entry, map)]).toEqual([
+      [
+        0,
+        [
+          [30, 32],
+          [3, 8],
+        ],
+      ],
+    ]);
+  });
+
+  test('leaves out the code inlined from above a function whose start borrows an earlier line', () => {
+    // The render function's start takes the mapping of the statement before it (line 6); a minifier inlined into it
+    // a function of lines 8 to 11.
+    const script = 'let n=c(0);return(t)=>(u(),function(e){p()}(e),v())';
+    const at = (text: string) => script.indexOf(text);
+    const mappings = lineMappings([
+      [at('let n'), 5],
+      [at('u()'), 18],
+      [at('function(e)'), 7],
+      [at('p()'), 8],
+      [at('}(e)'), 10],
+      [at('v()'), 24],
+    ]);
+    const map = decodeSourceMap({ version: 3, sources: ['src/List.vue'], mappings })!;
+    const entry = oneLine(script, [['(t)=>', 'v())']]);
+    expect([...reachedFunctionLines(entry, map)]).toEqual([[0, [[19, 25]]]]);
+  });
+
+  test('starts a function on the line its start borrows when its own code begins there or on the next line', () => {
+    // A minified arrow function: its start has no segment, the assignment before it maps to its header line.
+    const script = 'const f=(a)=>{g(a);h(a)};';
+    const at = (text: string) => script.indexOf(text);
+    const mappings = lineMappings([
+      [at('const f'), 4],
+      [at('g(a)'), 5],
+      [at('h(a)'), 6],
+      [at('};'), 7],
+    ]);
+    const map = decodeSourceMap({ version: 3, sources: ['src/cart.ts'], mappings })!;
+    expect([...reachedFunctionLines(oneLine(script, [['(a)=>', '}']]), map)]).toEqual([[0, [[5, 8]]]]);
+  });
+
   test('leaves out a function whose start maps to no source', () => {
     // Line 0 has a segment with no source, so the function starting there maps nowhere.
     const mappings = ['A', `AA${vlq(2)}A`, 'AAEA'].join(';');
