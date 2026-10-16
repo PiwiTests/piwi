@@ -1,0 +1,344 @@
+/**
+ * Combined coverage: one ratio per commit over every suite that ran the code,
+ * the Playwright suite's own coverage and the reports uploaded for the commit.
+ * Pure: the server and the demo load the inputs, this counts.
+ *
+ * Per file version (path and blob) in the coverage scope:
+ *
+ * 1. **Reference lines**: the span table's executable lines when a run
+ *    recorded them for that blob, else the union of the reports' executable
+ *    lines for it. Every suite's lines count on them only, so the suites'
+ *    ratios share one denominator; a line a tool marks outside them is ignored.
+ * 2. **Executed**: a reference line ran when any suite ran it.
+ * 3. **Undetermined**: reference lines no suite ran, inside a function a suite
+ *    that records functions only (the browser end-to-end suite) ran. Shown next
+ *    to the ratio, never added to it.
+ * 4. **Functions**: every function a suite knows, matched across suites by its
+ *    start line; one ran when any suite ran a function starting there.
+ * 5. **Files without coverage data**: files of the commit's inventory in scope
+ *    that no suite names, outside both ratios.
+ *
+ * Each reference line falls in one class: unit only, end to end only, both,
+ * none, or undetermined.
+ */
+import {
+  countLines,
+  intersectLineRanges,
+  normalizeFunctionRanges,
+  normalizeLineRanges,
+  type LineRange,
+} from '@piwitests/core/coverage';
+
+/** What a suite's tests are. */
+export type CoverageSuiteKind = 'unit' | 'e2e';
+
+/** The suite name of the Playwright suite Piwi records itself. */
+export const E2E_SUITE = 'e2e';
+/** The name totals use for every suite together. */
+export const COMBINED_SUITE = 'combined';
+
+/** One file as one suite covered it. */
+export interface SuiteFile {
+  path: string;
+  /** The file version the line numbers refer to; without one, the file counts as reached, its lines do not. */
+  blob?: string;
+  /** The lines the suite's tool can mark as run (a report's), empty when it names none. */
+  executable: LineRange[];
+  lines: LineRange[];
+  /** The functions that ran. */
+  functions: LineRange[];
+  /** Every function the suite knows in the file, run or not. */
+  allFunctions: LineRange[];
+  /** False when the suite records functions only (the browser): its unrun lines in a function that ran are undetermined. */
+  linesRecorded: boolean;
+}
+
+/** One suite's coverage of the commit. */
+export interface SuiteInput {
+  name: string;
+  kind: CoverageSuiteKind;
+  files: SuiteFile[];
+  /** The commit an absent suite's files were carried forward from, file by file where the blob matches. */
+  carriedFrom?: string | null;
+  /** How many of its files were carried forward. */
+  carriedFiles?: number;
+  /** The suite left part of its coverage out. */
+  incomplete?: boolean;
+}
+
+/** What the commit's coverage is read against. */
+export interface CombineInput {
+  /** The commit's tracked files in scope and their blobs; null when no upload named an inventory. */
+  inventory: ReadonlyMap<string, string> | null;
+  /** Whether a path counts. */
+  inScope: (path: string) => boolean;
+  /** The span table's executable lines of each file version, by `path\0blob`. */
+  spanTable: ReadonlyMap<string, LineRange[]>;
+  suites: SuiteInput[];
+}
+
+/** The classes of a file's reference lines. */
+export interface LineClasses {
+  unitOnly: LineRange[];
+  e2eOnly: LineRange[];
+  both: LineRange[];
+  none: LineRange[];
+  undetermined: LineRange[];
+}
+
+/** One file of the commit, combined. */
+export interface CombinedFile {
+  path: string;
+  blob: string | null;
+  /** Where the reference lines come from: the span table, the reports, or none (functions only). */
+  reference: 'span-table' | 'report' | 'none';
+  executable: LineRange[];
+  executed: LineRange[];
+  classes: LineClasses;
+  /** Per suite, the reference lines it ran. */
+  bySuite: Record<string, LineRange[]>;
+  knownFunctions: LineRange[];
+  runFunctions: LineRange[];
+  /** Per suite, the functions it ran, matched by start line. */
+  functionsBySuite: Record<string, number>;
+}
+
+/** Counts over files: the totals of a commit, a suite or a folder. */
+export interface CoverageCounts {
+  executableLines: number;
+  executedLines: number;
+  undeterminedLines: number;
+  knownFunctions: number;
+  runFunctions: number;
+  /** Files counted: in scope, named by a suite. */
+  files: number;
+  unitOnlyLines: number;
+  e2eOnlyLines: number;
+  bothLines: number;
+}
+
+/** One suite's totals on the commit's reference lines. */
+export interface SuiteTotals extends CoverageCounts {
+  name: string;
+  kind: CoverageSuiteKind;
+  carriedFrom: string | null;
+  carriedFiles: number;
+  incomplete: boolean;
+}
+
+/** A commit's coverage, combined. */
+export interface CombinedCoverage {
+  files: CombinedFile[];
+  totals: CoverageCounts;
+  suites: SuiteTotals[];
+  /** Files of the inventory in scope no suite names; null without an inventory. */
+  filesWithoutData: string[] | null;
+  /** Files whose reference lines are the reports' because no run recorded the span table of their version. */
+  filesReferencedByReports: number;
+}
+
+const key = (path: string, blob: string) => `${path}\0${blob}`;
+
+/** Lines of `a` not in `b`, both normalized. */
+export function subtractLineRanges(a: LineRange[], b: LineRange[]): LineRange[] {
+  const out: LineRange[] = [];
+  let j = 0;
+  for (const [start, end] of a) {
+    let from = start;
+    while (j < b.length && b[j]![1] < from) j++;
+    let k = j;
+    while (k < b.length && b[k]![0] <= end) {
+      const [bStart, bEnd] = b[k]!;
+      if (bStart > from) out.push([from, bStart - 1]);
+      from = Math.max(from, bEnd + 1);
+      if (from > end) break;
+      k++;
+    }
+    if (from <= end) out.push([from, end]);
+  }
+  return out;
+}
+
+const union = (...ranges: LineRange[][]) => normalizeLineRanges(ranges.flat());
+
+function emptyCounts(): CoverageCounts {
+  return {
+    executableLines: 0,
+    executedLines: 0,
+    undeterminedLines: 0,
+    knownFunctions: 0,
+    runFunctions: 0,
+    files: 0,
+    unitOnlyLines: 0,
+    e2eOnlyLines: 0,
+    bothLines: 0,
+  };
+}
+
+/** Add a file's counts to `into`. */
+export function addFileCounts(into: CoverageCounts, file: CombinedFile): void {
+  into.files++;
+  into.executableLines += countLines(file.executable);
+  into.executedLines += countLines(file.executed);
+  into.undeterminedLines += countLines(file.classes.undetermined);
+  into.knownFunctions += file.knownFunctions.length;
+  into.runFunctions += file.runFunctions.length;
+  into.unitOnlyLines += countLines(file.classes.unitOnly);
+  into.e2eOnlyLines += countLines(file.classes.e2eOnly);
+  into.bothLines += countLines(file.classes.both);
+}
+
+/** The functions known by start line, the widest range kept for each. */
+function functionsByStart(ranges: LineRange[]): Map<number, LineRange> {
+  const out = new Map<number, LineRange>();
+  for (const range of ranges) {
+    const known = out.get(range[0]);
+    if (!known || range[1] > known[1]) out.set(range[0], range);
+  }
+  return out;
+}
+
+/** Combine the suites' coverage of one commit. */
+export function combineCoverage(input: CombineInput): CombinedCoverage {
+  // Each file's entries per suite, at the version the inventory names (else the first a suite names).
+  const byPath = new Map<string, Array<{ suite: SuiteInput; file: SuiteFile }>>();
+  for (const suite of input.suites) {
+    for (const file of suite.files) {
+      if (!input.inScope(file.path)) continue;
+      const list = byPath.get(file.path);
+      if (list) list.push({ suite, file });
+      else byPath.set(file.path, [{ suite, file }]);
+    }
+  }
+
+  const files: CombinedFile[] = [];
+  let referencedByReports = 0;
+  for (const [path, entries] of [...byPath].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+    const blob = input.inventory?.get(path) ?? entries.find((e) => e.file.blob)?.file.blob ?? null;
+    // Entries of another version name other lines: only those of this version count, a file without a blob counts as reached.
+    const placed = entries.filter((e) => blob !== null && e.file.blob === blob);
+    const span = blob ? input.spanTable.get(key(path, blob)) : undefined;
+    const reported = union(...placed.map((e) => e.file.executable));
+    const reference: CombinedFile['reference'] =
+      span && span.length > 0 ? 'span-table' : reported.length > 0 ? 'report' : 'none';
+    if (reference === 'report') referencedByReports++;
+    const executable = reference === 'span-table' ? normalizeLineRanges(span) : reported;
+
+    const bySuite: Record<string, LineRange[]> = {};
+    const unitRan: LineRange[][] = [];
+    const e2eRan: LineRange[][] = [];
+    const inFunctionsRan: LineRange[][] = [];
+    for (const { suite, file } of placed) {
+      const ran = intersectLineRanges(normalizeLineRanges(file.lines), executable);
+      bySuite[suite.name] = union(bySuite[suite.name] ?? [], ran);
+      (suite.kind === 'unit' ? unitRan : e2eRan).push(ran);
+      if (!file.linesRecorded) inFunctionsRan.push(normalizeLineRanges(file.functions));
+    }
+    const unit = union(...unitRan);
+    const e2e = union(...e2eRan);
+    const executed = union(unit, e2e);
+    const notRun = subtractLineRanges(executable, executed);
+    const undetermined = intersectLineRanges(notRun, union(...inFunctionsRan));
+    const both = intersectLineRanges(unit, e2e);
+    const classes: LineClasses = {
+      unitOnly: subtractLineRanges(unit, e2e),
+      e2eOnly: subtractLineRanges(e2e, unit),
+      both,
+      none: subtractLineRanges(notRun, undetermined),
+      undetermined,
+    };
+
+    const known = functionsByStart(
+      normalizeFunctionRanges(placed.flatMap((e) => [...e.file.allFunctions, ...e.file.functions])),
+    );
+    const ranStarts = new Set<number>();
+    const functionsBySuite: Record<string, number> = {};
+    for (const { suite, file } of placed) {
+      const starts = new Set(file.functions.map((f) => f[0]).filter((start) => known.has(start)));
+      for (const start of starts) ranStarts.add(start);
+      functionsBySuite[suite.name] = (functionsBySuite[suite.name] ?? 0) + starts.size;
+    }
+    const knownFunctions = [...known.values()].sort((a, b) => a[0] - b[0]);
+    files.push({
+      path,
+      blob,
+      reference,
+      executable,
+      executed,
+      classes,
+      bySuite,
+      knownFunctions,
+      runFunctions: knownFunctions.filter((f) => ranStarts.has(f[0])),
+      functionsBySuite,
+    });
+  }
+
+  const totals = emptyCounts();
+  for (const file of files) addFileCounts(totals, file);
+
+  const suites: SuiteTotals[] = input.suites.map((suite) => {
+    const counts = emptyCounts();
+    // Every suite counts on the same reference lines: a file it does not name is all unrun for it.
+    for (const file of files) {
+      counts.executableLines += countLines(file.executable);
+      counts.knownFunctions += file.knownFunctions.length;
+      if (!(suite.name in file.bySuite)) continue;
+      counts.files++;
+      counts.executedLines += countLines(file.bySuite[suite.name]!);
+      counts.runFunctions += file.functionsBySuite[suite.name] ?? 0;
+    }
+    return {
+      ...counts,
+      name: suite.name,
+      kind: suite.kind,
+      carriedFrom: suite.carriedFrom ?? null,
+      carriedFiles: suite.carriedFiles ?? 0,
+      incomplete: suite.incomplete === true,
+    };
+  });
+
+  const named = new Set(files.map((f) => f.path));
+  const filesWithoutData = input.inventory
+    ? [...input.inventory.keys()].filter((path) => input.inScope(path) && !named.has(path)).sort()
+    : null;
+
+  return { files, totals, suites, filesWithoutData, filesReferencedByReports: referencedByReports };
+}
+
+/** A ratio as a percentage with one decimal, or null when there is nothing to count. */
+export function coveragePercent(part: number, whole: number): number | null {
+  return whole > 0 ? Math.round((part / whole) * 1000) / 10 : null;
+}
+
+/** One folder's (or file's) entry in a breakdown. */
+export interface FolderEntry extends CoverageCounts {
+  /** The folder or file path, repository-relative; '' for the root. */
+  path: string;
+  kind: 'folder' | 'file';
+}
+
+/**
+ * The breakdown of a folder: its direct children, folders then files, each
+ * with the sum of its files' counts. `folder` is '' for the repository root.
+ */
+export function folderBreakdown(files: CombinedFile[], folder: string): FolderEntry[] {
+  const prefix = folder ? `${folder.replace(/\/+$/, '')}/` : '';
+  const children = new Map<string, FolderEntry>();
+  for (const file of files) {
+    if (!file.path.startsWith(prefix)) continue;
+    const rest = file.path.slice(prefix.length);
+    const slash = rest.indexOf('/');
+    const name = slash < 0 ? rest : rest.slice(0, slash);
+    const childPath = prefix + name;
+    let entry = children.get(childPath);
+    if (!entry) {
+      entry = { ...emptyCounts(), path: childPath, kind: slash < 0 ? 'file' : 'folder' };
+      children.set(childPath, entry);
+    }
+    addFileCounts(entry, file);
+  }
+  return [...children.values()].sort(
+    (a, b) =>
+      (a.kind === b.kind ? 0 : a.kind === 'folder' ? -1 : 1) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+  );
+}

@@ -871,6 +871,78 @@ export const coverageReportFiles = sqliteTable(
   }),
 );
 
+// Coverage totals: per project, commit and suite (`combined` for every suite
+// together), the counts combined coverage computed on the commit's reference
+// lines, recomputed after each upload and each run coverage of the commit.
+// `scope_version` is the project's coverage scope version they were computed
+// under; another version reads as stale.
+export const coverageTotals = sqliteTable(
+  'coverage_totals',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    commit: text('commit_sha').notNull(),
+    branch: text('branch').notNull().default(''), // '' = the default branch
+    suite: text('suite').notNull(), // a suite's name, or 'combined'
+    kind: text('kind').notNull(), // 'unit' | 'e2e' | 'combined'
+    executableLines: integer('executable_lines').notNull().default(0),
+    executedLines: integer('executed_lines').notNull().default(0),
+    undeterminedLines: integer('undetermined_lines').notNull().default(0),
+    knownFunctions: integer('known_functions').notNull().default(0),
+    runFunctions: integer('run_functions').notNull().default(0),
+    files: integer('files').notNull().default(0),
+    unitOnlyLines: integer('unit_only_lines').notNull().default(0),
+    e2eOnlyLines: integer('e2e_only_lines').notNull().default(0),
+    bothLines: integer('both_lines').notNull().default(0),
+    filesWithoutData: integer('files_without_data'), // null without an inventory
+    filesCarriedForward: integer('files_carried_forward').notNull().default(0),
+    carriedFrom: text('carried_from'), // the commit an absent suite's files came from
+    incomplete: integer('incomplete', { mode: 'boolean' }).notNull().default(false),
+    scopeVersion: integer('scope_version').notNull().default(0),
+    computedAt: integer('computed_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite),
+    projectBranchIdx: index('idx_coverage_totals_project_branch').on(table.projectId, table.branch, table.computedAt),
+  }),
+);
+
+// Coverage per day: per project, day (UTC, `YYYY-MM-DD`), branch and suite, the
+// totals of the last commit computed that day, for trends kept after the
+// reports themselves are pruned.
+export const coverageDaily = sqliteTable(
+  'coverage_daily',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(), // UTC date, YYYY-MM-DD
+    branch: text('branch').notNull().default(''),
+    suite: text('suite').notNull(),
+    commit: text('commit_sha').notNull(),
+    executableLines: integer('executable_lines').notNull().default(0),
+    executedLines: integer('executed_lines').notNull().default(0),
+    undeterminedLines: integer('undetermined_lines').notNull().default(0),
+    knownFunctions: integer('known_functions').notNull().default(0),
+    runFunctions: integer('run_functions').notNull().default(0),
+    files: integer('files').notNull().default(0),
+    unitOnlyLines: integer('unit_only_lines').notNull().default(0),
+    e2eOnlyLines: integer('e2e_only_lines').notNull().default(0),
+    bothLines: integer('both_lines').notNull().default(0),
+    computedAt: integer('computed_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueDay: uniqueIndex('idx_coverage_daily_unique').on(table.projectId, table.day, table.branch, table.suite),
+  }),
+);
+
 // Locator breaks a pull-request run's diff predicts: one row per chain of the
 // locator index that a string the diff removed or renamed stops matching.
 // Written at finish time by change coverage; read by the pull-request comment

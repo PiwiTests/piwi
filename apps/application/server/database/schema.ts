@@ -68,6 +68,8 @@ export const {
   coverageExecutable,
   coverageReports,
   coverageReportFiles,
+  coverageTotals,
+  coverageDaily,
   casePayloads,
   testFunctions,
   testSelections,

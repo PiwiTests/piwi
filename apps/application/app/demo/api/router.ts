@@ -85,6 +85,11 @@ import {
   parseCoverageReportUpload,
   storeCoverageReport,
 } from '~~/server/utils/coverage-reports';
+import {
+  getCoverageSummary,
+  invalidateCommitCoverage,
+  parseCoverageSummaryQuery,
+} from '~~/server/utils/coverage-summary';
 import { demoClusterSuspectLines, demoExecutionSuspectLines } from './suspect-lines';
 import {
   CoverageInsightInputError,
@@ -1187,7 +1192,21 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const upload = parseCoverageReportUpload(body);
       if (typeof upload === 'string') throw demoHttpError(400, upload);
-      return storeCoverageReport(await getDemoDb(), +m[1]!, upload);
+      const stored = await storeCoverageReport(await getDemoDb(), +m[1]!, upload);
+      invalidateCommitCoverage(+m[1]!, upload.commit);
+      return stored;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/coverage-summary$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = parseCoverageSummaryQuery(q?.get('commit'), q?.get('branch'), q?.get('folder'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const summary = await getCoverageSummary(await getDemoDb(), +m[1]!, parsed);
+      if (!summary) throw demoHttpError(404, 'No coverage for this commit');
+      return summary;
     },
   },
   {

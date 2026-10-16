@@ -19,7 +19,7 @@
  * or thirty days without a report); on the default branch, the newest commit
  * and the last commit of each day of the past ninety days are kept.
  */
-import { and, desc, eq, inArray, lt, ne, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
   decodeFunctionRanges,
   decodeLineRanges,
@@ -29,11 +29,12 @@ import {
   MAX_COVERAGE_RANGES,
   type LineRange,
 } from '@piwitests/core/coverage';
-import { coverageFragments, coverageReportFiles, coverageReports } from '../database/schema';
+import { coverageFragments, coverageReportFiles, coverageReports, coverageTotals } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { locatorBranchTag } from './locator-usages';
 import { resolveCasePayloadContents, upsertCasePayloads } from './case-payloads';
 import { REPORT_RUNTIME, upsertFragmentRows, withCoverageLock } from './coverage';
+import { COMBINED_SUITE, E2E_SUITE } from '#shared/coverage-combine';
 import { projectDefaultBranch } from './scm/stored-default-branch';
 
 /** Files one upload carries at most. */
@@ -57,6 +58,8 @@ const COMMIT = /^[0-9a-f]{7,64}$/;
 const BLOB_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** A suite name: a letter or digit, then up to 63 letters, digits, `.`, `_` or `-`. */
 const SUITE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** The suite names totals use: the Playwright suite Piwi records, and every suite together. */
+const RESERVED_SUITES = new Set([E2E_SUITE, COMBINED_SUITE]);
 
 /** What a suite's tests are: unit tests, or an end-to-end suite (the Playwright suite Piwi records, a backend's run). */
 export type CoverageSuiteKind = 'unit' | 'e2e';
@@ -117,6 +120,9 @@ export function parseCoverageReportUpload(body: unknown): CoverageReportUpload |
   const suite = typeof body.suite === 'string' ? body.suite.trim() : '';
   if (!SUITE.test(suite))
     return 'suite must be 1 to 64 letters, digits, ".", "_" or "-", starting with a letter or digit';
+  if (RESERVED_SUITES.has(suite.toLowerCase())) {
+    return `suite "${suite}" is reserved: "e2e" is the Playwright suite Piwi records, "combined" every suite together`;
+  }
   const kind = body.kind === undefined ? 'unit' : body.kind;
   if (kind !== 'unit' && kind !== 'e2e') return 'kind must be "unit" or "e2e"';
   if (!Array.isArray(body.files)) return 'files must be an array';
@@ -442,7 +448,8 @@ export async function listCoverageReports(
 /**
  * Prune coverage reports: a branch's last updated more than thirty days ago;
  * on the default branch, every commit but the newest and the last commit of
- * each UTC day within ninety days. Returns how many reports went.
+ * each UTC day within ninety days. A commit's totals go after the same thirty
+ * or ninety days; the daily totals stay. Returns how many reports went.
  */
 export async function pruneCoverageReports(db: DrizzleDB, now: Date = new Date()): Promise<number> {
   const branches = await db
@@ -495,6 +502,17 @@ export async function pruneCoverageReports(db: DrizzleDB, now: Date = new Date()
   for (let i = 0; i < stale.length; i += ID_CHUNK) {
     await db.delete(coverageReports).where(inArray(coverageReports.id, stale.slice(i, i + ID_CHUNK)));
   }
+  await db
+    .delete(coverageTotals)
+    .where(
+      or(
+        and(
+          ne(coverageTotals.branch, ''),
+          lt(coverageTotals.computedAt, new Date(now.getTime() - BRANCH_REPORT_MAX_AGE_MS)),
+        ),
+        lt(coverageTotals.computedAt, new Date(horizon)),
+      ),
+    );
   return branches.length + stale.length;
 }
 

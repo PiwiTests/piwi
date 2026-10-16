@@ -1,5 +1,10 @@
 import { MAX_RUN_COVERAGE_BYTES, parseRunCoverage, storeRunCoverage } from '../../../utils/coverage';
 import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
+import { invalidateCommitCoverage } from '../../../utils/coverage-summary';
+import { scheduleCommitTotals } from '../../../utils/coverage-totals';
+import { getDatabase } from '../../../database';
+import { testRuns } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
 
 defineRouteMeta({
   openAPI: {
@@ -76,5 +81,12 @@ export default eventHandler(async (event) => {
   const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
   const files = parseRunCoverage(await readBody(event));
   if (typeof files === 'string') throw apiError({ statusCode: 400, message: files });
-  return { files: await storeRunCoverage(db, id, projectId, files) };
+  const stored = await storeRunCoverage(db, id, projectId, files);
+  // The run's commit's combined coverage counts the run coverage of its complete runs.
+  const [run] = await db.select({ commit: testRuns.commit }).from(testRuns).where(eq(testRuns.id, id));
+  if (run?.commit) {
+    invalidateCommitCoverage(projectId, run.commit);
+    scheduleCommitTotals(getDatabase, projectId, run.commit);
+  }
+  return { files: stored };
 });

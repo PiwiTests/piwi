@@ -51,6 +51,7 @@ import {
   coverageFragments,
   coverageReportFiles,
   coverageReports,
+  coverageTotals,
   runCoverage,
   testCoverage,
   testRuns,
@@ -1029,6 +1030,9 @@ export async function deleteBranchCoverageRows(db: DrizzleDB, projectId: number,
     .delete(coverageReports)
     .where(and(eq(coverageReports.projectId, projectId), eq(coverageReports.branch, branch)))
     .returning({ id: coverageReports.id });
+  await db
+    .delete(coverageTotals)
+    .where(and(eq(coverageTotals.projectId, projectId), eq(coverageTotals.branch, branch)));
   return reach.length + coverage.length + reports.length;
 }
 

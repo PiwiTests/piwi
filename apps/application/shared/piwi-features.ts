@@ -349,7 +349,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'The coverage reports of your unit tests (Vitest, coverlet, Microsoft code coverage), uploaded per commit and suite, next to the coverage the Playwright suite records.',
         needs: [],
-        where: 'CLI (`piwi coverage upload`)',
+        where: 'CLI (`piwi coverage upload`); API and MCP tools',
         doc: 'features/combined-coverage',
       },
       {

@@ -1,6 +1,6 @@
 /**
  * The coverage tools of the MCP server (`get_coverage`, `compare_coverage`,
- * `get_coverage_loss`) and the coverage summary the quarantine tools add to
+ * `get_coverage_loss`, `get_coverage_summary`) and the coverage summary the quarantine tools add to
  * their answers. They answer from `#shared/handlers/coverage-insights` and
  * the coverage reads in `server/utils/coverage.ts`, with line ranges written
  * as `12-15,20` and empty fields left out. A project that recorded no
@@ -29,6 +29,7 @@ import {
 import { testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { getExecutionsCoverage, getFileCoverage } from '../coverage';
+import { getCoverageSummary, parseCoverageSummaryQuery } from '../coverage-summary';
 import { resolveCaseProjectId, resolveTestRunCaseProjectId, scopeAllows } from '../project-access';
 import type { McpContext, McpToolHandler } from './tools';
 
@@ -214,11 +215,24 @@ const getCoverageLossTool: McpToolHandler = async (db, params, ctx) => {
   return compactCoverageJson(await getCoverageLoss(db, projectId, testCaseIds));
 };
 
+const getCoverageSummaryTool: McpToolHandler = async (db, params, ctx) => {
+  const projectId = positiveId(params.projectId, 'projectId');
+  assertInScope(ctx, projectId);
+  const query = parseCoverageSummaryQuery(params.commit, params.branch, params.folder);
+  if ('error' in query) throw new Error(query.error);
+  const summary = await getCoverageSummary(db, projectId, query);
+  if (!summary) {
+    return `No combined coverage for project ${projectId}${query.commit ? ` at ${query.commit}` : ''}: upload a suite's coverage report with \`piwi coverage upload\`, or record run coverage with the reporter's coverage options.`;
+  }
+  return compactCoverageJson(summary);
+};
+
 export const COVERAGE_TOOL_HANDLERS = {
   get_coverage: getCoverage,
   compare_coverage: compareCoverage,
   get_coverage_loss: getCoverageLossTool,
-} satisfies Record<'get_coverage' | 'compare_coverage' | 'get_coverage_loss', McpToolHandler>;
+  get_coverage_summary: getCoverageSummaryTool,
+} satisfies Record<'get_coverage' | 'compare_coverage' | 'get_coverage_loss' | 'get_coverage_summary', McpToolHandler>;
 
 /** A coverage loss as a quarantine answer carries it: the counts and the worst few files. */
 function lossSummary(loss: CoverageLossAnswer) {

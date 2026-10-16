@@ -77,6 +77,28 @@ job uploads its own report. A suite uploaded in parts (four portals, four shards
 On Bitbucket and Azure DevOps, set `PIWI_DASHBOARD_URL`, `PIWI_PROJECT_NAME` and `PIWI_API_KEY` as repository or
 pipeline variables. The project must exist on the dashboard: the first Playwright run creates it.
 
+## One ratio per commit
+
+For each commit, the dashboard counts every suite that ran the code: the reports uploaded for it, and `e2e`, the run
+coverage of the commit's complete Playwright runs (a partial run, or a probe or flake-lab run, never counts). The
+totals are recomputed a few seconds after each upload and each run coverage of the commit; read them with the
+[API](https://piwitests.dev/demo/docs) or the MCP `get_coverage_summary` tool.
+
+- **One set of executable lines per file version.** Tools disagree on which lines can run, so every suite counts on
+  the same lines: the span table's, from [server coverage](./server-coverage), when a run recorded them for that
+  version of the file; otherwise the reports' own. A line a tool marks outside them is ignored. On 71 .NET tests,
+  taking both tools' lines together understated the code only the end-to-end tests ran by 16 points; the span table as
+  the one reference stayed within 1.3.
+- **Undetermined lines.** The browser suite records functions, not lines. An unrun line inside a function it ran is
+  undetermined: shown beside the ratio, never counted as run.
+- **Functions** count across suites by their start line: one ran when any suite ran a function starting there.
+- **Classes of lines.** Each executable line is unit only, end to end only, both, none, or undetermined. "End to end
+  only" is what the Playwright suite alone protects; "unit only" is code no user path reaches in the tests.
+- **Files without coverage data** are the commit's tracked files in scope that no suite names, from the upload's
+  inventory, counted apart from the percentage.
+- **Carried forward.** A suite the commit lacks comes from its newest earlier report, on the commit's branch then on
+  the default branch, file by file where the file's version is unchanged, and the totals say from which commit.
+
 ## How paths are matched
 
 A report's paths are made repository-relative before anything is sent:
@@ -117,6 +139,8 @@ result Piwi keeps.
 - **A tool can leave code out without failing.** coverlet does not instrument an assembly it cannot resolve the
   dependencies of, and says so only in its diagnostic log.
 - **One commit, one checkout.** Upload from the checkout the tests ran in: the blob ids and the inventory come from it.
+- **Functions match by start line.** coverlet starts a method at its opening brace, the compiler's span table at its
+  declaration, so a .NET function both report can count twice.
 
 ## Related
 

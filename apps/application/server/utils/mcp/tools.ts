@@ -2913,13 +2913,17 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     });
   },
 
-  // ── get_coverage, compare_coverage, get_coverage_loss (coverage-tools.ts) ──
+  // ── get_coverage, compare_coverage, get_coverage_loss, get_coverage_summary (coverage-tools.ts) ──
   async get_coverage(db, params, ctx) {
     return COVERAGE_TOOL_HANDLERS.get_coverage(db, params, ctx);
   },
 
   async compare_coverage(db, params, ctx) {
     return COVERAGE_TOOL_HANDLERS.compare_coverage(db, params, ctx);
+  },
+
+  async get_coverage_summary(db, params, ctx) {
+    return COVERAGE_TOOL_HANDLERS.get_coverage_summary(db, params, ctx);
   },
 
   async get_coverage_loss(db, params, ctx) {
