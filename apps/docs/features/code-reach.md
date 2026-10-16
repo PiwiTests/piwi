@@ -1,6 +1,6 @@
 ---
 title: Code reach
-description: "Which tests execute each application source file, recorded from Chromium's JavaScript coverage and an ASP.NET Core backend's coverage on a scheduled run, and used by test selection, change coverage and preflight."
+description: "Which tests execute each application source file, recorded from Chromium's JavaScript coverage on a scheduled run, by file or by function, and used by test selection, change coverage and preflight."
 lang: en-US
 ---
 
@@ -24,8 +24,8 @@ reporter: [['@piwitests/reporter', { captureCodeReach: !!process.env.NIGHTLY }]]
 
 ## What it records
 
-The fixtures start Chromium's JavaScript coverage on each page the test has, up to 16, a page a `beforeAll` opened
-included, and at teardown turn each script into source files:
+The fixtures start Chromium's JavaScript coverage on each page the test opens, and on up to 16 pages already open as
+it starts (a `beforeAll`'s, an earlier test's), and at teardown turn each script into source files:
 
 - a module a dev server serves by path (Vite's `/src/components/Pay.vue`, `/@fs/…`) is the file itself;
 - a bundle is read through its source map, inline or fetched once per worker (20 MB and 5 seconds at most).

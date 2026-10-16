@@ -377,7 +377,11 @@ interface CodeReachSession {
   stopped: boolean;
 }
 
-/** Pages a test records JavaScript coverage on at most. */
+/**
+ * Pages already open as a test starts that it records JavaScript coverage on at
+ * most, with those still recording: a worker may hold many pages a test never
+ * drives. A page the test opens always records.
+ */
 const MAX_CODE_REACH_PAGES = 16;
 
 /** How long the start of a test waits for coverage to run on the pages already open, in ms. */
@@ -389,12 +393,16 @@ const CODE_REACH_START_WAIT_MS = 2000;
  * the test opens, and each page already open as it starts. Resolves once
  * coverage is running, so a caller can await it before the test navigates.
  */
-function maybeStartCodeReach(page: Page): Promise<boolean> {
+function maybeStartCodeReach(page: Page, alreadyOpen = false): Promise<boolean> {
   const sink = currentSink;
   if (!sink || !browserCoverageInWorker() || isPageClosed(page)) return Promise.resolve(false);
   const known = sink.codeReach.sessions.get(page);
   if (known) return known.started;
-  if (sink.codeReach.sessions.size >= MAX_CODE_REACH_PAGES) return Promise.resolve(false);
+  if (alreadyOpen) {
+    let recording = 0;
+    for (const [other, session] of sink.codeReach.sessions) if (!session.stopped && !isPageClosed(other)) recording++;
+    if (recording >= MAX_CODE_REACH_PAGES) return Promise.resolve(false);
+  }
   const started = startCodeReach(page);
   sink.codeReach.sessions.set(page, { started, stopped: false });
   return started;
@@ -407,7 +415,7 @@ function maybeStartCodeReach(page: Page): Promise<boolean> {
  */
 async function startCodeReachOnOpenPages(): Promise<void> {
   if (!browserCoverageInWorker() || OPEN_PAGES.size === 0) return;
-  const started = Promise.all([...OPEN_PAGES].map((page) => maybeStartCodeReach(page)));
+  const started = Promise.all([...OPEN_PAGES].map((page) => maybeStartCodeReach(page, true)));
   await Promise.race([started, new Promise((resolve) => setTimeout(resolve, CODE_REACH_START_WAIT_MS).unref())]);
 }
 

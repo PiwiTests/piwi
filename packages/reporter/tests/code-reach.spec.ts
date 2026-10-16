@@ -11,10 +11,12 @@ import {
   pageMapFetcher,
   resetCodeReachCaches,
   MAX_CACHED_SCRIPTS,
-  mergeCoverageReads,
+  mergeCoverageRead,
   resolveCodeReach,
   startCodeReach,
   stopCodeReach,
+  type ParsedScript,
+  type RanScript,
 } from '../src/internal/capture/code-reach.js';
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -144,9 +146,17 @@ describe('resolveCodeReach', () => {
 
     fetched.length = 0;
     for (let i = 0; i <= MAX_CACHED_SCRIPTS; i++) {
-      await resolveCodeReach([script(`http://localhost:3000/assets/chunk-${i}.js`, 'function a(){}a();')], roots(), fetchMap);
+      await resolveCodeReach(
+        [script(`http://localhost:3000/assets/chunk-${i}.js`, 'function a(){}a();')],
+        roots(),
+        fetchMap,
+      );
     }
-    await resolveCodeReach([script('http://localhost:3000/assets/chunk-0.js', 'function a(){}a();')], roots(), fetchMap);
+    await resolveCodeReach(
+      [script('http://localhost:3000/assets/chunk-0.js', 'function a(){}a();')],
+      roots(),
+      fetchMap,
+    );
     expect(fetched).toHaveLength(MAX_CACHED_SCRIPTS + 2);
   });
 
@@ -250,7 +260,9 @@ describe('resolveCodeReach', () => {
       ['http://localhost:5281', [path.join(dir, 'portals/admin')]],
       ['http://localhost:5284', [path.join(dir, 'portals/site'), path.join(dir, 'shared')]],
     ]);
-    expect(codeReachRoots(dir, { 'http://localhost:5281': 'portals/admin' }).roots).toEqual([...new Set([dir, r.repoRoot])]);
+    expect(codeReachRoots(dir, { 'http://localhost:5281': 'portals/admin' }).roots).toEqual([
+      ...new Set([dir, r.repoRoot]),
+    ]);
   });
 
   it('resolves a module against the directories of its own origin, else of its page', async () => {
@@ -265,39 +277,71 @@ describe('resolveCodeReach', () => {
         { functionName: 'go', ranges: [{ startOffset: 7, endOffset: 23, count: 1 }] },
       ],
     });
-    const vite = (port: number): JsCoverageEntry => ({ url: `http://localhost:${port}/dist/@vite/client`, functions: [] });
+    const vite = (port: number): JsCoverageEntry => ({
+      url: `http://localhost:${port}/dist/@vite/client`,
+      functions: [],
+    });
     const r = codeReachRoots(dir, {
       'http://localhost:5231': 'portals/admin',
       'http://localhost:5284': 'portals/site',
     });
     // The script's own origin has directories.
-    expect(await resolveCodeReach([vite(5231), index(5231)], r, async () => null, 'http://localhost:5281/Home')).toEqual([
-      'portals/admin/js/index.ts',
-    ]);
+    expect(
+      await resolveCodeReach([vite(5231), index(5231)], r, async () => null, 'http://localhost:5281/Home'),
+    ).toEqual(['portals/admin/js/index.ts']);
     // It has none: its page's origin picks them.
-    expect(await resolveCodeReach([vite(5234), index(5234)], r, async () => null, 'http://localhost:5284/Home')).toEqual([
-      'portals/site/js/index.ts',
-    ]);
+    expect(
+      await resolveCodeReach([vite(5234), index(5234)], r, async () => null, 'http://localhost:5284/Home'),
+    ).toEqual(['portals/site/js/index.ts']);
+    // The page it was parsed on wins over the address the page ends on.
+    const parsedOnAdmin = { ...index(5235), pageUrl: 'http://localhost:5231/Home' };
+    expect(
+      await resolveCodeReach([vite(5235), parsedOnAdmin], r, async () => null, 'http://localhost:5284/Home'),
+    ).toEqual(['portals/admin/js/index.ts']);
   });
 });
 
-describe('mergeCoverageReads', () => {
+describe('mergeCoverageRead', () => {
   const fn = (functionName: string, startOffset: number, endOffset: number, count: number) => ({
     functionName,
     ranges: [{ startOffset, endOffset, count }],
   });
+  const ranOf = (ran: Map<string, RanScript>) =>
+    [...ran.values()].map((r) => [r.script.url, r.functions.map((f) => f.functionName)]);
 
-  it('counts a function that ran in any read, in the order of its first read', () => {
-    const merged = mergeCoverageReads([
-      [{ scriptId: '1', functions: [fn('', 0, 100, 1), fn('pay', 10, 20, 0)] }],
-      [
-        { scriptId: '1', functions: [fn('pay', 10, 20, 1), fn('idle', 30, 40, 0)] },
-        { scriptId: '2', functions: [fn('next', 5, 9, 1)] },
-      ],
-      [{ scriptId: '1', functions: [fn('pay', 10, 20, 0)] }],
+  it('keeps the functions that ran in any read, by script version, in the order of their first read', () => {
+    const ran = new Map<string, RanScript>();
+    const scripts = new Map<string, ParsedScript>([
+      ['1', { url: 'http://a/pay.js', hash: 'p' }],
+      ['2', { url: 'http://a/next.js', hash: 'n' }],
     ]);
-    expect(merged.get('1')).toEqual([fn('', 0, 100, 1), fn('pay', 10, 20, 1), fn('idle', 30, 40, 0)]);
-    expect(merged.get('2')).toEqual([fn('next', 5, 9, 1)]);
+    mergeCoverageRead(ran, scripts, [{ scriptId: '1', functions: [fn('', 0, 100, 1), fn('pay', 10, 20, 0)] }]);
+    mergeCoverageRead(ran, scripts, [
+      { scriptId: '1', functions: [fn('pay', 10, 20, 1), fn('idle', 30, 40, 0)] },
+      { scriptId: '2', functions: [fn('next', 5, 9, 0)] },
+    ]);
+    // A script the page did not report, with no URL, is left out.
+    mergeCoverageRead(ran, scripts, [
+      { scriptId: '1', functions: [fn('pay', 10, 20, 1)] },
+      { scriptId: '9', functions: [fn('eval', 0, 4, 1)] },
+    ]);
+    expect(ranOf(ran)).toEqual([
+      ['http://a/pay.js', ['', 'pay']],
+      ['http://a/next.js', []],
+    ]);
+  });
+
+  it('reads a script id against the scripts the page knew as the read was taken', () => {
+    // A cross-site navigation starts a renderer that numbers its scripts afresh.
+    const ran = new Map<string, RanScript>();
+    const scripts = new Map<string, ParsedScript>([['3', { url: 'http://first.test/first.js', hash: 'f' }]]);
+    mergeCoverageRead(ran, scripts, [{ scriptId: '3', functions: [fn('first', 2, 9, 1)] }]);
+    scripts.set('3', { url: 'http://second.test/second.js', hash: 's' });
+    mergeCoverageRead(ran, scripts, [{ scriptId: '3', functions: [fn('second', 2, 7, 1)] }]);
+    expect(ranOf(ran)).toEqual([
+      ['http://first.test/first.js', ['first']],
+      ['http://second.test/second.js', ['second']],
+    ]);
   });
 });
 
@@ -414,6 +458,30 @@ describe('in Chromium', () => {
     ]);
   });
 
+  it('keeps the files of a document left for another site', async (ctx) => {
+    if (!browser) return ctx.skip();
+    // Two sites served by the same server: the second document may run in a renderer of its own.
+    const sites = await chromium.launch({ args: ['--host-resolver-rules=MAP *.test 127.0.0.1'] });
+    try {
+      const page = await sites.newPage();
+      const port = new URL(url).port;
+      expect(await startCodeReach(page)).toBe(true);
+      await page.goto(`http://first.test:${port}/first.html`);
+      await page.click('body[data-ready="first"] #go');
+      await page.waitForFunction("document.body.dataset.done === 'first'");
+      await page.goto(`http://second.test:${port}/second.html`);
+      await page.click('body[data-ready="second"] #go');
+      await page.waitForFunction("document.body.dataset.done === 'second'");
+      const entries = (await stopCodeReach(page)) ?? [];
+      expect(await resolveCodeReach(entries, { roots: [dir], repoRoot: dir }, async () => null)).toEqual([
+        'src/first.js',
+        'src/second.js',
+      ]);
+    } finally {
+      await sites.close();
+    }
+  });
+
   it('covers a page opened before the capture, from its next action on', async (ctx) => {
     if (!browser) return ctx.skip();
     const page = await browser.newPage();
@@ -423,7 +491,11 @@ describe('in Chromium', () => {
       expect(await startCodeReach(page)).toBe(true);
       await page.click('#pay');
       await page.waitForFunction("document.body.dataset.paid === 'yes'");
-      const files = await resolveCodeReach((await stopCodeReach(page)) ?? [], { roots: [dir], repoRoot: dir }, async () => null);
+      const files = await resolveCodeReach(
+        (await stopCodeReach(page)) ?? [],
+        { roots: [dir], repoRoot: dir },
+        async () => null,
+      );
       expect(files).toEqual(['src/main.js', 'src/pay.js']);
     }
     await page.close();

@@ -98,6 +98,8 @@ export type MapFetcher = (url: string) => Promise<string | null>;
 export interface CoveredScript extends JsCoverageEntry {
   /** V8's content hash of the script; without it, the version is a hash of `source`. */
   hash?: string;
+  /** The address of the page's document as it parsed the script, whose origin's roots it falls back on. */
+  pageUrl?: string;
 }
 
 /**
@@ -334,8 +336,8 @@ function textOf(entry: CoveredScript, resolution: { text: ScriptText | undefined
 
 /**
  * The repository-relative files the covered scripts reached, sorted and capped.
- * `pageUrl`, the page's address as its coverage stopped, picks the roots of the
- * scripts whose own origin has none.
+ * A script whose own origin has no roots takes those of its page's origin: the
+ * page's address as it parsed the script, else `pageUrl`.
  */
 export async function resolveCodeReach(
   entries: CoveredScript[],
@@ -379,7 +381,7 @@ async function resolveReach(
   // Every script is looked up before the first is resolved: caching one may evict another this test still needs.
   const known = scripts.map((entry) => scriptCache.get(entry.url, scriptVersion(entry)));
   for (const [i, covered] of scripts.entries()) {
-    const dirs = scriptRoots(roots, covered.url, pageUrl);
+    const dirs = scriptRoots(roots, covered.url, covered.pageUrl ?? pageUrl);
     const resolution = known[i] ?? (await resolveScript(covered, dirs, bases, fetchMap));
     if (resolution.kind === 'file') {
       if (!resolution.file) continue;
@@ -440,16 +442,25 @@ function isChromiumPage(page: Page): boolean {
   }
 }
 
-/** A script the page parsed: its URL and V8's content hash. */
-interface ParsedScript {
+/** A script the page parsed: its URL, V8's content hash, and the address of the page's document then. */
+export interface ParsedScript {
   url: string;
   hash: string;
+  pageUrl?: string;
 }
 
 /** One script's function coverage, as `Profiler.takePreciseCoverage` reports it. */
-interface ScriptCoverage {
+export interface ScriptCoverage {
   scriptId: string;
   functions: CoveredScript['functions'];
+}
+
+/** What ran in one version of a script since a capture started, its reads merged. */
+export interface RanScript {
+  script: ParsedScript;
+  functions: CoveredScript['functions'];
+  /** The functions above by their range, for the next read to merge into. */
+  byRange: Map<string, CoveredScript['functions'][number]>;
 }
 
 /** The function coverage running on one page, through its own CDP session. */
@@ -459,8 +470,12 @@ interface CoverageCapture {
   scripts: Map<string, ParsedScript>;
   /** The sources read, by script version; a failed read is dropped, so a later parse of that version reads again. */
   sources: Map<string, Promise<string | null>>;
-  /** The coverage read as each document was left, in order; each read holds what ran since the last one. */
-  reads: Array<Promise<ScriptCoverage[]>>;
+  /** What ran since the capture started, by script version: each read is merged in as it arrives. */
+  ran: Map<string, RanScript>;
+  /** The reads taken as documents were left, not merged yet. */
+  reading: Set<Promise<void>>;
+  /** The address of the page's current document. */
+  pageUrl: string;
 }
 
 const captures = new WeakMap<Page, CoverageCapture>();
@@ -522,7 +537,12 @@ function onPaused(
     (event.data as { eventName?: string } | undefined)?.eventName === 'listener:beforeunload' &&
     (event.callFrames?.[0]?.functionName ?? MARK_FUNCTION) === MARK_FUNCTION;
   const read = leaving ? readCoverage(page, capture.cdp) : null;
-  if (read) capture.reads.push(read);
+  if (read) {
+    // Merged before the page resumes, against its scripts as it knows them now.
+    const merging = read.then((coverage) => mergeCoverageRead(capture.ran, capture.scripts, coverage));
+    capture.reading.add(merging);
+    void merging.finally(() => capture.reading.delete(merging));
+  }
   void (read ?? Promise.resolve()).finally(() => {
     internalCall(page, () => capture.cdp.send('Debugger.resume')).catch(() => {});
   });
@@ -546,7 +566,7 @@ function onScriptParsed(
   event: { scriptId: string; url: string; hash: string },
 ): void {
   if (!event.url || REPLAYED_SCRIPT.test(event.url)) return;
-  capture.scripts.set(event.scriptId, { url: event.url, hash: event.hash });
+  capture.scripts.set(event.scriptId, { url: event.url, hash: event.hash, pageUrl: capture.pageUrl });
   if (NEVER_REACHED.test(event.url)) return;
   const key = versionKey(event.url, event.hash);
   if (capture.sources.has(key) || scriptCache.get(event.url, event.hash)) return;
@@ -562,48 +582,57 @@ function onScriptParsed(
   capture.sources.set(key, source);
 }
 
-/** Read the coverage gathered since the last read: V8 resets what it reports at each read. */
+/** How long the page stays paused on leaving a document while its coverage is read, at most, in ms. */
+const READ_WAIT_MS = 5000;
+
+/**
+ * Read the coverage gathered since the last read: V8 resets what it reports at
+ * each read. A read that does not answer in time counts as empty.
+ */
 function readCoverage(page: Page, cdp: CDPSession): Promise<ScriptCoverage[]> {
-  return internalCall(page, () => cdp.send('Profiler.takePreciseCoverage')).then(
-    (taken) => taken.result as ScriptCoverage[],
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<ScriptCoverage[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), READ_WAIT_MS);
+  });
+  const taken = internalCall(page, () => cdp.send('Profiler.takePreciseCoverage')).then(
+    (answer) => answer.result as ScriptCoverage[],
     () => [],
   );
+  return Promise.race([taken, late]).finally(() => clearTimeout(timer));
 }
 
 /**
- * The reads of a capture as one coverage per script: a function counts when it
- * ran in any read. Functions keep the order of their first read, so a script's
- * top-level function stays its first.
+ * Merge one coverage read into what a capture ran, by script version: a script
+ * id is looked up in the scripts the page parsed as the read was taken, since a
+ * renderer a cross-site navigation starts numbers its scripts afresh. Only the
+ * functions that ran are kept, as V8 reports every function it knows at every
+ * read; a script none of whose functions ran is kept without any. Functions keep
+ * the order of their first read, so a script's top-level function stays its first.
  */
-export function mergeCoverageReads(reads: ScriptCoverage[][]): Map<string, CoveredScript['functions']> {
-  const merged = new Map<string, CoveredScript['functions']>();
-  const byRange = new Map<string, Map<string, CoveredScript['functions'][number]>>();
-  for (const read of reads) {
-    for (const script of read) {
-      let functions = merged.get(script.scriptId);
-      let ranges = byRange.get(script.scriptId);
-      if (!functions || !ranges) {
-        functions = [];
-        ranges = new Map();
-        merged.set(script.scriptId, functions);
-        byRange.set(script.scriptId, ranges);
-      }
-      for (const fn of script.functions) {
-        const whole = fn.ranges[0];
-        if (!whole) continue;
-        const key = `${whole.startOffset}:${whole.endOffset}`;
-        const known = ranges.get(key);
-        if (!known) {
-          const copy = { ...fn, ranges: fn.ranges.map((range) => ({ ...range })) };
-          ranges.set(key, copy);
-          functions.push(copy);
-        } else if (whole.count > known.ranges[0]!.count) {
-          known.ranges[0]!.count = whole.count;
-        }
-      }
+export function mergeCoverageRead(
+  ran: Map<string, RanScript>,
+  scripts: ReadonlyMap<string, ParsedScript>,
+  read: readonly ScriptCoverage[],
+): void {
+  for (const covered of read) {
+    const script = scripts.get(covered.scriptId);
+    if (!script) continue;
+    const key = versionKey(script.url, script.hash);
+    let known = ran.get(key);
+    if (!known) {
+      known = { script, functions: [], byRange: new Map() };
+      ran.set(key, known);
+    }
+    for (const fn of covered.functions) {
+      const whole = fn.ranges[0];
+      if (!whole || whole.count <= 0) continue;
+      const range = `${whole.startOffset}:${whole.endOffset}`;
+      if (known.byRange.has(range)) continue;
+      const copy = { ...fn, ranges: fn.ranges.map((r) => ({ ...r })) };
+      known.byRange.set(range, copy);
+      known.functions.push(copy);
     }
   }
-  return merged;
 }
 
 async function detach(page: Page, cdp: CDPSession): Promise<void> {
@@ -625,13 +654,22 @@ export async function startCodeReach(page: Page): Promise<boolean> {
   let cdp: CDPSession | null = null;
   try {
     cdp = await internalCall(page, () => page.context().newCDPSession(page));
-    const capture: CoverageCapture = { cdp, scripts: new Map(), sources: new Map(), reads: [] };
+    const capture: CoverageCapture = {
+      cdp,
+      scripts: new Map(),
+      sources: new Map(),
+      ran: new Map(),
+      reading: new Set(),
+      pageUrl: page.url(),
+    };
     const marks = marksOf(page);
     cdp.on('Debugger.scriptParsed', (event) => onScriptParsed(page, capture, event));
     cdp.on('Debugger.paused', (event) => onPaused(page, capture, event));
     // A document the main frame commits while the capture runs gets the mark from the script added below.
     cdp.on('Page.frameNavigated', (event) => {
-      if (!event.frame.parentId) marks.add(event.frame.loaderId);
+      if (event.frame.parentId) return;
+      marks.add(event.frame.loaderId);
+      capture.pageUrl = event.frame.url;
     });
     await internalCall(page, () =>
       Promise.all([
@@ -667,13 +705,12 @@ export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null>
       await cdp.send('Profiler.stopPreciseCoverage');
       return taken.result as ScriptCoverage[];
     });
-    const coverage = mergeCoverageReads([...(await Promise.all(capture.reads)), last]);
+    await Promise.all(capture.reading);
+    mergeCoverageRead(capture.ran, capture.scripts, last);
     const entries: CoveredScript[] = [];
-    for (const [scriptId, functions] of coverage) {
-      const parsed = capture.scripts.get(scriptId);
-      if (!parsed) continue;
-      const entry: CoveredScript = { url: parsed.url, hash: parsed.hash, functions };
-      const source = await capture.sources.get(versionKey(parsed.url, parsed.hash));
+    for (const [key, { script, functions }] of capture.ran) {
+      const entry: CoveredScript = { url: script.url, hash: script.hash, functions, pageUrl: script.pageUrl };
+      const source = await capture.sources.get(key);
       if (source != null) entry.source = source;
       entries.push(entry);
     }
