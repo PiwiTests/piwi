@@ -669,7 +669,7 @@ export const HELP_TOPICS = {
   'case.coverage-incomplete': {
     title: 'Incomplete coverage',
     text: 'Part of this test’s coverage is missing: the backend no longer held the coverage of one of its requests when the reporter asked for it, a collection failed, a cap was reached, or part of it is no longer stored. The files listed ran; others may have too.',
-    doc: 'features/code-reach#server-code',
+    doc: 'features/server-coverage',
   },
   'case.coverage-none': {
     title: 'No coverage for this test',
@@ -691,7 +691,7 @@ export const HELP_TOPICS = {
   'case.coverage-backend-none': {
     title: 'No backend coverage for this test',
     text: 'The run recorded backend coverage, but none for this test. Its requests may not have reached the instrumented backend (a page served from elsewhere, a mocked route, a request that failed), or the backend may no longer have held the coverage when the reporter asked.',
-    doc: 'features/code-reach#server-code',
+    doc: 'features/server-coverage',
   },
   'coverage.file': {
     title: 'Which tests run this file',
@@ -822,7 +822,7 @@ export const HELP_TOPICS = {
   'cluster.suspect-lines-coverage': {
     title: 'Suspect lines need coverage',
     text: 'This project records coverage, but the failing tests of this run recorded none, so the changes are not narrowed to the lines they ran. A test records browser files in Chromium only, and backend lines only when its requests reach a backend built for coverage; the run may also predate coverage being turned on.',
-    doc: 'features/code-reach#server-code',
+    doc: 'features/server-coverage',
   },
   'cluster.baseline': {
     title: 'Baseline commit',

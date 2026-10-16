@@ -85,7 +85,7 @@ Three lines are cluster-specific:
 - **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*;
   a single test is named, *quarantined* if it is.
 - **What changed**: the commits and files since the last passing run (or your baseline), with **See the changes**
-  for the diff and, with [coverage](./code-reach#server-code), the first
+  for the diff and, with [coverage](./server-coverage), the first
   [suspect line](/guide/concepts#suspect-lines): a changed line the failing tests ran, marked in the diff. Missing
   setup (no commit or repository URL, an unsupported host, a missing or refused [SCM token](/guide/source-control))
   shows the range, the host's error, its **Compare** page and a hint on what to set up;

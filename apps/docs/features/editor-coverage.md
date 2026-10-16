@@ -18,7 +18,7 @@ a line lists them.
 The marks show what the reporter records, per test:
 
 - **Server code**: an ASP.NET Core backend built for coverage, with the reporter's `coverage.server` set to `lines`, or
-  `PIWI_COVERAGE_SERVER=lines`: [Code reach → Server code](./code-reach#server-code) has the steps. With `functions`,
+  `PIWI_COVERAGE_SERVER=lines`: [Server coverage](./server-coverage) has the steps. With `functions`,
   the lenses show and no line is marked.
 - **Browser code**: recorded per file ([code reach](./code-reach#turn-it-on)), so such a file lists its tests in its
   top lens, with no line marks; with `coverage.browser: 'functions'`, the lenses above each function that ran show
@@ -110,7 +110,7 @@ finds a Playwright config in the solution's folder or its Git repository.
   tests without line marks.
 - **The latest coverage of each test**: on your branch where its tests ran with coverage, else on the default branch.
 - **Pages only**: an API test through Playwright's `request` fixture records no server coverage
-  ([Code reach](./code-reach#server-code)).
+  ([Server coverage](./server-coverage)).
 - An instance without coverage shows nothing, and is asked again only on a refresh.
 
 ## Related

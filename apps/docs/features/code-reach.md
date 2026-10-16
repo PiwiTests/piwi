@@ -7,8 +7,9 @@ lang: en-US
 # Code reach
 
 Code reach answers "which tests reach this file?" for application code: an opt-in capture records the source files
-whose functions ran during each test, in the browser and, with an instrumented ASP.NET Core backend, on the
-[server](#server-code), so a change to a component or a module maps to the tests that execute it.
+whose functions ran during each test in the browser, so a change to a component or a module maps to the tests that
+execute it. An ASP.NET Core backend built for coverage adds the code each test ran on the server:
+[server coverage](./server-coverage).
 
 ## Turn it on
 
@@ -34,8 +35,8 @@ count, or every eagerly loaded file would be reached by every test. Paths are re
 files under `node_modules` or outside the repository are dropped, and at most 2,000 files are kept per test. Only the
 paths leave the machine, never code, counts or line numbers.
 
-`coverage.browser: 'functions'` adds each function's start and end line, through the source map, and the file's git
-blob: line numbers then leave the machine.
+`coverage.browser: 'files'` is the same as `captureCodeReach: true`; `'functions'` adds each function's start and end
+line, through the source map, and the file's git blob: line numbers then leave the machine.
 
 Paths resolve against the Playwright config's directory, then the repository root. Set `codeReachRoots` to the dev
 server's root when it is elsewhere; for Nuxt that is `app/`:
@@ -44,8 +45,10 @@ server's root when it is elsewhere; for Nuxt that is `app/`:
 reporter: [['@piwitests/reporter', { captureCodeReach: true, codeReachRoots: ['app'] }]],
 ```
 
-For dev servers that serve modules at the same paths (one per portal), map each origin to its directories, `*` for
-the rest; a script takes its own origin's, else its page's:
+When the tests reach several dev servers that serve modules at the same paths (one per portal, each with its own
+`/js/index.ts`), give `codeReachRoots` an object: each origin with its directories, `*` for every other origin. A
+script resolves against its own origin's directories, else those of the page that loaded it, so the key can be the
+address the tests open:
 
 ```ts
 codeReachRoots: {
@@ -78,52 +81,12 @@ recorded exactly the files it ran.
 
 ## Cost
 
-Code reach reads V8's function coverage, which records only whether each function ran, so pages run at nearly their
-usual speed: a test pays for a CDP session per page and a coverage read per document it leaves, and a script's source
-is read once per worker. Medians on a 4-core sandbox, headless Chromium:
-
-- **A script-heavy page** (Vue's development build rendering a 1,000-row table 30 times, 400 ES modules): 1,128 ms to
-  1,220 ms per test, 8% more, 16% for a worker's first test, where Playwright's `page.coverage` adds 50%.
-- **A light page** (`npm run reporter:bench`): 61 to 103 ms more per test, where `page.coverage` adds 176 to 209 ms.
-
-The extra time grows with the scripts a page loads and the documents a test opens.
-
-## Server code
-
-With an ASP.NET Core backend built for coverage, each test also records the backend code it ran:
-
-1. Add the `PiwiTests.Instrumentation.Coverage` package to every project whose code you want covered, as its
-   [README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#readme)
-   shows, serve it with `app.UsePiwiTestLogs()` ([backend logs](/guide/backend-logs)), and build the test environment
-   with `-p:PiwiCoverage=true`. Never ship that build to production.
-2. Set the reporter's `coverage.server` option, or `PIWI_COVERAGE_SERVER`, with the capture fixtures in place.
-
-```ts
-reporter: [['@piwitests/reporter', { coverage: { server: 'lines' } }]],
-```
-
-Each response names its request's coverage; once the test ends, outside its time, the reporter collects what its pages
-and API calls named, several tests per call.
-
-| `coverage.server` | Records per test |
-| --- | --- |
-| `files` | the backend files that ran, paths only |
-| `functions` | also the start and end line of each function that ran |
-| `lines` | also the executed lines |
-
-With `functions` and `lines`, each file names the git blob its line numbers refer to. The run's end also sends the
-backend's run-level coverage, with each file's executable lines at `lines`. A test whose coverage the backend no
-longer held, or that could not be collected, is marked incomplete.
-`coverage.browser: 'files'` is the same as `captureCodeReach: true`.
-
-- **Run level only:** lambdas created at startup (inline minimal API handlers, inline middleware, DI factory lambdas)
-  and work outside a request (hosted services, timers). The methods they call count normally.
-- **API calls** through Playwright's `request` fixture keep their last response's coverage only: a redirect's earlier
-  responses, and a response `failOnStatusCode` turns into an error, name none.
-- C# and Visual Basic only.
-
-On a prototype, per-test server coverage added under 2% to test duration on Microsoft's eShopOnWeb, whose CPU goes to
-the framework, and up to 26% server CPU where business logic takes it; functions cost about what lines cost.
+Code reach reads V8's function coverage, which records only whether each function ran. A test pays for a CDP session
+on each page it has, a debugger stop and a coverage read for each document it leaves, and a script's source is read
+once per worker, so the cost grows with the modules each document loads. One script-heavy page costs about 8% more per
+test; on a large ASP.NET Core and Vue application, served by Vite dev servers and moving between screens by full page
+loads, its UI tests took 40 to 50% longer, by file or by function alike: turn it on in a scheduled run there.
+[Coverage cost](/reference/coverage-cost) has every mode and how each was measured.
 
 ## On the execution page
 
@@ -153,7 +116,7 @@ test to copy.
 
 - **[Impact-from-diff](./test-selection#impact-from-diff)** maps a changed file to the tests that executed it; a changed
   file no test reached still widens the run to the whole suite, since code reach misses top-level code, server code
-  without [server coverage](#server-code) and type-only modules.
+  without [server coverage](./server-coverage) and type-only modules.
 - **[Uncovered changes](./uncovered-changes)** counts a changed file as reached when a test executed it.
 - **[Locator preflight](./preflight)** calls a break *likely* only when one of its tests reaches the changed file.
 - **[Coverage in the editor](./editor-coverage)** marks the lines tests ran and the ones none runs, in VS Code and the
@@ -173,10 +136,11 @@ The [API](https://piwitests.dev/demo/docs) (`/docs` on your instance) serves the
   React server components included.
 - A module whose top-level code calls its own functions, a table built on import, counts for every test that loads it.
 - A function a minifier inlines into another counts for the file it was inlined into.
-- Chromium drops the coverage of a document the page leaves, so it is read on `beforeunload`, from a listener in an
-  isolated world; a document left without one (a crash) keeps what an earlier read saw.
-- On a page open before the test, what ran before counts only if it runs again; what a page runs on its own (a timer)
-  counts too.
+- Chromium drops the coverage of a document the page leaves, so each document is read as it goes: the capture adds a
+  `beforeunload` listener in an isolated world, out of the page's reach, and the debugger stops on it for that read. A
+  document left without `beforeunload` (a crash) keeps only what an earlier read saw.
+- On a page open before the test, what ran there before counts only if it runs again, and what a page runs on its own
+  meanwhile (a timer, a poll) counts too.
 - Reach is per branch: a branch's own runs replace its tests' reach, and the default branch's stands in for the rest.
 
 ## Try it in the demo
@@ -185,6 +149,8 @@ The [API](https://piwitests.dev/demo/docs) (`/docs` on your instance) serves the
 
 ## Related
 
+- [Server coverage](./server-coverage): the code each test ran in an ASP.NET Core backend
+- [Coverage cost](/reference/coverage-cost): what each mode costs
 - [Capture fixtures](/guide/capture-fixtures): what else the fixtures record
 - [Test selection](./test-selection): impact-from-diff
 - [Privacy & data flow](/guide/privacy): what the reporter sends

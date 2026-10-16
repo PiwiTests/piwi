@@ -15,7 +15,7 @@ agents and, for a failure, the AI diagnosis.
 
 ## Turn it on
 
-The insights read the coverage your runs already record: set up [server coverage](./code-reach#server-code) with
+The insights read the coverage your runs already record: set up [server coverage](./server-coverage) with
 `coverage: { server: 'lines' }` in the reporter options, or `PIWI_COVERAGE_SERVER=lines`. Line answers need the
 `lines` granularity; `functions` gives function answers, and browser coverage, files only, gives file answers. A run
 without coverage changes nothing, so a nightly job with coverage on is enough for the comparisons across runs.
@@ -150,7 +150,7 @@ instance).
 
 ## Related
 
-- [Code reach](./code-reach): recording coverage, browser and server
+- [Code reach](./code-reach) and [server coverage](./server-coverage): recording coverage, browser and server
 - [Flaky tests & quarantine](./flaky-tests): root causes and the quarantine these answers inform
 - [AI diagnosis](./ai-diagnosis): the evidence a diagnosis reads
 - [MCP server](./mcp): connecting an agent
