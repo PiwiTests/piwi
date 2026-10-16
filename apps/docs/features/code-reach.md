@@ -42,6 +42,19 @@ server's root when it is elsewhere; for Nuxt that is `app/`:
 reporter: [['@piwitests/reporter', { captureCodeReach: true, codeReachRoots: ['app'] }]],
 ```
 
+When the tests reach several applications whose dev servers serve modules at the same paths (one Vite server per
+portal, each with its own `/js/index.ts`), give `codeReachRoots` an object instead: each origin with its directories,
+and `*` for every other origin. A script resolves against the directories of its own origin, else of the origin of the
+page that loaded it, so the key can be the address the tests open:
+
+```ts
+codeReachRoots: {
+  'http://localhost:5001': 'portals/admin/src',
+  'http://localhost:5002': 'portals/customer/src',
+  '*': ['shared'],
+},
+```
+
 Code a bundler or dev server adds (module wrappers, hot-reload hooks) counts for no file.
 
 When the backend is instrumented (the [Nitro or ASP.NET Core packages](/guide/backend-logs)), the handler file of each

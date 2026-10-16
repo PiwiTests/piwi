@@ -9,6 +9,7 @@ import {
   piwiFixtures,
   probeElementAttrs,
   CAPTURED_ATTRS_ARG,
+  configuredCodeReachRoots,
 } from '../src/internal/capture/capture-fixtures.js';
 import {
   ATTACHMENT_NAMES,
@@ -1854,5 +1855,21 @@ describe('keepsFailureScreenshots', () => {
     expect(keepsFailureScreenshots('on-first-failure', 1)).toBe(false);
     expect(keepsFailureScreenshots('off', 0)).toBe(false);
     expect(keepsFailureScreenshots(undefined, 0)).toBe(false);
+  });
+});
+
+describe('configuredCodeReachRoots', () => {
+  afterEach(() => {
+    delete process.env.PIWI_CODE_REACH_ROOTS;
+  });
+
+  it('reads a JSON array, a JSON object per origin, or a path list', () => {
+    expect(configuredCodeReachRoots()).toBeNull();
+    process.env.PIWI_CODE_REACH_ROOTS = JSON.stringify(['app', '', 3]);
+    expect(configuredCodeReachRoots()).toEqual(['app']);
+    process.env.PIWI_CODE_REACH_ROOTS = JSON.stringify({ 'http://localhost:5281': 'admin', '*': ['app', 1] });
+    expect(configuredCodeReachRoots()).toEqual({ 'http://localhost:5281': ['admin'], '*': ['app'] });
+    process.env.PIWI_CODE_REACH_ROOTS = ['app', 'lib'].join(path.delimiter);
+    expect(configuredCodeReachRoots()).toEqual(['app', 'lib']);
   });
 });

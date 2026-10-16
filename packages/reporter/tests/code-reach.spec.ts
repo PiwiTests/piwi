@@ -236,6 +236,48 @@ describe('resolveCodeReach', () => {
     expect(r.roots[r.roots.length - 1]).toBe(r.repoRoot);
     expect(codeReachRoots(dir, ['app']).roots).toEqual([path.join(dir, 'app'), r.repoRoot]);
   });
+
+  it('reads directories per origin from an object, `*` for every other origin', () => {
+    const r = codeReachRoots(dir, {
+      'http://localhost:5281/': 'portals/admin',
+      'http://localhost:5284': ['portals/site', 'shared'],
+      '*': ['app'],
+      'not a url': 'ignored',
+    });
+    expect(r.roots).toEqual([path.join(dir, 'app'), r.repoRoot]);
+    expect([...r.byOrigin!]).toEqual([
+      ['http://localhost:5281', [path.join(dir, 'portals/admin')]],
+      ['http://localhost:5284', [path.join(dir, 'portals/site'), path.join(dir, 'shared')]],
+    ]);
+    expect(codeReachRoots(dir, { 'http://localhost:5281': 'portals/admin' }).roots).toEqual([...new Set([dir, r.repoRoot])]);
+  });
+
+  it('resolves a module against the directories of its own origin, else of its page', async () => {
+    write('portals/admin/js/index.ts', 'export {};');
+    write('portals/site/js/index.ts', 'export {};');
+    const source = 'export function go() {}\ngo();';
+    const index = (port: number): JsCoverageEntry => ({
+      url: `http://localhost:${port}/dist/js/index.ts`,
+      source,
+      functions: [
+        { functionName: '', ranges: [{ startOffset: 0, endOffset: source.length, count: 1 }] },
+        { functionName: 'go', ranges: [{ startOffset: 7, endOffset: 23, count: 1 }] },
+      ],
+    });
+    const vite = (port: number): JsCoverageEntry => ({ url: `http://localhost:${port}/dist/@vite/client`, functions: [] });
+    const r = codeReachRoots(dir, {
+      'http://localhost:5231': 'portals/admin',
+      'http://localhost:5284': 'portals/site',
+    });
+    // The script's own origin has directories.
+    expect(await resolveCodeReach([vite(5231), index(5231)], r, async () => null, 'http://localhost:5281/Home')).toEqual([
+      'portals/admin/js/index.ts',
+    ]);
+    // It has none: its page's origin picks them.
+    expect(await resolveCodeReach([vite(5234), index(5234)], r, async () => null, 'http://localhost:5284/Home')).toEqual([
+      'portals/site/js/index.ts',
+    ]);
+  });
 });
 
 describe('in Chromium', () => {

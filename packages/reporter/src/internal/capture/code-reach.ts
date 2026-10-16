@@ -14,7 +14,8 @@
  * Each covered script is resolved to original files in one of two ways:
  *
  * - a module served by path (Vite's `/src/components/Pay.vue`, `/@fs/<abs>`):
- *   the URL's path, tried against the code reach roots, when the file exists.
+ *   the URL's path, tried against the code reach roots, when the file exists;
+ *   the roots of the script's origin, or of its page's, come first.
  *   A Vite dev server's `base` (Nuxt's `/_nuxt/`), read from the address its
  *   `@vite/client` script loads from, is dropped from the path first.
  *   When the module has a source map (Vite serves one inline), only functions
@@ -60,9 +61,18 @@ const BUILD_DIRS = /(?:^|\/)(?:dist|build|out|\.output|\.next|\.nuxt|\.svelte-ki
 export interface CodeReachRoots {
   /** Directories a module path or a map source is tried against, first match wins; the repository root is last. */
   roots: string[];
+  /**
+   * Directories tried before `roots` for the scripts an origin serves, or, when the script's own origin has none,
+   * that a page at the origin loads: an application served by several dev servers (one per portal) resolves each
+   * one's modules against its own directory.
+   */
+  byOrigin?: Map<string, string[]>;
   /** Paths go out relative to it. */
   repoRoot: string;
 }
+
+/** The `codeReachRoots` option: directories for every script, or directories per origin, `*` for the rest. */
+export type CodeReachRootsOption = string[] | Record<string, string | string[]>;
 
 /** Fetches a source map's text; null when it cannot. */
 export type MapFetcher = (url: string) => Promise<string | null>;
@@ -135,14 +145,44 @@ export function repositoryRoot(from: string): string {
 }
 
 /**
- * The roots for a test: `codeReachRoots` when set, else the Playwright config's
- * directory; the repository root always comes last, since bundlers name
- * sources from the project root (Turbopack's `[project]/`).
+ * The roots for a test: `codeReachRoots` when set (an array, or the `*` entry of
+ * an object), else the Playwright config's directory; the repository root always
+ * comes last, since bundlers name sources from the project root (Turbopack's
+ * `[project]/`). An object's other keys are origins, each with the directories
+ * tried first for its scripts. Relative directories resolve against the config's.
  */
-export function codeReachRoots(configDir: string, configured: string[] | null | undefined): CodeReachRoots {
+export function codeReachRoots(configDir: string, configured: CodeReachRootsOption | null | undefined): CodeReachRoots {
   const repoRoot = repositoryRoot(configDir);
-  const roots = configured?.length ? configured.map((r) => path.resolve(configDir, r)) : [configDir];
-  return { roots: [...new Set([...roots, repoRoot])], repoRoot };
+  const resolve = (dirs: string | string[] | undefined) =>
+    (Array.isArray(dirs) ? dirs : dirs ? [dirs] : []).filter(Boolean).map((r) => path.resolve(configDir, r));
+  const global = Array.isArray(configured) ? resolve(configured) : resolve(configured?.['*']);
+  const byOrigin = new Map<string, string[]>();
+  if (configured && !Array.isArray(configured)) {
+    for (const [key, dirs] of Object.entries(configured)) {
+      const origin = key === '*' ? null : originOf(key);
+      const resolved = resolve(dirs);
+      if (origin && resolved.length) byOrigin.set(origin, resolved);
+    }
+  }
+  const roots = global.length ? global : [configDir];
+  return { roots: [...new Set([...roots, repoRoot])], byOrigin, repoRoot };
+}
+
+function originOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const origin = new URL(url).origin;
+    return origin === 'null' ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+/** The directories a script resolves against: its origin's, else its page's origin's, then the test's roots. */
+function scriptRoots(roots: CodeReachRoots, scriptUrl: string, pageUrl: string | undefined): string[] {
+  if (!roots.byOrigin?.size) return roots.roots;
+  const own = roots.byOrigin.get(originOf(scriptUrl) ?? '') ?? roots.byOrigin.get(originOf(pageUrl) ?? '');
+  return own ? [...new Set([...own, ...roots.roots])] : roots.roots;
 }
 
 function isFile(file: string): boolean {
@@ -251,14 +291,14 @@ function parseMap(text: string): SourceMapLookup | null {
  */
 async function resolveScript(
   entry: CoveredScript,
-  roots: CodeReachRoots,
+  roots: string[],
   bases: ViteBases,
   fetchMap: MapFetcher,
 ): Promise<ScriptResolution> {
   const version = scriptVersion(entry);
   const cached = scriptCache.get(entry.url, version);
   if (cached) return cached;
-  const file = fileForUrl(entry.url, roots.roots, bases);
+  const file = fileForUrl(entry.url, roots, bases);
   const lookup = await loadMap(entry, fetchMap);
   let resolution: ScriptResolution;
   if (file) resolution = { kind: 'file', file, lookup, source: entry.source };
@@ -273,11 +313,16 @@ function withSource(entry: CoveredScript, resolution: { source: string | undefin
   return { ...entry, source: resolution.source };
 }
 
-/** The repository-relative files the covered scripts reached, sorted and capped. */
+/**
+ * The repository-relative files the covered scripts reached, sorted and capped.
+ * `pageUrl`, the page's address as its coverage stopped, picks the roots of the
+ * scripts whose own origin has none.
+ */
 export async function resolveCodeReach(
   entries: CoveredScript[],
   roots: CodeReachRoots,
   fetchMap: MapFetcher,
+  pageUrl?: string,
 ): Promise<string[]> {
   const files = new Set<string>();
   const bases = viteBases(entries);
@@ -285,7 +330,8 @@ export async function resolveCodeReach(
   // Every script is looked up before the first is resolved: caching one may evict another this test still needs.
   const known = scripts.map((entry) => scriptCache.get(entry.url, scriptVersion(entry)));
   for (const [i, covered] of scripts.entries()) {
-    const resolution = known[i] ?? (await resolveScript(covered, roots, bases, fetchMap));
+    const dirs = scriptRoots(roots, covered.url, pageUrl);
+    const resolution = known[i] ?? (await resolveScript(covered, dirs, bases, fetchMap));
     if (resolution.kind === 'file') {
       const entry = withSource(covered, resolution);
       const ran = resolution.lookup ? reachedSources(entry, resolution.lookup).size > 0 : scriptRan(entry);
@@ -295,11 +341,11 @@ export async function resolveCodeReach(
       for (const index of reachedSources(entry, resolution.lookup)) {
         if (resolution.files[index] === undefined) {
           const source = resolution.lookup.sources[index] ?? '';
-          let absolute = resolveSourcePath(source, roots.roots);
+          let absolute = resolveSourcePath(source, dirs);
           // A source relative to the map: resolve it as a URL path, then against the roots.
           if (!absolute && !/^[a-z][\w+.-]*:/i.test(source)) {
             try {
-              absolute = fileForUrl(new URL(source, entry.url).href, roots.roots, bases);
+              absolute = fileForUrl(new URL(source, entry.url).href, dirs, bases);
             } catch {
               absolute = null;
             }

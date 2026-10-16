@@ -107,8 +107,14 @@ export interface PiwiDashboardOptions {
    * repository root, which is always tried last. Defaults to the Playwright
    * config's directory. Set it to the dev server's root when that is not the
    * config's directory (Nuxt: `['app']`).
+   *
+   * An object gives directories per origin instead, for an application whose
+   * tests reach several dev servers that serve modules at the same paths (one per
+   * portal): a script resolves against the directories of its own origin, else
+   * of the origin of the page that loaded it, then those under `'*'`
+   * (`{ 'http://localhost:3001': 'portals/admin', '*': ['app'] }`).
    */
-  codeReachRoots?: string[];
+  codeReachRoots?: string[] | Record<string, string | string[]>;
   /**
    * Record, per test, which source code ran, in the browser and in the
    * backend, and send it with the test as its coverage. Rides the capture

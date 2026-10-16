@@ -107,7 +107,14 @@ import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import { browserCoverageInWorker, serverCoverageInWorker } from '../collect/coverage-settings.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
-import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach } from './code-reach.js';
+import {
+  codeReachRoots,
+  pageMapFetcher,
+  resolveCodeReach,
+  startCodeReach,
+  stopCodeReach,
+  type CodeReachRootsOption,
+} from './code-reach.js';
 import {
   activeResourceLedger,
   noteResourceUse,
@@ -371,13 +378,21 @@ function maybeStartCodeReach(page: Page): Promise<boolean> {
   return started;
 }
 
-/** The code reach roots from `PIWI_CODE_REACH_ROOTS` (a JSON array or a path list). */
-export function configuredCodeReachRoots(): string[] | null {
+/**
+ * The code reach roots from `PIWI_CODE_REACH_ROOTS`: a JSON array, a JSON object
+ * of directories per origin (`*` for every other origin), or a path list.
+ */
+export function configuredCodeReachRoots(): CodeReachRootsOption | null {
   const raw = process.env.PIWI_CODE_REACH_ROOTS?.trim();
   if (!raw) return null;
+  const dirs = (value: unknown): string[] =>
+    (Array.isArray(value) ? value : [value]).filter((r): r is string => typeof r === 'string' && r !== '');
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter((r): r is string => typeof r === 'string' && r !== '');
+    if (Array.isArray(parsed)) return dirs(parsed);
+    if (parsed && typeof parsed === 'object') {
+      return Object.fromEntries(Object.entries(parsed).map(([origin, value]) => [origin, dirs(value)]));
+    }
   } catch {
     // Not JSON: a path list.
   }
@@ -410,6 +425,7 @@ async function stopSinkCodeReach(
       entries,
       codeReachRoots(configDir, configuredCodeReachRoots()),
       pageMapFetcher(session.page),
+      session.page.url(),
     );
   } catch {
     /* code reach is best-effort and must never affect the test */
