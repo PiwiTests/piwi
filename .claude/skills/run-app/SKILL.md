@@ -14,8 +14,8 @@ repo root).
 
 ## Look at one page (the common case)
 
-One command boots a throwaway dev server on port 3050, creates and seeds the dev database on the
-first run, opens the route, waits for hydration and for the page to settle, screenshots it into
+One command boots a throwaway dev server on port 3050 on a database seeded afresh from the current
+demo seed (`.data/screens/`, so your dev database is left alone), opens the route, waits for hydration and for the page to settle, screenshots it into
 `.screens/` (gitignored) and tears the server down:
 
 ```bash

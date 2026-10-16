@@ -228,8 +228,12 @@ remove one without updating the scene. Capture waits on `settle()` (fonts, netwo
 on a timeout, and a capture that would not fit the viewport is an **error naming the viewport to use** — never a
 silently cropped image.
 
+The server it boots runs on a throwaway database, `.data/screens/`, seeded afresh from the current demo seed on every
+run: scenes name demo rows by id, which a dev database seeded once and kept stops matching when the seed changes. Your
+dev database is left alone; `--url` drives a server's own data instead.
+
 `--freeze-now <iso>` pins the browser clock so relative timestamps stop moving and two runs produce byte-identical
-PNGs; combine it with a freshly seeded database when a diff needs to mean a real UI change.
+PNGs; with the freshly seeded database a booted run gets, a diff then means a real UI change.
 
 Annotations (boxes, arrows, numbered steps, callouts, spotlights, redactions) come from `scripts/screenshot-annotations.mjs`
 — an in-repo SVG overlay, no runtime dependency. A scene with an `annotate` list writes both the plain image and a

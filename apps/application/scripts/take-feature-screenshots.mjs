@@ -17,8 +17,11 @@
  *   node scripts/take-feature-screenshots.mjs --route /test-run-cases/37 --expand --height 2400
  *
  * Without --url the script boots its own dev server on port 3050 and tears it
- * down at the end; a missing dev DB is created and seeded first. With --url it
- * drives the server you point it at.
+ * down at the end. That server runs on a throwaway database, `.data/screens/`,
+ * seeded afresh from the current demo seed on every run: the scenes name demo
+ * rows by id (execution 711, project 5), and a dev database seeded once and
+ * kept no longer holds what they expect after the seed changes. With --url it
+ * drives the server you point it at, and its data.
  *
  * `--route <path>` captures one page without registering a scene — the way to
  * look at any screen while verifying a change. It gets the same server, the
@@ -49,7 +52,14 @@ import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import { drawAnnotations, clearAnnotations } from './screenshot-annotations.mjs';
-import { resolveChromium, startServer, waitForPortFree } from './lib/dev-server.mjs';
+import {
+  DEFAULT_PORT,
+  portInUse,
+  resolveChromium,
+  seedThrowawayDb,
+  startServer,
+  waitForPortFree,
+} from './lib/dev-server.mjs';
 import { waitForHydration, settlePage } from './lib/page-waits.mjs';
 import { SUSPECT_SCENE_CLUSTER, SUSPECT_SCENE_EXECUTION, withSceneChanges } from './lib/suspect-lines-scene.mjs';
 import {
@@ -5694,6 +5704,11 @@ async function main() {
   }
 
   for (const scene of scenes) mkdirSync(outDirFor(scene, flags.out), { recursive: true });
+  // Checked before seeding, so a taken port fails at once rather than after the seed.
+  if (!flags.url && (await portInUse(DEFAULT_PORT))) {
+    throw new Error(`port ${DEFAULT_PORT} is already in use; stop the server on it first, or pass --url to drive it`);
+  }
+  const serverEnv = flags.url ? null : seedThrowawayDb(join(APP_DIR, '.data', 'screens'));
   const browser = await chromium.launch({
     executablePath: resolveChromium(),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -5709,7 +5724,7 @@ async function main() {
   let written = 0;
   try {
     for (const [mode, group] of byMode) {
-      const server = flags.url ? { base: flags.url, stop: () => {} } : await startServer({ mode });
+      const server = flags.url ? { base: flags.url, stop: () => {} } : await startServer({ mode, env: serverEnv });
       try {
         for (const scene of group) {
           try {
