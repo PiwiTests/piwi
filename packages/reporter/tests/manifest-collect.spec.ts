@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   parseManifestJson,
   hasInstrumentationHeader,
-  baseUrlFromConfig,
   configDirFromConfig,
   fetchInstrumentationManifest,
+  fetchOriginManifest,
   instrumentationManifestUrls,
   type FetchLike,
 } from '../src/internal/manifest/collect';
@@ -45,13 +45,7 @@ describe('hasInstrumentationHeader', () => {
   });
 });
 
-describe('baseUrlFromConfig / configDirFromConfig', () => {
-  it('reads the first base URL from projects, else the top-level use', () => {
-    expect(baseUrlFromConfig({ use: { baseURL: 'https://top' } })).toBe('https://top');
-    expect(baseUrlFromConfig({ projects: [{ use: {} }, { use: { baseURL: 'https://p' } }] })).toBe('https://p');
-    expect(baseUrlFromConfig({})).toBeNull();
-  });
-
+describe('configDirFromConfig', () => {
   it('prefers the config file directory for the committed manifest', () => {
     expect(configDirFromConfig({ configFile: '/repo/playwright.config.ts' })).toBe('/repo');
     expect(configDirFromConfig({ rootDir: '/repo/tests' })).toBe('/repo/tests');
@@ -124,5 +118,29 @@ describe('fetchInstrumentationManifest', () => {
       throw new DOMException('The operation was aborted.', 'TimeoutError');
     };
     expect(await fetchInstrumentationManifest('https://app.test', fetchImpl)).toBeNull();
+  });
+});
+
+describe('fetchOriginManifest', () => {
+  it('fetches the manifest at the origin root with no probe', async () => {
+    const requested: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      requested.push(url);
+      return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
+    };
+    const manifest = await fetchOriginManifest('http://localhost:5282', fetchImpl);
+    expect(manifest?.routes?.[0]?.pattern).toBe('/api/cart');
+    expect(requested).toEqual(['http://localhost:5282/__piwi/manifest']);
+  });
+
+  it('returns null for a page that is not a manifest, or a failed request', async () => {
+    const html: FetchLike = async () => ({ ok: true, status: 200, headers: {}, text: async () => '<!doctype html>' });
+    expect(await fetchOriginManifest('http://localhost:5282', html)).toBeNull();
+    const notFound: FetchLike = async () => ({ ok: false, status: 404, headers: {}, text: async () => '' });
+    expect(await fetchOriginManifest('http://localhost:5282', notFound)).toBeNull();
+    const down: FetchLike = async () => {
+      throw new TypeError('fetch failed');
+    };
+    expect(await fetchOriginManifest('http://localhost:5282', down)).toBeNull();
   });
 });

@@ -2,11 +2,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 /**
- * Declared-surface manifest collection. Two ramps run from the reporter's global
- * setup: a committed `piwi.manifest.json` next to the Playwright config, and the
- * instrumentation package's `/__piwi/manifest`, fetched only when the base URL's
- * first response carries an instrumentation header. Both reduce to
- * {@link ReporterManifest} and are uploaded to the dashboard with their source.
+ * Declared-surface manifest collection. Three ramps feed it: from the reporter's
+ * global setup, a committed `piwi.manifest.json` next to the Playwright config and
+ * the instrumentation package's `/__piwi/manifest` of each base URL whose first
+ * response carries an instrumentation header; from the reporter, the manifest of
+ * every other origin whose responses carried one during the run
+ * (`run-manifests.ts`). All reduce to {@link ReporterManifest} and are uploaded to
+ * the dashboard with their source.
  */
 
 /** A declared route: method, pattern, optional handler file and documented codes. */
@@ -101,20 +103,6 @@ export function configDirFromConfig(config: { configFile?: string; rootDir?: str
   return process.cwd();
 }
 
-/** The first base URL declared by any Playwright project's `use.baseURL`, or null. */
-export function baseUrlFromConfig(config: {
-  use?: { baseURL?: string };
-  projects?: Array<{ use?: { baseURL?: string } }>;
-}): string | null {
-  const top = config?.use?.baseURL;
-  if (typeof top === 'string' && top) return top;
-  for (const project of config?.projects ?? []) {
-    const url = project?.use?.baseURL;
-    if (typeof url === 'string' && url) return url;
-  }
-  return null;
-}
-
 /** A fetch-shaped function, so the instrumentation fetch is testable without a server. */
 export type FetchLike = (
   url: string,
@@ -153,12 +141,32 @@ export async function fetchInstrumentationManifest(
     const probe = await fetchImpl(baseUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
     if (!hasInstrumentationHeader(probe.headers)) return null;
     for (const manifestUrl of instrumentationManifestUrls(baseUrl)) {
-      const res = await fetchImpl(manifestUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
-      const manifest = res.ok ? parseManifestJson(await res.text()) : null;
+      const manifest = await fetchManifestAt(manifestUrl, fetchImpl);
       if (manifest) return manifest;
     }
     return null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Fetch the instrumentation manifest at the root of an origin the run's responses
+ * already showed instrumented, so with no probe; bounded by the same timeout.
+ * Best-effort — any failure returns null.
+ */
+export async function fetchOriginManifest(
+  origin: string,
+  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+): Promise<ReporterManifest | null> {
+  try {
+    return await fetchManifestAt(new URL(INSTRUMENTATION_MANIFEST_PATH, origin).toString(), fetchImpl);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchManifestAt(manifestUrl: string, fetchImpl: FetchLike): Promise<ReporterManifest | null> {
+  const res = await fetchImpl(manifestUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
+  return res.ok ? parseManifestJson(await res.text()) : null;
 }

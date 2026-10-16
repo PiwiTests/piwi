@@ -187,10 +187,11 @@ export interface PiwiDashboardOptions {
    */
   sampleAriaOnPass?: boolean;
   /**
-   * Upload the application's declared surface at run start: a committed
-   * `piwi.manifest.json` next to the Playwright config, and — when the base URL's
-   * first response carries an instrumentation header — the instrumentation
-   * package's `/__piwi/manifest`. A route or page the manifest declares that no
+   * Upload the application's declared surface: at run start, a committed
+   * `piwi.manifest.json` next to the Playwright config and the instrumentation
+   * package's `/__piwi/manifest` of each `baseURL` whose first response carries an
+   * instrumentation header; as the run's last test ends, the manifest of every
+   * other origin whose responses carried one. A route or page the manifest declares that no
    * test reaches becomes a "declared, never hit" gap. Defaults to `true`; set to
    * `false` (or `PIWI_UPLOAD_MANIFEST=false`) to never upload.
    */

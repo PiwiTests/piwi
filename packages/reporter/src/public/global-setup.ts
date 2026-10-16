@@ -17,8 +17,9 @@ import {
   readCommittedManifest,
   fetchInstrumentationManifest,
   configDirFromConfig,
-  baseUrlFromConfig,
 } from '../internal/manifest/collect.js';
+import { lookupProjectId, uploadManifest } from '../internal/manifest/run-manifests.js';
+import { baseUrlsFromConfig } from '../internal/collect/server-coverage.js';
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
@@ -165,16 +166,13 @@ export function createGlobalSetup(
       const wantsAria = opts.sampleAriaOnPass !== false && !!opts.projectName;
       const committedManifest =
         opts.uploadManifest !== false ? readCommittedManifest(configDirFromConfig(config)) : null;
-      const manifestBaseUrl = opts.uploadManifest !== false ? baseUrlFromConfig(config) : null;
+      const manifestBaseUrls = opts.uploadManifest !== false ? baseUrlsFromConfig(config) : [];
       const wantsManifest =
-        opts.uploadManifest !== false && !!opts.projectName && (!!committedManifest || !!manifestBaseUrl);
+        opts.uploadManifest !== false && !!opts.projectName && (!!committedManifest || manifestBaseUrls.length > 0);
 
       let projectId: number | undefined;
       if ((wantsAria || wantsManifest) && opts.projectName) {
-        const menu = await httpClient.getJSON('/api/projects/menu', auth);
-        projectId = (menu?.items as Array<{ id: number; name: string }> | undefined)?.find(
-          (p) => p.name.toLowerCase() === opts.projectName!.toLowerCase(),
-        )?.id;
+        projectId = await lookupProjectId(httpClient, auth, opts.projectName);
       }
 
       // Ask the server which tests are due a fresh green ARIA sample this run
@@ -192,31 +190,26 @@ export function createGlobalSetup(
         }
       }
 
-      // Declared surface: upload a committed `piwi.manifest.json` and, when the
-      // app under test carries an instrumentation header, its `/__piwi/manifest`.
+      // Declared surface: upload a committed `piwi.manifest.json` and the
+      // `/__piwi/manifest` of each base URL whose app carries an instrumentation
+      // header. The other origins the run reaches are the reporter's.
       if (wantsManifest && projectId != null) {
         // The run's branch, so the dashboard tags a route added on a pull-request
         // branch instead of writing it to the default-branch surface.
         const branch = resolveScmBranch(process.env) ?? null;
         if (committedManifest) {
-          await httpClient
-            .putJSON(
-              `/api/projects/${projectId}/surface/manifest`,
-              { source: 'committed', branch, manifest: committedManifest },
-              auth,
-            )
-            .catch((e: unknown) => logger.debug(`Manifest upload (committed) skipped: ${errorMessage(e)}`));
+          await uploadManifest(
+            httpClient,
+            auth,
+            projectId,
+            { source: 'committed', branch, manifest: committedManifest },
+            logger,
+          );
         }
-        if (manifestBaseUrl) {
-          const declared = await fetchInstrumentationManifest(manifestBaseUrl);
-          if (declared) {
-            await httpClient
-              .putJSON(
-                `/api/projects/${projectId}/surface/manifest`,
-                { source: 'instrumentation', branch, manifest: declared },
-                auth,
-              )
-              .catch((e: unknown) => logger.debug(`Manifest upload (instrumentation) skipped: ${errorMessage(e)}`));
+        const declared = await Promise.all(manifestBaseUrls.map((url) => fetchInstrumentationManifest(url)));
+        for (const manifest of declared) {
+          if (manifest) {
+            await uploadManifest(httpClient, auth, projectId, { source: 'instrumentation', branch, manifest }, logger);
           }
         }
       }
