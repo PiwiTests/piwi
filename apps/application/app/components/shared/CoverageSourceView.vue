@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * A source file with its coverage marked: every line, highlighted for the
- * file's language, the lines that ran carrying the bar the diff draws on
- * suspect rows (`data-executed`), and the executable lines that did not run
- * a lighter bar (`data-not-executed`). The functions that ran are listed
+ * file's language, the lines that ran carrying a bar at the left
+ * (`data-executed`), and the executable lines that did not run another
+ * (`data-not-executed`), in the colors the editors mark them in, with a help
+ * hint saying what they mean. The functions that ran are listed
  * above it, each a link that brings its first line into view. Without the
  * source, the line numbers alone say what ran and what did not. The
  * `annotation` slot adds a narrow column after each line number (a count of
@@ -14,7 +15,7 @@
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
 import { highlightLines, languageForPath } from '#shared/highlight';
 import { lineRangesText } from '~/utils/suspect-lines';
-import { NOT_RUN_ROW_CLASS, functionNameAt } from '~/utils/coverage-view';
+import { NOT_RUN_ROW_CLASS, RAN_ROW_CLASS, functionNameAt } from '~/utils/coverage-view';
 
 const props = withDefaults(
   defineProps<{
@@ -149,15 +150,12 @@ defineExpose({ reveal });
     <template v-if="content !== null">
       <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span class="inline-flex items-center gap-1.5">
-          <span class="inline-block h-3 w-[3px] bg-[var(--ui-text-highlighted)]" aria-hidden="true" />{{
-            executedTitle
-          }}
+          <span class="inline-block h-3 w-[3px] bg-coverage-run" aria-hidden="true" />{{ executedTitle }}
         </span>
         <span v-if="notExecuted" class="inline-flex items-center gap-1.5">
-          <span class="inline-block h-3 w-[3px] bg-[var(--ui-border-accented)]" aria-hidden="true" />{{
-            notExecutedTitle
-          }}
+          <span class="inline-block h-3 w-[3px] bg-coverage-not-run" aria-hidden="true" />{{ notExecutedTitle }}
         </span>
+        <HelpHint topic="coverage.marks" />
       </p>
       <div
         ref="scroller"
@@ -177,7 +175,7 @@ defineExpose({ reveal });
             :title="row.executed ? executedTitle : row.notExecuted ? notExecutedTitle : undefined"
             class="flex leading-5 transition-colors"
             :class="[
-              row.executed ? SUSPECT_ROW_CLASS : row.notExecuted ? NOT_RUN_ROW_CLASS : '',
+              row.executed ? RAN_ROW_CLASS : row.notExecuted ? NOT_RUN_ROW_CLASS : '',
               row.selected ? SELECTED_ROW_CLASS : flashed === row.line ? 'bg-elevated' : '',
               selectable ? 'cursor-pointer hover:bg-elevated/60' : '',
             ]"

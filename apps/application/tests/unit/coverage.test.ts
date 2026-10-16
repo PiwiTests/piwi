@@ -375,6 +375,19 @@ describe('coverage reads', () => {
     expect(coverage.executable).toEqual([{ path: BASKET, runtime: 'server', blob: BLOB_B, lines: [[50, 80]] }]);
   });
 
+  test('a file’s coverage leaves out another file whose path ends with the same path', async () => {
+    const other = await freshDb();
+    await run(other, 50, 'main', T0);
+    const app = { path: 'src/App.vue', runtime: 'browser', blob: BLOB_A, functions: [[3, 9]] };
+    const admin = { path: 'apps/admin/src/App.vue', runtime: 'browser', blob: BLOB_B, functions: [[20, 40]] };
+    await persistRunCases(other as never, 1, 50, [execution('shop', capture(app)), execution('admin', capture(admin))]);
+    const coverage = await getFileCoverage(other as never, 1, 'src/App.vue');
+    expect(coverage.fragments.map((f) => f.path)).toEqual(['src/App.vue']);
+    expect(coverage.tests.map((t) => t.title)).toEqual(['shop']);
+    // A path that names neither file exactly still finds both by suffix.
+    expect((await getFileCoverage(other as never, 1, 'App.vue')).fragments).toHaveLength(2);
+  });
+
   test('a branch reads its tests’ own coverage per runtime, the default branch’s for the rest', async () => {
     const onBranch = await getFileCoverage(db as never, 1, BASKET, 'feature/basket');
     expect(onBranch.branch).toBe('feature/basket');

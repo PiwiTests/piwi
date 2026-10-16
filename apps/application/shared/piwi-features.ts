@@ -331,10 +331,18 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Code reach',
         summary:
-          'Which tests execute each application source file, from JavaScript coverage and, with an ASP.NET Core coverage build, server coverage on a scheduled run: feeds impact-from-diff, uncovered changes and preflight.',
+          'Which tests execute each application source file, from JavaScript coverage on a scheduled run, by file or by function: feeds impact-from-diff, uncovered changes and preflight.',
         needs: ['fixtures'],
-        where: 'Reporter options captureCodeReach and coverage; Execution → Source; a file’s coverage page',
+        where: 'Reporter options captureCodeReach and coverage.browser; Execution → Source; a file’s coverage page',
         doc: 'features/code-reach',
+      },
+      {
+        title: 'Server coverage',
+        summary:
+          'The backend files, functions and lines each test ran, per test, from an ASP.NET Core build instrumented for coverage.',
+        needs: ['fixtures', 'backend'],
+        where: 'Reporter option coverage.server; Execution → Source; a file’s coverage page',
+        doc: 'features/server-coverage',
       },
       {
         title: 'Coverage insights',

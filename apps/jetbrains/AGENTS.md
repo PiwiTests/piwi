@@ -46,7 +46,10 @@ while it does not run.
   (`DocumentMarkupModel`), one per span of `Glue.coverageMarks`, with a `LineMarkerRendererEx` painting a bar at the
   left of the gutter in the error stripe color of `PIWI_COVERAGE_RUN`, `PIWI_COVERAGE_NOT_RUN` or, dashed,
   `PIWI_COVERAGE_CHANGED` (**Coverage** in `PiwiColorSettingsPage.kt`, no background by default), which marks the
-  scroll bar too, its tooltip saying what the lines are. The highlighters follow the edits; `piwi/coverageChanged`
+  scroll bar too. The run and not-run defaults are the dashboard's (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`,
+  checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`). The bar is also an `ActiveGutterRenderer`:
+  hovered, it and the scroll bar mark show `Glue.coverageMarkTooltip`, what the lines are and what the marks mean;
+  clicked, the same as a hint. The highlighters follow the edits; `piwi/coverageChanged`
   replaces a file's answer, draws it again and has its Code Vision asked again (`PiwiProjectService.coverageChanged`).
   **Show Coverage Marks** (`Piwi.ToggleCoverageMarks`, a `ToggleAction` under **Tools → Piwi**, kept in
   `PiwiLocalSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks; a file

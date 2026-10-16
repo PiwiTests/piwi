@@ -379,7 +379,10 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.captureCodeReach === false || options.collectPerformanceMetrics === false)
     env[PIWI_ENV_KEYS.captureCodeReach] = 'false';
   else if (options.captureCodeReach === true) env[PIWI_ENV_KEYS.captureCodeReach] = 'true';
-  if (options.codeReachRoots?.length) env[PIWI_ENV_KEYS.codeReachRoots] = JSON.stringify(options.codeReachRoots);
+  const roots = options.codeReachRoots;
+  if (roots && (Array.isArray(roots) ? roots.length : Object.keys(roots).length)) {
+    env[PIWI_ENV_KEYS.codeReachRoots] = JSON.stringify(roots);
+  }
   // Coverage rides the same bridge: both sides off when performance metrics
   // are, each side's explicit value otherwise (unset keeps them off).
   if (options.collectPerformanceMetrics === false) {

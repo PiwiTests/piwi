@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto';
 import { normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
-import { sameFilePath } from '@piwitests/core/locator-break';
+import { itemsOfFile, sameFilePath } from '@piwitests/core/locator-break';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { placeLine } from './analysis.js';
@@ -25,6 +25,13 @@ export function gitBlobId(content: string | Uint8Array): string {
 }
 
 const BOM = '\uFEFF';
+
+/**
+ * What the coverage marks mean, as the hover on a marked line ends: the bar at the left of the line in the colors the
+ * dashboard marks it in by default.
+ */
+export const COVERAGE_MARKS_EXPLAINED =
+  '_The bar at the left of a line: teal, a test ran it; slate, it is executable and no test runs it; dashed amber, it changed since the coverage run._';
 
 /**
  * The blob ids a text can have in git: its bytes as they are, and with CRLF line endings stored as LF (`core.autocrlf`,
@@ -81,10 +88,13 @@ export interface CoverageVersion {
   executable: LineRange[] | null;
 }
 
-/** The versions the coverage names lines of, the one the most tests recorded first. */
+/**
+ * The versions the coverage names lines of, the one the most tests recorded first. Fragments of another file whose
+ * path ends with the same path are left out when the file has fragments of its own.
+ */
 export function coverageVersions(coverage: FileCoverage): CoverageVersion[] {
   const byBlob = new Map<string, CoverageFragment[]>();
-  for (const fragment of coverage.fragments) {
+  for (const fragment of itemsOfFile(coverage.fragments, coverage.file)) {
     if (!fragment.blob || !(fragment.lines?.length || fragment.functions?.length)) continue;
     byBlob.set(fragment.blob, [...(byBlob.get(fragment.blob) ?? []), fragment]);
   }

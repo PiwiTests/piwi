@@ -69,7 +69,7 @@ feature its backend does not provide is skipped with the reason; `backends.ts` l
 | Route manifest: the routes the backend declares, so the Test Map names the ones no test reaches (`GET /api/orders`) | `route-manifest` | ✓ | ✓ |
 | Server spans on each request (`X-Piwi-Trace`) | `server-spans` | only for a probe | ✓ |
 | [Server probes](https://piwitests.dev/features/probes#server-probes): a signed fault applied inside the server | `server-probes` | ✓ | ✓ |
-| [Server coverage](https://piwitests.dev/features/code-reach#server-code): the backend lines each test ran | `server-coverage`, `shop` | ✓ | |
+| [Server coverage](https://piwitests.dev/features/server-coverage): the backend lines each test ran | `server-coverage`, `shop` | ✓ | |
 | [Code reach](https://piwitests.dev/features/code-reach): the browser files each test ran (`web/assets/*.js`) | every page spec | ✓ | ✓ |
 | Page inventory: the controls and links no test uses (the shop's **Orders** link) | every passing spec | ✓ | ✓ |
 | The API contract below | `api-contract` | ✓ | ✓ |

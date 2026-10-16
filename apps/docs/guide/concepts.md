@@ -288,7 +288,7 @@ no one feature, so it links none. See [how features group](/reference/gap-detect
 
 The application source files a test executed: those whose functions ran in the page, from Chromium's JavaScript
 coverage when [code reach](/features/code-reach) is on, those it ran in an ASP.NET Core backend with
-[server coverage](/features/code-reach#server-code) on, and the handler files of the routes it called
+[server coverage](/features/server-coverage) on, and the handler files of the routes it called
 when the backend is instrumented. Observed reach at file level, never line coverage. It feeds
 [impact-from-diff](/features/test-selection#impact-from-diff) and [Uncovered changes](/features/uncovered-changes).
 

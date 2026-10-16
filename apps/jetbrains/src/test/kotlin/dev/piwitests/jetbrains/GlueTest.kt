@@ -1177,6 +1177,16 @@ class GlueTest {
     }
 
     @Test
+    fun `a coverage mark's tooltip says what it marks, then what the marks mean`() {
+        val mark = Glue.CoverageMark(Glue.CoverageKind.NOT_RUN, 11, 11, "Piwi: no test runs this line")
+        assertEquals(
+            "<html>Piwi: no test runs this line<br>The bar at the left of a line: teal, a test ran it; slate, it is " +
+                "executable and no test runs it; dashed amber, it changed since the coverage run.</html>",
+            Glue.coverageMarkTooltip(mark),
+        )
+    }
+
+    @Test
     fun `no coverage mark while hidden, nor for a file whose coverage marks no line`() {
         assertEquals(emptyList<Glue.CoverageMark>(), Glue.coverageMarks(mappedCoverage, 20, shown = false))
         assertEquals(emptyList<Glue.CoverageMark>(), Glue.coverageMarks(null, 20, shown = true))

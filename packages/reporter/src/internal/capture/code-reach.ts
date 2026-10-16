@@ -3,18 +3,22 @@
  * from V8's function coverage, read through a CDP session on the page.
  * Opt-in (`captureCodeReach`), Chromium-only; other browsers record nothing.
  *
- * The session keeps the debugger on for the test, with every pause skipped, to
+ * The session keeps the debugger on for the test, every pause released at once, to
  * learn each parsed script's URL and V8 content hash, and reads a script's
  * source as soon as it is parsed, only for a version (URL and hash) the worker
  * has not resolved yet: a script seen in an earlier test is never read again.
  * Chromium reports no coverage for a document the page's main frame has left,
- * so a test that navigates reaches the files of its last document; an
- * iframe's earlier documents stay covered, their sources read before they go.
+ * so the coverage is also read as each document is left: the debugger stops on
+ * its `beforeunload`, from a listener the capture adds in an isolated world, and
+ * the reads add up: a test that navigates reaches the files of every document it
+ * went through. An iframe's earlier documents stay covered, their sources read
+ * before they go.
  *
  * Each covered script is resolved to original files in one of two ways:
  *
  * - a module served by path (Vite's `/src/components/Pay.vue`, `/@fs/<abs>`):
- *   the URL's path, tried against the code reach roots, when the file exists.
+ *   the URL's path, tried against the code reach roots, when the file exists;
+ *   the roots of the script's origin, or of its page's, come first.
  *   A Vite dev server's `base` (Nuxt's `/_nuxt/`), read from the address its
  *   `@vite/client` script loads from, is dropped from the path first.
  *   When the module has a source map (Vite serves one inline), only functions
@@ -29,15 +33,23 @@
  * it and under `node_modules` are dropped, and so are the scripts React
  * evaluates in development to replay server component stacks
  * (`about://React/Server/…`), which stand for code that ran on the server. Decoded maps, resolved paths and the
- * sources they are read against are cached per worker by script URL, for the latest version seen at that URL only,
- * and for at most `MAX_CACHED_SCRIPTS` URLs, the least recently used going first.
+ * length and line starts of the scripts they are read against are cached per worker by script URL, for the latest
+ * version seen at that URL only, and for at most `MAX_CACHED_SCRIPTS` URLs, the least recently used going first.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { CDPSession, Page } from '@playwright/test';
-import { finalizeCodeReach, reachedSources, scriptRan, type JsCoverageEntry } from '@piwitests/core/code-reach';
+import {
+  finalizeCodeReach,
+  reachedFunctionLines,
+  scriptRan,
+  scriptText,
+  type JsCoverageEntry,
+  type ScriptText,
+} from '@piwitests/core/code-reach';
+import type { LineRange } from '@piwitests/core/coverage';
 import {
   decodeDataUrl,
   decodeSourceMap,
@@ -53,6 +65,8 @@ const MAP_TIMEOUT_MS = 5000;
 const SOURCE_EXTENSIONS = /\.(?:[cm]?[jt]sx?|vue|svelte|astro|marko|html?)$/i;
 /** Script URLs that stand for code run elsewhere: React's replayed server component stacks. */
 const REPLAYED_SCRIPT = /^(?:about|rsc):/i;
+/** Script URLs whose code counts for no file: dependencies and a Vite dev server's own client. */
+const NEVER_REACHED = /\/node_modules\/|\/@vite\//;
 /** Directories a served file is build output in, not source: a bundle there is resolved through its map. */
 const BUILD_DIRS = /(?:^|\/)(?:dist|build|out|\.output|\.next|\.nuxt|\.svelte-kit|public|static|wwwroot)\//;
 
@@ -60,9 +74,18 @@ const BUILD_DIRS = /(?:^|\/)(?:dist|build|out|\.output|\.next|\.nuxt|\.svelte-ki
 export interface CodeReachRoots {
   /** Directories a module path or a map source is tried against, first match wins; the repository root is last. */
   roots: string[];
+  /**
+   * Directories tried before `roots` for the scripts an origin serves, or, when the script's own origin has none,
+   * that a page at the origin loads: an application served by several dev servers (one per portal) resolves each
+   * one's modules against its own directory.
+   */
+  byOrigin?: Map<string, string[]>;
   /** Paths go out relative to it. */
   repoRoot: string;
 }
+
+/** The `codeReachRoots` option: directories for every script, or directories per origin, `*` for the rest. */
+export type CodeReachRootsOption = string[] | Record<string, string | string[]>;
 
 /** Fetches a source map's text; null when it cannot. */
 export type MapFetcher = (url: string) => Promise<string | null>;
@@ -75,16 +98,24 @@ export type MapFetcher = (url: string) => Promise<string | null>;
 export interface CoveredScript extends JsCoverageEntry {
   /** V8's content hash of the script; without it, the version is a hash of `source`. */
   hash?: string;
+  /** The address of the page's document as it parsed the script, whose origin's roots it falls back on. */
+  pageUrl?: string;
 }
 
-/** What one script resolves to, cached per worker with the source its function offsets are read against. */
+/**
+ * What one script resolves to, cached per worker with the text its function offsets are read against (its length
+ * and line starts, not the source itself).
+ */
 type ScriptResolution =
-  | { kind: 'file'; file: string | null; lookup: SourceMapLookup | null; source: string | undefined }
-  | { kind: 'map'; lookup: SourceMapLookup; files: Array<string | null | undefined>; source: string | undefined }
+  | { kind: 'file'; file: string | null; lookup: SourceMapLookup | null; text: ScriptText | undefined }
+  | { kind: 'map'; lookup: SourceMapLookup; files: Array<string | null | undefined>; text: ScriptText | undefined }
   | { kind: 'none' };
 
-/** Script and map URLs cached per worker at most. */
-export const MAX_CACHED_SCRIPTS = 500;
+/**
+ * Script and map URLs cached per worker at most: more than the modules a large application's dev server serves to
+ * one page, so a test that navigates between its pages finds every script it has already resolved.
+ */
+export const MAX_CACHED_SCRIPTS = 4000;
 
 /**
  * A per-worker cache holding, for each URL, the value of the latest version
@@ -135,14 +166,44 @@ export function repositoryRoot(from: string): string {
 }
 
 /**
- * The roots for a test: `codeReachRoots` when set, else the Playwright config's
- * directory; the repository root always comes last, since bundlers name
- * sources from the project root (Turbopack's `[project]/`).
+ * The roots for a test: `codeReachRoots` when set (an array, or the `*` entry of
+ * an object), else the Playwright config's directory; the repository root always
+ * comes last, since bundlers name sources from the project root (Turbopack's
+ * `[project]/`). An object's other keys are origins, each with the directories
+ * tried first for its scripts. Relative directories resolve against the config's.
  */
-export function codeReachRoots(configDir: string, configured: string[] | null | undefined): CodeReachRoots {
+export function codeReachRoots(configDir: string, configured: CodeReachRootsOption | null | undefined): CodeReachRoots {
   const repoRoot = repositoryRoot(configDir);
-  const roots = configured?.length ? configured.map((r) => path.resolve(configDir, r)) : [configDir];
-  return { roots: [...new Set([...roots, repoRoot])], repoRoot };
+  const resolve = (dirs: string | string[] | undefined) =>
+    (Array.isArray(dirs) ? dirs : dirs ? [dirs] : []).filter(Boolean).map((r) => path.resolve(configDir, r));
+  const global = Array.isArray(configured) ? resolve(configured) : resolve(configured?.['*']);
+  const byOrigin = new Map<string, string[]>();
+  if (configured && !Array.isArray(configured)) {
+    for (const [key, dirs] of Object.entries(configured)) {
+      const origin = key === '*' ? null : originOf(key);
+      const resolved = resolve(dirs);
+      if (origin && resolved.length) byOrigin.set(origin, resolved);
+    }
+  }
+  const roots = global.length ? global : [configDir];
+  return { roots: [...new Set([...roots, repoRoot])], byOrigin, repoRoot };
+}
+
+function originOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const origin = new URL(url).origin;
+    return origin === 'null' ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+/** The directories a script resolves against: its origin's, else its page's origin's, then the test's roots. */
+function scriptRoots(roots: CodeReachRoots, scriptUrl: string, pageUrl: string | undefined): string[] {
+  if (!roots.byOrigin?.size) return roots.roots;
+  const own = roots.byOrigin.get(originOf(scriptUrl) ?? '') ?? roots.byOrigin.get(originOf(pageUrl) ?? '');
+  return own ? [...new Set([...own, ...roots.roots])] : roots.roots;
 }
 
 function isFile(file: string): boolean {
@@ -251,55 +312,97 @@ function parseMap(text: string): SourceMapLookup | null {
  */
 async function resolveScript(
   entry: CoveredScript,
-  roots: CodeReachRoots,
+  roots: string[],
   bases: ViteBases,
   fetchMap: MapFetcher,
 ): Promise<ScriptResolution> {
   const version = scriptVersion(entry);
   const cached = scriptCache.get(entry.url, version);
   if (cached) return cached;
-  const file = fileForUrl(entry.url, roots.roots, bases);
+  const file = fileForUrl(entry.url, roots, bases);
   const lookup = await loadMap(entry, fetchMap);
   let resolution: ScriptResolution;
-  if (file) resolution = { kind: 'file', file, lookup, source: entry.source };
-  else resolution = lookup ? { kind: 'map', lookup, files: [], source: entry.source } : { kind: 'none' };
-  if (entry.source !== undefined) scriptCache.set(entry.url, version, resolution);
+  const text = entry.source === undefined ? undefined : scriptText(entry.source);
+  if (file) resolution = { kind: 'file', file, lookup, text };
+  else resolution = lookup ? { kind: 'map', lookup, files: [], text } : { kind: 'none' };
+  if (text) scriptCache.set(entry.url, version, resolution);
   return resolution;
 }
 
-/** The entry with the source its resolution was read against, when the capture left it out. */
-function withSource(entry: CoveredScript, resolution: { source: string | undefined }): CoveredScript {
-  if (entry.source !== undefined || resolution.source === undefined) return entry;
-  return { ...entry, source: resolution.source };
+/** The text a script's offsets are read against: its resolution's, else its own source's. */
+function textOf(entry: CoveredScript, resolution: { text: ScriptText | undefined }): ScriptText | undefined {
+  return resolution.text ?? (entry.source === undefined ? undefined : scriptText(entry.source));
 }
 
-/** The repository-relative files the covered scripts reached, sorted and capped. */
+/**
+ * The repository-relative files the covered scripts reached, sorted and capped.
+ * A script whose own origin has no roots takes those of its page's origin: the
+ * page's address as it parsed the script, else `pageUrl`.
+ */
 export async function resolveCodeReach(
   entries: CoveredScript[],
   roots: CodeReachRoots,
   fetchMap: MapFetcher,
+  pageUrl?: string,
 ): Promise<string[]> {
-  const files = new Set<string>();
+  return finalizeCodeReach((await resolveReach(entries, roots, fetchMap, pageUrl)).keys());
+}
+
+/**
+ * The repository-relative files the covered scripts reached, each with the
+ * start and end line of every function that ran in it (none when the lines are
+ * not known: a script whose source was not read).
+ */
+export async function resolveCodeReachFunctions(
+  entries: CoveredScript[],
+  roots: CodeReachRoots,
+  fetchMap: MapFetcher,
+  pageUrl?: string,
+): Promise<Map<string, LineRange[]>> {
+  return resolveReach(entries, roots, fetchMap, pageUrl);
+}
+
+/** The files the covered scripts reached, repository-relative, with the line ranges of their functions that ran. */
+async function resolveReach(
+  entries: CoveredScript[],
+  roots: CodeReachRoots,
+  fetchMap: MapFetcher,
+  pageUrl: string | undefined,
+): Promise<Map<string, LineRange[]>> {
+  const files = new Map<string, LineRange[]>();
+  const add = (file: string, functions: LineRange[]) => {
+    const path = relativeToRepo(file, roots.repoRoot);
+    const known = files.get(path);
+    if (known) known.push(...functions);
+    else files.set(path, [...functions]);
+  };
   const bases = viteBases(entries);
   const scripts = entries.filter((entry) => entry.url && entry.functions?.length && !REPLAYED_SCRIPT.test(entry.url));
   // Every script is looked up before the first is resolved: caching one may evict another this test still needs.
   const known = scripts.map((entry) => scriptCache.get(entry.url, scriptVersion(entry)));
   for (const [i, covered] of scripts.entries()) {
-    const resolution = known[i] ?? (await resolveScript(covered, roots, bases, fetchMap));
+    const dirs = scriptRoots(roots, covered.url, covered.pageUrl ?? pageUrl);
+    const resolution = known[i] ?? (await resolveScript(covered, dirs, bases, fetchMap));
     if (resolution.kind === 'file') {
-      const entry = withSource(covered, resolution);
-      const ran = resolution.lookup ? reachedSources(entry, resolution.lookup).size > 0 : scriptRan(entry);
-      if (resolution.file && ran) files.add(relativeToRepo(resolution.file, roots.repoRoot));
+      if (!resolution.file) continue;
+      const text = textOf(covered, resolution);
+      if (resolution.lookup) {
+        // A module with its own map counts for the functions that map to its source, at the lines they map to.
+        const reached = reachedFunctionLines(covered, resolution.lookup, text);
+        if (reached.size > 0) add(resolution.file, [...reached.values()].flat());
+      } else if (scriptRan(covered, text)) {
+        add(resolution.file, reachedFunctionLines(covered, null, text).get(-1) ?? []);
+      }
     } else if (resolution.kind === 'map') {
-      const entry = withSource(covered, resolution);
-      for (const index of reachedSources(entry, resolution.lookup)) {
+      const entry = covered;
+      for (const [index, functions] of reachedFunctionLines(covered, resolution.lookup, textOf(covered, resolution))) {
         if (resolution.files[index] === undefined) {
           const source = resolution.lookup.sources[index] ?? '';
-          let absolute = resolveSourcePath(source, roots.roots);
+          let absolute = resolveSourcePath(source, dirs);
           // A source relative to the map: resolve it as a URL path, then against the roots.
           if (!absolute && !/^[a-z][\w+.-]*:/i.test(source)) {
             try {
-              absolute = fileForUrl(new URL(source, entry.url).href, roots.roots, bases);
+              absolute = fileForUrl(new URL(source, entry.url).href, dirs, bases);
             } catch {
               absolute = null;
             }
@@ -307,11 +410,11 @@ export async function resolveCodeReach(
           resolution.files[index] = absolute;
         }
         const file = resolution.files[index];
-        if (file) files.add(relativeToRepo(file, roots.repoRoot));
+        if (file) add(file, functions);
       }
     }
   }
-  return finalizeCodeReach(files);
+  return files;
 }
 
 /** A map fetcher through the page's request context, bounded in size and time. */
@@ -339,10 +442,25 @@ function isChromiumPage(page: Page): boolean {
   }
 }
 
-/** A script the page parsed: its URL and V8's content hash. */
-interface ParsedScript {
+/** A script the page parsed: its URL, V8's content hash, and the address of the page's document then. */
+export interface ParsedScript {
   url: string;
   hash: string;
+  pageUrl?: string;
+}
+
+/** One script's function coverage, as `Profiler.takePreciseCoverage` reports it. */
+export interface ScriptCoverage {
+  scriptId: string;
+  functions: CoveredScript['functions'];
+}
+
+/** What ran in one version of a script since a capture started, its reads merged. */
+export interface RanScript {
+  script: ParsedScript;
+  functions: CoveredScript['functions'];
+  /** The functions above by their range, for the next read to merge into. */
+  byRange: Map<string, CoveredScript['functions'][number]>;
 }
 
 /** The function coverage running on one page, through its own CDP session. */
@@ -352,9 +470,83 @@ interface CoverageCapture {
   scripts: Map<string, ParsedScript>;
   /** The sources read, by script version; a failed read is dropped, so a later parse of that version reads again. */
   sources: Map<string, Promise<string | null>>;
+  /** What ran since the capture started, by script version: each read is merged in as it arrives. */
+  ran: Map<string, RanScript>;
+  /** The reads taken as documents were left, not merged yet. */
+  reading: Set<Promise<void>>;
+  /** The address of the page's current document. */
+  pageUrl: string;
 }
 
 const captures = new WeakMap<Page, CoverageCapture>();
+
+/** The isolated world the capture marks each document from, out of the page's reach. */
+const MARK_WORLD = 'piwi-code-reach';
+
+/**
+ * A `beforeunload` listener that does nothing: the debugger pauses on it as its
+ * document is being left, while the document is still there, and the coverage is
+ * read during the pause. A command sent once the navigation started would only
+ * reach the next document.
+ */
+const MARK_FUNCTION = 'piwiCodeReachMark';
+const MARK_SOURCE = `addEventListener('beforeunload', function ${MARK_FUNCTION}() {});`;
+
+/** The documents of each page that carry the mark, by loader id; a document keeps it from one test to the next. */
+const markedDocuments = new WeakMap<Page, Set<string>>();
+
+function marksOf(page: Page): Set<string> {
+  let marks = markedDocuments.get(page);
+  if (!marks) {
+    marks = new Set();
+    markedDocuments.set(page, marks);
+  }
+  return marks;
+}
+
+/** Mark the page's current document, unless it already carries the mark; best-effort. */
+async function markCurrentDocument(page: Page, cdp: CDPSession): Promise<void> {
+  try {
+    const { frameTree } = await internalCall(page, () => cdp.send('Page.getFrameTree'));
+    const marks = marksOf(page);
+    if (marks.has(frameTree.frame.loaderId)) return;
+    const world = await internalCall(page, () =>
+      cdp.send('Page.createIsolatedWorld', { frameId: frameTree.frame.id, worldName: MARK_WORLD }),
+    );
+    await internalCall(page, () =>
+      cdp.send('Runtime.evaluate', { expression: MARK_SOURCE, contextId: world.executionContextId }),
+    );
+    marks.add(frameTree.frame.loaderId);
+  } catch {
+    // The document stays unmarked: what it ran is read when the capture stops, if it is still there.
+  }
+}
+
+/**
+ * Release every pause: the debugger runs only to learn the scripts and to stop
+ * as a document is left, when the coverage is read first.
+ */
+function onPaused(
+  page: Page,
+  capture: CoverageCapture,
+  event: { reason: string; data?: unknown; callFrames?: Array<{ functionName: string }> },
+): void {
+  // The page's own `beforeunload` listeners stop the debugger too: only the mark's stop reads.
+  const leaving =
+    event.reason === 'EventListener' &&
+    (event.data as { eventName?: string } | undefined)?.eventName === 'listener:beforeunload' &&
+    (event.callFrames?.[0]?.functionName ?? MARK_FUNCTION) === MARK_FUNCTION;
+  const read = leaving ? readCoverage(page, capture.cdp) : null;
+  if (read) {
+    // Merged before the page resumes, against its scripts as it knows them now.
+    const merging = read.then((coverage) => mergeCoverageRead(capture.ran, capture.scripts, coverage));
+    capture.reading.add(merging);
+    void merging.finally(() => capture.reading.delete(merging));
+  }
+  void (read ?? Promise.resolve()).finally(() => {
+    internalCall(page, () => capture.cdp.send('Debugger.resume')).catch(() => {});
+  });
+}
 
 function versionKey(url: string, hash: string): string {
   return `${hash} ${url}`;
@@ -364,7 +556,9 @@ function versionKey(url: string, hash: string): string {
  * Record a parsed script, and read its source now, while its document is
  * still there, when the worker has not resolved this version of it yet.
  * Scripts without a URL (the page's inline handlers, Playwright's own
- * evaluations) are left out, and so are replayed server stacks.
+ * evaluations) are left out, and so are replayed server stacks. The source of a
+ * dependency (`node_modules`, a dev server's own client) is never read: it counts
+ * for no file.
  */
 function onScriptParsed(
   page: Page,
@@ -372,7 +566,8 @@ function onScriptParsed(
   event: { scriptId: string; url: string; hash: string },
 ): void {
   if (!event.url || REPLAYED_SCRIPT.test(event.url)) return;
-  capture.scripts.set(event.scriptId, { url: event.url, hash: event.hash });
+  capture.scripts.set(event.scriptId, { url: event.url, hash: event.hash, pageUrl: capture.pageUrl });
+  if (NEVER_REACHED.test(event.url)) return;
   const key = versionKey(event.url, event.hash);
   if (capture.sources.has(key) || scriptCache.get(event.url, event.hash)) return;
   const source: Promise<string | null> = internalCall(page, () =>
@@ -387,6 +582,59 @@ function onScriptParsed(
   capture.sources.set(key, source);
 }
 
+/** How long the page stays paused on leaving a document while its coverage is read, at most, in ms. */
+const READ_WAIT_MS = 5000;
+
+/**
+ * Read the coverage gathered since the last read: V8 resets what it reports at
+ * each read. A read that does not answer in time counts as empty.
+ */
+function readCoverage(page: Page, cdp: CDPSession): Promise<ScriptCoverage[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<ScriptCoverage[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), READ_WAIT_MS);
+  });
+  const taken = internalCall(page, () => cdp.send('Profiler.takePreciseCoverage')).then(
+    (answer) => answer.result as ScriptCoverage[],
+    () => [],
+  );
+  return Promise.race([taken, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Merge one coverage read into what a capture ran, by script version: a script
+ * id is looked up in the scripts the page parsed as the read was taken, since a
+ * renderer a cross-site navigation starts numbers its scripts afresh. Only the
+ * functions that ran are kept, as V8 reports every function it knows at every
+ * read; a script none of whose functions ran is kept without any. Functions keep
+ * the order of their first read, so a script's top-level function stays its first.
+ */
+export function mergeCoverageRead(
+  ran: Map<string, RanScript>,
+  scripts: ReadonlyMap<string, ParsedScript>,
+  read: readonly ScriptCoverage[],
+): void {
+  for (const covered of read) {
+    const script = scripts.get(covered.scriptId);
+    if (!script) continue;
+    const key = versionKey(script.url, script.hash);
+    let known = ran.get(key);
+    if (!known) {
+      known = { script, functions: [], byRange: new Map() };
+      ran.set(key, known);
+    }
+    for (const fn of covered.functions) {
+      const whole = fn.ranges[0];
+      if (!whole || whole.count <= 0) continue;
+      const range = `${whole.startOffset}:${whole.endOffset}`;
+      if (known.byRange.has(range)) continue;
+      const copy = { ...fn, ranges: fn.ranges.map((r) => ({ ...r })) };
+      known.byRange.set(range, copy);
+      known.functions.push(copy);
+    }
+  }
+}
+
 async function detach(page: Page, cdp: CDPSession): Promise<void> {
   try {
     await internalCall(page, () => cdp.detach());
@@ -397,27 +645,43 @@ async function detach(page: Page, cdp: CDPSession): Promise<void> {
 
 /**
  * Start function coverage on a page, with the debugger on to learn each
- * script's version; false when the browser has none or it fails.
+ * script's version and to stop as each document is left (its `beforeunload`,
+ * from a listener the capture adds in an isolated world); false when the
+ * browser has none or it fails.
  */
 export async function startCodeReach(page: Page): Promise<boolean> {
   if (!isChromiumPage(page) || captures.has(page)) return false;
   let cdp: CDPSession | null = null;
   try {
     cdp = await internalCall(page, () => page.context().newCDPSession(page));
-    const capture: CoverageCapture = { cdp, scripts: new Map(), sources: new Map() };
+    const capture: CoverageCapture = {
+      cdp,
+      scripts: new Map(),
+      sources: new Map(),
+      ran: new Map(),
+      reading: new Set(),
+      pageUrl: page.url(),
+    };
+    const marks = marksOf(page);
     cdp.on('Debugger.scriptParsed', (event) => onScriptParsed(page, capture, event));
-    // A pause that lands before the skip applies would hold the page: release it.
-    cdp.on('Debugger.paused', () => {
-      internalCall(page, () => capture.cdp.send('Debugger.resume')).catch(() => {});
+    cdp.on('Debugger.paused', (event) => onPaused(page, capture, event));
+    // A document the main frame commits while the capture runs gets the mark from the script added below.
+    cdp.on('Page.frameNavigated', (event) => {
+      if (event.frame.parentId) return;
+      marks.add(event.frame.loaderId);
+      capture.pageUrl = event.frame.url;
     });
     await internalCall(page, () =>
       Promise.all([
         capture.cdp.send('Debugger.enable'),
-        capture.cdp.send('Debugger.setSkipAllPauses', { skip: true }),
         capture.cdp.send('Profiler.enable'),
         capture.cdp.send('Profiler.startPreciseCoverage', { callCount: false, detailed: false }),
+        capture.cdp.send('Page.enable'),
+        capture.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: MARK_SOURCE, worldName: MARK_WORLD }),
+        capture.cdp.send('DOMDebugger.setEventListenerBreakpoint', { eventName: 'beforeunload' }),
       ]),
     );
+    await markCurrentDocument(page, capture.cdp);
     captures.set(page, capture);
     return true;
   } catch {
@@ -436,17 +700,17 @@ export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null>
   captures.delete(page);
   const { cdp } = capture;
   try {
-    const coverage = await internalCall(page, async () => {
+    const last = await internalCall(page, async () => {
       const taken = await cdp.send('Profiler.takePreciseCoverage');
       await cdp.send('Profiler.stopPreciseCoverage');
-      return taken;
+      return taken.result as ScriptCoverage[];
     });
+    await Promise.all(capture.reading);
+    mergeCoverageRead(capture.ran, capture.scripts, last);
     const entries: CoveredScript[] = [];
-    for (const script of coverage.result) {
-      const parsed = capture.scripts.get(script.scriptId);
-      if (!parsed) continue;
-      const entry: CoveredScript = { url: parsed.url, hash: parsed.hash, functions: script.functions };
-      const source = await capture.sources.get(versionKey(parsed.url, parsed.hash));
+    for (const [key, { script, functions }] of capture.ran) {
+      const entry: CoveredScript = { url: script.url, hash: script.hash, functions, pageUrl: script.pageUrl };
+      const source = await capture.sources.get(key);
       if (source != null) entry.source = source;
       entries.push(entry);
     }

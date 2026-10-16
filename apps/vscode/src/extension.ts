@@ -409,8 +409,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         ? { overviewRulerColor: new vscode.ThemeColor(color), overviewRulerLane: vscode.OverviewRulerLane.Center }
         : {}),
     });
-  const coverageRun = leftMark('testing.coveredGutterBackground', 'solid', false);
-  const coverageNotRun = leftMark('testing.uncoveredGutterBackground', 'solid', true);
+  const coverageRun = leftMark('piwi.coverageRunBorder', 'solid', false);
+  const coverageNotRun = leftMark('piwi.coverageNotRunBorder', 'solid', true);
   const coverageChanged = leftMark('piwi.coverageChangedBorder', 'dashed', true);
   context.subscriptions.push(coverageRun, coverageNotRun, coverageChanged);
   /** Each file's `piwi/coverage` answer, by URI: the one the service pushes changes against. */

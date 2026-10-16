@@ -22,21 +22,21 @@ function vlq(n: number): string {
   return out;
 }
 
-/** Encode segments `[genCol, source?]` per generated line, with made-up original positions. */
-function encode(lines: Array<Array<[number, number?]>>): string {
+/** Encode segments `[genCol, source?, originalLine?]` per generated line; the original line defaults to 1. */
+function encode(lines: Array<Array<[number, number?, number?]>>): string {
   let prevSource = 0;
   let prevOrigLine = 0;
   return lines
     .map((segments) => {
       let prevCol = 0;
       return segments
-        .map(([col, source]) => {
+        .map(([col, source, origLine = 1]) => {
           let out = vlq(col - prevCol);
           prevCol = col;
           if (source !== undefined) {
-            out += vlq(source - prevSource) + vlq(1 - prevOrigLine) + vlq(0);
+            out += vlq(source - prevSource) + vlq(origLine - prevOrigLine) + vlq(0);
             prevSource = source;
-            prevOrigLine = 1;
+            prevOrigLine = origLine;
           }
           return out;
         })
@@ -68,6 +68,26 @@ describe('decodeSourceMap', () => {
     expect(map.sourceAt(9, 0)).toBeNull();
   });
 
+  test('reads the original lines a range of generated code spans, per source', () => {
+    // Line 0: source 0 at original line 4, then source 1 at 40; line 1: source 0 at 6; line 2: source 0 at 5.
+    const lines = decodeSourceMap({
+      version: 3,
+      sources: ['a.ts', 'b.ts'],
+      mappings: encode([
+        [
+          [0, 0, 4],
+          [10, 1, 40],
+        ],
+        [[2, 0, 6]],
+        [[0, 0, 5]],
+      ]),
+    })!;
+    expect(lines.originalLinesBetween(0, { line: 0, column: 0 }, { line: 2, column: 1 })).toEqual([4, 6]);
+    expect(lines.originalLinesBetween(1, { line: 0, column: 0 }, { line: 2, column: 1 })).toEqual([40, 40]);
+    expect(lines.originalLinesBetween(0, { line: 0, column: 0 }, { line: 1, column: 0 })).toEqual([4, 4]);
+    expect(lines.originalLinesBetween(1, { line: 1, column: 0 }, { line: 2, column: 9 })).toBeNull();
+  });
+
   test('reads an index map with sections', () => {
     const indexed = decodeSourceMap({
       version: 3,
@@ -79,6 +99,32 @@ describe('decodeSourceMap', () => {
     expect(indexed.sources).toEqual(['a.ts', 'b.ts']);
     expect(indexed.sourceAt(0, 3)).toBe(0);
     expect(indexed.sourceAt(5, 3)).toBe(1);
+    // The lines between two sections have no segment.
+    expect(indexed.sourceAt(3, 0)).toBeNull();
+    expect(indexed.mapsBetween(1, { line: 0, column: 1 }, { line: 6, column: 0 })).toBe(true);
+    expect(indexed.originalLinesBetween(0, { line: 1, column: 0 }, { line: 6, column: 0 })).toBeNull();
+  });
+
+  test('sorts a line whose segments come out of column order, with their original lines', () => {
+    const unsorted = decodeSourceMap({
+      version: 3,
+      sources: ['a.ts', 'b.ts'],
+      mappings: encode([
+        [
+          [20, 1, 9],
+          [0, 0, 3],
+        ],
+      ]),
+    })!;
+    expect(unsorted.originalAt(0, 5)).toEqual({ source: 0, line: 3 });
+    expect(unsorted.originalAt(0, 25)).toEqual({ source: 1, line: 9 });
+    expect(unsorted.originalLinesBetween(1, { line: 0, column: 0 }, { line: 0, column: 30 })).toEqual([9, 9]);
+  });
+
+  test('answers nothing outside the generated lines', () => {
+    expect(map.originalAt(-1, 0)).toBeNull();
+    expect(map.originalAt(3, 0)).toBeNull();
+    expect(map.mapsBetween(0, { line: -2, column: 0 }, { line: 0, column: 5 })).toBe(true);
   });
 
   test('refuses another version', () => {

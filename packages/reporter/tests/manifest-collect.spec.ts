@@ -1,13 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
+  backendManifestFetch,
   parseManifestJson,
   hasInstrumentationHeader,
-  baseUrlFromConfig,
   configDirFromConfig,
   fetchInstrumentationManifest,
+  fetchOriginManifest,
   instrumentationManifestUrls,
   type FetchLike,
 } from '../src/internal/manifest/collect';
+import { jsonRes, startServer, textRes, type FakeServer } from './_helpers';
 
 describe('parseManifestJson', () => {
   it('parses routes and pages, dropping malformed entries', () => {
@@ -45,13 +47,7 @@ describe('hasInstrumentationHeader', () => {
   });
 });
 
-describe('baseUrlFromConfig / configDirFromConfig', () => {
-  it('reads the first base URL from projects, else the top-level use', () => {
-    expect(baseUrlFromConfig({ use: { baseURL: 'https://top' } })).toBe('https://top');
-    expect(baseUrlFromConfig({ projects: [{ use: {} }, { use: { baseURL: 'https://p' } }] })).toBe('https://p');
-    expect(baseUrlFromConfig({})).toBeNull();
-  });
-
+describe('configDirFromConfig', () => {
   it('prefers the config file directory for the committed manifest', () => {
     expect(configDirFromConfig({ configFile: '/repo/playwright.config.ts' })).toBe('/repo');
     expect(configDirFromConfig({ rootDir: '/repo/tests' })).toBe('/repo/tests');
@@ -124,5 +120,62 @@ describe('fetchInstrumentationManifest', () => {
       throw new DOMException('The operation was aborted.', 'TimeoutError');
     };
     expect(await fetchInstrumentationManifest('https://app.test', fetchImpl)).toBeNull();
+  });
+});
+
+describe('fetchOriginManifest', () => {
+  it('fetches the manifest at the origin root with no probe', async () => {
+    const requested: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      requested.push(url);
+      return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
+    };
+    const manifest = await fetchOriginManifest('http://localhost:5282', fetchImpl);
+    expect(manifest?.routes?.[0]?.pattern).toBe('/api/cart');
+    expect(requested).toEqual(['http://localhost:5282/__piwi/manifest']);
+  });
+
+  it('returns null for a page that is not a manifest, or a failed request', async () => {
+    const html: FetchLike = async () => ({ ok: true, status: 200, headers: {}, text: async () => '<!doctype html>' });
+    expect(await fetchOriginManifest('http://localhost:5282', html)).toBeNull();
+    const notFound: FetchLike = async () => ({ ok: false, status: 404, headers: {}, text: async () => '' });
+    expect(await fetchOriginManifest('http://localhost:5282', notFound)).toBeNull();
+    const down: FetchLike = async () => {
+      throw new TypeError('fetch failed');
+    };
+    expect(await fetchOriginManifest('http://localhost:5282', down)).toBeNull();
+  });
+});
+
+describe('backendManifestFetch', () => {
+  let origin: FakeServer | null = null;
+  afterEach(async () => {
+    await origin?.close();
+    origin = null;
+  });
+
+  it('fetches an origin manifest by default', async () => {
+    origin = await startServer((req, res) =>
+      req.url === '/__piwi/manifest' ? jsonRes(res, 200, { routes: [{ method: 'GET', pattern: '/Commande' }] }) : textRes(res, 404, ''),
+    );
+    const manifest = await fetchOriginManifest(origin.url);
+    expect(manifest?.routes?.[0]?.pattern).toBe('/Commande');
+  });
+
+  it('follows no redirect', async () => {
+    origin = await startServer((req, res) => {
+      if (req.url === '/__piwi/manifest') {
+        res.writeHead(302, { Location: '/elsewhere' });
+        res.end();
+      } else jsonRes(res, 200, { routes: [{ method: 'GET', pattern: '/elsewhere' }] });
+    });
+    expect(await fetchOriginManifest(origin.url, backendManifestFetch(false))).toBeNull();
+    expect(origin.requests.map((r) => r.url)).toEqual(['/__piwi/manifest']);
+  });
+
+  it('reads no answer past its size cap', async () => {
+    const routes = Array.from({ length: 100_000 }, (_, i) => ({ method: 'GET', pattern: `/route/${i}/with/a/long/path` }));
+    origin = await startServer((_req, res) => jsonRes(res, 200, { routes }));
+    expect(await fetchOriginManifest(origin.url, backendManifestFetch(false))).toBeNull();
   });
 });

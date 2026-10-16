@@ -164,7 +164,7 @@ Playwright test
 
 ## Route manifest
 
-Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the routes and pages the application declares, read from its endpoint table. The Piwi reporter fetches it when a run starts (only when the base URL's response carries `X-Piwi-Logs`) and uploads it, so a declared route or page that no test reaches becomes a **declared, never hit** gap in the Test Map. Because the endpoint table is read, the manifest holds every route from the first run, hit or not.
+Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the routes and pages the application declares, read from its endpoint table. The Piwi reporter fetches it when a run starts, from each base URL whose response carries `X-Piwi-Logs`, and as the run's last test ends, from every other origin whose responses carried it, and uploads it, so a declared route or page that no test reaches becomes a **declared, never hit** gap in the Test Map. Because the endpoint table is read, the manifest holds every route from the first run, hit or not.
 
 ```json
 {

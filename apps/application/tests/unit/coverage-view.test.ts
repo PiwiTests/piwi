@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { CoverageCapture } from '@piwitests/core/coverage';
+import type { CoverageCapture, LineRange } from '@piwitests/core/coverage';
 import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 import {
   coverageFileRoute,
@@ -123,6 +123,21 @@ describe('coverage rows', () => {
     expect(coverageSummary(coverageGroups(browser))).toBe('Ran 1 browser file.');
     expect(coverageSummary(coverageGroups({ v: 1, files: [] }))).toBeNull();
     expect(coverageSummary(coverageGroups(null))).toBeNull();
+  });
+
+  test('browser files with functions come first, by the functions that ran, and the summary counts them', () => {
+    const functions = (...ranges: LineRange[]) => ranges;
+    const browser: CoverageCapture = {
+      v: 1,
+      files: [
+        { path: 'src/a.vue', runtime: 'browser' },
+        { path: 'src/b.vue', runtime: 'browser', blob: 'a'.repeat(40), functions: functions([3, 9]) },
+        { path: 'src/c.vue', runtime: 'browser', blob: 'b'.repeat(40), functions: functions([1, 2], [5, 8]) },
+      ],
+    };
+    const groups = coverageGroups(browser);
+    expect(groups.browser.map((r) => r.file.path)).toEqual(['src/c.vue', 'src/b.vue', 'src/a.vue']);
+    expect(coverageSummary(groups)).toBe('Ran 3 browser files (3 functions).');
   });
 
   test('marks the files the suspect lines name, then the files the range changed', () => {

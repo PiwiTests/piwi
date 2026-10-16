@@ -189,11 +189,12 @@ export interface RunTestsArgs {
    */
   breakpoints?: EditorBreakpoint[];
   /**
-   * `server`: the run records the backend's coverage by line (`PIWI_COVERAGE_SERVER=lines` in `RunCommand.env`, which
-   * the reporter reads when the Playwright config leaves `coverage.server` unset), so it refreshes the marks of the
-   * server file whose coverage lens started it. Set by those lenses; absent otherwise.
+   * The coverage the run records, so it refreshes the marks of the file whose coverage lens started it: `server`, the
+   * backend's by line (`PIWI_COVERAGE_SERVER=lines` in `RunCommand.env`); `browser`, the browser's by function
+   * (`PIWI_COVERAGE_BROWSER=functions`). The reporter reads them when the Playwright config leaves `coverage` unset.
+   * Set by those lenses; absent otherwise.
    */
-  coverage?: 'server';
+  coverage?: 'server' | 'browser';
 }
 
 export interface RunCommand {

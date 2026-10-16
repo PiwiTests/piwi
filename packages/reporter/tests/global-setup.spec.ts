@@ -119,6 +119,38 @@ describe('createGlobalSetup', () => {
     }
   });
 
+  it("uploads the instrumentation manifest of every project's base URL", async () => {
+    const instrumented = (pattern: string) =>
+      startServer((req, res) => {
+        if (req.url === '/__piwi/manifest') return jsonRes(res, 200, { routes: [{ method: 'GET', pattern }] });
+        res.writeHead(200, { 'X-Piwi-Logs': 'H4sIAAAAAAAAA4uOBQApu0wNAgAAAA==' });
+        res.end('<!doctype html>');
+      });
+    const shop = await instrumented('/cart');
+    const admin = await instrumented('/users');
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/setup') return jsonRes(res, 200, { runId: 5, setupToken: 't' });
+      if (req.url === '/api/projects/menu') return jsonRes(res, 200, { items: [{ id: 9, name: 'two-apps' }] });
+      return jsonRes(res, 200, {});
+    });
+    cleanupNames.push('two-apps');
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'two-apps', sampleAriaOnPass: false });
+      await setupFn({
+        reporter: [PIWI_REPORTER_ENTRY],
+        projects: [{ use: { baseURL: shop.url } }, { use: { baseURL: admin.url } }, { use: { baseURL: shop.url } }],
+      });
+
+      const uploads = requests.filter((r) => r.url === '/api/projects/9/surface/manifest');
+      const patterns = uploads.map((r) => JSON.parse(r.body).manifest.routes[0].pattern).sort();
+      expect(patterns).toEqual(['/cart', '/users']);
+    } finally {
+      await Promise.all(
+        [server, shop.server, admin.server].map((s) => new Promise<void>((r) => s.close(() => r()))),
+      );
+    }
+  });
+
   it('registers the run and writes the setup file for the reporter to pick up', async () => {
     const { server, url, requests } = await startServer((_req, res) =>
       jsonRes(res, 200, { runId: 42, setupToken: 'tok-abc' }),

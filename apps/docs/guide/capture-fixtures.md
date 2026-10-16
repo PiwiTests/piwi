@@ -82,7 +82,7 @@ Capture works however your tests create pages or call an API:
 - `browser.newPage()` and `browser.newContext().newPage()`, in your own fixtures too,
 - popups (`window.open`) and pages a context opens on its own,
 - the `request` fixture, `page.request` and `playwright.request.newContext()`, each call with its
-  [backend logs](./backend-logs) and [server coverage](/features/code-reach#server-code).
+  [backend logs](./backend-logs) and [server coverage](/features/server-coverage).
 
 Semantics worth knowing:
 

@@ -316,6 +316,12 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 ),
                 drawn(),
             )
+            // Hovered in the gutter or the scroll bar, a mark says what it marks and what the marks mean.
+            val run = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
+                .first { it.textAttributesKey?.externalName == "PIWI_COVERAGE_RUN" }
+            val tooltip = Glue.coverageMarkTooltip(Glue.CoverageMark(Glue.CoverageKind.RUN, 0, 1, "Piwi: run by 2 tests"))
+            assertEquals(tooltip, (run.lineMarkerRenderer as com.intellij.openapi.editor.markup.ActiveGutterRenderer).tooltipText)
+            assertEquals(tooltip, run.errorStripeTooltip)
             assertTrue(marks.known)
             marks.shown = false
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()

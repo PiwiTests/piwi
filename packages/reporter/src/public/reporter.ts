@@ -16,7 +16,7 @@ import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
 import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
-import { MetadataCollector } from '../internal/collect/metadata-collector.js';
+import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
 import { computeInstanceId } from '../internal/support/instance-id.js';
@@ -70,7 +70,8 @@ import { FailureLinks, failureHeadline } from '../internal/support/failure-links
 import { coverageSettings, type CoverageSettings } from '../internal/collect/coverage-settings.js';
 import { CoverageCollection, LastTestWatch } from '../internal/collect/test-coverage.js';
 import { baseUrlsFromConfig, ignoresHttpsErrors } from '../internal/collect/server-coverage.js';
-import { configDirFromConfig } from '../internal/manifest/collect.js';
+import { backendManifestFetch, configDirFromConfig } from '../internal/manifest/collect.js';
+import { RunManifests } from '../internal/manifest/run-manifests.js';
 import type {
   CollectedTestCase,
   StreamEvent,
@@ -158,8 +159,10 @@ export class PiwiDashboardReporter {
   private readonly coverageSettings: CoverageSettings;
   /** Each test's coverage, when browser or server coverage is on; set in `onBegin`. */
   private coverage: CoverageCollection | null = null;
-  /** Tells when the run's last test ended, while server coverage is on. */
+  /** Tells when the run's last test ended, while server coverage needs it. */
   private lastTestWatch: LastTestWatch | null = null;
+  /** The manifests of the instrumented origins the run reaches beyond its base URLs. */
+  private manifests: RunManifests | null = null;
   /** Result events that stream once their test's server coverage is in. */
   private coverageSends: Array<Promise<void>> = [];
 
@@ -332,11 +335,19 @@ export class PiwiDashboardReporter {
     // Workers start after this hook and inherit the environment, so the
     // capture fixtures record the coverage the options switch on.
     const coverage = this.coverageSettings;
+    // Each origin the run reaches beyond its base URLs has its manifest fetched as its first response is noted.
+    if (this.options.uploadManifest !== false && this.options.projectName) {
+      this.manifests = new RunManifests(
+        baseUrlsFromConfig(config),
+        this.logger,
+        backendManifestFetch(ignoresHttpsErrors(config)),
+      );
+    }
+    if (coverage.server !== 'off') this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
     if (coverage.browser !== 'off' || coverage.server !== 'off') {
-      if (coverage.browser === 'files') process.env[PIWI_ENV_KEYS.coverageBrowser] = 'files';
+      if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
       if (coverage.server !== 'off') {
         process.env[PIWI_ENV_KEYS.coverageServer] = coverage.server;
-        this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
       }
       this.coverage = new CoverageCollection({
         settings: coverage,
@@ -536,6 +547,7 @@ export class PiwiDashboardReporter {
 
     if (this.options.collectPerformanceMetrics && result.attachments) {
       this.fileHandler.parsePerformanceAttachments(testCase, result.attachments);
+      this.manifests?.note(testCase.networkRequests);
 
       // Locator snapshots arrive pre-stamped with their call-site `location`
       // (captured in the fixture at action call time), so they are not
@@ -568,7 +580,7 @@ export class PiwiDashboardReporter {
 
     // The source files the test executed, when code reach is on.
     const reachAttachment =
-      this.coverageSettings.browser === 'files'
+      this.coverageSettings.browser !== 'off'
         ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.codeReach)
         : undefined;
     if (reachAttachment?.body) {
@@ -638,7 +650,9 @@ export class PiwiDashboardReporter {
       result.status !== 'interrupted' &&
       result.status !== test.expectedStatus &&
       result.retry < (test.retries ?? 0);
-    if (this.lastTestWatch?.end(test.id, willRetry)) this.coverage?.lastTestEnded();
+    if (this.lastTestWatch?.end(test.id, willRetry)) {
+      this.coverage?.lastTestEnded();
+    }
   }
 
   /**
@@ -825,6 +839,10 @@ export class PiwiDashboardReporter {
       );
       if (submitted && this.coverage) {
         await this.coverage.sendRunCoverage(this.httpClient, submitted.runId, submitted.auth);
+      }
+      if (submitted && this.manifests) {
+        const branch = resolveScmBranch(process.env) ?? null;
+        await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
       }
     } finally {
       this.coverage?.close();

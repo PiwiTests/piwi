@@ -31,11 +31,13 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
 - Coverage marks: each visible file the service reads (C# among them) is asked `piwi/coverage` once, again after a
   `piwi/statusChanged`, and drawn as whole-line left borders (`coverageDecorations` in `src/glue.ts`): the lines tests
-  ran in `testing.coveredGutterBackground`, the executable lines none runs in `testing.uncoveredGutterBackground`, both
-  VS Code's own testing colors, and the lines changed since the coverage run dashed in `piwi.coverageChangedBorder`;
-  the last two also in the overview ruler. `piwi/coverageChanged` replaces a file's answer and draws it again with its
-  lenses; an edit asks nothing, the service pushes the marks it placed. The service's hover names the tests behind a
-  line. **Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`, kept in `workspaceState` as
+  ran in `piwi.coverageRunBorder`, the executable lines none runs in `piwi.coverageNotRunBorder`, both defaulting to
+  the dashboard's colors (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, checked by
+  `apps/application/tests/unit/coverage-mark-colors.test.ts`), and the lines changed since the coverage run dashed in
+  `piwi.coverageChangedBorder`; the last two also in the overview ruler. `piwi/coverageChanged` replaces a file's
+  answer and draws it again with its lenses; an edit asks nothing, the service pushes the marks it placed. The
+  service's hover names the tests behind a line and ends on what the marks mean (VS Code has no hover on a
+  decoration's border). **Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`, kept in `workspaceState` as
   `piwi.coverageShown`, shown by default) is in the palette only once a file showed marks (`piwi.hasCoverage`): a
   workspace without coverage shows nothing of it.
 - `src/failures-view.ts` is the **Failures** view of the **Piwi** panel (`viewsContainers.panel`): a `TreeView` over

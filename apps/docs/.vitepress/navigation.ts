@@ -182,6 +182,7 @@ export const referenceSidebar: SidebarGroup[] = [
       { text: 'Configuration reference', link: '/reference/configuration' },
       { text: 'Configuration generator', link: '/reference/configuration/generator' },
       { text: 'Reporter options', link: '/reference/reporter-options' },
+      { text: 'Coverage cost', link: '/reference/coverage-cost' },
       { text: 'Test metadata', link: '/reference/test-metadata' },
       { text: 'Test search', link: '/reference/test-search' },
       { text: 'Clue rules', link: '/reference/clues' },

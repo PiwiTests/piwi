@@ -1,4 +1,10 @@
-import { mergeCoverage, reduceCoverage, sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
+import {
+  mergeCoverage,
+  reduceCoverage,
+  sanitizeCoverage,
+  type CoverageCapture,
+  type CoverageFile,
+} from '@piwitests/core/coverage';
 import { ATTACHMENT_NAMES } from '../capture/attachments.js';
 import { repositoryRoot } from '../capture/code-reach.js';
 import { Logger } from '../support/logger.js';
@@ -41,11 +47,12 @@ const INCOMPLETE: ServerCoverage = { files: [], incomplete: true };
 /**
  * A test's coverage from its parts: the server coverage, when server
  * coverage is on, at its granularity, and the browser files, when browser
- * coverage is on, as paths. Null when no file remains.
+ * coverage is on: paths, or files with the lines of their functions at
+ * `functions`. Null when no file remains.
  */
 export function composeTestCoverage(
   server: ServerCoverage | null,
-  browserFiles: string[] | null | undefined,
+  browserFiles: ReadonlyArray<string | CoverageFile> | null | undefined,
   settings: CoverageSettings,
 ): CoverageCapture | null {
   const serverCapture: CoverageCapture | null =
@@ -60,8 +67,16 @@ export function composeTestCoverage(
         )
       : null;
   const browserCapture: CoverageCapture | null =
-    settings.browser === 'files' && browserFiles?.length
-      ? reduceCoverage({ v: 1, files: browserFiles.map((path) => ({ path, runtime: 'browser' })) }, 'files')
+    settings.browser !== 'off' && browserFiles?.length
+      ? reduceCoverage(
+          {
+            v: 1,
+            files: browserFiles.map((file) =>
+              typeof file === 'string' ? { path: file, runtime: 'browser' } : { ...file, runtime: 'browser' },
+            ),
+          },
+          settings.browser,
+        )
       : null;
   const merged = mergeCoverage(serverCapture, browserCapture);
   return merged ? sanitizeCoverage(merged) : null;
@@ -143,10 +158,16 @@ export class CoverageCollection {
   private readonly waitMs: number;
   private readonly pending = new Set<PendingTest>();
   private readonly runFiles = new Map<string, Promise<RunCoverageFile[] | null>>();
+  /** The blob ids of the browser files, which name line numbers at `functions` granularity. */
+  private readonly browserBlobs: BlobIds | null;
+  /** The tests whose browser files are getting their blob ids, so the end of the run waits for them. */
+  private readonly browserPending = new Set<Promise<void>>();
 
   constructor(private readonly options: CoverageCollectionOptions) {
     this.logger = options.logger ?? new Logger();
     this.waitMs = options.waitMs ?? TEST_COVERAGE_WAIT_MS;
+    this.browserBlobs =
+      options.settings.browser === 'functions' ? new BlobIds(() => repositoryRoot(options.configDir)) : null;
     const granularity = options.settings.server;
     this.collector =
       granularity === 'off'
@@ -163,22 +184,56 @@ export class CoverageCollection {
   }
 
   /**
+   * The browser side of a test's coverage: its code reach paths, or, at
+   * `functions` granularity, the files of its `piwi-browser-coverage` attachment
+   * with their blob ids, once read. Never rejects.
+   */
+  private browserCoverage(
+    testCase: CollectedTestCase,
+    attachments: ReadonlyArray<{ name: string; body?: Buffer }> | undefined,
+  ): ReadonlyArray<string | CoverageFile> | undefined | Promise<ReadonlyArray<string | CoverageFile> | undefined> {
+    if (this.options.settings.browser === 'off') return undefined;
+    const paths = testCase.codeReach;
+    const attachment = this.browserBlobs
+      ? attachments?.find((a) => a.name === ATTACHMENT_NAMES.browserCoverage)
+      : undefined;
+    if (!this.browserBlobs || !attachment?.body) return paths;
+    let files: CoverageFile[] = [];
+    try {
+      files = sanitizeCoverage(JSON.parse(attachment.body.toString('utf8')))?.files ?? [];
+    } catch {
+      return paths;
+    }
+    const browser = files.filter((file) => file.runtime === 'browser');
+    if (browser.length === 0) return paths;
+    return this.browserBlobs.withBlobs(browser).catch(() => browser);
+  }
+
+  /**
    * Set a test's coverage from its attachments. Null when it is set now;
-   * otherwise the test waits for its server coverage, and the promise
-   * resolves once it is set, within the wait bound. Never rejects.
+   * otherwise the test waits for its server coverage, or for the blob ids of
+   * its browser files, and the promise resolves once it is set, within the wait
+   * bound. Never rejects.
    */
   apply(
     testCase: CollectedTestCase,
     attachments: ReadonlyArray<{ name: string; body?: Buffer }> | undefined,
   ): Promise<void> | null {
-    const browserFiles = this.options.settings.browser === 'files' ? testCase.codeReach : undefined;
+    const browser = this.browserCoverage(testCase, attachments);
     const attachment = this.collector
       ? attachments?.find((a) => a.name === ATTACHMENT_NAMES.serverCoverageRequests)
       : undefined;
     const requests = attachment?.body ? parseServerCoverageRequests(attachment.body) : null;
     if (!this.collector || !requests) {
-      this.assign(testCase, composeTestCoverage(null, browserFiles, this.options.settings));
-      return null;
+      if (!(browser instanceof Promise)) {
+        this.assign(testCase, composeTestCoverage(null, browser, this.options.settings));
+        return null;
+      }
+      const ready = browser.then((files) =>
+        this.assign(testCase, composeTestCoverage(null, files, this.options.settings)),
+      );
+      this.browserPending.add(ready);
+      return ready.finally(() => this.browserPending.delete(ready));
     }
 
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -190,8 +245,10 @@ export class CoverageCollection {
         settled = true;
         clearTimeout(timer);
         this.pending.delete(entry);
-        this.assign(testCase, composeTestCoverage(server, browserFiles, this.options.settings));
-        resolve();
+        void Promise.resolve(browser).then((files) => {
+          this.assign(testCase, composeTestCoverage(server, files, this.options.settings));
+          resolve();
+        });
       };
     });
     const entry: PendingTest = { finish, done };
@@ -212,16 +269,18 @@ export class CoverageCollection {
   }
 
   /**
-   * Collect what is queued and wait for the tests still waiting, at most
-   * `boundMs`; a test still waiting then goes without its server coverage,
-   * marked incomplete.
+   * Collect what is queued and wait for the tests still waiting, for their
+   * server coverage or the blob ids of their browser files, at most `boundMs`;
+   * a test still waiting for its server coverage then goes without it, marked
+   * incomplete, and one still waiting for blob ids goes without its browser files.
    */
   async settle(boundMs = SETTLE_WAIT_MS): Promise<void> {
     this.collector?.flush();
-    if (this.pending.size > 0) {
+    const waiting = [...this.browserPending, ...[...this.pending].map((entry) => entry.done)];
+    if (waiting.length > 0) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
-        Promise.all([...this.pending].map((entry) => entry.done)),
+        Promise.all(waiting),
         new Promise((resolve) => {
           timer = setTimeout(resolve, boundMs);
         }),

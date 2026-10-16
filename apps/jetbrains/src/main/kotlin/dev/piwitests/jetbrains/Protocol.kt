@@ -83,7 +83,8 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a locator
  * action or assertion on their line, headed, with Piwi's pause bar, when their file is under the Playwright config's
  * folder. `root` names the Playwright config's folder to run them with; without it, the config of `uri`. `coverage`
- * `server`, set by a server file's coverage lens, has the run record the backend's coverage by line.
+ * `server`, set by a server file's coverage lens, has the run record the backend's coverage by line; `browser`, set by
+ * a browser file's, the browser's coverage by function.
  */
 data class RunTestsArgs(
     val uri: String,
