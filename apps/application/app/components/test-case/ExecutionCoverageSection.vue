@@ -4,12 +4,13 @@
  * ran, from its coverage (`GET /api/test-run-cases/:id/coverage`). A summary
  * sentence ("Ran 5 server files (20 lines) and 3 browser files."), with a
  * hint when the capture was incomplete; then the server files, most executed
- * lines first, and the browser files, by path, the first 20 of each with the
- * rest one click away. Each row opens its file in the editor at the first
- * line it ran, says its precision and counts, marks a file the failure's
- * suspect lines name or the range changed (a link to the cluster's What
- * changed card), and links the file's coverage view; a server file with line
- * numbers unfolds to its source (`CoverageFileSource`). A test that recorded
+ * lines first, and the browser files, most functions that ran first, then by
+ * path, the first 20 of each with the rest one click away. Each row opens its
+ * file in the editor at the first line it ran, says its precision and counts,
+ * marks a file the failure's suspect lines name or the range changed (a link
+ * to the cluster's What changed card), and links the file's coverage view; a
+ * file with line numbers, server or browser, unfolds to its source
+ * (`CoverageFileSource`). A test that recorded
  * nothing says so in one line, and one whose run recorded backend coverage
  * but none for it says that. A failed or timed-out execution also says how its
  * path differs from the test's last passing run (`CoverageDivergencePart`). The

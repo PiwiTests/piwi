@@ -5,9 +5,9 @@ import { PROJECT } from '#shared/test-project-names';
 
 /**
  * The Coverage section of the execution page's Source tab: what the test ran,
- * server files by executed lines and browser files by path; a server file
- * unfolds to its source at the blob its coverage names, marking the lines the
- * test ran and the executable lines it did not, or to the line numbers alone
+ * server files by executed lines and browser files recorded by file by path; a
+ * server file unfolds to its source at the blob its coverage names, marking the
+ * lines the test ran and the executable lines it did not, or to the line numbers alone
  * when the repository cannot serve the source. A test with no coverage says so
  * in one line, and a project that records no coverage shows no section at all.
  */
@@ -144,7 +144,7 @@ test.describe('Execution coverage', () => {
       'src/pages/orders.vue',
     ]);
     await expect(browser.first()).toContainText('by file');
-    // A browser file has no source to unfold.
+    // A browser file recorded by file has no line to show in its source, so it does not unfold.
     await expect(section.getByRole('button', { name: /^Show the source of src\/pages/ })).toHaveCount(0);
   });
 

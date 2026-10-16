@@ -660,7 +660,7 @@ export const HELP_TOPICS = {
       'The code this test ran, as its coverage recorded it: the backend files with their lines, and the browser files.',
       '',
       '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core today), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked, and the executable lines it did not run in a lighter mark when the run sent its own coverage.',
-      '- **Browser** — the application files whose functions ran in Chromium, by path.',
+      '- **Browser** — the application files whose functions ran in Chromium, by path, or with the functions that ran when the reporter recorded them; such a file opens to its source too.',
       '- **Precision** — by line, by function, or by file, as the reporter’s `coverage` option recorded it.',
       '- **suspect lines** — the changed lines this failing test ran, and **changed** a file changed since the last passing run; both open the cluster’s What changed card.',
     ].join('\n'),

@@ -3,9 +3,9 @@
  * The source of one file a test's coverage names, at the git blob its line
  * numbers refer to, with the lines the test ran marked and, when its run sent
  * run coverage for the same version, the executable lines it did not run.
- * Reads the source (`GET /api/projects/:id/source`) and the run's coverage of
- * the file (`GET /api/test-runs/:id/coverage?file=`) when it mounts; a source
- * the repository cannot serve leaves the line numbers alone.
+ * Reads the source (`GET /api/projects/:id/source`) and, for a server file, the
+ * run's coverage of the file (`GET /api/test-runs/:id/coverage?file=`) when it
+ * mounts; a source the repository cannot serve leaves the line numbers alone.
  */
 import { normalizeLineRanges, type CoverageFile } from '@piwitests/core/coverage';
 import type { ApiResponse } from '~~/types/api';
@@ -37,8 +37,9 @@ watch(
           query: { path, blob, ...(runId ? { run: runId } : {}) },
         }).catch(() => null)
       : Promise.resolve(null);
+    // Run coverage names the executable lines of server files only.
     const run =
-      runId && blob
+      runId && blob && props.file.runtime === 'server'
         ? $fetch<RunCoverageResponse>(`/api/test-runs/${runId}/coverage`, { query: { file: path } }).catch(() => null)
         : Promise.resolve(null);
     const [read, runCoverage] = await Promise.all([source, run]);
