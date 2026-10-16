@@ -19,10 +19,10 @@ The marks show what the reporter records, per test:
 
 - **Server code**: an ASP.NET Core backend built for coverage, with the reporter's `coverage.server` set to `lines`, or
   `PIWI_COVERAGE_SERVER=lines`: [Server coverage](./server-coverage) has the steps. With `functions`,
-  the lenses show and no line is marked.
+  every line of a function that ran is marked run, and no line is marked as not run.
 - **Browser code**: recorded per file ([code reach](./code-reach#turn-it-on)), so such a file lists its tests in its
-  top lens, with no line marks; with `coverage.browser: 'functions'`, the lenses above each function that ran show
-  too, and still no line is marked.
+  top lens, with no line marks; with `coverage.browser: 'functions'`, every line of a function that ran is marked run,
+  with its lens above it. No line of a browser file is marked as not run.
 
 Nothing else is needed in the editor. A test file, a file no recorded coverage names lines of, and a project without
 coverage show nothing of it: no mark, no lens line, no command, no hover text.
@@ -106,11 +106,11 @@ finds a Playwright config in the solution's folder or its Git repository.
 
 ## Limits
 
-- **Lines for server code only.** Browser code is recorded per file, or per function, so a browser file lists its
-  tests without line marks.
+- **Lines for server code only.** Browser code is recorded per file or per function; recorded per function, a function
+  that ran marks all its lines run, the branches it skipped included.
 - **The latest coverage of each test**: on your branch where its tests ran with coverage, else on the default branch.
-- **Pages only**: an API test through Playwright's `request` fixture records no server coverage
-  ([Server coverage](./server-coverage)).
+- **API calls** through Playwright's `request` fixture keep their last response's server coverage only
+  ([Server coverage](./server-coverage#limits)).
 - An instance without coverage shows nothing, and is asked again only on a refresh.
 
 ## Related
