@@ -15,7 +15,9 @@ per-directory responsibilities.
 3. **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`), `piwi-*` attachment names
    (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, `[Piwi Dashboard]`-prefixed log output, the
    `__piwiProbeElement` global the capture fixtures install into every instrumented page
-   (`internal/capture/capture-fixtures.ts`), the boxed stack prefix `internal/capture/quiet-capture.ts` registers
+   (`internal/capture/capture-fixtures.ts`), the `beforeunload` listener code reach adds to each document of a covered
+   page in its own isolated world, where the debugger stops to read the coverage as the document is left
+   (`internal/capture/code-reach.ts`), the boxed stack prefix `internal/capture/quiet-capture.ts` registers
    for this package's `dist/` in each worker, the proxy every API request context is handed out behind
    (`internal/capture/api-requests.ts`: the `request` fixture's, any `playwright.request.newContext()`'s and
    `page.request`), and the editor's breakpoints (`internal/capture/pause-at.ts`): a headed local run with

@@ -3,13 +3,16 @@
  * from V8's function coverage, read through a CDP session on the page.
  * Opt-in (`captureCodeReach`), Chromium-only; other browsers record nothing.
  *
- * The session keeps the debugger on for the test, with every pause skipped, to
+ * The session keeps the debugger on for the test, every pause released at once, to
  * learn each parsed script's URL and V8 content hash, and reads a script's
  * source as soon as it is parsed, only for a version (URL and hash) the worker
  * has not resolved yet: a script seen in an earlier test is never read again.
  * Chromium reports no coverage for a document the page's main frame has left,
- * so a test that navigates reaches the files of its last document; an
- * iframe's earlier documents stay covered, their sources read before they go.
+ * so the coverage is also read as each document is left: the debugger stops on
+ * its `beforeunload`, from a listener the capture adds in an isolated world, and
+ * the reads add up: a test that navigates reaches the files of every document it
+ * went through. An iframe's earlier documents stay covered, their sources read
+ * before they go.
  *
  * Each covered script is resolved to original files in one of two ways:
  *
@@ -391,6 +394,12 @@ interface ParsedScript {
   hash: string;
 }
 
+/** One script's function coverage, as `Profiler.takePreciseCoverage` reports it. */
+interface ScriptCoverage {
+  scriptId: string;
+  functions: CoveredScript['functions'];
+}
+
 /** The function coverage running on one page, through its own CDP session. */
 interface CoverageCapture {
   cdp: CDPSession;
@@ -398,9 +407,67 @@ interface CoverageCapture {
   scripts: Map<string, ParsedScript>;
   /** The sources read, by script version; a failed read is dropped, so a later parse of that version reads again. */
   sources: Map<string, Promise<string | null>>;
+  /** The coverage read as each document was left, in order; each read holds what ran since the last one. */
+  reads: Array<Promise<ScriptCoverage[]>>;
 }
 
 const captures = new WeakMap<Page, CoverageCapture>();
+
+/** The isolated world the capture marks each document from, out of the page's reach. */
+const MARK_WORLD = 'piwi-code-reach';
+
+/**
+ * A `beforeunload` listener that does nothing: the debugger pauses on it as its
+ * document is being left, while the document is still there, and the coverage is
+ * read during the pause. A command sent once the navigation started would only
+ * reach the next document.
+ */
+const MARK_SOURCE = "addEventListener('beforeunload', function piwiCodeReachMark() {});";
+
+/** The documents of each page that carry the mark, by loader id; a document keeps it from one test to the next. */
+const markedDocuments = new WeakMap<Page, Set<string>>();
+
+function marksOf(page: Page): Set<string> {
+  let marks = markedDocuments.get(page);
+  if (!marks) {
+    marks = new Set();
+    markedDocuments.set(page, marks);
+  }
+  return marks;
+}
+
+/** Mark the page's current document, unless it already carries the mark; best-effort. */
+async function markCurrentDocument(page: Page, cdp: CDPSession): Promise<void> {
+  try {
+    const { frameTree } = await internalCall(page, () => cdp.send('Page.getFrameTree'));
+    const marks = marksOf(page);
+    if (marks.has(frameTree.frame.loaderId)) return;
+    const world = await internalCall(page, () =>
+      cdp.send('Page.createIsolatedWorld', { frameId: frameTree.frame.id, worldName: MARK_WORLD }),
+    );
+    await internalCall(page, () =>
+      cdp.send('Runtime.evaluate', { expression: MARK_SOURCE, contextId: world.executionContextId }),
+    );
+    marks.add(frameTree.frame.loaderId);
+  } catch {
+    // The document stays unmarked: what it ran is read when the capture stops, if it is still there.
+  }
+}
+
+/**
+ * Release every pause: the debugger runs only to learn the scripts and to stop
+ * as a document is left, when the coverage is read first.
+ */
+function onPaused(page: Page, capture: CoverageCapture, event: { reason: string; data?: unknown }): void {
+  const leaving =
+    event.reason === 'EventListener' &&
+    (event.data as { eventName?: string } | undefined)?.eventName === 'listener:beforeunload';
+  const read = leaving ? readCoverage(page, capture.cdp) : null;
+  if (read) capture.reads.push(read);
+  void (read ?? Promise.resolve()).finally(() => {
+    internalCall(page, () => capture.cdp.send('Debugger.resume')).catch(() => {});
+  });
+}
 
 function versionKey(url: string, hash: string): string {
   return `${hash} ${url}`;
@@ -433,6 +500,50 @@ function onScriptParsed(
   capture.sources.set(key, source);
 }
 
+/** Read the coverage gathered since the last read: V8 resets what it reports at each read. */
+function readCoverage(page: Page, cdp: CDPSession): Promise<ScriptCoverage[]> {
+  return internalCall(page, () => cdp.send('Profiler.takePreciseCoverage')).then(
+    (taken) => taken.result as ScriptCoverage[],
+    () => [],
+  );
+}
+
+/**
+ * The reads of a capture as one coverage per script: a function counts when it
+ * ran in any read. Functions keep the order of their first read, so a script's
+ * top-level function stays its first.
+ */
+export function mergeCoverageReads(reads: ScriptCoverage[][]): Map<string, CoveredScript['functions']> {
+  const merged = new Map<string, CoveredScript['functions']>();
+  const byRange = new Map<string, Map<string, CoveredScript['functions'][number]>>();
+  for (const read of reads) {
+    for (const script of read) {
+      let functions = merged.get(script.scriptId);
+      let ranges = byRange.get(script.scriptId);
+      if (!functions || !ranges) {
+        functions = [];
+        ranges = new Map();
+        merged.set(script.scriptId, functions);
+        byRange.set(script.scriptId, ranges);
+      }
+      for (const fn of script.functions) {
+        const whole = fn.ranges[0];
+        if (!whole) continue;
+        const key = `${whole.startOffset}:${whole.endOffset}`;
+        const known = ranges.get(key);
+        if (!known) {
+          const copy = { ...fn, ranges: fn.ranges.map((range) => ({ ...range })) };
+          ranges.set(key, copy);
+          functions.push(copy);
+        } else if (whole.count > known.ranges[0]!.count) {
+          known.ranges[0]!.count = whole.count;
+        }
+      }
+    }
+  }
+  return merged;
+}
+
 async function detach(page: Page, cdp: CDPSession): Promise<void> {
   try {
     await internalCall(page, () => cdp.detach());
@@ -443,27 +554,34 @@ async function detach(page: Page, cdp: CDPSession): Promise<void> {
 
 /**
  * Start function coverage on a page, with the debugger on to learn each
- * script's version; false when the browser has none or it fails.
+ * script's version and to stop as each document is left (its `beforeunload`,
+ * from a listener the capture adds in an isolated world); false when the
+ * browser has none or it fails.
  */
 export async function startCodeReach(page: Page): Promise<boolean> {
   if (!isChromiumPage(page) || captures.has(page)) return false;
   let cdp: CDPSession | null = null;
   try {
     cdp = await internalCall(page, () => page.context().newCDPSession(page));
-    const capture: CoverageCapture = { cdp, scripts: new Map(), sources: new Map() };
+    const capture: CoverageCapture = { cdp, scripts: new Map(), sources: new Map(), reads: [] };
+    const marks = marksOf(page);
     cdp.on('Debugger.scriptParsed', (event) => onScriptParsed(page, capture, event));
-    // A pause that lands before the skip applies would hold the page: release it.
-    cdp.on('Debugger.paused', () => {
-      internalCall(page, () => capture.cdp.send('Debugger.resume')).catch(() => {});
+    cdp.on('Debugger.paused', (event) => onPaused(page, capture, event));
+    // A document the main frame commits while the capture runs gets the mark from the script added below.
+    cdp.on('Page.frameNavigated', (event) => {
+      if (!event.frame.parentId) marks.add(event.frame.loaderId);
     });
     await internalCall(page, () =>
       Promise.all([
         capture.cdp.send('Debugger.enable'),
-        capture.cdp.send('Debugger.setSkipAllPauses', { skip: true }),
         capture.cdp.send('Profiler.enable'),
         capture.cdp.send('Profiler.startPreciseCoverage', { callCount: false, detailed: false }),
+        capture.cdp.send('Page.enable'),
+        capture.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: MARK_SOURCE, worldName: MARK_WORLD }),
+        capture.cdp.send('DOMDebugger.setEventListenerBreakpoint', { eventName: 'beforeunload' }),
       ]),
     );
+    await markCurrentDocument(page, capture.cdp);
     captures.set(page, capture);
     return true;
   } catch {
@@ -482,16 +600,17 @@ export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null>
   captures.delete(page);
   const { cdp } = capture;
   try {
-    const coverage = await internalCall(page, async () => {
+    const last = await internalCall(page, async () => {
       const taken = await cdp.send('Profiler.takePreciseCoverage');
       await cdp.send('Profiler.stopPreciseCoverage');
-      return taken;
+      return taken.result as ScriptCoverage[];
     });
+    const coverage = mergeCoverageReads([...(await Promise.all(capture.reads)), last]);
     const entries: CoveredScript[] = [];
-    for (const script of coverage.result) {
-      const parsed = capture.scripts.get(script.scriptId);
+    for (const [scriptId, functions] of coverage) {
+      const parsed = capture.scripts.get(scriptId);
       if (!parsed) continue;
-      const entry: CoveredScript = { url: parsed.url, hash: parsed.hash, functions: script.functions };
+      const entry: CoveredScript = { url: parsed.url, hash: parsed.hash, functions };
       const source = await capture.sources.get(versionKey(parsed.url, parsed.hash));
       if (source != null) entry.source = source;
       entries.push(entry);

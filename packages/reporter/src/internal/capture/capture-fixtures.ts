@@ -84,6 +84,7 @@ import {
 } from '../flake/mode.js';
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
+import { finalizeCodeReach } from '@piwitests/core/code-reach';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -317,9 +318,9 @@ interface CaptureSink {
   pause: { set: PauseSet; next: boolean; finished: boolean } | null;
   // The page each locator call ran on, keyed by call site and chain.
   locatorPages: LocatorPageLog;
-  // JavaScript coverage of the test's first page, when code reach is on, and
-  // the source files it resolved to once stopped.
-  codeReach: { page: Page; started: Promise<boolean>; stopped: boolean; files: string[] | null } | null;
+  // JavaScript coverage of each page the test has, when code reach is on, and
+  // the source files they resolved to once stopped.
+  codeReach: { sessions: Map<Page, CodeReachSession>; files: Set<string> };
   // The server coverage request ids (`X-Piwi-Coverage`) the test's responses
   // carried, by origin, when server coverage is on.
   serverCoverage: Map<string, Set<string>>;
@@ -357,25 +358,50 @@ function createSink(): CaptureSink {
     userPick: null,
     pause: null,
     locatorPages: new LocatorPageLog(),
-    codeReach: null,
+    codeReach: { sessions: new Map(), files: new Set() },
     serverCoverage: new Map(),
     baseURL: null,
   };
 }
 
+/** The JavaScript coverage of one page during one test. */
+interface CodeReachSession {
+  started: Promise<boolean>;
+  stopped: boolean;
+}
+
+/** Pages a test records JavaScript coverage on at most. */
+const MAX_CODE_REACH_PAGES = 16;
+
+/** How long the start of a test waits for coverage to run on the pages already open, in ms. */
+const CODE_REACH_START_WAIT_MS = 2000;
+
 /**
- * Start JavaScript coverage on the running test's first page when code reach
- * is on (`PIWI_CAPTURE_CODE_REACH=true` or `PIWI_COVERAGE_BROWSER=files`).
- * Resolves once coverage is running, so a caller can await it before the test
- * navigates.
+ * Start JavaScript coverage on a page of the running test when code reach is on
+ * (`PIWI_CAPTURE_CODE_REACH=true` or `PIWI_COVERAGE_BROWSER=files`): each page
+ * the test opens, and each page already open as it starts. Resolves once
+ * coverage is running, so a caller can await it before the test navigates.
  */
 function maybeStartCodeReach(page: Page): Promise<boolean> {
   const sink = currentSink;
-  if (!sink || !browserCoverageInWorker()) return Promise.resolve(false);
-  if (sink.codeReach) return sink.codeReach.page === page ? sink.codeReach.started : Promise.resolve(false);
+  if (!sink || !browserCoverageInWorker() || isPageClosed(page)) return Promise.resolve(false);
+  const known = sink.codeReach.sessions.get(page);
+  if (known) return known.started;
+  if (sink.codeReach.sessions.size >= MAX_CODE_REACH_PAGES) return Promise.resolve(false);
   const started = startCodeReach(page);
-  sink.codeReach = { page, started, stopped: false, files: null };
+  sink.codeReach.sessions.set(page, { started, stopped: false });
   return started;
+}
+
+/**
+ * Start coverage on the pages open as a test begins: a page a `beforeAll` or an
+ * earlier test opened, which the test drives without creating. Waits a bounded
+ * time, so a page that does not answer never holds the test.
+ */
+async function startCodeReachOnOpenPages(): Promise<void> {
+  if (!browserCoverageInWorker() || OPEN_PAGES.size === 0) return;
+  const started = Promise.all([...OPEN_PAGES].map((page) => maybeStartCodeReach(page)));
+  await Promise.race([started, new Promise((resolve) => setTimeout(resolve, CODE_REACH_START_WAIT_MS).unref())]);
 }
 
 /**
@@ -400,36 +426,40 @@ export function configuredCodeReachRoots(): CodeReachRootsOption | null {
 }
 
 /**
- * Stop the test's coverage and resolve it to source files, while its page can
- * still fetch source maps. With `closing`, only when that page or its context
- * is the one closing. Never throws.
+ * Stop the test's coverage and resolve it to source files, while each page can
+ * still fetch source maps. With `closing`, only on that page, or on the pages of
+ * that context. Never throws.
  */
 async function stopSinkCodeReach(
   sink: CaptureSink,
   closing?: { page?: Page; context?: BrowserContext },
 ): Promise<void> {
-  const session = sink.codeReach;
-  if (!session || session.stopped) return;
-  if (closing && closing.page !== session.page && (!closing.context || pageContext(session.page) !== closing.context)) {
-    return;
+  const stopping: Array<[Page, CodeReachSession]> = [];
+  for (const [page, session] of sink.codeReach.sessions) {
+    if (session.stopped) continue;
+    if (closing && closing.page !== page && (!closing.context || pageContext(page) !== closing.context)) continue;
+    session.stopped = true;
+    stopping.push([page, session]);
   }
-  session.stopped = true;
-  try {
-    if (!(await session.started) || isPageClosed(session.page)) return;
-    const entries = await stopCodeReach(session.page);
-    if (!entries) return;
-    const info = sink.testInfo;
-    const configFile = info?.config.configFile;
-    const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
-    session.files = await resolveCodeReach(
-      entries,
-      codeReachRoots(configDir, configuredCodeReachRoots()),
-      pageMapFetcher(session.page),
-      session.page.url(),
-    );
-  } catch {
-    /* code reach is best-effort and must never affect the test */
-  }
+  if (stopping.length === 0) return;
+  const info = sink.testInfo;
+  const configFile = info?.config.configFile;
+  const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
+  const roots = codeReachRoots(configDir, configuredCodeReachRoots());
+  await Promise.all(
+    stopping.map(async ([page, session]) => {
+      try {
+        if (!(await session.started) || isPageClosed(page)) return;
+        const entries = await stopCodeReach(page);
+        if (!entries) return;
+        for (const file of await resolveCodeReach(entries, roots, pageMapFetcher(page), page.url())) {
+          sink.codeReach.files.add(file);
+        }
+      } catch {
+        /* code reach is best-effort and must never affect the test */
+      }
+    }),
+  );
 }
 
 /**
@@ -924,6 +954,8 @@ async function maybeOpenPicker(sink: CaptureSink, closing?: { page?: Page; conte
 // paths (browser patch, context patch, the `page` fixture, popup events), and
 // must be wrapped exactly once.
 const INSTRUMENTED_PAGES = new WeakSet<Page>();
+/** The instrumented pages still open in this worker, whichever test or hook opened them. */
+const OPEN_PAGES = new Set<Page>();
 const INSTRUMENTED_CONTEXTS = new WeakSet<BrowserContext>();
 const PATCHED_BROWSERS = new WeakSet<Browser>();
 
@@ -1416,6 +1448,10 @@ const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABO
 function instrumentPage(page: Page): void {
   if (!page || INSTRUMENTED_PAGES.has(page)) return;
   INSTRUMENTED_PAGES.add(page);
+  if (typeof page.once === 'function') {
+    OPEN_PAGES.add(page);
+    page.once('close', () => OPEN_PAGES.delete(page));
+  }
   void maybeStartCodeReach(page);
   observeOwnApiRequests(page);
 
@@ -1971,10 +2007,10 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // The source files the test executed, whatever the outcome.
   await stopSinkCodeReach(sink);
-  if (sink.codeReach?.files?.length) {
+  if (sink.codeReach.files.size > 0) {
     await testInfo.attach(ATTACHMENT_NAMES.codeReach, {
       contentType: 'application/json',
-      body: Buffer.from(JSON.stringify(sink.codeReach.files)),
+      body: Buffer.from(JSON.stringify(finalizeCodeReach(sink.codeReach.files))),
     });
   }
 
@@ -2309,6 +2345,7 @@ export const piwiFixtures: Fixtures<
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
       try {
+        await startCodeReachOnOpenPages();
         await use();
       } finally {
         currentSink = null;

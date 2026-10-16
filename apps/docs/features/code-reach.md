@@ -24,8 +24,9 @@ reporter: [['@piwitests/reporter', { captureCodeReach: !!process.env.NIGHTLY }]]
 
 ## What it records
 
-The fixtures start Chromium's JavaScript coverage on the test's first page and, at teardown, turn each script into
-source files:
+The fixtures start Chromium's JavaScript coverage on every page the test has, up to 16: each page it opens, and each
+page already open as it starts, such as one a `beforeAll` opened and the tests of a serial group share. At teardown,
+they turn each script into source files:
 
 - a module a dev server serves by path (Vite's `/src/components/Pay.vue`, `/@fs/…`) is the file itself;
 - a bundle is read through its source map, inline or fetched once per worker (20 MB and 5 seconds at most).
@@ -79,8 +80,8 @@ test recorded exactly the files it ran.
 ## Cost
 
 Code reach reads V8's function coverage, which records only whether each function ran, so the page's JavaScript runs
-at nearly its usual speed: each test pays for a CDP session and one coverage read, and a script's source is read once
-per worker. Medians on a 4-core sandbox, headless Chromium:
+at nearly its usual speed: each test pays for a CDP session per page and one coverage read per document it leaves, and
+a script's source is read once per worker. Medians on a 4-core sandbox, headless Chromium:
 
 - **A script-heavy page** (Vue's development build rendering a 1,000-row table 30 times, plus 400 small ES modules): a
   test goes from 1,128 ms to 1,220 ms, 8% more, and 16% more for a worker's first test. Playwright's `page.coverage`
@@ -176,8 +177,11 @@ The API serves the tests reaching one file and the whole map of a branch: see th
   React server components included.
 - A module whose top-level code calls its own functions, a table built on import, counts for every test that loads it.
 - A function a minifier inlines into another as plain statements counts for the file it was inlined into.
-- A test that loads a new document in its page reaches the files of the last document only: Chromium keeps no
-  coverage of a document the page has left. Client-side navigation and an iframe's earlier documents stay covered.
+- Chromium keeps no coverage of a document the page has left, so each one is read as it goes: the capture adds a
+  `beforeunload` listener in an isolated world, out of the page's reach, and the debugger stops on it for that read. A
+  document that leaves without `beforeunload` (a crash) keeps only what an earlier read saw.
+- On a page open before the test, coverage starts with the test: what ran there before counts only if it runs again,
+  and what a page runs on its own meanwhile (a timer, a poll) counts too, even on a page the test does not drive.
 - Reach is per branch: a branch's own runs replace its tests' reach, and the default branch's stands in for the rest.
 
 ## Try it in the demo

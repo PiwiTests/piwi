@@ -11,6 +11,7 @@ import {
   pageMapFetcher,
   resetCodeReachCaches,
   MAX_CACHED_SCRIPTS,
+  mergeCoverageReads,
   resolveCodeReach,
   startCodeReach,
   stopCodeReach,
@@ -280,6 +281,26 @@ describe('resolveCodeReach', () => {
   });
 });
 
+describe('mergeCoverageReads', () => {
+  const fn = (functionName: string, startOffset: number, endOffset: number, count: number) => ({
+    functionName,
+    ranges: [{ startOffset, endOffset, count }],
+  });
+
+  it('counts a function that ran in any read, in the order of its first read', () => {
+    const merged = mergeCoverageReads([
+      [{ scriptId: '1', functions: [fn('', 0, 100, 1), fn('pay', 10, 20, 0)] }],
+      [
+        { scriptId: '1', functions: [fn('pay', 10, 20, 1), fn('idle', 30, 40, 0)] },
+        { scriptId: '2', functions: [fn('next', 5, 9, 1)] },
+      ],
+      [{ scriptId: '1', functions: [fn('pay', 10, 20, 0)] }],
+    ]);
+    expect(merged.get('1')).toEqual([fn('', 0, 100, 1), fn('pay', 10, 20, 1), fn('idle', 30, 40, 0)]);
+    expect(merged.get('2')).toEqual([fn('next', 5, 9, 1)]);
+  });
+});
+
 describe('in Chromium', () => {
   let browser: Browser | null = null;
   let server: http.Server;
@@ -370,6 +391,40 @@ describe('in Chromium', () => {
   it("keeps the files of an iframe's earlier document", async (ctx) => {
     if (!browser) return ctx.skip();
     expect((await iframeJourney()).files).toEqual(['src/first.js', 'src/second.js']);
+  });
+
+  it("keeps the files of the page's earlier documents, through a link and a goto", async (ctx) => {
+    if (!browser) return ctx.skip();
+    const page = await browser.newPage();
+    expect(await startCodeReach(page)).toBe(true);
+    await page.goto(`${url}first.html`);
+    await page.click('body[data-ready="first"] #go');
+    await page.waitForFunction("document.body.dataset.done === 'first'");
+    await page.evaluate("location.href = '/second.html'");
+    await page.click('body[data-ready="second"] #go');
+    await page.waitForFunction("document.body.dataset.done === 'second'");
+    await page.goto(url);
+    const entries = (await stopCodeReach(page)) ?? [];
+    await page.close();
+    expect(await resolveCodeReach(entries, { roots: [dir], repoRoot: dir }, async () => null)).toEqual([
+      'src/first.js',
+      'src/second.js',
+    ]);
+  });
+
+  it('covers a page opened before the capture, from its next action on', async (ctx) => {
+    if (!browser) return ctx.skip();
+    const page = await browser.newPage();
+    await page.goto(url);
+    // Two captures in a row, as two tests sharing the page.
+    for (let i = 0; i < 2; i++) {
+      expect(await startCodeReach(page)).toBe(true);
+      await page.click('#pay');
+      await page.waitForFunction("document.body.dataset.paid === 'yes'");
+      const files = await resolveCodeReach((await stopCodeReach(page)) ?? [], { roots: [dir], repoRoot: dir }, async () => null);
+      expect(files).toEqual(['src/main.js', 'src/pay.js']);
+    }
+    await page.close();
   });
 
   it('reads a script once per worker, and resolves it the same in a later test', async (ctx) => {
