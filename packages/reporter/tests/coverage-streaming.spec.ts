@@ -222,3 +222,86 @@ describe('server coverage in the reporter', () => {
     expect(dash.calls).toContain('PUT /api/test-runs/2/coverage');
   });
 });
+
+describe('the manifests of the origins a run reaches', () => {
+  let servers: FakeServer[] = [];
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    await Promise.all(servers.map((server) => server.close()));
+    servers = [];
+    vi.restoreAllMocks();
+  });
+
+  it('fetches an origin manifest as the origin is first noted, and uploads it after the finish', async () => {
+    const projectName = `piwi-manifests-${process.pid}`;
+    const calls: string[] = [];
+    const uploads: unknown[] = [];
+    const dash = await startServerOnTestPort((req, res) => {
+      calls.push(`${req.method} ${req.url}`);
+      if (req.url === '/api/test-runs/start') jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      else if (req.url === '/api/test-runs/1/events' || req.url === '/api/test-runs/1/finish') jsonRes(res, 200, {});
+      else if (req.url === '/api/projects/menu') jsonRes(res, 200, { items: [{ id: 7, name: projectName }] });
+      else if (req.method === 'PUT' && req.url === '/api/projects/7/surface/manifest') {
+        uploads.push(JSON.parse(req.body));
+        jsonRes(res, 200, {});
+      } else textRes(res, 404, 'nope');
+    });
+    servers.push(dash);
+    const portal = await startServerOnTestPort((req, res) => {
+      if (req.url === '/__piwi/manifest') jsonRes(res, 200, { routes: [{ method: 'GET', pattern: '/Commande' }] });
+      else textRes(res, 404, 'nope');
+    });
+    servers.push(portal);
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: dash.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      captureResources: false,
+      collectScmInfo: false,
+      streamingBatchDelay: 20,
+      streamingBatchSize: 1,
+    });
+    const suite = fakeSuite();
+    const first = { ...fakeTestCase({ title: 'first', parent: suite }), id: 'first', retries: 0 };
+    const never = { ...fakeTestCase({ title: 'never', parent: suite, line: 9 }), id: 'never', retries: 0 };
+    suite.allTests = () => [first, never];
+    const network = [{ method: 'GET', url: `${portal.url}/Commande`, status: 200, duration: 1, serverLogs: [] }];
+
+    reporter.onBegin(fakeConfig({ projects: [{ use: { baseURL: 'http://127.0.0.1:1/' } }] }), suite);
+    reporter.onTestBegin(first, fakeResult({}));
+    reporter.onTestEnd(
+      first,
+      fakeResult({
+        attachments: [
+          { name: ATTACHMENT_NAMES.network, contentType: 'application/json', body: Buffer.from(JSON.stringify(network)) },
+        ],
+      }),
+    );
+
+    // Fetched now, though a planned test never ends (an interrupted run, --max-failures).
+    await waitFor(() => portal.requests.some((req) => req.url === '/__piwi/manifest'));
+    // The origin's server stops before the end of the run, as a webServer does.
+    await portal.close();
+    servers = servers.filter((server) => server !== portal);
+
+    await reporter.onEnd({ status: 'interrupted' } as never);
+
+    expect(uploads).toEqual([
+      expect.objectContaining({
+        source: 'instrumentation',
+        manifest: { routes: [{ method: 'GET', pattern: '/Commande' }] },
+      }),
+    ]);
+    const finishAt = calls.indexOf('POST /api/test-runs/1/finish');
+    expect(finishAt).toBeGreaterThan(-1);
+    expect(calls.indexOf('PUT /api/projects/7/surface/manifest')).toBeGreaterThan(finishAt);
+  });
+});

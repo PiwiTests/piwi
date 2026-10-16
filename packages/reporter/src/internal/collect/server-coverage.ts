@@ -9,11 +9,10 @@ import {
   type CoverageGranularity,
   type LineRange,
 } from '@piwitests/core/coverage';
-import * as http from 'node:http';
-import * as https from 'node:https';
 import { Logger } from '../support/logger.js';
 import { errorMessage } from '../support/errors.js';
 import { createLimiter } from '../support/limiter.js';
+import { backendRequest } from '../transport/backend-request.js';
 import type { BlobIds } from './blob-ids.js';
 
 /**
@@ -144,53 +143,6 @@ export function ignoresHttpsErrors(config: ConfigUse): boolean {
     config?.use?.ignoreHTTPSErrors === true ||
     (config?.projects ?? []).some((project) => project?.use?.ignoreHTTPSErrors === true)
   );
-}
-
-/** A backend's answer: its status and body. */
-interface Answer {
-  status: number;
-  text: string;
-}
-
-/**
- * One HTTP request on a connection of its own, so a connection the backend
- * closed is never reused, ended by `signal`. Rejects on a network error, an
- * abort, or an answer over `MAX_ANSWER_BYTES`.
- */
-function request(
-  url: string,
-  init: { method: string; headers?: Record<string, string>; body?: string; insecure: boolean; signal: AbortSignal },
-): Promise<Answer> {
-  return new Promise((resolve, reject) => {
-    const target = new URL(url);
-    const headers: Record<string, string | number> = { ...init.headers };
-    if (init.body !== undefined) headers['Content-Length'] = Buffer.byteLength(init.body);
-    const options = { method: init.method, headers, agent: false as const };
-    const onAnswer = (res: http.IncomingMessage) => {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      res.on('data', (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > MAX_ANSWER_BYTES) req.destroy(new Error(`the answer exceeds ${MAX_ANSWER_BYTES} bytes`));
-        else chunks.push(chunk);
-      });
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }));
-      res.on('error', reject);
-      res.on('close', () => {
-        if (!res.complete) reject(new Error('the connection closed before the answer completed'));
-      });
-    };
-    const req =
-      target.protocol === 'https:'
-        ? https.request(target, { ...options, rejectUnauthorized: !init.insecure }, onAnswer)
-        : http.request(target, options, onAnswer);
-    const onAbort = () => req.destroy(init.signal.reason instanceof Error ? init.signal.reason : new Error('aborted'));
-    if (init.signal.aborted) onAbort();
-    else init.signal.addEventListener('abort', onAbort, { once: true });
-    req.on('close', () => init.signal.removeEventListener('abort', onAbort));
-    req.on('error', reject);
-    req.end(init.body);
-  });
 }
 
 /** The files of a run-level answer (`{ v: 1, files }`), cleaned like a test's coverage; null when not one. */
@@ -510,10 +462,11 @@ export class ServerCoverageCollector {
     const onClose = () => controller.abort(new Error('the collection was closed'));
     this.closer.signal.addEventListener('abort', onClose, { once: true });
     try {
-      const answer = await request(url, {
+      const answer = await backendRequest(url, {
         ...init,
         insecure: this.options.ignoreHttpsErrors === true,
         signal: controller.signal,
+        maxBytes: MAX_ANSWER_BYTES,
       });
       let json: unknown;
       try {

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
+  backendManifestFetch,
   parseManifestJson,
   hasInstrumentationHeader,
   configDirFromConfig,
@@ -8,6 +9,7 @@ import {
   instrumentationManifestUrls,
   type FetchLike,
 } from '../src/internal/manifest/collect';
+import { jsonRes, startServer, textRes, type FakeServer } from './_helpers';
 
 describe('parseManifestJson', () => {
   it('parses routes and pages, dropping malformed entries', () => {
@@ -142,5 +144,38 @@ describe('fetchOriginManifest', () => {
       throw new TypeError('fetch failed');
     };
     expect(await fetchOriginManifest('http://localhost:5282', down)).toBeNull();
+  });
+});
+
+describe('backendManifestFetch', () => {
+  let origin: FakeServer | null = null;
+  afterEach(async () => {
+    await origin?.close();
+    origin = null;
+  });
+
+  it('fetches an origin manifest by default', async () => {
+    origin = await startServer((req, res) =>
+      req.url === '/__piwi/manifest' ? jsonRes(res, 200, { routes: [{ method: 'GET', pattern: '/Commande' }] }) : textRes(res, 404, ''),
+    );
+    const manifest = await fetchOriginManifest(origin.url);
+    expect(manifest?.routes?.[0]?.pattern).toBe('/Commande');
+  });
+
+  it('follows no redirect', async () => {
+    origin = await startServer((req, res) => {
+      if (req.url === '/__piwi/manifest') {
+        res.writeHead(302, { Location: '/elsewhere' });
+        res.end();
+      } else jsonRes(res, 200, { routes: [{ method: 'GET', pattern: '/elsewhere' }] });
+    });
+    expect(await fetchOriginManifest(origin.url, backendManifestFetch(false))).toBeNull();
+    expect(origin.requests.map((r) => r.url)).toEqual(['/__piwi/manifest']);
+  });
+
+  it('reads no answer past its size cap', async () => {
+    const routes = Array.from({ length: 100_000 }, (_, i) => ({ method: 'GET', pattern: `/route/${i}/with/a/long/path` }));
+    origin = await startServer((_req, res) => jsonRes(res, 200, { routes }));
+    expect(await fetchOriginManifest(origin.url, backendManifestFetch(false))).toBeNull();
   });
 });

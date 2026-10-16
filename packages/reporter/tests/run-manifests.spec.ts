@@ -56,10 +56,10 @@ describe('RunManifests', () => {
       { method: 'GET', url: 'http://localhost:5281/', status: 200, duration: 1, serverLogs: [] },
       { method: 'GET', url: 'http://localhost:5282/Commande', status: 200, duration: 1, serverLogs: [] },
     ]);
-    manifests.fetch();
+    // Fetched as soon as it is noted, while its server is up.
+    expect(requested).toEqual(['http://localhost:5282/__piwi/manifest']);
     manifests.note([{ method: 'GET', url: 'http://localhost:5283/Dossier', status: 200, duration: 1, serverLogs: [] }]);
-    manifests.fetch();
-    manifests.fetch();
+    manifests.note([{ method: 'GET', url: 'http://localhost:5282/Panier', status: 200, duration: 1, serverLogs: [] }]);
 
     await manifests.upload(new HttpClient(dashboard.url, logger), null, 'shop', 'feature/x');
 
@@ -72,7 +72,7 @@ describe('RunManifests', () => {
     ]);
   });
 
-  it('fetches an origin noted after the last test when it uploads', async () => {
+  it('uploads the manifest of an origin noted by the last test', async () => {
     dashboard = await startServer((req, res) => {
       if (req.url === '/api/projects/menu') return jsonRes(res, 200, { items: [{ id: 7, name: 'Shop' }] });
       jsonRes(res, 200, {});

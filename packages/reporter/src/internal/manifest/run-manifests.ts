@@ -2,16 +2,16 @@ import type { WireNetworkRequest } from '@piwitests/core/wire';
 import { errorMessage } from '../support/errors.js';
 import type { Logger } from '../support/logger.js';
 import type { HttpClient } from '../transport/http-client.js';
-import { fetchOriginManifest, type FetchLike, type ReporterManifest } from './collect.js';
+import { backendManifestFetch, fetchOriginManifest, type FetchLike, type ReporterManifest } from './collect.js';
 
 /**
  * The declared surface of the origins a run reached beyond its configured base
  * URLs: an application whose tests navigate several origins (one per portal or
  * service, no `baseURL`) has a manifest on each. The reporter notes the origin of
- * every request whose response carried an instrumentation header, fetches each
- * origin's `/__piwi/manifest` as the run's last test ends, while the servers are
- * still up, and uploads them once the run is submitted. The base URLs' origins are
- * the global setup's.
+ * every request whose response carried an instrumentation header and fetches its
+ * `/__piwi/manifest` the first time it is noted, while its server is up since it
+ * just answered, then uploads them once the run is submitted. The base URLs'
+ * origins are the global setup's.
  */
 
 /** The project id a project name has on the dashboard, from its project menu; undefined when none matches. */
@@ -64,29 +64,27 @@ function originOf(url: string): string | null {
 
 export class RunManifests {
   private readonly skipped: Set<string>;
-  private readonly noted = new Set<string>();
   private readonly fetched = new Map<string, Promise<ReporterManifest | null>>();
 
-  /** @param baseUrls the configured base URLs, whose origins the global setup covers. */
+  /**
+   * @param baseUrls the configured base URLs, whose origins the global setup covers.
+   * @param fetchImpl how a manifest is fetched; {@link backendManifestFetch} with
+   *   `insecure` set when the run ignores HTTPS errors.
+   */
   constructor(
     baseUrls: readonly string[],
     private readonly logger: Logger,
-    private readonly fetchImpl?: FetchLike,
+    private readonly fetchImpl: FetchLike = backendManifestFetch(false),
   ) {
     this.skipped = new Set(baseUrls.map(originOf).filter((origin): origin is string => origin !== null));
   }
 
-  /** Note the instrumented origins a test's requests reached. */
+  /** Note the instrumented origins a test's requests reached, and fetch the manifest of each one not seen yet. */
   note(requests: readonly WireNetworkRequest[] | null | undefined): void {
     for (const origin of instrumentedOrigins(requests)) {
-      if (!this.skipped.has(origin)) this.noted.add(origin);
-    }
-  }
-
-  /** Fetch the manifest of every origin noted and not fetched yet; call it while the servers are up. */
-  fetch(): void {
-    for (const origin of this.noted) {
-      if (!this.fetched.has(origin)) this.fetched.set(origin, fetchOriginManifest(origin, this.fetchImpl));
+      if (!this.skipped.has(origin) && !this.fetched.has(origin)) {
+        this.fetched.set(origin, fetchOriginManifest(origin, this.fetchImpl));
+      }
     }
   }
 
@@ -97,7 +95,6 @@ export class RunManifests {
     projectName: string | undefined,
     branch: string | null,
   ): Promise<void> {
-    this.fetch();
     if (!projectName || this.fetched.size === 0) return;
     try {
       const manifests = (await Promise.all(this.fetched.values())).filter((m): m is ReporterManifest => m !== null);

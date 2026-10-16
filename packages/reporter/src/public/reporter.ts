@@ -70,7 +70,7 @@ import { FailureLinks, failureHeadline } from '../internal/support/failure-links
 import { coverageSettings, type CoverageSettings } from '../internal/collect/coverage-settings.js';
 import { CoverageCollection, LastTestWatch } from '../internal/collect/test-coverage.js';
 import { baseUrlsFromConfig, ignoresHttpsErrors } from '../internal/collect/server-coverage.js';
-import { configDirFromConfig } from '../internal/manifest/collect.js';
+import { backendManifestFetch, configDirFromConfig } from '../internal/manifest/collect.js';
 import { RunManifests } from '../internal/manifest/run-manifests.js';
 import type {
   CollectedTestCase,
@@ -159,7 +159,7 @@ export class PiwiDashboardReporter {
   private readonly coverageSettings: CoverageSettings;
   /** Each test's coverage, when browser or server coverage is on; set in `onBegin`. */
   private coverage: CoverageCollection | null = null;
-  /** Tells when the run's last test ended, while server coverage or the manifests of the reached origins need it. */
+  /** Tells when the run's last test ended, while server coverage needs it. */
   private lastTestWatch: LastTestWatch | null = null;
   /** The manifests of the instrumented origins the run reaches beyond its base URLs. */
   private manifests: RunManifests | null = null;
@@ -335,11 +335,15 @@ export class PiwiDashboardReporter {
     // Workers start after this hook and inherit the environment, so the
     // capture fixtures record the coverage the options switch on.
     const coverage = this.coverageSettings;
-    // The origins the run reaches beyond its base URLs serve their manifests while their servers are up.
+    // Each origin the run reaches beyond its base URLs has its manifest fetched as its first response is noted.
     if (this.options.uploadManifest !== false && this.options.projectName) {
-      this.manifests = new RunManifests(baseUrlsFromConfig(config), this.logger);
+      this.manifests = new RunManifests(
+        baseUrlsFromConfig(config),
+        this.logger,
+        backendManifestFetch(ignoresHttpsErrors(config)),
+      );
     }
-    if (coverage.server !== 'off' || this.manifests) this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
+    if (coverage.server !== 'off') this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
     if (coverage.browser !== 'off' || coverage.server !== 'off') {
       if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
       if (coverage.server !== 'off') {
@@ -648,7 +652,6 @@ export class PiwiDashboardReporter {
       result.retry < (test.retries ?? 0);
     if (this.lastTestWatch?.end(test.id, willRetry)) {
       this.coverage?.lastTestEnded();
-      this.manifests?.fetch();
     }
   }
 

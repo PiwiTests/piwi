@@ -147,7 +147,7 @@ src/
                 coverage), blob-ids (the git blob of each covered file)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
-                fetched as its last test ends, uploaded once it is submitted)
+                fetched as each is first seen, uploaded once the run is submitted)
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,

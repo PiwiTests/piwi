@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { backendRequest } from '../transport/backend-request.js';
 
 /**
  * Declared-surface manifest collection. Three ramps feed it: from the reporter's
@@ -112,6 +113,32 @@ export type FetchLike = (
 /** How long each instrumentation-manifest request may run before it is aborted. */
 const INSTRUMENTATION_FETCH_TIMEOUT_MS = 5000;
 
+/** Largest manifest read from an origin, in bytes. */
+const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
+
+/**
+ * A {@link FetchLike} for the manifest of an origin the run reached: a GET on a
+ * connection of its own that follows no redirect and reads at most
+ * `MAX_MANIFEST_BYTES`; `insecure` accepts any certificate, as the run's browsers
+ * do with `ignoreHTTPSErrors`.
+ */
+export function backendManifestFetch(insecure: boolean): FetchLike {
+  return async (url, init) => {
+    const answer = await backendRequest(url, {
+      method: 'GET',
+      insecure,
+      signal: init?.signal ?? AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS),
+      maxBytes: MAX_MANIFEST_BYTES,
+    });
+    return {
+      ok: answer.status >= 200 && answer.status < 300,
+      status: answer.status,
+      headers: answer.headers,
+      text: async () => answer.text,
+    };
+  };
+}
+
 /**
  * Where the instrumentation manifest may be served: under the base URL's path
  * first, for an application mounted below the origin (`https://host/shop/` serves
@@ -152,12 +179,13 @@ export async function fetchInstrumentationManifest(
 
 /**
  * Fetch the instrumentation manifest at the root of an origin the run's responses
- * already showed instrumented, so with no probe; bounded by the same timeout.
- * Best-effort — any failure returns null.
+ * already showed instrumented, so with no probe; bounded by the same timeout, and
+ * by default through {@link backendManifestFetch}. Best-effort — any failure
+ * returns null.
  */
 export async function fetchOriginManifest(
   origin: string,
-  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+  fetchImpl: FetchLike = backendManifestFetch(false),
 ): Promise<ReporterManifest | null> {
   try {
     return await fetchManifestAt(new URL(INSTRUMENTATION_MANIFEST_PATH, origin).toString(), fetchImpl);
