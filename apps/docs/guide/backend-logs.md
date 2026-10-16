@@ -144,10 +144,9 @@ uses the handler and dependencies they name. The reporter reads them while `capt
 ## Route manifest
 
 Both packages serve `/__piwi/manifest` outside production: the routes the server has, as JSON. The
-reporter's global setup fetches it from each `baseURL` whose first response carries an instrumentation header, and
-the reporter from every other origin whose responses carried one during the run (an application whose tests reach
-several servers, with no `baseURL`), as the run's last test ends. Each is uploaded with the run, so a route or page nothing reaches becomes a
-[declared, never hit](/features/scenario-gaps#declared-surface) gap. Any backend can instead commit a
+reporter fetches it from each `baseURL` and each other origin whose responses carry an instrumentation header, and
+uploads it with the run, so a route or page nothing reaches becomes a
+[declared, never hit](/features/scenario-gaps#declared-surface) gap. Any backend can commit a
 `piwi.manifest.json` next to the Playwright config. Turn the upload off with `uploadManifest: false`.
 
 - **ASP.NET Core** reads the application's endpoint table, so the manifest holds every route from the first run, hit
