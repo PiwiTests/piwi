@@ -79,6 +79,12 @@ import {
   parseSourceQuery,
   storeRunCoverage,
 } from '~~/server/utils/coverage';
+import {
+  listCoverageReports,
+  parseCoverageReportsQuery,
+  parseCoverageReportUpload,
+  storeCoverageReport,
+} from '~~/server/utils/coverage-reports';
 import { demoClusterSuspectLines, demoExecutionSuspectLines } from './suspect-lines';
 import {
   CoverageInsightInputError,
@@ -153,6 +159,7 @@ import {
   getProjectSlowTests,
   getProjectTimeoutOpportunities,
   getProjectFailureClusters,
+  INVALID_COVERAGE_SCOPE,
   updateProject,
   createProject,
   getProjectMenu,
@@ -810,7 +817,12 @@ const routes: RouteEntry[] = [
       // A browser demo has no server secret to encrypt with (the server uses
       // encryptSecret with PIWI_SECRET_KEY), so the token is stored as-is —
       // but every GET strips it, so it never leaves the browser's own DB.
-      return updateProject(await getDemoDb(), +m[1]!, body as Parameters<typeof updateProject>[2]);
+      try {
+        return await updateProject(await getDemoDb(), +m[1]!, body as Parameters<typeof updateProject>[2]);
+      } catch (e) {
+        if (e instanceof Error && e.message === INVALID_COVERAGE_SCOPE) throw demoHttpError(400, e.message);
+        throw e;
+      }
     },
   },
   {
@@ -1155,6 +1167,27 @@ const routes: RouteEntry[] = [
       const files = parseRunCoverage(body);
       if (typeof files === 'string') throw demoHttpError(400, files);
       return { files: await storeRunCoverage(db, +m[1]!, run.projectId, files) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/coverage-reports$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = parseCoverageReportsQuery(q?.get('commit') ?? undefined, q?.get('limit') ?? undefined);
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      return { items: await listCoverageReports(await getDemoDb(), +m[1]!, parsed) };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/coverage-reports$/,
+    permission: 'run:submit',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const upload = parseCoverageReportUpload(body);
+      if (typeof upload === 'string') throw demoHttpError(400, upload);
+      return storeCoverageReport(await getDemoDb(), +m[1]!, upload);
     },
   },
   {

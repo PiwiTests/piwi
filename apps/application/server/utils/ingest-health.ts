@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { addIngestHealth, INGEST_HEALTH_COUNTS, readIngestHealth, type IngestHealth } from '#shared/ingest-health';
 
 /** True when the delta holds nothing to record. */
@@ -31,7 +31,11 @@ export async function recordIngestHealth(db: DrizzleDB, runId: number, delta: In
     const unchanged = run.metadata == null ? isNull(testRuns.metadata) : eq(testRuns.metadata, run.metadata);
     const written = await db
       .update(testRuns)
-      .set({ metadata: { ...metadata, ...(health ? { ingestHealth: health } : {}) }, origin: runOrigin(metadata) })
+      .set({
+        metadata: { ...metadata, ...(health ? { ingestHealth: health } : {}) },
+        origin: runOrigin(metadata),
+        commit: runCommit(metadata),
+      })
       .where(attempt < RECORD_ATTEMPTS ? and(eq(testRuns.id, runId), unchanged) : eq(testRuns.id, runId))
       .returning({ id: testRuns.id });
     if (written.length > 0) return;

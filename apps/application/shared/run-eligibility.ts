@@ -254,6 +254,18 @@ export function runOrigin(metadata: unknown): RunOriginRead {
   return 'local';
 }
 
+/**
+ * The commit a run tested, read from its metadata (`scm.commit`): 7 to 64
+ * hexadecimal characters, lowercased; null when it names none. Written to
+ * `test_runs.commit` with every write of the metadata.
+ */
+export function runCommit(metadata: unknown): string | null {
+  const commit = record(record(metadata)?.scm)?.commit;
+  if (typeof commit !== 'string') return null;
+  const value = commit.trim().toLowerCase();
+  return /^[0-9a-f]{7,64}$/.test(value) ? value : null;
+}
+
 /** What a run was launched for (a dispatch, a cluster, a bug report), when its origin names it. */
 export function runOriginRef(metadata: unknown): string | null {
   return parseRunOrigin(record(metadata)?.[RUN_ORIGIN_METADATA_KEY])?.ref ?? null;

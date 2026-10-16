@@ -60,6 +60,7 @@ import {
 } from '../analytics/timeout-hygiene';
 import { parseProjectDecisions } from '#shared/capabilities';
 import { normalizeProjectTargets } from '#shared/analytics/targets';
+import { parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -413,6 +414,10 @@ async function validTagIds(db: DrizzleDB, tagIds: number[]): Promise<number[]> {
 
 // ─── updateProject ───────────────────────────────────────────────
 
+/** The error `updateProject` throws for a coverage scope `parseCoverageScope` refuses. */
+export const INVALID_COVERAGE_SCOPE =
+  'coverageScope must be { include?: string[], exclude?: string[] }: at most 200 patterns each, 300 characters a pattern, no "!" negation';
+
 export async function updateProject(
   db: DrizzleDB,
   id: number,
@@ -434,6 +439,8 @@ export async function updateProject(
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
     targets?: unknown;
+    /** The files coverage totals count (`CoverageScope`); null restores the default excludes. */
+    coverageScope?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -454,8 +461,14 @@ export async function updateProject(
     gateStatus,
     generatedSpecs,
     targets,
+    coverageScope,
     tagIds: dataTagIds,
   } = data;
+  const scope: CoverageScope | null | undefined =
+    coverageScope === undefined || coverageScope === null ? coverageScope : parseCoverageScope(coverageScope);
+  if (scope === null && coverageScope !== null) throw new Error(INVALID_COVERAGE_SCOPE);
+  const scopeChanged =
+    scope !== undefined && JSON.stringify(scope) !== JSON.stringify(projectResults[0].coverageScope ?? null);
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
   const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
@@ -476,6 +489,9 @@ export async function updateProject(
         gateStatus,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
+        ...(scopeChanged
+          ? { coverageScope: scope, coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(projects.id, id));

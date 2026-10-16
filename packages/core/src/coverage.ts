@@ -305,24 +305,42 @@ export function decodeFunctionRanges(text: string | null | undefined): LineRange
 /**
  * A deterministic string of a file's content, to hash a fragment by: runtime,
  * path, blob, function ranges and line ranges, normalized, so the same
- * content gives the same string whatever the order of its ranges.
+ * content gives the same string whatever the order of its ranges. A file of
+ * a coverage report also names its executable lines and every function its
+ * tool knows: they follow, as a sixth and seventh element, only when either
+ * is present, so the string of a file without them is unchanged.
  */
-export function canonicalCoverageFile(file: CoverageFile): string {
+export function canonicalCoverageFile(file: CanonicalCoverageInput): string {
+  const executable = normalizeLineRanges(file.executable);
+  const allFunctions = normalizeFunctionRanges(file.allFunctions);
+  const known = executable.length > 0 || allFunctions.length > 0;
   const entry = fileEntry(
     file.path,
-    file.runtime,
-    file.blob,
+    file.runtime as CoverageRuntime,
+    known ? undefined : file.blob,
     normalizeFunctionRanges(file.functions),
     normalizeLineRanges(file.lines),
   );
+  const blob = known ? (file.blob ?? '') : (entry.blob ?? '');
   return JSON.stringify([
     entry.runtime,
     entry.path,
-    entry.blob ?? '',
+    blob,
     encodeLineRanges(entry.functions ?? []),
     encodeLineRanges(entry.lines ?? []),
+    ...(known ? [encodeLineRanges(executable), encodeLineRanges(allFunctions)] : []),
   ]);
 }
+
+/**
+ * What {@link canonicalCoverageFile} reads: a coverage file, or a coverage
+ * report's, whose runtime names the report rather than where the code ran.
+ */
+export type CanonicalCoverageInput = Omit<CoverageFile, 'runtime'> & {
+  runtime: string;
+  executable?: LineRange[];
+  allFunctions?: LineRange[];
+};
 
 /** Whether a line is in normalized line ranges, by binary search. */
 export function lineInRanges(ranges: LineRange[], line: number): boolean {

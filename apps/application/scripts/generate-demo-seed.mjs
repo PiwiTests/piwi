@@ -1196,6 +1196,8 @@ for (const proj of DEMO_PROJECTS) {
       metadata,
       // `runOrigin(metadata)`: the metadata carries a CI record.
       origin: 'ci',
+      // `runCommit(metadata)`.
+      commit_sha: commit.sha,
       stream_token: null,
       instance_id: null,
       // Newest runs are on a newer Playwright than older ones so the
@@ -3945,6 +3947,8 @@ const CODE_REACH = [];
 const COVERAGE_FRAGMENTS = [];
 const TEST_COVERAGE = [];
 const RUN_COVERAGE = [];
+/** `coverage_executable`: per project, runtime, path and blob, the executable lines of that file version. */
+const COVERAGE_VERSIONS = new Map();
 {
   const ranges = (list) =>
     (list ?? []).map(([start, end]) => (start === end ? String(start) : `${start}-${end}`)).join(',');
@@ -4042,8 +4046,23 @@ const RUN_COVERAGE = [];
         blob: entry.blob,
         functions: ranges(entry.functions) || null,
         lines: ranges(entry.lines) || null,
-        executable: ranges(entry.executable) || null,
+        executable: null,
       });
+      // What the file's version holds is stored once per version, as `storeFileVersions` does.
+      const executable = ranges(entry.executable);
+      const key = `${story.projectId}\x00${entry.runtime}\x00${entry.path}\x00${entry.blob}`;
+      if (executable && entry.blob && !COVERAGE_VERSIONS.has(key)) {
+        COVERAGE_VERSIONS.set(key, {
+          id: COVERAGE_VERSIONS.size + 1,
+          project_id: story.projectId,
+          runtime: entry.runtime,
+          path: entry.path,
+          blob: entry.blob,
+          lines: executable,
+          functions: null,
+          created_at: run.start_time,
+        });
+      }
     }
   }
 
@@ -4684,6 +4703,7 @@ const REBASE_SQL = [
   `UPDATE files SET created_at = created_at + ${D};`,
   `UPDATE case_payloads SET created_at = created_at + ${D};`,
   `UPDATE coverage_fragments SET created_at = created_at + ${D}, last_seen_at = last_seen_at + ${D};`,
+  `UPDATE coverage_executable SET created_at = created_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
@@ -5657,6 +5677,7 @@ const lines = [
   '-- Test and run coverage (reference test_cases, coverage_fragments and test_runs)',
   insert('test_coverage', TEST_COVERAGE),
   insert('run_coverage', RUN_COVERAGE),
+  insert('coverage_executable', [...COVERAGE_VERSIONS.values()]),
   '',
   '-- Probe ledger (Test Map, checked axis)',
   insert('probes', PROBES),
@@ -5724,3 +5745,4 @@ console.log(`   CodeReach  : ${CODE_REACH.length}`);
 console.log(`   CovFrags   : ${COVERAGE_FRAGMENTS.length}`);
 console.log(`   TestCov    : ${TEST_COVERAGE.length}`);
 console.log(`   RunCov     : ${RUN_COVERAGE.length}`);
+console.log(`   CovVersions: ${COVERAGE_VERSIONS.size}`);

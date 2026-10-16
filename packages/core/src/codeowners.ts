@@ -66,7 +66,7 @@ function escapeSegment(segment: string): string {
  * - every pattern also owns what sits beneath it, because a bare name in
  *   CODEOWNERS may be a directory and a directory owns its contents.
  */
-function patternToRegExp(pattern: string): RegExp {
+export function pathPatternToRegExp(pattern: string): RegExp {
   let source = pattern;
 
   const anchored = source.startsWith('/');
@@ -102,7 +102,7 @@ export interface CompiledCodeowners {
 }
 
 export function compileCodeowners(rules: CodeownersRule[]): CompiledCodeowners {
-  return { rules: rules.map((rule) => ({ ...rule, regex: patternToRegExp(rule.pattern) })) };
+  return { rules: rules.map((rule) => ({ ...rule, regex: pathPatternToRegExp(rule.pattern) })) };
 }
 
 /**

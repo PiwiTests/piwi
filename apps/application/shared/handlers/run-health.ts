@@ -24,7 +24,7 @@ import { and, eq, gte, inArray, isNotNull, lte, ne, or } from 'drizzle-orm';
 import { failureClusters, markers, networkRequests, testRuns, testRunsCases } from '../../server/database/schema';
 import { parsePlaywrightError } from '../error-parse';
 import { runBaseUrls } from '../graph';
-import { eligibleRunSql, isEligibleRun, runOrigin } from '../run-eligibility';
+import { eligibleRunSql, isEligibleRun, runCommit, runOrigin } from '../run-eligibility';
 import {
   INCIDENT_REVIEW_METADATA_KEY,
   INCIDENT_RUN_METADATA_KEY,
@@ -533,7 +533,7 @@ async function addIncidentMarker(db: DrizzleDB, run: RunRow, incident: RunIncide
 async function writeMetadata(db: DrizzleDB, runId: number, metadata: Record<string, unknown>): Promise<void> {
   await db
     .update(testRuns)
-    .set({ metadata, origin: runOrigin(metadata), updatedAt: new Date() })
+    .set({ metadata, origin: runOrigin(metadata), commit: runCommit(metadata), updatedAt: new Date() })
     .where(eq(testRuns.id, runId));
 }
 

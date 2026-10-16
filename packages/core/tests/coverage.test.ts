@@ -632,6 +632,18 @@ describe('canonicalCoverageFile', () => {
     expect(a).toBe(JSON.stringify(['server', 'src/a.cs', BLOB_A, '1-30,10-20', '2-4,12-14']));
   });
 
+  test('adds the executable lines and every known function only when a file names either', () => {
+    const plain = { path: 'src/a.ts', runtime: 'server' as const, blob: BLOB_A, lines: [[2, 3]] as LineRange[] };
+    expect(canonicalCoverageFile({ ...plain, executable: [], allFunctions: [] })).toBe(canonicalCoverageFile(plain));
+    expect(canonicalCoverageFile({ ...plain, executable: [[1, 4]] })).toBe(
+      JSON.stringify(['server', 'src/a.ts', BLOB_A, '', '2-3', '1-4', '']),
+    );
+    // A report's file nothing ran keeps its blob with its executable lines.
+    expect(canonicalCoverageFile({ path: 'src/a.ts', runtime: 'server', blob: BLOB_A, executable: [[1, 4]] })).toBe(
+      JSON.stringify(['server', 'src/a.ts', BLOB_A, '', '', '1-4', '']),
+    );
+  });
+
   test('differs when the runtime, the path, the blob or a range differs', () => {
     const base = { path: 'src/a.ts', runtime: 'browser' as const, blob: BLOB_A, functions: [[1, 5]] as LineRange[] };
     const canonical = canonicalCoverageFile(base);

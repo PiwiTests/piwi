@@ -56,8 +56,14 @@ async function addUsers(...rows: [id: number, username: string, role: string][])
   await db.insert(schema.users).values(rows.map(([id, username, role]) => ({ id, username, password: '', role })));
 }
 
+/** Projects as the schema before the data migration holds them: the columns added since are not there yet. */
 async function addProjects(...ids: number[]) {
-  await db.insert(schema.projects).values(ids.map((id) => ({ id, name: `project-${id}` })));
+  for (const id of ids) {
+    await client.execute({
+      sql: 'INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+      args: [id, `project-${id}`, ASSIGNED_AT / 1000, ASSIGNED_AT / 1000],
+    });
+  }
 }
 
 async function assign(userId: number, projectId: number | null, createdBy: number | null = null) {

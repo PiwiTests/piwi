@@ -411,6 +411,8 @@ export interface ProjectWithTestRuns {
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
   targets?: import('#shared/analytics/targets').ProjectTargets | null;
+  /** The files coverage totals count; null for the default excludes. */
+  coverageScope?: import('@piwitests/core/coverage-scope').CoverageScope | null;
   /** Stored per-project capability decisions, for the edit form's overrides. */
   capabilities?: Partial<
     Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
@@ -438,6 +440,8 @@ export interface ProjectDetails {
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
   targets?: import('#shared/analytics/targets').ProjectTargets | null;
+  /** The files coverage totals count; null for the default excludes. */
+  coverageScope?: import('@piwitests/core/coverage-scope').CoverageScope | null;
   color?: string | null;
   tags?: TagInfo[];
   /** Stored per-project capability decisions, for the edit form's overrides. */

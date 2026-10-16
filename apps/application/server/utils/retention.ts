@@ -7,6 +7,7 @@ import {
   analyticsDashboards,
   casePayloads,
   coverageFragments,
+  coverageReports,
   entityLinks,
   failureClusters,
   failureDiagnoses,
@@ -342,7 +343,8 @@ function payloadUnreferenced(): SQL {
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.pageInventoryPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.locatorPagesPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.codeReachPayloadId} = ${casePayloads.id})
-    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.coveragePayloadId} = ${casePayloads.id})`;
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.coveragePayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${coverageReports} WHERE ${coverageReports.inventoryPayloadId} = ${casePayloads.id})`;
 }
 
 export interface OrphanSweepResult {

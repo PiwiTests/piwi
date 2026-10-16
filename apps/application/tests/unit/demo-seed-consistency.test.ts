@@ -1096,10 +1096,14 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       want.coverage.browserFiles,
     );
     if (want.coverage.runCoverage) {
+      // The run's own coverage of each file, at a version whose executable lines are stored.
       const run = new Set(
-        q(`select path from run_coverage where run_id = ${execution!.runId} and executable is not null`).map((r) =>
-          String(r.path),
-        ),
+        q(`
+          select rc.path from run_coverage rc
+          join coverage_executable ce
+            on ce.project_id = rc.project_id and ce.runtime = rc.runtime and ce.path = rc.path and ce.blob = rc.blob
+          where rc.run_id = ${execution!.runId} and ce.lines is not null
+        `).map((r) => String(r.path)),
       );
       for (const f of server) expect(run.has(String(f.path)), `${label}: run coverage of ${f.path}`).toBe(true);
     }
@@ -1123,8 +1127,8 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
     if (executable) {
       const blobs = [...new Set(fragments.map((f) => `'${String(f.blob)}'`))].join(',');
       const recorded = q(`
-        select run_id from run_coverage
-        where project_id = ${want.project!.id} and path = '${path}' and blob in (${blobs}) and executable is not null
+        select id from coverage_executable
+        where project_id = ${want.project!.id} and path = '${path}' and blob in (${blobs}) and lines is not null
       `);
       expect(recorded.length, `${label}: a run recorded the executable lines of ${path}`).toBeGreaterThan(0);
     }

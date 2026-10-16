@@ -21,7 +21,7 @@ import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
 import { resolveRunBranch } from '../../server/utils/run-branch';
-import { runOrigin } from '../run-eligibility';
+import { runCommit, runOrigin } from '../run-eligibility';
 import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
 import { sumFailedAndTimedOut } from '../utils/test-counts';
@@ -309,6 +309,7 @@ export async function importBlobReportRun(
       importHash,
       metadata: metadata as never,
       origin: runOrigin(metadata),
+      commit: runCommit(metadata),
     })
     .returning();
 
@@ -484,6 +485,7 @@ export async function importTraceRun(
             importHash: runKey,
             metadata: metadata as never,
             origin: runOrigin(metadata),
+            commit: runCommit(metadata),
           })
           .returning()
       )[0];

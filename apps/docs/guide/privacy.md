@@ -30,13 +30,12 @@ Every outbound connection Piwi can make:
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
 
 The reporter sends your instance what its options switch on. [Code reach](/features/code-reach) and
-[server coverage](/features/server-coverage), off by default, send repository-relative file paths; line numbers and
-each file's git blob id only with `coverage.browser: 'functions'`, or `coverage.server: 'functions'` or `'lines'`;
-source code and hit counts never.
+[server coverage](/features/server-coverage), off by default, send repository-relative paths; line numbers and
+blob ids only with `coverage.browser: 'functions'` or `coverage.server: 'functions'` or `'lines'`. `piwi coverage
+upload` adds the commit's tracked paths. Source code and hit counts never leave.
 
-Two rows need no setting: the anonymous git-host reads happen whenever runs report a public-host remote,
-and a link's title is fetched when someone attaches it. Both fail quietly without network access.
-Everything else is off until you configure it.
+Two rows need no setting: anonymous git-host reads for runs that report a public-host remote, and a
+link's title when someone attaches it. Both fail quietly offline; the rest is off until configured.
 
 The **AI provider** is the one worth pausing on, because it's the only destination that receives your
 source code and the full failure context. It's opt-in, it goes only to the endpoint *you* set — including a local

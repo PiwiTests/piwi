@@ -10,7 +10,7 @@ import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
-import { runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin } from '#shared/run-eligibility';
 
 defineRouteMeta({
   openAPI: {
@@ -122,6 +122,7 @@ export default eventHandler(async (event) => {
         label: body.label || null,
         metadata,
         origin: runOrigin(metadata),
+        commit: runCommit(metadata),
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -177,6 +178,7 @@ export default eventHandler(async (event) => {
       label: body.label || null,
       metadata: null,
       origin: runOrigin(null),
+      commit: runCommit(null),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,

@@ -6,7 +6,7 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
-import { runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
@@ -138,6 +138,7 @@ export default eventHandler(async (event) => {
       duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${duration} THEN coalesce(${testRuns.duration}, 0) ELSE ${duration} END`,
       metadata: { ...currentMeta, shardDurations: allDurations },
       origin: runOrigin(currentMeta),
+      commit: runCommit(currentMeta),
       // The first shard to report a branch names the run's branch.
       branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
@@ -199,6 +200,7 @@ export default eventHandler(async (event) => {
           p90TestDuration,
           metadata: finalMeta,
           origin: runOrigin(finalMeta),
+          commit: runCommit(finalMeta),
           updatedAt: new Date(),
         })
         .where(eq(testRuns.id, id));
@@ -292,6 +294,7 @@ export default eventHandler(async (event) => {
       ...(p90TestDuration !== null && { p90TestDuration }),
       metadata: pendingMetadata,
       origin: runOrigin(pendingMetadata),
+      commit: runCommit(pendingMetadata),
       ...(body.metadata && { branch: resolveRunBranch(body.metadata) }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
@@ -336,6 +339,7 @@ export default eventHandler(async (event) => {
       ...(body.metadata && {
         metadata: reportedMetadata,
         origin: runOrigin(reportedMetadata),
+        commit: runCommit(reportedMetadata),
         branch: resolveRunBranch(body.metadata),
       }),
       ...(body.label !== undefined && { label: body.label }),
