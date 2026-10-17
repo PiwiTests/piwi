@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A unit-test project the tests run with dotnet test -p:PiwiCoverage=true, as a solution's tests run on a coverage
+       build: it imports the coverage package's props, as a package reference does, so its code is instrumented and
+       its test host writes the report PIWI_COVERAGE_OUTPUT names at exit. Not part of the solution. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PiwiTests.Instrumentation.Coverage/PiwiTests.Instrumentation.Coverage.csproj" />
+  </ItemGroup>
+  <Import Project="../PiwiTests.Instrumentation.Coverage/build/PiwiTests.Instrumentation.Coverage.props" />
+</Project>

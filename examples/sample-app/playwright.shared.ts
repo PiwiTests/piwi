@@ -22,9 +22,11 @@ export const piwiOptions: PiwiDashboardOptions = {
   capturePageInventory: true,
   // A browser, context or page a test opens and leaves open is listed with the line that opened it.
   leakCheck: 'report',
-  // The browser files each test runs, and, from a backend with a coverage build, the server lines. The pages load
-  // their scripts from /assets/*, which are the files under web/.
-  coverage: { browser: 'files', server: backend.features.serverCoverage ? 'lines' : 'off' },
+  // The browser functions each test runs, and, from a backend with a coverage build, the server lines: with the
+  // backend's unit tests (`npm run coverage:unit`), the dashboard counts both on one set of lines per commit. The
+  // pages load their scripts from /assets/*, which are the files under web/. `'functions'` needs @piwitests/reporter
+  // 0.55.0 or later.
+  coverage: { browser: 'functions', server: backend.features.serverCoverage ? 'lines' : 'off' },
   codeReachRoots: ['web'],
 };
 

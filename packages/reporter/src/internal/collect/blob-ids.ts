@@ -13,6 +13,11 @@ export function gitBlobId(content: Buffer): string {
   return crypto.createHash('sha1').update(`blob ${content.length}\0`).update(content).digest('hex');
 }
 
+/** Whether a file's entry names line numbers, which refer to one version of the file. */
+function namesLines(file: CoverageFile & { executable?: unknown[]; allFunctions?: unknown[] }): boolean {
+  return Boolean(file.functions?.length || file.lines?.length || file.executable?.length || file.allFunctions?.length);
+}
+
 /** Paths hashed by one `git hash-object` at most. */
 const GIT_BATCH = 500;
 
@@ -56,15 +61,18 @@ export class BlobIds {
     private readonly hashObjects: (root: string, paths: string[]) => Promise<string[] | null> = gitHashObjects,
   ) {}
 
-  /** The files with the blob id of each one that names line numbers and has a blob in the checkout. */
+  /**
+   * The files with the blob id of each one that names line numbers (functions, lines, executable lines or every
+   * function) and has a blob in the checkout.
+   */
   async withBlobs<T extends CoverageFile>(files: T[]): Promise<T[]> {
-    const named = files.filter((file) => file.functions?.length || file.lines?.length);
+    const named = files.filter(namesLines);
     const blobs = new Map<string, string | null>();
     const ids = await this.blobsOf(named.map((file) => file.path));
     named.forEach((file, i) => blobs.set(file.path, ids[i] ?? null));
     return files.map((file) => {
       const blob = blobs.get(file.path);
-      return blob && (file.functions?.length || file.lines?.length) ? { ...file, blob } : file;
+      return blob && namesLines(file) ? { ...file, blob } : file;
     });
   }
 

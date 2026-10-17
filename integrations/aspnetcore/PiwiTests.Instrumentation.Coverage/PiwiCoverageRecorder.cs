@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -17,7 +18,9 @@ namespace PiwiTests.Instrumentation.Coverage;
 /// The request being served is an <see cref="AsyncLocal{T}"/> mirrored into a thread-static field on every
 /// execution context change, so the per-call read is a thread-static load. Instrumented modules are registered
 /// on their first call, by module version id: the recorder finds the loaded assembly and reads its span table
-/// once.
+/// once. <see cref="RegisterAvailable"/> registers the others, whose code has not run, for their executable lines.
+/// With <c>PIWI_COVERAGE_OUTPUT</c> set, the first call also arranges for the run-level report to be written at
+/// process exit (<see cref="PiwiCoverageOutput"/>).
 /// </remarks>
 public static class PiwiCoverageRecorder
 {
@@ -33,13 +36,15 @@ public static class PiwiCoverageRecorder
 
     private static readonly object s_lock = new();
     private static readonly HashSet<Guid> s_untracked = [];
+    private static readonly Dictionary<string, (long Length, DateTime Written)> s_scannedFiles = new(StringComparer.Ordinal);
     private static InstrumentedModule[] s_modules = [];
+    private static int s_ran;
 
     /// <summary>The mode set by <c>PIWI_COVERAGE_MODE</c>: <c>run</c>, or <c>test</c> (the default).</summary>
     public static PiwiCoverageMode Mode => s_mode;
 
     /// <summary>True once code from a module built with coverage instrumentation has run in this process.</summary>
-    public static bool HasInstrumentedModules => Volatile.Read(ref s_modules).Length > 0;
+    public static bool HasInstrumentedModules => Volatile.Read(ref s_ran) != 0;
 
     /// <summary>The instrumented modules registered so far, by index.</summary>
     internal static IReadOnlyList<InstrumentedModule> Modules => Volatile.Read(ref s_modules);
@@ -66,6 +71,72 @@ public static class PiwiCoverageRecorder
         ArgumentNullException.ThrowIfNull(request);
         foreach (var (module, row, payload) in request.Payloads())
             module.AddToShared(row, payload);
+    }
+
+    /// <summary>
+    /// Registers every instrumented module of this process, whether its code ran or not: the loaded assemblies
+    /// carrying a span table, and the assemblies in the application's base directory, read from disk without
+    /// loading them. A file read once is read again only when its size or write time changes.
+    /// </summary>
+    internal static void RegisterAvailable() => RegisterAvailable(AppContext.BaseDirectory);
+
+    /// <inheritdoc cref="RegisterAvailable()"/>
+    /// <param name="directory">The directory whose assemblies are read from disk.</param>
+    internal static void RegisterAvailable(string? directory)
+    {
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (assembly.IsDynamic)
+                continue;
+
+            try
+            {
+                var mvid = assembly.ManifestModule.ModuleVersionId;
+                if (!IsKnown(mvid))
+                    Add(mvid, SpanTable.Read(assembly));
+            }
+            catch (Exception e) when (IsUnreadable(e))
+            {
+                // An assembly whose span table cannot be read has no executable lines.
+            }
+        }
+
+        if (string.IsNullOrEmpty(directory))
+            return;
+
+        string[] files;
+        try
+        {
+            files = Directory.GetFiles(directory, "*.dll", SearchOption.TopDirectoryOnly);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return;
+        }
+
+        Array.Sort(files, StringComparer.Ordinal);
+        foreach (var file in files)
+        {
+            try
+            {
+                var info = new FileInfo(file);
+                var stamp = (info.Length, info.LastWriteTimeUtc);
+                lock (s_lock)
+                {
+                    if (s_scannedFiles.TryGetValue(file, out var scanned) && scanned == stamp)
+                        continue;
+                    s_scannedFiles[file] = stamp;
+                }
+
+                var spans = SpanTable.ReadFile(file, out var mvid);
+                if (mvid != Guid.Empty && !IsKnown(mvid))
+                    Add(mvid, spans);
+            }
+            catch (Exception e) when (IsUnreadable(e) || e is UnauthorizedAccessException)
+            {
+                // Not an assembly, or one whose span table cannot be read: no executable lines.
+            }
+        }
     }
 
     internal static bool[] Payload(Guid mvid, int row, ref bool[] slot, int length) =>
@@ -96,7 +167,14 @@ public static class PiwiCoverageRecorder
         if (last is not null && last.Mvid == mvid)
             return last;
 
-        return t_lastModule = Find(mvid) ?? Register(mvid);
+        var module = Find(mvid) ?? Register(mvid);
+        if (module is not null && Volatile.Read(ref s_ran) == 0)
+        {
+            Volatile.Write(ref s_ran, 1);
+            PiwiCoverageOutput.Arm();
+        }
+
+        return t_lastModule = module;
     }
 
     private static InstrumentedModule? Find(Guid mvid)
@@ -119,7 +197,23 @@ public static class PiwiCoverageRecorder
             if (s_untracked.Contains(mvid))
                 return null;
 
-            var spans = ReadSpanTable(mvid);
+            return Add(mvid, ReadSpanTable(mvid));
+        }
+    }
+
+    private static bool IsKnown(Guid mvid)
+    {
+        lock (s_lock)
+            return Find(mvid) is not null || s_untracked.Contains(mvid);
+    }
+
+    /// <summary>Registers the module <paramref name="mvid"/> with its span table, or as untracked without one.</summary>
+    private static InstrumentedModule? Add(Guid mvid, SpanTable? spans)
+    {
+        lock (s_lock)
+        {
+            if (Find(mvid) is { } known)
+                return known;
             if (spans is null)
             {
                 s_untracked.Add(mvid);
@@ -132,6 +226,9 @@ public static class PiwiCoverageRecorder
             return module;
         }
     }
+
+    private static bool IsUnreadable(Exception e) =>
+        e is BadImageFormatException or NotSupportedException or InvalidOperationException or IOException or ArgumentException;
 
     private static SpanTable? ReadSpanTable(Guid mvid)
     {
@@ -147,8 +244,7 @@ public static class PiwiCoverageRecorder
 
                 return SpanTable.Read(assembly);
             }
-            catch (Exception e) when (e is BadImageFormatException or NotSupportedException or InvalidOperationException
-                                          or System.IO.IOException or ArgumentException)
+            catch (Exception e) when (IsUnreadable(e))
             {
                 return null;
             }

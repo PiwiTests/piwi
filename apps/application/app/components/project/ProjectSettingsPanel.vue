@@ -18,6 +18,7 @@ const SECTION_IDS = [
   'source-control',
   'ai',
   'capabilities',
+  'coverage',
   'targets',
   'issue-tracker',
   'browser-extension',
@@ -70,6 +71,13 @@ const sections = computed<Section[]>(() => [
     icon: 'i-lucide-toggle-right',
     group: 'analysis',
     visible: canDecide.value || showOpenApi.value || showServerProbes.value,
+  },
+  {
+    id: 'coverage',
+    label: 'Coverage',
+    icon: 'i-lucide-scan-line',
+    group: 'analysis',
+    visible: canManage.value && !isHidden('coverage'),
   },
   { id: 'targets', label: 'Targets', icon: 'i-lucide-target', group: 'analysis', visible: canManage.value },
   {
@@ -202,6 +210,8 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
           @saved="emit('saved')"
         />
       </template>
+
+      <ProjectCoverageSettings v-else-if="active === 'coverage'" :project="project" @saved="emit('saved')" />
 
       <ProjectTargetsForm
         v-else-if="active === 'targets'"

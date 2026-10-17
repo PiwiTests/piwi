@@ -275,6 +275,13 @@ function onLabelKeydown(e: KeyboardEvent) {
         >
         <span v-if="scm?.author">{{ scm.author }}</span>
       </template>
+      <ClientOnly>
+        <RunCoverageFact
+          v-if="testRun?.projectId && typeof scm?.commit === 'string' && /^[0-9a-f]{7,64}$/i.test(scm.commit)"
+          :project-id="testRun.projectId"
+          :commit="scm.commit.toLowerCase()"
+        />
+      </ClientOnly>
       <template v-if="testRun?.environment">
         <span class="text-dimmed">·</span>
         <EnvironmentBadge :name="testRun.environment" />

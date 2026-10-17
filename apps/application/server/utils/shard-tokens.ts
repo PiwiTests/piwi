@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { testRuns } from '../database/schema';
 import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
-import { runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin } from '#shared/run-eligibility';
 
 /**
  * How a shard token is kept, in run metadata (which every project member can
@@ -78,7 +78,7 @@ export async function persistShardToken(
 
   await db
     .update(testRuns)
-    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .set({ metadata: meta, origin: runOrigin(meta), commit: runCommit(meta), updatedAt: new Date() })
     .where(eq(testRuns.id, runId));
 }
 
@@ -102,6 +102,6 @@ export async function removeStoredShardToken(db: DB, runId: number, token: strin
 
   await db
     .update(testRuns)
-    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .set({ metadata: meta, origin: runOrigin(meta), commit: runCommit(meta), updatedAt: new Date() })
     .where(eq(testRuns.id, runId));
 }

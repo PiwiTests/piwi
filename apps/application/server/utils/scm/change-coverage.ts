@@ -19,13 +19,18 @@ import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
 import { selectBaselineRun } from '../branch-baseline';
 import { createScmProvider } from './index';
 import { MAX_SCM_FILES } from './ScmProvider';
-import type { ScmProvider } from './ScmProvider';
+import type { ScmChanges, ScmProvider } from './ScmProvider';
 import {
   computeChangeCoverage,
   extractTicketIds,
   ticketPrefix,
   type ChangeCoverage,
+  type ChangedFileInput,
+  type CommitCoverageInput,
 } from '#shared/handlers/change-coverage';
+import { patchChangedLines } from '#shared/patch-coverage';
+import { cachedCommitCoverage } from '../coverage-summary';
+import { commitDetailRemoved } from '../coverage-totals';
 import { readProjectIntegration } from '../integrations/binding';
 import {
   detectChangedUnreached,
@@ -233,6 +238,42 @@ async function scanImportEdges(provider: ScmProvider, ref: string, unreachedFile
   return pairs;
 }
 
+/** The changed files of a diff, each with its changed lines when the provider sent its patch. */
+function toChangedFiles(changes: ScmChanges): ChangedFileInput[] {
+  return changes.files.map((f) => ({
+    filePath: f.filename,
+    additions: f.additions,
+    deletions: f.deletions,
+    ...(!changes.patchesOmitted && f.patch && f.status !== 'removed' && f.status !== 'deleted'
+      ? { changedLines: patchChangedLines(f.filename, f.patch) }
+      : {}),
+  }));
+}
+
+/**
+ * The head commit's combined coverage, as change coverage reads it; null when
+ * it has none, or only its totals are kept: its files went when a newer commit
+ * superseded it, after its pull-request feedback was posted.
+ */
+async function headCommitCoverage(
+  db: DbClient,
+  projectId: number,
+  headSha: string,
+): Promise<CommitCoverageInput | null> {
+  if (await commitDetailRemoved(db, projectId, headSha)) return null;
+  const coverage = await cachedCommitCoverage(db, projectId, headSha).catch((e) => {
+    console.error(`[change-coverage] could not read the coverage of ${headSha}`, e);
+    return null;
+  });
+  if (!coverage) return null;
+  return {
+    commit: coverage.commit,
+    files: coverage.combined.files,
+    suites: coverage.combined.suites,
+    areas: { names: coverage.areas.map((a) => a.name), areaOf: coverage.areaOf },
+  };
+}
+
 /** A generic, honest draft suggestion for an uncovered changed file. */
 function draftTitleFor(filePath: string): string {
   const base = filePath.split('/').pop() || filePath;
@@ -305,11 +346,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   if (!changes || changes.files.length === 0) return null;
   const baseSha = baseRef;
 
-  const changedFiles = changes.files.map((f) => ({
-    filePath: f.filename,
-    additions: f.additions,
-    deletions: f.deletions,
-  }));
+  const changedFiles = toChangedFiles(changes);
 
   const ticketKey = (await readProjectIntegration(db, run.projectId).catch(() => null))?.projectKey ?? null;
   const tickets = extractTicketIds(
@@ -333,6 +370,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     filesTruncated: changes.filesTruncated ?? false,
     totalChangedFiles: changes.totalChangedFiles ?? null,
     scmAvailable: true,
+    commitCoverage: await headCommitCoverage(db, run.projectId, headSha),
   });
 
   // A run off the default branch tags its rows with its own branch; a
@@ -384,6 +422,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     reachedInRun: f.reachedInRun,
     reachedCountHistory: f.reachedCountHistory,
     reachBasis: f.reachBasis,
+    suites: f.suites,
     ticket: f.ticket,
   }));
   // A muted detector keeps writing its ledger rows — so it still collects triage
@@ -433,6 +472,7 @@ export async function readChangeCoverage(
     tickets: [],
     reachedFiles: 0,
     uncoveredFiles: 0,
+    patchCoverage: null,
     filesTruncated: false,
     totalChangedFiles: null,
     scmAvailable,
@@ -490,11 +530,7 @@ export async function readChangeCoverage(
   const changes = await provider.fetchChanges(baseSha, headSha).catch(() => null);
   if (!changes) return empty(false);
 
-  const changedFiles = changes.files.map((f) => ({
-    filePath: f.filename,
-    additions: f.additions,
-    deletions: f.deletions,
-  }));
+  const changedFiles = toChangedFiles(changes);
   const ticketKey = (await readProjectIntegration(db, projectId).catch(() => null))?.projectKey ?? null;
   const tickets = extractTicketIds([baseBranch, ...changes.commits.map((c) => c.message)], { ticketKey });
 
@@ -509,6 +545,7 @@ export async function readChangeCoverage(
     filesTruncated: changes.filesTruncated ?? false,
     totalChangedFiles: changes.totalChangedFiles ?? null,
     scmAvailable: true,
+    commitCoverage: await headCommitCoverage(db, projectId, headSha),
   });
 }
 
@@ -522,6 +559,7 @@ export function toPrChangeCoverage(coverage: ChangeCoverage): PrChangeCoverage {
     windowRuns: coverage.windowRuns,
     baseBranch: coverage.baseBranch,
     filesTruncated: coverage.filesTruncated,
+    patchCoverage: coverage.patchCoverage,
     tickets: coverage.tickets.map((group) => ({
       ticket: group.ticket,
       files: group.files.map((f) => ({
@@ -530,7 +568,8 @@ export function toPrChangeCoverage(coverage: ChangeCoverage): PrChangeCoverage {
         deletions: f.deletions,
         reachedInRun: f.reachedInRun,
         reachedCountHistory: f.reachedCountHistory,
-        draftTitle: f.reachedInRun ? null : draftTitleFor(f.filePath),
+        suites: f.suites,
+        draftTitle: f.reachedInRun || f.suites.length > 0 ? null : draftTitleFor(f.filePath),
       })),
     })),
   };

@@ -10,12 +10,23 @@
  * `annotation` slot adds a narrow column after each line number (a count of
  * tests, for instance). With `selectable`, a click on a line emits
  * `select-line` (with whether Shift was held), and the `selected` lines carry
- * the neutral selected-row mark (`data-selected`).
+ * the neutral selected-row mark (`data-selected`); without an annotation, each
+ * line number is a button that selects its line from the keyboard. With
+ * `classes`, a commit's combined coverage, each line's bar says which kinds of
+ * suite ran it instead (`data-class`): both, unit only, end to end only, none,
+ * or undetermined, and a screen reader reads the class after the line number.
  */
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
 import { highlightLines, languageForPath } from '#shared/highlight';
 import { lineRangesText } from '~/utils/suspect-lines';
-import { NOT_RUN_ROW_CLASS, RAN_ROW_CLASS, functionNameAt } from '~/utils/coverage-view';
+import type { LineClasses } from '#shared/coverage-combine';
+import {
+  LINE_CLASS_MARKS,
+  NOT_RUN_ROW_CLASS,
+  RAN_ROW_CLASS,
+  functionNameAt,
+  type LineClassKind,
+} from '~/utils/coverage-view';
 
 const props = withDefaults(
   defineProps<{
@@ -41,6 +52,8 @@ const props = withDefaults(
     selected?: LineRange[];
     /** The height cap of the scrolling source. */
     scrollClass?: string;
+    /** The lines' classes in a commit's combined coverage; marks each line by the suites that ran it. */
+    classes?: LineClasses | null;
   }>(),
   {
     notExecuted: null,
@@ -51,6 +64,7 @@ const props = withDefaults(
     selectable: false,
     selected: () => [],
     scrollClass: 'max-h-[28rem]',
+    classes: null,
   },
 );
 
@@ -85,9 +99,43 @@ const rows = computed(() => {
       executed,
       notExecuted: !executed && lineInRanges(gaps, line),
       selected: lineInRanges(props.selected, line),
+      kind: classOf(line),
     };
   });
 });
+
+/** A line's class in the combined coverage; null without classes, or for a line that is not code. */
+function classOf(line: number): LineClassKind | null {
+  const c = props.classes;
+  if (!c) return null;
+  if (lineInRanges(c.both, line)) return 'both';
+  if (lineInRanges(c.unitOnly, line)) return 'unit';
+  if (lineInRanges(c.e2eOnly, line)) return 'e2e';
+  if (lineInRanges(c.undetermined, line)) return 'undetermined';
+  if (lineInRanges(c.none, line)) return 'none';
+  return null;
+}
+
+/** The classes the file's lines fall in, which the legend keeps to. */
+const classLegend = computed(() => {
+  const present = new Set(rows.value.map((r) => r.kind));
+  return (Object.keys(LINE_CLASS_MARKS) as LineClassKind[]).filter((kind) => present.has(kind));
+});
+
+function rowTitle(row: (typeof rows.value)[number]): string | undefined {
+  if (row.kind) return LINE_CLASS_MARKS[row.kind].title;
+  return row.executed ? props.executedTitle : row.notExecuted ? props.notExecutedTitle : undefined;
+}
+
+function rowMark(row: (typeof rows.value)[number]): string {
+  if (props.classes) return row.kind ? LINE_CLASS_MARKS[row.kind].row : '';
+  return row.executed ? RAN_ROW_CLASS : row.notExecuted ? NOT_RUN_ROW_CLASS : '';
+}
+
+/** A line's accessible name: its number, and its class in the combined coverage. */
+function lineName(row: (typeof rows.value)[number]): string {
+  return row.kind ? `Line ${row.line}: ${LINE_CLASS_MARKS[row.kind].label}` : `Line ${row.line}`;
+}
 
 /** Wide enough for the last line number, the same on every row. */
 const gutterWidth = computed(() => `calc(${String(Math.max(rows.value.length, 1)).length}ch + 1.5rem)`);
@@ -148,7 +196,8 @@ defineExpose({ reveal });
     </p>
 
     <template v-if="content !== null">
-      <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+      <CoverageClassLegend v-if="classes" :kinds="classLegend" />
+      <p v-else class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span class="inline-flex items-center gap-1.5">
           <span class="inline-block h-3 w-[3px] bg-coverage-run" aria-hidden="true" />{{ executedTitle }}
         </span>
@@ -172,18 +221,35 @@ defineExpose({ reveal });
             :data-executed="row.executed ? '' : undefined"
             :data-not-executed="row.notExecuted ? '' : undefined"
             :data-selected="row.selected ? '' : undefined"
-            :title="row.executed ? executedTitle : row.notExecuted ? notExecutedTitle : undefined"
+            :data-class="row.kind ?? undefined"
+            :title="rowTitle(row)"
             class="flex leading-5 transition-colors"
             :class="[
-              row.executed ? RAN_ROW_CLASS : row.notExecuted ? NOT_RUN_ROW_CLASS : '',
+              rowMark(row),
               row.selected ? SELECTED_ROW_CLASS : flashed === row.line ? 'bg-elevated' : '',
               selectable ? 'cursor-pointer hover:bg-elevated/60' : '',
             ]"
             @mousedown="selectable && $event.shiftKey && $event.preventDefault()"
             @click="selectable && emit('select-line', row.line, $event.shiftKey)"
           >
-            <span class="shrink-0 select-none pl-3 pr-3 text-right text-muted" :style="{ minWidth: gutterWidth }">
+            <button
+              v-if="selectable && !$slots.annotation"
+              type="button"
+              class="shrink-0 select-none rounded pl-3 pr-3 text-right text-muted focus-visible:outline-2 focus-visible:-outline-offset-2"
+              :style="{ minWidth: gutterWidth }"
+              :aria-label="lineName(row)"
+              :aria-pressed="row.selected ? 'true' : 'false'"
+              data-line-button
+              @click.stop="emit('select-line', row.line, $event.shiftKey)"
+            >
               {{ row.line }}
+            </button>
+            <span
+              v-else
+              class="shrink-0 select-none pl-3 pr-3 text-right text-muted"
+              :style="{ minWidth: gutterWidth }"
+            >
+              {{ row.line }}<span v-if="row.kind" class="sr-only">: {{ LINE_CLASS_MARKS[row.kind].label }}</span>
             </span>
             <span v-if="$slots.annotation" class="shrink-0 select-none pr-3">
               <slot name="annotation" :line="row.line" :executed="row.executed" :not-executed="row.notExecuted" />

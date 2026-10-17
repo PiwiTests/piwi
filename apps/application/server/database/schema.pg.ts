@@ -61,6 +61,9 @@ export const projects = pgTable(
     capabilities: jsonb('capabilities'), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
     generatedSpecs: jsonb('generated_specs'), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
     targets: jsonb('targets'), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
+    coverageScope: jsonb('coverage_scope'), // CoverageScope — include and exclude patterns of the files coverage totals count; null = the default excludes
+    coverageScopeVersion: integer('coverage_scope_version').notNull().default(0), // Bumped on every change of coverage_scope, so totals computed under another scope read as stale
+    coverageAreas: jsonb('coverage_areas'), // CoverageArea[] — named areas of the code (`front`, `back`) by include patterns, each counted apart; null = none
     locatorIndexBuiltAt: timestamp('locator_index_built_at', { mode: 'date' }),
     quarantineFailsStatus: boolean('quarantine_fails_status').notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
     gateStatus: boolean('gate_status').notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
@@ -105,6 +108,7 @@ export const testRuns = pgTable(
     branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: jsonb('metadata'), // Additional metadata as JSON
     origin: text('origin').notNull().default('local'), // What launched the run, `runOrigin(metadata)`, written with every metadata write; read by the eligibility rule
+    commit: text('commit_sha'), // The run's commit, `runCommit(metadata)` (metadata.scm.commit), written with every metadata write; null when the run names none
     setupSteps: jsonb('setup_steps'), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
@@ -134,6 +138,7 @@ export const testRuns = pgTable(
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
     projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
     keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
+    projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
   }),
 );
 
@@ -728,6 +733,8 @@ export const coverageFragments = pgTable(
     blob: text('blob'),
     functions: text('functions'),
     lines: text('lines'),
+    executable: text('executable'),
+    allFunctions: text('all_functions'),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -787,6 +794,169 @@ export const runCoverage = pgTable(
   (table) => ({
     uniqueFile: uniqueIndex('idx_run_coverage_unique').on(table.runId, table.runtime, table.path),
     projectPathIdx: index('idx_run_coverage_project_path').on(table.projectId, table.path),
+  }),
+);
+
+// Executable lines per file version (see schema.sqlite.ts).
+export const coverageExecutable = pgTable(
+  'coverage_executable',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    runtime: text('runtime').notNull(), // 'browser' | 'server'
+    path: text('path').notNull(), // repository-relative path
+    blob: text('blob').notNull(), // git blob id of the file version
+    lines: text('lines'), // executable line ranges, `12-15,20`
+    functions: text('functions'), // every function's range, run or not, `12-15,20`
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueVersion: uniqueIndex('idx_coverage_executable_unique').on(
+      table.projectId,
+      table.runtime,
+      table.path,
+      table.blob,
+    ),
+    projectPathIdx: index('idx_coverage_executable_project_path').on(table.projectId, table.path),
+  }),
+);
+
+// Coverage reports: one suite's coverage of one commit, imported from another
+// tool's report (`piwi coverage upload`) and kept in Piwi's model, attributed to
+// no test. Reports of the same commit and suite merge, like shards. The
+// commit's file inventory (the tracked files and their blobs) is a
+// `case_payloads` row.
+export const coverageReports = pgTable(
+  'coverage_reports',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    commit: text('commit_sha').notNull(), // full commit id, lowercase hex
+    branch: text('branch').notNull().default(''), // '' = the project's default branch; else the branch it ran on
+    suite: text('suite').notNull(), // the name the team uploads it under, e.g. 'unit-back'
+    kind: text('kind').notNull(), // 'unit' | 'e2e'
+    tool: text('tool'), // 'cobertura' | 'lcov' | 'piwi', with the writer when the report names it
+    incomplete: boolean('incomplete').notNull().default(false), // true when part of the report was left out (a cap, a file version that disagreed)
+    fileCount: integer('file_count').notNull().default(0),
+    inventoryPayloadId: integer('inventory_payload_id').references(() => casePayloads.id), // The commit's file inventory, `[[path, blob], ...]`
+    inventoryCount: integer('inventory_count'), // How many files the inventory names; null without one
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueSuite: uniqueIndex('idx_coverage_reports_unique').on(table.projectId, table.commit, table.suite),
+    projectBranchIdx: index('idx_coverage_reports_project_branch').on(table.projectId, table.branch, table.updatedAt),
+    inventoryIdx: index('idx_coverage_reports_inventory').on(table.inventoryPayloadId),
+  }),
+);
+
+// The fragment each file of a coverage report has: the file's version, its
+// executable lines, the lines and functions that ran and every function the
+// tool knows, shared with every report and commit that recorded the same.
+export const coverageReportFiles = pgTable(
+  'coverage_report_files',
+  {
+    id: serial('id').primaryKey(),
+    reportId: integer('report_id')
+      .notNull()
+      .references(() => coverageReports.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(), // repository-relative path
+    fragmentId: integer('fragment_id')
+      .notNull()
+      .references(() => coverageFragments.id, { onDelete: 'cascade' }),
+  },
+  (table) => ({
+    uniqueFile: uniqueIndex('idx_coverage_report_files_unique').on(table.reportId, table.path),
+    fragmentIdx: index('idx_coverage_report_files_fragment').on(table.fragmentId),
+  }),
+);
+
+// Coverage totals per project, commit and suite (see schema.sqlite.ts).
+export const coverageTotals = pgTable(
+  'coverage_totals',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    commit: text('commit_sha').notNull(),
+    branch: text('branch').notNull().default(''), // '' = the default branch
+    suite: text('suite').notNull(), // a suite's name, or 'combined'
+    area: text('area').notNull().default(''), // a named area of the project's code, or '' for every file
+    kind: text('kind').notNull(), // 'unit' | 'e2e' | 'combined'
+    executableLines: integer('executable_lines').notNull().default(0),
+    executedLines: integer('executed_lines').notNull().default(0),
+    undeterminedLines: integer('undetermined_lines').notNull().default(0),
+    knownFunctions: integer('known_functions').notNull().default(0),
+    runFunctions: integer('run_functions').notNull().default(0),
+    files: integer('files').notNull().default(0),
+    unitOnlyLines: integer('unit_only_lines').notNull().default(0),
+    e2eOnlyLines: integer('e2e_only_lines').notNull().default(0),
+    bothLines: integer('both_lines').notNull().default(0),
+    filesWithoutData: integer('files_without_data'), // null without an inventory
+    filesCarriedForward: integer('files_carried_forward').notNull().default(0),
+    carriedFrom: text('carried_from'), // the commit an absent suite's files came from
+    incomplete: boolean('incomplete').notNull().default(false),
+    scopeVersion: integer('scope_version').notNull().default(0),
+    commitSeenAt: timestamp('commit_seen_at', { mode: 'date' }),
+    computationStartedAt: timestamp('computation_started_at', { mode: 'date' }),
+    computedAt: timestamp('computed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    detailRemovedAt: timestamp('detail_removed_at', { mode: 'date' }), // null while the commit's reports are kept
+    supersededBy: text('superseded_by'), // the newer commit whose coverage made the reports go
+  },
+  (table) => ({
+    uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite, table.area),
+    projectBranchIdx: index('idx_coverage_totals_project_branch').on(table.projectId, table.branch, table.commitSeenAt),
+  }),
+);
+
+// Coverage per day, branch and suite (see schema.sqlite.ts).
+export const coverageDaily = pgTable(
+  'coverage_daily',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(), // UTC date, YYYY-MM-DD
+    branch: text('branch').notNull().default(''),
+    suite: text('suite').notNull(),
+    area: text('area').notNull().default(''), // a named area of the project's code, or '' for every file
+    commit: text('commit_sha').notNull(),
+    executableLines: integer('executable_lines').notNull().default(0),
+    executedLines: integer('executed_lines').notNull().default(0),
+    undeterminedLines: integer('undetermined_lines').notNull().default(0),
+    knownFunctions: integer('known_functions').notNull().default(0),
+    runFunctions: integer('run_functions').notNull().default(0),
+    files: integer('files').notNull().default(0),
+    unitOnlyLines: integer('unit_only_lines').notNull().default(0),
+    e2eOnlyLines: integer('e2e_only_lines').notNull().default(0),
+    bothLines: integer('both_lines').notNull().default(0),
+    commitSeenAt: timestamp('commit_seen_at', { mode: 'date' }),
+    computedAt: timestamp('computed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueDay: uniqueIndex('idx_coverage_daily_unique').on(
+      table.projectId,
+      table.day,
+      table.branch,
+      table.suite,
+      table.area,
+    ),
   }),
 );
 
@@ -2060,7 +2230,7 @@ export const gateEvaluations = pgTable(
       .references(() => testRuns.id, { onDelete: 'cascade' }),
     commitSha: text('commit_sha'),
     prNumber: integer('pr_number'), // null when the run names no pull request
-    policy: jsonb('policy').notNull(), // GatePolicy, plus maxUncoveredChanges when asked
+    policy: jsonb('policy').notNull(), // GatePolicy, plus maxUncoveredChanges and minPatchCoverage when asked
     policyHash: text('policy_hash').notNull(),
     passed: boolean('passed').notNull(),
     verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
@@ -2101,6 +2271,7 @@ export const prFeedbackPosts = pgTable(
     prNumber: integer('pr_number'), // null when only commit statuses were posted
     commentId: text('comment_id'), // the host's id of Piwi's comment; null when none was posted or the host returned none
     statuses: jsonb('statuses').notNull(), // string[]: the commit status contexts the host accepted
+    fixes: jsonb('fixes'), // VerifiedFix[]: the clusters the run verified as fixed, which a refreshed comment reports again; null before the first comment
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),

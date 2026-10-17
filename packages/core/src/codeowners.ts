@@ -55,6 +55,19 @@ function escapeSegment(segment: string): string {
     .replace(/\?/g, '[^/]');
 }
 
+/** A pattern's segments, consecutive `**` read as one, and whether it matches at any depth. */
+function patternParts(pattern: string): { segments: string[]; floating: boolean } {
+  let source = pattern;
+
+  const anchored = source.startsWith('/');
+  if (anchored) source = source.slice(1);
+  if (source.endsWith('/')) source = source.slice(0, -1);
+
+  // `**/**` spans what one `**` spans.
+  const segments = source.split('/').filter((segment, i, all) => segment !== '**' || all[i - 1] !== '**');
+  return { segments, floating: !anchored && !source.includes('/') };
+}
+
 /**
  * Translate one gitignore-style CODEOWNERS pattern into a regular expression
  * anchored at the repository root.
@@ -66,16 +79,9 @@ function escapeSegment(segment: string): string {
  * - every pattern also owns what sits beneath it, because a bare name in
  *   CODEOWNERS may be a directory and a directory owns its contents.
  */
-function patternToRegExp(pattern: string): RegExp {
-  let source = pattern;
+export function pathPatternToRegExp(pattern: string): RegExp {
+  const { segments, floating } = patternParts(pattern);
 
-  const anchored = source.startsWith('/');
-  if (anchored) source = source.slice(1);
-  if (source.endsWith('/')) source = source.slice(0, -1);
-
-  const floating = !anchored && !source.includes('/');
-
-  const segments = source.split('/');
   let body = '';
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i]!;
@@ -96,13 +102,77 @@ function patternToRegExp(pattern: string): RegExp {
   return new RegExp(`^${prefix}${body}(?:/.*)?$`);
 }
 
+/** Whether one path segment matches one pattern segment: `*` any run of characters, `?` one, the rest themselves. */
+function segmentMatches(pattern: string, segment: string): boolean {
+  // After a mismatch, only the last `*` takes one more character: at most pattern × segment steps.
+  let p = 0;
+  let s = 0;
+  let afterStar = -1;
+  let starTook = 0;
+  while (s < segment.length) {
+    const char = pattern[p];
+    if (char === '*') {
+      afterStar = ++p;
+      starTook = s;
+    } else if (char !== undefined && (char === '?' || char === segment[s])) {
+      p++;
+      s++;
+    } else if (afterStar >= 0) {
+      p = afterStar;
+      s = ++starTook;
+    } else {
+      return false;
+    }
+  }
+  while (pattern[p] === '*') p++;
+  return p === pattern.length;
+}
+
+/**
+ * The paths {@link pathPatternToRegExp} matches, matched segment by segment
+ * without a regular expression: the steps grow with the pattern's segments
+ * times the path's, whatever wildcards the pattern holds.
+ */
+export function pathPatternMatcher(pattern: string): (path: string) => boolean {
+  const { segments, floating } = patternParts(pattern);
+  if (floating) {
+    const only = segments[0]!;
+    return (path) => path.split('/').some((part) => segmentMatches(only, part));
+  }
+  return (path) => {
+    const parts = path.split('/');
+    // `at[j]`: the pattern's segments read so far match the path up to the `/` before its segment j.
+    let at = new Uint8Array(parts.length);
+    at[0] = 1;
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]!;
+      const isLast = i === segments.length - 1;
+      if (segment === '**') {
+        // Last, it takes the rest; before, it skips zero or more non-empty segments.
+        if (isLast) return at.includes(1);
+        for (let j = 1; j < parts.length; j++) if (at[j - 1] && parts[j - 1] !== '') at[j] = 1;
+        continue;
+      }
+      const next = new Uint8Array(parts.length);
+      for (let j = 0; j < parts.length; j++) {
+        if (!at[j] || !segmentMatches(segment, parts[j]!)) continue;
+        // The last segment owns what sits beneath it.
+        if (isLast) return true;
+        if (j + 1 < parts.length) next[j + 1] = 1;
+      }
+      at = next;
+    }
+    return false;
+  };
+}
+
 /** Rules with their compiled matchers, so a file list is matched in one pass. */
 export interface CompiledCodeowners {
   rules: Array<CodeownersRule & { regex: RegExp }>;
 }
 
 export function compileCodeowners(rules: CodeownersRule[]): CompiledCodeowners {
-  return { rules: rules.map((rule) => ({ ...rule, regex: patternToRegExp(rule.pattern) })) };
+  return { rules: rules.map((rule) => ({ ...rule, regex: pathPatternToRegExp(rule.pattern) })) };
 }
 
 /**

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -202,8 +203,8 @@ public class CoverageTests
 
     [Theory]
     [InlineData("files", new[] { "path", "runtime" })]
-    [InlineData("functions", new[] { "functions", "path", "runtime" })]
-    [InlineData("lines", new[] { "functions", "lines", "path", "runtime" })]
+    [InlineData("functions", new[] { "checksums", "functions", "path", "runtime" })]
+    [InlineData("lines", new[] { "checksums", "functions", "lines", "path", "runtime" })]
     public async Task Projects_the_answer_to_the_granularity_asked_for(string granularity, string[] keys)
     {
         await using var app = await CoverageTestApp.StartAsync();
@@ -228,8 +229,8 @@ public class CoverageTests
 
     [Theory]
     [InlineData("files", new[] { "path", "runtime" })]
-    [InlineData("functions", new[] { "functions", "path", "runtime" })]
-    [InlineData("lines", new[] { "executable", "functions", "lines", "path", "runtime" })]
+    [InlineData("functions", new[] { "checksums", "functions", "path", "runtime" })]
+    [InlineData("lines", new[] { "allFunctions", "checksums", "executable", "functions", "lines", "path", "runtime" })]
     public async Task Serves_the_run_level_coverage_at_the_granularity_asked_for(string granularity, string[] keys)
     {
         await using var app = await CoverageTestApp.StartAsync();
@@ -255,6 +256,67 @@ public class CoverageTests
         Assert.Contains(badRequest, Expand(check.Executable!));
         Assert.DoesNotContain(badRequest, Expand(check.Lines!));
         Assert.Contains(Line("Checks.cs", "return Results.Ok(value);"), Expand(check.Lines!));
+    }
+
+    [Fact]
+    public async Task Lists_the_executable_lines_of_an_instrumented_assembly_whose_code_never_ran()
+    {
+        const string idle = "PiwiTests.Instrumentation.CoverageIdleFixture";
+        Assert.DoesNotContain(AppDomain.CurrentDomain.GetAssemblies(), a => a.GetName().Name == idle);
+        await using var app = await CoverageTestApp.StartAsync();
+        await app.RequestIdAsync("/check?value=5");
+
+        var run = await app.RunAsync("lines");
+
+        var discounts = Assert.Single(run.Files, f => f.Path == $"integrations/aspnetcore/{idle}/Discounts.cs");
+        Assert.Empty(discounts.Lines!);
+        Assert.Empty(discounts.Functions!);
+        var source = System.IO.File.ReadAllLines(RepositoryFile(discounts.Path));
+        var returned = Array.FindIndex(source, l => l.Contains("return price - price * percent / 100;", StringComparison.Ordinal)) + 1;
+        Assert.Contains(returned, Expand(discounts.Executable!));
+        var declared = Array.FindIndex(source, l => l.Contains("public static decimal Apply(", StringComparison.Ordinal)) + 1;
+        Assert.Equal(declared, Assert.Single(discounts.AllFunctions!)[0]);
+        Assert.DoesNotContain(AppDomain.CurrentDomain.GetAssemblies(), a => a.GetName().Name == idle);
+    }
+
+    [Fact]
+    public async Task Writes_the_run_level_report_to_a_file_with_the_paths_the_compiler_recorded()
+    {
+        await using var app = await CoverageTestApp.StartAsync();
+        await app.RequestIdAsync("/check?value=5");
+        var output = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"piwi-coverage-{Guid.NewGuid():N}", "unit.json");
+        try
+        {
+            PiwiCoverageOutput.Write(output);
+
+            using var json = JsonDocument.Parse(System.IO.File.ReadAllText(output));
+            Assert.Equal(["files", "v"], TestApp.SortedKeys(json.RootElement));
+            var files = json.RootElement.GetProperty("files").Deserialize<List<WireCoverageFile>>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+            var check = Assert.Single(files, f => f.Path.Replace('\\', '/').EndsWith("/" + Path("Checks.cs"), StringComparison.Ordinal));
+            Assert.True(System.IO.Path.IsPathRooted(check.Path));
+            Assert.Contains(Line("Checks.cs", "return Results.Ok(value);"), Expand(check.Lines!));
+            Assert.NotEmpty(check.Executable!);
+            Assert.NotEmpty(check.AllFunctions!);
+            Assert.Equal([output], System.IO.Directory.GetFiles(System.IO.Path.GetDirectoryName(output)!));
+        }
+        finally
+        {
+            System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(output)!, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Names_the_checksum_of_each_files_source_with_its_lines()
+    {
+        await using var app = await CoverageTestApp.StartAsync();
+        var id = (await app.RequestIdAsync("/quote?quantity=3"))!;
+        var expected = "sha256:" + Convert.ToHexString(SHA256.HashData(System.IO.File.ReadAllBytes(RepositoryFile(Path("Quotes.cs"))))).ToLowerInvariant();
+
+        var collected = await app.CollectAsync("lines", id);
+        var run = await app.RunAsync("lines");
+
+        Assert.Equal([expected], collected.File("Quotes.cs").Checksums!);
+        Assert.Equal([expected], run.File("Quotes.cs").Checksums!);
     }
 
     [Fact]

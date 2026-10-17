@@ -2895,6 +2895,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       totalFiles: coverage.files.length,
       reachedFiles: coverage.reachedFiles,
       uncoveredFiles: coverage.uncoveredFiles,
+      patchCoverage: coverage.patchCoverage,
       tickets: coverage.tickets.map((t) =>
         dropNulls({
           ticket: t.ticket,
@@ -2906,6 +2907,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
               reachedInRun: f.reachedInRun,
               reachedCountHistory: f.reachedCountHistory,
               reachingTestCount: f.reachingTestCount,
+              suites: f.suites.length > 0 ? f.suites : null,
             }),
           ),
         }),
@@ -2913,13 +2915,17 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     });
   },
 
-  // ── get_coverage, compare_coverage, get_coverage_loss (coverage-tools.ts) ──
+  // ── get_coverage, compare_coverage, get_coverage_loss, get_coverage_summary (coverage-tools.ts) ──
   async get_coverage(db, params, ctx) {
     return COVERAGE_TOOL_HANDLERS.get_coverage(db, params, ctx);
   },
 
   async compare_coverage(db, params, ctx) {
     return COVERAGE_TOOL_HANDLERS.compare_coverage(db, params, ctx);
+  },
+
+  async get_coverage_summary(db, params, ctx) {
+    return COVERAGE_TOOL_HANDLERS.get_coverage_summary(db, params, ctx);
   },
 
   async get_coverage_loss(db, params, ctx) {

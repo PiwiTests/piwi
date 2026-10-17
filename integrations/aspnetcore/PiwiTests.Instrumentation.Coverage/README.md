@@ -57,6 +57,45 @@ The compiler also embeds a **span table** in the assembly (the `<DynamicAnalysis
 
 The mode is read once, when the process starts.
 
+## Unit tests: a report at process exit
+
+A process that serves no coverage endpoint, a test host running unit tests on a coverage build, writes its run-level
+report when it exits, where `PIWI_COVERAGE_OUTPUT` says:
+
+```bash
+dotnet build -p:PiwiCoverage=true
+PIWI_COVERAGE_MODE=run PIWI_COVERAGE_OUTPUT=TestResults/piwi/ VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=30000 dotnet test --no-build
+npx @piwitests/reporter coverage upload "TestResults/piwi/*.json" --suite unit-back
+```
+
+```powershell
+dotnet build -p:PiwiCoverage=true
+$env:PIWI_COVERAGE_MODE='run'; $env:PIWI_COVERAGE_OUTPUT='TestResults/piwi/'; $env:VSTEST_TESTHOST_SHUTDOWN_TIMEOUT='30000'; dotnet test --no-build
+npx @piwitests/reporter coverage upload "TestResults/piwi/*.json" --suite unit-back
+```
+
+- **A file or a directory.** A value ending in `/` (or `\`), or naming an existing directory, is a directory: each test
+  host writes `piwi-coverage-<test project>-<process id>.json` in it, so a solution's test projects write a report
+  each, and `piwi coverage upload` merges the files a pattern matches. Any other value is the file to write, which
+  the last test host to exit overwrites. Empty the directory before a run: a report left from an earlier run would be
+  uploaded with the new ones.
+- **A relative path** starts from the directory `dotnet test` runs in: in a test project that references the package,
+  directly or through the project it tests, the package's props pass it to the VSTest host as a full path, through
+  the run settings. Elsewhere, with inline run settings on the command line (`dotnet test -- ...`), which replace
+  those, or in a host that runs without VSTest, it starts from the host's working directory, the test project's
+  output directory under VSTest: give a full path then.
+- **The shutdown timeout.** VSTest stops a test host 100 ms after the test session ends, report written or not. The
+  span tables and executable lines are read on a background thread while the tests run, so exit only adds the
+  coverage and writes the file; tests that end before that read does leave it to exit. `VSTEST_TESTHOST_SHUTDOWN_TIMEOUT`
+  (milliseconds) gives the host longer, and costs nothing when it exits sooner.
+- The report is written to a temporary file beside it, then renamed: a file that exists is a whole report.
+
+The report is the one `/__piwi/coverage/run` serves at the `lines` granularity, with the executable lines and every
+method (`allFunctions`) of each instrumented assembly in the test host's directory, whether its code ran or not, and
+its paths as the compiler recorded them: `piwi coverage upload` makes them repository-relative. Its lines are the span
+table's, the ones the end-to-end suite counts. The report is written once the first instrumented method runs; a
+process that runs none writes nothing.
+
 ## The header and the endpoints
 
 In `test` mode, a response whose request ran instrumented code before the response started carries the request's id:
@@ -84,7 +123,8 @@ The id is `<process key>.<sequence>`; the process key is random per process, so 
           "path": "src/Web/Services/BasketService.cs",
           "runtime": "server",
           "functions": [[22, 25], [31, 48]],
-          "lines": [[23, 24], [33, 35], [40, 40]]
+          "lines": [[23, 24], [33, 35], [40, 40]],
+          "checksums": ["sha256:9f2c…"]
         }
       ],
       "missing": ["3f9a1c0b7e21.43"]
@@ -94,13 +134,14 @@ The id is `<process key>.<sequence>`; the process key is random per process, so 
 ```
 
 - `granularity` is `files` (`path` and `runtime` only), `functions` (with `functions`) or `lines` (with `functions` and `lines`, the default).
+- `checksums`, at `functions` and `lines`, lists the checksum of the source the compiler read for the file, from the span table, one per version compiled into the process. The Piwi reporter compares it with the file in its checkout and drops the line numbers of a file built from another version, marking the test's coverage incomplete.
 - `missing` lists the ids the backend does not hold: from another process, already collected, or evicted.
 - The body is limited to 1 MB and 10,000 request ids.
 
-**`GET /__piwi/coverage/run?granularity=lines`** returns the run-level coverage: the code that ran outside any request, every request collected, evicted or still kept, and, at `lines` granularity, each file's `executable` lines (the lines of every statement, run or not):
+**`GET /__piwi/coverage/run?granularity=lines`** returns the run-level coverage: the code that ran outside any request, every request collected, evicted or still kept, and, at `lines` granularity, each file's `executable` lines (the lines of every statement, run or not) and `allFunctions` (the line range of every method, run or not). Executable lines cover every assembly built with coverage instrumentation, including those whose code never ran: the loaded ones, and those in the application's base directory, whose span tables are read from disk without loading them:
 
 ```json
-{ "v": 1, "files": [{ "path": "src/Web/Services/BasketViewModelService.cs", "runtime": "server", "functions": [[20, 26]], "lines": [[22, 25]], "executable": [[22, 25], [30, 50]] }] }
+{ "v": 1, "files": [{ "path": "src/Web/Services/BasketViewModelService.cs", "runtime": "server", "functions": [[20, 26]], "lines": [[22, 25]], "executable": [[22, 25], [30, 50]], "allFunctions": [[20, 26], [28, 51]], "checksums": ["sha256:41d0…"] }] }
 ```
 
 Both endpoints answer under the request's path base, beside `/__piwi/manifest`, and only once instrumented code runs in the process; otherwise the paths reach the application.
@@ -133,7 +174,7 @@ report.AddRequest(request);
 report.WriteFiles(jsonWriter);
 ```
 
-`PiwiCoverageRecorder.HasInstrumentedModules` tells whether a coverage build runs, `AddToRunLevel` adds a request to the run-level coverage once it is no longer kept, and `PiwiCoverageReport.AddRunLevel` and `AddExecutableLines` build the run-level report.
+`PiwiCoverageRecorder.HasInstrumentedModules` tells whether code from a coverage build ran, `AddToRunLevel` adds a request to the run-level coverage once it is no longer kept, and `PiwiCoverageReport.AddRunLevel` and `AddExecutableLines` build the run-level report.
 
 ## Requirements
 

@@ -17,7 +17,7 @@ import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
-import { runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { settleFinalizingRun } from '../../utils/finalizing-runs';
@@ -359,6 +359,7 @@ export default eventHandler(async (event) => {
         label: (testRunData.label as string | null | undefined) || null,
         metadata,
         origin: runOrigin(metadata),
+        commit: runCommit(metadata),
         instanceId: (testRunData.instanceId as string | null | undefined) || null,
         playwrightVersion: (testRunData.playwrightVersion as string | null | undefined) || null,
         reporterVersion: (testRunData.reporterVersion as string | null | undefined) || null,

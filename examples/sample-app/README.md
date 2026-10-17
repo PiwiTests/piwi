@@ -48,6 +48,11 @@ packages in the repository's `node_modules`, where the reporter is its workspace
 `packages/reporter` builds it), and the Nitro backend builds the integration from its source. An `npm install` here
 switches both to the published packages.
 
+The sample follows the repository, so between two releases it can use what the published packages it pins do not
+have yet: `coverage.browser: 'functions'` and `npm run coverage:unit` (`piwi coverage upload`) need
+`@piwitests/reporter` 0.55.0 or later. With an earlier one installed, `npm run typecheck` rejects `'functions'`, the
+browser side records nothing, and `coverage:unit` stops with a message saying so.
+
 > **One test fails and one leaks on purpose.** `failing-locator.spec.ts` clicks a button by its former label, to show
 > what the dashboard keeps on a failure: the ARIA snapshot, a locator suggestion and the *Alternative locators* panel.
 > `resource-leak.spec.ts` leaves a browser context open.
@@ -70,14 +75,34 @@ feature its backend does not provide is skipped with the reason; `backends.ts` l
 | Server spans on each request (`X-Piwi-Trace`) | `server-spans` | only for a probe | ✓ |
 | [Server probes](https://piwitests.dev/features/probes#server-probes): a signed fault applied inside the server | `server-probes` | ✓ | ✓ |
 | [Server coverage](https://piwitests.dev/features/server-coverage): the backend lines each test ran | `server-coverage`, `shop` | ✓ | |
-| [Code reach](https://piwitests.dev/features/code-reach): the browser files each test ran (`web/assets/*.js`) | every page spec | ✓ | ✓ |
+| [Code reach](https://piwitests.dev/features/code-reach): the browser functions each test ran (`web/assets/*.js`) | every page spec | ✓ | ✓ |
+| [Combined coverage](https://piwitests.dev/features/combined-coverage): the backend's unit tests and the Playwright suite on one set of lines, split into a `front` and a `back` area | `npm run coverage:setup`, `npm run coverage:unit` | ✓ | |
 | Page inventory: the controls and links no test uses (the shop's **Orders** link) | every passing spec | ✓ | ✓ |
 | The API contract below | `api-contract` | ✓ | ✓ |
 
 The reporter options are in `playwright.shared.ts`: on top of the defaults, the page inventory, a video of a failing
-test, leak reports, and `coverage: { browser: 'files', server: 'lines' }` (the server side only for a backend with
+test, leak reports, and `coverage: { browser: 'functions', server: 'lines' }` (the server side only for a backend with
 coverage). `piwi.manifest.json` names the pages, so on the dashboard `/shop/orders` shows as declared and never
 reached. The backend's route manifest adds its routes, so `GET /api/orders` shows the same, and so does `GET /api/before-all-marker`, which only a `beforeAll` hook calls.
+
+### Combined coverage
+
+The backend's unit tests (`backends/aspnetcore.Tests`) call its services directly, and the Playwright suite drives
+them through the pages and the API. After `npm test` against ASP.NET Core:
+
+```bash
+npm run coverage:setup   # once: keep the coverage to the pages' scripts and the backend's sources, name the front and back areas
+npm run coverage:unit    # the unit tests on a coverage build, uploaded as the unit-back suite of this commit
+```
+
+`coverage:unit` empties `backends/aspnetcore.Tests/TestResults/piwi-coverage/`, runs `dotnet test` with
+`-p:PiwiCoverage=true` and `PIWI_COVERAGE_OUTPUT` naming that directory, so each test host writes Piwi's run-level
+report in it at exit (`VSTEST_TESTHOST_SHUTDOWN_TIMEOUT` gives it the time), then `piwi coverage upload --suite
+unit-back` sends the reports (pass `--dry-run` to see what it would send). It stops with a message when no report was
+written. The project's **Coverage** page then counts both suites on the backend's span-table lines: the lines
+both ran, those only one of them ran, and each area's share. The browser records functions, not lines, so `front`
+shows its share of functions. A file opens on its source when the dashboard has the repository's
+[source control](https://piwitests.dev/guide/source-control) connection.
 
 ### The specs
 

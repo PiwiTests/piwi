@@ -151,8 +151,8 @@ const TITLES: Record<string, string> = {
   'Movement over the period.': 'L’évolution sur la période.',
   'Fixes, triage and the risks still open.': 'Correctifs, tri et risques encore ouverts.',
   'What is costing the most time and attention.': 'Ce qui coûte le plus de temps et d’attention.',
-  'Regressions, CI time and the tests that moved over the period.':
-    'Régressions, temps de CI et tests qui ont évolué sur la période.',
+  'Regressions, CI time, combined coverage and the tests that moved over the period.':
+    'Régressions, temps de CI, couverture combinée et tests qui ont évolué sur la période.',
   'Environments, browsers and shared endpoints.': 'Environnements, navigateurs et endpoints partagés.',
   'The state of every project right now.': 'L’état de chaque projet en ce moment.',
   'What is costing you the most time and attention.': 'Ce qui vous coûte le plus de temps et d’attention.',
@@ -191,6 +191,8 @@ const TITLES: Record<string, string> = {
   'Where the gaps stand': 'Où en sont les lacunes',
   'Top new gaps by project': 'Principales nouvelles lacunes par projet',
   'Suite growth': 'Croissance de la suite',
+  'Coverage trend': 'Évolution de la couverture',
+  'Line coverage': 'Couverture des lignes',
   Skipped: 'Ignorés',
   'Did not run': 'Non exécutés',
   'Flaky debt': 'Dette d’instabilité',

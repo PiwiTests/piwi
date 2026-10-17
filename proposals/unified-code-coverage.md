@@ -657,7 +657,8 @@ its docs (`code-reach.md`, `backend-logs.md`, `privacy.md`, the reporter options
 ## Not in this plan
 
 - Branch (condition) coverage and hit counts: executed or not is what selection and the editors need.
-- Coverage of unit tests (`dotnet test`, Vitest) or of the test code itself.
+- Coverage of the test code itself. Coverage of unit tests (`dotnet test`, Vitest), combined with this plan's into one
+  ratio per commit, is [`combined-code-coverage.md`](combined-code-coverage.md).
 - F#, which the compiler instrumentation does not cover.
 - Mutation testing, and any percentage target or gate that fails a build on coverage.
 

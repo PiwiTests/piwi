@@ -1196,6 +1196,8 @@ for (const proj of DEMO_PROJECTS) {
       metadata,
       // `runOrigin(metadata)`: the metadata carries a CI record.
       origin: 'ci',
+      // `runCommit(metadata)`.
+      commit_sha: commit.sha,
       stream_token: null,
       instance_id: null,
       // Newest runs are on a newer Playwright than older ones so the
@@ -3945,6 +3947,199 @@ const CODE_REACH = [];
 const COVERAGE_FRAGMENTS = [];
 const TEST_COVERAGE = [];
 const RUN_COVERAGE = [];
+/** `coverage_executable`: per project, runtime, path and blob, the executable lines of that file version. */
+const COVERAGE_VERSIONS = new Map();
+/** `coverage_reports` and `coverage_report_files`: the unit-test coverage uploaded for a story's covered commit. */
+const COVERAGE_REPORTS = [];
+const COVERAGE_REPORT_FILES = [];
+/** `coverage_daily`: the combined coverage of the days before the covered commit, for the coverage trend. */
+const COVERAGE_DAILY = [];
+
+/** The covered project's named areas: its front end and its API. */
+const COVERAGE_AREAS = [
+  { name: 'front', include: ['src/'] },
+  { name: 'back', include: ['api/'] },
+];
+
+/**
+ * Thirty days of combined coverage before a story's covered run, climbing
+ * toward the commit's own totals, which the demo computes when it opens:
+ * every suite together, each suite, and each of the project's areas.
+ */
+function seedCoverageDaily(story, run) {
+  const project = PROJECTS.find((p) => p.id === story.projectId);
+  if (project) project.coverage_areas = JSON.stringify(COVERAGE_AREAS);
+  const runDay = Math.floor(run.start_time / 86400) * 86400;
+  const lines = [
+    // [suite, area, executable lines, share run 30 days back, share run the day before]
+    ['combined', '', 116, 0.48, 0.6],
+    ['unit-back', '', 116, 0.2, 0.23],
+    ['unit-front', '', 116, 0.2, 0.26],
+    ['e2e', '', 116, 0.25, 0.31],
+    ['combined', 'front', 63, 0.3, 0.37],
+    ['combined', 'back', 53, 0.7, 0.79],
+  ];
+  for (let back = 30; back >= 1; back--) {
+    for (const [suite, area, lineCount, from, to] of lines) {
+      const executable = lineCount - Math.round((back * lineCount) / 600);
+      const share = from + ((to - from) * (30 - back)) / 29;
+      pushCoverageDaily(story, run, runDay - back * 86400, suite, area, executable, Math.round(executable * share));
+    }
+  }
+}
+
+/** One `coverage_daily` row of the covered project. */
+function pushCoverageDaily(story, run, daySec, suite, area, executable, executed) {
+  COVERAGE_DAILY.push({
+    id: COVERAGE_DAILY.length + 1,
+    project_id: story.projectId,
+    day: new Date(daySec * 1000).toISOString().slice(0, 10),
+    branch: '',
+    suite,
+    area,
+    commit_sha: run.commit_sha,
+    executable_lines: executable,
+    executed_lines: executed,
+    undetermined_lines: 0,
+    known_functions: 0,
+    run_functions: 0,
+    files: 0,
+    unit_only_lines: 0,
+    e2e_only_lines: 0,
+    both_lines: 0,
+    commit_seen_at: daySec,
+    computed_at: daySec,
+  });
+}
+
+/** Two pushes of the covered project's `develop` branch, before its covered commit, with unit-test reports only. */
+const DEVELOP_COMMITS = ['e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e', 'f2e3d4c5b6a7988796a5b4c3d2e1f0a9b8c7d6e5'];
+
+/**
+ * The unit tests of the commit a story's run coverage was recorded at, as
+ * `piwi coverage upload` would send them: the back end's tests (coverlet)
+ * ran the first statements of each API file and counted its braces too; the
+ * front end's (Vitest) ran part of each browser file, whose version the
+ * commit's inventory names. Two more tracked files no suite names are the
+ * files without coverage data.
+ *
+ * Two pushes of `develop` came before it: the first uploaded both suites, the
+ * second the front end's only. When the demo computes the totals, the second
+ * push's report supersedes the first's front-end report and carries its
+ * back-end one forward, so the first push keeps only its totals.
+ */
+function seedCoverageReports(story, run, fragmentIdOf) {
+  const project = PROJECTS.find((p) => p.id === story.projectId);
+  const branch = run.branch && run.branch !== project?.default_branch ? run.branch : '';
+  const blobOf = (path) => createHash('sha1').update(`demo-blob:${path}`).digest('hex');
+  const expand = (list) => list.flatMap(([a, b]) => Array.from({ length: b - a + 1 }, (_, i) => a + i));
+  const toRanges = (lines) => {
+    const out = [];
+    for (const line of [...new Set(lines)].sort((a, b) => a - b)) {
+      const last = out[out.length - 1];
+      if (last && last[1] === line - 1) last[1] = line;
+      else out.push([line, line]);
+    }
+    return out;
+  };
+  const back = story.runCoverage
+    .filter((entry) => entry.runtime === 'server' && entry.blob && entry.executable?.length)
+    .map((entry) => {
+      const statements = expand(entry.executable);
+      // coverlet also counts the line after each statement block: a closing brace.
+      const executable = toRanges([...statements, ...entry.executable.map(([, end]) => end + 1)]);
+      return {
+        path: entry.path,
+        blob: entry.blob,
+        executable,
+        lines: toRanges(statements.slice(0, Math.ceil(statements.length / 2))),
+        functions: (entry.functions ?? []).slice(0, 1),
+        allFunctions: entry.functions ?? [],
+      };
+    });
+  const browserPaths = [
+    ...new Set(
+      Object.values(story.coverage)
+        .flat()
+        .filter((e) => typeof e === 'string'),
+    ),
+  ].sort();
+  const front = browserPaths.map((path, i) => ({
+    path,
+    blob: blobOf(path),
+    executable: [
+      [3, 14],
+      [18, 26],
+    ],
+    lines:
+      i % 2 === 0
+        ? [[3, 10]]
+        : [
+            [3, 14],
+            [18, 20],
+          ],
+    functions: [[2, 15]],
+    allFunctions: [
+      [2, 15],
+      [17, 27],
+    ],
+  }));
+  const extra = ['api/Billing/InvoiceEndpoints.cs', 'src/pages/billing/index.vue'];
+  const inventory = [
+    ...back.map((f) => [f.path, f.blob]),
+    ...front.map((f) => [f.path, f.blob]),
+    ...extra.map((path) => [path, blobOf(path)]),
+  ].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  const content = JSON.stringify(inventory);
+  const inventoryId = CASE_PAYLOADS.length + 1;
+  CASE_PAYLOADS.push({
+    id: inventoryId,
+    project_id: story.projectId,
+    hash: createHash('sha256').update(content).digest('hex'),
+    content,
+    size: content.length,
+    created_at: run.start_time,
+  });
+  const pushReport = (commit, reportBranch, suite, tool, files, at) => {
+    const id = COVERAGE_REPORTS.length + 1;
+    COVERAGE_REPORTS.push({
+      id,
+      project_id: story.projectId,
+      commit_sha: commit,
+      branch: reportBranch,
+      suite,
+      kind: 'unit',
+      tool,
+      incomplete: 0,
+      file_count: files.length,
+      inventory_payload_id: inventoryId,
+      inventory_count: inventory.length,
+      created_at: at,
+      updated_at: at,
+    });
+    for (const file of files) {
+      COVERAGE_REPORT_FILES.push({
+        id: COVERAGE_REPORT_FILES.length + 1,
+        report_id: id,
+        path: file.path,
+        fragment_id: fragmentIdOf(story.projectId, file, at),
+      });
+    }
+  };
+  // The second push of develop ran more of the front end.
+  const frontLater = front.map((file) => ({
+    ...file,
+    lines: [
+      [3, 14],
+      [18, 22],
+    ],
+  }));
+  pushReport(run.commit_sha, branch, 'unit-back', 'cobertura', back, run.start_time);
+  pushReport(run.commit_sha, branch, 'unit-front', 'lcov', front, run.start_time);
+  pushReport(DEVELOP_COMMITS[0], 'develop', 'unit-back', 'cobertura', back, run.start_time - 2 * 86400);
+  pushReport(DEVELOP_COMMITS[0], 'develop', 'unit-front', 'lcov', front, run.start_time - 2 * 86400);
+  pushReport(DEVELOP_COMMITS[1], 'develop', 'unit-front', 'lcov', frontLater, run.start_time - 86400);
+}
 {
   const ranges = (list) =>
     (list ?? []).map(([start, end]) => (start === end ? String(start) : `${start}-${end}`)).join(',');
@@ -3990,6 +4185,44 @@ const RUN_COVERAGE = [];
       casePayloadIds.set(key, id);
     }
     return casePayloadIds.get(key);
+  };
+  /** A coverage report's file as a fragment, under the runtime `report`, hashed as `canonicalCoverageFile` hashes it. */
+  const fragmentIdOfReportFile = (projectId, file, seenAt) => {
+    const columns = {
+      functions: ranges(file.functions),
+      lines: ranges(file.lines),
+      executable: ranges(file.executable),
+      allFunctions: ranges(file.allFunctions),
+    };
+    const canonical = JSON.stringify([
+      'report',
+      file.path,
+      file.blob,
+      columns.functions,
+      columns.lines,
+      columns.executable,
+      columns.allFunctions,
+    ]);
+    const key = `${projectId}\x00${canonical}`;
+    if (!fragmentIds.has(key)) {
+      const id = COVERAGE_FRAGMENTS.length + 1;
+      COVERAGE_FRAGMENTS.push({
+        id,
+        project_id: projectId,
+        hash: createHash('sha256').update(canonical).digest('hex'),
+        runtime: 'report',
+        path: file.path,
+        blob: file.blob,
+        functions: columns.functions || null,
+        lines: columns.lines || null,
+        executable: columns.executable || null,
+        all_functions: columns.allFunctions || null,
+        created_at: seenAt,
+        last_seen_at: seenAt,
+      });
+      fragmentIds.set(key, id);
+    }
+    return fragmentIds.get(key);
   };
   for (const story of FAILURE_STORIES) {
     if (!story.coverage) continue;
@@ -4042,8 +4275,27 @@ const RUN_COVERAGE = [];
         blob: entry.blob,
         functions: ranges(entry.functions) || null,
         lines: ranges(entry.lines) || null,
-        executable: ranges(entry.executable) || null,
+        executable: null,
       });
+      // What the file's version holds is stored once per version, as `storeFileVersions` does.
+      const executable = ranges(entry.executable);
+      const key = `${story.projectId}\x00${entry.runtime}\x00${entry.path}\x00${entry.blob}`;
+      if (executable && entry.blob && !COVERAGE_VERSIONS.has(key)) {
+        COVERAGE_VERSIONS.set(key, {
+          id: COVERAGE_VERSIONS.size + 1,
+          project_id: story.projectId,
+          runtime: entry.runtime,
+          path: entry.path,
+          blob: entry.blob,
+          lines: executable,
+          functions: null,
+          created_at: run.start_time,
+        });
+      }
+    }
+    if (story.runCoverage?.length) {
+      seedCoverageReports(story, run, fragmentIdOfReportFile);
+      seedCoverageDaily(story, run);
     }
   }
 
@@ -4684,6 +4936,9 @@ const REBASE_SQL = [
   `UPDATE files SET created_at = created_at + ${D};`,
   `UPDATE case_payloads SET created_at = created_at + ${D};`,
   `UPDATE coverage_fragments SET created_at = created_at + ${D}, last_seen_at = last_seen_at + ${D};`,
+  `UPDATE coverage_executable SET created_at = created_at + ${D};`,
+  `UPDATE coverage_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE coverage_daily SET day = date(day, printf('%+d days', ${D} / 86400)), commit_seen_at = commit_seen_at + ${D}, computed_at = computed_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
@@ -5657,6 +5912,10 @@ const lines = [
   '-- Test and run coverage (reference test_cases, coverage_fragments and test_runs)',
   insert('test_coverage', TEST_COVERAGE),
   insert('run_coverage', RUN_COVERAGE),
+  insert('coverage_executable', [...COVERAGE_VERSIONS.values()]),
+  insert('coverage_reports', COVERAGE_REPORTS),
+  insert('coverage_daily', COVERAGE_DAILY),
+  insert('coverage_report_files', COVERAGE_REPORT_FILES),
   '',
   '-- Probe ledger (Test Map, checked axis)',
   insert('probes', PROBES),
@@ -5724,3 +5983,5 @@ console.log(`   CodeReach  : ${CODE_REACH.length}`);
 console.log(`   CovFrags   : ${COVERAGE_FRAGMENTS.length}`);
 console.log(`   TestCov    : ${TEST_COVERAGE.length}`);
 console.log(`   RunCov     : ${RUN_COVERAGE.length}`);
+console.log(`   CovVersions: ${COVERAGE_VERSIONS.size}`);
+console.log(`   CovReports : ${COVERAGE_REPORTS.length} (${COVERAGE_REPORT_FILES.length} files)`);

@@ -779,6 +779,11 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-crosshair',
     onSelect: () => navigateTo(`/projects/${projectId}/locators`),
   });
+  items.push({
+    label: 'Coverage',
+    icon: 'i-lucide-scan-line',
+    onSelect: () => navigateTo(`/projects/${projectId}/coverage`),
+  });
   if (!projCapHidden('bug-reports'))
     items.push({
       label: 'Bug reports',

@@ -50,15 +50,20 @@ const textOf = (entry: JsCoverageEntry, text: ScriptText | undefined): ScriptTex
   text ?? (entry.source === undefined ? undefined : scriptText(entry.source));
 
 /**
- * The ranges of the functions that ran in a script, without its top-level
- * function (the one spanning the whole script).
+ * The ranges of the functions that ran in a script, or with `all` of every
+ * function its coverage lists, run or not, without its top-level function (the
+ * one spanning the whole script).
  */
-function executedFunctionRanges(entry: JsCoverageEntry, length?: number): Array<{ start: number; end: number }> {
+function executedFunctionRanges(
+  entry: JsCoverageEntry,
+  length?: number,
+  all = false,
+): Array<{ start: number; end: number }> {
   length ??= entry.source?.length ?? Number.POSITIVE_INFINITY;
   const out: Array<{ start: number; end: number }> = [];
   entry.functions.forEach((fn, i) => {
     const whole = fn.ranges[0];
-    if (!whole || whole.count <= 0) return;
+    if (!whole || (!all && whole.count <= 0)) return;
     const topLevel = whole.startOffset === 0 && (whole.endOffset >= length || (i === 0 && fn.functionName === ''));
     if (topLevel) return;
     out.push({ start: whole.startOffset, end: whole.endOffset });
@@ -107,9 +112,32 @@ export function reachedFunctionLines(
   map: SourceMapLookup | null,
   text?: ScriptText,
 ): Map<number, LineRange[]> {
+  return functionLines(entry, map, text, false);
+}
+
+/**
+ * The 1-based start and end line of every function the script's coverage
+ * lists, whether it ran or not, as {@link reachedFunctionLines} gives them. V8
+ * lists the functions a script declares that did not run, except those
+ * nested in a function that never ran, which the outer function's range holds.
+ */
+export function knownFunctionLines(
+  entry: JsCoverageEntry,
+  map: SourceMapLookup | null,
+  text?: ScriptText,
+): Map<number, LineRange[]> {
+  return functionLines(entry, map, text, true);
+}
+
+function functionLines(
+  entry: JsCoverageEntry,
+  map: SourceMapLookup | null,
+  text: ScriptText | undefined,
+  all: boolean,
+): Map<number, LineRange[]> {
   const out = new Map<number, LineRange[]>();
   const read = textOf(entry, text);
-  const ranges = executedFunctionRanges(entry, read?.length);
+  const ranges = executedFunctionRanges(entry, read?.length, all);
   if (!ranges.length || !read) return out;
   const add = (source: number, range: LineRange) => {
     const list = out.get(source);

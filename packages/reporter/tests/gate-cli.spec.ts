@@ -126,6 +126,14 @@ describe('parseGateArgs', () => {
     expect(() => parseGateArgs([...base, '--max-failed', 'lots'], EMPTY_ENV)).toThrow(/non-negative/);
   });
 
+  it('reads the warn-only patch coverage minimum as a percentage', () => {
+    const base = ['--server-url', 'https://x.example.com', '--run-id', '1'];
+    expect(parseGateArgs([...base, '--min-patch-coverage', '80'], EMPTY_ENV).minPatchCoverage).toBe(80);
+    expect(parseGateArgs([...base, '--min-patch-coverage=72.5%'], EMPTY_ENV).minPatchCoverage).toBe(72.5);
+    expect(parseGateArgs(base, EMPTY_ENV).minPatchCoverage).toBeUndefined();
+    expect(() => parseGateArgs([...base, '--min-patch-coverage', '120'], EMPTY_ENV)).toThrow(/percentage/);
+  });
+
   it('refuses to run without a dashboard URL', () => {
     expect(() => parseGateArgs(['--run-id', '1'], EMPTY_ENV)).toThrow(/No dashboard URL/);
   });

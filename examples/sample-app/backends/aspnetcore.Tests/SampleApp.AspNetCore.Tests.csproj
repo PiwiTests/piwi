@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The backend's unit tests. With -p:PiwiCoverage=true the backend under test is a coverage build, and with
+       PIWI_COVERAGE_OUTPUT set the test host writes its run-level report at exit, for `piwi coverage upload`. The
+       tests themselves are never instrumented: only the backend imports the coverage props. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../aspnetcore/SampleApp.AspNetCore.csproj" />
+  </ItemGroup>
+</Project>

@@ -13,6 +13,7 @@ import {
   MAX_CACHED_SCRIPTS,
   mergeCoverageRead,
   resolveCodeReach,
+  resolveCodeReachFunctions,
   startCodeReach,
   stopCodeReach,
   type ParsedScript,
@@ -72,6 +73,44 @@ describe('resolveCodeReach', () => {
       functions: [{ functionName: '', ranges: [{ startOffset: 0, endOffset: source.length, count: 1 }] }],
     };
     expect(await resolveCodeReach([ran, importedOnly], roots(), async () => null)).toEqual(['src/components/Pay.vue']);
+  });
+
+  it('lists every function a script declares with known, run or not, in the files it reached or only loaded', async () => {
+    const source = 'export function pay() {}\nexport function refund() {}\npay();';
+    const ran: JsCoverageEntry = {
+      url: 'http://localhost:5173/src/components/Pay.vue?t=1',
+      source,
+      functions: [
+        { functionName: '', ranges: [{ startOffset: 0, endOffset: source.length, count: 1 }] },
+        { functionName: 'pay', ranges: [{ startOffset: 7, endOffset: 24, count: 1 }] },
+        { functionName: 'refund', ranges: [{ startOffset: 32, endOffset: 52, count: 0 }] },
+      ],
+    };
+    const idle = 'export function later() {}';
+    const importedOnly: JsCoverageEntry = {
+      url: `http://localhost:5173/@fs${dir}/src/unused.ts`,
+      source: idle,
+      functions: [
+        { functionName: '', ranges: [{ startOffset: 0, endOffset: idle.length, count: 1 }] },
+        { functionName: 'later', ranges: [{ startOffset: 7, endOffset: idle.length, count: 0 }] },
+      ],
+    };
+    const resolved = await resolveCodeReachFunctions([ran, importedOnly], roots(), async () => null, undefined, {
+      known: true,
+    });
+    expect([...resolved.reached]).toEqual([['src/components/Pay.vue', [[1, 1]]]]);
+    expect([...resolved.known]).toEqual([
+      [
+        'src/components/Pay.vue',
+        [
+          [1, 1],
+          [2, 2],
+        ],
+      ],
+      ['src/unused.ts', [[1, 1]]],
+    ]);
+    const withoutKnown = await resolveCodeReachFunctions([ran], roots(), async () => null);
+    expect(withoutKnown.known.size).toBe(0);
   });
 
   it('a bundle resolves through its fetched source map, webpack prefixes and node_modules handled', async () => {
@@ -307,6 +346,11 @@ describe('mergeCoverageRead', () => {
     ranges: [{ startOffset, endOffset, count }],
   });
   const ranOf = (ran: Map<string, RanScript>) =>
+    [...ran.values()].map((r) => [
+      r.script.url,
+      r.functions.filter((f) => f.ranges[0]!.count > 0).map((f) => f.functionName),
+    ]);
+  const listedOf = (ran: Map<string, RanScript>) =>
     [...ran.values()].map((r) => [r.script.url, r.functions.map((f) => f.functionName)]);
 
   it('keeps the functions that ran in any read, by script version, in the order of their first read', () => {
@@ -329,6 +373,25 @@ describe('mergeCoverageRead', () => {
       ['http://a/pay.js', ['', 'pay']],
       ['http://a/next.js', []],
     ]);
+    // The functions that did not run are kept too, idle.
+    expect(listedOf(ran)).toEqual([
+      ['http://a/pay.js', ['', 'pay', 'idle']],
+      ['http://a/next.js', ['next']],
+    ]);
+  });
+
+  it('keeps only the functions that ran without keepIdle', () => {
+    const ran = new Map<string, RanScript>();
+    const scripts = new Map<string, ParsedScript>([['1', { url: 'http://a/pay.js', hash: 'p' }]]);
+    mergeCoverageRead(ran, scripts, [{ scriptId: '1', functions: [fn('', 0, 100, 1), fn('pay', 10, 20, 0)] }], false);
+    mergeCoverageRead(
+      ran,
+      scripts,
+      [{ scriptId: '1', functions: [fn('', 0, 100, 0), fn('pay', 10, 20, 1), fn('idle', 30, 40, 0)] }],
+      false,
+    );
+    expect(listedOf(ran)).toEqual([['http://a/pay.js', ['', 'pay']]]);
+    expect(ranOf(ran)).toEqual([['http://a/pay.js', ['', 'pay']]]);
   });
 
   it('reads a script id against the scripts the page knew as the read was taken', () => {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Text;
 
 namespace PiwiTests.Instrumentation.Coverage;
@@ -28,16 +29,26 @@ internal sealed class SpanTable
 
     private const int GuidSize = 16;
 
+    private static readonly Guid Sha1 = new("ff1816ec-aa5e-4d10-87f7-6f4963833460");
+    private static readonly Guid Sha256 = new("8829d00f-11b8-4213-878b-770e8597ac16");
+
     private readonly SourceSpan[][] _methods;
 
-    private SpanTable(string[] documents, SourceSpan[][] methods)
+    private SpanTable(string[] documents, string?[] checksums, SourceSpan[][] methods)
     {
         Documents = documents;
+        Checksums = checksums;
         _methods = methods;
     }
 
     /// <summary>The source document paths, as the compiler recorded them.</summary>
     internal IReadOnlyList<string> Documents { get; }
+
+    /// <summary>
+    /// The checksum of each document, of the bytes the compiler read: <c>sha256:&lt;hex&gt;</c> or
+    /// <c>sha1:&lt;hex&gt;</c>, null for a document without one or with another algorithm.
+    /// </summary>
+    internal IReadOnlyList<string?> Checksums { get; }
 
     /// <summary>The number of method definition rows; rows run from 1 to this number.</summary>
     internal int MethodRows => _methods.Length - 1;
@@ -60,6 +71,49 @@ internal sealed class SpanTable
         var data = new byte[stream.Length];
         stream.ReadExactly(data);
         return Parse(data);
+    }
+
+    /// <summary>
+    /// Reads the span table of the assembly file at <paramref name="path"/> without loading it, and its module
+    /// version id. Null when the file is no .NET assembly or has no span table.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The span table has a format version other than 0.1 or 0.2.</exception>
+    /// <exception cref="BadImageFormatException">The assembly or its span table is malformed.</exception>
+    /// <exception cref="IOException">The file cannot be read.</exception>
+    internal static SpanTable? ReadFile(string path, out Guid mvid)
+    {
+        mvid = Guid.Empty;
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var pe = new PEReader(stream);
+        if (!pe.HasMetadata)
+            return null;
+
+        var metadata = pe.GetMetadataReader();
+        if (!metadata.IsAssembly)
+            return null;
+
+        mvid = metadata.GetGuid(metadata.GetModuleDefinition().Mvid);
+        foreach (var handle in metadata.ManifestResources)
+        {
+            var resource = metadata.GetManifestResource(handle);
+            if (!resource.Implementation.IsNil || !metadata.StringComparer.Equals(resource.Name, ResourceName))
+                continue;
+
+            // An embedded resource: its length then its bytes, at its offset in the resources directory.
+            var directory = pe.PEHeaders.CorHeader?.ResourcesDirectory ?? default;
+            if (resource.Offset < 0 || resource.Offset > directory.Size - sizeof(int))
+                throw new BadImageFormatException("Resource offset out of range.");
+
+            var reader = pe.GetSectionData(directory.RelativeVirtualAddress)
+                .GetReader((int)resource.Offset, directory.Size - (int)resource.Offset);
+            var length = reader.ReadInt32();
+            if (length < 0 || length > reader.RemainingBytes)
+                throw new BadImageFormatException("Resource length out of range.");
+
+            return Parse(reader.ReadBytes(length));
+        }
+
+        return null;
     }
 
     /// <summary>Parses the content of a <c>&lt;DynamicAnalysisData&gt;</c> resource.</summary>
@@ -90,34 +144,57 @@ internal sealed class SpanTable
             var smallGuidReferences = guidHeapSize / GuidSize <= ushort.MaxValue;
 
             var documentNames = new int[documentCount];
+            var hashAlgorithms = new int[documentCount];
+            var hashes = new int[documentCount];
             for (var i = 0; i < documentCount; i++)
             {
                 documentNames[i] = ReadReference(ref reader, smallBlobReferences);
-                ReadReference(ref reader, smallGuidReferences);
-                ReadReference(ref reader, smallBlobReferences);
+                hashAlgorithms[i] = ReadReference(ref reader, smallGuidReferences);
+                hashes[i] = ReadReference(ref reader, smallBlobReferences);
             }
 
             var methodBlobs = new int[methodCount];
             for (var i = 0; i < methodCount; i++)
                 methodBlobs[i] = ReadReference(ref reader, smallBlobReferences);
 
-            var blobHeapOffset = reader.Offset + stringHeapSize + userStringHeapSize + guidHeapSize;
+            var guidHeapOffset = reader.Offset + stringHeapSize + userStringHeapSize;
+            var blobHeapOffset = guidHeapOffset + guidHeapSize;
             if (reader.Length != blobHeapOffset + blobHeapSize)
                 throw new BadImageFormatException("The heap sizes do not match the blob length.");
 
             var blobHeap = new BlobHeap(start + blobHeapOffset, blobHeapSize);
 
             var documents = new string[documentCount];
+            var checksums = new string?[documentCount];
             for (var i = 0; i < documentCount; i++)
+            {
                 documents[i] = blobHeap.DocumentName(documentNames[i]);
+                checksums[i] = Checksum(data, guidHeapOffset, guidHeapSize, hashAlgorithms[i], blobHeap, hashes[i]);
+            }
 
             var methods = new SourceSpan[methodCount + 1][];
             methods[0] = [];
             for (var i = 0; i < methodCount; i++)
                 methods[i + 1] = methodBlobs[i] == 0 ? [] : blobHeap.Spans(methodBlobs[i], documentCount);
 
-            return new SpanTable(documents, methods);
+            return new SpanTable(documents, checksums, methods);
         }
+    }
+
+    /// <summary>A document's checksum as <see cref="Checksums"/> names it, or null.</summary>
+    private static string? Checksum(byte[] data, int guidHeapOffset, int guidHeapSize, int algorithm, BlobHeap blobHeap, int hash)
+    {
+        // A guid reference is a 1-based index into the guid heap; a blob reference of 0 is the empty blob.
+        if (algorithm < 1 || algorithm * GuidSize > guidHeapSize || hash == 0)
+            return null;
+
+        var guid = new Guid(data.AsSpan(guidHeapOffset + (algorithm - 1) * GuidSize, GuidSize));
+        var name = guid == Sha256 ? "sha256" : guid == Sha1 ? "sha1" : null;
+        if (name is null)
+            return null;
+
+        var bytes = blobHeap.Bytes(hash);
+        return bytes.Length == 0 ? null : $"{name}:{Convert.ToHexString(bytes).ToLowerInvariant()}";
     }
 
     private static int ReadReference(ref BlobReader reader, bool small) => small ? reader.ReadUInt16() : reader.ReadInt32();
@@ -149,6 +226,13 @@ internal sealed class SpanTable
             }
 
             return name.ToString();
+        }
+
+        /// <summary>The bytes of the blob at <paramref name="offset"/>.</summary>
+        internal byte[] Bytes(int offset)
+        {
+            var reader = Blob(offset);
+            return reader.ReadBytes(reader.Length);
         }
 
         /// <summary>

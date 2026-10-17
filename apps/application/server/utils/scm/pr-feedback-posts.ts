@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import { prFeedbackPosts } from '../../database/schema';
 import { detectScmHost } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
+import type { VerifiedFix } from '../fix-verification';
 
 export interface PrFeedbackPostInput {
   projectId: number;
@@ -18,6 +19,8 @@ export interface PrFeedbackPostInput {
   commentId?: string | null;
   /** Commit status contexts the host accepted. */
   statuses?: string[];
+  /** The clusters the comment reported fixed; kept when this post names none. */
+  fixes?: VerifiedFix[];
 }
 
 export interface PrFeedbackPost {
@@ -27,6 +30,8 @@ export interface PrFeedbackPost {
   prNumber: number | null;
   commentId: string | null;
   statuses: string[];
+  /** The clusters the run verified as fixed, as its comment reported them. */
+  fixes: VerifiedFix[];
 }
 
 /** A run's pull-request number from its SCM metadata, when the CI provider exposed one. */
@@ -47,6 +52,7 @@ export async function readPrFeedbackPost(db: DbClient, runId: number): Promise<P
     prNumber: row.prNumber ?? null,
     commentId: row.commentId ?? null,
     statuses: Array.isArray(row.statuses) ? (row.statuses as string[]) : [],
+    fixes: Array.isArray(row.fixes) ? (row.fixes as VerifiedFix[]) : [],
   };
 }
 
@@ -60,11 +66,12 @@ export async function recordPrFeedbackPost(db: DbClient, input: PrFeedbackPostIn
   const statuses = [...new Set([...(existing?.statuses ?? []), ...(input.statuses ?? [])])];
   const prNumber = input.prNumber ?? existing?.prNumber ?? null;
   const commentId = input.commentId ?? existing?.commentId ?? null;
+  const fixes = input.fixes ?? existing?.fixes ?? null;
   const now = new Date();
   if (existing) {
     await db
       .update(prFeedbackPosts)
-      .set({ prNumber, commentId, statuses, updatedAt: now })
+      .set({ prNumber, commentId, statuses, fixes, updatedAt: now })
       .where(eq(prFeedbackPosts.runId, input.runId));
     return;
   }
@@ -78,11 +85,12 @@ export async function recordPrFeedbackPost(db: DbClient, input: PrFeedbackPostIn
       prNumber,
       commentId,
       statuses,
+      fixes,
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: prFeedbackPosts.runId,
-      set: { prNumber, commentId, statuses, updatedAt: now },
+      set: { prNumber, commentId, statuses, fixes, updatedAt: now },
     });
 }

@@ -5,9 +5,11 @@
  * the route or page a file implements, and the files a test executed when code
  * reach is on) and to the tickets named in the commits and the pull request.
  *
- * Honest by construction: reach is *observed* reach, never instrumented
- * coverage, and "no test in this run" is always paired with the count from the
- * recent window, so a selection-narrowed run is never mistaken for a gap.
+ * Honest by construction: reach is *observed* reach, and "no test in this run"
+ * is always paired with the count from the recent window, so a
+ * selection-narrowed run is never mistaken for a gap. With the head commit's
+ * combined coverage, a file a suite ran one of the changed lines of counts as
+ * reached too, and the change's patch coverage is counted on it.
  */
 
 import { and, desc, eq, inArray, notInArray } from 'drizzle-orm';
@@ -30,6 +32,8 @@ import {
 } from '../graph';
 import { HISTORY_WINDOW_RUNS } from './scenario-gaps';
 import { eligibleRunSql } from '../run-eligibility';
+import type { CombinedFile, CoverageSuiteKind } from '../coverage-combine';
+import { computePatchCoverage, suitesOnChangedLines, type PatchAreas, type PatchCoverage } from '../patch-coverage';
 
 /** A repo-relative path normalized for suffix matching. */
 function normalizePath(p: string): string {
@@ -128,6 +132,8 @@ export interface ChangedFileInput {
   filePath: string;
   additions: number;
   deletions: number;
+  /** The new file's added and modified lines, from the provider's patch; absent without one. */
+  changedLines?: number[];
 }
 
 /**
@@ -150,6 +156,8 @@ export interface ChangeCoverageFile {
   reachedCountHistory: number;
   /** Distinct tests that observably reach this file. */
   reachingTestCount: number;
+  /** The suites of the head commit's coverage that ran one of the file's changed lines. */
+  suites: string[];
   /** Whether reach for this file is observable at all — drives gap confidence. */
   reachBasis: ReachBasis;
   ticket: string | null;
@@ -170,6 +178,8 @@ export interface ChangeCoverage {
   tickets: ChangeCoverageTicket[];
   reachedFiles: number;
   uncoveredFiles: number;
+  /** The changed lines the head commit's combined coverage counts; null without coverage or patches. */
+  patchCoverage: PatchCoverage | null;
   /** True when the provider capped the changed-file list, so more files exist than shown. */
   filesTruncated: boolean;
   /** Total changed files the diff reported before the cap, when the provider exposes it. */
@@ -195,6 +205,24 @@ export interface ChangeCoverageInput {
   /** Total changed files the diff reported before the cap, when known. */
   totalChangedFiles?: number | null;
   scmAvailable?: boolean;
+  /** The head commit's combined coverage, when it has some. */
+  commitCoverage?: CommitCoverageInput | null;
+}
+
+/** The parts of a commit's combined coverage change coverage reads. */
+export interface CommitCoverageInput {
+  commit: string;
+  files: CombinedFile[];
+  suites: Array<{ name: string; kind: CoverageSuiteKind }>;
+  /** The project's named areas; the patch coverage counts each. */
+  areas?: PatchAreas | null;
+}
+
+/** A file reached by a test, in the run or the window, or by a suite on its changed lines. */
+export function isReachedFile(
+  file: Pick<ChangeCoverageFile, 'reachedInRun' | 'reachedCountHistory' | 'suites'>,
+): boolean {
+  return file.reachedInRun || file.reachedCountHistory > 0 || file.suites.length > 0;
 }
 
 // ── File reach ───────────────────────────────────────────────────────────────
@@ -305,6 +333,8 @@ export async function computeChangeCoverage(
   const files = input.changedFiles
     .map((f) => ({ ...f, filePath: normalizePath(f.filePath) }))
     .filter((f) => f.filePath);
+  const commitCoverage = input.commitCoverage ?? null;
+  const combinedByPath = new Map((commitCoverage?.files ?? []).map((f) => [f.path, f]));
 
   const recent = await db
     .select({ id: testRuns.id })
@@ -380,7 +410,11 @@ export async function computeChangeCoverage(
 
     const reachedInRun = input.runId != null ? [...reaching].some((id) => ranInRun.has(id)) : historyRuns.size > 0;
 
-    const reachBasis: ReachBasis = reaching.size > 0 ? 'reached' : observable ? 'observable-unreached' : 'no-evidence';
+    const combined = combinedByPath.get(file.filePath);
+    const suites = combined && file.changedLines?.length ? suitesOnChangedLines(combined, file.changedLines) : [];
+
+    const reachBasis: ReachBasis =
+      reaching.size > 0 || suites.length > 0 ? 'reached' : observable ? 'observable-unreached' : 'no-evidence';
 
     return {
       filePath: file.filePath,
@@ -389,12 +423,22 @@ export async function computeChangeCoverage(
       reachedInRun,
       reachedCountHistory: historyRuns.size,
       reachingTestCount: reaching.size,
+      suites,
       reachBasis,
       ticket: fileTickets[file.filePath] ?? primaryTicket,
     };
   });
 
-  const reachedFiles = covered.filter((f) => f.reachedInRun || f.reachedCountHistory > 0).length;
+  const reachedFiles = covered.filter(isReachedFile).length;
+  const patchCoverage = commitCoverage
+    ? computePatchCoverage(
+        commitCoverage.commit,
+        commitCoverage.files,
+        commitCoverage.suites,
+        new Map(files.filter((f) => f.changedLines?.length).map((f) => [f.filePath, f.changedLines!])),
+        commitCoverage.areas ?? null,
+      )
+    : null;
 
   // Group by ticket, uncovered files leading each group.
   const byTicket = new Map<string | null, ChangeCoverageFile[]>();
@@ -418,6 +462,7 @@ export async function computeChangeCoverage(
     tickets: ticketGroups,
     reachedFiles,
     uncoveredFiles: covered.length - reachedFiles,
+    patchCoverage,
     filesTruncated: input.filesTruncated ?? false,
     totalChangedFiles: input.totalChangedFiles ?? null,
     scmAvailable: input.scmAvailable ?? true,

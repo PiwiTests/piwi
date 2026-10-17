@@ -22,7 +22,7 @@ import {
   type CiRerunSettings,
   type ClusterRerunDispatch,
 } from '#shared/ci-rerun';
-import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runOrigin, runOriginRef } from '#shared/run-eligibility';
+import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runCommit, runOrigin, runOriginRef } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { RunMetadata } from './run-json-types';
@@ -300,7 +300,7 @@ export async function matchCiRerunRun(db: DbClient, runId: number): Promise<numb
   };
   await db
     .update(testRuns)
-    .set({ metadata, origin: runOrigin(metadata) })
+    .set({ metadata, origin: runOrigin(metadata), commit: runCommit(metadata) })
     .where(eq(testRuns.id, runId));
   await db
     .update(failureClusters)

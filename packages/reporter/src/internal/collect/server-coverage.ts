@@ -14,6 +14,7 @@ import { errorMessage } from '../support/errors.js';
 import { createLimiter } from '../support/limiter.js';
 import { backendRequest } from '../transport/backend-request.js';
 import type { BlobIds } from './blob-ids.js';
+import { checksumsOf, type SourceChecksums } from './source-checksums.js';
 
 /**
  * Collection of server coverage, in the reporter process. A backend built
@@ -34,6 +35,8 @@ import type { BlobIds } from './blob-ids.js';
  * base is the path of a configured base URL on that origin, then the origin
  * root; the first that answers with coverage is kept for the run. A missing
  * id, a failed or timed-out call, or a cap reached marks the test's coverage
+ * incomplete. A file whose source checksums (`checksums`) do not match the
+ * checkout keeps its path without its line numbers, and marks the test
  * incomplete. Nothing here throws.
  */
 
@@ -46,9 +49,13 @@ export interface ServerCoverage {
   incomplete: boolean;
 }
 
-/** One file of a backend's run-level coverage, with its executable lines at `lines` granularity. */
+/**
+ * One file of a run's coverage: a backend's, with its executable lines and every method (`allFunctions`) at `lines`
+ * granularity, or the browser's, with every function the tests' pages declared in it, run or not (`allFunctions`).
+ */
 export interface RunCoverageFile extends CoverageFile {
   executable?: LineRange[];
+  allFunctions?: LineRange[];
 }
 
 /** The bounds collection keeps to. */
@@ -145,6 +152,19 @@ export function ignoresHttpsErrors(config: ConfigUse): boolean {
   );
 }
 
+/** The source checksums an answer's files name, by normalized path. */
+function fileChecksums(files: unknown, into = new Map<string, string[]>()): Map<string, string[]> {
+  if (!Array.isArray(files)) return into;
+  for (const item of files) {
+    if (!isRecord(item)) continue;
+    const filePath = normalizeCoveragePath(item.path);
+    const checksums = checksumsOf(item.checksums);
+    if (filePath === null || checksums.length === 0) continue;
+    into.set(filePath, [...new Set([...(into.get(filePath) ?? []), ...checksums])]);
+  }
+  return into;
+}
+
 /** The files of a run-level answer (`{ v: 1, files }`), cleaned like a test's coverage; null when not one. */
 function runFilesOf(answer: unknown): RunCoverageFile[] | null {
   if (!isRecord(answer) || answer.v !== 1 || !Array.isArray(answer.files)) return null;
@@ -157,9 +177,11 @@ function runFilesOf(answer: unknown): RunCoverageFile[] | null {
     const functions = normalizeFunctionRanges(item.functions);
     const lines = normalizeLineRanges(item.lines);
     const executable = normalizeLineRanges(item.executable);
+    const allFunctions = normalizeFunctionRanges(item.allFunctions);
     if (functions.length > 0) file.functions = functions;
     if (lines.length > 0) file.lines = lines;
     if (executable.length > 0) file.executable = executable;
+    if (allFunctions.length > 0) file.allFunctions = allFunctions;
     files.push(file);
   }
   return files;
@@ -175,6 +197,8 @@ interface TestEntry {
   /** Groups still to answer, plus origins not yet split into calls. */
   pending: number;
   captures: CoverageCapture[];
+  /** The source checksums the answers named, by path. */
+  checksums: Map<string, string[]>;
   incomplete: boolean;
   resolve: (coverage: ServerCoverage) => void;
 }
@@ -212,6 +236,8 @@ export interface ServerCoverageCollectorOptions {
   baseUrls: string[];
   /** Adds blob ids to the files that name line numbers; null leaves them without. */
   blobs: BlobIds | null;
+  /** Checks the source checksums the backend names against the checkout; null keeps every file's line numbers. */
+  checksums?: SourceChecksums | null;
   /** Accept any certificate from an https backend, as the run's browsers do with `ignoreHTTPSErrors`. */
   ignoreHttpsErrors?: boolean;
   logger?: Logger;
@@ -224,6 +250,7 @@ export class ServerCoverageCollector {
   private readonly originStates = new Map<string, OriginState>();
   private readonly closer = new AbortController();
   private groupSequence = 0;
+  private versionWarned = false;
 
   constructor(private readonly options: ServerCoverageCollectorOptions) {
     this.limits = { ...DEFAULT_COLLECTOR_LIMITS, ...options.limits };
@@ -253,7 +280,13 @@ export class ServerCoverageCollector {
       return Promise.resolve({ files: [], incomplete: truncated || parts.length > 0 });
     }
     return new Promise((resolve) => {
-      const entry: TestEntry = { pending: parts.length, captures: [], incomplete: truncated, resolve };
+      const entry: TestEntry = {
+        pending: parts.length,
+        captures: [],
+        checksums: new Map(),
+        incomplete: truncated,
+        resolve,
+      };
       for (const [origin, ids] of parts) this.enqueue(origin, { entry, ids });
     });
   }
@@ -280,10 +313,14 @@ export class ServerCoverageCollector {
         this.reportFailure(state, `Could not fetch the run's server coverage from ${origin}: ${outcome.reason}.`);
         return null;
       }
-      const files = outcome.ok ? runFilesOf(outcome.json) : null;
-      if (files) {
+      const answered = outcome.ok ? runFilesOf(outcome.json) : null;
+      if (answered) {
         state.base = base;
-        return this.options.blobs ? this.options.blobs.withBlobs(files) : files;
+        const files = await this.verifyChecksums(
+          answered,
+          fileChecksums(isRecord(outcome.json) ? outcome.json.files : null),
+        );
+        return this.options.blobs ? this.options.blobs.withBlobs(files.files) : files.files;
       }
     }
     this.reportFailure(state, `Could not fetch the run's server coverage: ${this.noEndpoint(origin, RUN_PATH)}.`);
@@ -306,7 +343,13 @@ export class ServerCoverageCollector {
   private stateOf(origin: string): OriginState {
     let state = this.originStates.get(origin);
     if (!state) {
-      state = { queue: [], timer: null, base: null, limit: createLimiter(this.limits.concurrency), warned: false };
+      state = {
+        queue: [],
+        timer: null,
+        base: null,
+        limit: createLimiter(this.limits.concurrency),
+        warned: false,
+      };
       this.originStates.set(origin, state);
     }
     return state;
@@ -403,6 +446,7 @@ export class ServerCoverageCollector {
         group.entry.incomplete = true;
       } else {
         if (Array.isArray(result.missing) && result.missing.length > 0) group.entry.incomplete = true;
+        fileChecksums(result.files, group.entry.checksums);
         const capture = sanitizeCoverage({ v: 1, files: result.files });
         if (capture) {
           group.entry.captures.push(capture);
@@ -511,9 +555,35 @@ export class ServerCoverageCollector {
     void this.finish(entry);
   }
 
+  /**
+   * The files with the line numbers of those built from another version than
+   * the checkout's dropped; the first time any is, a warning names one.
+   */
+  private async verifyChecksums<T extends CoverageFile>(
+    files: T[],
+    checksums: ReadonlyMap<string, readonly string[]>,
+  ): Promise<{ files: T[]; dropped: string[] }> {
+    if (!this.options.checksums || checksums.size === 0) return { files, dropped: [] };
+    try {
+      const verified = await this.options.checksums.verify(files, checksums);
+      if (verified.dropped.length > 0 && !this.versionWarned && !this.closer.signal.aborted) {
+        this.versionWarned = true;
+        this.logger.warn(
+          `The backend was built from other sources than the checkout (${verified.dropped[0]} differs): ` +
+            `server coverage leaves out the line numbers of such files and marks their tests incomplete.`,
+        );
+      }
+      return verified;
+    } catch {
+      return { files, dropped: [] };
+    }
+  }
+
   private async finish(entry: TestEntry): Promise<void> {
     const merged = mergeCoverage(...entry.captures);
-    let files = merged?.files ?? [];
+    const verified = await this.verifyChecksums(merged?.files ?? [], entry.checksums);
+    let files = verified.files;
+    if (verified.dropped.length > 0) entry.incomplete = true;
     try {
       if (this.options.blobs) files = await this.options.blobs.withBlobs(files);
     } catch {

@@ -39,6 +39,14 @@
  *   branch, that many tests recorded coverage of the file, every one by line
  *   at a git blob; with `executable`, a run's coverage holds the file's
  *   executable lines at that blob.
+ * - `combinedCoverage: { suites, filesWithoutData }`: the project's newest
+ *   commit with coverage reports combines that many suites (its reports, and
+ *   `e2e` when a complete run of the commit recorded run coverage), and its
+ *   inventory names that many files no suite names.
+ * - `supersededCoverage: { branch, carried }`: the branch's two newest commits
+ *   with coverage reports share a suite, so the newer supersedes the older's
+ *   report of it, and the older alone has `carried`, which the newer carries
+ *   forward from it.
  * - `insight: 'divergence' | 'path-variation'`: the coverage insight the route
  *   shows holds: the execution failed with coverage and its test has an
  *   earlier passing execution with coverage; or the test has at least 8
@@ -111,6 +119,27 @@ export const DEMO_EXAMPLES = [
     expect: {
       project: { id: 5, name: 'web-dashboard' },
       fileCoverage: { path: 'api/Users/UsersEndpoints.cs', tests: 3, executable: true },
+    },
+  },
+  {
+    id: 'combined-coverage',
+    doc: 'features/combined-coverage',
+    title: 'Web Dashboard › every suite’s coverage of one commit',
+    shows:
+      'The back end’s and the front end’s unit tests and the Playwright run of one commit, counted on the span table’s lines: the share each suite ran, a folder’s files, and the two tracked files no suite names.',
+    route: '/projects/5/coverage',
+    expect: { project: { id: 5, name: 'web-dashboard' }, combinedCoverage: { suites: 3, filesWithoutData: 2 } },
+  },
+  {
+    id: 'combined-coverage-notes',
+    doc: 'features/combined-coverage',
+    title: 'Web Dashboard › a branch’s coverage, carried and superseded',
+    shows:
+      'The newest push of develop uploaded the front end’s unit tests only: the notes above its numbers say the back end’s suite is carried from the push before, and link to it, whose file detail went when this push arrived: it keeps only its totals.',
+    route: '/projects/5/coverage?branch=develop',
+    expect: {
+      project: { id: 5, name: 'web-dashboard' },
+      supersededCoverage: { branch: 'develop', carried: 'unit-back' },
     },
   },
   {

@@ -12,6 +12,7 @@
 import { runAi } from './ai.js';
 import { runBug } from './bug.js';
 import { runCodegen } from './codegen.js';
+import { runCoverage } from './coverage.js';
 import { runFlake } from './flake.js';
 import { runGate } from './gate.js';
 import { runInit } from './init.js';
@@ -32,6 +33,7 @@ Commands:
   skills    Install the Piwi agent skills into this project
   gate      Fail a CI job on the dashboard's analysis of a run
   report    Print a quality report (Markdown, PDF, HTML, CSV or JSON)
+  coverage  Upload a unit-test (or other) coverage report of a commit (coverage upload)
   select    Print the Playwright args for a saved test selection
   run       Run a saved test selection with playwright test
   probe     Run the dashboard's probe plan and record what the suite noticed
@@ -58,6 +60,8 @@ async function main(): Promise<number> {
       return runGate(rest);
     case 'report':
       return runQualityReport(rest);
+    case 'coverage':
+      return runCoverage(rest);
     case 'select':
       return runSelect(rest);
     case 'run':

@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">
+<coverage lines-valid="6" lines-covered="4" line-rate="0.6666" branches-valid="2" branches-covered="1" branch-rate="0.5" timestamp="1792188935149" complexity="0" version="0.1">
+  <sources>
+    <source>/home/ci/repo/apps/web</source>
+  </sources>
+  <packages>
+    <package name="main" line-rate="0.6666" branch-rate="0.5">
+      <classes>
+        <class name="math.ts" filename="src/math.ts" line-rate="0.8" branch-rate="0.5">
+          <methods>
+            <method name="add" hits="1" signature="()V">
+              <lines>
+                <line number="1" hits="1"/>
+              </lines>
+            </method>
+            <method name="sub" hits="1" signature="()V">
+              <lines>
+                <line number="5" hits="1"/>
+              </lines>
+            </method>
+            <method name="(anonymous_2)" hits="0" signature="()V">
+              <lines>
+                <line number="12" hits="0"/>
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="2" hits="1" branch="false"/>
+            <line number="6" hits="1" branch="true" condition-coverage="50% (1/2)"/>
+            <line number="7" hits="0" branch="false"/>
+            <line number="9" hits="1" branch="false"/>
+            <line number="12" hits="1" branch="false"/>
+          </lines>
+        </class>
+        <class name="unused.ts" filename="src/unused.ts" line-rate="0" branch-rate="1">
+          <methods>
+            <method name="never" hits="0" signature="()V">
+              <lines>
+                <line number="1" hits="0"/>
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="2" hits="0" branch="false"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

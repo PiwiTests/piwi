@@ -7,7 +7,7 @@ import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
-import { runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
@@ -235,6 +235,7 @@ export default eventHandler(async (event) => {
       label: body.label || null,
       metadata,
       origin: runOrigin(metadata),
+      commit: runCommit(metadata),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,

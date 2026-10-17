@@ -25,6 +25,47 @@ export const RAN_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--color-coverage-run)]
 /** A row of the left bar the source view draws on an executable line that did not run. */
 export const NOT_RUN_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--color-coverage-not-run)]';
 
+/** A line's class in a commit's combined coverage. */
+export type LineClassKind = 'both' | 'unit' | 'e2e' | 'none' | 'undetermined';
+
+/**
+ * Each class's source mark, its key on the legend (the bars draw the lines no
+ * suite ran as their track, so its key is the track's tint), its short label
+ * and its hover text, in the order the legend lists them.
+ */
+export const LINE_CLASS_MARKS: Record<LineClassKind, { row: string; legend: string; label: string; title: string }> = {
+  both: {
+    row: RAN_ROW_CLASS,
+    legend: 'bg-coverage-run',
+    label: 'Both',
+    title: 'Unit and end-to-end tests ran it',
+  },
+  unit: {
+    row: 'shadow-[inset_3px_0_0_0_var(--color-coverage-unit)]',
+    legend: 'bg-coverage-unit',
+    label: 'Unit only',
+    title: 'Only unit tests ran it',
+  },
+  e2e: {
+    row: 'shadow-[inset_3px_0_0_0_var(--color-coverage-e2e)]',
+    legend: 'bg-coverage-e2e',
+    label: 'End to end only',
+    title: 'Only end-to-end tests ran it',
+  },
+  undetermined: {
+    row: 'shadow-[inset_3px_0_0_0_var(--color-coverage-undetermined)]',
+    legend: 'bg-coverage-undetermined',
+    label: 'Undetermined',
+    title: 'Undetermined: in a function the browser ran',
+  },
+  none: {
+    row: NOT_RUN_ROW_CLASS,
+    legend: 'bg-[var(--color-coverage-not-run)]/50',
+    label: 'No suite',
+    title: 'No suite ran it',
+  },
+};
+
 /** Rows a group shows before "Show all". */
 export const COVERAGE_ROWS_SHOWN = 20;
 

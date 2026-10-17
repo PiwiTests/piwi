@@ -1356,7 +1356,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     capability: 'scm',
     description:
-      'Change coverage for a pull request: the files a change touched joined to the tests that observably reach them, grouped by ticket, with the uncovered files that need a scenario. Pass a run id to diff it against its baseline, or an explicit base and head commit. Reach is observed reach, never instrumented coverage; "no test in this run" is paired with the count from recent history. Returns an empty result when no SCM token or diff is available.',
+      'Change coverage for a pull request: the files a change touched joined to the tests that observably reach them, grouped by ticket, with the uncovered files that need a scenario. Pass a run id to diff it against its baseline, or an explicit base and head commit. Reach is observed reach; "no test in this run" is paired with the count from recent history. When the head commit has combined coverage (uploaded suites and its complete runs), a file a suite ran one of the changed lines of counts as reached and names those `suites`, and `patchCoverage` counts the changed lines that ran, in total, by unit suites and by the end-to-end suite. Returns an empty result when no SCM token or diff is available.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1421,6 +1421,31 @@ export const MCP_TOOL_DEFS = [
         testCaseIds: { type: 'array', items: { type: 'number' }, description: 'The tests (testCaseId), 1 to 50' },
       },
       required: ['projectId', 'testCaseIds'],
+    },
+  },
+  {
+    name: 'get_coverage_summary',
+    module: 'core',
+    capability: 'coverage',
+    description:
+      'Combined coverage of a commit: every suite that ran the code (the unit-test reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs), counted on one set of executable lines per file version. Gives the totals and each suite’s lines (`executedLines` of `executableLines`, with `linePercent`), functions, `undeterminedLines` (unrun lines inside functions the browser suite ran, never counted as run), the lines only unit tests or only end-to-end tests run, the files without coverage data, each named area of the code (`areas`, e.g. front and back, with each suite’s share), one `folder`’s breakdown (kept to one `area` when given), its least-covered files (`leastCovered`, the most lines no suite ran first: where a test is most missing), and with `file` which suites ran each of its lines. `notes` says what the numbers leave out or take from elsewhere: a suite `carried` from an earlier commit, an `incomplete` report, a `missing-suite`, `no-inventory`, totals under an earlier scope (`scope-changed`), `runs-not-counted`; on a branch, a commit a newer one superseded keeps only its totals (`detailRemoved`, `supersededBy`), with no folder breakdown or file lines. Without `commit`, the newest commit with coverage on `branch` (default branch when absent).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        commit: { type: 'string', description: 'A commit id (7 to 64 hexadecimal characters)' },
+        branch: { type: 'string', description: 'The branch whose newest commit with coverage to read' },
+        folder: { type: 'string', description: 'A repository-relative folder to break down (the root when absent)' },
+        file: {
+          type: 'string',
+          description: 'A repository-relative file: adds its lines’ classes and the lines each suite ran',
+        },
+        area: {
+          type: 'string',
+          description: 'One of the project’s named areas (`front`, `back`): the breakdown keeps to its files',
+        },
+      },
+      required: ['projectId'],
     },
   },
   {

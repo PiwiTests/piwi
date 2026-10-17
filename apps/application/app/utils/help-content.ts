@@ -163,6 +163,11 @@ export const HELP_TOPICS = {
     text: 'How many tests the suite has over time (the highest test count one run reported in each bucket), and the share of them skipped or not run. A growing suite whose skipped share grows too is adding tests nobody runs.',
     doc: 'reference/analytics-widgets#which-way-it-is-going',
   },
+  'analytics.coverage-trend': {
+    title: 'Coverage trend',
+    text: 'The share of executable lines the suites ran together (the unit-test reports uploaded for each commit and the Playwright runs), at the commit whose coverage arrived last in each bucket, summed over the projects in scope. Kept per day, so it outlives the reports it came from.',
+    doc: 'features/combined-coverage#over-time',
+  },
   'analytics.flaky-debt': {
     title: 'Flaky debt',
     text: 'Whether flakiness is going down: flaky occurrences per run in each bucket (from the daily rollups, so over any window), the distinct tests that passed only on a retry (from the stored runs, so only as far back as retention keeps them) and the tests in quarantine at the end of each bucket.',
@@ -666,6 +671,36 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/code-reach#on-the-execution-page',
   },
+  'coverage.areas': {
+    title: 'Coverage areas',
+    text: 'Name the parts of your code, `front` and `back` for instance, by the patterns of their files. Every suite’s coverage splits the same way, unit and end to end: each area gets its own totals on the coverage page, its own line in the coverage trend, and its share of a pull request’s changed lines. A file belongs to the first area whose patterns match it; a file in none counts only in the totals. The coverage scope, its include and exclude patterns, decides which files count at all.',
+    doc: 'features/combined-coverage#areas',
+  },
+  'coverage.tree': {
+    title: 'Files',
+    text: 'The repository as a tree, at the commit. Each folder and file carries a bar in the colors of the legend above: the lines both kinds of suite ran, unit tests only, end-to-end tests only, undetermined, and the empty track for lines no suite ran. A folder’s name shows it on the right, with its suites and its least-covered files; its chevron only folds it. **Least covered** sorts each folder by lines no suite ran. Greyed files are tracked in scope but no suite names them.',
+    doc: 'features/combined-coverage#find-what-is-not-covered',
+  },
+  'coverage.least-covered': {
+    title: 'Files to cover next',
+    text: 'The files of this folder with the most executable lines no suite ran, unit or end to end, the most first, then the lowest share run. Undetermined lines (in a function the browser ran) are not counted. A file opens with each line marked by the suites that ran it, and the next gap one click away.',
+    doc: 'features/combined-coverage#find-what-is-not-covered',
+  },
+  'coverage.combined-marks': {
+    title: 'Marks by suite',
+    text: [
+      'With every suite of the commit, the bar at the left of a line says which kinds of suite ran it:',
+      '',
+      '- **Teal**: unit tests and end-to-end tests both ran it.',
+      '- **Blue**: only unit tests ran it. No user path in the end-to-end tests reaches it.',
+      '- **Violet**: only the end-to-end tests ran it. Only the Playwright suite protects it.',
+      '- **Slate**: no suite ran it. The first place to add a test.',
+      '- **Yellow**: undetermined. It sits in a function the browser ran, and the browser records functions, not lines.',
+      '',
+      'An unmarked line is not code (a blank line, a comment, a brace the compiler does not count).',
+    ].join('\n'),
+    doc: 'features/combined-coverage#find-what-is-not-covered',
+  },
   'coverage.marks': {
     title: 'Coverage marks',
     text: [
@@ -716,6 +751,33 @@ export const HELP_TOPICS = {
       '- **Precision** — a file recorded by function marks its functions, and one recorded by file lists its tests only.',
     ].join('\n'),
     doc: 'features/code-reach#which-tests-run-a-file',
+  },
+  'coverage.combined': {
+    title: 'Combined coverage',
+    text: [
+      'Every suite that ran the code at this commit, counted on one set of executable lines per file version.',
+      '',
+      '- **Suites** — the reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs. A suite the commit lacks comes from the newest commit whose coverage arrived before it, on the commit’s branch then on the default branch, where the file is unchanged.',
+      '- **Lines** — the span table’s when a run recorded them, else the reports’. Every suite’s ratio counts on them.',
+      '- **Undetermined** — unrun lines inside functions the browser suite ran: its lines are not recorded, so they are shown beside the ratio, never in it.',
+      '- **Without data** — tracked files in the coverage scope that no suite names.',
+    ].join('\n'),
+    doc: 'features/combined-coverage#one-ratio-per-commit',
+  },
+  'coverage.notes': {
+    title: 'What these numbers leave out',
+    text: [
+      'Where the commit’s numbers come from elsewhere, or miss something:',
+      '',
+      '- **Totals only** — on a branch, each suite keeps only the report of the commit whose coverage arrived last. An earlier commit keeps its totals, as computed, and no files.',
+      '- **Carried** — a suite this commit lacks counts from an earlier commit, for the files whose version is unchanged.',
+      '- **Incomplete** — the report was cut at a size limit, or its files disagreed with the checkout.',
+      '- **No coverage** — a suite the project uploads that neither this commit nor an earlier one has.',
+      '- **No inventory** — files no suite names are not counted; upload with the checkout.',
+      '- **Earlier scope** — totals kept from before the coverage scope or areas changed are not counted again.',
+      '- **Runs that don’t count** — a partial run, a lab run or a probe never counts.',
+    ].join('\n'),
+    doc: 'features/combined-coverage#what-the-numbers-leave-out',
   },
   'coverage.file-source': {
     title: 'Source not available',

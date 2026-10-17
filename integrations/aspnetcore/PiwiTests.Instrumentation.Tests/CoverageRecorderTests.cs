@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using PiwiTests.Instrumentation.Coverage;
@@ -38,6 +39,48 @@ public class CoverageRecorderTests
     public void Reads_no_span_table_from_an_assembly_built_without_instrumentation()
     {
         Assert.Null(SpanTable.Read(typeof(CoverageRecorderTests).Assembly));
+        Assert.Null(SpanTable.ReadFile(typeof(CoverageRecorderTests).Assembly.Location, out var mvid));
+        Assert.Equal(typeof(CoverageRecorderTests).Assembly.ManifestModule.ModuleVersionId, mvid);
+    }
+
+    [Fact]
+    public void Reads_the_same_span_table_and_module_version_id_from_the_assembly_file()
+    {
+        var loaded = SpanTable.Read(Fixture)!;
+
+        var read = SpanTable.ReadFile(Fixture.Location, out var mvid)!;
+
+        Assert.Equal(FixtureMvid, mvid);
+        Assert.Equal(loaded.Documents, read.Documents);
+        Assert.Equal(loaded.Checksums, read.Checksums);
+        Assert.Equal(loaded.MethodRows, read.MethodRows);
+        var row = Row(typeof(Quotes).GetMethod(nameof(Quotes.Quote))!);
+        Assert.Equal(loaded.Spans(row), read.Spans(row));
+    }
+
+    [Fact]
+    public void Reads_the_checksum_of_the_source_the_compiler_read_for_each_document()
+    {
+        var table = SpanTable.Read(Fixture)!;
+        var index = table.Documents.ToList().FindIndex(d => d.Replace('\\', '/').EndsWith("/" + Path("Quotes.cs"), StringComparison.Ordinal));
+
+        var expected = "sha256:" + Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(RepositoryFile(Path("Quotes.cs"))))).ToLowerInvariant();
+        Assert.Equal(expected, table.Checksums[index]);
+    }
+
+    [Fact]
+    public void Reads_no_span_table_from_a_file_that_is_not_an_assembly()
+    {
+        var file = System.IO.Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(file, "not an assembly");
+            Assert.ThrowsAny<BadImageFormatException>(() => SpanTable.ReadFile(file, out _));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
     }
 
     [Theory]

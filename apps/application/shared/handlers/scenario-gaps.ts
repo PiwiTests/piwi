@@ -502,12 +502,15 @@ export interface ChangedFileReach {
    * state is not a confident gap. Absent is treated as observable.
    */
   reachBasis?: 'reached' | 'observable-unreached' | 'no-evidence';
+  /** The suites of the head commit's coverage that ran one of its changed lines. */
+  suites?: string[];
   ticket?: string | null;
 }
 
 /**
- * Changed, unreached — a changed source file no test reached in this run, paired
- * with its history count so a selection-narrowed run is never mistaken for a
+ * Changed, unreached — a changed source file no test reached in this run and no
+ * suite of the head commit's coverage ran a changed line of, paired with its
+ * history count so a selection-narrowed run is never mistaken for a
  * gap. Blind spot, reported per ticket at change time. A file the graph cannot
  * observe (no route or page maps it, no test source touches it) is reported at
  * low confidence and says so, rather than as a strong blind spot.
@@ -519,7 +522,7 @@ export function detectChangedUnreached(
 ): DetectedGap[] {
   const gaps: DetectedGap[] = [];
   for (const file of files) {
-    if (file.reachedInRun) continue;
+    if (file.reachedInRun || file.suites?.length) continue;
     const noEvidence = file.reachBasis === 'no-evidence';
     const base = `+${file.additions} −${file.deletions} · no test in run #${runId} · ${file.reachedCountHistory} in ${windowRuns} runs — observed reach.`;
     gaps.push({

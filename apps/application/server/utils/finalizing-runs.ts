@@ -3,7 +3,7 @@ import { testRuns } from '../database/schema';
 import type { DbClient } from '../database';
 import { runEventBus } from './run-events';
 import { runFinalizeSideEffects } from './run-finalize-side-effects';
-import { runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin } from '#shared/run-eligibility';
 
 /**
  * The metadata key where a `finalizing` run keeps the status its reporter sent
@@ -49,7 +49,7 @@ export async function settleFinalizingRun(
 
   const settled = await db
     .update(testRuns)
-    .set({ status, metadata, origin: runOrigin(metadata), updatedAt: new Date() })
+    .set({ status, metadata, origin: runOrigin(metadata), commit: runCommit(metadata), updatedAt: new Date() })
     .where(and(eq(testRuns.id, run.id), eq(testRuns.status, 'finalizing')))
     .returning({ id: testRuns.id, isFullRun: testRuns.isFullRun });
   if (settled.length === 0) return null;

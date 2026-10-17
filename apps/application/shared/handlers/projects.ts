@@ -9,6 +9,9 @@ import {
   failureClusters,
   failureDiagnoses,
   casePayloads,
+  coverageDaily,
+  coverageReports,
+  coverageTotals,
   entityLinks,
   bugReports,
   analyticsDailyRollups,
@@ -30,6 +33,8 @@ import {
   isNull,
   isNotNull,
   count,
+  ne,
+  notInArray,
   type SQL,
 } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
@@ -60,6 +65,7 @@ import {
 } from '../analytics/timeout-hygiene';
 import { parseProjectDecisions } from '#shared/capabilities';
 import { normalizeProjectTargets } from '#shared/analytics/targets';
+import { parseCoverageAreas, parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -413,6 +419,14 @@ async function validTagIds(db: DrizzleDB, tagIds: number[]): Promise<number[]> {
 
 // ─── updateProject ───────────────────────────────────────────────
 
+/** The error `updateProject` throws for a coverage scope `parseCoverageScope` refuses. */
+export const INVALID_COVERAGE_SCOPE =
+  'coverageScope must be { include?: string[], exclude?: string[] }: at most 200 patterns each, 300 characters and 20 "*" a pattern, no "!" negation';
+
+/** The error `updateProject` throws for coverage areas `parseCoverageAreas` refuses. */
+export const INVALID_COVERAGE_AREAS =
+  'coverageAreas must be a list of at most 20 { name, include: string[] }: distinct names of 1 to 40 letters, digits, spaces, ".", "_" or "-", each with at least one pattern';
+
 export async function updateProject(
   db: DrizzleDB,
   id: number,
@@ -434,6 +448,10 @@ export async function updateProject(
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
     targets?: unknown;
+    /** The files coverage totals count (`CoverageScope`); null restores the default excludes. */
+    coverageScope?: unknown;
+    /** Named areas of the code (`CoverageArea[]`), each counted apart; null or [] removes them. */
+    coverageAreas?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -454,8 +472,22 @@ export async function updateProject(
     gateStatus,
     generatedSpecs,
     targets,
+    coverageScope,
+    coverageAreas,
     tagIds: dataTagIds,
   } = data;
+  const areas =
+    coverageAreas === undefined || coverageAreas === null ? coverageAreas : parseCoverageAreas(coverageAreas);
+  if (areas === null && coverageAreas !== null) throw new Error(INVALID_COVERAGE_AREAS);
+  const scope: CoverageScope | null | undefined =
+    coverageScope === undefined || coverageScope === null ? coverageScope : parseCoverageScope(coverageScope);
+  if (scope === null && coverageScope !== null) throw new Error(INVALID_COVERAGE_SCOPE);
+  const scopeChanged =
+    scope !== undefined && JSON.stringify(scope) !== JSON.stringify(projectResults[0].coverageScope ?? null);
+  const storedAreas = areas === undefined ? undefined : areas && areas.length > 0 ? areas : null;
+  const areasChanged =
+    storedAreas !== undefined &&
+    JSON.stringify(storedAreas) !== JSON.stringify(projectResults[0].coverageAreas ?? null);
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
   const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
@@ -476,9 +508,29 @@ export async function updateProject(
         gateStatus,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
+        ...(scopeChanged ? { coverageScope: scope } : {}),
+        // Totals counted under another scope or other areas read as stale.
+        ...(scopeChanged || areasChanged ? { coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` } : {}),
+        ...(storedAreas !== undefined ? { coverageAreas: storedAreas } : {}),
         updatedAt: new Date(),
       })
       .where(eq(projects.id, id));
+
+    if (areasChanged) {
+      // An area the project no longer names leaves the trend and the totals.
+      const names = (storedAreas ?? []).map((a) => a.name);
+      for (const table of [coverageDaily, coverageTotals]) {
+        await tx
+          .delete(table)
+          .where(
+            and(
+              eq(table.projectId, id),
+              ne(table.area, ''),
+              names.length > 0 ? notInArray(table.area, names) : undefined,
+            ),
+          );
+      }
+    }
 
     if (uniqueTagIds !== undefined) {
       await tx.delete(projectTags).where(eq(projectTags.projectId, id));
@@ -558,6 +610,7 @@ export async function deleteProjectData(
   onProgress?.({ phase: 'project', totalRuns, runsDeleted: totalRuns });
 
   await db.delete(testCases).where(eq(testCases.projectId, projectId));
+  await db.delete(coverageReports).where(eq(coverageReports.projectId, projectId));
   await db.delete(casePayloads).where(eq(casePayloads.projectId, projectId));
 
   // Entity links pinned to this project's clusters (a known-issue link Piwi

@@ -223,7 +223,8 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
               .limit(1)
           : db.select({ id: networkRequests.id }).from(networkRequests).where(SERVER_TRACE).limit(1),
       ),
-    // Coverage: active once a test's coverage of a file is stored for the project.
+    // Coverage: active once a test's coverage of a file is stored for the project; an uploaded report's
+    // fragments (runtime `report`) are no test's.
     coverage: () =>
       exists(
         db,
@@ -231,9 +232,13 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
           ? db
               .select({ id: coverageFragments.id })
               .from(coverageFragments)
-              .where(eq(coverageFragments.projectId, pid))
+              .where(and(eq(coverageFragments.projectId, pid), sql`${coverageFragments.runtime} <> 'report'`))
               .limit(1)
-          : db.select({ id: coverageFragments.id }).from(coverageFragments).limit(1),
+          : db
+              .select({ id: coverageFragments.id })
+              .from(coverageFragments)
+              .where(sql`${coverageFragments.runtime} <> 'report'`)
+              .limit(1),
       ),
     clustering: () =>
       exists(

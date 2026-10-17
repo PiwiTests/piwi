@@ -89,6 +89,10 @@ export const ES_COPY = {
           title: 'Lo que tus pruebas no cubren',
           body: 'El Test Map dibuja las funciones de la aplicación a partir de lo que alcanzan las pruebas y lista las pruebas que aún no existen, ordenadas por exposición. Una de ellas: las pruebas siguen pasando cuando POST /api/orders falla.',
         },
+        combined: {
+          title: 'Todas las suites, una sola tasa',
+          body: 'Las pruebas unitarias de ambos lados y la ejecución de Playwright de un mismo commit, contadas sobre las mismas líneas: **Combined coverage** da la parte que ejecutan juntas, luego la de cada suite y las líneas que solo ejecutan las pruebas unitarias.',
+        },
       },
     },
     product: {

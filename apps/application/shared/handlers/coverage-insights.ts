@@ -86,12 +86,12 @@ const PATH_CHUNK = 100;
 /** An input a coverage insight refuses, such as an execution of another test. */
 export class CoverageInsightInputError extends Error {}
 
-/** Whether the project recorded any coverage. */
+/** Whether the project's tests recorded any coverage; an uploaded report's fragments (runtime `report`) are no test's. */
 export async function projectRecordsCoverage(db: DrizzleDB, projectId: number): Promise<boolean> {
   const [row] = await db
     .select({ id: coverageFragments.id })
     .from(coverageFragments)
-    .where(eq(coverageFragments.projectId, projectId))
+    .where(and(eq(coverageFragments.projectId, projectId), sql`${coverageFragments.runtime} <> 'report'`))
     .limit(1);
   return Boolean(row);
 }

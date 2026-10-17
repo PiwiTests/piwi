@@ -5,6 +5,13 @@
     <Instrument>TestCoverage</Instrument>
   </PropertyGroup>
 
+  <!-- A relative PIWI_COVERAGE_OUTPUT names a path in the directory dotnet test runs in: the VSTest host, which runs in
+       the test project's output directory, gets it as a full path through the run settings. Inline run settings on the
+       dotnet test command line replace these, and the host then resolves the path against its own directory. -->
+  <PropertyGroup Condition="'$(PIWI_COVERAGE_OUTPUT)' != '' and !$([System.IO.Path]::IsPathRooted('$(PIWI_COVERAGE_OUTPUT)'))">
+    <VSTestCLIRunSettings>$(VSTestCLIRunSettings);RunConfiguration.EnvironmentVariables.PIWI_COVERAGE_OUTPUT=$([MSBuild]::NormalizePath('$(MSBuildStartupDirectory)', '$(PIWI_COVERAGE_OUTPUT)'))</VSTestCLIRunSettings>
+  </PropertyGroup>
+
   <!-- The instrumentation is no input of the compile step, so an up-to-date assembly of the other kind would be kept:
        a file naming it is one, rewritten only when it changes, so switching between a coverage build and a plain build
        recompiles. -->

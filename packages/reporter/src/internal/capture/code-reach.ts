@@ -43,6 +43,7 @@ import { execFileSync } from 'node:child_process';
 import type { CDPSession, Page } from '@playwright/test';
 import {
   finalizeCodeReach,
+  knownFunctionLines,
   reachedFunctionLines,
   scriptRan,
   scriptText,
@@ -57,6 +58,7 @@ import {
   sourceMappingUrl,
   type SourceMapLookup,
 } from '@piwitests/core/source-map';
+import { browserFunctionsInWorker } from '../collect/coverage-settings.js';
 import { internalCall } from './quiet-capture.js';
 
 /** Largest source map fetched, in bytes. */
@@ -348,18 +350,31 @@ export async function resolveCodeReach(
   return finalizeCodeReach((await resolveReach(entries, roots, fetchMap, pageUrl)).keys());
 }
 
+/** What the covered scripts of a test resolve to: the functions that ran, and every function V8 lists. */
+export interface ResolvedFunctions {
+  /** The files reached, repository-relative, each with the start and end line of every function that ran in it. */
+  reached: Map<string, LineRange[]>;
+  /**
+   * With `known`, every file a covered script resolves to, with the start and end line of every function V8 lists
+   * in it, run or not; empty otherwise.
+   */
+  known: Map<string, LineRange[]>;
+}
+
 /**
  * The repository-relative files the covered scripts reached, each with the
  * start and end line of every function that ran in it (none when the lines are
- * not known: a script whose source was not read).
+ * not known: a script whose source was not read); with `known`, also every
+ * function the scripts declare, run or not.
  */
 export async function resolveCodeReachFunctions(
   entries: CoveredScript[],
   roots: CodeReachRoots,
   fetchMap: MapFetcher,
   pageUrl?: string,
-): Promise<Map<string, LineRange[]>> {
-  return resolveReach(entries, roots, fetchMap, pageUrl);
+  options: { known?: boolean } = {},
+): Promise<ResolvedFunctions> {
+  return resolveFunctions(entries, roots, fetchMap, pageUrl, options.known === true);
 }
 
 /** The files the covered scripts reached, repository-relative, with the line ranges of their functions that ran. */
@@ -369,20 +384,55 @@ async function resolveReach(
   fetchMap: MapFetcher,
   pageUrl: string | undefined,
 ): Promise<Map<string, LineRange[]>> {
+  return (await resolveFunctions(entries, roots, fetchMap, pageUrl, false)).reached;
+}
+
+/**
+ * The known function lines of a script version per original file, as last resolved, with the number of functions V8
+ * listed then: V8 lists more of a script's functions as it compiles them, and a larger list resolves again.
+ */
+const knownCache = new LatestByUrl<{ count: number; files: Map<string, LineRange[]> }>();
+
+async function resolveFunctions(
+  entries: CoveredScript[],
+  roots: CodeReachRoots,
+  fetchMap: MapFetcher,
+  pageUrl: string | undefined,
+  withKnown: boolean,
+): Promise<ResolvedFunctions> {
   const files = new Map<string, LineRange[]>();
-  const add = (file: string, functions: LineRange[]) => {
+  const known = new Map<string, LineRange[]>();
+  const addTo = (into: Map<string, LineRange[]>, file: string, functions: LineRange[]) => {
     const path = relativeToRepo(file, roots.repoRoot);
-    const known = files.get(path);
-    if (known) known.push(...functions);
-    else files.set(path, [...functions]);
+    const listed = into.get(path);
+    if (listed) listed.push(...functions);
+    else into.set(path, [...functions]);
   };
+  const add = (file: string, functions: LineRange[]) => addTo(files, file, functions);
   const bases = viteBases(entries);
   const scripts = entries.filter((entry) => entry.url && entry.functions?.length && !REPLAYED_SCRIPT.test(entry.url));
   // Every script is looked up before the first is resolved: caching one may evict another this test still needs.
-  const known = scripts.map((entry) => scriptCache.get(entry.url, scriptVersion(entry)));
+  const cached = scripts.map((entry) => scriptCache.get(entry.url, scriptVersion(entry)));
   for (const [i, covered] of scripts.entries()) {
     const dirs = scriptRoots(roots, covered.url, covered.pageUrl ?? pageUrl);
-    const resolution = known[i] ?? (await resolveScript(covered, dirs, bases, fetchMap));
+    const resolution = cached[i] ?? (await resolveScript(covered, dirs, bases, fetchMap));
+    /** The file a map's source resolves to, resolved once per script version. */
+    const mapFile = (resolved: Extract<ScriptResolution, { kind: 'map' }>, index: number): string | null => {
+      if (resolved.files[index] === undefined) {
+        const source = resolved.lookup.sources[index] ?? '';
+        let absolute = resolveSourcePath(source, dirs);
+        // A source relative to the map: resolve it as a URL path, then against the roots.
+        if (!absolute && !/^[a-z][\w+.-]*:/i.test(source)) {
+          try {
+            absolute = fileForUrl(new URL(source, covered.url).href, dirs, bases);
+          } catch {
+            absolute = null;
+          }
+        }
+        resolved.files[index] = absolute;
+      }
+      return resolved.files[index] ?? null;
+    };
     if (resolution.kind === 'file') {
       if (!resolution.file) continue;
       const text = textOf(covered, resolution);
@@ -394,27 +444,33 @@ async function resolveReach(
         add(resolution.file, reachedFunctionLines(covered, null, text).get(-1) ?? []);
       }
     } else if (resolution.kind === 'map') {
-      const entry = covered;
       for (const [index, functions] of reachedFunctionLines(covered, resolution.lookup, textOf(covered, resolution))) {
-        if (resolution.files[index] === undefined) {
-          const source = resolution.lookup.sources[index] ?? '';
-          let absolute = resolveSourcePath(source, dirs);
-          // A source relative to the map: resolve it as a URL path, then against the roots.
-          if (!absolute && !/^[a-z][\w+.-]*:/i.test(source)) {
-            try {
-              absolute = fileForUrl(new URL(source, entry.url).href, dirs, bases);
-            } catch {
-              absolute = null;
-            }
-          }
-          resolution.files[index] = absolute;
-        }
-        const file = resolution.files[index];
+        const file = mapFile(resolution, index);
         if (file) add(file, functions);
       }
     }
+    if (!withKnown || resolution.kind === 'none') continue;
+    const version = scriptVersion(covered);
+    let listed = knownCache.get(covered.url, version);
+    if (!listed || listed.count < covered.functions.length) {
+      const byFile = new Map<string, LineRange[]>();
+      const text = textOf(covered, resolution);
+      if (resolution.kind === 'file' && resolution.file) {
+        const lines = knownFunctionLines(covered, resolution.lookup, text);
+        const all = resolution.lookup ? [...lines.values()].flat() : (lines.get(-1) ?? []);
+        if (all.length > 0) byFile.set(resolution.file, all);
+      } else if (resolution.kind === 'map') {
+        for (const [index, functions] of knownFunctionLines(covered, resolution.lookup, text)) {
+          const file = mapFile(resolution, index);
+          if (file) byFile.set(file, [...(byFile.get(file) ?? []), ...functions]);
+        }
+      }
+      listed = { count: covered.functions.length, files: byFile };
+      knownCache.set(covered.url, version, listed);
+    }
+    for (const [file, functions] of listed.files) addTo(known, file, functions);
   }
-  return files;
+  return { reached: files, known };
 }
 
 /** A map fetcher through the page's request context, bounded in size and time. */
@@ -472,6 +528,8 @@ interface CoverageCapture {
   sources: Map<string, Promise<string | null>>;
   /** What ran since the capture started, by script version: each read is merged in as it arrives. */
   ran: Map<string, RanScript>;
+  /** Whether the functions that did not run are kept too, for `coverage.browser: 'functions'`. */
+  keepIdle: boolean;
   /** The reads taken as documents were left, not merged yet. */
   reading: Set<Promise<void>>;
   /** The address of the page's current document. */
@@ -539,7 +597,9 @@ function onPaused(
   const read = leaving ? readCoverage(page, capture.cdp) : null;
   if (read) {
     // Merged before the page resumes, against its scripts as it knows them now.
-    const merging = read.then((coverage) => mergeCoverageRead(capture.ran, capture.scripts, coverage));
+    const merging = read.then((coverage) =>
+      mergeCoverageRead(capture.ran, capture.scripts, coverage, capture.keepIdle),
+    );
     capture.reading.add(merging);
     void merging.finally(() => capture.reading.delete(merging));
   }
@@ -604,15 +664,18 @@ function readCoverage(page: Page, cdp: CDPSession): Promise<ScriptCoverage[]> {
 /**
  * Merge one coverage read into what a capture ran, by script version: a script
  * id is looked up in the scripts the page parsed as the read was taken, since a
- * renderer a cross-site navigation starts numbers its scripts afresh. Only the
- * functions that ran are kept, as V8 reports every function it knows at every
- * read; a script none of whose functions ran is kept without any. Functions keep
- * the order of their first read, so a script's top-level function stays its first.
+ * renderer a cross-site navigation starts numbers its scripts afresh. With
+ * `keepIdle`, every function V8 lists is kept, with a count above zero once any
+ * read saw it run: V8 lists every function it knows at every read, and a later
+ * read that saw it run raises the count of one an earlier read saw idle;
+ * without, only the functions a read saw run. Functions keep the order of their
+ * first read, so a script's top-level function stays its first.
  */
 export function mergeCoverageRead(
   ran: Map<string, RanScript>,
   scripts: ReadonlyMap<string, ParsedScript>,
   read: readonly ScriptCoverage[],
+  keepIdle = true,
 ): void {
   for (const covered of read) {
     const script = scripts.get(covered.scriptId);
@@ -625,9 +688,14 @@ export function mergeCoverageRead(
     }
     for (const fn of covered.functions) {
       const whole = fn.ranges[0];
-      if (!whole || whole.count <= 0) continue;
+      if (!whole) continue;
+      if (!keepIdle && whole.count <= 0) continue;
       const range = `${whole.startOffset}:${whole.endOffset}`;
-      if (known.byRange.has(range)) continue;
+      const seen = known.byRange.get(range);
+      if (seen) {
+        if (whole.count > 0 && seen.ranges[0]!.count <= 0) seen.ranges[0]!.count = whole.count;
+        continue;
+      }
       const copy = { ...fn, ranges: fn.ranges.map((r) => ({ ...r })) };
       known.byRange.set(range, copy);
       known.functions.push(copy);
@@ -659,6 +727,7 @@ export async function startCodeReach(page: Page): Promise<boolean> {
       scripts: new Map(),
       sources: new Map(),
       ran: new Map(),
+      keepIdle: browserFunctionsInWorker(),
       reading: new Set(),
       pageUrl: page.url(),
     };
@@ -706,7 +775,7 @@ export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null>
       return taken.result as ScriptCoverage[];
     });
     await Promise.all(capture.reading);
-    mergeCoverageRead(capture.ran, capture.scripts, last);
+    mergeCoverageRead(capture.ran, capture.scripts, last, capture.keepIdle);
     const entries: CoveredScript[] = [];
     for (const [key, { script, functions }] of capture.ran) {
       const entry: CoveredScript = { url: script.url, hash: script.hash, functions, pageUrl: script.pageUrl };
@@ -726,5 +795,6 @@ export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null>
 export function resetCodeReachCaches(): void {
   scriptCache.clear();
   mapCache.clear();
+  knownCache.clear();
   cachedRepoRoot = null;
 }

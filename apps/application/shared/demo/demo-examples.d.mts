@@ -28,6 +28,8 @@ export interface DemoExampleExpect {
   suspects?: { path: string; granularity?: 'lines' | 'functions' | 'files' };
   coverage?: { serverFiles: number; browserFiles: number; runCoverage?: true };
   fileCoverage?: { path: string; tests: number; executable?: true };
+  combinedCoverage?: { suites: number; filesWithoutData: number };
+  supersededCoverage?: { branch: string; carried: string };
   insight?: 'divergence' | 'path-variation';
 }
 

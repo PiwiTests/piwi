@@ -105,6 +105,7 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `--max-leaks <n>` | Fail when the run left more than *n* browsers, contexts or pages open, counted per opening line |
 | `--max-new-leaks <n>` | Fail when more than *n* of those were never seen on the base branch |
 | `--max-uncovered-changes <n>` | Warn when more than *n* changed files have no observed test reach (warn-only — never fails the gate) |
+| `--min-patch-coverage <percent>` | Warn when fewer of the change's added and modified lines ran, in the head commit's [combined coverage](/features/combined-coverage) (warn-only — never fails the gate) |
 | `--json` | Print the raw result as JSON instead of a summary |
 | `-h`, `--help` | Show help |
 
@@ -137,6 +138,45 @@ npx @piwitests/reporter report --project checkout --period 7d --format md
 | `--output <file>` | Write to a file instead of stdout (required for `pdf`) |
 | `--fail-on <tone>` | `bad`: exit 1 on a bad verdict; `mixed`: on a mixed or bad one |
 | `-h`, `--help` | Show help |
+
+## `coverage`
+
+Upload another tool's coverage report of a commit to the dashboard, for [combined coverage](/features/combined-coverage):
+the unit tests of a front end or a back end, from Cobertura or LCOV. The command reads each report as a stream,
+resolves its paths against the checkout, keeps the files in the project's coverage scope and sends paths, line numbers
+and git blob ids, with the commit's tracked files in scope. Uploads of one commit and suite merge, so shards upload
+separately. When a newer commit has superseded this one on its branch (a CI job run again), the upload
+still exits `0`, the summary says so in one line, and the dashboard keeps the commit's totals as they were.
+
+```bash
+npx @piwitests/reporter coverage upload "**/coverage.cobertura.xml" --suite unit-back
+```
+
+**Exit codes:** `0` uploaded · `1` nothing to upload (no report, or no file of the reports in the checkout) · `2` the upload could not be made.
+
+| Flag | Description |
+|---|---|
+| `--suite <name>` | The suite the report covers, e.g. `unit-back` |
+| `--kind <kind>` | `unit` (default) or `e2e`, for a backend's own run-level report |
+| `--format <format>` | `cobertura`, `lcov` or `piwi` (a .NET test host's report, written at exit with `PIWI_COVERAGE_OUTPUT`); detected from the content when absent |
+| `--root <dir>` | The directory the reports' relative paths start from |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--branch <name>` | The branch (env `PIWI_BRANCH`, the CI's, else git's) |
+| `--dry-run` | Read and resolve the reports, print the summary, send nothing |
+| `--json` | Print the summary as JSON |
+| `-h`, `--help` | Show help |
+
+Patterns are expanded by the command, so a quoted `**` works the same in every shell. Without `--root`, a relative path
+is tried against the report's `<source>`, the current directory, the report's directory and its parent (Vitest writes
+`coverage/` under its root), and the repository root; the first that names a file of the checkout wins, and the
+summary counts the paths none did. An absolute path is taken under the repository root, and the `/_/` of a .NET build
+with `ContinuousIntegrationBuild` is read as the repository root, in a path or in the `<source>` it is joined to.
+
+Each file is named by the git blob of its content in the checkout. When `git hash-object` fails on a file, the command
+says so on stderr and goes on: a changed tracked file is left out of the commit's inventory, a file git does not track
+is sent without its blob.
 
 ## `select` / `run` {#select-run}
 

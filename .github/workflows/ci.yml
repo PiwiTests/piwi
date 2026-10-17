@@ -133,6 +133,7 @@ jobs:
               - 'integrations/aspnetcore/**'
               - 'integrations/serilog/**'
               - 'examples/sample-app/backends/aspnetcore/**'
+              - 'examples/sample-app/backends/aspnetcore.Tests/**'
             smoke:
               - 'packages/server/**'
               - 'packages/reporter/**'

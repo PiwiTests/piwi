@@ -590,6 +590,8 @@ export function* datasetBatches({ scale = 'large', now = new Date() } = {}) {
         },
         // `runOrigin(metadata)`: the metadata carries a CI record.
         origin: 'ci',
+        // `runCommit(metadata)`.
+        commit_sha: commit,
         instance_id: `ci-${project.name}`,
         playwright_version: r < runs * 0.7 ? '1.54.2' : '1.55.1',
         reporter_version: '0.46.0',

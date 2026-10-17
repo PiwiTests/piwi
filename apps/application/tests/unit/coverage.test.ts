@@ -355,7 +355,7 @@ describe('coverage reads', () => {
     expect((await getFileCoverage(db as never, 1, 'Other.cs')).fragments).toEqual([]);
   });
 
-  test('a file’s executable lines come from the newest run coverage of each version', async () => {
+  test('a file’s executable lines are the union of what the run coverages of each version named', async () => {
     const other = await freshDb();
     await run(other, 40, 'main', T0);
     await run(other, 41, 'feature/basket', T0 + 1000);
@@ -371,7 +371,7 @@ describe('coverage reads', () => {
       { path: BASKET, runtime: 'server', blob: BLOB_A, executable: [[1, 9]] },
     ]);
     const coverage = await getFileCoverage(other as never, 1, 'BasketService.cs');
-    // The version no fragment names is left out; the newest run's lines win for the one they do.
+    // The version no fragment names is left out; the runs' lines unite for the one they do.
     expect(coverage.executable).toEqual([{ path: BASKET, runtime: 'server', blob: BLOB_B, lines: [[50, 80]] }]);
   });
 
@@ -426,6 +426,7 @@ describe('run coverage', () => {
   beforeAll(async () => {
     db = await freshDb();
     await run(db, 30, 'main', T0);
+    await run(db, 31, 'main', T0 + 1000);
   });
 
   test('cleans a request like a test’s coverage, and validates executable lines', () => {
@@ -493,10 +494,55 @@ describe('run coverage', () => {
       .where(eq(schema.runCoverage.runId, 30))
       .orderBy(schema.runCoverage.path);
     expect(rows.map((r) => [r.runtime, r.path, r.blob, r.functions, r.lines, r.executable])).toEqual([
-      ['server', 'src/A.cs', BLOB_A, null, '1-3,5-6', '1-10,12-14'],
+      ['server', 'src/A.cs', BLOB_A, null, '1-3,5-6', null],
       // The shards disagree on the file version, so the blob goes.
       ['server', 'src/B.cs', null, null, '7,9', null],
       ['browser', 'src/a.ts', null, '1-4', null, null],
+    ]);
+    // What a version holds is stored once for the version, the union of what the shards named.
+    const versions = await db.select().from(schema.coverageExecutable);
+    expect(versions.map((v) => [v.runtime, v.path, v.blob, v.lines, v.functions])).toEqual([
+      ['server', 'src/A.cs', BLOB_A, '1-10,12-14', null],
+    ]);
+  });
+
+  test('keeps every browser function a run names with the file version, the ones that ran with the run', async () => {
+    const files = parseRunCoverage({
+      v: 1,
+      files: [
+        {
+          path: 'src/pay.ts',
+          runtime: 'browser',
+          blob: BLOB_A,
+          functions: [[1, 4]],
+          allFunctions: [
+            [1, 4],
+            [6, 9],
+          ],
+        },
+        { path: 'src/idle.ts', runtime: 'browser', blob: BLOB_B, allFunctions: [[1, 2]] },
+      ],
+    });
+    await storeRunCoverage(db as never, 31, 1, files as never);
+    const more = parseRunCoverage({
+      v: 1,
+      files: [{ path: 'src/pay.ts', runtime: 'browser', blob: BLOB_A, allFunctions: [[11, 12]] }],
+    });
+    await storeRunCoverage(db as never, 31, 1, more as never);
+    const read = await getRunCoverage(db as never, 31);
+    expect(read!.files).toEqual([
+      { path: 'src/idle.ts', runtime: 'browser', blob: BLOB_B, allFunctions: [[1, 2]] },
+      {
+        path: 'src/pay.ts',
+        runtime: 'browser',
+        blob: BLOB_A,
+        functions: [[1, 4]],
+        allFunctions: [
+          [1, 4],
+          [6, 9],
+          [11, 12],
+        ],
+      },
     ]);
   });
 

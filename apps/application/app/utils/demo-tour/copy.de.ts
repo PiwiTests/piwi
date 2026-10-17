@@ -89,6 +89,10 @@ export const DE_COPY = {
           title: 'Was Ihre Tests nicht abdecken',
           body: 'Die Test Map zeichnet die Funktionen der App aus dem, was die Tests erreichen, und listet die Tests auf, die es noch nicht gibt, sortiert nach Risikoexposition. Einer davon hier: Die Tests bestehen weiter, wenn POST /api/orders ausfällt.',
         },
+        combined: {
+          title: 'Alle Suites, eine Quote',
+          body: 'Die Unit-Tests beider Seiten und der Playwright-Lauf eines Commits, auf denselben Zeilen gezählt: **Combined coverage** zeigt den Anteil, den sie zusammen ausführen, dann den jeder Suite und die Zeilen, die nur die Unit-Tests ausführen.',
+        },
       },
     },
     product: {

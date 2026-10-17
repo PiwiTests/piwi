@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { reachedFunctionLines, reachedSources, scriptRan, scriptText, type JsCoverageEntry } from '../src/code-reach';
+import {
+  knownFunctionLines,
+  reachedFunctionLines,
+  reachedSources,
+  scriptRan,
+  scriptText,
+  type JsCoverageEntry,
+} from '../src/code-reach';
 import { decodeSourceMap } from '../src/source-map';
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -48,6 +55,18 @@ describe('reachedFunctionLines', () => {
 
   test('is empty without the script source', () => {
     expect(reachedFunctionLines({ ...entry, source: undefined }, null).size).toBe(0);
+  });
+
+  test('lists the functions that did not run too with knownFunctionLines, not counting the top level', () => {
+    expect([...knownFunctionLines(entry, null)]).toEqual([
+      [
+        -1,
+        [
+          [1, 3],
+          [4, 4],
+        ],
+      ],
+    ]);
   });
 
   test('reads the same lines from a cached script text as from the source', () => {

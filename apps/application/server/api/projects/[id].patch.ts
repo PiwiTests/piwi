@@ -2,7 +2,8 @@ import { generatedSpecSettingsSchema } from '#shared/handlers/bug-reports';
 import { getDatabase } from '../../database';
 import { z } from 'zod';
 import { requireProjectAccess, requireRouteId } from '../../utils/project-access';
-import { updateProject } from '#shared/handlers/projects';
+import { INVALID_COVERAGE_AREAS, INVALID_COVERAGE_SCOPE, updateProject } from '#shared/handlers/projects';
+import { recountProjectCoverage } from '../../utils/coverage-summary';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { resolveCiRerunSettings, type CiRerunSettings } from '#shared/ci-rerun';
 import { resolveServerProbeSettings } from '#shared/server-probes';
@@ -13,7 +14,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, and tags. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
+      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },
@@ -62,6 +63,10 @@ const updateProjectSchema = z.object({
   generatedSpecs: generatedSpecSettingsSchema.optional().nullable(),
   /** Per-project targets on catalog metrics; null clears them. */
   targets: projectTargetsSchema.optional().nullable(),
+  /** The files coverage totals count, `{ include, exclude }`; null restores the default excludes. */
+  coverageScope: z.unknown().optional(),
+  /** Named areas of the code, `[{ name, include }]`, each counted apart; null or [] removes them. */
+  coverageAreas: z.unknown().optional(),
   tagIds: z.array(z.number()).optional(),
 });
 
@@ -98,6 +103,8 @@ export default eventHandler(async (event) => {
     gateStatus,
     generatedSpecs,
     targets,
+    coverageScope,
+    coverageAreas,
     tagIds,
   } = validation.data;
 
@@ -138,13 +145,22 @@ export default eventHandler(async (event) => {
             ? null
             : { testImport: generatedSpecs.testImport || null, bugsFolder: generatedSpecs.bugsFolder || null },
       targets,
+      coverageScope,
+      coverageAreas,
       tagIds,
+    }).then(async (project) => {
+      if (coverageScope !== undefined || coverageAreas !== undefined) await recountProjectCoverage(db, id);
+      return project;
     });
   } catch (e: any) {
     if (e?.message === 'Project not found') {
       throw apiError({ statusCode: 404, message: 'Project not found' });
     }
-    if (e?.message === 'One or more tag IDs are invalid') {
+    if (
+      e?.message === 'One or more tag IDs are invalid' ||
+      e?.message === INVALID_COVERAGE_SCOPE ||
+      e?.message === INVALID_COVERAGE_AREAS
+    ) {
       throw apiError({ statusCode: 400, message: e.message });
     }
     throw e;

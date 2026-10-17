@@ -1,0 +1,233 @@
+/**
+ * The words of the combined coverage screens: the commit's totals, a suite's
+ * line, a folder's ratio, the notes on what the numbers leave out, which
+ * suites ran a range of a file, and the steps between a file's gaps. Pure, so
+ * the sentences are tested once and read the same on every screen.
+ */
+import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
+import type { CoverageDataNote, CoverageRatios, CoverageSummary } from '~~/server/utils/coverage-summary';
+
+/** A count with thousands separators, the same in every locale so the server and the browser agree. */
+export function formatCount(n: number): string {
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** A percentage as the screens write it: one decimal, `—` when there is nothing to count. */
+export function formatPercent(percent: number | null): string {
+  return percent === null ? '—' : `${percent.toFixed(1)}%`;
+}
+
+/** A count and its noun: `1 line`, `1,204 lines`. */
+export const plural = (n: number, one: string, many = `${one}s`) => `${formatCount(n)} ${n === 1 ? one : many}`;
+
+/** The commit's headline: the share of lines that ran, of how many, across how many suites. */
+export function totalsSentence(summary: Pick<CoverageSummary, 'totals' | 'suites'>): string {
+  const { totals, suites } = summary;
+  if (totals.executableLines === 0) {
+    return `No executable lines are known for this commit, across ${plural(suites.length, 'suite')}.`;
+  }
+  return `${formatPercent(totals.linePercent)} of ${plural(totals.executableLines, 'executable line')} ran, across ${plural(suites.length, 'suite')}.`;
+}
+
+/** The undetermined share, when there is one: lines inside functions the browser suite ran. */
+export function undeterminedSentence(totals: CoverageRatios): string | null {
+  if (!totals.undeterminedLines) return null;
+  return `${formatPercent(totals.undeterminedPercent)} more (${plural(totals.undeterminedLines, 'line')}) are in functions the end-to-end tests ran, whose lines are not recorded.`;
+}
+
+/** The share of functions that ran. */
+export function functionsSentence(totals: CoverageRatios): string | null {
+  if (!totals.knownFunctions) return null;
+  return `${formatCount(totals.runFunctions)} of ${plural(totals.knownFunctions, 'function')} ran (${formatPercent(totals.functionPercent)}).`;
+}
+
+/** What only one kind of suite protects: the lines only unit tests, and only end-to-end tests, ran. */
+export function splitSentence(totals: CoverageRatios): string | null {
+  if (!totals.executedLines) return null;
+  return `Unit tests only: ${plural(totals.unitOnlyLines, 'line')} · end-to-end tests only: ${formatCount(totals.e2eOnlyLines)} · both: ${formatCount(totals.bothLines)}.`;
+}
+
+/** A suite's label: its name, and `end to end` or `unit`. */
+export function suiteKindLabel(kind: 'unit' | 'e2e'): string {
+  return kind === 'e2e' ? 'End to end' : 'Unit';
+}
+
+/** Where a carried-forward suite came from, or null for one the commit has. */
+export function carriedSentence(suite: { carriedFrom: string | null; carriedFiles: number }): string | null {
+  if (!suite.carriedFrom) return null;
+  return `${plural(suite.carriedFiles, 'file')} carried from ${suite.carriedFrom.slice(0, 7)}`;
+}
+
+/** A note's sentence, in parts: text, and the commits it names, each shown as a link to its coverage. */
+export type NoteSentence = Array<string | { commit: string }>;
+
+/** One note on a commit's numbers as one plain sentence; `branch` is the commit's, null for the default branch. */
+export function dataNoteSentence(note: CoverageDataNote, branch: string | null): NoteSentence {
+  switch (note.kind) {
+    case 'detail-removed':
+      return note.supersededBy
+        ? [
+            'Only this commit’s totals are kept: its file detail went when ',
+            { commit: note.supersededBy },
+            ` arrived on ${branch ?? 'the default branch'}.`,
+          ]
+        : ['Only this commit’s totals are kept: its file detail is no longer stored.'];
+    case 'carried':
+      return [
+        `${note.suite}: ${plural(note.files, 'file')} carried from `,
+        { commit: note.from },
+        ', an earlier commit.',
+      ];
+    case 'incomplete':
+      return [
+        `${note.suite}: the report is incomplete, cut at a size limit or with files that disagreed with the checkout.`,
+      ];
+    case 'missing-suite':
+      return [`${note.suite}: no coverage for this commit or an earlier one.`];
+    case 'no-inventory':
+      return ['No inventory uploaded: files no suite names are not counted.'];
+    case 'scope-changed':
+      return ['These totals were computed under an earlier coverage scope or areas than the project’s current ones.'];
+    case 'runs-not-counted': {
+      const runs = note.partial + note.lab;
+      const why = [
+        note.partial ? `${formatCount(note.partial)} partial or unfinished` : null,
+        note.lab ? `${formatCount(note.lab)} from a lab or a probe` : null,
+      ].filter((part): part is string => !!part);
+      return [
+        `${plural(runs, 'end-to-end run')} of this commit ${runs === 1 ? 'doesn’t' : 'don’t'} count: ${why.join(', ')}.`,
+      ];
+    }
+  }
+}
+
+/** The notes a file's view shows: those about its marks, not about the commit's totals. */
+export function fileViewNotes(notes: CoverageDataNote[]): CoverageDataNote[] {
+  return notes.filter((n) => n.kind !== 'no-inventory' && n.kind !== 'scope-changed');
+}
+
+/** The suites that ran any line of a range of a file, by name; empty when none did. */
+export function suitesOnLines(bySuite: Record<string, LineRange[]>, range: LineRange): string[] {
+  const out: string[] = [];
+  for (const [name, ranges] of Object.entries(bySuite)) {
+    for (let line = range[0]; line <= range[1]; line++) {
+      if (lineInRanges(ranges, line)) {
+        out.push(name);
+        break;
+      }
+    }
+  }
+  return out.sort();
+}
+
+/** The parent folders of a folder, for its breadcrumb: `a/b/c` gives `a`, `a/b`, `a/b/c`. */
+export function folderTrail(folder: string): Array<{ name: string; path: string }> {
+  const parts = folder.split('/').filter(Boolean);
+  return parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join('/') }));
+}
+
+/** What a link between the coverage screens carries over: the pinned commit, the branch and the area. */
+export interface CoverageLinkContext {
+  commit?: string | null;
+  branch?: string | null;
+  area?: string | null;
+}
+
+/** A link to the coverage page with `query`, the commit, branch and area of `context` kept. */
+export function coverageLink(
+  projectId: number,
+  context: CoverageLinkContext,
+  query: Record<string, string | undefined> = {},
+): { path: string; query: Record<string, string | undefined> } {
+  return {
+    path: `/projects/${projectId}/coverage`,
+    query: {
+      commit: context.commit || undefined,
+      branch: context.branch || undefined,
+      area: context.area || undefined,
+      ...query,
+    },
+  };
+}
+
+/** A file's view, marked by the suites that ran each line, at the same commit, branch and area. */
+export function coverageFileLink(projectId: number, context: CoverageLinkContext, path: string) {
+  return coverageLink(projectId, context, { file: path, marks: 'suites' });
+}
+
+/** The open folders with `folder` and its parents added, the saved ones kept in their order. */
+export function withLineage(open: string[], folder: string): string[] {
+  const missing = folderTrail(folder)
+    .map((part) => part.path)
+    .filter((path) => !open.includes(path));
+  return missing.length ? [...open, ...missing] : open;
+}
+
+/** Where a selection stands among a file's gaps: the gap it is in, and the gaps before and after it. */
+export interface GapSteps {
+  /** The index of the gap the selection starts in; null when it is in none. */
+  index: number | null;
+  previous: LineRange | null;
+  next: LineRange | null;
+}
+
+/** Step through normalized gaps from a selection: without one, the first gap is next. */
+export function gapSteps(gaps: LineRange[], selection: LineRange | null): GapSteps {
+  const index = selection ? gaps.findIndex(([start, end]) => start <= selection[0] && selection[0] <= end) : -1;
+  const after = selection ? selection[1] : 0;
+  const before = selection ? selection[0] : 0;
+  return {
+    index: index < 0 ? null : index,
+    previous: selection ? ([...gaps].reverse().find(([, end]) => end < before) ?? null) : null,
+    next: gaps.find(([start]) => start > after) ?? null,
+  };
+}
+
+/** The narrowest function holding a line; null outside every function. */
+export function enclosingFunction(functions: LineRange[], line: number): LineRange | null {
+  let found: LineRange | null = null;
+  for (const range of functions) {
+    if (range[0] <= line && line <= range[1] && (!found || range[1] - range[0] < found[1] - found[0])) found = range;
+  }
+  return found;
+}
+
+/** Areas as the settings form writes them: one per line, `name: pattern, pattern`. */
+export function areasText(areas: Array<{ name: string; include: string[] }> | null | undefined): string {
+  return (areas ?? []).map((a) => `${a.name}: ${a.include.join(', ')}`).join('\n');
+}
+
+/**
+ * Areas read back from the settings form's text: blank lines and `#`
+ * comments skipped. An error names the first line that is not `name: patterns`.
+ */
+export function parseAreasText(
+  text: string,
+): { areas: Array<{ name: string; include: string[] }> } | { error: string } {
+  const areas: Array<{ name: string; include: string[] }> = [];
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (!line || line.startsWith('#')) continue;
+    const colon = line.indexOf(':');
+    const name = colon < 0 ? '' : line.slice(0, colon).trim();
+    const include = (colon < 0 ? '' : line.slice(colon + 1))
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (!name || include.length === 0) return { error: `Line ${i + 1}: write the area as “name: pattern, pattern”.` };
+    areas.push({ name, include });
+  }
+  return { areas };
+}
+
+/** Patterns as the settings form writes them, one per line; and read back, blank lines dropped. */
+export function patternsText(patterns: string[] | null | undefined): string {
+  return (patterns ?? []).join('\n');
+}
+export function parsePatternsText(text: string): string[] {
+  return text
+    .split('\n')
+    .map((p) => p.trim())
+    .filter(Boolean);
+}

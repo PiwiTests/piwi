@@ -121,7 +121,13 @@ Collection batches tests per origin (25 tests or 1 second), and the run's last t
 ending sends what is queued at once and fetches the run-level coverage, since
 Playwright stops a `webServer` before `onEnd`. `onEnd` waits at most 15 seconds for
 the tests still collecting, before the ladder above, and sends the run-level coverage
-(`PUT /api/test-runs/:id/coverage`) once the ladder returned the run id.
+(`PUT /api/test-runs/:id/coverage`) once the ladder returned the run id. At
+`coverage.browser: 'functions'` that includes the browser's run-level coverage:
+per file, the functions any test ran and every function V8 listed, run or not
+(`allFunctions`), which the workers name once each in `piwi-browser-functions`
+attachments, as many per test as the capture caps need.
+A backend's files whose source checksums (`checksums`) differ from the checkout's
+lose their line numbers (`internal/collect/source-checksums.ts`).
 
 ## Directory layout
 

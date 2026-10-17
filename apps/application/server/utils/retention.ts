@@ -6,7 +6,9 @@ import type { DbClient } from '../database';
 import {
   analyticsDashboards,
   casePayloads,
+  coverageExecutable,
   coverageFragments,
+  coverageReports,
   entityLinks,
   failureClusters,
   failureDiagnoses,
@@ -28,7 +30,7 @@ import {
 } from '../database/schema';
 import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { deleteGraphRowsForRuns } from './graph-ingest';
-import { unreferencedFragments } from './coverage';
+import { unreferencedFileVersions, unreferencedFragments } from './coverage';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/analytics/rollups';
 import { dayKey } from '#shared/handlers/analytics/common';
@@ -342,7 +344,8 @@ function payloadUnreferenced(): SQL {
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.pageInventoryPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.locatorPagesPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.codeReachPayloadId} = ${casePayloads.id})
-    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.coveragePayloadId} = ${casePayloads.id})`;
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.coveragePayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${coverageReports} WHERE ${coverageReports.inventoryPayloadId} = ${casePayloads.id})`;
 }
 
 export interface OrphanSweepResult {
@@ -353,6 +356,7 @@ export interface OrphanSweepResult {
   notificationDeliveries: number;
   casePayloads: number;
   coverageFragments: number;
+  coverageFileVersions: number;
   shareLinks: number;
   dashboards: number;
 }
@@ -384,6 +388,8 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   const orphanedPayloads = and(lt(casePayloads.createdAt, oneHourAgo), payloadUnreferenced())!;
   // Coverage fragments no test's coverage and no remaining execution can reference.
   const orphanedFragments = unreferencedFragments();
+  // File versions no run coverage and no fragment names, counted after the fragments go.
+  const orphanedFileVersions = unreferencedFileVersions();
   // `share_links.entity_id` is polymorphic over four tables and carries no FK,
   // so a link whose entity was pruned or deleted lingers until this sweep removes
   // it (a snapshot's and a dashboard's links go with them; this is the safety net).
@@ -403,6 +409,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
     notificationDeliveries: await countWhere(db, notificationDeliveries, orphanedDeliveries),
     casePayloads: await countWhere(db, casePayloads, orphanedPayloads),
     coverageFragments: await countWhere(db, coverageFragments, orphanedFragments),
+    coverageFileVersions: 0,
     shareLinks: await countWhere(db, shareLinks, orphanedShareLinks),
     dashboards: await countWhere(db, analyticsDashboards, orphanedDashboards),
   };
@@ -417,6 +424,8 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   await db.delete(notificationDeliveries).where(orphanedDeliveries);
   await db.delete(casePayloads).where(orphanedPayloads);
   await db.delete(coverageFragments).where(orphanedFragments);
+  result.coverageFileVersions = await countWhere(db, coverageExecutable, orphanedFileVersions);
+  await db.delete(coverageExecutable).where(orphanedFileVersions);
   await db.delete(shareLinks).where(orphanedShareLinks);
   if (result.dashboards > 0) await deleteDashboardRows(db as unknown as DrizzleDB, orphanedDashboards);
 

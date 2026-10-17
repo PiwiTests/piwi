@@ -20,6 +20,9 @@ export const projects = sqliteTable(
     capabilities: text('capabilities', { mode: 'json' }), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
     generatedSpecs: text('generated_specs', { mode: 'json' }), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
     targets: text('targets', { mode: 'json' }), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
+    coverageScope: text('coverage_scope', { mode: 'json' }), // CoverageScope — include and exclude patterns of the files coverage totals count; null = the default excludes
+    coverageScopeVersion: integer('coverage_scope_version').notNull().default(0), // Bumped on every change of coverage_scope, so totals computed under another scope read as stale
+    coverageAreas: text('coverage_areas', { mode: 'json' }), // CoverageArea[] — named areas of the code (`front`, `back`) by include patterns, each counted apart; null = none
     locatorIndexBuiltAt: integer('locator_index_built_at', { mode: 'timestamp' }), // when locator_usages was first built from stored executions; null = not yet
     quarantineFailsStatus: integer('quarantine_fails_status', { mode: 'boolean' }).notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
     gateStatus: integer('gate_status', { mode: 'boolean' }).notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
@@ -64,6 +67,7 @@ export const testRuns = sqliteTable(
     branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
     origin: text('origin').notNull().default('local'), // What launched the run, `runOrigin(metadata)`, written with every metadata write; read by the eligibility rule
+    commit: text('commit_sha'), // The run's commit, `runCommit(metadata)` (metadata.scm.commit), written with every metadata write; null when the run names none
     setupSteps: text('setup_steps', { mode: 'json' }), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
@@ -93,6 +97,7 @@ export const testRuns = sqliteTable(
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
     projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
     keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
+    projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
   }),
 );
 
@@ -712,6 +717,8 @@ export const coverageFragments = sqliteTable(
     blob: text('blob'), // git blob id of the file version the line numbers refer to
     functions: text('functions'), // function ranges, `12-15,20`
     lines: text('lines'), // executed line ranges, `12-15,20`
+    executable: text('executable'), // a coverage report's executable line ranges; null for a test's fragment
+    allFunctions: text('all_functions'), // a coverage report's function ranges, run or not; null for a test's fragment
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -775,6 +782,183 @@ export const runCoverage = sqliteTable(
   (table) => ({
     uniqueFile: uniqueIndex('idx_run_coverage_unique').on(table.runId, table.runtime, table.path),
     projectPathIdx: index('idx_run_coverage_project_path').on(table.projectId, table.path),
+  }),
+);
+
+// Executable lines per file version: the lines of every statement of one
+// version (blob) of a file, as the span table of the build that compiled it
+// lists them, and every function known in it (run or not). They depend on the
+// file's content alone, so they are stored once per version: the union of what
+// the run coverages naming the version sent.
+export const coverageExecutable = sqliteTable(
+  'coverage_executable',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    runtime: text('runtime').notNull(), // 'browser' | 'server'
+    path: text('path').notNull(), // repository-relative path
+    blob: text('blob').notNull(), // git blob id of the file version
+    lines: text('lines'), // executable line ranges, `12-15,20`
+    functions: text('functions'), // every function's range, run or not, `12-15,20`
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueVersion: uniqueIndex('idx_coverage_executable_unique').on(
+      table.projectId,
+      table.runtime,
+      table.path,
+      table.blob,
+    ),
+    projectPathIdx: index('idx_coverage_executable_project_path').on(table.projectId, table.path),
+  }),
+);
+
+// Coverage reports: one suite's coverage of one commit, imported from another
+// tool's report (`piwi coverage upload`) and kept in Piwi's model, attributed to
+// no test. Reports of the same commit and suite merge, like shards. The
+// commit's file inventory (the tracked files and their blobs) is a
+// `case_payloads` row.
+export const coverageReports = sqliteTable(
+  'coverage_reports',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    commit: text('commit_sha').notNull(), // full commit id, lowercase hex
+    branch: text('branch').notNull().default(''), // '' = the project's default branch; else the branch it ran on
+    suite: text('suite').notNull(), // the name the team uploads it under, e.g. 'unit-back'
+    kind: text('kind').notNull(), // 'unit' | 'e2e'
+    tool: text('tool'), // 'cobertura' | 'lcov' | 'piwi', with the writer when the report names it
+    incomplete: integer('incomplete', { mode: 'boolean' }).notNull().default(false), // true when part of the report was left out (a cap, a file version that disagreed)
+    fileCount: integer('file_count').notNull().default(0),
+    inventoryPayloadId: integer('inventory_payload_id').references(() => casePayloads.id), // The commit's file inventory, `[[path, blob], ...]`
+    inventoryCount: integer('inventory_count'), // How many files the inventory names; null without one
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueSuite: uniqueIndex('idx_coverage_reports_unique').on(table.projectId, table.commit, table.suite),
+    projectBranchIdx: index('idx_coverage_reports_project_branch').on(table.projectId, table.branch, table.updatedAt),
+    inventoryIdx: index('idx_coverage_reports_inventory').on(table.inventoryPayloadId),
+  }),
+);
+
+// The fragment each file of a coverage report has: the file's version, its
+// executable lines, the lines and functions that ran and every function the
+// tool knows, shared with every report and commit that recorded the same.
+export const coverageReportFiles = sqliteTable(
+  'coverage_report_files',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    reportId: integer('report_id')
+      .notNull()
+      .references(() => coverageReports.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(), // repository-relative path
+    fragmentId: integer('fragment_id')
+      .notNull()
+      .references(() => coverageFragments.id, { onDelete: 'cascade' }),
+  },
+  (table) => ({
+    uniqueFile: uniqueIndex('idx_coverage_report_files_unique').on(table.reportId, table.path),
+    fragmentIdx: index('idx_coverage_report_files_fragment').on(table.fragmentId),
+  }),
+);
+
+// Coverage totals: per project, commit and suite (`combined` for every suite
+// together), the counts combined coverage computed on the commit's reference
+// lines, recomputed after each upload and each run coverage of the commit.
+// `scope_version` is the project's coverage scope version they were computed
+// under; another version reads as stale. `commit_seen_at` is when the commit's
+// coverage first arrived (its first report or run), the order commits follow;
+// `computation_started_at` keeps an older computation from replacing a newer.
+// `detail_removed_at` is when the commit's report files went (a newer commit
+// superseded them, `superseded_by`): its totals are final from then on.
+export const coverageTotals = sqliteTable(
+  'coverage_totals',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    commit: text('commit_sha').notNull(),
+    branch: text('branch').notNull().default(''), // '' = the default branch
+    suite: text('suite').notNull(), // a suite's name, or 'combined'
+    area: text('area').notNull().default(''), // a named area of the project's code, or '' for every file
+    kind: text('kind').notNull(), // 'unit' | 'e2e' | 'combined'
+    executableLines: integer('executable_lines').notNull().default(0),
+    executedLines: integer('executed_lines').notNull().default(0),
+    undeterminedLines: integer('undetermined_lines').notNull().default(0),
+    knownFunctions: integer('known_functions').notNull().default(0),
+    runFunctions: integer('run_functions').notNull().default(0),
+    files: integer('files').notNull().default(0),
+    unitOnlyLines: integer('unit_only_lines').notNull().default(0),
+    e2eOnlyLines: integer('e2e_only_lines').notNull().default(0),
+    bothLines: integer('both_lines').notNull().default(0),
+    filesWithoutData: integer('files_without_data'), // null without an inventory
+    filesCarriedForward: integer('files_carried_forward').notNull().default(0),
+    carriedFrom: text('carried_from'), // the commit an absent suite's files came from
+    incomplete: integer('incomplete', { mode: 'boolean' }).notNull().default(false),
+    scopeVersion: integer('scope_version').notNull().default(0),
+    commitSeenAt: integer('commit_seen_at', { mode: 'timestamp' }),
+    computationStartedAt: integer('computation_started_at', { mode: 'timestamp_ms' }),
+    computedAt: integer('computed_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    detailRemovedAt: integer('detail_removed_at', { mode: 'timestamp' }), // null while the commit's reports are kept
+    supersededBy: text('superseded_by'), // the newer commit whose coverage made the reports go
+  },
+  (table) => ({
+    uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite, table.area),
+    projectBranchIdx: index('idx_coverage_totals_project_branch').on(table.projectId, table.branch, table.commitSeenAt),
+  }),
+);
+
+// Coverage per day: per project, day (UTC, `YYYY-MM-DD`), branch and suite, the
+// totals of the last commit whose coverage arrived that day (`commit_seen_at`),
+// for trends kept after the reports themselves are pruned.
+export const coverageDaily = sqliteTable(
+  'coverage_daily',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(), // UTC date, YYYY-MM-DD
+    branch: text('branch').notNull().default(''),
+    suite: text('suite').notNull(),
+    area: text('area').notNull().default(''), // a named area of the project's code, or '' for every file
+    commit: text('commit_sha').notNull(),
+    executableLines: integer('executable_lines').notNull().default(0),
+    executedLines: integer('executed_lines').notNull().default(0),
+    undeterminedLines: integer('undetermined_lines').notNull().default(0),
+    knownFunctions: integer('known_functions').notNull().default(0),
+    runFunctions: integer('run_functions').notNull().default(0),
+    files: integer('files').notNull().default(0),
+    unitOnlyLines: integer('unit_only_lines').notNull().default(0),
+    e2eOnlyLines: integer('e2e_only_lines').notNull().default(0),
+    bothLines: integer('both_lines').notNull().default(0),
+    commitSeenAt: integer('commit_seen_at', { mode: 'timestamp' }),
+    computedAt: integer('computed_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueDay: uniqueIndex('idx_coverage_daily_unique').on(
+      table.projectId,
+      table.day,
+      table.branch,
+      table.suite,
+      table.area,
+    ),
   }),
 );
 
@@ -2061,7 +2245,7 @@ export const gateEvaluations = sqliteTable(
       .references(() => testRuns.id, { onDelete: 'cascade' }),
     commitSha: text('commit_sha'),
     prNumber: integer('pr_number'), // null when the run names no pull request
-    policy: text('policy', { mode: 'json' }).notNull(), // GatePolicy, plus maxUncoveredChanges when asked
+    policy: text('policy', { mode: 'json' }).notNull(), // GatePolicy, plus maxUncoveredChanges and minPatchCoverage when asked
     policyHash: text('policy_hash').notNull(),
     passed: integer('passed', { mode: 'boolean' }).notNull(),
     verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
@@ -2102,6 +2286,7 @@ export const prFeedbackPosts = sqliteTable(
     prNumber: integer('pr_number'), // null when only commit statuses were posted
     commentId: text('comment_id'), // the host's id of Piwi's comment; null when none was posted or the host returned none
     statuses: text('statuses', { mode: 'json' }).notNull(), // string[]: the commit status contexts the host accepted
+    fixes: text('fixes', { mode: 'json' }), // VerifiedFix[]: the clusters the run verified as fixed, which a refreshed comment reports again; null before the first comment
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),

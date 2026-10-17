@@ -33,6 +33,8 @@ interface GateArgs {
   policy: GatePolicy;
   /** Warn-only: report (never fail on) more than n uncovered changed files. */
   maxUncoveredChanges?: number;
+  /** Warn-only: report (never fail on) a patch coverage under this percentage. */
+  minPatchCoverage?: number;
 }
 
 const USAGE = `
@@ -65,6 +67,7 @@ Policy (at least one is required):
 
 Warn-only (reported, never fails the build):
   --max-uncovered-changes <n>  Warn when more than n changed files have no observed test reach
+  --min-patch-coverage <percent>  Warn when fewer of the changed lines ran, in the commit's combined coverage
 
 Other:
   --json                   Print the raw result as JSON instead of a summary
@@ -81,6 +84,15 @@ function readOption(argv: string[], name: string): string | undefined {
   if (index === -1) return undefined;
   const value = argv[index + 1];
   return value && !value.startsWith('--') ? value : undefined;
+}
+
+function readPercent(argv: string[], name: string): number | undefined {
+  const raw = readOption(argv, name)?.replace(/%$/, '');
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 100)
+    throw new Error(`${name} expects a percentage from 0 to 100, got "${raw}"`);
+  return n;
 }
 
 function readCount(argv: string[], name: string): number | undefined {
@@ -141,6 +153,7 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv): GateArgs 
     runId,
     policy,
     maxUncoveredChanges: readCount(argv, '--max-uncovered-changes'),
+    minPatchCoverage: readPercent(argv, '--min-patch-coverage'),
   };
 }
 
@@ -149,12 +162,16 @@ async function requestGate(args: GateArgs): Promise<GateResult> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-Piwi-Client': 'cli' };
   if (args.apiKey) headers['X-API-Key'] = args.apiKey;
 
-  // `maxUncoveredChanges` is a warn-only body field the server reads outside the
-  // policy; JSON.stringify drops it when it is undefined.
+  // `maxUncoveredChanges` and `minPatchCoverage` are warn-only body fields the
+  // server reads outside the policy; JSON.stringify drops them when undefined.
   const res = await fetch(`${args.serverUrl}/api/test-runs/${args.runId}/gate`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ ...args.policy, maxUncoveredChanges: args.maxUncoveredChanges }),
+    body: JSON.stringify({
+      ...args.policy,
+      maxUncoveredChanges: args.maxUncoveredChanges,
+      minPatchCoverage: args.minPatchCoverage,
+    }),
   });
 
   if (!res.ok) {

@@ -14,9 +14,22 @@
  * by function marks its functions, and one recorded by file lists its tests
  * only. `?branch=` reads another branch than the default one. On a project
  * that records no coverage the page says so in one sentence.
+ *
+ * Without `?file=`, the page is the project's combined coverage at a commit
+ * (`?commit=`, else the one whose coverage arrived last on `?branch=`),
+ * broken down by `?folder=` (`GET /api/projects/:id/coverage-summary`). The file view adds,
+ * at the commit, which suites ran the file's lines; with `?marks=suites`, or
+ * for a file no test recorded, each line is marked by the kinds of suite that
+ * ran it, read from the commit's combined coverage alone. The previous and
+ * next gap (lines no test, or no suite, ran) are one click away. Every link
+ * between the overview and a file keeps the pinned commit, the branch and
+ * the area. The notes on the commit's suites (one carried, one incomplete,
+ * only the commit's totals kept) sit above the file.
  */
-import { decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
+import { countLines, decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
+import { coveragePercent } from '#shared/coverage-combine';
 import type { ApiResponse, ProjectDetails } from '~~/types/api';
+import { SEGMENTED_SELECTED_CLASS } from '~/utils';
 import type { FileCoverage } from '~~/server/utils/coverage';
 import { compactFileCoverage, nearestTest } from '#shared/coverage-insights';
 import { COVERAGE_PRECISION_LABEL, COVERAGE_PRECISION_TITLE, functionNameAt } from '~/utils/coverage-view';
@@ -31,6 +44,19 @@ import {
   testsOnLines,
 } from '~/utils/file-coverage';
 import { lineRangesText } from '~/utils/suspect-lines';
+import {
+  coverageLink,
+  enclosingFunction,
+  fileViewNotes,
+  folderTrail,
+  formatCount,
+  formatPercent,
+  gapSteps,
+  plural,
+  suitesOnLines,
+  type CoverageLinkContext,
+} from '~/utils/combined-coverage';
+import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 
 type SourceResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/source.get').default>;
 
@@ -47,25 +73,124 @@ const branch = computed(() =>
   typeof route.query.branch === 'string' && route.query.branch ? route.query.branch : undefined,
 );
 const fileName = computed(() => file.value.split('/').pop() || 'Coverage');
+const commit = computed(() =>
+  typeof route.query.commit === 'string' && route.query.commit ? route.query.commit : undefined,
+);
+const folder = computed(() => (typeof route.query.folder === 'string' ? route.query.folder : undefined));
+const area = computed(() => (typeof route.query.area === 'string' && route.query.area ? route.query.area : undefined));
+
+// The combined coverage at the commit: the page's subject without a file, the suites of each line with one.
+const {
+  data: summary,
+  status: summaryStatus,
+  error: summaryError,
+} = useFetch<CoverageSummary>(`/api/projects/${projectId}/coverage-summary`, {
+  server: false,
+  lazy: true,
+  query: computed(() => ({
+    commit: commit.value,
+    branch: branch.value,
+    folder: file.value ? undefined : folder.value,
+    file: file.value || undefined,
+    area: file.value ? undefined : area.value,
+  })),
+});
+const summaryLoading = computed(() => summaryStatus.value === 'idle' || summaryStatus.value === 'pending');
+/** The overview's first read: a later one, for another folder or area, keeps the overview and its tree in place. */
+const summaryFirstLoading = computed(() => summaryLoading.value && !summary.value);
+/** What the links back to the overview keep: the commit when the page pins one, the branch and the area. */
+const linkContext = computed<CoverageLinkContext>(() => ({
+  commit: commit.value ? (summary.value?.commit ?? commit.value) : null,
+  branch: branch.value,
+  area: area.value,
+}));
+/** No combined coverage at all: the summary answered 404. */
+const noCombined = computed(() => summaryError.value?.statusCode === 404);
 
 useHead(
   computed(() => ({
-    title: `Coverage of ${fileName.value} — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `${file.value ? `Coverage of ${fileName.value}` : 'Coverage'} — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
   })),
 );
 
-// Client-side only: a file many tests run has a large answer, with no place in the SSR payload.
+// Client-side only: a file many tests run has a large answer, with no place in the SSR payload. The key
+// follows the file and the branch, so opening a file from the overview reads it; the overview reads nothing.
 const {
   data: coverage,
   status,
   error,
-} = useFetch<FileCoverage>(`/api/projects/${projectId}/coverage`, {
-  server: false,
-  lazy: true,
-  query: computed(() => ({ file: file.value, branch: branch.value })),
-  immediate: coverageActive.value && file.value !== '',
+} = useAsyncData<FileCoverage | null>(
+  () => `file-coverage-${projectId}-${branch.value ?? ''}-${file.value}`,
+  () =>
+    coverageActive.value && file.value
+      ? $fetch<FileCoverage>(`/api/projects/${projectId}/coverage`, {
+          query: { file: file.value, branch: branch.value },
+        })
+      : Promise.resolve(null),
+  { server: false, lazy: true, watch: [coverageActive] },
+);
+
+/**
+ * The file at the commit's combined coverage: when it is the version the tests
+ * recorded, or the tests recorded no version (none ran it, or they recorded it
+ * by file only).
+ */
+const combinedFile = computed(() => {
+  const at = summary.value?.file;
+  if (!at || !at.blob) return null;
+  return !version.value?.blob || at.blob === version.value.blob ? at : null;
 });
-const loading = computed(() => status.value === 'idle' || status.value === 'pending');
+/** How lines are marked: by the suites of the commit, or by how many tests ran them. */
+const marks = computed<'suites' | 'tests'>(() =>
+  combinedFile.value && (!version.value?.blob || route.query.marks === 'suites') ? 'suites' : 'tests',
+);
+const MARK_OPTIONS = [
+  { value: 'tests', label: 'By tests' },
+  { value: 'suites', label: 'By suites' },
+] as const;
+function pickMarks(next: 'suites' | 'tests') {
+  void router.replace({ query: { ...route.query, marks: next === 'suites' ? 'suites' : undefined } });
+}
+/** The path and version the page shows: the commit's with marks by suite, else the tests'. */
+const shownPath = computed(() => (marks.value === 'suites' ? file.value : (version.value?.path ?? null)));
+const shownBlob = computed(() =>
+  marks.value === 'suites' ? (combinedFile.value?.blob ?? null) : (version.value?.blob ?? null),
+);
+const combinedFileSentence = computed(() => {
+  const at = combinedFile.value;
+  if (!at || !summary.value) return null;
+  const executable = countLines(at.executable);
+  const ran = formatPercent(coveragePercent(countLines(at.executed), executable));
+  const { unitOnly, e2eOnly, both } = at.classes;
+  return `With every suite at ${summary.value.commit.slice(0, 7)}: ${ran} of its ${plural(executable, 'line')} ran — unit only ${formatCount(countLines(unitOnly))}, end to end only ${formatCount(countLines(e2eOnly))}, both ${formatCount(countLines(both))}.`;
+});
+/** The file's lines by class, for its bar. */
+const combinedCounts = computed(() => {
+  const at = combinedFile.value;
+  if (!at) return null;
+  return {
+    executableLines: countLines(at.executable),
+    bothLines: countLines(at.classes.both),
+    unitOnlyLines: countLines(at.classes.unitOnly),
+    e2eOnlyLines: countLines(at.classes.e2eOnly),
+    undeterminedLines: countLines(at.classes.undetermined),
+  };
+});
+/** The file's folders, each a link to the explorer at that folder. */
+const fileTrail = computed(() => folderTrail(file.value.split('/').slice(0, -1).join('/')));
+const selectionSuites = computed(() =>
+  combinedFile.value && selection.value ? suitesOnLines(combinedFile.value.bySuite, selection.value) : null,
+);
+const selectionSuitesSentence = computed(() => {
+  const picked = selection.value;
+  const suites = selectionSuites.value;
+  if (!picked || !suites) return '';
+  const lines = picked[0] === picked[1] ? `Line ${picked[0]}` : `Lines ${picked[0]}–${picked[1]}`;
+  return suites.length ? `${lines} ran in ${suites.join(', ')}.` : `No suite ran ${lines.toLowerCase()}.`;
+});
+const loading = computed(
+  () => (coverageActive.value && (status.value === 'idle' || status.value === 'pending')) || summaryLoading.value,
+);
 
 const versions = computed(() => (coverage.value ? fileCoverageVersions(coverage.value) : []));
 /** `?blob=` value of a version whose coverage names no lines. */
@@ -134,13 +259,46 @@ function selectLine(line: number, extend: boolean) {
 }
 
 const counts = computed(() => (version.value ? lineTestCounts(version.value) : new Map<number, number>()));
-const firstLine = computed(() => selection.value?.[0] ?? version.value?.executed[0]?.[0] ?? null);
+const firstLine = computed(
+  () =>
+    selection.value?.[0] ??
+    (marks.value === 'suites' ? combinedFile.value?.classes.none[0]?.[0] : version.value?.executed[0]?.[0]) ??
+    null,
+);
+
+/** Lines no test ran, or no suite with marks by suite: what to cover next. */
+const gaps = computed<LineRange[]>(() =>
+  marks.value === 'suites' ? (combinedFile.value?.classes.none ?? []) : (version.value?.notExecuted ?? []),
+);
+const steps = computed(() => gapSteps(gaps.value, selection.value));
+const sourceView = ref<{ reveal: (line: number, flash?: boolean) => void } | null>(null);
+function goToGap(gap: LineRange | null) {
+  if (!gap) return;
+  anchor = gap[0];
+  setSelection(gap);
+  sourceView.value?.reveal(gap[0], true);
+}
+const gapSentence = computed(() => {
+  const n = gaps.value.length;
+  if (n === 0) return marks.value === 'suites' ? 'Every line of this file ran in a suite.' : null;
+  const i = steps.value.index;
+  if (i === null) {
+    return `${plural(n, 'gap')}: ${plural(countLines(gaps.value), 'line')}.`;
+  }
+  const gap = gaps.value[i]!;
+  const functions =
+    marks.value === 'suites' ? (combinedFile.value?.knownFunctions ?? []) : (version.value?.functions ?? []);
+  const fn = enclosingFunction(functions, gap[0]);
+  const name = fn ? functionNameAt(sourceLines.value?.[fn[0] - 1]) : null;
+  const lines = gap[0] === gap[1] ? `line ${gap[0]}` : `lines ${gap[0]}–${gap[1]}`;
+  return `Gap ${i + 1} of ${n} · ${lines}${name ? ` · in ${name}` : ''}`;
+});
 
 // The source at the version shown, read when the version changes.
 const source = ref<string | null>(null);
 const sourcePending = ref(false);
 watch(
-  () => [version.value?.path, version.value?.blob] as const,
+  () => [shownPath.value, shownBlob.value] as const,
   async ([path, blob], _old, onCleanup) => {
     let stale = false;
     onCleanup(() => (stale = true));
@@ -207,7 +365,8 @@ const nearestSentence = computed(() => {
               { label: 'Home', icon: 'i-lucide-house', to: '/' },
               { label: 'Projects', to: '/projects' },
               { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
-              { label: fileName },
+              file ? { label: 'Coverage', to: coverageLink(projectId, linkContext) } : { label: 'Coverage' },
+              ...(file ? [{ label: fileName }] : []),
             ]"
           />
         </template>
@@ -215,63 +374,188 @@ const nearestSentence = computed(() => {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4" data-shot="coverage-file">
-        <EmptyState v-if="!coverageActive" text="This project records no coverage." />
-        <EmptyState v-else-if="!file" text="No file named: add ?file= and a repository-relative path to the address." />
-        <LoadingState v-else-if="loading" text="Reading the file’s coverage…" />
-        <ErrorState v-else-if="error" text="The coverage of this file could not be read." />
+      <div v-if="!file" class="p-4 space-y-4">
+        <LoadingState v-if="summaryFirstLoading" text="Combining the suites’ coverage…" />
         <EmptyState
-          v-else-if="!version || !coverage"
-          :text="`No test recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`"
+          v-else-if="noCombined"
+          text="No combined coverage yet: upload a suite’s coverage report with piwi coverage upload, or record run coverage with the reporter."
         />
+        <ErrorState v-else-if="summaryError || !summary" text="The combined coverage could not be read." />
+        <ProjectCoverageOverview v-else :project-id="projectId" :summary="summary" :aria-busy="summaryLoading" />
+      </div>
+      <div v-else class="p-4 space-y-4" data-shot="coverage-file">
+        <LoadingState v-if="loading" text="Reading the file’s coverage…" />
+        <EmptyState v-else-if="!coverageActive && !combinedFile" text="This project records no coverage." />
+        <ErrorState v-else-if="error && !combinedFile" text="The coverage of this file could not be read." />
+        <template v-else-if="!version && !combinedFile">
+          <CoverageDataNotes
+            v-if="summary"
+            :project-id="projectId"
+            :notes="fileViewNotes(summary.notes)"
+            :branch="summary.branch"
+            :link="{ branch: linkContext.branch, area: linkContext.area }"
+          />
+          <EmptyState
+            :text="
+              summary?.detailRemoved
+                ? `Only the totals of ${summary.commit.slice(0, 7)} are kept, and no test recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`
+                : `No test or suite recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`
+            "
+          />
+        </template>
 
         <template v-else>
+          <CoverageDataNotes
+            v-if="summary"
+            :project-id="projectId"
+            :notes="fileViewNotes(summary.notes)"
+            :branch="summary.branch"
+            :link="{ branch: linkContext.branch, area: linkContext.area }"
+          />
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0 space-y-1">
+              <nav class="flex flex-wrap items-center gap-1 text-xs text-muted" aria-label="Folder">
+                <NuxtLink :to="coverageLink(projectId, linkContext)" class="hover:underline">Repository</NuxtLink>
+                <template v-for="part in fileTrail" :key="part.path">
+                  <span>/</span>
+                  <NuxtLink
+                    :to="coverageLink(projectId, linkContext, { folder: part.path })"
+                    class="font-mono hover:underline"
+                    >{{ part.name }}</NuxtLink
+                  >
+                </template>
+              </nav>
               <p class="text-sm text-highlighted break-words" data-testid="coverage-file-path">
                 <OpenInIdeLink
-                  :file-path="version.path"
+                  :file-path="shownPath ?? file"
                   :line="firstLine"
                   :project-key="projectId"
                   :project-name="project?.name"
-                  >{{ version.path }}</OpenInIdeLink
+                  >{{ shownPath ?? file }}</OpenInIdeLink
                 >
               </p>
-              <p class="text-sm text-highlighted leading-relaxed" data-testid="coverage-file-summary">
+              <p
+                v-if="version && coverage"
+                class="text-sm text-highlighted leading-relaxed"
+                data-testid="coverage-file-summary"
+              >
                 {{ fileCoverageSentence(version, coverage.branch) }}
               </p>
+              <p
+                v-if="combinedFileSentence"
+                class="text-sm text-highlighted leading-relaxed"
+                data-testid="coverage-file-combined"
+              >
+                {{ combinedFileSentence }}
+                <template v-if="selectionSuites">
+                  {{ selectionSuitesSentence }}
+                </template>
+              </p>
+              <CoverageBar v-if="combinedCounts && marks === 'suites'" :counts="combinedCounts" class="max-w-md" />
               <p class="text-xs text-muted inline-flex flex-wrap items-center gap-x-1">
-                <span>{{ version.runtime === 'server' ? 'Server file' : 'Browser file' }}</span>
-                ·
-                <span :title="COVERAGE_PRECISION_TITLE[version.granularity]"
-                  >recorded {{ COVERAGE_PRECISION_LABEL[version.granularity] }}</span
-                >
-                <template v-if="version.blob">
-                  · version <span class="font-mono">{{ version.blob.slice(0, 7) }}</span>
+                <span v-if="marks === 'suites'">Marked by the suites that ran each line</span>
+                <template v-else-if="version">
+                  <span>{{ version.runtime === 'server' ? 'Server file' : 'Browser file' }}</span>
+                  ·
+                  <span :title="COVERAGE_PRECISION_TITLE[version.granularity]"
+                    >recorded {{ COVERAGE_PRECISION_LABEL[version.granularity] }}</span
+                  >
+                </template>
+                <template v-if="shownBlob">
+                  · version <span class="font-mono">{{ shownBlob.slice(0, 7) }}</span>
                 </template>
                 <HelpHint topic="coverage.file" />
               </p>
             </div>
-            <USelect
-              v-if="versions.length > 1"
-              :model-value="version.key"
-              :items="versionItems"
-              color="neutral"
-              size="sm"
-              icon="i-lucide-git-commit-horizontal"
-              class="w-full sm:w-64 shrink-0"
-              aria-label="Version"
-              title="The tests recorded several versions of this file; line numbers belong to one"
-              data-testid="coverage-file-version"
-              @update:model-value="pickVersion(String($event))"
-            />
+            <div class="flex flex-col gap-2 sm:items-end shrink-0">
+              <div
+                v-if="version?.blob && combinedFile"
+                class="inline-flex shrink-0 gap-0.5 rounded-md bg-elevated/60 p-0.5"
+                role="group"
+                aria-label="Mark lines by"
+                data-testid="coverage-file-marks"
+              >
+                <button
+                  v-for="option in MARK_OPTIONS"
+                  :key="option.value"
+                  type="button"
+                  class="rounded px-2 py-0.5 text-xs whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+                  :class="marks === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
+                  :aria-pressed="marks === option.value ? 'true' : 'false'"
+                  @click="pickMarks(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <USelect
+                v-if="versions.length > 1 && version"
+                :model-value="version.key"
+                :items="versionItems"
+                color="neutral"
+                size="sm"
+                icon="i-lucide-git-commit-horizontal"
+                class="w-full sm:w-64"
+                aria-label="Version"
+                title="The tests recorded several versions of this file; line numbers belong to one"
+                data-testid="coverage-file-version"
+                @update:model-value="pickVersion(String($event))"
+              />
+            </div>
           </div>
 
           <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-            <div v-if="version.blob" class="min-w-0">
+            <div v-if="shownBlob" class="min-w-0 space-y-2">
+              <div
+                v-if="gapSentence"
+                class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted"
+                data-testid="coverage-file-gaps"
+              >
+                <span class="tabular-nums">{{ gapSentence }}</span>
+                <span v-if="gaps.length" class="inline-flex gap-1">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-chevron-up"
+                    :disabled="!steps.previous"
+                    data-testid="coverage-gap-previous"
+                    @click="goToGap(steps.previous)"
+                    >Previous gap</UButton
+                  >
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    trailing-icon="i-lucide-chevron-down"
+                    :disabled="!steps.next"
+                    data-testid="coverage-gap-next"
+                    @click="goToGap(steps.next)"
+                    >Next gap</UButton
+                  >
+                </span>
+              </div>
               <LoadingState v-if="sourcePending" text="Reading the source…" />
               <CoverageSourceView
-                v-else-if="source !== null"
+                v-else-if="marks === 'suites' && combinedFile"
+                ref="sourceView"
+                :key="`suites-${combinedFile.blob}`"
+                :path="shownPath ?? file"
+                :content="source"
+                :executed="combinedFile.executed"
+                :not-executed="combinedFile.classes.none"
+                :functions="combinedFile.runFunctions"
+                :classes="combinedFile.classes"
+                :focus-line="firstLine"
+                :selected="selection ? [selection] : []"
+                selectable
+                scroll-class="max-h-[60vh] lg:max-h-[calc(100vh-14rem)]"
+                executed-title="Ran in a suite"
+                not-executed-title="Ran in no suite"
+                @select-line="selectLine"
+              />
+              <CoverageSourceView
+                v-else-if="version && source !== null"
+                ref="sourceView"
                 :key="version.key"
                 :path="version.path"
                 :content="source"
@@ -331,9 +615,10 @@ const nearestSentence = computed(() => {
             <div
               ref="testsPanel"
               class="min-w-0 lg:sticky lg:top-0 scroll-mt-4"
-              :class="version.blob ? '' : 'lg:col-span-2'"
+              :class="shownBlob ? '' : 'lg:col-span-2'"
             >
               <FileCoverageTests
+                v-if="version && coverage && (marks === 'tests' || version.blob)"
                 :project-id="projectId"
                 :project-name="project?.name"
                 :tests="coverage.tests"
@@ -343,6 +628,17 @@ const nearestSentence = computed(() => {
                 :nearest-sentence="nearestSentence"
                 @clear="setSelection(null)"
               />
+              <SectionCard v-else title="Suites on these lines" data-testid="coverage-file-suites">
+                <p class="text-sm text-highlighted">
+                  {{
+                    selectionSuites
+                      ? selectionSuitesSentence
+                      : version
+                        ? 'Select a line, or a gap, to see which suites ran it. The tests recorded this file by file only.'
+                        : 'Select a line, or a gap, to see which suites ran it. No end-to-end test recorded this file.'
+                  }}
+                </p>
+              </SectionCard>
             </div>
           </div>
         </template>

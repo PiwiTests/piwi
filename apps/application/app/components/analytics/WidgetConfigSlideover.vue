@@ -228,6 +228,22 @@ function apply() {
           <UTextarea v-model="options.markdown" :rows="8" autoresize class="w-full" data-testid="widget-markdown" />
         </UFormField>
 
+        <UFormField
+          v-else-if="widget.type === 'coverage-trend'"
+          label="Lines beside every suite"
+          help="Areas are the named parts of each project’s code, set in its coverage settings."
+        >
+          <USelect
+            v-model="options.split"
+            :items="[
+              { label: 'One per suite', value: 'suites' },
+              { label: 'One per area', value: 'areas' },
+            ]"
+            class="w-full"
+            aria-label="Lines beside every suite"
+          />
+        </UFormField>
+
         <UFormField v-else-if="'limit' in options" label="Rows">
           <UInputNumber v-model="options.limit" :min="5" :max="25" class="w-full" aria-label="Rows" />
         </UFormField>

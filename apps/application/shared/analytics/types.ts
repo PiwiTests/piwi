@@ -665,6 +665,51 @@ export interface AnalyticsSuiteGrowth {
   didNotRunPct: number | null;
 }
 
+// ── Coverage trend ───────────────────────────────────────────────────────────
+
+export interface AnalyticsCoverageTrendPoint {
+  /** Bucket start date (ISO `YYYY-MM-DD`). */
+  date: string;
+  /** Lines every suite ran together over executable lines, 0–100, as of the bucket's end; null before any coverage. */
+  linePercent: number | null;
+  executedLines: number;
+  executableLines: number;
+  /** The day (`YYYY-MM-DD`) the value is carried from when no project has coverage in the bucket itself; else null. */
+  carriedFrom: string | null;
+}
+
+/** One dashed line of the coverage trend: a suite, or a named area of the code. */
+export interface AnalyticsCoverageTrendSeries {
+  name: string;
+  points: Array<{ date: string; linePercent: number | null }>;
+  /** At the period's end. */
+  linePercent: number | null;
+}
+
+export interface AnalyticsCoverageTrend {
+  points: AnalyticsCoverageTrendPoint[];
+  bucketDays: number;
+  /** The combined line coverage at the period's end and at the comparison period's end. */
+  linePercent: number | null;
+  previousLinePercent: number | null;
+  /** Percentage points gained (positive) or lost against the comparison period. */
+  delta: number | null;
+  executedLines: number;
+  executableLines: number;
+  /** What the dashed lines are: each suite's share of the same lines, or each area's share of its own lines. */
+  split: 'suites' | 'areas';
+  /** One per suite or area name, every project in scope summed. */
+  series: AnalyticsCoverageTrendSeries[];
+  /** Projects of the scope with coverage on; the widget shows nothing at 0. */
+  projects: number;
+  /** Projects of the scope that declined coverage, left out. */
+  declined: number;
+  /** Points whose value is carried from an earlier day. */
+  carriedPoints: number;
+  /** A point counts a commit whose totals were computed under an earlier coverage scope or areas. */
+  earlierScope: boolean;
+}
+
 export interface AnalyticsFlakyDebtPoint {
   date: string;
   /** Flaky occurrences per run in the bucket; null without a run. */

@@ -46,7 +46,7 @@ import {
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
-import { runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
@@ -164,7 +164,7 @@ async function persistDemoShardToken(
 
   await db
     .update(testRuns)
-    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .set({ metadata: meta, origin: runOrigin(meta), commit: runCommit(meta), updatedAt: new Date() })
     .where(eq(testRuns.id, runId));
 }
 
@@ -185,7 +185,7 @@ async function removeStoredDemoShardToken(db: DemoDb, runId: number, token: stri
 
   await db
     .update(testRuns)
-    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .set({ metadata: meta, origin: runOrigin(meta), commit: runCommit(meta), updatedAt: new Date() })
     .where(eq(testRuns.id, runId));
 }
 
@@ -285,6 +285,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
         label: body.label || null,
         metadata,
         origin: runOrigin(metadata),
+        commit: runCommit(metadata),
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -324,6 +325,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
       label: body.label || null,
       metadata: null,
       origin: runOrigin(null),
+      commit: runCommit(null),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,
@@ -414,6 +416,7 @@ export async function apiBeginTestRun(
         branch: resolveRunBranch(body.metadata || testRun.metadata),
         metadata,
         origin: runOrigin(metadata),
+        commit: runCommit(metadata),
         playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
         reporterVersion: body.reporterVersion || (testRun.reporterVersion as string | null),
         isFullRun: body.isFullRun !== false ? 1 : 0,
@@ -1115,6 +1118,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
         metadata: { ...currentMeta, shardDurations: allDurations },
         origin: runOrigin(currentMeta),
+        commit: runCommit(currentMeta),
         // The first shard to report a branch names the run's branch.
         branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         ...(body.setupSteps && { setupSteps: body.setupSteps }),
@@ -1183,6 +1187,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
           p90TestDuration,
           metadata: finalMeta,
           origin: runOrigin(finalMeta),
+          commit: runCommit(finalMeta),
           updatedAt: new Date(),
         })
         .where(eq(testRuns.id, id));
@@ -1268,6 +1273,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(body.metadata && {
         metadata: reportedMetadata,
         origin: runOrigin(reportedMetadata),
+        commit: runCommit(reportedMetadata),
         branch: resolveRunBranch(body.metadata),
       }),
       ...(body.label !== undefined && { label: body.label }),

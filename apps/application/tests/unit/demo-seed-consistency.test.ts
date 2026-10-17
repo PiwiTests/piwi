@@ -938,6 +938,8 @@ const EXPECT_KEYS = new Set([
   'suspects',
   'coverage',
   'fileCoverage',
+  'combinedCoverage',
+  'supersededCoverage',
   'insight',
 ]);
 const ROUTE_ENTITIES = [
@@ -1096,13 +1098,66 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       want.coverage.browserFiles,
     );
     if (want.coverage.runCoverage) {
+      // The run's own coverage of each file, at a version whose executable lines are stored.
       const run = new Set(
-        q(`select path from run_coverage where run_id = ${execution!.runId} and executable is not null`).map((r) =>
-          String(r.path),
-        ),
+        q(`
+          select rc.path from run_coverage rc
+          join coverage_executable ce
+            on ce.project_id = rc.project_id and ce.runtime = rc.runtime and ce.path = rc.path and ce.blob = rc.blob
+          where rc.run_id = ${execution!.runId} and ce.lines is not null
+        `).map((r) => String(r.path)),
       );
       for (const f of server) expect(run.has(String(f.path)), `${label}: run coverage of ${f.path}`).toBe(true);
     }
+  }
+  if (want.combinedCoverage) {
+    expect(want.project, `${label}: combinedCoverage needs a project`).toBeTruthy();
+    const projectId = want.project!.id;
+    const [newest] = q(
+      `select commit_sha as sha from coverage_reports where project_id = ${projectId} order by updated_at desc, id desc limit 1`,
+    );
+    expect(newest, `${label}: the project has a coverage report`).toBeTruthy();
+    const sha = String(newest!.sha);
+    const reports = q(
+      `select suite, inventory_payload_id as inventory from coverage_reports where project_id = ${projectId} and commit_sha = '${sha}'`,
+    );
+    const runs = `select id from test_runs where project_id = ${projectId} and commit_sha = '${sha}' and is_full_run = 1`;
+    const [run] = q(`select count(*) as n from run_coverage where run_id in (${runs})`);
+    expect(new Set(reports.map((r) => r.suite)).size + (Number(run?.n) > 0 ? 1 : 0), `${label}: suites`).toBe(
+      want.combinedCoverage.suites,
+    );
+    const inventory = new Set<string>();
+    for (const r of reports) {
+      if (r.inventory == null) continue;
+      const [payload] = q(`select content from case_payloads where id = ${r.inventory}`);
+      for (const [path] of JSON.parse(String(payload!.content)) as Array<[string, string]>) inventory.add(path);
+    }
+    const named = new Set(
+      q(`
+        select f.path from coverage_report_files f join coverage_reports r on r.id = f.report_id
+        where r.project_id = ${projectId} and r.commit_sha = '${sha}'
+        union select path from run_coverage where run_id in (${runs})
+      `).map((r) => String(r.path)),
+    );
+    expect([...inventory].filter((p) => !named.has(p)).length, `${label}: files without coverage data`).toBe(
+      want.combinedCoverage.filesWithoutData,
+    );
+  }
+  if (want.supersededCoverage) {
+    expect(want.project, `${label}: supersededCoverage needs a project`).toBeTruthy();
+    const { branch, carried } = want.supersededCoverage;
+    const rows = q(
+      `select commit_sha as sha, suite, created_at as at from coverage_reports where project_id = ${want.project!.id} and branch = '${branch}' order by created_at desc, id desc`,
+    );
+    const commits = [...new Set(rows.map((r) => String(r.sha)))];
+    expect(commits.length, `${label}: commits with reports on ${branch}`).toBeGreaterThanOrEqual(2);
+    const suitesOf = (sha: string) => new Set(rows.filter((r) => r.sha === sha).map((r) => String(r.suite)));
+    const [newer, older] = [suitesOf(commits[0]!), suitesOf(commits[1]!)];
+    expect(
+      [...newer].some((suite) => older.has(suite)),
+      `${label}: the newer commit supersedes a report`,
+    ).toBe(true);
+    expect(older.has(carried) && !newer.has(carried), `${label}: ${carried} is the older commit's alone`).toBe(true);
   }
   if (want.fileCoverage) {
     expect(want.project, `${label}: fileCoverage needs a project`).toBeTruthy();
@@ -1123,8 +1178,8 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
     if (executable) {
       const blobs = [...new Set(fragments.map((f) => `'${String(f.blob)}'`))].join(',');
       const recorded = q(`
-        select run_id from run_coverage
-        where project_id = ${want.project!.id} and path = '${path}' and blob in (${blobs}) and executable is not null
+        select id from coverage_executable
+        where project_id = ${want.project!.id} and path = '${path}' and blob in (${blobs}) and lines is not null
       `);
       expect(recorded.length, `${label}: a run recorded the executable lines of ${path}`).toBeGreaterThan(0);
     }

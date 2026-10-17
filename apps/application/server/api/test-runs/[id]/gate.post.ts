@@ -8,6 +8,7 @@ import { parseTagFilter } from '#shared/utils/tag-filter';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { readChangeCoverage } from '../../../utils/scm/change-coverage';
+import { patchCoverageWarning } from '#shared/patch-coverage';
 import { runFindingsNovelty } from '#shared/handlers/resource-findings';
 import { isLeak } from '#shared/resource-fingerprint.mjs';
 import { readRunIncident } from '#shared/run-incident';
@@ -23,7 +24,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Evaluate a CI gate policy against a finished run',
     description:
-      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch). A leak rule on a run that sent no resource report is a violation. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only in its first release: it reports the run’s uncovered changed files without changing the verdict. Evaluation does not modify the run. Each evaluation is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, the verdict is also posted as the `<statusContext>/gate` commit status.',
+      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch). A leak rule on a run that sent no resource report is a violation. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only in its first release: it reports the run’s uncovered changed files without changing the verdict. `minPatchCoverage` (a percentage) is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Evaluation does not modify the run. Each evaluation is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, the verdict is also posted as the `<statusContext>/gate` commit status.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
     requestBody: {
@@ -41,6 +42,7 @@ defineRouteMeta({
               failOnFlaky: { type: 'boolean' },
               requireSelection: { type: 'string' },
               maxUncoveredChanges: { type: 'integer', minimum: 0 },
+              minPatchCoverage: { type: 'number', minimum: 0, maximum: 100 },
               maxLeaks: { type: 'integer', minimum: 0 },
               maxNewLeaks: { type: 'integer', minimum: 0 },
             },
@@ -52,6 +54,13 @@ defineRouteMeta({
 });
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
+
+/** Read a percentage, or undefined when the rule was not requested. */
+function optionalPercent(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : undefined;
+}
 
 /** Read a non-negative integer, or undefined when the rule was not requested. */
 function optionalCount(value: unknown): number | undefined {
@@ -91,12 +100,14 @@ export default eventHandler(async (event) => {
   // never changes the verdict, so a project can watch the number before a
   // blocking mode ships. Off by default; a value (including 0) turns it on.
   const maxUncoveredChanges = optionalCount(body?.maxUncoveredChanges);
+  // `minPatchCoverage` is warn-only as well: the number informs, it is not a target.
+  const minPatchCoverage = optionalPercent(body?.minPatchCoverage);
 
-  if (isEmptyPolicy(policy) && maxUncoveredChanges == null) {
+  if (isEmptyPolicy(policy) && maxUncoveredChanges == null && minPatchCoverage == null) {
     throw apiError({
       statusCode: 400,
       message:
-        'Gate policy is empty — pass at least one of requireTags, maxFailed, maxNewRegressions, maxNewFlaky, maxQuarantined, failOnNewCluster, failOnFlaky, requireSelection, maxLeaks, maxNewLeaks or maxUncoveredChanges',
+        'Gate policy is empty — pass at least one of requireTags, maxFailed, maxNewRegressions, maxNewFlaky, maxQuarantined, failOnNewCluster, failOnFlaky, requireSelection, maxLeaks, maxNewLeaks, maxUncoveredChanges or minPatchCoverage',
     });
   }
 
@@ -265,14 +276,18 @@ export default eventHandler(async (event) => {
   // files and surface a warning when they exceed the threshold, without touching
   // the pass/fail verdict.
   const warnings: string[] = [];
-  if (maxUncoveredChanges != null) {
+  if (maxUncoveredChanges != null || minPatchCoverage != null) {
     const coverage = await readChangeCoverage(db, run.projectId, { runId: id }).catch(() => null);
     if (coverage?.scmAvailable) {
-      if (coverage.uncoveredFiles > maxUncoveredChanges) {
+      if (maxUncoveredChanges != null && coverage.uncoveredFiles > maxUncoveredChanges) {
         warnings.push(
           `${coverage.uncoveredFiles} uncovered changed file${coverage.uncoveredFiles === 1 ? '' : 's'} ` +
             `(threshold ${maxUncoveredChanges}) — observed reach, warn-only. See the change-coverage report.`,
         );
+      }
+      if (minPatchCoverage != null) {
+        const warning = patchCoverageWarning(coverage.patchCoverage, minPatchCoverage);
+        if (warning) warnings.push(warning);
       }
     }
   }
@@ -289,7 +304,7 @@ export default eventHandler(async (event) => {
       projectId: run.projectId,
       runId: id,
       runMetadata: run.metadata,
-      policy: { ...policy, maxUncoveredChanges },
+      policy: { ...policy, maxUncoveredChanges, minPatchCoverage },
       result,
       source: gateSource(getRequestHeader(event, GATE_CLIENT_HEADER)),
       clusterIds,
