@@ -17,6 +17,26 @@ The compiler also embeds a **span table** in the assembly (the `<DynamicAnalysis
 - A statement that declares a lambda counts its own lines, and the lambda's lines only once the lambda ran.
 - Files under an `obj/` directory (the Razor generator's own output, for example) are left out. Razor views are covered at their `.cshtml` lines; a view's method is in the generated source, so a `.cshtml` file has lines but no functions.
 
+## What it leaves out
+
+A coverage build leaves out what coverlet leaves out, so its executable lines are the ones `dotnet test --collect "XPlat Code Coverage"` counts: an excluded method has no executable lines and no coverage, and a method's lambdas, local functions and `async` or iterator body go with it.
+
+- **Attributes:** `ExcludeFromCodeCoverage` and `ExcludeFromCoverage`, in any namespace, and the attributes `ExcludeByAttribute` names (`GeneratedCode`, `GeneratedCodeAttribute` or `System.CodeDom.Compiler.GeneratedCodeAttribute`), on the assembly, a type and the types nested in it, a method or constructor, or a property. As in coverlet, an attribute on an event is not read; the compiler itself leaves out an event marked `[ExcludeFromCodeCoverage]`.
+- **Files:** the `ExcludeByFile` globs (`**/Migrations/*.cs`, `**/Generated/`), matched against each method's source path without its root and ignoring case, as coverlet matches them; in a deterministic build, against the local path its `/_/` stands for.
+- **Filters:** `Exclude` and `Include`, `[Assembly]Namespace.Type` with `*` and `?` (the character before it is optional), applied to a type and, for `Exclude`, to the types it is nested in.
+
+The build reads them where coverlet does, when it compiles: the MSBuild properties of coverlet.msbuild (`ExcludeByAttribute`, `ExcludeByFile`, `Exclude`, `Include`, comma-separated), and the `Configuration` of the coverlet collector (`XPlat code coverage`) in the run settings file `dotnet test --settings` or else `RunSettingsFilePath` names, both when both are set:
+
+```xml
+<PropertyGroup>
+  <ExcludeByAttribute>GeneratedCode</ExcludeByAttribute>
+  <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
+  <RunSettingsFilePath>$(MSBuildThisFileDirectory)coverlet.runsettings</RunSettingsFilePath>
+</PropertyGroup>
+```
+
+A build made apart from `dotnet test`, such as the end-to-end environment's, sees only a project file's or `Directory.Build.props`'s: set them there. Not read: `SkipAutoProps`, and Microsoft code coverage's run settings (`ModulePaths`, `Functions`, `Attributes`, `Sources`). Two differences from coverlet remain: with `CompilerGeneratedAttribute` in `ExcludeByAttribute`, coverlet also drops the bodies of lambdas, local functions, `async` and iterator methods, which the span table holds as their method's statements, so they count; and coverlet keeps, in a Release build, a local function an excluded method declares after its last statement.
+
 ## Enabling it
 
 1. **Add the package to every project whose code you want covered.** A web project that references `PiwiTests.Instrumentation.AspNetCore` already has it; class libraries need it too:

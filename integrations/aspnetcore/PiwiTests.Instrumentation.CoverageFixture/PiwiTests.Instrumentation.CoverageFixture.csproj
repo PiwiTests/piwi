@@ -5,6 +5,10 @@
     <LangVersion>12</LangVersion>
     <IsPackable>false</IsPackable>
     <Instrument>TestCoverage</Instrument>
+    <!-- coverlet.msbuild's exclusions, which the coverage package's props embed for the recorder. -->
+    <ExcludeByAttribute>GeneratedCode</ExcludeByAttribute>
+    <ExcludeByFile>**/Generated/*.cs</ExcludeByFile>
+    <Exclude>[PiwiTests.Instrumentation.Coverage]*,[PiwiTests.Instrumentation.CoverageFixture]PiwiTests.Instrumentation.CoverageFixture.Legacy*</Exclude>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -12,4 +16,5 @@
   <ItemGroup>
     <ProjectReference Include="../PiwiTests.Instrumentation.Coverage/PiwiTests.Instrumentation.Coverage.csproj" />
   </ItemGroup>
+  <Import Project="../PiwiTests.Instrumentation.Coverage/build/PiwiTests.Instrumentation.Coverage.props" />
 </Project>

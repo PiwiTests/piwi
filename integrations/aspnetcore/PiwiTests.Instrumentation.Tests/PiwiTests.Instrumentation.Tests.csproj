@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../PiwiTests.Instrumentation.AspNetCore/PiwiTests.Instrumentation.AspNetCore.csproj" />
+    <ProjectReference Include="../PiwiTests.Instrumentation.CoverageExcludedFixture/PiwiTests.Instrumentation.CoverageExcludedFixture.csproj" />
     <ProjectReference Include="../PiwiTests.Instrumentation.CoverageFixture/PiwiTests.Instrumentation.CoverageFixture.csproj" />
     <ProjectReference Include="../PiwiTests.Instrumentation.CoverageIdleFixture/PiwiTests.Instrumentation.CoverageIdleFixture.csproj" />
     <ProjectReference Include="../../serilog/PiwiTests.Instrumentation.Serilog/PiwiTests.Instrumentation.Serilog.csproj" />
