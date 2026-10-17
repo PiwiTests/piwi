@@ -28,8 +28,9 @@ vi.mock('#shared/handlers/scenario-gaps', async (importOriginal) => ({
 // stops at its first check and says why.
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_SITE_URL;
-const { analyzeFinishedRunInBackground, postRunPrFeedbackInBackground } =
+const { analyzeFinishedRunInBackground, postRunPrFeedbackInBackground, refreshCommitPrFeedback } =
   await import('../../server/utils/scm/pr-feedback');
+const { recordPrFeedbackPost } = await import('../../server/utils/scm/pr-feedback-posts');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -100,6 +101,72 @@ describe('the pull-request feedback of a finished run', () => {
           '[pr-feedback] nothing posted for run #1: PIWI_SITE_URL is not set, so comment links would be unusable',
         ),
       );
+    } finally {
+      warnings.mockRestore();
+    }
+  });
+});
+
+describe('refreshing a commit’s feedback once its coverage changed', () => {
+  const REPO = 'https://github.com/acme/shop';
+  const OLD = 'a'.repeat(40);
+  const NEW = 'b'.repeat(40);
+
+  beforeAll(async () => {
+    await db.insert(schema.testRuns).values([
+      { id: 2, projectId: 1, status: 'passed', branch: 'feat', commit: OLD, startTime: new Date(), isFullRun: 1 },
+      { id: 3, projectId: 1, status: 'passed', branch: 'feat', commit: NEW, startTime: new Date(), isFullRun: 1 },
+      {
+        id: 4,
+        projectId: 1,
+        status: 'passed',
+        branch: 'other',
+        commit: 'c'.repeat(40),
+        startTime: new Date(),
+        isFullRun: 1,
+      },
+    ]);
+    for (const runId of [2, 3]) {
+      await recordPrFeedbackPost(db as never, {
+        projectId: 1,
+        runId,
+        repositoryUrl: REPO,
+        prNumber: 5,
+        commentId: '77',
+      });
+    }
+  });
+
+  test('re-posts the newest posted run of the pull request, with its change coverage recomputed', async () => {
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await refreshCommitPrFeedback(db as never, 1, NEW);
+      expect(computeRunChangeCoverage).toHaveBeenCalledWith(db, 3);
+      expect(verifyClusterFixes).not.toHaveBeenCalled();
+    } finally {
+      warnings.mockRestore();
+    }
+  });
+
+  test('leaves alone a run whose pull request a later push commented on', async () => {
+    await refreshCommitPrFeedback(db as never, 1, OLD);
+    expect(computeRunChangeCoverage).not.toHaveBeenCalled();
+  });
+
+  test('refreshes a run whose feedback was being posted once it is', async () => {
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await recordPrFeedbackPost(db as never, { projectId: 1, runId: 4, repositoryUrl: REPO, prNumber: 6 });
+      let fixed!: (clusters: never[]) => void;
+      const analysis = {
+        fixed: new Promise<never[]>((resolve) => (fixed = resolve)),
+        coverage: Promise.resolve(null),
+      };
+      void postRunPrFeedbackInBackground(db as never, 4, analysis);
+      await refreshCommitPrFeedback(db as never, 1, 'c'.repeat(40));
+      expect(computeRunChangeCoverage).not.toHaveBeenCalled();
+      fixed([]);
+      await vi.waitFor(() => expect(computeRunChangeCoverage).toHaveBeenCalledWith(db, 4));
     } finally {
       warnings.mockRestore();
     }

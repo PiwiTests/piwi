@@ -9,6 +9,7 @@ delete process.env.PIWI_DATABASE_URL;
 const { computeChangeCoverage, extractTicketIds, pickPrimaryTicket } =
   await import('../../shared/handlers/change-coverage');
 const { routeNodeKey, pageNodeKey } = await import('../../shared/graph');
+const { combineCoverage } = await import('../../shared/coverage-combine');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 let caseSeq = 0;
@@ -256,5 +257,48 @@ describe('computeChangeCoverage', () => {
     expect(cc.tickets).toHaveLength(1);
     expect(cc.tickets[0]!.ticket).toBe('PROJ-1');
     expect(cc.tickets[0]!.files).toHaveLength(2);
+  });
+
+  test('counts a file a suite ran a changed line of as reached, and the change’s patch coverage', async () => {
+    const orders = await seedCase('places an order', 'tests/orders.spec.ts');
+    await seedRun([orders]);
+    const blob = 'a'.repeat(40);
+    const combined = combineCoverage({
+      inventory: null,
+      inScope: () => true,
+      spanTable: new Map(),
+      suites: [
+        {
+          name: 'unit-back',
+          kind: 'unit',
+          files: [
+            {
+              path: 'src/utils/rounding.ts',
+              blob,
+              executable: [[1, 6]],
+              lines: [[1, 3]],
+              functions: [],
+              allFunctions: [],
+              linesRecorded: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [
+        { filePath: 'src/utils/rounding.ts', additions: 3, deletions: 0, changedLines: [2, 5, 6] },
+        { filePath: 'src/utils/tax.ts', additions: 1, deletions: 0, changedLines: [1] },
+      ],
+      commitCoverage: { commit: 'c0ffee', files: combined.files, suites: combined.suites },
+    });
+
+    const [rounding, tax] = cc.files;
+    expect(rounding).toMatchObject({ suites: ['unit-back'], reachBasis: 'reached', reachedInRun: false });
+    expect(tax!.suites).toEqual([]);
+    expect(cc.reachedFiles).toBe(1);
+    expect(cc.uncoveredFiles).toBe(1);
+    expect(cc.patchCoverage).toMatchObject({ changedLines: 3, executedLines: 1, unitLines: 1, e2eLines: 0 });
   });
 });

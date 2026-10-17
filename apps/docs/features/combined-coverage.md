@@ -107,6 +107,13 @@ links its commit's, and a file's coverage page says which suites ran each line.
   <figcaption>Three suites of one commit, counted on the same lines.</figcaption>
 </figure>
 
+## In pull requests
+
+The [Uncovered changes](./uncovered-changes) section of the pull-request comment opens with the change's patch
+coverage: "34 of the 41 changed lines ran (unit 28, end to end 19)". A changed file a suite ran one of the changed lines
+of counts as reached, so a file only a unit test covers is no longer reported as a gap. `piwi gate
+--min-patch-coverage <percent>` warns under a minimum, and never fails the build.
+
 ## How paths are matched
 
 A report's paths are made repository-relative before anything is sent:

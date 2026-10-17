@@ -2226,7 +2226,7 @@ export const gateEvaluations = sqliteTable(
       .references(() => testRuns.id, { onDelete: 'cascade' }),
     commitSha: text('commit_sha'),
     prNumber: integer('pr_number'), // null when the run names no pull request
-    policy: text('policy', { mode: 'json' }).notNull(), // GatePolicy, plus maxUncoveredChanges when asked
+    policy: text('policy', { mode: 'json' }).notNull(), // GatePolicy, plus maxUncoveredChanges and minPatchCoverage when asked
     policyHash: text('policy_hash').notNull(),
     passed: integer('passed', { mode: 'boolean' }).notNull(),
     verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
@@ -2267,6 +2267,7 @@ export const prFeedbackPosts = sqliteTable(
     prNumber: integer('pr_number'), // null when only commit statuses were posted
     commentId: text('comment_id'), // the host's id of Piwi's comment; null when none was posted or the host returned none
     statuses: text('statuses', { mode: 'json' }).notNull(), // string[]: the commit status contexts the host accepted
+    fixes: text('fixes', { mode: 'json' }), // VerifiedFix[]: the clusters the run verified as fixed, which a refreshed comment reports again; null before the first comment
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),

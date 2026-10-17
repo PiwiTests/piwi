@@ -282,8 +282,16 @@ describe('the gate commit status', () => {
 });
 
 describe('the pull-request feedback record', () => {
-  test('adds up the statuses posted for a run and keeps the comment', async () => {
+  test('adds up the statuses posted for a run and keeps the comment and its fixes', async () => {
     const run = await insertRun();
+    const fix = {
+      clusterId: 3,
+      signature: 'sig',
+      title: 'Checkout times out',
+      verification: 'stopped-failing' as const,
+      timeToResolutionMs: 1000,
+      testCount: 2,
+    };
     await recordPrFeedbackPost(db as never, {
       projectId: 1,
       runId: run,
@@ -291,6 +299,7 @@ describe('the pull-request feedback record', () => {
       prNumber: 5,
       commentId: '991',
       statuses: ['piwi/tests'],
+      fixes: [fix],
     });
     await recordPrFeedbackPost(db as never, {
       projectId: 1,
@@ -305,6 +314,7 @@ describe('the pull-request feedback record', () => {
       prNumber: 5,
       commentId: '991',
       statuses: ['piwi/tests', 'piwi/tests/gate'],
+      fixes: [fix],
     });
   });
 

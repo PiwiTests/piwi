@@ -3,6 +3,7 @@ import { MAX_REPORT_BYTES, parseCoverageReportUpload, storeCoverageReport } from
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { invalidateCommitCoverage } from '../../../utils/coverage-summary';
 import { scheduleCommitTotals } from '../../../utils/coverage-totals';
+import { refreshCommitPrFeedback } from '../../../utils/scm/pr-feedback';
 
 const RANGES = {
   type: 'array',
@@ -14,7 +15,7 @@ defineRouteMeta({
     tags: ['Coverage'],
     summary: 'Upload a coverage report',
     description:
-      'Stores one suite’s coverage of one commit, read from another tool’s report (Cobertura or LCOV from Vitest, coverlet or Microsoft code coverage) by `piwi coverage upload`, attributed to no test. A report is keyed by `commit` and `suite`: uploads of the same commit and suite merge, like shards (per file, the union of its lines and functions when the file version agrees; the newer version otherwise, which marks the report incomplete). Each file is repository-relative, with the git `blob` of the version its line numbers refer to, its `executable` lines, the `lines` and `functions` that ran and `allFunctions`, every function the tool knows, run or not; a file with neither executable lines nor functions is dropped. `inventory` is the commit’s tracked files in the project’s coverage scope and their blobs, `[[path, blob], ...]`, merged across parts. No source code, no test names and no hit counts are sent. `branch` is the branch the suite ran on; the project’s default branch, or none, stores it as the default branch’s. At most 20000 files, 100000 inventory entries and 16 MB per request. The commit’s combined coverage is recomputed a few seconds later. Returns the report and `stored`, how many of the request’s files were stored. The suite names `e2e` and `combined` are reserved.',
+      'Stores one suite’s coverage of one commit, read from another tool’s report (Cobertura or LCOV from Vitest, coverlet or Microsoft code coverage) by `piwi coverage upload`, attributed to no test. A report is keyed by `commit` and `suite`: uploads of the same commit and suite merge, like shards (per file, the union of its lines and functions when the file version agrees; the newer version otherwise, which marks the report incomplete). Each file is repository-relative, with the git `blob` of the version its line numbers refer to, its `executable` lines, the `lines` and `functions` that ran and `allFunctions`, every function the tool knows, run or not; a file with neither executable lines nor functions is dropped. `inventory` is the commit’s tracked files in the project’s coverage scope and their blobs, `[[path, blob], ...]`, merged across parts. No source code, no test names and no hit counts are sent. `branch` is the branch the suite ran on; the project’s default branch, or none, stores it as the default branch’s. At most 20000 files, 100000 inventory entries and 16 MB per request. The commit’s combined coverage is recomputed a few seconds later, and the pull-request feedback of its newest posted run is posted again with the new patch coverage. Returns the report and `stored`, how many of the request’s files were stored. The suite names `e2e` and `combined` are reserved.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'run:submit',
     requestBody: {
@@ -109,6 +110,6 @@ export default eventHandler(async (event) => {
   if (typeof upload === 'string') throw apiError({ statusCode: 400, message: upload });
   const stored = await storeCoverageReport(await getDatabase(), id, upload);
   invalidateCommitCoverage(id, upload.commit);
-  scheduleCommitTotals(getDatabase, id, upload.commit);
+  scheduleCommitTotals(getDatabase, id, upload.commit, refreshCommitPrFeedback);
   return stored;
 });

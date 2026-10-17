@@ -9,6 +9,8 @@
 
 import type { WireResourceFinding } from '#shared/types';
 import { findingView } from '#shared/resource-copy';
+import type { PatchCoverage } from '#shared/patch-coverage';
+import { coveragePercent } from '#shared/coverage-combine';
 
 /** `app_settings` key holding the resolved `PrFeedbackSettings`. */
 export const PR_FEEDBACK_KEY = 'pr_feedback';
@@ -187,6 +189,8 @@ export interface PrChangeCoverageFile {
   deletions: number;
   reachedInRun: boolean;
   reachedCountHistory: number;
+  /** The suites of the head commit's coverage that ran one of its changed lines. */
+  suites?: string[];
   /** A one-line suggestion for the scenario to write, when there is one. */
   draftTitle?: string | null;
 }
@@ -207,6 +211,29 @@ export interface PrChangeCoverage {
   tickets: PrChangeCoverageTicket[];
   /** True when the diff had more changed files than the provider cap returned. */
   filesTruncated?: boolean;
+  /** The changed lines the head commit's combined coverage counts. */
+  patchCoverage?: PatchCoverage | null;
+}
+
+/**
+ * The patch coverage line: "Patch coverage 82.9%: 34 of the 41 changed lines
+ * ran (unit 28, end to end 19)."
+ */
+export function renderPatchCoverage(pc: PatchCoverage): string {
+  const percent = coveragePercent(pc.executedLines, pc.changedLines);
+  const kinds = new Set(pc.suites.map((s) => s.kind));
+  const parts = [
+    ...(kinds.has('unit') ? [`unit ${pc.unitLines}`] : []),
+    ...(kinds.has('e2e') ? [`end to end ${pc.e2eLines}`] : []),
+  ];
+  const lines = pc.changedLines === 1 ? 'changed line' : 'changed lines';
+  let text = `**Patch coverage ${percent}%**: ${pc.executedLines} of the ${pc.changedLines} ${lines} ran`;
+  if (parts.length > 0) text += ` (${parts.join(', ')})`;
+  text += `, at ${codeSpan(pc.commit.slice(0, 7))}.`;
+  if (pc.undeterminedLines > 0) {
+    text += ` ${pc.undeterminedLines} more ${pc.undeterminedLines === 1 ? 'is' : 'are'} undetermined: in functions the browser ran.`;
+  }
+  return text;
 }
 
 /** Max uncovered files listed in the pull-request comment. */
@@ -220,14 +247,25 @@ const MAX_UNCOVERED_LISTED = 10;
 export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
   if (cc.totalFiles === 0) return null;
   const base = cc.baseBranch ? codeSpan(cc.baseBranch) : 'the default branch';
-  const preface = `Observed reach, not instrumented coverage. Numbers from this run and the last ${cc.windowRuns} on ${base}.`;
+  const bySuites = cc.patchCoverage != null || cc.tickets.some((g) => g.files.some((f) => f.suites?.length));
+  const preface = bySuites
+    ? `Observed reach, and the lines the head commit's coverage suites ran. Numbers from this run and the last ${cc.windowRuns} on ${base}.`
+    : `Observed reach, not instrumented coverage. Numbers from this run and the last ${cc.windowRuns} on ${base}.`;
+  const patch = cc.patchCoverage ? renderPatchCoverage(cc.patchCoverage) : null;
 
   if (cc.uncoveredFiles === 0) {
-    return `#### 🟣 Uncovered changes · 0 of ${cc.totalFiles} files\n${preface}\n\nAll ${cc.totalFiles} changed ${cc.totalFiles === 1 ? 'file has' : 'files have'} observed reach.`;
+    const one = cc.totalFiles === 1;
+    const reached = bySuites
+      ? `All ${cc.totalFiles} changed ${one ? 'file is' : 'files are'} reached.`
+      : `All ${cc.totalFiles} changed ${one ? 'file has' : 'files have'} observed reach.`;
+    return [`#### 🟣 Uncovered changes · 0 of ${cc.totalFiles} files\n${preface}`, patch, reached]
+      .filter(Boolean)
+      .join('\n\n');
   }
 
   const header = `#### 🟣 Uncovered changes · ${cc.uncoveredFiles} of ${cc.totalFiles} files · ${cc.ticketCount} ${cc.ticketCount === 1 ? 'ticket' : 'tickets'}`;
   const blocks: string[] = [header, preface];
+  if (patch) blocks.push(patch);
 
   // One definition of "uncovered" everywhere: no reach in this run and none in
   // the recent window. A file reached only in history is a separate, lower line.
@@ -236,7 +274,7 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
   for (const group of cc.tickets) {
     const lines: string[] = [];
     for (const file of group.files) {
-      if (file.reachedInRun) continue;
+      if (file.reachedInRun || file.suites?.length) continue;
       if (file.reachedCountHistory > 0) {
         historyOnly++;
         continue;
@@ -635,10 +673,14 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
  * release, so the state is always `success` — it reports, it never blocks.
  */
 export function buildChangeCoverageStatus(cc: PrChangeCoverage, targetUrl: string, context: string): CommitStatusInput {
-  const description =
+  const reach =
     cc.uncoveredFiles > 0
       ? `${cc.uncoveredFiles} of ${cc.totalFiles} changed files have no observed reach`
       : `all ${cc.totalFiles} changed files have observed reach`;
+  const patch = cc.patchCoverage
+    ? `, patch coverage ${coveragePercent(cc.patchCoverage.executedLines, cc.patchCoverage.changedLines)}%`
+    : '';
+  const description = reach + patch;
   return {
     state: 'success',
     description: description.slice(0, 140),

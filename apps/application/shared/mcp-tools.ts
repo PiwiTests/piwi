@@ -1356,7 +1356,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     capability: 'scm',
     description:
-      'Change coverage for a pull request: the files a change touched joined to the tests that observably reach them, grouped by ticket, with the uncovered files that need a scenario. Pass a run id to diff it against its baseline, or an explicit base and head commit. Reach is observed reach, never instrumented coverage; "no test in this run" is paired with the count from recent history. Returns an empty result when no SCM token or diff is available.',
+      'Change coverage for a pull request: the files a change touched joined to the tests that observably reach them, grouped by ticket, with the uncovered files that need a scenario. Pass a run id to diff it against its baseline, or an explicit base and head commit. Reach is observed reach; "no test in this run" is paired with the count from recent history. When the head commit has combined coverage (uploaded suites and its complete runs), a file a suite ran one of the changed lines of counts as reached and names those `suites`, and `patchCoverage` counts the changed lines that ran, in total, by unit suites and by the end-to-end suite. Returns an empty result when no SCM token or diff is available.',
     inputSchema: {
       type: 'object',
       properties: {

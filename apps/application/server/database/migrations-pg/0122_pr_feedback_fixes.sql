@@ -1,0 +1,1 @@
+ALTER TABLE "pr_feedback_posts" ADD COLUMN "fixes" jsonb;

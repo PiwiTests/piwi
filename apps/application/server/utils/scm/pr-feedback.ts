@@ -15,8 +15,16 @@
  * verification) runs for every finished run, posted or not
  * (`analyzeFinishedRunInBackground`); the posting reads its result.
  */
-import { and, eq, inArray } from 'drizzle-orm';
-import { bugReports, failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
+import { and, desc, eq, inArray, max } from 'drizzle-orm';
+import {
+  bugReports,
+  failureClusters,
+  prFeedbackPosts,
+  projects,
+  testCases,
+  testRuns,
+  testRunsCases,
+} from '../../database/schema';
 import { getAppSetting } from '../app-settings';
 import { createScmProvider } from './index';
 import { normalizeGitUrl } from './git-url';
@@ -47,7 +55,7 @@ import {
   type PrSummaryInput,
 } from '#shared/pr-feedback';
 import { computeRunChangeCoverage, type RunChangeCoverage } from './change-coverage';
-import { recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
+import { readPrFeedbackPost, recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { resolveRunBranchTagFromStored } from '../graph-ingest';
@@ -446,6 +454,7 @@ export async function postRunPrFeedback(
       prNumber,
       commentId,
       statuses,
+      fixes: fixedClusters,
     }).catch((e) => console.error(`[pr-feedback] could not record the feedback of run #${runId}`, e));
   }
 
@@ -511,6 +520,8 @@ export function postRunPrFeedbackInBackground(
   runId: number,
   analysis: FinishedRunAnalysis,
 ): Promise<void> {
+  const inFlight = { stale: false };
+  feedbackInFlight.set(runId, inFlight);
   Promise.all([analysis.fixed, analysis.coverage])
     .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null, change?.locatorBreaks ?? null))
     .then((result) => {
@@ -518,8 +529,81 @@ export function postRunPrFeedbackInBackground(
         console.warn(`[pr-feedback] nothing posted for run #${runId}: ${result.reason}`);
       }
     })
-    .catch((e) => console.error('[pr-feedback] postRunPrFeedback failed', e));
+    .catch((e) => console.error('[pr-feedback] postRunPrFeedback failed', e))
+    .finally(() => {
+      feedbackInFlight.delete(runId);
+      if (inFlight.stale) void refreshRunPrFeedback(db, runId);
+    });
   return analysis.coverage.then(() => undefined);
+}
+
+/** Runs whose feedback is being posted, and whether their commit's coverage changed meanwhile. */
+const feedbackInFlight = new Map<number, { stale: boolean }>();
+
+/** Runs of a commit a coverage change refreshes the feedback of, the newest first. */
+const REFRESHED_RUNS_SCANNED = 20;
+
+/**
+ * Post a run's feedback again with its change coverage recomputed, keeping the
+ * fixes its comment reported: a coverage upload or a run coverage of its
+ * commit changes the patch coverage and the files a suite ran. Only the
+ * newest posted run of its pull request is refreshed, so an older commit
+ * never overwrites the comment a later push wrote. A failure is logged.
+ */
+export async function refreshRunPrFeedback(db: DbClient, runId: number): Promise<void> {
+  try {
+    const post = await readPrFeedbackPost(db, runId);
+    if (!post) return;
+    if (post.prNumber != null) {
+      const [newest] = await db
+        .select({ runId: max(prFeedbackPosts.runId) })
+        .from(prFeedbackPosts)
+        .where(and(eq(prFeedbackPosts.repositoryUrl, post.repositoryUrl), eq(prFeedbackPosts.prNumber, post.prNumber)));
+      if (newest?.runId != null && newest.runId > runId) return;
+    }
+    const change = await computeRunChangeCoverage(db, runId);
+    await postRunPrFeedback(db, runId, post.fixes, change?.pr ?? null, change?.locatorBreaks ?? null);
+  } catch (e) {
+    console.error(`[pr-feedback] could not refresh the feedback of run #${runId}`, e);
+  }
+}
+
+/**
+ * Refresh the feedback of a commit's newest posted run, once its coverage
+ * changed. A run whose feedback is still being posted is refreshed when it is.
+ */
+export async function refreshCommitPrFeedback(db: DbClient, projectId: number, commit: string): Promise<void> {
+  const runs = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.projectId, projectId), eq(testRuns.commit, commit)))
+    .orderBy(desc(testRuns.id))
+    .limit(REFRESHED_RUNS_SCANNED);
+  if (runs.length === 0) return;
+  let pending = false;
+  for (const run of runs) {
+    const inFlight = feedbackInFlight.get(run.id);
+    if (inFlight) {
+      inFlight.stale = true;
+      pending = true;
+    }
+  }
+  if (pending) return;
+  const [posted] = await db
+    .select({ runId: prFeedbackPosts.runId })
+    .from(prFeedbackPosts)
+    .where(
+      and(
+        eq(prFeedbackPosts.projectId, projectId),
+        inArray(
+          prFeedbackPosts.runId,
+          runs.map((r) => r.id),
+        ),
+      ),
+    )
+    .orderBy(desc(prFeedbackPosts.runId))
+    .limit(1);
+  if (posted) await refreshRunPrFeedback(db, posted.runId);
 }
 
 /**

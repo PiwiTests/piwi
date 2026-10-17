@@ -2895,6 +2895,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       totalFiles: coverage.files.length,
       reachedFiles: coverage.reachedFiles,
       uncoveredFiles: coverage.uncoveredFiles,
+      patchCoverage: coverage.patchCoverage,
       tickets: coverage.tickets.map((t) =>
         dropNulls({
           ticket: t.ticket,
@@ -2906,6 +2907,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
               reachedInRun: f.reachedInRun,
               reachedCountHistory: f.reachedCountHistory,
               reachingTestCount: f.reachingTestCount,
+              suites: f.suites.length > 0 ? f.suites : null,
             }),
           ),
         }),

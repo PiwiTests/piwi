@@ -391,16 +391,25 @@ export const TOTALS_DELAY_MS = 5000;
 /**
  * Compute a commit's totals a few seconds from now, once for every upload and
  * run coverage arriving meanwhile: four shards and three suites trigger one
- * computation. A failure is logged, never thrown.
+ * computation; `after` runs once they are stored. A failure is logged, never
+ * thrown.
  */
-export function scheduleCommitTotals(db: () => Promise<DrizzleDB>, projectId: number, commit: string): void {
+export function scheduleCommitTotals<D extends DrizzleDB>(
+  db: () => Promise<D>,
+  projectId: number,
+  commit: string,
+  after?: (db: D, projectId: number, commit: string) => Promise<void>,
+): void {
   const key = `${projectId}\0${commit}`;
   const known = pending.get(key);
   if (known) clearTimeout(known);
   const timer = setTimeout(() => {
     pending.delete(key);
     db()
-      .then((database) => storeCommitTotals(database, projectId, commit))
+      .then(async (database) => {
+        await storeCommitTotals(database, projectId, commit);
+        await after?.(database, projectId, commit);
+      })
       .catch((error) => console.error(`[coverage] Could not compute the totals of ${commit}:`, error));
   }, TOTALS_DELAY_MS);
   timer.unref?.();

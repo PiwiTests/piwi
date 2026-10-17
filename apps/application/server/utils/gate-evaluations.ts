@@ -63,7 +63,7 @@ export interface GateEvaluationInput {
   projectId: number;
   runId: number;
   runMetadata: unknown;
-  /** The policy as evaluated, `maxUncoveredChanges` included when asked. */
+  /** The policy as evaluated, `maxUncoveredChanges` and `minPatchCoverage` included when asked. */
   policy: Record<string, unknown>;
   result: Pick<GateResult, 'passed' | 'verdict' | 'violations'>;
   source: GateSource;

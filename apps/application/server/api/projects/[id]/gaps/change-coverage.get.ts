@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Scenario gaps'],
     summary: 'Change coverage for a run or commit range',
     description:
-      'Joins the files a change touched to the tests that observably reach them, grouped by ticket. Pass `run` to diff a run against its baseline, or `base` and `head` to diff an explicit commit range. Degrades to an empty result when no SCM token or diff is available. Reach is observed reach, never instrumented coverage.',
+      'Joins the files a change touched to the tests that observably reach them, grouped by ticket. Pass `run` to diff a run against its baseline, or `base` and `head` to diff an explicit commit range. Degrades to an empty result when no SCM token or diff is available. Reach is observed reach; when the head commit has combined coverage, a file a suite ran one of the changed lines of counts as reached and lists those `suites`, and `patchCoverage` counts the changed lines that ran (null without that coverage, or without the provider’s patches).',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'run', in: 'query', required: false, schema: { type: 'integer' } },

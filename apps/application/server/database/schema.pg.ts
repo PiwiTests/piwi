@@ -2215,7 +2215,7 @@ export const gateEvaluations = pgTable(
       .references(() => testRuns.id, { onDelete: 'cascade' }),
     commitSha: text('commit_sha'),
     prNumber: integer('pr_number'), // null when the run names no pull request
-    policy: jsonb('policy').notNull(), // GatePolicy, plus maxUncoveredChanges when asked
+    policy: jsonb('policy').notNull(), // GatePolicy, plus maxUncoveredChanges and minPatchCoverage when asked
     policyHash: text('policy_hash').notNull(),
     passed: boolean('passed').notNull(),
     verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
@@ -2256,6 +2256,7 @@ export const prFeedbackPosts = pgTable(
     prNumber: integer('pr_number'), // null when only commit statuses were posted
     commentId: text('comment_id'), // the host's id of Piwi's comment; null when none was posted or the host returned none
     statuses: jsonb('statuses').notNull(), // string[]: the commit status contexts the host accepted
+    fixes: jsonb('fixes'), // VerifiedFix[]: the clusters the run verified as fixed, which a refreshed comment reports again; null before the first comment
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
