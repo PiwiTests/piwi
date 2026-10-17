@@ -24,7 +24,8 @@ export const piwiOptions: PiwiDashboardOptions = {
   leakCheck: 'report',
   // The browser functions each test runs, and, from a backend with a coverage build, the server lines: with the
   // backend's unit tests (`npm run coverage:unit`), the dashboard counts both on one set of lines per commit. The
-  // pages load their scripts from /assets/*, which are the files under web/.
+  // pages load their scripts from /assets/*, which are the files under web/. `'functions'` needs @piwitests/reporter
+  // 0.55.0 or later.
   coverage: { browser: 'functions', server: backend.features.serverCoverage ? 'lines' : 'off' },
   codeReachRoots: ['web'],
 };

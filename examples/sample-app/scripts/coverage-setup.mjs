@@ -17,8 +17,17 @@ const headers = {
 };
 
 async function call(method, path, body) {
-  const response = await fetch(`${server}${path}`, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
-  if (!response.ok) throw new Error(`${method} ${path} answered ${response.status}: ${await response.text()}`);
+  let response;
+  try {
+    response = await fetch(`${server}${path}`, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
+  } catch (error) {
+    console.error(`Could not reach ${server}: ${error.cause?.message ?? error.message}`);
+    process.exit(1);
+  }
+  if (!response.ok) {
+    console.error(`${method} ${path} answered ${response.status}: ${await response.text()}`);
+    process.exit(1);
+  }
   return response.json();
 }
 

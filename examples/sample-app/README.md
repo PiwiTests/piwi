@@ -48,6 +48,11 @@ packages in the repository's `node_modules`, where the reporter is its workspace
 `packages/reporter` builds it), and the Nitro backend builds the integration from its source. An `npm install` here
 switches both to the published packages.
 
+The sample follows the repository, so between two releases it can use what the published packages it pins do not
+have yet: `coverage.browser: 'functions'` and `npm run coverage:unit` (`piwi coverage upload`) need
+`@piwitests/reporter` 0.55.0 or later. With an earlier one installed, `npm run typecheck` rejects `'functions'`, the
+browser side records nothing, and `coverage:unit` stops with a message saying so.
+
 > **One test fails and one leaks on purpose.** `failing-locator.spec.ts` clicks a button by its former label, to show
 > what the dashboard keeps on a failure: the ARIA snapshot, a locator suggestion and the *Alternative locators* panel.
 > `resource-leak.spec.ts` leaves a browser context open.
@@ -90,9 +95,11 @@ npm run coverage:setup   # once: keep the coverage to the pages' scripts and the
 npm run coverage:unit    # the unit tests on a coverage build, uploaded as the unit-back suite of this commit
 ```
 
-`coverage:unit` runs `dotnet test` with `-p:PiwiCoverage=true` and `PIWI_COVERAGE_OUTPUT`, so the test host writes
-Piwi's run-level report at exit, then `piwi coverage upload --suite unit-back` sends it (pass `--dry-run` to see what
-it would send). The project's **Coverage** page then counts both suites on the backend's span-table lines: the lines
+`coverage:unit` empties `backends/aspnetcore.Tests/TestResults/piwi-coverage/`, runs `dotnet test` with
+`-p:PiwiCoverage=true` and `PIWI_COVERAGE_OUTPUT` naming that directory, so each test host writes Piwi's run-level
+report in it at exit (`VSTEST_TESTHOST_SHUTDOWN_TIMEOUT` gives it the time), then `piwi coverage upload --suite
+unit-back` sends the reports (pass `--dry-run` to see what it would send). It stops with a message when no report was
+written. The project's **Coverage** page then counts both suites on the backend's span-table lines: the lines
 both ran, those only one of them ran, and each area's share. The browser records functions, not lines, so `front`
 shows its share of functions. A file opens on its source when the dashboard has the repository's
 [source control](https://piwitests.dev/guide/source-control) connection.
