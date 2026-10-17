@@ -8,6 +8,7 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { configureSqliteConnections } from '../../server/database/sqlite-connections';
 
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -20,6 +21,7 @@ vi.mock('../../server/storage', () => ({
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
 const {
+  PROJECT_NOT_FOUND,
   getReportFiles,
   getReportInventories,
   listCoverageReports,
@@ -44,7 +46,10 @@ let dbCount = 0;
 afterAll(() => rmSync(tmpDir, { recursive: true, force: true }));
 
 async function freshDb(): Promise<Db> {
-  const db = drizzle(createClient({ url: `file:${join(tmpDir, `test-${++dbCount}.db`)}` }), { schema });
+  // Configured as the server configures its client: writes wait for an open transaction.
+  const client = createClient({ url: `file:${join(tmpDir, `test-${++dbCount}.db`)}` });
+  await configureSqliteConnections(client);
+  const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
   await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main' });
   return db;
@@ -120,6 +125,14 @@ describe('parseCoverageReportUpload', () => {
         allFunctions: [],
       },
     ]);
+  });
+
+  test('marks an upload incomplete when a file’s ranges past the cap are dropped', () => {
+    const many = Array.from({ length: 10_001 }, (_, i) => [2 * i + 1, 2 * i + 1]);
+    const parsed = upload({ files: [{ path: 'src/cart.ts', blob: BLOB_A, executable: [[1, 30_000]], lines: many }] });
+    expect(parsed.files[0]!.lines).toEqual([]);
+    expect(parsed.incomplete).toBe(true);
+    expect(upload({ files: [cart([[1, 2]])] }).incomplete).toBe(false);
   });
 
   test('reads a listing query', () => {
@@ -217,6 +230,88 @@ describe('storeCoverageReport', () => {
     expect(report.branch).toBe('feature/pay');
     expect(await deleteBranchCoverageRows(db as never, 1, 'feature/pay')).toBe(1);
     expect(await db.select().from(schema.coverageReportFiles)).toEqual([]);
+  });
+
+  test('stores a commit uploaded from a branch and then from the default branch as the default branch’s', async () => {
+    await storeCoverageReport(db as never, 1, upload({ branch: 'feature/x', files: [cart([[1, 2]])] }));
+    await storeCoverageReport(
+      db as never,
+      1,
+      upload({ branch: 'feature/x', suite: 'unit-front', files: [cart([[3, 3]])] }),
+    );
+    const { report } = await storeCoverageReport(db as never, 1, upload({ branch: 'main', files: [cart([[4, 4]])] }));
+    expect(report.branch).toBeNull();
+    // A later part from the branch keeps it there, and the pull request closing deletes nothing.
+    await storeCoverageReport(
+      db as never,
+      1,
+      upload({ branch: 'feature/x', suite: 'unit-front', files: [cart([[5, 5]])] }),
+    );
+    expect(
+      (await db.select({ branch: schema.coverageReports.branch }).from(schema.coverageReports)).map((r) => r.branch),
+    ).toEqual(['', '']);
+    expect(await deleteBranchCoverageRows(db as never, 1, 'feature/x')).toBe(0);
+    expect(await db.select().from(schema.coverageReports)).toHaveLength(2);
+  });
+
+  test('merges parts that two servers store at once', async () => {
+    // A second copy of the module has its own in-process lock, as another server would.
+    vi.resetModules();
+    const other = await import('../../server/utils/coverage-reports');
+    await Promise.all([
+      storeCoverageReport(db as never, 1, upload({ files: [cart([[1, 2]])] })),
+      other.storeCoverageReport(
+        db as never,
+        1,
+        upload({ files: [{ path: 'src/pay.ts', blob: BLOB_B, executable: [[1, 3]], lines: [[1, 1]] }] }),
+      ),
+    ]);
+    const reports = await db.select().from(schema.coverageReports);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.fileCount).toBe(2);
+  });
+
+  test('counts the inventory once, and a report stored without its count gets one on the next listing', async () => {
+    const { report } = await storeCoverageReport(
+      db as never,
+      1,
+      upload({
+        inventory: [
+          ['src/cart.ts', BLOB_A],
+          ['src/pay.ts', BLOB_B],
+        ],
+        files: [cart([[1, 2]])],
+      }),
+    );
+    expect(report.inventoryFiles).toBe(2);
+    expect((await storeCoverageReport(db as never, 1, upload({ files: [cart([[3, 3]])] }))).report.inventoryFiles).toBe(
+      2,
+    );
+    await db.update(schema.coverageReports).set({ inventoryCount: null });
+    expect((await listCoverageReports(db as never, 1))[0]!.inventoryFiles).toBe(2);
+    expect((await db.select().from(schema.coverageReports))[0]!.inventoryCount).toBe(2);
+  });
+
+  test('refuses a project that does not exist', async () => {
+    await expect(storeCoverageReport(db as never, 99, upload({ files: [cart([[1, 2]])] }))).rejects.toThrow(
+      PROJECT_NOT_FOUND,
+    );
+    expect(await db.select().from(schema.coverageReports)).toEqual([]);
+  });
+
+  test('sweeps the file versions no run coverage and no fragment names any more', async () => {
+    const old = new Date(Date.now() - 2 * DAY);
+    await db.insert(schema.coverageExecutable).values([
+      { projectId: 1, runtime: 'server', path: 'src/cart.ts', blob: BLOB_A, lines: '1-4', createdAt: old },
+      { projectId: 1, runtime: 'server', path: 'src/gone.ts', blob: BLOB_B, lines: '1-4', createdAt: old },
+      { projectId: 1, runtime: 'server', path: 'src/new.ts', blob: BLOB_B, lines: '1-4', createdAt: new Date() },
+    ]);
+    await storeCoverageReport(db as never, 1, upload({ files: [cart([[1, 2]])] }));
+    expect(await sweepOrphans(db as never)).toMatchObject({ coverageFileVersions: 1 });
+    expect((await db.select().from(schema.coverageExecutable)).map((v) => v.path).sort()).toEqual([
+      'src/cart.ts',
+      'src/new.ts',
+    ]);
   });
 
   test('keeps a report’s fragments and inventory from the orphan sweep', async () => {

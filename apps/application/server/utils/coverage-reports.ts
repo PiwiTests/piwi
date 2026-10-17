@@ -29,7 +29,7 @@ import {
   MAX_COVERAGE_RANGES,
   type LineRange,
 } from '@piwitests/core/coverage';
-import { coverageFragments, coverageReportFiles, coverageReports, coverageTotals } from '../database/schema';
+import { coverageFragments, coverageReportFiles, coverageReports, coverageTotals, projects } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { locatorBranchTag } from './locator-usages';
 import { resolveCasePayloadContents, upsertCasePayloads } from './case-payloads';
@@ -96,9 +96,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Ranges of untrusted input, or none past the cap on a file's ranges. */
-function capped(ranges: LineRange[]): LineRange[] {
-  return ranges.length > MAX_COVERAGE_RANGES ? [] : ranges;
+/** Ranges of untrusted input, or none past the cap on a file's ranges, which `dropped` then records. */
+function capped(ranges: LineRange[], dropped: { any: boolean }): LineRange[] {
+  if (ranges.length <= MAX_COVERAGE_RANGES) return ranges;
+  dropped.any = true;
+  return [];
 }
 
 function shortText(value: unknown, max: number): string | null {
@@ -109,9 +111,9 @@ function shortText(value: unknown, max: number): string | null {
  * An upload body checked: `{ v: 1, commit, branch?, suite, kind?, tool?,
  * inventory?, incomplete?, files }`. Paths are cleaned as a test's coverage
  * paths are, ranges normalized, a file's ranges of one kind past 10,000
- * dropped, a file named twice merged. A file needs executable lines or a
- * function list; one with neither is dropped. An error message when the body
- * is not one.
+ * dropped (the upload is then incomplete), a file named twice merged. A file
+ * needs executable lines or a function list; one with neither is dropped. An
+ * error message when the body is not one.
  */
 export function parseCoverageReportUpload(body: unknown): CoverageReportUpload | string {
   if (!isRecord(body) || body.v !== 1) return 'Expected { "v": 1, "commit", "suite", "files": [...] }';
@@ -144,6 +146,7 @@ export function parseCoverageReportUpload(body: unknown): CoverageReportUpload |
   }
 
   const files = new Map<string, ReportFileUpload>();
+  const dropped = { any: false };
   for (const item of body.files) {
     if (!isRecord(item)) continue;
     const path = normalizeCoveragePath(item.path);
@@ -153,10 +156,10 @@ export function parseCoverageReportUpload(body: unknown): CoverageReportUpload |
       ...(typeof item.blob === 'string' && BLOB_ID.test(item.blob.toLowerCase())
         ? { blob: item.blob.toLowerCase() }
         : {}),
-      executable: capped(normalizeLineRanges(item.executable)),
-      lines: capped(normalizeLineRanges(item.lines)),
-      functions: capped(normalizeFunctionRanges(item.functions)),
-      allFunctions: capped(normalizeFunctionRanges(item.allFunctions)),
+      executable: capped(normalizeLineRanges(item.executable), dropped),
+      lines: capped(normalizeLineRanges(item.lines), dropped),
+      functions: capped(normalizeFunctionRanges(item.functions), dropped),
+      allFunctions: capped(normalizeFunctionRanges(item.allFunctions), dropped),
     };
     if (file.executable.length === 0 && file.allFunctions.length === 0) continue;
     const known = files.get(path);
@@ -171,7 +174,7 @@ export function parseCoverageReportUpload(body: unknown): CoverageReportUpload |
     tool: shortText(body.tool, 64),
     inventory,
     files: [...files.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
-    incomplete: body.incomplete === true,
+    incomplete: body.incomplete === true || dropped.any,
   };
 }
 
@@ -292,7 +295,7 @@ export async function getReportInventories(
   return new Map(withInventory.map((r) => [r.id, parseInventory(contents.get(r.inventoryPayloadId!))]));
 }
 
-function summaryOf(row: typeof coverageReports.$inferSelect, inventoryFiles: number | null): CoverageReportSummary {
+function summaryOf(row: typeof coverageReports.$inferSelect): CoverageReportSummary {
   return {
     id: row.id,
     commit: row.commit,
@@ -302,18 +305,25 @@ function summaryOf(row: typeof coverageReports.$inferSelect, inventoryFiles: num
     tool: row.tool,
     incomplete: !!row.incomplete,
     files: row.fileCount,
-    inventoryFiles,
+    inventoryFiles: row.inventoryPayloadId == null ? null : row.inventoryCount,
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
   };
 }
 
+/** The error `storeCoverageReport` throws for a project that does not exist. */
+export const PROJECT_NOT_FOUND = 'Project not found';
+
 /**
  * Store an upload into its commit and suite's report, merging it with what the
  * report already holds: per file, the union of both when the version agrees,
  * the upload's otherwise (the report is then incomplete). The inventory is the
- * union of the parts'. Returns the report and how many of the upload's files
- * were stored.
+ * union of the parts'. A commit any part of which ran on the default branch is
+ * the default branch's, every one of its reports with it. The merge runs in
+ * one transaction holding the report's row, so parts arriving at two servers
+ * at once both count. Returns the report and how many of the upload's files
+ * were stored; throws {@link PROJECT_NOT_FOUND} for a project that does not
+ * exist.
  */
 export async function storeCoverageReport(
   db: DrizzleDB,
@@ -322,26 +332,22 @@ export async function storeCoverageReport(
 ): Promise<{ report: CoverageReportSummary; stored: number }> {
   const key = `${projectId}\x00${upload.commit}\x00${upload.suite}`;
   return withCoverageLock(reportLocks, key, async () => {
-    const branch = upload.branch ? locatorBranchTag(upload.branch, await projectDefaultBranch(db, projectId)) : '';
+    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
+    if (!project) throw new Error(PROJECT_NOT_FOUND);
+    const tag = upload.branch ? locatorBranchTag(upload.branch, await projectDefaultBranch(db, projectId)) : '';
     const now = new Date();
-    const [existing] = await db
-      .select()
-      .from(coverageReports)
-      .where(
-        and(
-          eq(coverageReports.projectId, projectId),
-          eq(coverageReports.commit, upload.commit),
-          eq(coverageReports.suite, upload.suite),
-        ),
-      );
-    let report = existing;
-    if (!report) {
-      [report] = await db
+    const ofReport = and(
+      eq(coverageReports.projectId, projectId),
+      eq(coverageReports.commit, upload.commit),
+      eq(coverageReports.suite, upload.suite),
+    )!;
+    return db.transaction(async (tx) => {
+      await tx
         .insert(coverageReports)
         .values({
           projectId,
           commit: upload.commit,
-          branch,
+          branch: tag,
           suite: upload.suite,
           kind: upload.kind,
           tool: upload.tool,
@@ -349,81 +355,117 @@ export async function storeCoverageReport(
           createdAt: now,
           updatedAt: now,
         })
+        .onConflictDoNothing({ target: [coverageReports.projectId, coverageReports.commit, coverageReports.suite] });
+      // Writing the row first holds it until the merge commits: another part of the report waits for this one.
+      const [report] = await tx.update(coverageReports).set({ updatedAt: now }).where(ofReport).returning();
+      const reportId = report!.id;
+
+      let incomplete = upload.incomplete || !!report!.incomplete;
+      const stored = await loadReportFiles(
+        tx,
+        reportId,
+        upload.files.map((f) => f.path),
+      );
+      const merged = upload.files.map((file) => {
+        const known = stored.get(file.path);
+        if (!known) return file;
+        if (known.blob === file.blob) return mergeFiles(known, file);
+        incomplete = true;
+        return file;
+      });
+      const { hashes, ids } = await upsertFragmentRows(
+        tx,
+        projectId,
+        merged.map((file) => ({ ...file, runtime: REPORT_RUNTIME })),
+      );
+      const rows = merged.flatMap((file, i) => {
+        const fragment = ids.get(hashes[i]!);
+        return fragment ? [{ reportId, path: file.path, fragmentId: fragment.id }] : [];
+      });
+      for (let i = 0; i < rows.length; i += ROW_CHUNK) {
+        await tx
+          .insert(coverageReportFiles)
+          .values(rows.slice(i, i + ROW_CHUNK))
+          .onConflictDoUpdate({
+            target: [coverageReportFiles.reportId, coverageReportFiles.path],
+            set: { fragmentId: sql`excluded.fragment_id` },
+          });
+      }
+
+      let inventoryPayloadId = report!.inventoryPayloadId;
+      let inventoryCount = report!.inventoryCount;
+      if (upload.inventory) {
+        const byPath = new Map(
+          inventoryPayloadId == null
+            ? []
+            : parseInventory((await resolveCasePayloadContents(tx, [inventoryPayloadId])).get(inventoryPayloadId)),
+        );
+        for (const [path, blob] of upload.inventory) byPath.set(path, blob);
+        if (byPath.size > MAX_STORED_INVENTORY) incomplete = true;
+        const content = JSON.stringify(
+          [...byPath].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).slice(0, MAX_STORED_INVENTORY),
+        );
+        inventoryPayloadId = (await upsertCasePayloads(tx, projectId, [content])).get(content) ?? inventoryPayloadId;
+        inventoryCount = Math.min(byPath.size, MAX_STORED_INVENTORY);
+      } else if (inventoryPayloadId != null && inventoryCount == null) {
+        inventoryCount = await countInventory(tx, inventoryPayloadId);
+      }
+
+      const onDefaultBranch =
+        tag === '' ||
+        report!.branch === '' ||
+        (
+          await tx
+            .select({ id: coverageReports.id })
+            .from(coverageReports)
+            .where(
+              and(
+                eq(coverageReports.projectId, projectId),
+                eq(coverageReports.commit, upload.commit),
+                eq(coverageReports.branch, ''),
+              ),
+            )
+            .limit(1)
+        ).length > 0;
+      if (onDefaultBranch) {
+        await tx
+          .update(coverageReports)
+          .set({ branch: '' })
+          .where(
+            and(
+              eq(coverageReports.projectId, projectId),
+              eq(coverageReports.commit, upload.commit),
+              ne(coverageReports.branch, ''),
+            ),
+          );
+      }
+
+      const [counted] = await tx
+        .select({ n: sql<number>`count(*)` })
+        .from(coverageReportFiles)
+        .where(eq(coverageReportFiles.reportId, reportId));
+      const [updated] = await tx
+        .update(coverageReports)
+        .set({
+          branch: onDefaultBranch ? '' : report!.branch || tag,
+          kind: upload.kind,
+          tool: upload.tool ?? report!.tool,
+          incomplete,
+          fileCount: Number(counted?.n ?? 0),
+          inventoryPayloadId,
+          inventoryCount,
+          updatedAt: now,
+        })
+        .where(eq(coverageReports.id, reportId))
         .returning();
-    }
-    const reportId = report!.id;
-
-    let incomplete = upload.incomplete || !!report!.incomplete;
-    const stored = await loadReportFiles(
-      db,
-      reportId,
-      upload.files.map((f) => f.path),
-    );
-    const merged = upload.files.map((file) => {
-      const known = stored.get(file.path);
-      if (!known) return file;
-      if (known.blob === file.blob) return mergeFiles(known, file);
-      incomplete = true;
-      return file;
+      return { report: summaryOf(updated!), stored: rows.length };
     });
-    const { hashes, ids } = await upsertFragmentRows(
-      db,
-      projectId,
-      merged.map((file) => ({ ...file, runtime: REPORT_RUNTIME })),
-    );
-    const rows = merged.flatMap((file, i) => {
-      const fragment = ids.get(hashes[i]!);
-      return fragment ? [{ reportId, path: file.path, fragmentId: fragment.id }] : [];
-    });
-    for (let i = 0; i < rows.length; i += ROW_CHUNK) {
-      await db
-        .insert(coverageReportFiles)
-        .values(rows.slice(i, i + ROW_CHUNK))
-        .onConflictDoUpdate({
-          target: [coverageReportFiles.reportId, coverageReportFiles.path],
-          set: { fragmentId: sql`excluded.fragment_id` },
-        });
-    }
-
-    let inventoryPayloadId = report!.inventoryPayloadId;
-    let inventoryFiles: number | null = null;
-    if (upload.inventory) {
-      const byPath = new Map(
-        inventoryPayloadId == null
-          ? []
-          : parseInventory((await resolveCasePayloadContents(db, [inventoryPayloadId])).get(inventoryPayloadId)),
-      );
-      for (const [path, blob] of upload.inventory) byPath.set(path, blob);
-      if (byPath.size > MAX_STORED_INVENTORY) incomplete = true;
-      const content = JSON.stringify(
-        [...byPath].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).slice(0, MAX_STORED_INVENTORY),
-      );
-      inventoryPayloadId = (await upsertCasePayloads(db, projectId, [content])).get(content) ?? inventoryPayloadId;
-      inventoryFiles = Math.min(byPath.size, MAX_STORED_INVENTORY);
-    } else if (inventoryPayloadId != null) {
-      inventoryFiles =
-        (await getReportInventories(db, [{ id: reportId, inventoryPayloadId }])).get(reportId)?.length ?? 0;
-    }
-
-    const [counted] = await db
-      .select({ n: sql<number>`count(*)` })
-      .from(coverageReportFiles)
-      .where(eq(coverageReportFiles.reportId, reportId));
-    const [updated] = await db
-      .update(coverageReports)
-      .set({
-        branch: report!.branch || branch,
-        kind: upload.kind,
-        tool: upload.tool ?? report!.tool,
-        incomplete,
-        fileCount: Number(counted?.n ?? 0),
-        inventoryPayloadId,
-        updatedAt: now,
-      })
-      .where(eq(coverageReports.id, reportId))
-      .returning();
-    return { report: summaryOf(updated!, inventoryFiles), stored: rows.length };
   });
+}
+
+/** How many files a stored inventory names. */
+async function countInventory(db: DrizzleDB, payloadId: number): Promise<number> {
+  return parseInventory((await resolveCasePayloadContents(db, [payloadId])).get(payloadId)).length;
 }
 
 /** The reports of a project, newest first: of one commit, or the latest `limit` (50 by default, 500 at most). */
@@ -441,8 +483,13 @@ export async function listCoverageReports(
     .where(where)
     .orderBy(desc(coverageReports.updatedAt), desc(coverageReports.id))
     .limit(Math.min(Math.max(opts.limit ?? 50, 1), 500));
-  const inventories = await getReportInventories(db, rows);
-  return rows.map((row) => summaryOf(row, inventories.get(row.id)?.length ?? null));
+  // A report whose inventory has no count yet is counted once, here, and keeps the count.
+  for (const row of rows) {
+    if (row.inventoryPayloadId == null || row.inventoryCount != null) continue;
+    row.inventoryCount = await countInventory(db, row.inventoryPayloadId);
+    await db.update(coverageReports).set({ inventoryCount: row.inventoryCount }).where(eq(coverageReports.id, row.id));
+  }
+  return rows.map(summaryOf);
 }
 
 /**

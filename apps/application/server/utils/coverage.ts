@@ -446,7 +446,12 @@ export interface FileVersion {
   functions: LineRange[];
 }
 
-const versionKey = (v: { runtime: string; path: string; blob: string }) => `${v.runtime}\x00${v.path}\x00${v.blob}`;
+/** The key of a file version in maps of versions: runtime, path and blob. */
+export const fileVersionKey = (v: { runtime: string; path: string; blob: string }) =>
+  `${v.runtime}\x00${v.path}\x00${v.blob}`;
+const versionKey = fileVersionKey;
+/** File versions one query reads at most. */
+const VERSION_CHUNK = 250;
 
 /**
  * The stored versions of the given files (`coverage_executable`), per runtime,
@@ -458,10 +463,11 @@ export async function getFileVersions(
   versions: Array<{ path: string; runtime: CoverageRuntime; blob: string }>,
 ): Promise<FileVersion[]> {
   if (versions.length === 0) return [];
-  const wanted = new Set(versions.map(versionKey));
-  const paths = [...new Set(versions.map((v) => v.path))];
+  const wanted = [...new Map(versions.map((v) => [versionKey(v), v])).values()];
+  const wantedKeys = new Set(wanted.map(versionKey));
   const out: FileVersion[] = [];
-  for (let i = 0; i < paths.length; i += ID_CHUNK) {
+  for (let i = 0; i < wanted.length; i += VERSION_CHUNK) {
+    const chunk = wanted.slice(i, i + VERSION_CHUNK);
     const rows = await db
       .select({
         runtime: coverageExecutable.runtime,
@@ -474,11 +480,14 @@ export async function getFileVersions(
       .where(
         and(
           eq(coverageExecutable.projectId, projectId),
-          inArray(coverageExecutable.path, paths.slice(i, i + ID_CHUNK)),
+          inArray(coverageExecutable.path, [...new Set(chunk.map((v) => v.path))]),
+          inArray(coverageExecutable.blob, [...new Set(chunk.map((v) => v.blob))]),
         ),
       );
     for (const row of rows) {
-      if (!wanted.has(versionKey(row))) continue;
+      // The two lists also match a path at another listed blob.
+      if (!wantedKeys.has(versionKey(row))) continue;
+      wantedKeys.delete(versionKey(row));
       out.push({
         path: row.path,
         runtime: asRuntime(row.runtime),
@@ -775,10 +784,23 @@ export interface RunCoverage {
 }
 
 /**
- * The run's files with what their versions hold: the executable lines of each
- * file with a blob, and every function known in it, from `coverage_executable`,
- * or from the row itself for a run stored before versions were.
+ * A run coverage file with what its version holds: the executable lines of a
+ * server file and every function known in it, from `coverage_executable`, or
+ * from the row itself for a run stored before versions were.
  */
+export function withFileVersion(file: RunCoverageFile, version: FileVersion | undefined): RunCoverageFile {
+  return runFileEntry(
+    file.path,
+    file.runtime,
+    file.blob,
+    file.functions ?? [],
+    file.lines ?? [],
+    version && file.runtime === 'server' ? version.lines : (file.executable ?? []),
+    version?.functions ?? file.allFunctions ?? [],
+  );
+}
+
+/** The run's files with what their versions hold ({@link withFileVersion}). */
 async function withFileVersions(
   db: DrizzleDB,
   projectId: number,
@@ -790,18 +812,56 @@ async function withFileVersions(
     files.flatMap((f) => (f.blob ? [{ path: f.path, runtime: f.runtime, blob: f.blob }] : [])),
   );
   const byKey = new Map(versions.map((v) => [versionKey(v), v]));
-  return files.map((file) => {
-    const version = file.blob ? byKey.get(versionKey({ ...file, blob: file.blob })) : undefined;
-    return runFileEntry(
-      file.path,
-      file.runtime,
-      file.blob,
-      file.functions ?? [],
-      file.lines ?? [],
-      version && file.runtime === 'server' ? version.lines : (file.executable ?? []),
-      version?.functions ?? file.allFunctions ?? [],
-    );
-  });
+  return files.map((file) =>
+    withFileVersion(file, file.blob ? byKey.get(versionKey({ ...file, blob: file.blob })) : undefined),
+  );
+}
+
+/** A `run_coverage` row as a file, before what its version holds is read. */
+function runCoverageRowFile(row: {
+  runtime: string;
+  path: string;
+  blob: string | null;
+  functions: string | null;
+  lines: string | null;
+  executable: string | null;
+}): RunCoverageFile {
+  return {
+    path: row.path,
+    runtime: asRuntime(row.runtime),
+    ...(row.blob ? { blob: row.blob } : {}),
+    functions: decodeFunctionRanges(row.functions),
+    lines: decodeLineRanges(row.lines),
+    executable: decodeLineRanges(row.executable),
+  };
+}
+
+/**
+ * The run coverage files of several runs, by run id, sorted by path then
+ * runtime, before what their versions hold is read ({@link getFileVersions},
+ * {@link withFileVersion}).
+ */
+export async function getRunsCoverageFiles(db: DrizzleDB, runIds: number[]): Promise<Map<number, RunCoverageFile[]>> {
+  const out = new Map<number, RunCoverageFile[]>();
+  const ids = [...new Set(runIds)];
+  for (const id of ids) out.set(id, []);
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const rows = await db
+      .select({
+        runId: runCoverage.runId,
+        runtime: runCoverage.runtime,
+        path: runCoverage.path,
+        blob: runCoverage.blob,
+        functions: runCoverage.functions,
+        lines: runCoverage.lines,
+        executable: runCoverage.executable,
+      })
+      .from(runCoverage)
+      .where(inArray(runCoverage.runId, ids.slice(i, i + ID_CHUNK)));
+    for (const row of rows) out.get(row.runId)!.push(runCoverageRowFile(row));
+  }
+  for (const files of out.values()) files.sort(compareFiles);
+  return out;
 }
 
 /**
@@ -852,14 +912,7 @@ export async function getRunCoverage(
   for (const row of counted) fileCounts[asRuntime(row.runtime)] += Number(row.n);
   // The blob is kept until what the version holds is read: a file nothing ran names its version only.
   const files: RunCoverageFile[] = (opts.file ? itemsOfFile(rows, opts.file) : rows)
-    .map((row) => ({
-      path: row.path,
-      runtime: asRuntime(row.runtime),
-      ...(row.blob ? { blob: row.blob } : {}),
-      functions: decodeFunctionRanges(row.functions),
-      lines: decodeLineRanges(row.lines),
-      executable: decodeLineRanges(row.executable),
-    }))
+    .map(runCoverageRowFile)
     .sort(compareFiles);
   const kept = opts.limit != null ? files.slice(0, opts.limit) : files;
   return {
@@ -904,24 +957,7 @@ export async function storeRunCoverage(
   files: RunCoverageFile[],
 ): Promise<number> {
   if (files.length === 0) return 0;
-  await storeFileVersions(
-    db,
-    projectId,
-    files.flatMap((f) =>
-      f.blob && (f.executable?.length || f.allFunctions?.length)
-        ? [
-            {
-              path: f.path,
-              runtime: f.runtime,
-              blob: f.blob,
-              lines: f.runtime === 'server' ? (f.executable ?? []) : [],
-              functions: f.allFunctions ?? [],
-            },
-          ]
-        : [],
-    ),
-  );
-  return withCoverageLock(runLocks, runId, async () => {
+  const written = await withCoverageLock(runLocks, runId, async () => {
     const stored = new Map<string, RunCoverageFile>();
     const paths = [...new Set(files.map((f) => f.path))];
     for (let i = 0; i < paths.length; i += ID_CHUNK) {
@@ -989,6 +1025,25 @@ export async function storeRunCoverage(
     }
     return rows.length;
   });
+  // After the rows that name them, so the sweep of unreferenced versions never takes one in between.
+  await storeFileVersions(
+    db,
+    projectId,
+    files.flatMap((f) =>
+      f.blob && (f.executable?.length || f.allFunctions?.length)
+        ? [
+            {
+              path: f.path,
+              runtime: f.runtime,
+              blob: f.blob,
+              lines: f.runtime === 'server' ? (f.executable ?? []) : [],
+              functions: f.allFunctions ?? [],
+            },
+          ]
+        : [],
+    ),
+  );
+  return written;
 }
 
 /**
@@ -1008,6 +1063,20 @@ export function unreferencedFragments(now: Date = new Date()): SQL {
     sql`NOT EXISTS (SELECT 1 FROM ${coverageReportFiles} WHERE ${coverageReportFiles.fragmentId} = ${coverageFragments.id})`,
     sql`(NOT EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.projectId} = ${coverageFragments.projectId})
       OR ${coverageFragments.lastSeenAt} < (SELECT min(${testRuns.createdAt}) FROM ${testRuns} WHERE ${testRuns.projectId} = ${coverageFragments.projectId}))`,
+  )!;
+}
+
+/**
+ * The file versions nothing names any more, as a condition on
+ * `coverage_executable`: no run coverage and no coverage fragment of the
+ * project names that path at that blob, and the row is more than an hour old.
+ * Run coverage writes its rows before the versions they name.
+ */
+export function unreferencedFileVersions(now: Date = new Date()): SQL {
+  return and(
+    lt(coverageExecutable.createdAt, new Date(now.getTime() - HOUR_MS)),
+    sql`NOT EXISTS (SELECT 1 FROM ${runCoverage} WHERE ${runCoverage.projectId} = ${coverageExecutable.projectId} AND ${runCoverage.path} = ${coverageExecutable.path} AND ${runCoverage.blob} = ${coverageExecutable.blob})`,
+    sql`NOT EXISTS (SELECT 1 FROM ${coverageFragments} WHERE ${coverageFragments.projectId} = ${coverageExecutable.projectId} AND ${coverageFragments.path} = ${coverageExecutable.path} AND ${coverageFragments.blob} = ${coverageExecutable.blob})`,
   )!;
 }
 

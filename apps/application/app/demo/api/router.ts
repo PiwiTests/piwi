@@ -80,11 +80,13 @@ import {
   storeRunCoverage,
 } from '~~/server/utils/coverage';
 import {
+  PROJECT_NOT_FOUND,
   listCoverageReports,
   parseCoverageReportsQuery,
   parseCoverageReportUpload,
   storeCoverageReport,
 } from '~~/server/utils/coverage-reports';
+import { scheduleCommitTotals } from '~~/server/utils/coverage-totals';
 import {
   exportCommitCoverage,
   getCoverageSummary,
@@ -1178,11 +1180,19 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
       const db = await getDemoDb();
-      const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, +m[1]!));
+      const [run] = await db
+        .select({ projectId: testRuns.projectId, commit: testRuns.commit })
+        .from(testRuns)
+        .where(eq(testRuns.id, +m[1]!));
       if (!run) throw demoHttpError(404, 'Test run not found');
       const files = parseRunCoverage(body);
       if (typeof files === 'string') throw demoHttpError(400, files);
-      return { files: await storeRunCoverage(db, +m[1]!, run.projectId, files) };
+      const stored = await storeRunCoverage(db, +m[1]!, run.projectId, files);
+      if (run.commit) {
+        invalidateCommitCoverage(run.projectId, run.commit);
+        scheduleCommitTotals(getDemoDb, run.projectId, run.commit);
+      }
+      return { files: stored };
     },
   },
   {
@@ -1203,8 +1213,12 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const upload = parseCoverageReportUpload(body);
       if (typeof upload === 'string') throw demoHttpError(400, upload);
-      const stored = await storeCoverageReport(await getDemoDb(), +m[1]!, upload);
+      const stored = await storeCoverageReport(await getDemoDb(), +m[1]!, upload).catch((error: unknown) => {
+        if (error instanceof Error && error.message === PROJECT_NOT_FOUND) throw demoHttpError(404, PROJECT_NOT_FOUND);
+        throw error;
+      });
       invalidateCommitCoverage(+m[1]!, upload.commit);
+      scheduleCommitTotals(getDemoDb, +m[1]!, upload.commit);
       return stored;
     },
   },
