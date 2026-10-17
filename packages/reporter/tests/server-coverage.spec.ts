@@ -68,6 +68,10 @@ async function backend(
             functions: [[10, 12]],
             lines: [[11, 11]],
             executable: [[11, 30]],
+            allFunctions: [
+              [10, 12],
+              [14, 30],
+            ],
           },
           { path: '../outside.cs', runtime: 'server', lines: [[1, 1]] },
         ],
@@ -303,6 +307,10 @@ describe('ServerCoverageCollector', () => {
         functions: [[10, 12]],
         lines: [[11, 11]],
         executable: [[11, 30]],
+        allFunctions: [
+          [10, 12],
+          [14, 30],
+        ],
       },
     ]);
   });

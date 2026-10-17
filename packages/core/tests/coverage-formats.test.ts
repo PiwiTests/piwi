@@ -316,3 +316,51 @@ describe('mergeReportedFiles', () => {
     });
   });
 });
+
+describe('Piwi run-level reports', () => {
+  const report = JSON.stringify({
+    v: 1,
+    files: [
+      { path: '/_/src/Shop.cs', runtime: 'server', functions: [[2, 4]], lines: [[3, 3]], executable: [[3, 4]] },
+      {
+        path: '/_/src/Shop.cs',
+        runtime: 'server',
+        lines: [[4, 4]],
+        allFunctions: [
+          [2, 4],
+          [6, 8],
+        ],
+      },
+      { runtime: 'server' },
+    ],
+  });
+
+  it('is detected from its first bytes', () => {
+    expect(detectCoverageFormat(report.slice(0, 40))).toBe('piwi');
+    expect(detectCoverageFormat('{"name":"package"}')).toBeNull();
+  });
+
+  it('reads each file once, its entries merged, and skips an entry without a path', () => {
+    expect(parseCoverageReport(report)).toEqual({
+      format: 'piwi',
+      sources: [],
+      files: [
+        {
+          path: '/_/src/Shop.cs',
+          executable: [[3, 4]],
+          lines: [[3, 4]],
+          functions: [[2, 4]],
+          allFunctions: [
+            [2, 4],
+            [6, 8],
+          ],
+        },
+      ],
+    });
+  });
+
+  it('refuses text that is not a report', () => {
+    expect(() => parseCoverageReport('{"v": 1', 'piwi')).toThrow(/not JSON/);
+    expect(() => parseCoverageReport('{"v": 1}', 'piwi')).toThrow(/no "files"/);
+  });
+});

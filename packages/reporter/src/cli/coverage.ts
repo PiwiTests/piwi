@@ -1,8 +1,9 @@
 /**
  * `piwi coverage upload` — send another tool's coverage report to the
  * dashboard: the coverage of a unit-test suite (Vitest, coverlet, Microsoft
- * code coverage) or of a backend Piwi does not instrument, read from Cobertura
- * or LCOV, keyed by the commit and a suite name.
+ * code coverage, or a .NET test host running Piwi's recorder) or of a backend
+ * Piwi does not instrument, read from Cobertura, LCOV or Piwi's own run-level
+ * report, keyed by the commit and a suite name.
  *
  * The command reads each report as a stream, resolves its paths against the
  * checkout, keeps the files in the project's coverage scope, names each file's
@@ -53,8 +54,8 @@ Usage:
   npx @piwitests/reporter coverage upload <file or pattern>... --suite <name> [options]
 
 Reports:
-  <file or pattern>        Cobertura or LCOV files; quote patterns ("**/coverage.cobertura.xml")
-  --format <format>        cobertura or lcov; detected from the content when absent
+  <file or pattern>        Cobertura, LCOV or Piwi report files; quote patterns ("**/coverage.cobertura.xml")
+  --format <format>        cobertura, lcov or piwi; detected from the content when absent
   --root <dir>             The directory the reports' relative paths start from; tried
                            against each report's <source>, the current directory, the
                            report's directory and its parent, and the repository root otherwise
@@ -124,7 +125,7 @@ export function parseCoverageUploadArgs(argv: string[], env: NodeJS.ProcessEnv):
   }
   const unknown = [...flags].filter((flag) => flag !== '--dry-run' && flag !== '--json');
   if (unknown.length > 0) throw new Error(`Unknown option ${unknown[0]}`);
-  if (patterns.length === 0) throw new Error('No report — name the Cobertura or LCOV files to upload');
+  if (patterns.length === 0) throw new Error('No report — name the Cobertura, LCOV or Piwi report files to upload');
 
   const suite = values.get('--suite') ?? '';
   if (!SUITE.test(suite)) {
@@ -133,8 +134,8 @@ export function parseCoverageUploadArgs(argv: string[], env: NodeJS.ProcessEnv):
   const kind = values.get('--kind') ?? 'unit';
   if (kind !== 'unit' && kind !== 'e2e') throw new Error('--kind is unit or e2e');
   const format = values.get('--format');
-  if (format !== undefined && format !== 'cobertura' && format !== 'lcov') {
-    throw new Error('--format is cobertura or lcov');
+  if (format !== undefined && format !== 'cobertura' && format !== 'lcov' && format !== 'piwi') {
+    throw new Error('--format is cobertura, lcov or piwi');
   }
   const serverUrl = (values.get('--server-url') ?? env.PIWI_DASHBOARD_URL ?? '').replace(/\/+$/, '');
   const dryRun = flags.has('--dry-run');

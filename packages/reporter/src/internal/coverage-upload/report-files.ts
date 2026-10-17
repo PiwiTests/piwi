@@ -84,7 +84,7 @@ export async function readReport(file: string, format?: CoverageReportFormat): P
       head += chunk as string;
       if (head.length < 4096) continue;
       const detected = detectCoverageFormat(head);
-      if (!detected) throw new Error(`${file} is neither a Cobertura nor an LCOV report`);
+      if (!detected) throw new Error(`${file} is not a Cobertura, LCOV or Piwi coverage report`);
       reader = new CoverageReportReader(detected);
       reader.write(head);
       head = '';
@@ -94,7 +94,7 @@ export async function readReport(file: string, format?: CoverageReportFormat): P
   }
   if (!reader) {
     const detected = detectCoverageFormat(head);
-    if (!detected) throw new Error(`${file} is neither a Cobertura nor an LCOV report`);
+    if (!detected) throw new Error(`${file} is not a Cobertura, LCOV or Piwi coverage report`);
     reader = new CoverageReportReader(detected);
     reader.write(head);
   }

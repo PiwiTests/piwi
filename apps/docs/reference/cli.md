@@ -157,7 +157,7 @@ npx @piwitests/reporter coverage upload "**/coverage.cobertura.xml" --suite unit
 |---|---|
 | `--suite <name>` | The suite the report covers, e.g. `unit-back` |
 | `--kind <kind>` | `unit` (default) or `e2e`, for a backend's own run-level report |
-| `--format <format>` | `cobertura` or `lcov`; detected from the content when absent |
+| `--format <format>` | `cobertura`, `lcov` or `piwi` (a .NET test host's report, written at exit with `PIWI_COVERAGE_OUTPUT`); detected from the content when absent |
 | `--root <dir>` | The directory the reports' relative paths start from |
 | `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
 | `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |

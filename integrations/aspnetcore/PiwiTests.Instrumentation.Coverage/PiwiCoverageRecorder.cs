@@ -19,6 +19,8 @@ namespace PiwiTests.Instrumentation.Coverage;
 /// execution context change, so the per-call read is a thread-static load. Instrumented modules are registered
 /// on their first call, by module version id: the recorder finds the loaded assembly and reads its span table
 /// once. <see cref="RegisterAvailable"/> registers the others, whose code has not run, for their executable lines.
+/// With <c>PIWI_COVERAGE_OUTPUT</c> set, the first call also arranges for the run-level report to be written at
+/// process exit (<see cref="PiwiCoverageOutput"/>).
 /// </remarks>
 public static class PiwiCoverageRecorder
 {
@@ -167,7 +169,10 @@ public static class PiwiCoverageRecorder
 
         var module = Find(mvid) ?? Register(mvid);
         if (module is not null && Volatile.Read(ref s_ran) == 0)
+        {
             Volatile.Write(ref s_ran, 1);
+            PiwiCoverageOutput.Arm();
+        }
 
         return t_lastModule = module;
     }

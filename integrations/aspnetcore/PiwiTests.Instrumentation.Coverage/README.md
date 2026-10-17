@@ -57,6 +57,23 @@ The compiler also embeds a **span table** in the assembly (the `<DynamicAnalysis
 
 The mode is read once, when the process starts.
 
+## Unit tests: a report at process exit
+
+A process that serves no coverage endpoint, a test host running unit tests on a coverage build, writes its run-level
+report when it exits, to the file `PIWI_COVERAGE_OUTPUT` names:
+
+```bash
+dotnet build -p:PiwiCoverage=true
+PIWI_COVERAGE_MODE=run PIWI_COVERAGE_OUTPUT=TestResults/piwi-coverage.json dotnet test --no-build
+npx @piwitests/reporter coverage upload TestResults/piwi-coverage.json --suite unit-back
+```
+
+The report is the one `/__piwi/coverage/run` serves at the `lines` granularity, with the executable lines and every
+method (`allFunctions`) of each instrumented assembly in the test host's directory, whether its code ran or not, and
+its paths as the compiler recorded them: `piwi coverage upload` makes them repository-relative. Its lines are the span
+table's, the ones the end-to-end suite counts. The report is written once the first instrumented method runs; a
+process that runs none writes nothing.
+
 ## The header and the endpoints
 
 In `test` mode, a response whose request ran instrumented code before the response started carries the request's id:
@@ -99,10 +116,10 @@ The id is `<process key>.<sequence>`; the process key is random per process, so 
 - `missing` lists the ids the backend does not hold: from another process, already collected, or evicted.
 - The body is limited to 1 MB and 10,000 request ids.
 
-**`GET /__piwi/coverage/run?granularity=lines`** returns the run-level coverage: the code that ran outside any request, every request collected, evicted or still kept, and, at `lines` granularity, each file's `executable` lines (the lines of every statement, run or not). Executable lines cover every assembly built with coverage instrumentation, including those whose code never ran: the loaded ones, and those in the application's base directory, whose span tables are read from disk without loading them:
+**`GET /__piwi/coverage/run?granularity=lines`** returns the run-level coverage: the code that ran outside any request, every request collected, evicted or still kept, and, at `lines` granularity, each file's `executable` lines (the lines of every statement, run or not) and `allFunctions` (the line range of every method, run or not). Executable lines cover every assembly built with coverage instrumentation, including those whose code never ran: the loaded ones, and those in the application's base directory, whose span tables are read from disk without loading them:
 
 ```json
-{ "v": 1, "files": [{ "path": "src/Web/Services/BasketViewModelService.cs", "runtime": "server", "functions": [[20, 26]], "lines": [[22, 25]], "executable": [[22, 25], [30, 50]], "checksums": ["sha256:41d0…"] }] }
+{ "v": 1, "files": [{ "path": "src/Web/Services/BasketViewModelService.cs", "runtime": "server", "functions": [[20, 26]], "lines": [[22, 25]], "executable": [[22, 25], [30, 50]], "allFunctions": [[20, 26], [28, 51]], "checksums": ["sha256:41d0…"] }] }
 ```
 
 Both endpoints answer under the request's path base, beside `/__piwi/manifest`, and only once instrumented code runs in the process; otherwise the paths reach the application.

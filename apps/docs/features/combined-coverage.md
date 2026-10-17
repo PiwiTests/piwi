@@ -35,10 +35,14 @@ needs the Uploader role on the project, the one a reporter uses. Every flag is o
 | Vitest (`@vitest/coverage-v8`) | Cobertura or LCOV | `vitest run --coverage --coverage.reporter=cobertura` |
 | coverlet | Cobertura | `dotnet test --collect "XPlat Code Coverage"` |
 | Microsoft code coverage | Cobertura | `dotnet test --collect "Code Coverage;Format=cobertura"` |
+| Piwi's .NET recorder | Piwi | `PIWI_COVERAGE_OUTPUT=piwi.json dotnet test` on a `-p:PiwiCoverage=true` build |
 
-Upload from the full unit-test run. Vitest lists the files nothing ran only when every test ran (not with `--changed`
-or a single file) and when `coverage.include` names them; a report without its untested files counts less code than
-there is.
+On a large .NET solution, run the unit tests on the coverage build that [server coverage](./server-coverage) uses:
+the test host writes its report at exit, with the span table's lines, the ones the end-to-end suite counts, at a
+fraction of coverlet's cost.
+
+Upload from the full unit-test run: Vitest lists the files nothing ran only when every test ran and `coverage.include`
+names them.
 
 ## In CI
 

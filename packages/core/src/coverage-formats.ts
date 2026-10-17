@@ -1,7 +1,7 @@
 /**
  * Coverage reports written by other tools, read into Piwi's coverage model:
  * per file, its executable lines, the lines that ran, and the functions the
- * tool knows, run or not. Two formats are read:
+ * tool knows, run or not. Three formats are read:
  *
  * - **Cobertura** (Vitest's `cobertura` reporter, coverlet, Microsoft code
  *   coverage): a tag scanner reading `<source>`, each `<class filename>`, its
@@ -12,7 +12,11 @@
  *   references;
  * - **LCOV** (Vitest's `lcov` reporter, coverlet): `SF`, `DA`, `FN` (with an
  *   end line when the writer gives one), `FNDA`, the `FNL` and `FNA` records of
- *   LCOV 2.2, and `end_of_record`.
+ *   LCOV 2.2, and `end_of_record`;
+ * - **Piwi** (`PiwiTests.Instrumentation.Coverage`'s run-level report, which a
+ *   .NET test host writes at exit with `PIWI_COVERAGE_OUTPUT`): JSON,
+ *   `{ "v": 1, "files": [{ "path", "lines", "executable", "functions",
+ *   "allFunctions" }] }`, its ranges as written. Read whole when it ends.
  *
  * Every line a report lists is executable; it ran when its hit count is above
  * zero. A file named several times (Cobertura's classes, merged LCOV records)
@@ -25,7 +29,7 @@
 import { normalizeFunctionRanges, normalizeLineRanges, type LineRange } from './coverage';
 
 /** The report formats read. */
-export type CoverageReportFormat = 'cobertura' | 'lcov';
+export type CoverageReportFormat = 'cobertura' | 'lcov' | 'piwi';
 
 /** One file of a report, its path as the report writes it. */
 export interface ReportedFile {
@@ -60,6 +64,7 @@ const RAN = 2;
 /** The format of a report from its first bytes; null when it is neither. */
 export function detectCoverageFormat(head: string): CoverageReportFormat | null {
   const text = head.replace(/^﻿/, '').trimStart();
+  if (text.startsWith('{')) return /"files"\s*:/.test(text) ? 'piwi' : null;
   if (text.startsWith('<'))
     return /<coverage[\s>]/.test(text) || !/<\w/.test(text.replace(/<[?!][^>]*>/g, '')) ? 'cobertura' : null;
   return /^(?:TN|SF):/m.test(text) ? 'lcov' : null;
@@ -408,12 +413,53 @@ class LcovReader {
   }
 }
 
+/** Longest Piwi report read, in characters. */
+const MAX_PIWI_REPORT = 512 * 1024 * 1024;
+
+/** A Piwi run-level report: its text kept until the end, then parsed. */
+class PiwiReader {
+  private readonly chunks: string[] = [];
+  private length = 0;
+
+  write(chunk: string): void {
+    this.length += chunk.length;
+    if (this.length > MAX_PIWI_REPORT) throw new Error('The Piwi coverage report is larger than 512 MB.');
+    this.chunks.push(chunk);
+  }
+
+  end(): CoverageReport {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(this.chunks.join('').replace(/^﻿/, ''));
+    } catch {
+      throw new Error('The Piwi coverage report is not JSON.');
+    }
+    const files = (parsed as { files?: unknown } | null)?.files;
+    if (!Array.isArray(files)) throw new Error('The Piwi coverage report has no "files" array.');
+    const byPath = new Map<string, ReportedFile>();
+    for (const item of files as Array<Record<string, unknown>>) {
+      if (typeof item?.path !== 'string' || !item.path) continue;
+      const file: ReportedFile = {
+        path: item.path,
+        executable: normalizeLineRanges(item.executable),
+        lines: normalizeLineRanges(item.lines),
+        functions: normalizeFunctionRanges(item.functions),
+        allFunctions: normalizeFunctionRanges(item.allFunctions),
+      };
+      const known = byPath.get(file.path);
+      byPath.set(file.path, known ? mergeReportedFiles(known, file) : file);
+    }
+    return { format: 'piwi', sources: [], files: [...byPath.values()] };
+  }
+}
+
 /** Reads a report fed in chunks: {@link write} each chunk of text in order, then {@link end}. */
 export class CoverageReportReader {
-  private readonly reader: CoberturaReader | LcovReader;
+  private readonly reader: CoberturaReader | LcovReader | PiwiReader;
 
   constructor(readonly format: CoverageReportFormat) {
-    this.reader = format === 'cobertura' ? new CoberturaReader() : new LcovReader();
+    this.reader =
+      format === 'cobertura' ? new CoberturaReader() : format === 'lcov' ? new LcovReader() : new PiwiReader();
   }
 
   /** Adds the next chunk of the report's text. Throws on a tag or a line longer than 1 MB. */

@@ -19,8 +19,9 @@ public enum PiwiCoverageGranularity
 
 /// <summary>
 /// Turns recorded payloads into the coverage model: one entry per repository-relative file,
-/// <c>{ "path", "runtime": "server", "functions"?: [[start, end]], "lines"?: [[start, end]], "executable"?: [[start, end]], "checksums"?: [string] }</c>,
-/// with 1-based inclusive line ranges, sorted and merged. <c>checksums</c>, at the functions and lines
+/// <c>{ "path", "runtime": "server", "functions"?: [[start, end]], "lines"?: [[start, end]], "executable"?: [[start, end]], "allFunctions"?: [[start, end]], "checksums"?: [string] }</c>,
+/// with 1-based inclusive line ranges, sorted and merged. <c>allFunctions</c>, beside <c>executable</c>, is the
+/// line range of every method, run or not. <c>checksums</c>, at the functions and lines
 /// granularities, lists the checksums of the source the compiler read for the file (<c>sha256:&lt;hex&gt;</c>), one
 /// per distinct version compiled into the instrumented modules, so a reader can check its line numbers against its
 /// own copy of the file. A function is the line range of a method whose entry
@@ -78,7 +79,8 @@ public sealed class PiwiCoverageReport
     /// At <see cref="PiwiCoverageGranularity.Lines"/>, adds the executable lines of every instrumented module
     /// (<c>executable</c>): the lines of every statement, whether it ran or not, in the modules whose code ran and
     /// in those whose code did not (the loaded assemblies built with coverage instrumentation, and those in the
-    /// application's base directory). Does nothing at other granularities.
+    /// application's base directory), and the line range of every method (<c>allFunctions</c>). Does nothing at
+    /// other granularities.
     /// </summary>
     public void AddExecutableLines()
     {
@@ -93,6 +95,8 @@ public sealed class PiwiCoverageReport
             for (var row = 1; row < lines.Length; row++)
             {
                 var entries = lines[row];
+                if (entries.Length > 0 && entries[0].Ranges.Length > 0 && File(module, entries[0].Document) is { } method)
+                    method.AllFunctions.Add(entries[0].Ranges[0]);
                 for (var i = 1; i < entries.Length; i++)
                 {
                     if (File(module, entries[i].Document) is { } file)
@@ -113,7 +117,7 @@ public sealed class PiwiCoverageReport
         foreach (var path in paths)
         {
             var file = _files[path];
-            if (!file.Executed && file.Executable.Count == 0)
+            if (!file.Executed && file.Executable.Count == 0 && file.AllFunctions.Count == 0)
                 continue;
 
             writer.WriteStartObject();
@@ -126,6 +130,8 @@ public sealed class PiwiCoverageReport
                 WriteRanges(writer, "lines", Merge(file.Lines));
                 if (file.Executable.Count > 0)
                     WriteRanges(writer, "executable", Merge(file.Executable));
+                if (file.AllFunctions.Count > 0)
+                    WriteRanges(writer, "allFunctions", SortedFunctions(file.AllFunctions));
             }
 
             if (_granularity != PiwiCoverageGranularity.Files && file.Checksums.Count > 0)
@@ -242,6 +248,7 @@ public sealed class PiwiCoverageReport
         public readonly HashSet<LineRange> Functions = [];
         public readonly List<LineRange> Lines = [];
         public readonly List<LineRange> Executable = [];
+        public readonly HashSet<LineRange> AllFunctions = [];
         public readonly HashSet<string> Checksums = new(StringComparer.Ordinal);
     }
 }

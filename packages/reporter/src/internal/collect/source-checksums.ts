@@ -41,11 +41,12 @@ export function contentChecksums(content: Buffer): Set<string> {
 
 /** A file's coverage without its line numbers: the path only, the file still counting as reached. */
 function withoutLines<T extends CoverageFile>(file: T): T {
-  const copy: T & { executable?: unknown } = { ...file };
+  const copy: T & { executable?: unknown; allFunctions?: unknown } = { ...file };
   delete copy.functions;
   delete copy.lines;
   delete copy.blob;
   delete copy.executable;
+  delete copy.allFunctions;
   return copy;
 }
 

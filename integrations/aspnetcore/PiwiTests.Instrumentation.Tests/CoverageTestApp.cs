@@ -125,7 +125,7 @@ internal sealed class CoverageTestApp : IAsyncDisposable
     }
 }
 
-internal sealed record WireCoverageFile(string Path, string Runtime, int[][]? Functions, int[][]? Lines, int[][]? Executable, string[]? Checksums = null);
+internal sealed record WireCoverageFile(string Path, string Runtime, int[][]? Functions, int[][]? Lines, int[][]? Executable, string[]? Checksums = null, int[][]? AllFunctions = null);
 
 internal sealed record WireCoverageGroup(string Key, List<WireCoverageFile> Files, List<string> Missing)
 {

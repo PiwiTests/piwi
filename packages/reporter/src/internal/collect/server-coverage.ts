@@ -50,8 +50,8 @@ export interface ServerCoverage {
 }
 
 /**
- * One file of a run's coverage: a backend's, with its executable lines at `lines` granularity, or the browser's, with
- * every function the tests' pages declared in it, run or not (`allFunctions`).
+ * One file of a run's coverage: a backend's, with its executable lines and every method (`allFunctions`) at `lines`
+ * granularity, or the browser's, with every function the tests' pages declared in it, run or not (`allFunctions`).
  */
 export interface RunCoverageFile extends CoverageFile {
   executable?: LineRange[];
@@ -177,9 +177,11 @@ function runFilesOf(answer: unknown): RunCoverageFile[] | null {
     const functions = normalizeFunctionRanges(item.functions);
     const lines = normalizeLineRanges(item.lines);
     const executable = normalizeLineRanges(item.executable);
+    const allFunctions = normalizeFunctionRanges(item.allFunctions);
     if (functions.length > 0) file.functions = functions;
     if (lines.length > 0) file.lines = lines;
     if (executable.length > 0) file.executable = executable;
+    if (allFunctions.length > 0) file.allFunctions = allFunctions;
     files.push(file);
   }
   return files;

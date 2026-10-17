@@ -200,6 +200,31 @@ describe('uploadCoverage', () => {
     expect(summary).toMatchObject({ files: 0, unmatched: 3 });
   });
 
+  it("reads a .NET test host's Piwi report, its paths as the compiler recorded them", async () => {
+    write(
+      'TestResults/unit.json',
+      JSON.stringify({
+        v: 1,
+        files: [
+          {
+            path: path.join(repo, 'apps/web/src/cart.ts'),
+            runtime: 'server',
+            functions: [[1, 3]],
+            lines: [[2, 2]],
+            executable: [[2, 2]],
+            allFunctions: [[1, 3]],
+            checksums: ['sha256:00'],
+          },
+          { path: '/_/apps/web/src/idle.ts', runtime: 'server', functions: [], lines: [], executable: [[1, 1]] },
+        ],
+      }),
+    );
+    const args = parseCoverageUploadArgs(['TestResults/unit.json', '--suite', 'unit-back', '--dry-run'], EMPTY_ENV);
+    const { summary, code } = await uploadCoverage(args, EMPTY_ENV, repo);
+    expect(code).toBe(0);
+    expect(summary).toMatchObject({ files: 2, unmatched: 0 });
+  });
+
   it('says when the dashboard refuses a part', async () => {
     server = await startServerOnTestPort((req, res) => {
       if (req.url === '/api/projects/menu') jsonRes(res, 200, { items: [{ id: 7, name: 'shop' }] });
