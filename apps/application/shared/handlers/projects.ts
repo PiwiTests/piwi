@@ -9,6 +9,7 @@ import {
   failureClusters,
   failureDiagnoses,
   casePayloads,
+  coverageReports,
   entityLinks,
   bugReports,
   analyticsDailyRollups,
@@ -574,6 +575,7 @@ export async function deleteProjectData(
   onProgress?.({ phase: 'project', totalRuns, runsDeleted: totalRuns });
 
   await db.delete(testCases).where(eq(testCases.projectId, projectId));
+  await db.delete(coverageReports).where(eq(coverageReports.projectId, projectId));
   await db.delete(casePayloads).where(eq(casePayloads.projectId, projectId));
 
   // Entity links pinned to this project's clusters (a known-issue link Piwi

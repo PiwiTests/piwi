@@ -90,6 +90,10 @@ export const EN_COPY = {
           title: 'What your tests miss',
           body: 'The Test Map draws the app’s features from what the tests reach, then lists the tests that do not exist yet, ranked by exposure. One of them here: the tests still pass when POST /api/orders breaks.',
         },
+        combined: {
+          title: 'Every suite, one ratio',
+          body: 'The unit tests of both ends and the Playwright run of one commit, counted on the same lines: **Combined coverage** gives the share they ran together, then each suite’s, and the lines only the unit tests run.',
+        },
       },
     },
     product: {

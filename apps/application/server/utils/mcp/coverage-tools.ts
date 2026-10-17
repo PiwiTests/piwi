@@ -218,7 +218,7 @@ const getCoverageLossTool: McpToolHandler = async (db, params, ctx) => {
 const getCoverageSummaryTool: McpToolHandler = async (db, params, ctx) => {
   const projectId = positiveId(params.projectId, 'projectId');
   assertInScope(ctx, projectId);
-  const query = parseCoverageSummaryQuery(params.commit, params.branch, params.folder);
+  const query = parseCoverageSummaryQuery(params.commit, params.branch, params.folder, params.file);
   if ('error' in query) throw new Error(query.error);
   const summary = await getCoverageSummary(db, projectId, query);
   if (!summary) {

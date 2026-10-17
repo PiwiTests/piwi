@@ -126,6 +126,15 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
         align: 'start',
         doc: 'features/scenario-gaps',
       },
+      {
+        id: 'combined',
+        route: '/projects/5/coverage',
+        expect: { project: { id: 5, name: 'web-dashboard' }, combinedCoverage: { suites: 3, filesWithoutData: 2 } },
+        target: 'coverage-overview',
+        side: 'bottom',
+        align: 'start',
+        doc: 'features/combined-coverage',
+      },
     ],
   },
   {

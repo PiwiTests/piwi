@@ -3949,6 +3949,119 @@ const TEST_COVERAGE = [];
 const RUN_COVERAGE = [];
 /** `coverage_executable`: per project, runtime, path and blob, the executable lines of that file version. */
 const COVERAGE_VERSIONS = new Map();
+/** `coverage_reports` and `coverage_report_files`: the unit-test coverage uploaded for a story's covered commit. */
+const COVERAGE_REPORTS = [];
+const COVERAGE_REPORT_FILES = [];
+
+/**
+ * The unit tests of the commit a story's run coverage was recorded at, as
+ * `piwi coverage upload` would send them: the back end's tests (coverlet)
+ * ran the first statements of each API file and counted its braces too; the
+ * front end's (Vitest) ran part of each browser file, whose version the
+ * commit's inventory names. Two more tracked files no suite names are the
+ * files without coverage data.
+ */
+function seedCoverageReports(story, run, fragmentIdOf) {
+  const project = PROJECTS.find((p) => p.id === story.projectId);
+  const branch = run.branch && run.branch !== project?.default_branch ? run.branch : '';
+  const blobOf = (path) => createHash('sha1').update(`demo-blob:${path}`).digest('hex');
+  const expand = (list) => list.flatMap(([a, b]) => Array.from({ length: b - a + 1 }, (_, i) => a + i));
+  const toRanges = (lines) => {
+    const out = [];
+    for (const line of [...new Set(lines)].sort((a, b) => a - b)) {
+      const last = out[out.length - 1];
+      if (last && last[1] === line - 1) last[1] = line;
+      else out.push([line, line]);
+    }
+    return out;
+  };
+  const back = story.runCoverage
+    .filter((entry) => entry.runtime === 'server' && entry.blob && entry.executable?.length)
+    .map((entry) => {
+      const statements = expand(entry.executable);
+      // coverlet also counts the line after each statement block: a closing brace.
+      const executable = toRanges([...statements, ...entry.executable.map(([, end]) => end + 1)]);
+      return {
+        path: entry.path,
+        blob: entry.blob,
+        executable,
+        lines: toRanges(statements.slice(0, Math.ceil(statements.length / 2))),
+        functions: (entry.functions ?? []).slice(0, 1),
+        allFunctions: entry.functions ?? [],
+      };
+    });
+  const browserPaths = [
+    ...new Set(
+      Object.values(story.coverage)
+        .flat()
+        .filter((e) => typeof e === 'string'),
+    ),
+  ].sort();
+  const front = browserPaths.map((path, i) => ({
+    path,
+    blob: blobOf(path),
+    executable: [
+      [3, 14],
+      [18, 26],
+    ],
+    lines:
+      i % 2 === 0
+        ? [[3, 10]]
+        : [
+            [3, 14],
+            [18, 20],
+          ],
+    functions: [[2, 15]],
+    allFunctions: [
+      [2, 15],
+      [17, 27],
+    ],
+  }));
+  const extra = ['api/Billing/InvoiceEndpoints.cs', 'src/pages/billing/index.vue'];
+  const inventory = [
+    ...back.map((f) => [f.path, f.blob]),
+    ...front.map((f) => [f.path, f.blob]),
+    ...extra.map((path) => [path, blobOf(path)]),
+  ].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  const content = JSON.stringify(inventory);
+  const inventoryId = CASE_PAYLOADS.length + 1;
+  CASE_PAYLOADS.push({
+    id: inventoryId,
+    project_id: story.projectId,
+    hash: createHash('sha256').update(content).digest('hex'),
+    content,
+    size: content.length,
+    created_at: run.start_time,
+  });
+  for (const [suite, tool, files] of [
+    ['unit-back', 'cobertura', back],
+    ['unit-front', 'lcov', front],
+  ]) {
+    const id = COVERAGE_REPORTS.length + 1;
+    COVERAGE_REPORTS.push({
+      id,
+      project_id: story.projectId,
+      commit_sha: run.commit_sha,
+      branch,
+      suite,
+      kind: 'unit',
+      tool,
+      incomplete: 0,
+      file_count: files.length,
+      inventory_payload_id: inventoryId,
+      created_at: run.start_time,
+      updated_at: run.start_time,
+    });
+    for (const file of files) {
+      COVERAGE_REPORT_FILES.push({
+        id: COVERAGE_REPORT_FILES.length + 1,
+        report_id: id,
+        path: file.path,
+        fragment_id: fragmentIdOf(story.projectId, file, run.start_time),
+      });
+    }
+  }
+}
 {
   const ranges = (list) =>
     (list ?? []).map(([start, end]) => (start === end ? String(start) : `${start}-${end}`)).join(',');
@@ -3994,6 +4107,44 @@ const COVERAGE_VERSIONS = new Map();
       casePayloadIds.set(key, id);
     }
     return casePayloadIds.get(key);
+  };
+  /** A coverage report's file as a fragment, under the runtime `report`, hashed as `canonicalCoverageFile` hashes it. */
+  const fragmentIdOfReportFile = (projectId, file, seenAt) => {
+    const columns = {
+      functions: ranges(file.functions),
+      lines: ranges(file.lines),
+      executable: ranges(file.executable),
+      allFunctions: ranges(file.allFunctions),
+    };
+    const canonical = JSON.stringify([
+      'report',
+      file.path,
+      file.blob,
+      columns.functions,
+      columns.lines,
+      columns.executable,
+      columns.allFunctions,
+    ]);
+    const key = `${projectId}\x00${canonical}`;
+    if (!fragmentIds.has(key)) {
+      const id = COVERAGE_FRAGMENTS.length + 1;
+      COVERAGE_FRAGMENTS.push({
+        id,
+        project_id: projectId,
+        hash: createHash('sha256').update(canonical).digest('hex'),
+        runtime: 'report',
+        path: file.path,
+        blob: file.blob,
+        functions: columns.functions || null,
+        lines: columns.lines || null,
+        executable: columns.executable || null,
+        all_functions: columns.allFunctions || null,
+        created_at: seenAt,
+        last_seen_at: seenAt,
+      });
+      fragmentIds.set(key, id);
+    }
+    return fragmentIds.get(key);
   };
   for (const story of FAILURE_STORIES) {
     if (!story.coverage) continue;
@@ -4064,6 +4215,7 @@ const COVERAGE_VERSIONS = new Map();
         });
       }
     }
+    if (story.runCoverage?.length) seedCoverageReports(story, run, fragmentIdOfReportFile);
   }
 
   // The order-dependent flake: every execution of the toggle and of the
@@ -4704,6 +4856,7 @@ const REBASE_SQL = [
   `UPDATE case_payloads SET created_at = created_at + ${D};`,
   `UPDATE coverage_fragments SET created_at = created_at + ${D}, last_seen_at = last_seen_at + ${D};`,
   `UPDATE coverage_executable SET created_at = created_at + ${D};`,
+  `UPDATE coverage_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
@@ -5678,6 +5831,8 @@ const lines = [
   insert('test_coverage', TEST_COVERAGE),
   insert('run_coverage', RUN_COVERAGE),
   insert('coverage_executable', [...COVERAGE_VERSIONS.values()]),
+  insert('coverage_reports', COVERAGE_REPORTS),
+  insert('coverage_report_files', COVERAGE_REPORT_FILES),
   '',
   '-- Probe ledger (Test Map, checked axis)',
   insert('probes', PROBES),
@@ -5746,3 +5901,4 @@ console.log(`   CovFrags   : ${COVERAGE_FRAGMENTS.length}`);
 console.log(`   TestCov    : ${TEST_COVERAGE.length}`);
 console.log(`   RunCov     : ${RUN_COVERAGE.length}`);
 console.log(`   CovVersions: ${COVERAGE_VERSIONS.size}`);
+console.log(`   CovReports : ${COVERAGE_REPORTS.length} (${COVERAGE_REPORT_FILES.length} files)`);

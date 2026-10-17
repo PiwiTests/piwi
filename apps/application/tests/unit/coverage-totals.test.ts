@@ -153,6 +153,13 @@ describe('combined coverage of a commit', () => {
     ]);
     expect(summary.filesWithoutData).toEqual({ count: 1, paths: ['src/idle.ts'] });
     expect(summary.entries.map((e) => [e.path, e.linePercent])).toEqual([['src', 60]]);
+    const withFile = (await getCoverageSummary(db as never, 1, {
+      commit: null,
+      branch: null,
+      folder: '',
+      file: 'src/Shop.cs',
+    }))!;
+    expect(withFile.file?.bySuite).toEqual({ 'unit-back': [[2, 4]], e2e: [[6, 7]] });
   });
 
   test('carries a suite the commit lacks forward from its newest report, where the file version is unchanged', async () => {
@@ -216,6 +223,13 @@ describe('combined coverage of a commit', () => {
     });
     expect(parseCoverageSummaryQuery('zz', undefined, undefined)).toHaveProperty('error');
     expect(parseCoverageSummaryQuery(undefined, undefined, 'a/../b')).toHaveProperty('error');
+    expect(parseCoverageSummaryQuery(undefined, undefined, undefined, '/src/cart.ts')).toEqual({
+      commit: null,
+      branch: null,
+      folder: '',
+      file: 'src/cart.ts',
+    });
+    expect(parseCoverageSummaryQuery(undefined, undefined, undefined, '../x.ts')).toHaveProperty('error');
   });
 
   test('refuses the reserved suite names', () => {

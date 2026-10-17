@@ -90,6 +90,10 @@ export const FR_COPY = {
           title: 'Ce que vos tests ne couvrent pas',
           body: 'La Test Map dessine les fonctionnalités de l’application à partir de ce que les tests atteignent, puis liste les tests qui n’existent pas encore, classés par exposition. En voici un : les tests passent toujours quand POST /api/orders casse.',
         },
+        combined: {
+          title: 'Toutes les suites, un seul taux',
+          body: 'Les tests unitaires des deux côtés et l’exécution Playwright d’un même commit, comptés sur les mêmes lignes : **Combined coverage** donne la part qu’ils exécutent ensemble, puis celle de chaque suite, et les lignes que seuls les tests unitaires exécutent.',
+        },
       },
     },
     product: {

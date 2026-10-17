@@ -1202,7 +1202,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/coverage-summary$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const parsed = parseCoverageSummaryQuery(q?.get('commit'), q?.get('branch'), q?.get('folder'));
+      const parsed = parseCoverageSummaryQuery(q?.get('commit'), q?.get('branch'), q?.get('folder'), q?.get('file'));
       if ('error' in parsed) throw demoHttpError(400, parsed.error);
       const summary = await getCoverageSummary(await getDemoDb(), +m[1]!, parsed);
       if (!summary) throw demoHttpError(404, 'No coverage for this commit');

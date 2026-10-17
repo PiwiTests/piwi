@@ -3843,6 +3843,23 @@ const SCENES = [
       await shoot();
     },
   })),
+  // The combined coverage of the web dashboard's covered commit: its two unit
+  // reports and the Playwright run, the API files counted on the span table's
+  // lines, and the two tracked files no suite names.
+  {
+    name: 'combined-coverage',
+    description:
+      'A project’s combined coverage page: the share of lines every suite ran at one commit, each suite’s share, and the folders',
+    tags: ['docs'],
+    out: 'docs',
+    route: `/projects/${COVERAGE_SCENE_PROJECT}/coverage`,
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, settle, shoot }) {
+      await page.locator('[data-testid="coverage-entries"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad: 12 });
+    },
+  },
   {
     name: 'what-changed-coverage-hint',
     description:

@@ -938,6 +938,7 @@ const EXPECT_KEYS = new Set([
   'suspects',
   'coverage',
   'fileCoverage',
+  'combinedCoverage',
   'insight',
 ]);
 const ROUTE_ENTITIES = [
@@ -1107,6 +1108,39 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       );
       for (const f of server) expect(run.has(String(f.path)), `${label}: run coverage of ${f.path}`).toBe(true);
     }
+  }
+  if (want.combinedCoverage) {
+    expect(want.project, `${label}: combinedCoverage needs a project`).toBeTruthy();
+    const projectId = want.project!.id;
+    const [newest] = q(
+      `select commit_sha as sha from coverage_reports where project_id = ${projectId} order by updated_at desc, id desc limit 1`,
+    );
+    expect(newest, `${label}: the project has a coverage report`).toBeTruthy();
+    const sha = String(newest!.sha);
+    const reports = q(
+      `select suite, inventory_payload_id as inventory from coverage_reports where project_id = ${projectId} and commit_sha = '${sha}'`,
+    );
+    const runs = `select id from test_runs where project_id = ${projectId} and commit_sha = '${sha}' and is_full_run = 1`;
+    const [run] = q(`select count(*) as n from run_coverage where run_id in (${runs})`);
+    expect(new Set(reports.map((r) => r.suite)).size + (Number(run?.n) > 0 ? 1 : 0), `${label}: suites`).toBe(
+      want.combinedCoverage.suites,
+    );
+    const inventory = new Set<string>();
+    for (const r of reports) {
+      if (r.inventory == null) continue;
+      const [payload] = q(`select content from case_payloads where id = ${r.inventory}`);
+      for (const [path] of JSON.parse(String(payload!.content)) as Array<[string, string]>) inventory.add(path);
+    }
+    const named = new Set(
+      q(`
+        select f.path from coverage_report_files f join coverage_reports r on r.id = f.report_id
+        where r.project_id = ${projectId} and r.commit_sha = '${sha}'
+        union select path from run_coverage where run_id in (${runs})
+      `).map((r) => String(r.path)),
+    );
+    expect([...inventory].filter((p) => !named.has(p)).length, `${label}: files without coverage data`).toBe(
+      want.combinedCoverage.filesWithoutData,
+    );
   }
   if (want.fileCoverage) {
     expect(want.project, `${label}: fileCoverage needs a project`).toBeTruthy();

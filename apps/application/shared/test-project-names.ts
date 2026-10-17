@@ -36,6 +36,7 @@ export const PROJECT = {
   CLUSTER_SUGGEST: 'cluster-suggest-test',
   CLUSTER_WHAT_CHANGED_SETUP: 'cluster-what-changed-setup-test',
   CODE_REACH: 'code-reach-test',
+  COMBINED_COVERAGE: 'combined-coverage-test',
   COVERAGE_INSIGHTS: 'coverage-insights-test',
   COVERAGE_INSIGHTS_OFF: 'coverage-insights-off-test',
   // Deliberately does not contain "projects" (case-insensitive substring) — the

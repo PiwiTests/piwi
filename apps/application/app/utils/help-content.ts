@@ -717,6 +717,18 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/code-reach#which-tests-run-a-file',
   },
+  'coverage.combined': {
+    title: 'Combined coverage',
+    text: [
+      'Every suite that ran the code at this commit, counted on one set of executable lines per file version.',
+      '',
+      '- **Suites** — the reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs. A suite the commit lacks comes from its newest earlier report, where the file is unchanged.',
+      '- **Lines** — the span table’s when a run recorded them, else the reports’. Every suite’s ratio counts on them.',
+      '- **Undetermined** — unrun lines inside functions the browser suite ran: its lines are not recorded, so they are shown beside the ratio, never in it.',
+      '- **Without data** — tracked files in the coverage scope that no suite names.',
+    ].join('\n'),
+    doc: 'features/combined-coverage#one-ratio-per-commit',
+  },
   'coverage.file-source': {
     title: 'Source not available',
     text: 'Piwi reads a version of a file by its git blob through the project’s source control: a linked clone in the desktop app, GitHub or GitLab with a token, else the file at a run’s commit when its blob matches. Without one, the lines show as numbers.',

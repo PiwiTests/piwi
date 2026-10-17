@@ -14,8 +14,14 @@
  * by function marks its functions, and one recorded by file lists its tests
  * only. `?branch=` reads another branch than the default one. On a project
  * that records no coverage the page says so in one sentence.
+ *
+ * Without `?file=`, the page is the project's combined coverage at a commit
+ * (`?commit=`, else the newest with coverage on `?branch=`), broken down by
+ * `?folder=` (`GET /api/projects/:id/coverage-summary`). The file view adds,
+ * at the commit, which suites ran the file's lines.
  */
-import { decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
+import { countLines, decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
+import { coveragePercent } from '#shared/coverage-combine';
 import type { ApiResponse, ProjectDetails } from '~~/types/api';
 import type { FileCoverage } from '~~/server/utils/coverage';
 import { compactFileCoverage, nearestTest } from '#shared/coverage-insights';
@@ -31,6 +37,8 @@ import {
   testsOnLines,
 } from '~/utils/file-coverage';
 import { lineRangesText } from '~/utils/suspect-lines';
+import { formatCount, formatPercent, suitesOnLines } from '~/utils/combined-coverage';
+import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 
 type SourceResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/source.get').default>;
 
@@ -47,10 +55,33 @@ const branch = computed(() =>
   typeof route.query.branch === 'string' && route.query.branch ? route.query.branch : undefined,
 );
 const fileName = computed(() => file.value.split('/').pop() || 'Coverage');
+const commit = computed(() =>
+  typeof route.query.commit === 'string' && route.query.commit ? route.query.commit : undefined,
+);
+const folder = computed(() => (typeof route.query.folder === 'string' ? route.query.folder : undefined));
+
+// The combined coverage at the commit: the page's subject without a file, the suites of each line with one.
+const {
+  data: summary,
+  status: summaryStatus,
+  error: summaryError,
+} = useFetch<CoverageSummary>(`/api/projects/${projectId}/coverage-summary`, {
+  server: false,
+  lazy: true,
+  query: computed(() => ({
+    commit: commit.value,
+    branch: branch.value,
+    folder: file.value ? undefined : folder.value,
+    file: file.value || undefined,
+  })),
+});
+const summaryLoading = computed(() => summaryStatus.value === 'idle' || summaryStatus.value === 'pending');
+/** No combined coverage at all: the summary answered 404. */
+const noCombined = computed(() => summaryError.value?.statusCode === 404);
 
 useHead(
   computed(() => ({
-    title: `Coverage of ${fileName.value} — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `${file.value ? `Coverage of ${fileName.value}` : 'Coverage'} — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
   })),
 );
 
@@ -64,6 +95,30 @@ const {
   lazy: true,
   query: computed(() => ({ file: file.value, branch: branch.value })),
   immediate: coverageActive.value && file.value !== '',
+});
+
+/** The file at the commit's combined coverage, when that is the version shown. */
+const combinedFile = computed(() => {
+  const at = summary.value?.file;
+  return at && at.blob && at.blob === version.value?.blob ? at : null;
+});
+const combinedFileSentence = computed(() => {
+  const at = combinedFile.value;
+  if (!at || !summary.value) return null;
+  const executable = countLines(at.executable);
+  const ran = formatPercent(coveragePercent(countLines(at.executed), executable));
+  const { unitOnly, e2eOnly, both } = at.classes;
+  return `With every suite at ${summary.value.commit.slice(0, 7)}: ${ran} of its ${formatCount(executable)} lines ran — unit only ${formatCount(countLines(unitOnly))}, end to end only ${formatCount(countLines(e2eOnly))}, both ${formatCount(countLines(both))}.`;
+});
+const selectionSuites = computed(() =>
+  combinedFile.value && selection.value ? suitesOnLines(combinedFile.value.bySuite, selection.value) : null,
+);
+const selectionSuitesSentence = computed(() => {
+  const picked = selection.value;
+  const suites = selectionSuites.value;
+  if (!picked || !suites) return '';
+  const lines = picked[0] === picked[1] ? `Line ${picked[0]}` : `Lines ${picked[0]}–${picked[1]}`;
+  return suites.length ? `${lines} ran in ${suites.join(', ')}.` : `No suite ran ${lines.toLowerCase()}.`;
 });
 const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 
@@ -207,7 +262,8 @@ const nearestSentence = computed(() => {
               { label: 'Home', icon: 'i-lucide-house', to: '/' },
               { label: 'Projects', to: '/projects' },
               { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
-              { label: fileName },
+              file ? { label: 'Coverage', to: `/projects/${projectId}/coverage` } : { label: 'Coverage' },
+              ...(file ? [{ label: fileName }] : []),
             ]"
           />
         </template>
@@ -215,9 +271,17 @@ const nearestSentence = computed(() => {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4" data-shot="coverage-file">
+      <div v-if="!file" class="p-4 space-y-4">
+        <LoadingState v-if="summaryLoading" text="Combining the suites’ coverage…" />
+        <EmptyState
+          v-else-if="noCombined"
+          text="No combined coverage yet: upload a suite’s coverage report with piwi coverage upload, or record run coverage with the reporter."
+        />
+        <ErrorState v-else-if="summaryError || !summary" text="The combined coverage could not be read." />
+        <ProjectCoverageOverview v-else :project-id="projectId" :summary="summary" />
+      </div>
+      <div v-else class="p-4 space-y-4" data-shot="coverage-file">
         <EmptyState v-if="!coverageActive" text="This project records no coverage." />
-        <EmptyState v-else-if="!file" text="No file named: add ?file= and a repository-relative path to the address." />
         <LoadingState v-else-if="loading" text="Reading the file’s coverage…" />
         <ErrorState v-else-if="error" text="The coverage of this file could not be read." />
         <EmptyState
@@ -239,6 +303,16 @@ const nearestSentence = computed(() => {
               </p>
               <p class="text-sm text-highlighted leading-relaxed" data-testid="coverage-file-summary">
                 {{ fileCoverageSentence(version, coverage.branch) }}
+              </p>
+              <p
+                v-if="combinedFileSentence"
+                class="text-sm text-highlighted leading-relaxed"
+                data-testid="coverage-file-combined"
+              >
+                {{ combinedFileSentence }}
+                <template v-if="selectionSuites">
+                  {{ selectionSuitesSentence }}
+                </template>
               </p>
               <p class="text-xs text-muted inline-flex flex-wrap items-center gap-x-1">
                 <span>{{ version.runtime === 'server' ? 'Server file' : 'Browser file' }}</span>

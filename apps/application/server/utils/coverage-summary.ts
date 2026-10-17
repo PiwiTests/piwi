@@ -60,6 +60,8 @@ export interface CoverageSummary {
   /** The folder broken down ('' for the repository root) and its direct children. */
   folder: string;
   entries: Array<FolderEntry & CoverageRatios>;
+  /** With `file`, that file's lines: their classes and the lines each suite ran; null when no suite names it. */
+  file?: CombinedFile | null;
 }
 
 function ratios<T extends CoverageCounts>(counts: T): T & CoverageRatios {
@@ -114,6 +116,8 @@ export interface CoverageSummaryQuery {
   commit: string | null;
   branch: string | null;
   folder: string;
+  /** A repository-relative file whose lines to add. */
+  file?: string | null;
 }
 
 const COMMIT = /^[0-9a-f]{7,64}$/;
@@ -123,6 +127,7 @@ export function parseCoverageSummaryQuery(
   commit: unknown,
   branch: unknown,
   folder: unknown,
+  file?: unknown,
 ): CoverageSummaryQuery | { error: string } {
   const first = (value: unknown) => (Array.isArray(value) ? value[0] : value);
   const text = (value: unknown) => (typeof first(value) === 'string' ? (first(value) as string).trim() : '');
@@ -133,12 +138,9 @@ export function parseCoverageSummaryQuery(
   const dir = text(folder).replace(/^\/+|\/+$/g, '');
   if (dir.length > 500 || dir.split('/').includes('..'))
     return { error: 'folder must be a repository-relative folder' };
-  return { commit: sha || null, branch: name || null, folder: dir };
-}
-
-/** The files of a folder, for a reader that marks lines (the file view). */
-export function filesIn(coverage: CommitCoverage, path: string): CombinedFile[] {
-  return coverage.combined.files.filter((f) => f.path === path || f.path.startsWith(`${path}/`));
+  const path = text(file).replace(/^\/+/, '');
+  if (path.length > 500 || path.split('/').includes('..')) return { error: 'file must be a repository-relative path' };
+  return { commit: sha || null, branch: name || null, folder: dir, ...(path ? { file: path } : {}) };
 }
 
 /**
@@ -174,5 +176,6 @@ export async function getCoverageSummary(
     filesReferencedByReports: combined.filesReferencedByReports,
     folder: query.folder,
     entries: folderBreakdown(combined.files, query.folder).map((e) => ratios(e)),
+    ...(query.file ? { file: combined.files.find((f) => f.path === query.file) ?? null } : {}),
   };
 }

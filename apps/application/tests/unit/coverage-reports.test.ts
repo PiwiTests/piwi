@@ -30,6 +30,7 @@ const {
 } = await import('../../server/utils/coverage-reports');
 const { deleteBranchCoverageRows, unreferencedFragments } = await import('../../server/utils/coverage');
 const { sweepOrphans } = await import('../../server/utils/retention');
+const { deleteProjectData } = await import('../../shared/handlers/projects');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 const DAY = 24 * 3_600_000;
@@ -288,5 +289,18 @@ describe('pruneCoverageReports', () => {
         )[0]!.n,
       ),
     ).toBe(1);
+  });
+
+  test('a deleted project takes its reports and their inventories with it', async () => {
+    const db = await freshDb();
+    await db.run(sql`PRAGMA foreign_keys = ON`);
+    await storeCoverageReport(
+      db as never,
+      1,
+      upload({ inventory: [['src/cart.ts', BLOB_A]], files: [cart([[1, 2]])] }),
+    );
+    await deleteProjectData(db as never, 1);
+    expect(await db.select().from(schema.coverageReports)).toEqual([]);
+    expect(await db.select().from(schema.casePayloads)).toEqual([]);
   });
 });

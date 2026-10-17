@@ -99,6 +99,14 @@ totals are recomputed a few seconds after each upload and each run coverage of t
 - **Carried forward.** A suite the commit lacks comes from its newest earlier report, on the commit's branch then on
   the default branch, file by file where the file's version is unchanged, and the totals say from which commit.
 
+The project's coverage page (**Coverage** in the project's menu) shows the newest commit with coverage, a run's header
+links its commit's, and a file's coverage page says which suites ran each line.
+
+<figure>
+  <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage page">
+  <figcaption>Three suites of one commit, counted on the same lines.</figcaption>
+</figure>
+
 ## How paths are matched
 
 A report's paths are made repository-relative before anything is sent:
@@ -141,6 +149,10 @@ result Piwi keeps.
 - **One commit, one checkout.** Upload from the checkout the tests ran in: the blob ids and the inventory come from it.
 - **Functions match by start line.** coverlet starts a method at its opening brace, the compiler's span table at its
   declaration, so a .NET function both report can count twice.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 
