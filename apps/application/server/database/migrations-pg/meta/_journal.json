@@ -883,6 +883,13 @@
       "when": 1792227537678,
       "tag": "0125_backfill_coverage_arrival",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1792232019766,
+      "tag": "0126_coverage_detail_removed",
+      "breakpoints": true
     }
   ]
 }

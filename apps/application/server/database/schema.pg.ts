@@ -913,6 +913,8 @@ export const coverageTotals = pgTable(
     computedAt: timestamp('computed_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
+    detailRemovedAt: timestamp('detail_removed_at', { mode: 'date' }), // null while the commit's reports are kept
+    supersededBy: text('superseded_by'), // the newer commit whose coverage made the reports go
   },
   (table) => ({
     uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite, table.area),

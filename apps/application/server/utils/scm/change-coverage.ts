@@ -30,6 +30,7 @@ import {
 } from '#shared/handlers/change-coverage';
 import { patchChangedLines } from '#shared/patch-coverage';
 import { cachedCommitCoverage } from '../coverage-summary';
+import { commitDetailRemoved } from '../coverage-totals';
 import { readProjectIntegration } from '../integrations/binding';
 import {
   detectChangedUnreached,
@@ -249,12 +250,17 @@ function toChangedFiles(changes: ScmChanges): ChangedFileInput[] {
   }));
 }
 
-/** The head commit's combined coverage, as change coverage reads it; null when it has none. */
+/**
+ * The head commit's combined coverage, as change coverage reads it; null when
+ * it has none, or only its totals are kept: its files went when a newer commit
+ * superseded it, after its pull-request feedback was posted.
+ */
 async function headCommitCoverage(
   db: DbClient,
   projectId: number,
   headSha: string,
 ): Promise<CommitCoverageInput | null> {
+  if (await commitDetailRemoved(db, projectId, headSha)) return null;
   const coverage = await cachedCommitCoverage(db, projectId, headSha).catch((e) => {
     console.error(`[change-coverage] could not read the coverage of ${headSha}`, e);
     return null;

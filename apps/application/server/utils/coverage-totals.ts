@@ -23,8 +23,12 @@
  *   lines.
  * - A commit's branch is the default branch ('') when any of its reports or
  *   runs ran there.
+ * - Off the default branch, per suite only the report of the commit whose
+ *   coverage arrived last is kept ({@link pruneSupersededReports}). A commit
+ *   that lost its reports keeps its totals, final from then on: they are never
+ *   computed again.
  */
-import { and, desc, eq, getTableColumns, gt, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, gt, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import { normalizeFunctionRanges, normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import {
   DEFAULT_COVERAGE_SCOPE,
@@ -57,7 +61,7 @@ import {
   type FileVersion,
   type RunCoverageFile,
 } from './coverage';
-import { getReportFiles, getReportInventories, type ReportFileUpload } from './coverage-reports';
+import { getReportFiles, getReportInventories, markDetailRemoved, type ReportFileUpload } from './coverage-reports';
 import { locatorBranchTag } from './locator-usages';
 import { projectDefaultBranch } from './scm/stored-default-branch';
 
@@ -164,7 +168,7 @@ async function commitRuns(
 }
 
 /** The project's coverage scope, its version and its named areas. */
-async function projectScope(
+export async function projectScope(
   db: DrizzleDB,
   projectId: number,
 ): Promise<{ scope: CoverageScope; version: number; areas: CoverageArea[] }> {
@@ -440,8 +444,10 @@ function countColumns(counts: CoverageCounts) {
  * named areas, replacing what the commit held, and the `coverage_daily` rows
  * of the day the commit arrived, unless a commit that arrived later that day
  * holds them. A computation that started before the one that last wrote the
- * commit's totals writes nothing. `now` is when the computation starts.
- * Returns the coverage, or null when the commit has none.
+ * commit's totals writes nothing, and so does one of a commit whose detail
+ * was removed: its totals are final. `now` is when the computation starts.
+ * Returns the coverage, or null when the commit has none or its totals are
+ * final.
  */
 export async function storeCommitTotals(
   db: DrizzleDB,
@@ -451,6 +457,7 @@ export async function storeCommitTotals(
 ): Promise<CommitCoverage | null> {
   const ofCommit = and(eq(coverageTotals.projectId, projectId), eq(coverageTotals.commit, commit))!;
   const notNewer = or(isNull(coverageTotals.computationStartedAt), lt(coverageTotals.computationStartedAt, now))!;
+  if (await commitDetailRemoved(db, projectId, commit)) return null;
   const coverage = await loadCommitCoverage(db, projectId, commit);
   if (!coverage) {
     await db.delete(coverageTotals).where(and(ofCommit, notNewer));
@@ -520,13 +527,27 @@ export async function storeCommitTotals(
       .where(and(ofCommit, gt(coverageTotals.computationStartedAt, now)))
       .limit(1);
     if (newer) return false;
+    // Totals whose detail went while this computation ran stay as they were.
+    const [final] = await tx
+      .select({ id: coverageTotals.id })
+      .from(coverageTotals)
+      .where(and(ofCommit, isNotNull(coverageTotals.detailRemovedAt)))
+      .limit(1);
+    if (final) return false;
     for (let i = 0; i < rows.length; i += ROW_CHUNK) {
       await tx
         .insert(coverageTotals)
         .values(rows.slice(i, i + ROW_CHUNK))
         .onConflictDoUpdate({
           target: [coverageTotals.projectId, coverageTotals.commit, coverageTotals.suite, coverageTotals.area],
-          set: fromExcluded(coverageTotals, ['projectId', 'commit', 'suite', 'area']),
+          set: fromExcluded(coverageTotals, [
+            'projectId',
+            'commit',
+            'suite',
+            'area',
+            'detailRemovedAt',
+            'supersededBy',
+          ]),
           setWhere: sql`${coverageTotals.computationStartedAt} IS NULL OR excluded.computation_started_at >= ${coverageTotals.computationStartedAt}`,
         });
     }
@@ -620,14 +641,24 @@ async function storeCommitDaily(
 }
 
 const pending = new Map<string, ReturnType<typeof setTimeout>>();
+/** The commits whose totals are being computed. */
+const computing = new Set<string>();
 /** How long a commit's totals wait for more uploads and runs before they are computed. */
 export const TOTALS_DELAY_MS = 5000;
+
+/** Whether a commit's totals are waiting to be computed, or being computed, in this process. */
+function totalsInFlight(projectId: number, commit: string): boolean {
+  const key = `${projectId}\0${commit}`;
+  return pending.has(key) || computing.has(key);
+}
 
 /**
  * Compute a commit's totals a few seconds from now, once for every upload and
  * run coverage arriving meanwhile: four shards and three suites trigger one
- * computation; `after` runs once they are stored. A failure is logged, never
- * thrown.
+ * computation; `after` runs once they are stored. Off the default branch, the
+ * reports superseded on the commit's branch go next, the commit's own when a
+ * newer commit's arrived meanwhile. Nothing is computed for a commit whose
+ * totals are final. A failure is logged, never thrown.
  */
 export function scheduleCommitTotals<D extends DrizzleDB>(
   db: () => Promise<D>,
@@ -640,15 +671,215 @@ export function scheduleCommitTotals<D extends DrizzleDB>(
   if (known) clearTimeout(known);
   const timer = setTimeout(() => {
     pending.delete(key);
+    computing.add(key);
     db()
       .then(async (database) => {
-        await storeCommitTotals(database, projectId, commit);
-        await after?.(database, projectId, commit);
+        const coverage = await storeCommitTotals(database, projectId, commit);
+        if (!coverage) return;
+        try {
+          await after?.(database, projectId, commit);
+        } finally {
+          // The commit's totals are stored: it may supersede an earlier commit, or be superseded already.
+          if (coverage.branch !== '') {
+            await pruneSupersededReports(database, new Date(), { projectId, branch: coverage.branch, ready: commit });
+          }
+        }
       })
-      .catch((error) => console.error(`[coverage] Could not compute the totals of ${commit}:`, error));
+      .catch((error) => console.error(`[coverage] Could not compute the totals of ${commit}:`, error))
+      .finally(() => computing.delete(key));
   }, TOTALS_DELAY_MS);
   timer.unref?.();
   pending.set(key, timer);
+}
+
+/** A commit whose detail was removed: when, and the newer commit that superseded it. */
+export interface DetailRemoved {
+  at: Date;
+  supersededBy: string | null;
+}
+
+/** When a commit's detail was removed, its totals final from then on; null while its reports are kept. */
+export async function commitDetailRemoved(
+  db: DrizzleDB,
+  projectId: number,
+  commit: string,
+): Promise<DetailRemoved | null> {
+  const [row] = await db
+    .select({ at: coverageTotals.detailRemovedAt, supersededBy: coverageTotals.supersededBy })
+    .from(coverageTotals)
+    .where(
+      and(
+        eq(coverageTotals.projectId, projectId),
+        eq(coverageTotals.commit, commit),
+        eq(coverageTotals.suite, COMBINED_SUITE),
+        eq(coverageTotals.area, ''),
+      ),
+    );
+  return row?.at ? { at: new Date(row.at), supersededBy: row.supersededBy } : null;
+}
+
+/** A commit's final totals, as stored: every suite's and area's row, in the order they were computed. */
+export interface FinalCommitTotals extends DetailRemoved {
+  commit: string;
+  branch: string;
+  scopeVersion: number;
+  rows: Array<typeof coverageTotals.$inferSelect>;
+}
+
+/** The stored totals of a commit whose detail was removed; null while its reports are kept. */
+export async function finalCommitTotals(
+  db: DrizzleDB,
+  projectId: number,
+  commit: string,
+): Promise<FinalCommitTotals | null> {
+  const removed = await commitDetailRemoved(db, projectId, commit);
+  if (!removed) return null;
+  const rows = await db
+    .select()
+    .from(coverageTotals)
+    .where(and(eq(coverageTotals.projectId, projectId), eq(coverageTotals.commit, commit)))
+    .orderBy(coverageTotals.id);
+  const combined = rows.find((r) => r.suite === COMBINED_SUITE && r.area === '');
+  if (!combined) return null;
+  return { ...removed, commit, branch: combined.branch, scopeVersion: combined.scopeVersion, rows };
+}
+
+/**
+ * Prune the reports newer commits superseded, off the default branch: per
+ * project, branch and suite, only the report of the commit whose coverage
+ * arrived last stays, the one a later commit carries the suite forward from.
+ * A commit that loses a report keeps its totals, marked final with the newest
+ * commit that superseded it; one with no totals yet has them computed first,
+ * and one whose totals are being computed keeps its reports until the next
+ * prune, unless it is `only.ready`, the commit whose computation just stored
+ * them. `only` keeps to one project's branch. Returns how many reports went.
+ */
+export async function pruneSupersededReports(
+  db: DrizzleDB,
+  now: Date = new Date(),
+  only?: { projectId: number; branch: string; ready?: string },
+): Promise<number> {
+  if (only?.branch === '') return 0;
+  const reports = await db
+    .select({
+      id: coverageReports.id,
+      projectId: coverageReports.projectId,
+      commit: coverageReports.commit,
+      branch: coverageReports.branch,
+      suite: coverageReports.suite,
+      createdAt: coverageReports.createdAt,
+    })
+    .from(coverageReports)
+    .where(
+      only
+        ? and(eq(coverageReports.projectId, only.projectId), eq(coverageReports.branch, only.branch))
+        : ne(coverageReports.branch, ''),
+    );
+  if (reports.length < 2) return 0;
+
+  // A commit arrived when its totals say, else with its first report; its first report breaks a tie.
+  const commits = new Map<
+    string,
+    { projectId: number; commit: string; at: number; first: number; totals: boolean; final: boolean }
+  >();
+  for (const r of reports) {
+    const key = `${r.projectId}\0${r.commit}`;
+    const at = new Date(r.createdAt).getTime();
+    const known = commits.get(key);
+    if (known) Object.assign(known, { at: Math.min(known.at, at), first: Math.min(known.first, r.id) });
+    else commits.set(key, { projectId: r.projectId, commit: r.commit, at, first: r.id, totals: false, final: false });
+  }
+  const byProject = new Map<number, string[]>();
+  for (const c of commits.values()) byProject.set(c.projectId, [...(byProject.get(c.projectId) ?? []), c.commit]);
+  for (const [projectId, list] of byProject) {
+    for (let i = 0; i < list.length; i += ROW_CHUNK) {
+      const kept = await db
+        .select({
+          commit: coverageTotals.commit,
+          seenAt: coverageTotals.commitSeenAt,
+          final: coverageTotals.detailRemovedAt,
+        })
+        .from(coverageTotals)
+        .where(
+          and(
+            eq(coverageTotals.projectId, projectId),
+            inArray(coverageTotals.commit, list.slice(i, i + ROW_CHUNK)),
+            eq(coverageTotals.suite, COMBINED_SUITE),
+            eq(coverageTotals.area, ''),
+          ),
+        );
+      for (const row of kept) {
+        const c = commits.get(`${projectId}\0${row.commit}`)!;
+        c.totals = true;
+        c.final = row.final !== null;
+        if (row.seenAt) c.at = new Date(row.seenAt).getTime();
+      }
+    }
+  }
+
+  const arrival = (r: (typeof reports)[number]) => commits.get(`${r.projectId}\0${r.commit}`)!.at;
+  // A commit already superseded never supersedes another, whatever a late upload of it brought.
+  const later = (a: (typeof reports)[number], b: (typeof reports)[number]) => {
+    const [ca, cb] = [commits.get(`${a.projectId}\0${a.commit}`)!, commits.get(`${b.projectId}\0${b.commit}`)!];
+    if (ca.final !== cb.final) return cb.final;
+    return ca.at !== cb.at ? ca.at > cb.at : ca.first > cb.first;
+  };
+  const newest = new Map<string, (typeof reports)[number]>();
+  for (const r of reports) {
+    const key = `${r.projectId}\0${r.branch}\0${r.suite}`;
+    const top = newest.get(key);
+    if (!top || later(r, top)) newest.set(key, r);
+  }
+  const superseded = new Map<string, { ids: number[]; by: string; byAt: number }>();
+  for (const r of reports) {
+    const top = newest.get(`${r.projectId}\0${r.branch}\0${r.suite}`)!;
+    if (top.commit === r.commit) continue;
+    const key = `${r.projectId}\0${r.commit}`;
+    const entry = superseded.get(key) ?? { ids: [], by: top.commit, byAt: arrival(top) };
+    entry.ids.push(r.id);
+    if (arrival(top) > entry.byAt) Object.assign(entry, { by: top.commit, byAt: arrival(top) });
+    superseded.set(key, entry);
+  }
+
+  let pruned = 0;
+  for (const [key, entry] of superseded) {
+    const { projectId, commit, totals } = commits.get(key)!;
+    if (commit !== only?.ready && totalsInFlight(projectId, commit)) continue;
+    if (!totals) await storeCommitTotals(db, projectId, commit);
+    await markDetailRemoved(db, projectId, commit, entry.by, now);
+    for (let i = 0; i < entry.ids.length; i += ROW_CHUNK) {
+      await db.delete(coverageReports).where(inArray(coverageReports.id, entry.ids.slice(i, i + ROW_CHUNK)));
+    }
+    pruned += entry.ids.length;
+  }
+  return pruned;
+}
+
+/**
+ * What follows an upload or a run coverage of a commit: its totals computed a
+ * few seconds later, then `after`. A commit whose totals are final keeps them:
+ * a late upload of it (a CI job run again) is pruned again at once. Returns
+ * the commit that superseded it, or null when its totals are computed.
+ */
+export async function settleCommitCoverage<D extends DrizzleDB>(
+  db: () => Promise<D>,
+  projectId: number,
+  commit: string,
+  after?: (db: D, projectId: number, commit: string) => Promise<void>,
+): Promise<{ by: string | null } | null> {
+  const database = await db();
+  const removed = await commitDetailRemoved(database, projectId, commit);
+  if (!removed) {
+    scheduleCommitTotals(db, projectId, commit, after);
+    return null;
+  }
+  const [row] = await database
+    .select({ branch: coverageTotals.branch })
+    .from(coverageTotals)
+    .where(and(eq(coverageTotals.projectId, projectId), eq(coverageTotals.commit, commit)))
+    .limit(1);
+  if (row && row.branch !== '') await pruneSupersededReports(database, new Date(), { projectId, branch: row.branch });
+  return { by: removed.supersededBy };
 }
 
 /** The order of commits by arrival, newest first; a commit with no arrival kept goes by when it was computed. */
@@ -691,8 +922,8 @@ const MAX_RECOUNTED_COMMITS = 200;
 
 /**
  * The project's commits whose totals were computed under another version of
- * its coverage scope and areas: the default branch's first, then by arrival,
- * the latest first, at most `limit`.
+ * its coverage scope and areas, and are not final: the default branch's
+ * first, then by arrival, the latest first, at most `limit`.
  */
 export async function staleCoverageCommits(
   db: DrizzleDB,
@@ -709,6 +940,7 @@ export async function staleCoverageCommits(
         eq(coverageTotals.suite, COMBINED_SUITE),
         eq(coverageTotals.area, ''),
         ne(coverageTotals.scopeVersion, version),
+        isNull(coverageTotals.detailRemovedAt),
       ),
     )
     .orderBy(sql`CASE WHEN ${coverageTotals.branch} = '' THEN 0 ELSE 1 END`, ...newestArrivalFirst)

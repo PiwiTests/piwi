@@ -13,6 +13,7 @@ import { resolveDefaultBranch } from '../../utils/scm/default-branch';
 import { withProjectGraphLock } from '../../utils/project-graph-lock';
 import { pruneStaleBranchCoverageRows } from '../../utils/coverage';
 import { pruneCoverageReports } from '../../utils/coverage-reports';
+import { pruneSupersededReports } from '../../utils/coverage-totals';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
 /**
@@ -56,7 +57,7 @@ export default defineTask({
   meta: {
     name: 'graph:sweep',
     description:
-      'Keep the feature graph proportional to a project’s surface: prune changes edges older than 90 days, branch-tagged rows (graph, code reach, test coverage and coverage reports) older than 30 days, the default branch’s coverage reports to the newest commit and one commit a day for 90 days, and canonical nodes unseen for 30 runs whose surface-drift gap is closed. Backfill unknown default branches, then recompute scenario gaps. Independent of PIWI_RETENTION_DAYS.',
+      'Keep the feature graph proportional to a project’s surface: prune changes edges older than 90 days, branch-tagged rows (graph, code reach, test coverage and coverage reports) older than 30 days, a branch’s coverage reports to the newest commit’s of each suite, the default branch’s to the newest commit and one commit a day for 90 days (a commit’s totals stay, final), and canonical nodes unseen for 30 runs whose surface-drift gap is closed. Backfill unknown default branches, then recompute scenario gaps. Independent of PIWI_RETENTION_DAYS.',
   },
   async run() {
     const db = await getDatabase();
@@ -71,7 +72,7 @@ export default defineTask({
     const branchCoverageRowsPruned = await pruneStaleBranchCoverageRows(db);
     if (branchCoverageRowsPruned > 0) result.branchCoverageRowsPruned = branchCoverageRowsPruned;
 
-    const coverageReportsPruned = await pruneCoverageReports(db);
+    const coverageReportsPruned = (await pruneSupersededReports(db)) + (await pruneCoverageReports(db));
     if (coverageReportsPruned > 0) result.coverageReportsPruned = coverageReportsPruned;
 
     const reachesEdgesPruned = await pruneStaleReachesEdges(db);

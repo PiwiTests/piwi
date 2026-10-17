@@ -16,10 +16,13 @@
  *   `case_payloads` row of the report, `[[path, blob], ...]` sorted by path.
  *
  * A branch's reports go with its other coverage rows (its pull request closed,
- * or thirty days without a report); on the default branch, the newest commit
- * and the last commit of each day of the past ninety days are kept.
+ * or thirty days without a report), and per suite only the newest commit's
+ * stays (`pruneSupersededReports`); on the default branch, the newest commit
+ * and the last commit of each day of the past ninety days are kept. A commit
+ * whose reports went keeps its totals, final: a year on the default branch,
+ * thirty days after they were computed on another.
  */
-import { and, desc, eq, inArray, lt, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
   decodeFunctionRanges,
   decodeLineRanges,
@@ -51,6 +54,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const BRANCH_REPORT_MAX_AGE_MS = 30 * DAY_MS;
 /** The default branch keeps one commit per day for ninety days. */
 const DEFAULT_BRANCH_DAYS = 90;
+/** A default-branch commit's totals, a few rows, are kept a year, as long as a quality report snapshot by default. */
+const DEFAULT_BRANCH_TOTALS_DAYS = 365;
 const ROW_CHUNK = 200;
 const ID_CHUNK = 500;
 
@@ -493,10 +498,34 @@ export async function listCoverageReports(
 }
 
 /**
+ * Mark a commit's totals final: its report files went, `by` (a newer commit)
+ * superseded them. A commit already marked keeps its first mark.
+ */
+export async function markDetailRemoved(
+  db: DrizzleDB,
+  projectId: number,
+  commit: string,
+  by: string | null,
+  now: Date = new Date(),
+): Promise<void> {
+  await db
+    .update(coverageTotals)
+    .set({ detailRemovedAt: now, supersededBy: by })
+    .where(
+      and(
+        eq(coverageTotals.projectId, projectId),
+        eq(coverageTotals.commit, commit),
+        isNull(coverageTotals.detailRemovedAt),
+      ),
+    );
+}
+
+/**
  * Prune coverage reports: a branch's last updated more than thirty days ago;
  * on the default branch, every commit but the newest and the last commit of
- * each UTC day within ninety days. A commit's totals go after the same thirty
- * or ninety days; the daily totals stay. Returns how many reports went.
+ * each UTC day within ninety days. A commit whose reports all went keeps its
+ * totals, marked final; they go after thirty days off the default branch, a
+ * year on it. The daily totals stay. Returns how many reports went.
  */
 export async function pruneCoverageReports(db: DrizzleDB, now: Date = new Date()): Promise<number> {
   const branches = await db
@@ -507,7 +536,15 @@ export async function pruneCoverageReports(db: DrizzleDB, now: Date = new Date()
         lt(coverageReports.updatedAt, new Date(now.getTime() - BRANCH_REPORT_MAX_AGE_MS)),
       ),
     )
-    .returning({ id: coverageReports.id });
+    .returning({ id: coverageReports.id, projectId: coverageReports.projectId, commit: coverageReports.commit });
+  for (const { projectId, commit } of uniqueCommits(branches)) {
+    const [left] = await db
+      .select({ id: coverageReports.id })
+      .from(coverageReports)
+      .where(and(eq(coverageReports.projectId, projectId), eq(coverageReports.commit, commit)))
+      .limit(1);
+    if (!left) await markDetailRemoved(db, projectId, commit, null, now);
+  }
 
   const rows = await db
     .select({
@@ -545,9 +582,17 @@ export async function pruneCoverageReports(db: DrizzleDB, now: Date = new Date()
   }
   for (const { key } of newest.values()) keep.add(key);
   for (const { key } of lastOfDay.values()) keep.add(key);
-  const stale = [...commits].flatMap(([key, c]) => (keep.has(key) ? [] : c.ids));
-  for (let i = 0; i < stale.length; i += ID_CHUNK) {
-    await db.delete(coverageReports).where(inArray(coverageReports.id, stale.slice(i, i + ID_CHUNK)));
+  const commitOf = (key: string) => commits.get(key)!.commit;
+  let stale = 0;
+  for (const [key, c] of commits) {
+    if (keep.has(key)) continue;
+    // The commit kept for its day superseded it; past ninety days, the newest.
+    const day = c.at >= horizon ? lastOfDay.get(`${c.projectId}\x00${Math.floor(c.at / DAY_MS)}`) : undefined;
+    await markDetailRemoved(db, c.projectId, c.commit, commitOf(day?.key ?? newest.get(c.projectId)!.key), now);
+    for (let i = 0; i < c.ids.length; i += ID_CHUNK) {
+      await db.delete(coverageReports).where(inArray(coverageReports.id, c.ids.slice(i, i + ID_CHUNK)));
+    }
+    stale += c.ids.length;
   }
   await db
     .delete(coverageTotals)
@@ -557,10 +602,17 @@ export async function pruneCoverageReports(db: DrizzleDB, now: Date = new Date()
           ne(coverageTotals.branch, ''),
           lt(coverageTotals.computedAt, new Date(now.getTime() - BRANCH_REPORT_MAX_AGE_MS)),
         ),
-        lt(coverageTotals.computedAt, new Date(horizon)),
+        lt(coverageTotals.computedAt, new Date(now.getTime() - DEFAULT_BRANCH_TOTALS_DAYS * DAY_MS)),
       ),
     );
-  return branches.length + stale.length;
+  return branches.length + stale;
+}
+
+/** The distinct project and commit pairs of report rows. */
+function uniqueCommits(
+  rows: Array<{ projectId: number; commit: string }>,
+): Array<{ projectId: number; commit: string }> {
+  return [...new Map(rows.map((r) => [`${r.projectId}\x00${r.commit}`, r])).values()];
 }
 
 /**

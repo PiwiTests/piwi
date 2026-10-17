@@ -880,6 +880,8 @@ export const coverageReportFiles = sqliteTable(
 // under; another version reads as stale. `commit_seen_at` is when the commit's
 // coverage first arrived (its first report or run), the order commits follow;
 // `computation_started_at` keeps an older computation from replacing a newer.
+// `detail_removed_at` is when the commit's report files went (a newer commit
+// superseded them, `superseded_by`): its totals are final from then on.
 export const coverageTotals = sqliteTable(
   'coverage_totals',
   {
@@ -911,6 +913,8 @@ export const coverageTotals = sqliteTable(
     computedAt: integer('computed_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
+    detailRemovedAt: integer('detail_removed_at', { mode: 'timestamp' }), // null while the commit's reports are kept
+    supersededBy: text('superseded_by'), // the newer commit whose coverage made the reports go
   },
   (table) => ({
     uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite, table.area),
