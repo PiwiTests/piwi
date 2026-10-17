@@ -2072,11 +2072,11 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   }
   // Every function the browser files declare, run or not, the first time this worker finds it: the run's function
   // ratio counts them.
-  const known = browserFunctionsInWorker() ? newKnownFunctions(sink.codeReach.known, KNOWN_FUNCTIONS_SENT) : null;
-  if (known) {
+  const known = browserFunctionsInWorker() ? newKnownFunctions(sink.codeReach.known, KNOWN_FUNCTIONS_SENT) : [];
+  for (const part of known) {
     await testInfo.attach(ATTACHMENT_NAMES.browserFunctions, {
       contentType: 'application/json',
-      body: Buffer.from(JSON.stringify(known)),
+      body: Buffer.from(JSON.stringify(part)),
     });
   }
 

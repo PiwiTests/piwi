@@ -380,6 +380,20 @@ describe('mergeCoverageRead', () => {
     ]);
   });
 
+  it('keeps only the functions that ran without keepIdle', () => {
+    const ran = new Map<string, RanScript>();
+    const scripts = new Map<string, ParsedScript>([['1', { url: 'http://a/pay.js', hash: 'p' }]]);
+    mergeCoverageRead(ran, scripts, [{ scriptId: '1', functions: [fn('', 0, 100, 1), fn('pay', 10, 20, 0)] }], false);
+    mergeCoverageRead(
+      ran,
+      scripts,
+      [{ scriptId: '1', functions: [fn('', 0, 100, 0), fn('pay', 10, 20, 1), fn('idle', 30, 40, 0)] }],
+      false,
+    );
+    expect(listedOf(ran)).toEqual([['http://a/pay.js', ['', 'pay']]]);
+    expect(ranOf(ran)).toEqual([['http://a/pay.js', ['', 'pay']]]);
+  });
+
   it('reads a script id against the scripts the page knew as the read was taken', () => {
     // A cross-site navigation starts a renderer that numbers its scripts afresh.
     const ran = new Map<string, RanScript>();

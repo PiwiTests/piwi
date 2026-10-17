@@ -80,28 +80,42 @@ export interface BrowserKnownFunctions {
 
 /**
  * The functions of the browser files the worker has not named yet, run or
- * not, and records them in `sent`: paths normalized, ranges normalized as
- * function ranges, capped as any coverage is. A worker names each function
- * once; the reporter adds every test's up for the run. Null when none is new.
+ * not, as `piwi-browser-functions` attachments, and records them in `sent`:
+ * paths normalized, ranges normalized as function ranges, each attachment
+ * within the capture caps, a file with more ranges than one holds spread over
+ * several. A worker names each function once; the reporter adds every
+ * attachment's up for the run. Empty when none is new.
  */
 export function newKnownFunctions(
   known: ReadonlyMap<string, LineRange[]>,
   sent: Map<string, Set<string>>,
-): BrowserKnownFunctions | null {
-  const files: BrowserKnownFunctions['files'] = [];
+): BrowserKnownFunctions[] {
+  const parts: BrowserKnownFunctions[] = [];
+  let files: BrowserKnownFunctions['files'] = [];
   let budget = MAX_COVERAGE_RANGES;
+  const close = () => {
+    if (files.length > 0) parts.push({ v: 1, files: files.sort((a, b) => (a.path < b.path ? -1 : 1)) });
+    files = [];
+    budget = MAX_COVERAGE_RANGES;
+  };
   for (const [raw, ranges] of known) {
     const path = normalizeCoveragePath(raw);
-    if (path === null || files.length >= MAX_COVERAGE_FILES) continue;
+    if (path === null) continue;
     let named = sent.get(path);
-    const fresh = normalizeFunctionRanges(ranges).filter((range) => !named?.has(`${range[0]}:${range[1]}`));
-    if (fresh.length === 0 || fresh.length > budget) continue;
-    budget -= fresh.length;
+    let fresh = normalizeFunctionRanges(ranges).filter((range) => !named?.has(`${range[0]}:${range[1]}`));
+    if (fresh.length === 0) continue;
     if (!named) sent.set(path, (named = new Set()));
     for (const range of fresh) named.add(`${range[0]}:${range[1]}`);
-    files.push({ path, allFunctions: fresh });
+    while (fresh.length > 0) {
+      if (budget === 0 || files.length >= MAX_COVERAGE_FILES) close();
+      const part = fresh.slice(0, budget);
+      fresh = fresh.slice(part.length);
+      budget -= part.length;
+      files.push({ path, allFunctions: part });
+    }
   }
-  return files.length > 0 ? { v: 1, files: files.sort((a, b) => (a.path < b.path ? -1 : 1)) } : null;
+  close();
+  return parts;
 }
 
 /** In a test worker: whether the server side records, from `PIWI_COVERAGE_SERVER`. */

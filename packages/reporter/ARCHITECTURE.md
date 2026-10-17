@@ -124,7 +124,8 @@ the tests still collecting, before the ladder above, and sends the run-level cov
 (`PUT /api/test-runs/:id/coverage`) once the ladder returned the run id. At
 `coverage.browser: 'functions'` that includes the browser's run-level coverage:
 per file, the functions any test ran and every function V8 listed, run or not
-(`allFunctions`), which the workers name once each in `piwi-browser-functions`.
+(`allFunctions`), which the workers name once each in `piwi-browser-functions`
+attachments, as many per test as the capture caps need.
 A backend's files whose source checksums (`checksums`) differ from the checkout's
 lose their line numbers (`internal/collect/source-checksums.ts`).
 

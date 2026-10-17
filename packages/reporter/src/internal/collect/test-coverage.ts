@@ -219,8 +219,11 @@ export class CoverageCollection {
     const attachment = this.browserBlobs
       ? attachments?.find((a) => a.name === ATTACHMENT_NAMES.browserCoverage)
       : undefined;
-    if (this.browserBlobs)
-      this.addKnownFunctions(attachments?.find((a) => a.name === ATTACHMENT_NAMES.browserFunctions));
+    if (this.browserBlobs) {
+      for (const known of attachments ?? []) {
+        if (known.name === ATTACHMENT_NAMES.browserFunctions) this.addKnownFunctions(known);
+      }
+    }
     if (!this.browserBlobs || !attachment?.body) return paths;
     let files: CoverageFile[] = [];
     try {
@@ -234,7 +237,7 @@ export class CoverageCollection {
     return this.browserBlobs.withBlobs(browser).catch(() => browser);
   }
 
-  /** Add the functions of a `piwi-browser-functions` attachment to the run's. */
+  /** Add the functions of a `piwi-browser-functions` attachment, one of a test's, to the run's. */
   private addKnownFunctions(attachment: { body?: Buffer } | undefined): void {
     if (!attachment?.body) return;
     let parsed: unknown;

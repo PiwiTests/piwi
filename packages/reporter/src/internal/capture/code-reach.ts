@@ -58,6 +58,7 @@ import {
   sourceMappingUrl,
   type SourceMapLookup,
 } from '@piwitests/core/source-map';
+import { browserFunctionsInWorker } from '../collect/coverage-settings.js';
 import { internalCall } from './quiet-capture.js';
 
 /** Largest source map fetched, in bytes. */
@@ -527,6 +528,8 @@ interface CoverageCapture {
   sources: Map<string, Promise<string | null>>;
   /** What ran since the capture started, by script version: each read is merged in as it arrives. */
   ran: Map<string, RanScript>;
+  /** Whether the functions that did not run are kept too, for `coverage.browser: 'functions'`. */
+  keepIdle: boolean;
   /** The reads taken as documents were left, not merged yet. */
   reading: Set<Promise<void>>;
   /** The address of the page's current document. */
@@ -594,7 +597,9 @@ function onPaused(
   const read = leaving ? readCoverage(page, capture.cdp) : null;
   if (read) {
     // Merged before the page resumes, against its scripts as it knows them now.
-    const merging = read.then((coverage) => mergeCoverageRead(capture.ran, capture.scripts, coverage));
+    const merging = read.then((coverage) =>
+      mergeCoverageRead(capture.ran, capture.scripts, coverage, capture.keepIdle),
+    );
     capture.reading.add(merging);
     void merging.finally(() => capture.reading.delete(merging));
   }
@@ -659,16 +664,18 @@ function readCoverage(page: Page, cdp: CDPSession): Promise<ScriptCoverage[]> {
 /**
  * Merge one coverage read into what a capture ran, by script version: a script
  * id is looked up in the scripts the page parsed as the read was taken, since a
- * renderer a cross-site navigation starts numbers its scripts afresh. Every
- * function V8 lists is kept, with a count above zero once any read saw it run:
- * V8 lists every function it knows at every read, and a later read that saw it
- * run raises the count of one an earlier read saw idle. Functions keep the order
- * of their first read, so a script's top-level function stays its first.
+ * renderer a cross-site navigation starts numbers its scripts afresh. With
+ * `keepIdle`, every function V8 lists is kept, with a count above zero once any
+ * read saw it run: V8 lists every function it knows at every read, and a later
+ * read that saw it run raises the count of one an earlier read saw idle;
+ * without, only the functions a read saw run. Functions keep the order of their
+ * first read, so a script's top-level function stays its first.
  */
 export function mergeCoverageRead(
   ran: Map<string, RanScript>,
   scripts: ReadonlyMap<string, ParsedScript>,
   read: readonly ScriptCoverage[],
+  keepIdle = true,
 ): void {
   for (const covered of read) {
     const script = scripts.get(covered.scriptId);
@@ -682,6 +689,7 @@ export function mergeCoverageRead(
     for (const fn of covered.functions) {
       const whole = fn.ranges[0];
       if (!whole) continue;
+      if (!keepIdle && whole.count <= 0) continue;
       const range = `${whole.startOffset}:${whole.endOffset}`;
       const seen = known.byRange.get(range);
       if (seen) {
@@ -719,6 +727,7 @@ export async function startCodeReach(page: Page): Promise<boolean> {
       scripts: new Map(),
       sources: new Map(),
       ran: new Map(),
+      keepIdle: browserFunctionsInWorker(),
       reading: new Set(),
       pageUrl: page.url(),
     };
@@ -766,7 +775,7 @@ export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null>
       return taken.result as ScriptCoverage[];
     });
     await Promise.all(capture.reading);
-    mergeCoverageRead(capture.ran, capture.scripts, last);
+    mergeCoverageRead(capture.ran, capture.scripts, last, capture.keepIdle);
     const entries: CoveredScript[] = [];
     for (const [key, { script, functions }] of capture.ran) {
       const entry: CoveredScript = { url: script.url, hash: script.hash, functions, pageUrl: script.pageUrl };
