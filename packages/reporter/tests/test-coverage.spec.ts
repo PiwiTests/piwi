@@ -245,10 +245,10 @@ describe('newKnownFunctions', () => {
   });
 
   it('starts another attachment past the file cap', () => {
-    const known = new Map(
-      Array.from({ length: MAX_COVERAGE_FILES + 1 }, (_, i) => [`src/f${i}.ts`, [[1, 2]]] as const),
+    const known = new Map<string, Array<[number, number]>>(
+      Array.from({ length: MAX_COVERAGE_FILES + 1 }, (_, i) => [`src/f${i}.ts`, [[1, 2]]]),
     );
-    const parts = newKnownFunctions(known as Map<string, Array<[number, number]>>, new Map());
+    const parts = newKnownFunctions(known, new Map());
     expect(parts.map((part) => part.files.length)).toEqual([MAX_COVERAGE_FILES, 1]);
   });
 });
