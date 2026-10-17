@@ -1,8 +1,11 @@
 /**
- * Combined coverage end to end: a run of a commit records its run coverage,
- * a unit-test report of the same commit is uploaded, and the project's
- * coverage page, the run's header and the file view count both on the run's
- * executable lines.
+ * Combined coverage end to end: a run of a commit records its run coverage
+ * and its test's coverage, a unit-test report of the same commit is uploaded,
+ * and the project's coverage page, the run's header and the file view count
+ * both on the run's executable lines. The overview stays in place while it
+ * reads another folder, a file opened from it reads its tests' coverage, the
+ * links keep the pinned commit and the area, and a line is selected from the
+ * keyboard.
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
@@ -10,8 +13,11 @@ import { PROJECT } from '#shared/test-project-names';
 const COMMIT = 'c0ffee'.padEnd(40, '0');
 const BLOB = 'a'.repeat(40);
 const OTHER_BLOB = 'b'.repeat(40);
+/** `src/Shop.cs` at `BLOB`: nine lines. */
+const SOURCE = Array.from({ length: 9 }, (_, i) => `// line ${i + 1}`).join('\n');
 
 test('combines a uploaded unit report with the commit’s run coverage', async ({ page, request }) => {
+  test.setTimeout(90_000);
   const submitted = await request.post('/api/test-runs/submit', {
     data: {
       projectName: PROJECT.COMBINED_COVERAGE,
@@ -23,7 +29,16 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
       failedTests: 0,
       skippedTests: 0,
       metadata: { scm: { commit: COMMIT, branch: 'main' }, ci: { provider: 'GitHub Actions' } },
-      testCases: [{ title: 'pays', status: 'passed', duration: 10, location: 'tests/pay.spec.ts:1:1' }],
+      testCases: [
+        {
+          title: 'pays',
+          status: 'passed',
+          duration: 10,
+          location: 'tests/pay.spec.ts:1:1',
+          // The test's own coverage: the project records test coverage, which the file view reads.
+          coverage: { v: 1, files: [{ path: 'src/Shop.cs', runtime: 'server', blob: BLOB, lines: [[6, 7]] }] },
+        },
+      ],
     },
   });
   expect(submitted.ok()).toBeTruthy();
@@ -104,6 +119,10 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
     ).status(),
   ).toBe(400);
 
+  await page.route(
+    (url) => url.pathname.endsWith(`/projects/${projectId}/source`) && url.searchParams.get('blob') === BLOB,
+    (route) => route.fulfill({ json: { path: 'src/Shop.cs', blob: BLOB, content: SOURCE } }),
+  );
   await page.goto(`/projects/${projectId}/coverage`);
   // The first visit compiles the page on a dev server: give it time.
   await expect(page.getByTestId('coverage-totals')).toContainText('83.3% of 6 executable lines ran, across 2 suites.', {
@@ -112,21 +131,56 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
   await expect(page.locator('[data-area="api"]')).toContainText('83.3%');
   await expect(page.locator('[data-area="api"]')).toContainText('unit-back 50.0% · e2e 33.3%');
   await expect(page.getByTestId('coverage-suites').locator('[data-suite]')).toHaveCount(2);
-  await page.getByTestId('coverage-tree').getByRole('button', { name: 'src/', exact: true }).click();
+  // Another folder is read in place: the tree is the same element after the read.
+  const tree = page.getByTestId('coverage-tree');
+  await tree.evaluate((el) => el.setAttribute('data-kept', ''));
+  await tree.getByRole('button', { name: 'src/', exact: true }).click();
   await expect(page).toHaveURL(/folder=src/);
   await expect(page.locator('[data-entry="src/Shop.cs"]')).toContainText('83.3%');
+  await expect(page.getByTestId('coverage-folder-totals')).toContainText('of 6 lines ran');
+  await expect(tree).toHaveAttribute('data-kept', '');
   // The tree shows the file no suite names, greyed, and the folder's suites beside it.
   await expect(page.locator('[data-entry="src/Idle.cs"]')).toContainText('no coverage data');
   await expect(page.getByTestId('coverage-folder-totals')).toHaveText('83.3% of 6 lines ran · 1 no suite ran.');
 
   // Line 8 ran in no suite: the file leads the least-covered list, and its view steps to that gap.
+  // Opened from the overview, the file view reads the test's coverage of the file too.
   await expect(page.locator('[data-least-covered="src/Shop.cs"]')).toContainText('1 line no suite ran');
   await page.locator('[data-least-covered="src/Shop.cs"]').getByRole('link').click();
   await expect(page).toHaveURL(/marks=suites/);
+  await expect(page.getByTestId('coverage-file-summary')).toContainText('1 test', { timeout: 15_000 });
+  await expect(page.getByTestId('coverage-file-marks')).toBeVisible();
   await expect(page.getByTestId('coverage-file-gaps')).toContainText('1 gap: 1 line.');
   await page.getByTestId('coverage-gap-next').click();
   await expect(page.getByTestId('coverage-file-gaps')).toContainText('Gap 1 of 1 · line 8');
   await expect(page.getByTestId('coverage-file-combined')).toContainText('No suite ran line 8.');
+
+  // Each line number is a button naming the line's class: Enter selects it.
+  await page.getByRole('button', { name: 'Line 3: Unit only', exact: true }).press('Enter');
+  await expect(page.getByTestId('coverage-file-combined')).toContainText('Line 3 ran in unit-back.');
+  await expect(page.getByRole('button', { name: 'Line 6: End to end only', exact: true })).toBeVisible();
+
+  // A pinned commit and an area stay through the links: to a file, and back to its folder.
+  await page.goto(`/projects/${projectId}/coverage?commit=${COMMIT}&area=api`);
+  await expect(page.locator('[data-area="api"]').getByRole('link')).toHaveAttribute('aria-current', 'true', {
+    timeout: 30_000,
+  });
+  await expect(page.locator('[data-entry="src/Shop.cs"]').getByRole('link')).toHaveAttribute(
+    'href',
+    new RegExp(`commit=${COMMIT}.*area=api`),
+  );
+  await page.locator('[data-least-covered="src/Shop.cs"]').getByRole('link').click();
+  await expect(page).toHaveURL(new RegExp(`commit=${COMMIT}.*area=api.*file=src(/|%2F)Shop\\.cs`));
+  await page.getByRole('navigation', { name: 'Folder' }).getByRole('link', { name: 'src', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`commit=${COMMIT}.*area=api.*folder=src`));
+  await expect(page.getByTestId('coverage-folder-totals')).toContainText('of 6 lines ran');
+
+  // The open folders saved in this browser stay open beside the selected folder's parents.
+  const key = `piwi-coverage-tree-${projectId}`;
+  await page.evaluate((k) => localStorage.setItem(k, JSON.stringify(['docs'])), key);
+  await page.reload();
+  await expect(page.locator('[data-entry="src/Shop.cs"]')).toBeVisible({ timeout: 30_000 });
+  expect(JSON.parse((await page.evaluate((k) => localStorage.getItem(k), key)) ?? '[]')).toEqual(['docs', 'src']);
 
   await page.goto(`/test-runs/${runId}`);
   await expect(page.getByTestId('run-coverage-fact')).toHaveText(/Coverage 83\.3% of 6 lines\s*· 2 suites/, {

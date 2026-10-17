@@ -5,7 +5,7 @@
  * coverage page at that commit. Nothing when the commit has none.
  */
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
-import { formatCount, formatPercent } from '~/utils/combined-coverage';
+import { formatPercent, plural } from '~/utils/combined-coverage';
 
 const props = defineProps<{ projectId: number; commit: string }>();
 
@@ -27,9 +27,8 @@ const summary = computed(() => (data.value?.commit ? data.value : null));
       :title="`Every suite's coverage at ${summary.commit.slice(0, 7)}`"
       data-testid="run-coverage-fact"
     >
-      Coverage {{ formatPercent(summary.totals.linePercent) }} of
-      {{ formatCount(summary.totals.executableLines) }} lines · {{ summary.suites.length }}
-      {{ summary.suites.length === 1 ? 'suite' : 'suites' }}
+      Coverage {{ formatPercent(summary.totals.linePercent) }} of {{ plural(summary.totals.executableLines, 'line') }} ·
+      {{ plural(summary.suites.length, 'suite') }}
     </NuxtLink>
   </template>
 </template>

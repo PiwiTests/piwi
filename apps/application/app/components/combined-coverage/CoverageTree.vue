@@ -3,14 +3,22 @@
  * A commit's coverage as a foldable tree of the repository's folders and
  * files, each with its bar, its share of lines run and its lines no suite
  * ran. A folder's children are read when it opens
- * (`GET /api/projects/:id/coverage-tree?folder=`); the open folders are kept
- * per project in this browser. A folder's name selects it (`select`), its
- * chevron only folds it; a file opens its view, marked by suite. Files no
- * suite names show in place, greyed. `sort` orders each folder's children by
- * name, or by lines no suite ran, the most first.
+ * (`GET /api/projects/:id/coverage-tree?folder=`), with a retry when the
+ * read fails; the open folders are kept per project in this browser, and the
+ * selected folder's parents are opened beside them. A folder's name selects
+ * it (`select`), its chevron only folds it; a file opens its view, marked by
+ * suite, at the commit, branch and area of `link`. Files no suite names show
+ * in place, greyed. `sort` orders each folder's children by name, or by lines
+ * no suite ran, the most first.
  */
 import type { CoverageTree } from '~~/server/utils/coverage-summary';
-import { formatCount, formatPercent } from '~/utils/combined-coverage';
+import {
+  coverageFileLink,
+  formatCount,
+  formatPercent,
+  withLineage,
+  type CoverageLinkContext,
+} from '~/utils/combined-coverage';
 
 type Entry = CoverageTree['entries'][number];
 
@@ -21,6 +29,8 @@ const props = defineProps<{
   /** The selected folder, '' for the repository root. */
   selected: string;
   sort: 'name' | 'unrun';
+  /** The commit, branch and area a file's link keeps. */
+  link: CoverageLinkContext;
 }>();
 const emit = defineEmits<{ select: [folder: string] }>();
 
@@ -45,14 +55,9 @@ async function load(folder: string) {
     if (at.commit !== props.commit || at.area !== props.area) return;
     children.value.set(folder, tree.entries);
   } catch {
+    if (at.commit !== props.commit || at.area !== props.area) return;
     children.value.set(folder, 'error');
   }
-}
-
-/** The folders above `folder`, and itself: `a`, `a/b` for `a/b`. */
-function lineage(folder: string): string[] {
-  const parts = folder ? folder.split('/') : [];
-  return parts.map((_, i) => parts.slice(0, i + 1).join('/'));
 }
 
 function setExpanded(folder: string, open: boolean) {
@@ -82,14 +87,17 @@ watch(
   },
   { immediate: true },
 );
-// The selected folder shows, its parents open.
-watch(
-  () => props.selected,
-  (folder) => {
-    for (const parent of lineage(folder)) if (!expanded.value.has(parent)) setExpanded(parent, true);
-  },
-  { immediate: true },
-);
+// The selected folder shows, its parents open beside the saved ones: the saved folders are read on mount.
+onMounted(() => {
+  watch(
+    () => props.selected,
+    (folder) => {
+      const next = withLineage(expandedStore.value, folder);
+      if (next !== expandedStore.value) expandedStore.value = next;
+    },
+    { immediate: true },
+  );
+});
 watch(expandedStore, (folders) => {
   for (const folder of folders) void load(folder);
 });
@@ -131,20 +139,13 @@ const rows = computed<Row[]>(() => {
 
 const name = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 const indent = (depth: number) => ({ paddingLeft: `${depth * 1.25}rem` });
-
-function fileLink(path: string) {
-  return { path: `/projects/${props.projectId}/coverage`, query: { file: path, marks: 'suites' } };
-}
 </script>
 
 <template>
-  <div class="text-sm" role="tree" aria-label="Files" data-testid="coverage-tree">
-    <div
+  <ul class="text-sm" aria-label="Files" data-testid="coverage-tree">
+    <li
       v-for="row in rows"
       :key="row.entry ? row.entry.path : `${row.state}:${row.parent}`"
-      role="treeitem"
-      :aria-expanded="row.entry?.kind === 'folder' ? expanded.has(row.entry.path) : undefined"
-      :aria-selected="row.entry?.kind === 'folder' && row.entry.path === selected ? true : undefined"
       class="grid grid-cols-[minmax(0,1fr)_4rem_3.5rem] sm:grid-cols-[minmax(0,1fr)_8rem_3.5rem_6rem] items-center gap-x-3 rounded px-1 py-0.5"
       :class="row.entry?.kind === 'folder' && row.entry.path === selected ? 'bg-elevated' : 'hover:bg-elevated/50'"
       :data-entry="row.entry?.path"
@@ -156,6 +157,7 @@ function fileLink(path: string) {
             type="button"
             class="shrink-0 rounded text-muted hover:text-highlighted focus-visible:outline-2"
             :aria-label="`${expanded.has(row.entry.path) ? 'Fold' : 'Open'} ${row.entry.path}`"
+            :aria-expanded="expanded.has(row.entry.path)"
             @click="toggle(row.entry)"
           >
             <UIcon
@@ -174,13 +176,14 @@ function fileLink(path: string) {
             type="button"
             class="min-w-0 truncate text-left font-mono text-highlighted hover:underline"
             :title="`Show ${row.entry.path}/`"
+            :aria-current="row.entry.path === selected ? 'true' : undefined"
             @click="pick(row.entry)"
           >
             {{ name(row.entry.path) }}/
           </button>
           <NuxtLink
             v-else-if="!row.entry.noData"
-            :to="fileLink(row.entry.path)"
+            :to="coverageFileLink(projectId, link, row.entry.path)"
             class="min-w-0 truncate font-mono text-primary hover:underline"
             :title="row.entry.path"
           >
@@ -204,9 +207,23 @@ function fileLink(path: string) {
           </span>
         </template>
       </template>
-      <span v-else class="col-span-3 text-xs text-muted sm:col-span-4" :style="indent(row.depth)">
-        {{ row.state === 'error' ? 'This folder could not be read.' : 'Reading…' }}
+      <span
+        v-else-if="row.state === 'error'"
+        class="col-span-3 flex flex-wrap items-center gap-2 text-xs text-muted sm:col-span-4"
+        :style="indent(row.depth)"
+      >
+        This folder could not be read.
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-rotate-ccw"
+          data-testid="coverage-tree-retry"
+          @click="load(row.parent ?? '')"
+          >Retry</UButton
+        >
       </span>
-    </div>
-  </div>
+      <span v-else class="col-span-3 text-xs text-muted sm:col-span-4" :style="indent(row.depth)">Reading…</span>
+    </li>
+  </ul>
 </template>

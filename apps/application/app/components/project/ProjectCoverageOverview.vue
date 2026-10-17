@@ -10,22 +10,27 @@
  * and file with its bar, beside the selected folder (`?folder=`) with its
  * suites and its files with the most lines no suite ran. An area keeps both
  * to its files (`?area=`); the tree sorts by name or by lines not run, kept
- * in this browser. A file opens its view, marked by suite. The card's menu
+ * in this browser. A file opens its view, marked by suite. Every link keeps
+ * the commit `?commit=` pinned, the branch and the area. The card's menu
  * exports the commit's combined coverage as LCOV or Cobertura.
  */
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
-import { CODE_CHIP_CLASS } from '~/utils';
+import { CODE_CHIP_CLASS, SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS } from '~/utils';
 import { downloadBlob } from '~/utils/chart-export';
 import {
   carriedSentence,
+  coverageFileLink,
+  coverageLink,
   folderTrail,
   formatCount,
   formatPercent,
   functionsSentence,
+  plural,
   splitSentence,
   suiteKindLabel,
   totalsSentence,
   undeterminedSentence,
+  type CoverageLinkContext,
 } from '~/utils/combined-coverage';
 
 const props = defineProps<{
@@ -45,17 +50,20 @@ const meta = computed(() =>
   ].filter((line): line is string => !!line),
 );
 
-/** A link to this page with other query values, the commit and the area kept. */
+/** What every link keeps: the commit when the page pins one, the branch and the area. */
+const linkContext = computed<CoverageLinkContext>(() => ({
+  commit: typeof route.query.commit === 'string' && route.query.commit ? props.summary.commit : null,
+  branch: typeof route.query.branch === 'string' ? route.query.branch : null,
+  area: props.summary.area,
+}));
+
+/** A link to this page with other query values, the commit, branch and area kept. */
 function pageLink(query: Record<string, string | undefined>) {
-  return {
-    path: `/projects/${props.projectId}/coverage`,
-    query: { commit: route.query.commit as string | undefined, area: props.summary.area ?? undefined, ...query },
-  };
+  return coverageLink(props.projectId, linkContext.value, query);
 }
 
-/** A file's view, marked by the suites that ran each line. */
 function fileLink(path: string) {
-  return { path: `/projects/${props.projectId}/coverage`, query: { file: path, marks: 'suites' } };
+  return coverageFileLink(props.projectId, linkContext.value, path);
 }
 
 function selectFolder(folder: string) {
@@ -72,12 +80,16 @@ function pickArea(value: string) {
 }
 
 const sort = useLocalStorage<'name' | 'unrun'>('piwi-coverage-tree-sort', 'name', { initOnMounted: true });
+const SORT_OPTIONS = [
+  { value: 'name', label: 'Name' },
+  { value: 'unrun', label: 'Least covered' },
+] as const;
 
 /** The selected folder's sentence: its share of lines run, and its lines no suite ran. */
 const folderSentence = computed(() => {
   const t = props.summary.folderTotals;
   if (t.executableLines === 0) return 'No line to count here.';
-  return `${formatPercent(t.linePercent)} of ${formatCount(t.executableLines)} lines ran · ${formatCount(t.unrunLines)} no suite ran.`;
+  return `${formatPercent(t.linePercent)} of ${plural(t.executableLines, 'line')} ran · ${formatCount(t.unrunLines)} no suite ran.`;
 });
 
 const toast = useToast();
@@ -192,22 +204,21 @@ const exportItems = [
           <li
             v-for="area in summary.areas"
             :key="area.name"
-            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-2"
+            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 rounded-md px-2 py-2"
+            :class="summary.area === area.name ? SELECTED_ROW_CLASS : ''"
             :data-area="area.name"
           >
             <div class="min-w-0">
               <NuxtLink
                 :to="pageLink({ area: summary.area === area.name ? undefined : area.name, folder: undefined })"
-                class="text-sm font-semibold hover:underline"
-                :class="summary.area === area.name ? 'text-primary' : 'text-highlighted'"
+                class="text-sm font-semibold text-highlighted hover:underline"
                 :title="summary.area === area.name ? 'Show every file' : `Keep the files to ${area.name}`"
                 :aria-current="summary.area === area.name ? 'true' : undefined"
               >
                 {{ area.name }}
               </NuxtLink>
               <p class="text-xs text-muted tabular-nums">
-                {{ formatCount(area.files) }} {{ area.files === 1 ? 'file' : 'files' }} ·
-                {{ formatCount(area.executableLines) }} lines
+                {{ plural(area.files, 'file') }} · {{ plural(area.executableLines, 'line') }}
               </p>
             </div>
             <p class="text-sm tabular-nums text-highlighted text-right">{{ formatPercent(area.linePercent) }}</p>
@@ -235,24 +246,23 @@ const exportItems = [
           data-testid="coverage-area-select"
           @update:model-value="pickArea(String($event))"
         />
-        <div class="inline-flex rounded-md border border-default p-0.5" role="group" aria-label="Sort the files by">
-          <UButton
-            size="xs"
-            :color="sort === 'name' ? 'primary' : 'neutral'"
-            :variant="sort === 'name' ? 'soft' : 'ghost'"
-            :aria-pressed="sort === 'name'"
-            @click="sort = 'name'"
-            >Name</UButton
+        <div
+          class="inline-flex shrink-0 gap-0.5 rounded-md bg-elevated/60 p-0.5"
+          role="group"
+          aria-label="Sort the files by"
+        >
+          <button
+            v-for="option in SORT_OPTIONS"
+            :key="option.value"
+            type="button"
+            class="rounded px-2 py-0.5 text-xs whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+            :class="sort === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
+            :aria-pressed="sort === option.value ? 'true' : 'false'"
+            :data-testid="`coverage-sort-${option.value}`"
+            @click="sort = option.value"
           >
-          <UButton
-            size="xs"
-            :color="sort === 'unrun' ? 'primary' : 'neutral'"
-            :variant="sort === 'unrun' ? 'soft' : 'ghost'"
-            :aria-pressed="sort === 'unrun'"
-            data-testid="coverage-sort-unrun"
-            @click="sort = 'unrun'"
-            >Least covered</UButton
-          >
+            {{ option.label }}
+          </button>
         </div>
       </template>
 
@@ -263,6 +273,7 @@ const exportItems = [
           :area="summary.area"
           :selected="summary.folder"
           :sort="sort"
+          :link="linkContext"
           class="min-w-0"
           @select="selectFolder"
         />
@@ -308,8 +319,8 @@ const exportItems = [
                   {{ entry.path.slice(summary.folder ? summary.folder.length + 1 : 0) }}
                 </NuxtLink>
                 <p class="text-xs tabular-nums text-muted">
-                  {{ formatCount(entry.unrunLines) }} {{ entry.unrunLines === 1 ? 'line' : 'lines' }} no suite ran ·
-                  {{ formatPercent(entry.linePercent) }} of {{ formatCount(entry.executableLines) }} ran
+                  {{ plural(entry.unrunLines, 'line') }} no suite ran · {{ formatPercent(entry.linePercent) }} of
+                  {{ formatCount(entry.executableLines) }} ran
                 </p>
               </li>
             </ol>

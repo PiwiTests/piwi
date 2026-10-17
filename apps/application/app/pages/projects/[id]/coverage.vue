@@ -16,16 +16,19 @@
  * that records no coverage the page says so in one sentence.
  *
  * Without `?file=`, the page is the project's combined coverage at a commit
- * (`?commit=`, else the newest with coverage on `?branch=`), broken down by
- * `?folder=` (`GET /api/projects/:id/coverage-summary`). The file view adds,
+ * (`?commit=`, else the one whose coverage arrived last on `?branch=`),
+ * broken down by `?folder=` (`GET /api/projects/:id/coverage-summary`). The file view adds,
  * at the commit, which suites ran the file's lines; with `?marks=suites`, or
  * for a file no test recorded, each line is marked by the kinds of suite that
  * ran it, read from the commit's combined coverage alone. The previous and
- * next gap (lines no test, or no suite, ran) are one click away.
+ * next gap (lines no test, or no suite, ran) are one click away. Every link
+ * between the overview and a file keeps the pinned commit, the branch and
+ * the area.
  */
 import { countLines, decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import { coveragePercent } from '#shared/coverage-combine';
 import type { ApiResponse, ProjectDetails } from '~~/types/api';
+import { SEGMENTED_SELECTED_CLASS } from '~/utils';
 import type { FileCoverage } from '~~/server/utils/coverage';
 import { compactFileCoverage, nearestTest } from '#shared/coverage-insights';
 import { COVERAGE_PRECISION_LABEL, COVERAGE_PRECISION_TITLE, functionNameAt } from '~/utils/coverage-view';
@@ -41,12 +44,15 @@ import {
 } from '~/utils/file-coverage';
 import { lineRangesText } from '~/utils/suspect-lines';
 import {
+  coverageLink,
   enclosingFunction,
   folderTrail,
   formatCount,
   formatPercent,
   gapSteps,
+  plural,
   suitesOnLines,
+  type CoverageLinkContext,
 } from '~/utils/combined-coverage';
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 
@@ -88,6 +94,14 @@ const {
   })),
 });
 const summaryLoading = computed(() => summaryStatus.value === 'idle' || summaryStatus.value === 'pending');
+/** The overview's first read: a later one, for another folder or area, keeps the overview and its tree in place. */
+const summaryFirstLoading = computed(() => summaryLoading.value && !summary.value);
+/** What the links back to the overview keep: the commit when the page pins one, the branch and the area. */
+const linkContext = computed<CoverageLinkContext>(() => ({
+  commit: commit.value ? (summary.value?.commit ?? commit.value) : null,
+  branch: branch.value,
+  area: area.value,
+}));
 /** No combined coverage at all: the summary answered 404. */
 const noCombined = computed(() => summaryError.value?.statusCode === 404);
 
@@ -97,17 +111,22 @@ useHead(
   })),
 );
 
-// Client-side only: a file many tests run has a large answer, with no place in the SSR payload.
+// Client-side only: a file many tests run has a large answer, with no place in the SSR payload. The key
+// follows the file and the branch, so opening a file from the overview reads it; the overview reads nothing.
 const {
   data: coverage,
   status,
   error,
-} = useFetch<FileCoverage>(`/api/projects/${projectId}/coverage`, {
-  server: false,
-  lazy: true,
-  query: computed(() => ({ file: file.value, branch: branch.value })),
-  immediate: coverageActive.value && file.value !== '',
-});
+} = useAsyncData<FileCoverage | null>(
+  () => `file-coverage-${projectId}-${branch.value ?? ''}-${file.value}`,
+  () =>
+    coverageActive.value && file.value
+      ? $fetch<FileCoverage>(`/api/projects/${projectId}/coverage`, {
+          query: { file: file.value, branch: branch.value },
+        })
+      : Promise.resolve(null),
+  { server: false, lazy: true, watch: [coverageActive] },
+);
 
 /**
  * The file at the commit's combined coverage: when it is the version the tests
@@ -123,6 +142,10 @@ const combinedFile = computed(() => {
 const marks = computed<'suites' | 'tests'>(() =>
   combinedFile.value && (!version.value?.blob || route.query.marks === 'suites') ? 'suites' : 'tests',
 );
+const MARK_OPTIONS = [
+  { value: 'tests', label: 'By tests' },
+  { value: 'suites', label: 'By suites' },
+] as const;
 function pickMarks(next: 'suites' | 'tests') {
   void router.replace({ query: { ...route.query, marks: next === 'suites' ? 'suites' : undefined } });
 }
@@ -137,7 +160,7 @@ const combinedFileSentence = computed(() => {
   const executable = countLines(at.executable);
   const ran = formatPercent(coveragePercent(countLines(at.executed), executable));
   const { unitOnly, e2eOnly, both } = at.classes;
-  return `With every suite at ${summary.value.commit.slice(0, 7)}: ${ran} of its ${formatCount(executable)} lines ran — unit only ${formatCount(countLines(unitOnly))}, end to end only ${formatCount(countLines(e2eOnly))}, both ${formatCount(countLines(both))}.`;
+  return `With every suite at ${summary.value.commit.slice(0, 7)}: ${ran} of its ${plural(executable, 'line')} ran — unit only ${formatCount(countLines(unitOnly))}, end to end only ${formatCount(countLines(e2eOnly))}, both ${formatCount(countLines(both))}.`;
 });
 /** The file's lines by class, for its bar. */
 const combinedCounts = computed(() => {
@@ -258,8 +281,7 @@ const gapSentence = computed(() => {
   if (n === 0) return marks.value === 'suites' ? 'Every line of this file ran in a suite.' : null;
   const i = steps.value.index;
   if (i === null) {
-    const lines = countLines(gaps.value);
-    return `${n} ${n === 1 ? 'gap' : 'gaps'}: ${formatCount(lines)} ${lines === 1 ? 'line' : 'lines'}.`;
+    return `${plural(n, 'gap')}: ${plural(countLines(gaps.value), 'line')}.`;
   }
   const gap = gaps.value[i]!;
   const functions =
@@ -341,7 +363,7 @@ const nearestSentence = computed(() => {
               { label: 'Home', icon: 'i-lucide-house', to: '/' },
               { label: 'Projects', to: '/projects' },
               { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
-              file ? { label: 'Coverage', to: `/projects/${projectId}/coverage` } : { label: 'Coverage' },
+              file ? { label: 'Coverage', to: coverageLink(projectId, linkContext) } : { label: 'Coverage' },
               ...(file ? [{ label: fileName }] : []),
             ]"
           />
@@ -351,13 +373,13 @@ const nearestSentence = computed(() => {
 
     <template #body>
       <div v-if="!file" class="p-4 space-y-4">
-        <LoadingState v-if="summaryLoading" text="Combining the suites’ coverage…" />
+        <LoadingState v-if="summaryFirstLoading" text="Combining the suites’ coverage…" />
         <EmptyState
           v-else-if="noCombined"
           text="No combined coverage yet: upload a suite’s coverage report with piwi coverage upload, or record run coverage with the reporter."
         />
         <ErrorState v-else-if="summaryError || !summary" text="The combined coverage could not be read." />
-        <ProjectCoverageOverview v-else :project-id="projectId" :summary="summary" />
+        <ProjectCoverageOverview v-else :project-id="projectId" :summary="summary" :aria-busy="summaryLoading" />
       </div>
       <div v-else class="p-4 space-y-4" data-shot="coverage-file">
         <LoadingState v-if="loading" text="Reading the file’s coverage…" />
@@ -372,11 +394,11 @@ const nearestSentence = computed(() => {
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0 space-y-1">
               <nav class="flex flex-wrap items-center gap-1 text-xs text-muted" aria-label="Folder">
-                <NuxtLink :to="`/projects/${projectId}/coverage`" class="hover:underline">Repository</NuxtLink>
+                <NuxtLink :to="coverageLink(projectId, linkContext)" class="hover:underline">Repository</NuxtLink>
                 <template v-for="part in fileTrail" :key="part.path">
                   <span>/</span>
                   <NuxtLink
-                    :to="{ path: `/projects/${projectId}/coverage`, query: { folder: part.path } }"
+                    :to="coverageLink(projectId, linkContext, { folder: part.path })"
                     class="font-mono hover:underline"
                     >{{ part.name }}</NuxtLink
                   >
@@ -427,27 +449,22 @@ const nearestSentence = computed(() => {
             <div class="flex flex-col gap-2 sm:items-end shrink-0">
               <div
                 v-if="version?.blob && combinedFile"
-                class="inline-flex rounded-md border border-default p-0.5"
+                class="inline-flex shrink-0 gap-0.5 rounded-md bg-elevated/60 p-0.5"
                 role="group"
                 aria-label="Mark lines by"
                 data-testid="coverage-file-marks"
               >
-                <UButton
-                  size="xs"
-                  :color="marks === 'tests' ? 'primary' : 'neutral'"
-                  :variant="marks === 'tests' ? 'soft' : 'ghost'"
-                  :aria-pressed="marks === 'tests'"
-                  @click="pickMarks('tests')"
-                  >By tests</UButton
+                <button
+                  v-for="option in MARK_OPTIONS"
+                  :key="option.value"
+                  type="button"
+                  class="rounded px-2 py-0.5 text-xs whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+                  :class="marks === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
+                  :aria-pressed="marks === option.value ? 'true' : 'false'"
+                  @click="pickMarks(option.value)"
                 >
-                <UButton
-                  size="xs"
-                  :color="marks === 'suites' ? 'primary' : 'neutral'"
-                  :variant="marks === 'suites' ? 'soft' : 'ghost'"
-                  :aria-pressed="marks === 'suites'"
-                  @click="pickMarks('suites')"
-                  >By suites</UButton
-                >
+                  {{ option.label }}
+                </button>
               </div>
               <USelect
                 v-if="versions.length > 1 && version"

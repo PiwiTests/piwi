@@ -10,10 +10,11 @@
  * `annotation` slot adds a narrow column after each line number (a count of
  * tests, for instance). With `selectable`, a click on a line emits
  * `select-line` (with whether Shift was held), and the `selected` lines carry
- * the neutral selected-row mark (`data-selected`). With `classes`, a
- * commit's combined coverage, each line's bar says which kinds of suite ran
- * it instead (`data-class`): both, unit only, end to end only, none, or
- * undetermined.
+ * the neutral selected-row mark (`data-selected`); without an annotation, each
+ * line number is a button that selects its line from the keyboard. With
+ * `classes`, a commit's combined coverage, each line's bar says which kinds of
+ * suite ran it instead (`data-class`): both, unit only, end to end only, none,
+ * or undetermined, and a screen reader reads the class after the line number.
  */
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
 import { highlightLines, languageForPath } from '#shared/highlight';
@@ -131,6 +132,11 @@ function rowMark(row: (typeof rows.value)[number]): string {
   return row.executed ? RAN_ROW_CLASS : row.notExecuted ? NOT_RUN_ROW_CLASS : '';
 }
 
+/** A line's accessible name: its number, and its class in the combined coverage. */
+function lineName(row: (typeof rows.value)[number]): string {
+  return row.kind ? `Line ${row.line}: ${LINE_CLASS_MARKS[row.kind].label}` : `Line ${row.line}`;
+}
+
 /** Wide enough for the last line number, the same on every row. */
 const gutterWidth = computed(() => `calc(${String(Math.max(rows.value.length, 1)).length}ch + 1.5rem)`);
 
@@ -226,8 +232,24 @@ defineExpose({ reveal });
             @mousedown="selectable && $event.shiftKey && $event.preventDefault()"
             @click="selectable && emit('select-line', row.line, $event.shiftKey)"
           >
-            <span class="shrink-0 select-none pl-3 pr-3 text-right text-muted" :style="{ minWidth: gutterWidth }">
+            <button
+              v-if="selectable && !$slots.annotation"
+              type="button"
+              class="shrink-0 select-none rounded pl-3 pr-3 text-right text-muted focus-visible:outline-2 focus-visible:-outline-offset-2"
+              :style="{ minWidth: gutterWidth }"
+              :aria-label="lineName(row)"
+              :aria-pressed="row.selected ? 'true' : 'false'"
+              data-line-button
+              @click.stop="emit('select-line', row.line, $event.shiftKey)"
+            >
               {{ row.line }}
+            </button>
+            <span
+              v-else
+              class="shrink-0 select-none pl-3 pr-3 text-right text-muted"
+              :style="{ minWidth: gutterWidth }"
+            >
+              {{ row.line }}<span v-if="row.kind" class="sr-only">: {{ LINE_CLASS_MARKS[row.kind].label }}</span>
             </span>
             <span v-if="$slots.annotation" class="shrink-0 select-none pr-3">
               <slot name="annotation" :line="row.line" :executed="row.executed" :not-executed="row.notExecuted" />

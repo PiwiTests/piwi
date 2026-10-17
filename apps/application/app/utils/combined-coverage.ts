@@ -17,7 +17,8 @@ export function formatPercent(percent: number | null): string {
   return percent === null ? '—' : `${percent.toFixed(1)}%`;
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${formatCount(n)} ${n === 1 ? one : many}`;
+/** A count and its noun: `1 line`, `1,204 lines`. */
+export const plural = (n: number, one: string, many = `${one}s`) => `${formatCount(n)} ${n === 1 ? one : many}`;
 
 /** The commit's headline: the share of lines that ran, of how many, across how many suites. */
 export function totalsSentence(summary: Pick<CoverageSummary, 'totals' | 'suites'>): string {
@@ -75,6 +76,43 @@ export function suitesOnLines(bySuite: Record<string, LineRange[]>, range: LineR
 export function folderTrail(folder: string): Array<{ name: string; path: string }> {
   const parts = folder.split('/').filter(Boolean);
   return parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join('/') }));
+}
+
+/** What a link between the coverage screens carries over: the pinned commit, the branch and the area. */
+export interface CoverageLinkContext {
+  commit?: string | null;
+  branch?: string | null;
+  area?: string | null;
+}
+
+/** A link to the coverage page with `query`, the commit, branch and area of `context` kept. */
+export function coverageLink(
+  projectId: number,
+  context: CoverageLinkContext,
+  query: Record<string, string | undefined> = {},
+): { path: string; query: Record<string, string | undefined> } {
+  return {
+    path: `/projects/${projectId}/coverage`,
+    query: {
+      commit: context.commit || undefined,
+      branch: context.branch || undefined,
+      area: context.area || undefined,
+      ...query,
+    },
+  };
+}
+
+/** A file's view, marked by the suites that ran each line, at the same commit, branch and area. */
+export function coverageFileLink(projectId: number, context: CoverageLinkContext, path: string) {
+  return coverageLink(projectId, context, { file: path, marks: 'suites' });
+}
+
+/** The open folders with `folder` and its parents added, the saved ones kept in their order. */
+export function withLineage(open: string[], folder: string): string[] {
+  const missing = folderTrail(folder)
+    .map((part) => part.path)
+    .filter((path) => !open.includes(path));
+  return missing.length ? [...open, ...missing] : open;
 }
 
 /** Where a selection stands among a file's gaps: the gap it is in, and the gaps before and after it. */

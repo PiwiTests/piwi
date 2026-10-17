@@ -165,7 +165,7 @@ export const HELP_TOPICS = {
   },
   'analytics.coverage-trend': {
     title: 'Coverage trend',
-    text: 'The share of executable lines the suites ran together (the unit-test reports uploaded for each commit and the Playwright runs), at the newest commit with coverage in each bucket, summed over the projects in scope. Kept per day, so it outlives the reports it came from.',
+    text: 'The share of executable lines the suites ran together (the unit-test reports uploaded for each commit and the Playwright runs), at the commit whose coverage arrived last in each bucket, summed over the projects in scope. Kept per day, so it outlives the reports it came from.',
     doc: 'features/combined-coverage#over-time',
   },
   'analytics.flaky-debt': {
@@ -673,7 +673,7 @@ export const HELP_TOPICS = {
   },
   'coverage.areas': {
     title: 'Coverage areas',
-    text: 'Name the parts of your code, `front` and `back` for instance, by the patterns of their files. Every suite’s coverage splits the same way, unit and end to end: each area gets its own totals on the coverage page, its own line in the coverage trend, and its share of a pull request’s changed lines. A file belongs to the first area whose patterns match it; a file in none counts only in the totals. The scope above decides which files count at all.',
+    text: 'Name the parts of your code, `front` and `back` for instance, by the patterns of their files. Every suite’s coverage splits the same way, unit and end to end: each area gets its own totals on the coverage page, its own line in the coverage trend, and its share of a pull request’s changed lines. A file belongs to the first area whose patterns match it; a file in none counts only in the totals. The coverage scope, its include and exclude patterns, decides which files count at all.',
     doc: 'features/combined-coverage#areas',
   },
   'coverage.tree': {
@@ -682,7 +682,7 @@ export const HELP_TOPICS = {
     doc: 'features/combined-coverage#find-what-is-not-covered',
   },
   'coverage.least-covered': {
-    title: 'Least covered',
+    title: 'Files to cover next',
     text: 'The files of this folder with the most executable lines no suite ran, unit or end to end, the most first, then the lowest share run. Undetermined lines (in a function the browser ran) are not counted. A file opens with each line marked by the suites that ran it, and the next gap one click away.',
     doc: 'features/combined-coverage#find-what-is-not-covered',
   },
@@ -757,7 +757,7 @@ export const HELP_TOPICS = {
     text: [
       'Every suite that ran the code at this commit, counted on one set of executable lines per file version.',
       '',
-      '- **Suites** — the reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs. A suite the commit lacks comes from its newest earlier report, where the file is unchanged.',
+      '- **Suites** — the reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs. A suite the commit lacks comes from the newest commit whose coverage arrived before it, on the commit’s branch then on the default branch, where the file is unchanged.',
       '- **Lines** — the span table’s when a run recorded them, else the reports’. Every suite’s ratio counts on them.',
       '- **Undetermined** — unrun lines inside functions the browser suite ran: its lines are not recorded, so they are shown beside the ratio, never in it.',
       '- **Without data** — tracked files in the coverage scope that no suite names.',
