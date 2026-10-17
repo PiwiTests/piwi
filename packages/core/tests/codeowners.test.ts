@@ -3,6 +3,8 @@ import {
   compileCodeowners,
   ownersForPath,
   parseCodeowners,
+  pathPatternMatcher,
+  pathPatternToRegExp,
   primaryOwnerForPath,
   type CompiledCodeowners,
 } from '../src/codeowners';
@@ -125,5 +127,49 @@ describe('primaryOwnerForPath', () => {
 
   test('is null when nothing matches', () => {
     expect(primaryOwnerForPath(compile('/docs/ @writers'), 'tests/a.spec.ts')).toBeNull();
+  });
+});
+
+describe('path patterns', () => {
+  const deepPath = Array.from({ length: 22 }, (_, i) => `d${i}`).join('/');
+
+  test('reads consecutive ** as one, in constant time', () => {
+    const pattern = '**/**/**/**/**/**/**/**/**/**/**/**/x';
+    const started = performance.now();
+    expect(pathPatternToRegExp(pattern).test(deepPath)).toBe(false);
+    expect(pathPatternToRegExp(pattern).test('a/b/x')).toBe(true);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('the matcher matches what the regular expression matches', () => {
+    let seed = 7;
+    const random = (n: number) => {
+      seed = (Math.imul(seed, 1_103_515_245) + 12_345) >>> 0;
+      return (seed >>> 16) % n;
+    };
+    const pick = <T>(items: T[]) => items[random(items.length)]!;
+    const patternSegments = ['a', 'b', 'ab', '*', '**', 'a*', '*b', '?', 'a?b', '*a*', ''];
+    const pathSegments = ['a', 'b', 'ab', 'aab', 'ba', 'abb', ''];
+    for (let i = 0; i < 3000; i++) {
+      const segments = Array.from({ length: 1 + random(4) }, () => pick(patternSegments));
+      const pattern = `${pick(['', '/'])}${segments.join('/')}${pick(['', '/'])}`;
+      const regex = pathPatternToRegExp(pattern);
+      const matches = pathPatternMatcher(pattern);
+      for (let j = 0; j < 10; j++) {
+        const path = Array.from({ length: 1 + random(5) }, () => pick(pathSegments)).join('/');
+        expect(matches(path), `${pattern} on ${path}`).toBe(regex.test(path));
+      }
+    }
+  });
+
+  test('the matcher takes no time on patterns a regular expression backtracks on', () => {
+    const longSegment = 'a'.repeat(255);
+    const manySegments = Array.from({ length: 120 }, () => 'a').join('/');
+    const started = performance.now();
+    expect(pathPatternMatcher('*a*a*a*a*a*a*a*a*a*a*b')(longSegment)).toBe(false);
+    expect(pathPatternMatcher('a/**/a/**/a/**/a/**/a/**/a/**/b')(manySegments)).toBe(false);
+    expect(pathPatternMatcher('**/a*/**/a*/**/a*/**/a*/**/x')(manySegments)).toBe(false);
+    expect(pathPatternMatcher('**/**/**/**/**/**/**/**/**/**/**/**/x')(deepPath)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });

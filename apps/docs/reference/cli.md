@@ -171,7 +171,11 @@ Patterns are expanded by the command, so a quoted `**` works the same in every s
 is tried against the report's `<source>`, the current directory, the report's directory and its parent (Vitest writes
 `coverage/` under its root), and the repository root; the first that names a file of the checkout wins, and the
 summary counts the paths none did. An absolute path is taken under the repository root, and the `/_/` of a .NET build
-with `ContinuousIntegrationBuild` is read as the repository root.
+with `ContinuousIntegrationBuild` is read as the repository root, in a path or in the `<source>` it is joined to.
+
+Each file is named by the git blob of its content in the checkout. When `git hash-object` fails on a file, the command
+says so on stderr and goes on: a changed tracked file is left out of the commit's inventory, a file git does not track
+is sent without its blob.
 
 ## `select` / `run` {#select-run}
 

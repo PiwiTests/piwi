@@ -61,6 +61,10 @@ const MAX_PENDING = 1024 * 1024;
 const EXECUTABLE = 1;
 const RAN = 2;
 
+const GREATER_THAN = 0x3e;
+const DOUBLE_QUOTE = 0x22;
+const SINGLE_QUOTE = 0x27;
+
 /** The format of a report from its first bytes; null when it is neither. */
 export function detectCoverageFormat(head: string): CoverageReportFormat | null {
   const text = head.replace(/^﻿/, '').trimStart();
@@ -169,13 +173,6 @@ function attributesOf(text: string): Record<string, string> {
   return out;
 }
 
-/** How many times `char` occurs in `text` between `from` and `to`. */
-function count(text: string, char: string, from: number, to: number): number {
-  let n = 0;
-  for (let at = text.indexOf(char, from); at >= 0 && at < to; at = text.indexOf(char, at + 1)) n++;
-  return n;
-}
-
 const NUMBER_ATTRIBUTE = /\snumber\s*=\s*(?:"([^"]*)"|'([^']*)')/;
 const HITS_ATTRIBUTE = /\shits\s*=\s*(?:"([^"]*)"|'([^']*)')/;
 
@@ -193,7 +190,11 @@ function integer(value: string | undefined): number {
 
 /** A Cobertura report, fed in chunks. */
 class CoberturaReader {
+  /** The text not read yet: empty, or the markup still open, from its `<`. */
   private pending = '';
+  /** How many characters of that markup are scanned, and the quote open after them (0 when none). */
+  private scanned = 0;
+  private quote = 0;
   private readonly files = new ReportFiles();
   private readonly sources: string[] = [];
   /** The text inside the `<source>` being read, or null outside one. */
@@ -232,22 +233,43 @@ class CoberturaReader {
     return { format: 'cobertura', sources: this.sources, files: this.files.toFiles() };
   }
 
-  /** Where the markup starting at `open` ends: its `>`, past comments, CDATA and quoted attribute values; -1 if not yet read. */
+  /**
+   * Where the markup starting at `open` ends: its `>`, past comments, CDATA and quoted attribute values; -1 if not
+   * yet read. The text is scanned once, forward: an unfinished markup keeps how far it is scanned and its open quote
+   * for the next chunk.
+   */
   private tagEnd(text: string, open: number): number {
-    if (text.startsWith('<!--', open)) {
-      const end = text.indexOf('-->', open + 4);
-      return end < 0 ? -1 : end + 2;
+    const head = text.slice(open, open + 9);
+    if (head.length < 9 && ('<!--'.startsWith(head) || '<![CDATA['.startsWith(head))) return -1;
+    if (head.startsWith('<!--')) return this.through(text, open, '-->', 4);
+    if (head.startsWith('<![CDATA[')) return this.through(text, open, ']]>', 9);
+    let quote = this.quote;
+    for (let at = open + Math.max(1, this.scanned); at < text.length; at++) {
+      const char = text.charCodeAt(at);
+      if (quote !== 0) {
+        if (char === quote) quote = 0;
+      } else if (char === GREATER_THAN) {
+        this.scanned = 0;
+        this.quote = 0;
+        return at;
+      } else if (char === DOUBLE_QUOTE || char === SINGLE_QUOTE) {
+        quote = char;
+      }
     }
-    if (text.startsWith('<![CDATA[', open)) {
-      const end = text.indexOf(']]>', open + 9);
-      return end < 0 ? -1 : end + 2;
+    this.scanned = text.length - open;
+    this.quote = quote;
+    return -1;
+  }
+
+  /** Where a comment or CDATA section starting at `open` ends: the last character of `end`; -1 if not yet read. */
+  private through(text: string, open: number, end: string, start: number): number {
+    const at = text.indexOf(end, open + Math.max(start, this.scanned));
+    if (at < 0) {
+      this.scanned = Math.max(start, text.length - open - end.length + 1);
+      return -1;
     }
-    // A `>` inside a quoted attribute value does not close the tag: an odd count of either quote before it means one is open.
-    let close = text.indexOf('>', open + 1);
-    while (close >= 0 && (count(text, '"', open, close) % 2 === 1 || count(text, "'", open, close) % 2 === 1)) {
-      close = text.indexOf('>', close + 1);
-    }
-    return close;
+    this.scanned = 0;
+    return at + end.length - 1;
   }
 
   private tag(markup: string): void {
@@ -323,8 +345,12 @@ class LcovReader {
   private pending = '';
   private readonly files = new ReportFiles();
   private file: FileLines | null = null;
-  /** The functions of the current record by name (`FN`/`FNDA`) and by index (`FNL`/`FNA`). */
-  private byName = new Map<string, { start: number; end: number }>();
+  /**
+   * The functions of the current record by name (`FN`/`FNDA`), each name's in the order its `FN`s come, with how
+   * many `FNDA`s of the name are read; and by index (`FNL`/`FNA`).
+   */
+  private byName = new Map<string, Array<{ start: number; end: number }>>();
+  private namesRun = new Map<string, number>();
   private byIndex = new Map<string, { start: number; end: number }>();
   private record = 0;
 
@@ -367,17 +393,24 @@ class LcovReader {
         const end = withEnd ? integer(parts[1]) : start;
         const name = parts.slice(withEnd ? 2 : 1).join(',');
         if (this.file && Number.isInteger(start)) {
-          this.byName.set(name, { start, end });
-          this.file.fn(`${this.record}:n:${name}`, start, end, false);
+          const named = this.byName.get(name) ?? [];
+          this.byName.set(name, named);
+          named.push({ start, end });
+          this.file.fn(`${this.record}:n:${named.length - 1}:${name}`, start, end, false);
         }
         break;
       }
       case 'FNDA': {
+        // The n-th `FNDA` of a name counts the n-th `FN` of that name, in the order both are written.
         const comma = value.indexOf(',');
         const hits = integer(value.slice(0, comma));
         const name = value.slice(comma + 1);
-        const known = this.byName.get(name);
-        if (this.file && known && hits > 0) this.file.fn(`${this.record}:n:${name}`, known.start, known.end, true);
+        const nth = this.namesRun.get(name) ?? 0;
+        this.namesRun.set(name, nth + 1);
+        const known = this.byName.get(name)?.[nth];
+        if (this.file && known && hits > 0) {
+          this.file.fn(`${this.record}:n:${nth}:${name}`, known.start, known.end, true);
+        }
         break;
       }
       case 'FNL': {
@@ -409,6 +442,7 @@ class LcovReader {
   private endRecord(): void {
     this.file = null;
     this.byName = new Map();
+    this.namesRun = new Map();
     this.byIndex = new Map();
   }
 }
@@ -529,11 +563,12 @@ export interface ReportPathBases {
 
 /**
  * The repository-relative POSIX paths a report's path may stand for, in the
- * order to try them, each once: backslashes turned into slashes; the
- * deterministic `/_/` root of a .NET build with `ContinuousIntegrationBuild`
- * read as the repository root; an absolute path made relative to the
- * repository root; a relative path tried against each base. A path outside
- * the repository stands for none.
+ * order to try them, each once: backslashes turned into slashes; an absolute
+ * path made relative to the repository root; a relative path tried against
+ * each base; the deterministic `/_/` root of a .NET build with
+ * `ContinuousIntegrationBuild`, in the path or in the base it joins (coverlet's
+ * `<source>`), read as the repository root. A path outside the repository
+ * stands for none.
  */
 export function reportPathCandidates(raw: string, { repoRoot, bases }: ReportPathBases): string[] {
   const slash = (value: string) => value.replace(/\\/g, '/');
@@ -543,12 +578,11 @@ export function reportPathCandidates(raw: string, { repoRoot, bases }: ReportPat
   const out: string[] = [];
   const add = (absolute: string) => {
     const normalized = normalizeSlashPath(absolute);
-    const relative = normalized ? relativeTo(normalized, root) : null;
+    if (!normalized) return;
+    const relative = normalized.startsWith('/_/') ? normalized.slice(3) : relativeTo(normalized, root);
     if (relative && !out.includes(relative)) out.push(relative);
   };
-  if (path.startsWith('/_/')) {
-    add(`${root}/${path.slice(3)}`);
-  } else if (isAbsolutePath(path)) {
+  if (isAbsolutePath(path)) {
     add(path);
   } else {
     for (const base of bases) {

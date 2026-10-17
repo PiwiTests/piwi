@@ -148,6 +148,45 @@ describe('Cobertura', () => {
     expect(report.files.map((file) => file.path)).toEqual(['src/R&D/x.cs', 'src/&big;.cs']);
   });
 
+  it('reads quotes of the other kind and a > inside a quoted value, wherever the chunks split', () => {
+    const text = `<?xml version="1.0"?>
+      <coverage><sources><source>/repo</source></sources><packages><package><classes>
+        <class filename="src/O'Brien/a.ts"><lines><line number="1" hits="1"/></lines></class>
+        <!-- a comment's > and ' -->
+        <class filename='src/6" disk/b.ts' note="a > b"><lines><line number='2' hits='0'/></lines></class>
+        <class filename="src/c.ts"><lines><![CDATA[ > ' " ]]><line number="3" hits="2"/></lines></class>
+      </classes></package></packages></coverage>`;
+    const whole = parseCoverageReport(text)!;
+    expect(whole.files).toEqual([
+      { path: "src/O'Brien/a.ts", executable: [[1, 1]], lines: [[1, 1]], functions: [], allFunctions: [] },
+      { path: 'src/6" disk/b.ts', executable: [[2, 2]], lines: [], functions: [], allFunctions: [] },
+      { path: 'src/c.ts', executable: [[3, 3]], lines: [[3, 3]], functions: [], allFunctions: [] },
+    ]);
+    for (let at = 0; at <= text.length; at++) {
+      const reader = new CoverageReportReader('cobertura');
+      reader.write(text.slice(0, at));
+      reader.write(text.slice(at));
+      expect(reader.end(), `split at ${at}`).toEqual(whole);
+    }
+    expect(readInChunks(text, 1)).toEqual(whole);
+  });
+
+  it('reads a 10 MB report in 1 MB chunks in a single pass', () => {
+    const lines = Array.from({ length: 500 }, (_, i) => `<line number="${i + 1}" hits="${i % 3}" branch="false"/>`);
+    const classes = Array.from(
+      { length: 450 },
+      (_, i) => `<class name="C${i}" filename="src/f${i}.cs"><methods/><lines>${lines.join('\n')}</lines></class>`,
+    );
+    const text = `<?xml version="1.0"?><coverage><packages><package><classes>${classes.join('\n')}</classes></package></packages></coverage>`;
+    expect(text.length).toBeGreaterThan(9 * 1024 * 1024);
+    const started = performance.now();
+    const report = readInChunks(text, 1024 * 1024);
+    // Generous: one forward scan reads it in a few hundred milliseconds.
+    expect(performance.now() - started).toBeLessThan(1500);
+    expect(report.files).toHaveLength(450);
+    expect(report.files[449]!.executable).toEqual([[1, 500]]);
+  });
+
   it('refuses a tag longer than 1 MB rather than holding it', () => {
     const reader = new CoverageReportReader('cobertura');
     expect(() => reader.write(`<class filename="${'a'.repeat(1024 * 1024 + 10)}`)).toThrow(/longer than 1 MB/);
@@ -237,6 +276,19 @@ describe('LCOV', () => {
     ]);
   });
 
+  it('counts the n-th FNDA of a name for the n-th FN of that name', () => {
+    const report = parseCoverageReport(
+      ['SF:src/view.ts', 'FN:1,render', 'FN:40,render', 'FNDA:0,render', 'FNDA:3,render', 'end_of_record', ''].join(
+        '\n',
+      ),
+    )!;
+    expect(report.files[0]!.allFunctions).toEqual([
+      [1, 1],
+      [40, 40],
+    ]);
+    expect(report.files[0]!.functions).toEqual([[40, 40]]);
+  });
+
   it('merges two records of one file', () => {
     const report = parseCoverageReport('SF:a.ts\nDA:1,0\nend_of_record\nSF:a.ts\nDA:1,1\nDA:2,0\nend_of_record\n')!;
     expect(report.files).toEqual([
@@ -270,6 +322,14 @@ describe('reportPathCandidates', () => {
     ]);
     expect(reportPathCandidates('/_/src/Lib/Prices.cs', { repoRoot, bases: [] })).toEqual(['src/Lib/Prices.cs']);
     expect(reportPathCandidates('/opt/other/Prices.cs', { repoRoot, bases: [] })).toEqual([]);
+  });
+
+  it("reads the /_/ root of a coverlet deterministic report's <source>", () => {
+    expect(reportPathCandidates('Services/Foo.cs', { repoRoot, bases: ['/_/src/App/', repoRoot] })).toEqual([
+      'src/App/Services/Foo.cs',
+      'Services/Foo.cs',
+    ]);
+    expect(reportPathCandidates('../../../etc/passwd', { repoRoot, bases: ['/_/src/App/'] })).toEqual([]);
   });
 
   it('reads Windows paths: backslashes and drive letters in any case', () => {

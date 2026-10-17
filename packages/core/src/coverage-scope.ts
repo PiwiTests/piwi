@@ -11,7 +11,7 @@
  * in the same syntax: a file belongs to the first area whose patterns match
  * it, so every suite's coverage splits the same way.
  */
-import { pathPatternToRegExp } from './codeowners';
+import { pathPatternMatcher } from './codeowners';
 
 /** The include and exclude patterns of a project's coverage scope. */
 export interface CoverageScope {
@@ -39,10 +39,17 @@ export const DEFAULT_COVERAGE_EXCLUDES: readonly string[] = [
 /** The scope a project starts with: every file, but the default excludes. */
 export const DEFAULT_COVERAGE_SCOPE: CoverageScope = { include: [], exclude: [...DEFAULT_COVERAGE_EXCLUDES] };
 
-/** Patterns per list at most, and characters per pattern. */
+/** Patterns per list at most, characters per pattern, and `*` per pattern. */
 export const MAX_SCOPE_PATTERNS = 200;
 const MAX_PATTERN_LENGTH = 300;
+const MAX_PATTERN_WILDCARDS = 20;
 
+/**
+ * The patterns of a list from untrusted input, trimmed, blank ones and
+ * comments dropped, each kept once. Null when the list is not one of strings,
+ * holds a `!` negation, a pattern over 300 characters or with more than 20
+ * `*`, or names more than 200 patterns.
+ */
 function patterns(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) return null;
   const out: string[] = [];
@@ -50,7 +57,8 @@ function patterns(raw: unknown): string[] | null {
     if (typeof item !== 'string') return null;
     const pattern = item.trim();
     if (!pattern || pattern.startsWith('#')) continue;
-    if (pattern.length > MAX_PATTERN_LENGTH || pattern.startsWith('!')) return null;
+    const tooLarge = pattern.length > MAX_PATTERN_LENGTH || pattern.split('*').length - 1 > MAX_PATTERN_WILDCARDS;
+    if (tooLarge || pattern.startsWith('!')) return null;
     if (!out.includes(pattern)) out.push(pattern);
   }
   return out.length > MAX_SCOPE_PATTERNS ? null : out;
@@ -59,8 +67,8 @@ function patterns(raw: unknown): string[] | null {
 /**
  * A scope from untrusted input: two lists of patterns, blank ones and
  * comments dropped, each kept once. Null when either is not a list of
- * strings, holds a `!` negation or a pattern over 300 characters, or names
- * more than 200 patterns. A missing list is empty.
+ * strings, holds a `!` negation, a pattern over 300 characters or with more
+ * than 20 `*`, or names more than 200 patterns. A missing list is empty.
  */
 export function parseCoverageScope(raw: unknown): CoverageScope | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
@@ -75,12 +83,12 @@ export type CoverageScopeMatcher = (path: string) => boolean;
 
 /** Whether a path is in the scope: matched by an include pattern (or no include at all), by no exclude pattern. */
 export function compileCoverageScope(scope: CoverageScope): CoverageScopeMatcher {
-  const include = scope.include.map(pathPatternToRegExp);
-  const exclude = scope.exclude.map(pathPatternToRegExp);
+  const include = scope.include.map(pathPatternMatcher);
+  const exclude = scope.exclude.map(pathPatternMatcher);
   return (path) => {
     const file = path.replace(/\\/g, '/').replace(/^\.?\//, '');
-    if (include.length > 0 && !include.some((pattern) => pattern.test(file))) return false;
-    return !exclude.some((pattern) => pattern.test(file));
+    if (include.length > 0 && !include.some((matches) => matches(file))) return false;
+    return !exclude.some((matches) => matches(file));
   };
 }
 
@@ -97,8 +105,8 @@ const AREA_NAME = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,39}$/u;
 /**
  * Areas from untrusted input: each a name (1 to 40 letters, digits, spaces,
  * `.`, `_` or `-`, starting with a letter or digit) and at least one include
- * pattern, the names distinct. Null when the input is not such a list, or
- * names more than 20 areas.
+ * pattern, held to a scope's limits, the names distinct. Null when the input
+ * is not such a list, or names more than 20 areas.
  */
 export function parseCoverageAreas(raw: unknown): CoverageArea[] | null {
   if (!Array.isArray(raw) || raw.length > MAX_COVERAGE_AREAS) return null;
@@ -117,9 +125,9 @@ export function parseCoverageAreas(raw: unknown): CoverageArea[] | null {
 
 /** The area a repository-relative path belongs to: the first whose patterns match it, else null. */
 export function compileCoverageAreas(areas: CoverageArea[]): (path: string) => string | null {
-  const compiled = areas.map((area) => ({ name: area.name, patterns: area.include.map(pathPatternToRegExp) }));
+  const compiled = areas.map((area) => ({ name: area.name, patterns: area.include.map(pathPatternMatcher) }));
   return (path) => {
     const file = path.replace(/\\/g, '/').replace(/^\.?\//, '');
-    return compiled.find((area) => area.patterns.some((pattern) => pattern.test(file)))?.name ?? null;
+    return compiled.find((area) => area.patterns.some((matches) => matches(file)))?.name ?? null;
   };
 }

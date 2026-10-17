@@ -33,6 +33,20 @@ describe('compileCoverageScope', () => {
     expect(inScope('apps/docs/index.md')).toBe(false);
     expect(inScope('src/Legacy/Old.cs')).toBe(false);
   });
+
+  it('matches a pattern full of wildcards on a deep path at once', () => {
+    const deep = Array.from({ length: 22 }, (_, i) => `d${i}`).join('/');
+    const started = performance.now();
+    const inScope = compileCoverageScope({
+      include: ['**/**/**/**/**/**/**/**/**/**/**/**/x', 'a/**/a/**/a/**/a/**/a/**/b', '*a*a*a*a*a*a*a*a*a*b'],
+      exclude: [],
+    });
+    expect(inScope(deep)).toBe(false);
+    expect(inScope(Array.from({ length: 120 }, () => 'a').join('/'))).toBe(false);
+    expect(inScope('a'.repeat(255))).toBe(false);
+    expect(inScope(`${deep}/x`)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('parseCoverageScope', () => {
@@ -41,6 +55,12 @@ describe('parseCoverageScope', () => {
       include: ['src/'],
       exclude: [],
     });
+  });
+
+  it('refuses a pattern with more than 20 wildcards', () => {
+    expect(parseCoverageScope({ include: [`${'**/'.repeat(10)}x`] })).not.toBeNull();
+    expect(parseCoverageScope({ include: [`${'**/'.repeat(10)}*.ts`] })).toBeNull();
+    expect(parseCoverageAreas([{ name: 'front', include: ['*a'.repeat(21)] }])).toBeNull();
   });
 
   it('refuses a list that is not one of strings, a negation and a pattern too long', () => {

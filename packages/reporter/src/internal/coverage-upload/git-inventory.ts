@@ -14,6 +14,9 @@ import { gitHashObjects } from '../collect/blob-ids.js';
 /** Largest output read from one git command. */
 const MAX_GIT_OUTPUT = 512 * 1024 * 1024;
 
+/** Paths hashed by one `git hash-object` at most. */
+const GIT_BATCH = 500;
+
 function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -47,11 +50,33 @@ export async function readCheckout(cwd: string): Promise<Checkout> {
 }
 
 /**
+ * The blob ids git gives repository-relative paths under `root`, by path,
+ * hashed by `git hash-object` 500 paths at a time. A path of a batch git fails
+ * on has none.
+ */
+export async function hashPaths(root: string, paths: string[]): Promise<Map<string, string>> {
+  const ids = new Map<string, string>();
+  for (let start = 0; start < paths.length; start += GIT_BATCH) {
+    const batch = paths.slice(start, start + GIT_BATCH);
+    const hashed = await gitHashObjects(root, batch);
+    batch.forEach((file, i) => {
+      const id = hashed?.[i];
+      if (id) ids.set(file, id);
+    });
+  }
+  return ids;
+}
+
+/**
  * The tracked files of the checkout and their blob ids, by repository-relative
  * path: the committed blob, or, for a file the checkout changed, the blob of
- * its content now. A tracked file deleted from the checkout is left out.
+ * its content now. A tracked file deleted from the checkout is left out, and
+ * so is a changed file git cannot hash, which `warn` is told about.
  */
-export async function readInventory(root: string): Promise<Map<string, string>> {
+export async function readInventory(
+  root: string,
+  warn: (message: string) => void = () => {},
+): Promise<Map<string, string>> {
   const inventory = new Map<string, string>();
   // `-z`: paths as they are, NUL-separated, never quoted.
   for (const entry of (await git(root, ['ls-tree', '-r', '-z', '--full-tree', 'HEAD'])).split('\0')) {
@@ -67,13 +92,17 @@ export async function readInventory(root: string): Promise<Map<string, string>> 
     if (fs.existsSync(path.join(root, file))) changed.push(file);
     else inventory.delete(file);
   }
-  if (changed.length > 0) {
-    const ids = await gitHashObjects(root, changed);
-    changed.forEach((file, i) => {
-      const id = ids?.[i];
-      if (id) inventory.set(file, id);
-      else inventory.delete(file);
-    });
+  const ids = await hashPaths(root, changed);
+  for (const file of changed) {
+    const id = ids.get(file);
+    if (id) inventory.set(file, id);
+    else inventory.delete(file);
+  }
+  const unhashed = changed.length - ids.size;
+  if (unhashed > 0) {
+    warn(
+      `git hash-object failed on ${unhashed} changed file${unhashed === 1 ? '' : 's'}: left out of the commit's inventory`,
+    );
   }
   return inventory;
 }

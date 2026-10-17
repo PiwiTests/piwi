@@ -2,12 +2,24 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseCoverageUploadArgs, splitUpload, uploadCoverage, type UploadPart } from '../src/cli/coverage.js';
-import { readInventory } from '../src/internal/coverage-upload/git-inventory.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  parseCoverageUploadArgs,
+  runCoverage,
+  splitUpload,
+  uploadCoverage,
+  type UploadPart,
+} from '../src/cli/coverage.js';
+import { hashPaths, readInventory } from '../src/internal/coverage-upload/git-inventory.js';
 import { expandPattern } from '../src/internal/coverage-upload/report-files.js';
-import { gitBlobId } from '../src/internal/collect/blob-ids.js';
+import { gitBlobId, gitHashObjects } from '../src/internal/collect/blob-ids.js';
+import type * as BlobIdsModule from '../src/internal/collect/blob-ids.js';
 import { jsonRes, startServerOnTestPort, textRes, type FakeServer } from './_helpers.js';
+
+vi.mock('../src/internal/collect/blob-ids.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof BlobIdsModule>();
+  return { ...actual, gitHashObjects: vi.fn(actual.gitHashObjects) };
+});
 
 const EMPTY_ENV = {} as NodeJS.ProcessEnv;
 
@@ -56,10 +68,22 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.mocked(gitHashObjects).mockReset();
   await server?.close();
   server = null;
   fs.rmSync(repo, { recursive: true, force: true });
 });
+
+/** A dashboard with project 7, `shop`, answering an upload with `upload`. */
+async function startDashboard(upload: Parameters<typeof startServerOnTestPort>[0]): Promise<FakeServer> {
+  return startServerOnTestPort((req, res) => {
+    if (req.url === '/api/projects/menu') jsonRes(res, 200, { items: [{ id: 7, name: 'shop' }] });
+    else if (req.url === '/api/projects/7') jsonRes(res, 200, { id: 7, coverageScope: null });
+    else if (req.url === '/api/projects/7/coverage-reports') upload(req, res);
+    else textRes(res, 404, 'not found');
+  });
+}
 
 describe('parseCoverageUploadArgs', () => {
   it('reads the patterns, the suite and the connection, flags before the environment', () => {
@@ -119,6 +143,35 @@ describe('readInventory', () => {
     expect(inventory.has('README.md')).toBe(false);
     expect(inventory.has('apps/web/coverage/lcov.info')).toBe(false);
   });
+
+  it('leaves out a changed file git cannot hash, and says so', async () => {
+    write('apps/web/src/idle.ts', 'export const x = 2;\n');
+    vi.mocked(gitHashObjects).mockResolvedValueOnce(null);
+    const warnings: string[] = [];
+    const inventory = await readInventory(repo, (message) => warnings.push(message));
+    expect(inventory.has('apps/web/src/idle.ts')).toBe(false);
+    expect(inventory.get('apps/web/src/cart.ts')).toBe(gitBlobId(Buffer.from(CART)));
+    expect(warnings).toEqual(["git hash-object failed on 1 changed file: left out of the commit's inventory"]);
+  });
+});
+
+describe('hashPaths', () => {
+  it('hashes the paths 500 at a time', async () => {
+    const paths = Array.from({ length: 1201 }, (_, i) => `gen/f${i}.ts`);
+    for (const [i, file] of paths.entries()) write(file, `export const n = ${i};\n`);
+    const ids = await hashPaths(repo, paths);
+    expect(vi.mocked(gitHashObjects).mock.calls.map(([, batch]) => batch.length)).toEqual([500, 500, 201]);
+    expect(ids.size).toBe(1201);
+    expect(ids.get('gen/f1200.ts')).toBe(gitBlobId(Buffer.from('export const n = 1200;\n')));
+  });
+
+  it('keeps the ids of the batches git hashes when another fails', async () => {
+    const paths = Array.from({ length: 501 }, (_, i) => `gen/f${i}.ts`);
+    for (const file of paths) write(file, 'x\n');
+    vi.mocked(gitHashObjects).mockResolvedValueOnce(null);
+    const ids = await hashPaths(repo, paths);
+    expect([...ids.keys()]).toEqual(['gen/f500.ts']);
+  });
 });
 
 describe('splitUpload', () => {
@@ -139,6 +192,26 @@ describe('splitUpload', () => {
 
   it('sends one request for an empty report', () => {
     expect(splitUpload(head, [], [])).toEqual([{ ...head, files: [] }]);
+  });
+
+  it('keeps the bytes of the files and the inventory of each request within 8 MB, multi-byte paths counted', () => {
+    const budget = 8 * 1024 * 1024;
+    const files = Array.from({ length: 4000 }, (_, i) => ({
+      path: `src/${'漢'.repeat(200)}${i}.ts`,
+      executable: [[1, 2]] as UploadPart['files'][number]['executable'],
+      lines: [],
+    }));
+    const inventory = Array.from(
+      { length: 50_000 },
+      (_, i) => [`src/${'字'.repeat(100)}${i}.ts`, 'b'.repeat(40)] as [string, string],
+    );
+    const parts = splitUpload(head, files, inventory);
+    for (const part of parts) {
+      expect(Buffer.byteLength(JSON.stringify(part))).toBeLessThan(budget + 1024);
+    }
+    expect(parts.length).toBeGreaterThan(2);
+    expect(parts.flatMap((part) => part.files)).toEqual(files);
+    expect(parts.flatMap((part) => part.inventory ?? [])).toEqual(inventory);
   });
 });
 
@@ -236,5 +309,80 @@ describe('uploadCoverage', () => {
       PIWI_PROJECT_NAME: 'shop',
     } as never);
     await expect(uploadCoverage(args, EMPTY_ENV, repo)).rejects.toThrow(/refused the upload \(403\): Insufficient/);
+  });
+});
+
+describe('runCoverage', () => {
+  let stdout: string[];
+  let stderr: string[];
+  const last = (lines: string[]) => lines[lines.length - 1];
+
+  beforeEach(() => {
+    stdout = [];
+    stderr = [];
+    vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => void stdout.push(parts.join(' ')));
+    vi.spyOn(console, 'error').mockImplementation((...parts: unknown[]) => void stderr.push(parts.join(' ')));
+  });
+
+  const upload = (...extra: string[]) => ['upload', 'apps/web/coverage/lcov.info', '--suite', 'unit-front', ...extra];
+
+  it('exits 0 on help, and 2 without a subcommand, on an unknown one or on bad arguments', async () => {
+    expect(await runCoverage(['--help'], EMPTY_ENV, repo)).toBe(0);
+    expect(await runCoverage([], EMPTY_ENV, repo)).toBe(2);
+    expect(await runCoverage(['download'], EMPTY_ENV, repo)).toBe(2);
+    expect(last(stderr)).toMatch(/unknown subcommand "download"/);
+    expect(await runCoverage(['upload', 'a.info'], EMPTY_ENV, repo)).toBe(2);
+    expect(last(stderr)).toMatch(/--suite names the suite/);
+  });
+
+  it('exits 0 on a dry run with files, and 1 with no report or no file of the checkout', async () => {
+    expect(await runCoverage(upload('--dry-run'), EMPTY_ENV, repo)).toBe(0);
+    expect(last(stdout)).toMatch(/^Would upload unit-front for [0-9a-f]{7} .*: 1 file from 1 report/);
+    expect(await runCoverage(['upload', 'missing.info', '--suite', 'unit', '--dry-run'], EMPTY_ENV, repo)).toBe(1);
+    expect(last(stderr)).toMatch(/no report matched/);
+    expect(await runCoverage(upload('--dry-run', '--root', 'apps'), EMPTY_ENV, repo)).toBe(1);
+    expect(last(stderr)).toMatch(/none of the 3 files/);
+  });
+
+  it('exits 0 once uploaded, and 2 when the dashboard refuses a part', async () => {
+    let status = 200;
+    server = await startDashboard((_req, res) => {
+      if (status === 200) jsonRes(res, 200, { stored: 1, report: { files: 1 } });
+      else textRes(res, status, 'Insufficient permissions');
+    });
+    const env = { PIWI_DASHBOARD_URL: server.url, PIWI_PROJECT_NAME: 'shop' } as never;
+    expect(await runCoverage(upload(), env, repo)).toBe(0);
+    expect(last(stdout)).toMatch(/^Uploaded unit-front/);
+    status = 403;
+    expect(await runCoverage(upload(), env, repo)).toBe(2);
+    expect(last(stderr)).toMatch(/refused the upload \(403\)/);
+  });
+
+  it('exits 2 and names the dashboard when a request fails on the network', async () => {
+    server = await startDashboard((req) => req.raw.socket.destroy());
+    const env = { PIWI_DASHBOARD_URL: server.url, PIWI_PROJECT_NAME: 'shop' } as never;
+    expect(await runCoverage(upload(), env, repo)).toBe(2);
+    expect(last(stderr)).toContain(`piwi coverage upload: Could not reach the dashboard at ${server.url}: `);
+  });
+
+  it('exits 2 outside a git checkout', async () => {
+    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-coverage-outside-')));
+    try {
+      expect(await runCoverage(upload('--dry-run'), EMPTY_ENV, outside)).toBe(2);
+      expect(last(stderr)).toMatch(/is not inside a git checkout/);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when git cannot hash an untracked file the reports name, and sends it without a blob', async () => {
+    write('apps/web/src/fresh.ts', 'export const fresh = true;\n');
+    write('apps/web/coverage/lcov.info', 'SF:src/fresh.ts\nDA:1,1\nend_of_record\n');
+    vi.mocked(gitHashObjects).mockResolvedValueOnce(null);
+    expect(await runCoverage(upload('--dry-run', '--json'), EMPTY_ENV, repo)).toBe(0);
+    expect(stderr).toEqual([
+      'piwi coverage upload: warning: git hash-object failed on 1 untracked file the reports name: sent without a blob id',
+    ]);
+    expect(JSON.parse(stdout.join('\n'))).toMatchObject({ files: 1 });
   });
 });

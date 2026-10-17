@@ -23,15 +23,15 @@ import {
   parseCoverageScope,
   type CoverageScope,
 } from '@piwitests/core/coverage-scope';
-import { gitHashObjects } from '../internal/collect/blob-ids.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
-import { readCheckout, readInventory } from '../internal/coverage-upload/git-inventory.js';
+import { hashPaths, readCheckout, readInventory } from '../internal/coverage-upload/git-inventory.js';
 import {
   expandPattern,
   readReport,
   resolveReport,
   type ResolvedReports,
 } from '../internal/coverage-upload/report-files.js';
+import { errorMessage } from '../internal/support/errors.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 
 const EXIT_OK = 0;
@@ -40,7 +40,7 @@ const EXIT_ERROR = 2;
 
 /** Files per request at most, under the dashboard's 20,000. */
 const FILES_PER_REQUEST = 5000;
-/** JSON bytes per request at most, under the dashboard's 16 MB. */
+/** Bytes of files and inventory entries per request at most, as UTF-8 JSON, under the dashboard's 16 MB. */
 const BYTES_PER_REQUEST = 8 * 1024 * 1024;
 /** Inventory entries per request at most, under the dashboard's 100,000. */
 const INVENTORY_PER_REQUEST = 50_000;
@@ -177,40 +177,46 @@ export interface UploadPart {
   }>;
 }
 
+/** The bytes one item of a part adds to its JSON body, its comma counted. */
+function jsonBytes(item: unknown): number {
+  return Buffer.byteLength(JSON.stringify(item)) + 1;
+}
+
 /**
- * The requests of an upload: the files in parts of at most 5,000 files and
- * 8 MB, the inventory in parts of at most 50,000 entries, carried by the first
- * parts (with no file when the inventory needs more parts than the files).
+ * The requests of an upload: each at most 5,000 files, 50,000 inventory
+ * entries and 8 MB of their JSON in bytes, files and inventory entries counted
+ * against the one budget. Each part takes the next files, then the next
+ * inventory entries in the room left, so the inventory rides with the first
+ * parts and goes on in parts with no file when it needs more.
  */
 export function splitUpload(
   head: Omit<UploadPart, 'files' | 'inventory'>,
   files: UploadPart['files'],
   inventory: Array<[string, string]>,
 ): UploadPart[] {
-  const fileParts: Array<UploadPart['files']> = [];
-  let part: UploadPart['files'] = [];
-  let bytes = 0;
-  for (const file of files) {
-    const size = JSON.stringify(file).length + 1;
-    if (part.length > 0 && (part.length >= FILES_PER_REQUEST || bytes + size > BYTES_PER_REQUEST)) {
-      fileParts.push(part);
-      part = [];
-      bytes = 0;
+  const parts: UploadPart[] = [];
+  let nextFile = 0;
+  let nextEntry = 0;
+  do {
+    const partFiles: UploadPart['files'] = [];
+    const partInventory: Array<[string, string]> = [];
+    let bytes = 0;
+    // The first item of a part always goes in, so every part makes progress.
+    const fits = (item: unknown) => {
+      const size = jsonBytes(item);
+      if (bytes > 0 && bytes + size > BYTES_PER_REQUEST) return false;
+      bytes += size;
+      return true;
+    };
+    while (nextFile < files.length && partFiles.length < FILES_PER_REQUEST && fits(files[nextFile])) {
+      partFiles.push(files[nextFile++]!);
     }
-    part.push(file);
-    bytes += size;
-  }
-  if (part.length > 0) fileParts.push(part);
-  const inventoryParts: Array<Array<[string, string]>> = [];
-  for (let i = 0; i < inventory.length; i += INVENTORY_PER_REQUEST) {
-    inventoryParts.push(inventory.slice(i, i + INVENTORY_PER_REQUEST));
-  }
-  const count = Math.max(fileParts.length, inventoryParts.length, 1);
-  return Array.from({ length: count }, (_, i) => ({
-    ...head,
-    ...(inventoryParts[i] ? { inventory: inventoryParts[i] } : {}),
-    files: fileParts[i] ?? [],
-  }));
+    while (nextEntry < inventory.length && partInventory.length < INVENTORY_PER_REQUEST && fits(inventory[nextEntry])) {
+      partInventory.push(inventory[nextEntry++]!);
+    }
+    parts.push({ ...head, ...(partInventory.length > 0 ? { inventory: partInventory } : {}), files: partFiles });
+  } while (nextFile < files.length || nextEntry < inventory.length);
+  return parts;
 }
 
 /** What an upload came to, as the summary prints it. */
@@ -261,11 +267,17 @@ async function fetchScope(args: CoverageUploadArgs, projectId: number): Promise<
   return (raw ? parseCoverageScope(raw) : null) ?? DEFAULT_COVERAGE_SCOPE;
 }
 
-/** Read, resolve and send an upload; resolves with the summary. */
+/** A warning, on stderr. */
+function warnOnStderr(message: string): void {
+  console.error(`piwi coverage upload: warning: ${message}`);
+}
+
+/** Read, resolve and send an upload; resolves with the summary, and tells `warn` what it had to leave out. */
 export async function uploadCoverage(
   args: CoverageUploadArgs,
   env: NodeJS.ProcessEnv,
   cwd: string,
+  warn: (message: string) => void = warnOnStderr,
 ): Promise<{ summary: UploadSummary; code: number }> {
   const checkout = await readCheckout(cwd);
   const projectId = args.dryRun
@@ -276,7 +288,7 @@ export async function uploadCoverage(
   const branch = args.branch ?? resolveScmBranch(env, checkout.gitBranch) ?? null;
 
   const reports = [...new Set(args.patterns.flatMap((pattern) => expandPattern(pattern, cwd)))];
-  const inventory = await readInventory(checkout.root);
+  const inventory = await readInventory(checkout.root, warn);
   const resolved: ResolvedReports = { files: new Map(), unmatched: [], outOfScope: 0 };
   const formats = new Set<string>();
   for (const report of reports) {
@@ -287,12 +299,12 @@ export async function uploadCoverage(
 
   // A file the checkout holds but does not track (generated, not yet added) is named by the blob of its content.
   const untracked = [...resolved.files.keys()].filter((file) => !inventory.has(file));
-  const hashed = new Map<string, string>();
-  if (untracked.length > 0) {
-    const ids = await gitHashObjects(checkout.root, untracked);
-    untracked.forEach((file, i) => {
-      if (ids?.[i]) hashed.set(file, ids[i]!);
-    });
+  const hashed = await hashPaths(checkout.root, untracked);
+  if (hashed.size < untracked.length) {
+    const unhashed = untracked.length - hashed.size;
+    warn(
+      `git hash-object failed on ${unhashed} untracked file${unhashed === 1 ? '' : 's'} the reports name: sent without a blob id`,
+    );
   }
   const files: UploadPart['files'] = [...resolved.files.values()]
     .sort((a, b) => (a.path < b.path ? -1 : 1))
@@ -355,8 +367,23 @@ export async function uploadCoverage(
   return { summary, code: EXIT_OK };
 }
 
+/** The message of an upload's failure; a network failure says which dashboard could not be reached. */
+function failureMessage(error: unknown, args: CoverageUploadArgs): string {
+  // `fetch` rejects with a TypeError whose cause is the network error.
+  const cause =
+    error instanceof TypeError ? (error as { cause?: { message?: string; code?: string } }).cause : undefined;
+  if (cause) {
+    return `Could not reach the dashboard at ${args.serverUrl}: ${cause.message || cause.code || errorMessage(error)}`;
+  }
+  return errorMessage(error);
+}
+
 /** `piwi coverage <subcommand>`. */
-export async function runCoverage(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+export async function runCoverage(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): Promise<number> {
   const [subcommand, ...rest] = argv;
   if (
     subcommand === undefined ||
@@ -376,11 +403,11 @@ export async function runCoverage(argv: string[], env: NodeJS.ProcessEnv = proce
   try {
     args = parseCoverageUploadArgs(rest, env);
   } catch (error) {
-    console.error(`piwi coverage upload: ${(error as Error).message}`);
+    console.error(`piwi coverage upload: ${errorMessage(error)}`);
     return EXIT_ERROR;
   }
   try {
-    const { summary, code } = await uploadCoverage(args, env, process.cwd());
+    const { summary, code } = await uploadCoverage(args, env, cwd);
     if (args.json) console.log(JSON.stringify(summary, null, 2));
     else if (summary.reports.length === 0) console.error('piwi coverage upload: no report matched the files named');
     else if (summary.files === 0) {
@@ -390,7 +417,7 @@ export async function runCoverage(argv: string[], env: NodeJS.ProcessEnv = proce
     } else console.log(formatSummary(summary, args.dryRun));
     return code;
   } catch (error) {
-    console.error(`piwi coverage upload: ${(error as Error).message}`);
+    console.error(`piwi coverage upload: ${failureMessage(error, args)}`);
     return EXIT_ERROR;
   }
 }
