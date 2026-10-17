@@ -3855,7 +3855,7 @@ const SCENES = [
     route: `/projects/${COVERAGE_SCENE_PROJECT}/coverage`,
     viewport: { width: 1280, height: 1100 },
     async run({ page, settle, shoot }) {
-      await page.locator('[data-testid="coverage-entries"]').waitFor({ timeout: 60_000 });
+      await page.locator('[data-testid="coverage-tree"] [data-entry]').first().waitFor({ timeout: 60_000 });
       await settle();
       await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad: 12 });
     },

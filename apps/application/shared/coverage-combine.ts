@@ -406,3 +406,56 @@ export function leastCoveredFiles(
     .sort((a, b) => b.unrunLines - a.unrunLines || share(a) - share(b) || (a.path < b.path ? -1 : 1))
     .slice(0, limit);
 }
+
+/** One child of a folder in the coverage tree: its counts, its lines no suite ran, and its files without data. */
+export interface TreeEntry extends FolderEntry {
+  /** Executable lines no suite ran, the undetermined ones not counted. */
+  unrunLines: number;
+  /** Tracked files in scope under it that no suite names; 1 for such a file itself. */
+  filesWithoutData: number;
+  /** A file no suite names: it has no lines to count. */
+  noData: boolean;
+}
+
+/**
+ * The children of `folder` in the coverage tree: the folders and files of
+ * the combined coverage, each with its counts, and the files without
+ * coverage data in place, each under its folder. Folders first, then files,
+ * by path.
+ */
+export function coverageTreeLevel(files: CombinedFile[], withoutData: string[], folder: string): TreeEntry[] {
+  const prefix = folder ? `${folder.replace(/\/+$/, '')}/` : '';
+  const entries = new Map<string, TreeEntry>(
+    folderBreakdown(files, folder).map((e) => [
+      e.path,
+      {
+        ...e,
+        unrunLines: e.executableLines - e.executedLines - e.undeterminedLines,
+        filesWithoutData: 0,
+        noData: false,
+      },
+    ]),
+  );
+  for (const path of withoutData) {
+    if (!path.startsWith(prefix)) continue;
+    const rest = path.slice(prefix.length);
+    const slash = rest.indexOf('/');
+    const childPath = prefix + (slash < 0 ? rest : rest.slice(0, slash));
+    const known = entries.get(childPath);
+    if (known) known.filesWithoutData++;
+    else {
+      entries.set(childPath, {
+        ...emptyCounts(),
+        path: childPath,
+        kind: slash < 0 ? 'file' : 'folder',
+        unrunLines: 0,
+        filesWithoutData: 1,
+        noData: slash < 0,
+      });
+    }
+  }
+  return [...entries.values()].sort(
+    (a, b) =>
+      (a.kind === b.kind ? 0 : a.kind === 'folder' ? -1 : 1) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+  );
+}

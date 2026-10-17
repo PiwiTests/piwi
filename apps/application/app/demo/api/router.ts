@@ -88,6 +88,7 @@ import {
 import {
   exportCommitCoverage,
   getCoverageSummary,
+  getCoverageTree,
   recountProjectCoverage,
   invalidateCommitCoverage,
   parseCoverageExportFormat,
@@ -1223,6 +1224,24 @@ const routes: RouteEntry[] = [
       const summary = await getCoverageSummary(await getDemoDb(), +m[1]!, parsed);
       if (!summary) throw demoHttpError(404, 'No coverage for this commit');
       return summary;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/coverage-tree$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = parseCoverageSummaryQuery(
+        q?.get('commit'),
+        q?.get('branch'),
+        q?.get('folder'),
+        undefined,
+        q?.get('area'),
+      );
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const tree = await getCoverageTree(await getDemoDb(), +m[1]!, parsed);
+      if (!tree) throw demoHttpError(404, 'No coverage for this commit');
+      return tree;
     },
   },
   {

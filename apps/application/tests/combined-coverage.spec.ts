@@ -105,12 +105,19 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
   ).toBe(400);
 
   await page.goto(`/projects/${projectId}/coverage`);
-  await expect(page.locator('[data-area="api"]')).toContainText('83.3% of lines · unit-back 50.0% · e2e 33.3%');
-  await expect(page.getByTestId('coverage-totals')).toContainText('83.3% of 6 executable lines ran, across 2 suites.');
+  // The first visit compiles the page on a dev server: give it time.
+  await expect(page.getByTestId('coverage-totals')).toContainText('83.3% of 6 executable lines ran, across 2 suites.', {
+    timeout: 30_000,
+  });
+  await expect(page.locator('[data-area="api"]')).toContainText('83.3%');
+  await expect(page.locator('[data-area="api"]')).toContainText('unit-back 50.0% · e2e 33.3%');
   await expect(page.getByTestId('coverage-suites').locator('[data-suite]')).toHaveCount(2);
-  await page.getByRole('link', { name: 'src/', exact: true }).click();
+  await page.getByTestId('coverage-tree').getByRole('button', { name: 'src/', exact: true }).click();
   await expect(page).toHaveURL(/folder=src/);
   await expect(page.locator('[data-entry="src/Shop.cs"]')).toContainText('83.3%');
+  // The tree shows the file no suite names, greyed, and the folder's suites beside it.
+  await expect(page.locator('[data-entry="src/Idle.cs"]')).toContainText('no coverage data');
+  await expect(page.getByTestId('coverage-folder-totals')).toHaveText('83.3% of 6 lines ran · 1 no suite ran.');
 
   // Line 8 ran in no suite: the file leads the least-covered list, and its view steps to that gap.
   await expect(page.locator('[data-least-covered="src/Shop.cs"]')).toContainText('1 line no suite ran');
@@ -122,5 +129,7 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
   await expect(page.getByTestId('coverage-file-combined')).toContainText('No suite ran line 8.');
 
   await page.goto(`/test-runs/${runId}`);
-  await expect(page.getByTestId('run-coverage-fact')).toHaveText(/Coverage 83\.3% of 6 lines\s*· 2 suites/);
+  await expect(page.getByTestId('run-coverage-fact')).toHaveText(/Coverage 83\.3% of 6 lines\s*· 2 suites/, {
+    timeout: 30_000,
+  });
 });

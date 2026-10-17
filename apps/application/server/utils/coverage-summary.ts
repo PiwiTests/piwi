@@ -11,9 +11,12 @@ import { writeCobertura, writeLcov } from '@piwitests/core/coverage-writers';
 import { runCoverage, testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import {
+  areaCoverage,
   coveragePercent,
+  coverageTreeLevel,
   folderBreakdown,
   leastCoveredFiles,
+  type TreeEntry,
   type CombinedFile,
   type CoverageCounts,
   type CoverageSuiteKind,
@@ -69,6 +72,11 @@ export interface CoverageSummary {
   area: string | null;
   /** The folder broken down ('' for the repository root) and its direct children. */
   folder: string;
+  /** The folder's own totals, in the area when one is given, and each suite's share of its lines. */
+  folderTotals: CoverageRatios & {
+    unrunLines: number;
+    suites: Array<CoverageRatios & { name: string; kind: CoverageSuiteKind }>;
+  };
   entries: Array<FolderEntry & CoverageRatios>;
   /** The folder's files with the most lines no suite ran, the most first, at most 20. */
   leastCovered: Array<FolderEntry & CoverageRatios & { unrunLines: number }>;
@@ -245,6 +253,53 @@ export async function exportCommitCoverage(
       };
 }
 
+/** A folder's totals over `files` ('' for every file), and each suite's share of its lines. */
+function folderTotalsOf(
+  files: CommitCoverage['combined']['files'],
+  suites: CommitCoverage['combined']['suites'],
+  folder: string,
+): CoverageSummary['folderTotals'] {
+  const prefix = folder ? `${folder}/` : '';
+  const [totals] = areaCoverage({ files, suites }, ['folder'], (path) => (path.startsWith(prefix) ? 'folder' : null));
+  return {
+    ...ratios(totals!.totals),
+    unrunLines: totals!.totals.executableLines - totals!.totals.executedLines - totals!.totals.undeterminedLines,
+    suites: totals!.suites.map((s) => ({ ...ratios(s), name: s.name, kind: s.kind })),
+  };
+}
+
+/** One level of a commit's coverage tree: the children of a folder, in the area when one is given. */
+export interface CoverageTree {
+  commit: string;
+  folder: string;
+  area: string | null;
+  entries: Array<TreeEntry & CoverageRatios>;
+}
+
+/**
+ * The children of a folder in the coverage tree, each with its counts, its
+ * lines no suite ran and its files without data, at a commit (or the newest
+ * with coverage on the branch). Null when there is no coverage.
+ */
+export async function getCoverageTree(
+  db: DrizzleDB,
+  projectId: number,
+  query: CoverageSummaryQuery,
+): Promise<CoverageTree | null> {
+  const coverage = await queriedCommitCoverage(db, projectId, query);
+  if (!coverage) return null;
+  const area = query.area && coverage.areas.some((a) => a.name === query.area) ? query.area : null;
+  const inArea = (path: string) => area === null || coverage.areaOf(path) === area;
+  const files = coverage.combined.files.filter((f) => inArea(f.path));
+  const withoutData = (coverage.combined.filesWithoutData ?? []).filter(inArea);
+  return {
+    commit: coverage.commit,
+    folder: query.folder,
+    area,
+    entries: coverageTreeLevel(files, withoutData, query.folder).map((e) => ratios(e)),
+  };
+}
+
 /**
  * A project's combined coverage at a commit, or at the newest commit with
  * coverage on the branch. Null when there is none.
@@ -280,6 +335,7 @@ export async function getCoverageSummary(
     })),
     area,
     folder: query.folder,
+    folderTotals: folderTotalsOf(files, combined.suites, query.folder),
     entries: folderBreakdown(files, query.folder).map((e) => ratios(e)),
     leastCovered: leastCoveredFiles(files, query.folder, LEAST_COVERED_FILES).map((e) => ratios(e)),
     ...(query.file ? { file: combined.files.find((f) => f.path === query.file) ?? null } : {}),

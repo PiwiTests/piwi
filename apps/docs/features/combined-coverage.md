@@ -93,7 +93,7 @@ totals are recomputed a few seconds after each upload and each run coverage of t
   version of the file; otherwise the reports' own. A line a tool marks outside them is ignored.
 - **Undetermined lines.** The browser suite records functions, not lines. An unrun line inside a function it ran is
   undetermined: shown beside the ratio, never counted as run.
-- **Functions** count across suites by their start line: one ran when any suite ran a function starting there.
+- **Functions** count across suites by start line: one ran when any suite ran a function starting there.
 - **Classes of lines.** Each executable line is unit only, end to end only, both, none, or undetermined. "End to end
   only" is what the Playwright suite alone protects; "unit only" is code no user path reaches in the tests.
 - **Files without coverage data** are the commit's tracked files in scope that no suite names, from the upload's
@@ -111,11 +111,12 @@ header links its commit's.
 
 ## Find what is not covered
 
-The coverage page's **Least covered** list names the files of the folder with the most lines no suite ran. A file
-opens on its source, read through the [source control](/guide/source-control) connection, each line marked by the
-suites that ran it: both kinds, unit only, end to end only, none, or undetermined. **Next gap** jumps to the next lines
-no suite ran and names the function around them; a file the Playwright tests also recorded switches between marks
-**by tests** and **by suites**. Without a connection, the lines show as numbers.
+Every bar on the coverage page splits lines as a file's marks do: both kinds of suite, unit only, end to end only,
+undetermined, and the empty track for none. **Files** is a foldable tree of the repository, each folder and file with
+its bar, sorted by name or lines not run, files without data greyed. Beside it, the selected
+folder's suites and least-covered files. A file opens on its source, through the
+[source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next gap** jumps to
+the next lines none ran.
 
 ## In pull requests
 
@@ -129,8 +130,8 @@ of counts as reached, so a file only a unit test covers is no longer reported as
 The **Coverage trend** [Analytics widget](./analytics) charts the combined line coverage per day, summed over the
 projects in scope, with each suite's share as a dashed line and the change against the comparison period; the engineering
 [quality report](./quality-reports) gives it as one line, "Line coverage: 61.2% (+1.4 pts)". Each project counts at
-its newest commit with coverage on or before each day, on the default branch unless the scope names branches. The
-numbers are kept per day, so the trend outlives the reports' retention.
+its newest commit with coverage by each day, on the default branch unless the scope names branches. Kept per
+day, the trend outlives the reports' retention.
 
 ## Export
 

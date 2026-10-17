@@ -40,7 +40,14 @@ import {
   testsOnLines,
 } from '~/utils/file-coverage';
 import { lineRangesText } from '~/utils/suspect-lines';
-import { enclosingFunction, formatCount, formatPercent, gapSteps, suitesOnLines } from '~/utils/combined-coverage';
+import {
+  enclosingFunction,
+  folderTrail,
+  formatCount,
+  formatPercent,
+  gapSteps,
+  suitesOnLines,
+} from '~/utils/combined-coverage';
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 
 type SourceResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/source.get').default>;
@@ -132,6 +139,20 @@ const combinedFileSentence = computed(() => {
   const { unitOnly, e2eOnly, both } = at.classes;
   return `With every suite at ${summary.value.commit.slice(0, 7)}: ${ran} of its ${formatCount(executable)} lines ran — unit only ${formatCount(countLines(unitOnly))}, end to end only ${formatCount(countLines(e2eOnly))}, both ${formatCount(countLines(both))}.`;
 });
+/** The file's lines by class, for its bar. */
+const combinedCounts = computed(() => {
+  const at = combinedFile.value;
+  if (!at) return null;
+  return {
+    executableLines: countLines(at.executable),
+    bothLines: countLines(at.classes.both),
+    unitOnlyLines: countLines(at.classes.unitOnly),
+    e2eOnlyLines: countLines(at.classes.e2eOnly),
+    undeterminedLines: countLines(at.classes.undetermined),
+  };
+});
+/** The file's folders, each a link to the explorer at that folder. */
+const fileTrail = computed(() => folderTrail(file.value.split('/').slice(0, -1).join('/')));
 const selectionSuites = computed(() =>
   combinedFile.value && selection.value ? suitesOnLines(combinedFile.value.bySuite, selection.value) : null,
 );
@@ -350,6 +371,17 @@ const nearestSentence = computed(() => {
         <template v-else>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0 space-y-1">
+              <nav class="flex flex-wrap items-center gap-1 text-xs text-muted" aria-label="Folder">
+                <NuxtLink :to="`/projects/${projectId}/coverage`" class="hover:underline">Repository</NuxtLink>
+                <template v-for="part in fileTrail" :key="part.path">
+                  <span>/</span>
+                  <NuxtLink
+                    :to="{ path: `/projects/${projectId}/coverage`, query: { folder: part.path } }"
+                    class="font-mono hover:underline"
+                    >{{ part.name }}</NuxtLink
+                  >
+                </template>
+              </nav>
               <p class="text-sm text-highlighted break-words" data-testid="coverage-file-path">
                 <OpenInIdeLink
                   :file-path="shownPath ?? file"
@@ -376,6 +408,7 @@ const nearestSentence = computed(() => {
                   {{ selectionSuitesSentence }}
                 </template>
               </p>
+              <CoverageBar v-if="combinedCounts && marks === 'suites'" :counts="combinedCounts" class="max-w-md" />
               <p class="text-xs text-muted inline-flex flex-wrap items-center gap-x-1">
                 <span v-if="marks === 'suites'">Marked by the suites that ran each line</span>
                 <template v-else-if="version">

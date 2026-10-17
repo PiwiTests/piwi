@@ -115,12 +115,10 @@ function classOf(line: number): LineClassKind | null {
   return null;
 }
 
-/** The classes the file's lines fall in, in the legend's order. */
+/** The classes the file's lines fall in, which the legend keeps to. */
 const classLegend = computed(() => {
   const present = new Set(rows.value.map((r) => r.kind));
-  return (Object.keys(LINE_CLASS_MARKS) as LineClassKind[])
-    .filter((kind) => present.has(kind))
-    .map((kind) => ({ kind, ...LINE_CLASS_MARKS[kind] }));
+  return (Object.keys(LINE_CLASS_MARKS) as LineClassKind[]).filter((kind) => present.has(kind));
 });
 
 function rowTitle(row: (typeof rows.value)[number]): string | undefined {
@@ -192,12 +190,7 @@ defineExpose({ reveal });
     </p>
 
     <template v-if="content !== null">
-      <p v-if="classes" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted" data-class-legend>
-        <span v-for="item in classLegend" :key="item.kind" class="inline-flex items-center gap-1.5">
-          <span class="inline-block h-3 w-[3px]" :class="item.swatch" aria-hidden="true" />{{ item.title }}
-        </span>
-        <HelpHint topic="coverage.combined-marks" />
-      </p>
+      <CoverageClassLegend v-if="classes" :kinds="classLegend" />
       <p v-else class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span class="inline-flex items-center gap-1.5">
           <span class="inline-block h-3 w-[3px] bg-coverage-run" aria-hidden="true" />{{ executedTitle }}

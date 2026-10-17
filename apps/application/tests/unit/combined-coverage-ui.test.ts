@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { combineCoverage, leastCoveredFiles, type SuiteFile } from '#shared/coverage-combine';
+import { combineCoverage, coverageTreeLevel, leastCoveredFiles, type SuiteFile } from '#shared/coverage-combine';
 import { enclosingFunction, gapSteps } from '~/utils/combined-coverage';
 
 const BLOB = 'a'.repeat(40);
@@ -78,5 +78,45 @@ describe('leastCoveredFiles', () => {
 
   test('keeps to a folder and a limit', () => {
     expect(leastCoveredFiles(combined.files, 'src', 1).map((f) => f.path)).toEqual(['src/a.ts']);
+  });
+});
+
+describe('coverageTreeLevel', () => {
+  const combined = combineCoverage({
+    inventory: null,
+    inScope: () => true,
+    spanTable: new Map(),
+    suites: [
+      {
+        name: 'unit',
+        kind: 'unit',
+        files: [file('src/a.ts', [[1, 10]], [[1, 4]]), file('src/lib/b.ts', [[1, 4]], [[1, 4]])],
+      },
+    ],
+  });
+  const withoutData = ['src/idle.ts', 'src/lib/old.ts', 'src/docs/readme.md'];
+
+  test('lists a folder’s children with their lines not run, and the files no suite names in place', () => {
+    expect(
+      coverageTreeLevel(combined.files, withoutData, 'src').map((e) => [
+        e.path,
+        e.kind,
+        e.executableLines,
+        e.unrunLines,
+        e.filesWithoutData,
+        e.noData,
+      ]),
+    ).toEqual([
+      ['src/docs', 'folder', 0, 0, 1, false],
+      ['src/lib', 'folder', 4, 0, 1, false],
+      ['src/a.ts', 'file', 10, 6, 0, false],
+      ['src/idle.ts', 'file', 0, 0, 1, true],
+    ]);
+  });
+
+  test('starts from the repository root', () => {
+    expect(coverageTreeLevel(combined.files, withoutData, '').map((e) => [e.path, e.filesWithoutData])).toEqual([
+      ['src', 3],
+    ]);
   });
 });
