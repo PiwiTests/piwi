@@ -358,6 +358,20 @@ describe('runCoverage', () => {
     expect(last(stderr)).toMatch(/refused the upload \(403\)/);
   });
 
+  it('says in one line when a newer commit superseded the commit, and still exits 0', async () => {
+    const newer = 'f'.repeat(40);
+    server = await startDashboard((_req, res) =>
+      jsonRes(res, 200, { stored: 1, report: { files: 1 }, superseded: { by: newer } }),
+    );
+    const env = { PIWI_DASHBOARD_URL: server.url, PIWI_PROJECT_NAME: 'shop' } as never;
+    expect(await runCoverage(upload(), env, repo)).toBe(0);
+    const printed = last(stdout)!.split('\n');
+    expect(printed[0]).toMatch(/^Uploaded unit-front/);
+    expect(printed.filter((line) => /superseded/.test(line))).toEqual([
+      `${git('rev-parse', 'HEAD').slice(0, 7)} was superseded by fffffff on its branch: the dashboard keeps its totals as they were and drops this upload.`,
+    ]);
+  });
+
   it('exits 2 and names the dashboard when a request fails on the network', async () => {
     server = await startDashboard((req) => req.raw.socket.destroy());
     const env = { PIWI_DASHBOARD_URL: server.url, PIWI_PROJECT_NAME: 'shop' } as never;

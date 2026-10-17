@@ -232,6 +232,8 @@ export interface UploadSummary {
   requests: number;
   /** The report on the dashboard once uploaded: its files across every part so far. */
   reportFiles?: number;
+  /** Set when a newer commit superseded this one: the dashboard kept the upload out of its totals. */
+  supersededBy?: string | null;
 }
 
 function formatSummary(summary: UploadSummary, dryRun: boolean): string {
@@ -251,6 +253,12 @@ function formatSummary(summary: UploadSummary, dryRun: boolean): string {
     );
   }
   if (summary.outOfScope > 0) lines.push(`${summary.outOfScope} files are outside the project's coverage scope.`);
+  if (summary.supersededBy !== undefined) {
+    const by = summary.supersededBy ? ` ${summary.supersededBy.slice(0, 7)}` : ' a newer commit';
+    lines.push(
+      `${summary.commit.slice(0, 7)} was superseded by${by} on its branch: the dashboard keeps its totals as they were and drops this upload.`,
+    );
+  }
   return lines.join('\n');
 }
 
@@ -361,8 +369,9 @@ export async function uploadCoverage(
       const text = await res.text().catch(() => '');
       throw new Error(`The dashboard refused the upload (${res.status})${text ? `: ${text.slice(0, 400)}` : ''}`);
     }
-    const answer = (await res.json()) as { report?: { files?: number } };
+    const answer = (await res.json()) as { report?: { files?: number }; superseded?: { by?: string | null } };
     if (typeof answer.report?.files === 'number') summary.reportFiles = answer.report.files;
+    if (answer.superseded) summary.supersededBy = answer.superseded.by ?? null;
   }
   return { summary, code: EXIT_OK };
 }

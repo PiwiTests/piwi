@@ -145,7 +145,8 @@ Upload another tool's coverage report of a commit to the dashboard, for [combine
 the unit tests of a front end or a back end, from Cobertura or LCOV. The command reads each report as a stream,
 resolves its paths against the checkout, keeps the files in the project's coverage scope and sends paths, line numbers
 and git blob ids, with the commit's tracked files in scope. Uploads of one commit and suite merge, so shards upload
-separately.
+separately. When a newer commit has superseded this one on its branch (a CI job run again), the upload
+still exits `0`, the summary says so in one line, and the dashboard keeps the commit's totals as they were.
 
 ```bash
 npx @piwitests/reporter coverage upload "**/coverage.cobertura.xml" --suite unit-back
