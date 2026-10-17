@@ -7,7 +7,7 @@
     <!-- The recorder is never instrumented, even when a build passes -p:Instrument=TestCoverage. -->
     <Instrument></Instrument>
     <PackageId>PiwiTests.Instrumentation.Coverage</PackageId>
-    <Version>0.54.0</Version> <!-- x-release-please-version -->
+    <Version>0.55.0</Version> <!-- x-release-please-version -->
     <Description>Per-test server code coverage for Piwi Dashboard: records which code each HTTP request executed in a build compiled with -p:PiwiCoverage=true, no ASP.NET Core dependency</Description>
     <Authors>piwitests</Authors>
     <RepositoryUrl>https://github.com/PiwiTests/platform</RepositoryUrl>
