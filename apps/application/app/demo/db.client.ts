@@ -23,7 +23,7 @@ import { backfillUnindexedProjects } from '~~/server/utils/locator-usages';
 import { getAppSetting, setAppSetting } from '~~/server/utils/app-settings';
 import { backfillDailyRollups, ROLLUPS_BACKFILLED_SETTING } from '#shared/handlers/analytics/rollups';
 import { seedDemoReports } from './report-seed';
-import { storeCommitTotals } from '~~/server/utils/coverage-totals';
+import { pruneSupersededReports, storeCommitTotals } from '~~/server/utils/coverage-totals';
 
 /** Set once the demo computed the combined coverage of its seeded commits. */
 const COVERAGE_TOTALS_SETTING = 'demo_coverage_totals_computed';
@@ -320,12 +320,15 @@ async function initialize(): Promise<void> {
 
   // The combined coverage of each seeded commit with uploaded reports, as the
   // upload computes it on the server: the trend's point of the day it arrived.
+  // Then a branch's superseded reports go, as they do once a newer commit's
+  // totals are stored, and the earlier commits keep only their totals.
   await (async () => {
     if (await getAppSetting(drizzleDb as any, COVERAGE_TOTALS_SETTING)) return;
     const commits = await drizzleDb!
       .selectDistinct({ projectId: schema.coverageReports.projectId, commit: schema.coverageReports.commit })
       .from(schema.coverageReports);
     for (const { projectId, commit } of commits) await storeCommitTotals(drizzleDb as any, projectId, commit);
+    await pruneSupersededReports(drizzleDb as any);
     await setAppSetting(drizzleDb as any, COVERAGE_TOTALS_SETTING, new Date().toISOString());
   })().catch((e) => console.warn('[Demo DB] could not compute the coverage totals', e));
 }

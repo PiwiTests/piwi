@@ -939,6 +939,7 @@ const EXPECT_KEYS = new Set([
   'coverage',
   'fileCoverage',
   'combinedCoverage',
+  'supersededCoverage',
   'insight',
 ]);
 const ROUTE_ENTITIES = [
@@ -1141,6 +1142,22 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
     expect([...inventory].filter((p) => !named.has(p)).length, `${label}: files without coverage data`).toBe(
       want.combinedCoverage.filesWithoutData,
     );
+  }
+  if (want.supersededCoverage) {
+    expect(want.project, `${label}: supersededCoverage needs a project`).toBeTruthy();
+    const { branch, carried } = want.supersededCoverage;
+    const rows = q(
+      `select commit_sha as sha, suite, created_at as at from coverage_reports where project_id = ${want.project!.id} and branch = '${branch}' order by created_at desc, id desc`,
+    );
+    const commits = [...new Set(rows.map((r) => String(r.sha)))];
+    expect(commits.length, `${label}: commits with reports on ${branch}`).toBeGreaterThanOrEqual(2);
+    const suitesOf = (sha: string) => new Set(rows.filter((r) => r.sha === sha).map((r) => String(r.suite)));
+    const [newer, older] = [suitesOf(commits[0]!), suitesOf(commits[1]!)];
+    expect(
+      [...newer].some((suite) => older.has(suite)),
+      `${label}: the newer commit supersedes a report`,
+    ).toBe(true);
+    expect(older.has(carried) && !newer.has(carried), `${label}: ${carried} is the older commit's alone`).toBe(true);
   }
   if (want.fileCoverage) {
     expect(want.project, `${label}: fileCoverage needs a project`).toBeTruthy();

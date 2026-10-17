@@ -4012,6 +4012,9 @@ function pushCoverageDaily(story, run, daySec, suite, area, executable, executed
   });
 }
 
+/** Two pushes of the covered project's `develop` branch, before its covered commit, with unit-test reports only. */
+const DEVELOP_COMMITS = ['e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e', 'f2e3d4c5b6a7988796a5b4c3d2e1f0a9b8c7d6e5'];
+
 /**
  * The unit tests of the commit a story's run coverage was recorded at, as
  * `piwi coverage upload` would send them: the back end's tests (coverlet)
@@ -4019,6 +4022,11 @@ function pushCoverageDaily(story, run, daySec, suite, area, executable, executed
  * front end's (Vitest) ran part of each browser file, whose version the
  * commit's inventory names. Two more tracked files no suite names are the
  * files without coverage data.
+ *
+ * Two pushes of `develop` came before it: the first uploaded both suites, the
+ * second the front end's only. When the demo computes the totals, the second
+ * push's report supersedes the first's front-end report and carries its
+ * back-end one forward, so the first push keeps only its totals.
  */
 function seedCoverageReports(story, run, fragmentIdOf) {
   const project = PROJECTS.find((p) => p.id === story.projectId);
@@ -4092,16 +4100,13 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     size: content.length,
     created_at: run.start_time,
   });
-  for (const [suite, tool, files] of [
-    ['unit-back', 'cobertura', back],
-    ['unit-front', 'lcov', front],
-  ]) {
+  const pushReport = (commit, reportBranch, suite, tool, files, at) => {
     const id = COVERAGE_REPORTS.length + 1;
     COVERAGE_REPORTS.push({
       id,
       project_id: story.projectId,
-      commit_sha: run.commit_sha,
-      branch,
+      commit_sha: commit,
+      branch: reportBranch,
       suite,
       kind: 'unit',
       tool,
@@ -4109,18 +4114,31 @@ function seedCoverageReports(story, run, fragmentIdOf) {
       file_count: files.length,
       inventory_payload_id: inventoryId,
       inventory_count: inventory.length,
-      created_at: run.start_time,
-      updated_at: run.start_time,
+      created_at: at,
+      updated_at: at,
     });
     for (const file of files) {
       COVERAGE_REPORT_FILES.push({
         id: COVERAGE_REPORT_FILES.length + 1,
         report_id: id,
         path: file.path,
-        fragment_id: fragmentIdOf(story.projectId, file, run.start_time),
+        fragment_id: fragmentIdOf(story.projectId, file, at),
       });
     }
-  }
+  };
+  // The second push of develop ran more of the front end.
+  const frontLater = front.map((file) => ({
+    ...file,
+    lines: [
+      [3, 14],
+      [18, 22],
+    ],
+  }));
+  pushReport(run.commit_sha, branch, 'unit-back', 'cobertura', back, run.start_time);
+  pushReport(run.commit_sha, branch, 'unit-front', 'lcov', front, run.start_time);
+  pushReport(DEVELOP_COMMITS[0], 'develop', 'unit-back', 'cobertura', back, run.start_time - 2 * 86400);
+  pushReport(DEVELOP_COMMITS[0], 'develop', 'unit-front', 'lcov', front, run.start_time - 2 * 86400);
+  pushReport(DEVELOP_COMMITS[1], 'develop', 'unit-front', 'lcov', frontLater, run.start_time - 86400);
 }
 {
   const ranges = (list) =>
