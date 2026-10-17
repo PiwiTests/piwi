@@ -47,16 +47,12 @@ const legend = computed(() => [
   ...(trend.value?.series ?? []).map((suite, i) => ({ color: suiteColor(i), label: suite.name })),
 ]);
 
+// The change sits in the subtitle: the legend can name as many lines as there are suites or areas.
 const subtitle = computed(() => {
   const t = trend.value;
   if (!t || t.linePercent === null) return undefined;
-  return `${formatPercent(t.linePercent)} of ${formatCount(t.executableLines)} lines`;
-});
-
-const deltaText = computed(() => {
-  const d = trend.value?.delta;
-  if (d === null || d === undefined) return null;
-  return `${d > 0 ? '+' : ''}${d} pts vs previous period`;
+  const delta = t.delta === null ? '' : ` · ${t.delta > 0 ? '+' : ''}${t.delta} pts vs previous period`;
+  return `${formatPercent(t.linePercent)} of ${formatCount(t.executableLines)} lines${delta}`;
 });
 
 const exportData = computed(() =>
@@ -92,10 +88,6 @@ const exportData = computed(() =>
     :export-data="exportData"
     data-shot="analytics-coverage-trend"
   >
-    <template #actions>
-      <span v-if="deltaText" class="text-xs tabular-nums text-muted">{{ deltaText }}</span>
-    </template>
-
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the coverage trend: ${errorMessage(error)}`">
       <template #action>
