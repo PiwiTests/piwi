@@ -157,16 +157,21 @@ describe('demo suspect lines', () => {
   });
 
   test('every seeded coverage fragment is stored under the hash the ingest gives it', async () => {
-    const rows = (await client.execute('SELECT hash, runtime, path, blob, functions, lines FROM coverage_fragments'))
-      .rows;
+    const rows = (
+      await client.execute(
+        'SELECT hash, runtime, path, blob, functions, lines, executable, all_functions FROM coverage_fragments',
+      )
+    ).rows;
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       const canonical = canonicalCoverageFile({
         path: String(row.path),
-        runtime: row.runtime as 'browser' | 'server',
+        runtime: String(row.runtime),
         ...(row.blob ? { blob: String(row.blob) } : {}),
         functions: decodeFunctionRanges(row.functions as string | null),
         lines: decodeLineRanges(row.lines as string | null),
+        executable: decodeLineRanges(row.executable as string | null),
+        allFunctions: decodeFunctionRanges(row.all_functions as string | null),
       });
       expect(row.hash, String(row.path)).toBe(createHash('sha256').update(canonical).digest('hex'));
     }
