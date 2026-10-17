@@ -124,7 +124,7 @@ In `test` mode, a response whose request ran instrumented code before the respon
 X-Piwi-Coverage: 3f9a1c0b7e21.42
 ```
 
-The id is `<process key>.<sequence>`; the process key is random per process, so an id from an earlier process reads as missing. The Piwi reporter records the ids each test's pages receive and collects them once the test ends. Static files and requests that ran no instrumented code get no id.
+The id is `<process key>.<sequence>`; the process key is the process's instance id, random per process, so an id from an earlier process reads as missing. The Piwi reporter records the ids each test's pages receive and collects them once the test ends. Static files and requests that ran no instrumented code get no id.
 
 **`POST /__piwi/coverage/collect`** returns, per group, the coverage of its requests merged, and forgets them:
 
@@ -135,6 +135,7 @@ The id is `<process key>.<sequence>`; the process key is random per process, so 
 ```json
 {
   "v": 1,
+  "instance": { "id": "3f9a1c0b7e21", "startedAt": "2026-10-17T09:00:00.1234567+00:00" },
   "groups": [
     {
       "key": "test-1",
@@ -156,12 +157,13 @@ The id is `<process key>.<sequence>`; the process key is random per process, so 
 - `granularity` is `files` (`path` and `runtime` only), `functions` (with `functions`) or `lines` (with `functions` and `lines`, the default).
 - `checksums`, at `functions` and `lines`, lists the checksum of the source the compiler read for the file, from the span table, one per version compiled into the process. The Piwi reporter compares it with the file in its checkout and drops the line numbers of a file built from another version, marking the test's coverage incomplete.
 - `missing` lists the ids the backend does not hold: from another process, already collected, or evicted.
+- `instance` names the process that answered: its instance id (`PiwiCoverageRecorder.InstanceId`, the process key of its request ids) and when instrumented code first ran in it (`StartedAt`). Both endpoints name it, so the Piwi reporter tells a backend that restarted during the run: it marks the run's server coverage incomplete, and keeps the lines its tests' coverage named.
 - The body is limited to 1 MB and 10,000 request ids.
 
 **`GET /__piwi/coverage/run?granularity=lines`** returns the run-level coverage: the code that ran outside any request, every request collected, evicted or still kept, and, at `lines` granularity, each file's `executable` lines (the lines of every statement, run or not) and `allFunctions` (the line range of every method, run or not). Executable lines cover every assembly built with coverage instrumentation, including those whose code never ran: the loaded ones, and those in the application's base directory, whose span tables are read from disk without loading them:
 
 ```json
-{ "v": 1, "files": [{ "path": "src/Web/Services/BasketViewModelService.cs", "runtime": "server", "functions": [[20, 26]], "lines": [[22, 25]], "executable": [[22, 25], [30, 50]], "allFunctions": [[20, 26], [28, 51]], "checksums": ["sha256:41d0…"] }] }
+{ "v": 1, "instance": { "id": "3f9a1c0b7e21", "startedAt": "2026-10-17T09:00:00.1234567+00:00" }, "files": [{ "path": "src/Web/Services/BasketViewModelService.cs", "runtime": "server", "functions": [[20, 26]], "lines": [[22, 25]], "executable": [[22, 25], [30, 50]], "allFunctions": [[20, 26], [28, 51]], "checksums": ["sha256:41d0…"] }] }
 ```
 
 Both endpoints answer under the request's path base, beside `/__piwi/manifest`, and only once instrumented code runs in the process; otherwise the paths reach the application.
@@ -194,7 +196,7 @@ report.AddRequest(request);
 report.WriteFiles(jsonWriter);
 ```
 
-`PiwiCoverageRecorder.HasInstrumentedModules` tells whether code from a coverage build ran, `AddToRunLevel` adds a request to the run-level coverage once it is no longer kept, and `PiwiCoverageReport.AddRunLevel` and `AddExecutableLines` build the run-level report.
+`PiwiCoverageRecorder.HasInstrumentedModules` tells whether code from a coverage build ran, `InstanceId` and `StartedAt` name the process, `AddToRunLevel` adds a request to the run-level coverage once it is no longer kept, and `PiwiCoverageReport.AddRunLevel` and `AddExecutableLines` build the run-level report.
 
 ## Requirements
 

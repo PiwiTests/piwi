@@ -55,7 +55,10 @@ which would point at the wrong lines, and marks the test incomplete; the run-lev
 
 Each response names its request's coverage in an `X-Piwi-Coverage` header. Once the test ends, outside its time, the
 reporter asks each backend origin for the coverage its pages and API calls named, several tests per call. The
-run-level coverage is read as the run's last test ends, while a Playwright `webServer` is still up.
+run-level coverage is read as the run's last test ends, while a Playwright `webServer` is still up, and the lines and
+functions the tests' coverage named are added to it. Every answer names the backend process: a random id, which also
+starts each request id, and when the process started. The run-level coverage is whole only when the process that
+answers it is the one that served the run's first requests.
 
 ## Limits
 
@@ -65,6 +68,17 @@ run-level coverage is read as the run's last test ends, while a Playwright `webS
   responses, and a response `failOnStatusCode` turns into an error, name none.
 - **One backend per request:** a call the backend makes to another counts there only if it forwards the
   `X-Piwi-Coverage` header.
+- **A restart during the run:** the new process starts with no coverage. Each test's lines are kept, from its own
+  coverage; what the earlier process ran outside a request (startup, background work) is lost, and a test whose
+  requests it served but the reporter had not yet collected is marked incomplete. The reporter warns, the run's header
+  reads *Coverage incomplete: the backend restarted during the run*, and the run's coverage in the
+  [API](https://piwitests.dev/demo/docs) names the origin and about when it restarted. A backend unreachable at the
+  end of the run is flagged the same way, with only the tests' lines kept. The commit's
+  [combined coverage](./combined-coverage) notes the run, and its `e2e` suite reads as incomplete unless a complete
+  run of the commit counts beside it.
+- **Exclusions:** the coverage build leaves out what coverlet does, read from the project's coverlet settings
+  ([README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#what-it-leaves-out)):
+  an excluded member has no executable lines and no coverage.
 - C# and Visual Basic only.
 
 ## Cost
@@ -73,6 +87,10 @@ On a large ASP.NET Core and Vue application, the coverage build alone ran within
 line coverage added under 10% to its UI tests, with no measurable change in its CPU. The build records the same way
 at every granularity, so files and functions cost what lines cost. [Coverage cost](/reference/coverage-cost) has every
 mode, how it was measured, and the prototype figures.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

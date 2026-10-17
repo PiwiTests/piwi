@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Threading;
 
 namespace PiwiTests.Instrumentation.Coverage;
@@ -39,12 +40,31 @@ public static class PiwiCoverageRecorder
     private static readonly Dictionary<string, (long Length, DateTime Written)> s_scannedFiles = new(StringComparer.Ordinal);
     private static InstrumentedModule[] s_modules = [];
     private static int s_ran;
+    private static long s_startedAtTicks;
+
+    private static readonly string s_instanceId = Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
 
     /// <summary>The mode set by <c>PIWI_COVERAGE_MODE</c>: <c>run</c>, or <c>test</c> (the default).</summary>
     public static PiwiCoverageMode Mode => s_mode;
 
     /// <summary>True once code from a module built with coverage instrumentation has run in this process.</summary>
     public static bool HasInstrumentedModules => Volatile.Read(ref s_ran) != 0;
+
+    /// <summary>
+    /// Names this process: twelve random hexadecimal characters, drawn once per process, so a backend that
+    /// restarted answers with another instance id than the one it had.
+    /// </summary>
+    public static string InstanceId => s_instanceId;
+
+    /// <summary>When code built with coverage instrumentation first ran in this process, in UTC; null before it did.</summary>
+    public static DateTimeOffset? StartedAt
+    {
+        get
+        {
+            var ticks = Volatile.Read(ref s_startedAtTicks);
+            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+    }
 
     /// <summary>The instrumented modules registered so far, by index.</summary>
     internal static IReadOnlyList<InstrumentedModule> Modules => Volatile.Read(ref s_modules);
@@ -170,6 +190,7 @@ public static class PiwiCoverageRecorder
         var module = Find(mvid) ?? Register(mvid);
         if (module is not null && Volatile.Read(ref s_ran) == 0)
         {
+            Interlocked.CompareExchange(ref s_startedAtTicks, DateTime.UtcNow.Ticks, 0);
             Volatile.Write(ref s_ran, 1);
             PiwiCoverageOutput.Arm();
         }
