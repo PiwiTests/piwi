@@ -862,6 +862,20 @@
       "when": 1792220114503,
       "tag": "0122_coverage_areas",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "6",
+      "when": 1792227521948,
+      "tag": "0123_coverage_arrival",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "6",
+      "when": 1792227534401,
+      "tag": "0124_backfill_coverage_arrival",
+      "breakpoints": true
     }
   ]
 }

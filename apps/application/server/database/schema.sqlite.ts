@@ -837,6 +837,7 @@ export const coverageReports = sqliteTable(
     incomplete: integer('incomplete', { mode: 'boolean' }).notNull().default(false), // true when part of the report was left out (a cap, a file version that disagreed)
     fileCount: integer('file_count').notNull().default(0),
     inventoryPayloadId: integer('inventory_payload_id').references(() => casePayloads.id), // The commit's file inventory, `[[path, blob], ...]`
+    inventoryCount: integer('inventory_count'), // How many files the inventory names; null without one
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -876,7 +877,9 @@ export const coverageReportFiles = sqliteTable(
 // together), the counts combined coverage computed on the commit's reference
 // lines, recomputed after each upload and each run coverage of the commit.
 // `scope_version` is the project's coverage scope version they were computed
-// under; another version reads as stale.
+// under; another version reads as stale. `commit_seen_at` is when the commit's
+// coverage first arrived (its first report or run), the order commits follow;
+// `computation_started_at` keeps an older computation from replacing a newer.
 export const coverageTotals = sqliteTable(
   'coverage_totals',
   {
@@ -903,19 +906,21 @@ export const coverageTotals = sqliteTable(
     carriedFrom: text('carried_from'), // the commit an absent suite's files came from
     incomplete: integer('incomplete', { mode: 'boolean' }).notNull().default(false),
     scopeVersion: integer('scope_version').notNull().default(0),
+    commitSeenAt: integer('commit_seen_at', { mode: 'timestamp' }),
+    computationStartedAt: integer('computation_started_at', { mode: 'timestamp_ms' }),
     computedAt: integer('computed_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
   },
   (table) => ({
     uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite, table.area),
-    projectBranchIdx: index('idx_coverage_totals_project_branch').on(table.projectId, table.branch, table.computedAt),
+    projectBranchIdx: index('idx_coverage_totals_project_branch').on(table.projectId, table.branch, table.commitSeenAt),
   }),
 );
 
 // Coverage per day: per project, day (UTC, `YYYY-MM-DD`), branch and suite, the
-// totals of the last commit computed that day, for trends kept after the
-// reports themselves are pruned.
+// totals of the last commit whose coverage arrived that day (`commit_seen_at`),
+// for trends kept after the reports themselves are pruned.
 export const coverageDaily = sqliteTable(
   'coverage_daily',
   {
@@ -937,6 +942,7 @@ export const coverageDaily = sqliteTable(
     unitOnlyLines: integer('unit_only_lines').notNull().default(0),
     e2eOnlyLines: integer('e2e_only_lines').notNull().default(0),
     bothLines: integer('both_lines').notNull().default(0),
+    commitSeenAt: integer('commit_seen_at', { mode: 'timestamp' }),
     computedAt: integer('computed_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),

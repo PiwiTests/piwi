@@ -845,6 +845,7 @@ export const coverageReports = pgTable(
     incomplete: boolean('incomplete').notNull().default(false), // true when part of the report was left out (a cap, a file version that disagreed)
     fileCount: integer('file_count').notNull().default(0),
     inventoryPayloadId: integer('inventory_payload_id').references(() => casePayloads.id), // The commit's file inventory, `[[path, blob], ...]`
+    inventoryCount: integer('inventory_count'), // How many files the inventory names; null without one
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -907,13 +908,15 @@ export const coverageTotals = pgTable(
     carriedFrom: text('carried_from'), // the commit an absent suite's files came from
     incomplete: boolean('incomplete').notNull().default(false),
     scopeVersion: integer('scope_version').notNull().default(0),
+    commitSeenAt: timestamp('commit_seen_at', { mode: 'date' }),
+    computationStartedAt: timestamp('computation_started_at', { mode: 'date' }),
     computedAt: timestamp('computed_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
   },
   (table) => ({
     uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite, table.area),
-    projectBranchIdx: index('idx_coverage_totals_project_branch').on(table.projectId, table.branch, table.computedAt),
+    projectBranchIdx: index('idx_coverage_totals_project_branch').on(table.projectId, table.branch, table.commitSeenAt),
   }),
 );
 
@@ -939,6 +942,7 @@ export const coverageDaily = pgTable(
     unitOnlyLines: integer('unit_only_lines').notNull().default(0),
     e2eOnlyLines: integer('e2e_only_lines').notNull().default(0),
     bothLines: integer('both_lines').notNull().default(0),
+    commitSeenAt: timestamp('commit_seen_at', { mode: 'date' }),
     computedAt: timestamp('computed_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
