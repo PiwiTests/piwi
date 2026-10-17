@@ -297,6 +297,7 @@ public class CoverageTests
             Assert.Contains(Line("Checks.cs", "return Results.Ok(value);"), Expand(check.Lines!));
             Assert.NotEmpty(check.Executable!);
             Assert.NotEmpty(check.AllFunctions!);
+            Assert.Equal([output], System.IO.Directory.GetFiles(System.IO.Path.GetDirectoryName(output)!));
         }
         finally
         {

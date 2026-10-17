@@ -36,6 +36,7 @@ public sealed class PiwiCoverageReport
     private readonly Func<string, string?> _repositoryPath;
     private readonly Dictionary<(int Module, int Document), FileCoverage?> _documents = [];
     private readonly Dictionary<string, FileCoverage> _files = new(StringComparer.Ordinal);
+    private int _executableModules;
 
     /// <param name="granularity">What the report names.</param>
     /// <param name="repositoryPath">
@@ -79,8 +80,8 @@ public sealed class PiwiCoverageReport
     /// At <see cref="PiwiCoverageGranularity.Lines"/>, adds the executable lines of every instrumented module
     /// (<c>executable</c>): the lines of every statement, whether it ran or not, in the modules whose code ran and
     /// in those whose code did not (the loaded assemblies built with coverage instrumentation, and those in the
-    /// application's base directory), and the line range of every method (<c>allFunctions</c>). Does nothing at
-    /// other granularities.
+    /// application's base directory), and the line range of every method (<c>allFunctions</c>). Called again, adds
+    /// those of the modules registered since. Does nothing at other granularities.
     /// </summary>
     public void AddExecutableLines()
     {
@@ -89,8 +90,10 @@ public sealed class PiwiCoverageReport
 
         PiwiCoverageRecorder.RegisterAvailable();
 
-        foreach (var module in PiwiCoverageRecorder.Modules)
+        var modules = PiwiCoverageRecorder.Modules;
+        for (var index = _executableModules; index < modules.Count; index++)
         {
+            var module = modules[index];
             var lines = module.Lines;
             for (var row = 1; row < lines.Length; row++)
             {
@@ -104,6 +107,8 @@ public sealed class PiwiCoverageReport
                 }
             }
         }
+
+        _executableModules = modules.Count;
     }
 
     /// <summary>Writes the report's files as a JSON array, sorted by path.</summary>
@@ -127,9 +132,9 @@ public sealed class PiwiCoverageReport
                 WriteRanges(writer, "functions", SortedFunctions(file.Functions));
             if (_granularity == PiwiCoverageGranularity.Lines)
             {
-                WriteRanges(writer, "lines", Merge(file.Lines));
+                WriteRanges(writer, "lines", MergeInPlace(file.Lines));
                 if (file.Executable.Count > 0)
-                    WriteRanges(writer, "executable", Merge(file.Executable));
+                    WriteRanges(writer, "executable", MergeInPlace(file.Executable));
                 if (file.AllFunctions.Count > 0)
                     WriteRanges(writer, "allFunctions", SortedFunctions(file.AllFunctions));
             }
@@ -226,6 +231,15 @@ public sealed class PiwiCoverageReport
         }
 
         return merged;
+    }
+
+    /// <summary>Merges <paramref name="ranges"/> as <see cref="Merge"/> does, keeping the result in the list.</summary>
+    private static List<LineRange> MergeInPlace(List<LineRange> ranges)
+    {
+        var merged = Merge(ranges);
+        ranges.Clear();
+        ranges.AddRange(merged);
+        return ranges;
     }
 
     private static void WriteRanges(Utf8JsonWriter writer, string name, List<LineRange> ranges)

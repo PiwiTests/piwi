@@ -35,11 +35,12 @@ needs the Uploader role on the project, the one a reporter uses. Every flag is o
 | Vitest (`@vitest/coverage-v8`) | Cobertura or LCOV | `vitest run --coverage --coverage.reporter=cobertura` |
 | coverlet | Cobertura | `dotnet test --collect "XPlat Code Coverage"` |
 | Microsoft code coverage | Cobertura | `dotnet test --collect "Code Coverage;Format=cobertura"` |
-| Piwi's .NET recorder | Piwi | `PIWI_COVERAGE_OUTPUT=piwi.json dotnet test` on a `-p:PiwiCoverage=true` build |
+| Piwi's .NET recorder | Piwi | `PIWI_COVERAGE_OUTPUT=TestResults/piwi/ dotnet test -p:PiwiCoverage=true` |
 
-On a large .NET solution, run the unit tests on the coverage build that [server coverage](./server-coverage) uses:
-the test host writes its report at exit, with the span table's lines, the ones the end-to-end suite counts, at a
-fraction of coverlet's cost.
+On .NET, run the unit tests on the coverage build [server coverage](./server-coverage) uses: each test host writes a
+report there at exit, with the span table's lines, the ones the end-to-end suite counts, at a fraction of coverlet's
+cost. Upload `"TestResults/piwi/*.json"`; set `VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=30000`, as VSTest otherwise stops a
+host 100 ms after its tests.
 
 Upload from the full unit-test run: Vitest lists the files nothing ran only when every test ran and `coverage.include`
 names them.
@@ -101,8 +102,7 @@ totals are recomputed a few seconds after each upload and each run coverage of t
 - **Carried forward.** A suite the commit lacks comes from its newest earlier report, on the commit's branch then on
   the default branch, file by file where the file's version is unchanged, and the totals say from which commit.
 
-The project's coverage page (**Coverage** in the project's menu) shows the newest commit with coverage, and a run's
-header links its commit's.
+The project's **Coverage** page shows the newest commit with coverage, and a run's header links its commit's.
 
 <figure>
   <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage page">

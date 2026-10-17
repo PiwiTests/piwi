@@ -60,13 +60,35 @@ The mode is read once, when the process starts.
 ## Unit tests: a report at process exit
 
 A process that serves no coverage endpoint, a test host running unit tests on a coverage build, writes its run-level
-report when it exits, to the file `PIWI_COVERAGE_OUTPUT` names:
+report when it exits, where `PIWI_COVERAGE_OUTPUT` says:
 
 ```bash
 dotnet build -p:PiwiCoverage=true
-PIWI_COVERAGE_MODE=run PIWI_COVERAGE_OUTPUT=TestResults/piwi-coverage.json dotnet test --no-build
-npx @piwitests/reporter coverage upload TestResults/piwi-coverage.json --suite unit-back
+PIWI_COVERAGE_MODE=run PIWI_COVERAGE_OUTPUT=TestResults/piwi/ VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=30000 dotnet test --no-build
+npx @piwitests/reporter coverage upload "TestResults/piwi/*.json" --suite unit-back
 ```
+
+```powershell
+dotnet build -p:PiwiCoverage=true
+$env:PIWI_COVERAGE_MODE='run'; $env:PIWI_COVERAGE_OUTPUT='TestResults/piwi/'; $env:VSTEST_TESTHOST_SHUTDOWN_TIMEOUT='30000'; dotnet test --no-build
+npx @piwitests/reporter coverage upload "TestResults/piwi/*.json" --suite unit-back
+```
+
+- **A file or a directory.** A value ending in `/` (or `\`), or naming an existing directory, is a directory: each test
+  host writes `piwi-coverage-<test project>-<process id>.json` in it, so a solution's test projects write a report
+  each, and `piwi coverage upload` merges the files a pattern matches. Any other value is the file to write, which
+  the last test host to exit overwrites. Empty the directory before a run: a report left from an earlier run would be
+  uploaded with the new ones.
+- **A relative path** starts from the directory `dotnet test` runs in: in a test project that references the package,
+  directly or through the project it tests, the package's props pass it to the VSTest host as a full path, through
+  the run settings. Elsewhere, with inline run settings on the command line (`dotnet test -- ...`), which replace
+  those, or in a host that runs without VSTest, it starts from the host's working directory, the test project's
+  output directory under VSTest: give a full path then.
+- **The shutdown timeout.** VSTest stops a test host 100 ms after the test session ends, report written or not. The
+  span tables and executable lines are read on a background thread while the tests run, so exit only adds the
+  coverage and writes the file; tests that end before that read does leave it to exit. `VSTEST_TESTHOST_SHUTDOWN_TIMEOUT`
+  (milliseconds) gives the host longer, and costs nothing when it exits sooner.
+- The report is written to a temporary file beside it, then renamed: a file that exists is a whole report.
 
 The report is the one `/__piwi/coverage/run` serves at the `lines` granularity, with the executable lines and every
 method (`allFunctions`) of each instrumented assembly in the test host's directory, whether its code ran or not, and
