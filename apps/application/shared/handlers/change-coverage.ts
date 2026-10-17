@@ -33,7 +33,7 @@ import {
 import { HISTORY_WINDOW_RUNS } from './scenario-gaps';
 import { eligibleRunSql } from '../run-eligibility';
 import type { CombinedFile, CoverageSuiteKind } from '../coverage-combine';
-import { computePatchCoverage, suitesOnChangedLines, type PatchCoverage } from '../patch-coverage';
+import { computePatchCoverage, suitesOnChangedLines, type PatchAreas, type PatchCoverage } from '../patch-coverage';
 
 /** A repo-relative path normalized for suffix matching. */
 function normalizePath(p: string): string {
@@ -214,6 +214,8 @@ export interface CommitCoverageInput {
   commit: string;
   files: CombinedFile[];
   suites: Array<{ name: string; kind: CoverageSuiteKind }>;
+  /** The project's named areas; the patch coverage counts each. */
+  areas?: PatchAreas | null;
 }
 
 /** A file reached by a test, in the run or the window, or by a suite on its changed lines. */
@@ -434,6 +436,7 @@ export async function computeChangeCoverage(
         commitCoverage.files,
         commitCoverage.suites,
         new Map(files.filter((f) => f.changedLines?.length).map((f) => [f.filePath, f.changedLines!])),
+        commitCoverage.areas ?? null,
       )
     : null;
 

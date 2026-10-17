@@ -63,6 +63,7 @@ export const projects = pgTable(
     targets: jsonb('targets'), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
     coverageScope: jsonb('coverage_scope'), // CoverageScope — include and exclude patterns of the files coverage totals count; null = the default excludes
     coverageScopeVersion: integer('coverage_scope_version').notNull().default(0), // Bumped on every change of coverage_scope, so totals computed under another scope read as stale
+    coverageAreas: jsonb('coverage_areas'), // CoverageArea[] — named areas of the code (`front`, `back`) by include patterns, each counted apart; null = none
     locatorIndexBuiltAt: timestamp('locator_index_built_at', { mode: 'date' }),
     quarantineFailsStatus: boolean('quarantine_fails_status').notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
     gateStatus: boolean('gate_status').notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
@@ -890,6 +891,7 @@ export const coverageTotals = pgTable(
     commit: text('commit_sha').notNull(),
     branch: text('branch').notNull().default(''), // '' = the default branch
     suite: text('suite').notNull(), // a suite's name, or 'combined'
+    area: text('area').notNull().default(''), // a named area of the project's code, or '' for every file
     kind: text('kind').notNull(), // 'unit' | 'e2e' | 'combined'
     executableLines: integer('executable_lines').notNull().default(0),
     executedLines: integer('executed_lines').notNull().default(0),
@@ -910,7 +912,7 @@ export const coverageTotals = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite),
+    uniqueSuite: uniqueIndex('idx_coverage_totals_unique').on(table.projectId, table.commit, table.suite, table.area),
     projectBranchIdx: index('idx_coverage_totals_project_branch').on(table.projectId, table.branch, table.computedAt),
   }),
 );
@@ -926,6 +928,7 @@ export const coverageDaily = pgTable(
     day: text('day').notNull(), // UTC date, YYYY-MM-DD
     branch: text('branch').notNull().default(''),
     suite: text('suite').notNull(),
+    area: text('area').notNull().default(''), // a named area of the project's code, or '' for every file
     commit: text('commit_sha').notNull(),
     executableLines: integer('executable_lines').notNull().default(0),
     executedLines: integer('executed_lines').notNull().default(0),
@@ -941,7 +944,13 @@ export const coverageDaily = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    uniqueDay: uniqueIndex('idx_coverage_daily_unique').on(table.projectId, table.day, table.branch, table.suite),
+    uniqueDay: uniqueIndex('idx_coverage_daily_unique').on(
+      table.projectId,
+      table.day,
+      table.branch,
+      table.suite,
+      table.area,
+    ),
   }),
 );
 

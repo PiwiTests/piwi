@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_COVERAGE_SCOPE, compileCoverageScope, parseCoverageScope } from '../src/coverage-scope';
+import {
+  DEFAULT_COVERAGE_SCOPE,
+  compileCoverageAreas,
+  compileCoverageScope,
+  parseCoverageAreas,
+  parseCoverageScope,
+} from '../src/coverage-scope';
 
 describe('compileCoverageScope', () => {
   it('leaves out tests, build output and generated sources by default', () => {
@@ -43,5 +49,44 @@ describe('parseCoverageScope', () => {
     expect(parseCoverageScope({ exclude: ['!src/keep.ts'] })).toBeNull();
     expect(parseCoverageScope({ include: ['a'.repeat(301)] })).toBeNull();
     expect(parseCoverageScope([])).toBeNull();
+  });
+});
+
+describe('coverage areas', () => {
+  it('reads named areas, each with its patterns', () => {
+    expect(
+      parseCoverageAreas([
+        { name: ' front ', include: ['apps/web/', '# comment', ''] },
+        { name: 'back', include: ['src/Api/**'] },
+      ]),
+    ).toEqual([
+      { name: 'front', include: ['apps/web/'] },
+      { name: 'back', include: ['src/Api/**'] },
+    ]);
+    expect(parseCoverageAreas([])).toEqual([]);
+  });
+
+  it('refuses a nameless, patternless or repeated area, and more than twenty', () => {
+    expect(parseCoverageAreas([{ name: '', include: ['a/'] }])).toBeNull();
+    expect(parseCoverageAreas([{ name: 'front', include: [] }])).toBeNull();
+    expect(parseCoverageAreas([{ name: '-x', include: ['a/'] }])).toBeNull();
+    expect(
+      parseCoverageAreas([
+        { name: 'Front', include: ['a/'] },
+        { name: 'front', include: ['b/'] },
+      ]),
+    ).toBeNull();
+    expect(parseCoverageAreas(Array.from({ length: 21 }, (_, i) => ({ name: `a${i}`, include: ['a/'] })))).toBeNull();
+    expect(parseCoverageAreas({ name: 'front' })).toBeNull();
+  });
+
+  it('puts a file in the first area that matches it', () => {
+    const areaOf = compileCoverageAreas([
+      { name: 'web', include: ['apps/web/'] },
+      { name: 'front', include: ['apps/'] },
+    ]);
+    expect(areaOf('apps/web/src/cart.ts')).toBe('web');
+    expect(areaOf('apps/admin/main.ts')).toBe('front');
+    expect(areaOf('src/Api/Program.cs')).toBeNull();
   });
 });

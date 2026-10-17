@@ -90,9 +90,7 @@ totals are recomputed a few seconds after each upload and each run coverage of t
 
 - **One set of executable lines per file version.** Tools disagree on which lines can run, so every suite counts on
   the same lines: the span table's, from [server coverage](./server-coverage), when a run recorded them for that
-  version of the file; otherwise the reports' own. A line a tool marks outside them is ignored. On 71 .NET tests,
-  taking both tools' lines together understated the code only the end-to-end tests ran by 16 points; the span table as
-  the one reference stayed within 1.3.
+  version of the file; otherwise the reports' own. A line a tool marks outside them is ignored.
 - **Undetermined lines.** The browser suite records functions, not lines. An unrun line inside a function it ran is
   undetermined: shown beside the ratio, never counted as run.
 - **Functions** count across suites by their start line: one ran when any suite ran a function starting there.
@@ -136,9 +134,9 @@ numbers are kept per day, so the trend outlives the reports' retention.
 
 ## Export
 
-The menu of the coverage page's card downloads the commit's combined coverage as LCOV or Cobertura, for Sonar,
-Codecov or an IDE; the [API](https://piwitests.dev/demo/docs) serves the same (`coverage-export?format=`). Each line
-counted is written with 1 hit when any suite ran it and 0 when none did: Piwi keeps no hit counts and no branches.
+The coverage page's card menu downloads the commit's combined coverage as LCOV or Cobertura, for Sonar, Codecov or an
+IDE (`coverage-export?format=` in the API). A line any suite ran has 1 hit, else 0: Piwi keeps no hit counts and no
+branches.
 
 ## How paths are matched
 
@@ -149,12 +147,18 @@ A path that names no file of the checkout is dropped and counted.
 ## The coverage scope
 
 A project's coverage scope decides which files count: include and exclude patterns over repository-relative paths, in
-the syntax CODEOWNERS uses. With no include pattern every file is included; an exclude pattern wins. By default the
-scope leaves out test files (`*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, projects named `*Tests`), build output
-(`bin/`, `obj/`) and generated sources (`*.g.cs`, `*.Designer.cs`, `*.generated.*`). Set it with the
-[API](https://piwitests.dev/demo/docs) (a project's `coverageScope`). The upload sends only the files in scope, and with
-them the commit's file inventory: its tracked files in scope and their blob ids, so a file no report names still counts
-as a file without coverage data.
+the syntax CODEOWNERS uses. With no include pattern every file counts; an exclude wins. The defaults leave out tests,
+build output and generated sources. Set it in the project's **Settings › Coverage**, or with the
+[API](https://piwitests.dev/demo/docs) (`coverageScope`). The upload sends only the files in scope, with the commit's
+inventory (its tracked files in scope and their blob ids), so a file no report names still counts as without data.
+
+## Areas
+
+Name the parts of the code in the same settings (`coverageAreas` in the API): `front: apps/web/`, `back: src/Api/`. A
+file belongs to the first area whose patterns match it, and every suite splits the same way: the coverage page gives
+each area its totals and each suite's share, and its link keeps the lists to that area's files; the coverage trend
+draws one line per area (its *Lines beside every suite* option); the pull-request comment counts the changed lines per
+area, "By area: front 28 of 30, back 6 of 11". A change recounts the newest commit; earlier days have no area lines.
 
 ## What is sent
 
@@ -164,10 +168,7 @@ result Piwi keeps.
 
 ## Limits
 
-- **Formats:** Cobertura and LCOV. Istanbul JSON, OpenCover and JaCoCo are not read; JaCoCo has converters to
-  Cobertura.
-- **Tools disagree on which lines can run.** Microsoft code coverage and coverlet count braces and declaration lines
-  that the C# compiler's span table, which server coverage reads, does not.
+- **Formats:** Cobertura, LCOV and Piwi's own. Istanbul JSON, OpenCover and JaCoCo are not read.
 - **A tool can leave code out without failing.** coverlet does not instrument an assembly it cannot resolve the
   dependencies of, and says so only in its diagnostic log.
 - **One commit, one checkout.** Upload from the checkout the tests ran in: the blob ids and the inventory come from it.

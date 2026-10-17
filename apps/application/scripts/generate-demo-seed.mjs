@@ -3955,34 +3955,60 @@ const COVERAGE_REPORT_FILES = [];
 /** `coverage_daily`: the combined coverage of the days before the covered commit, for the coverage trend. */
 const COVERAGE_DAILY = [];
 
+/** The covered project's named areas: its front end and its API. */
+const COVERAGE_AREAS = [
+  { name: 'front', include: ['src/'] },
+  { name: 'back', include: ['api/'] },
+];
+
 /**
  * Thirty days of combined coverage before a story's covered run, climbing
- * toward the commit's own totals, which the demo computes when it opens.
+ * toward the commit's own totals, which the demo computes when it opens:
+ * every suite together, each suite, and each of the project's areas.
  */
 function seedCoverageDaily(story, run) {
+  const project = PROJECTS.find((p) => p.id === story.projectId);
+  if (project) project.coverage_areas = JSON.stringify(COVERAGE_AREAS);
   const runDay = Math.floor(run.start_time / 86400) * 86400;
+  const lines = [
+    // [suite, area, executable lines, share run 30 days back, share run the day before]
+    ['combined', '', 116, 0.48, 0.6],
+    ['unit-back', '', 116, 0.2, 0.23],
+    ['unit-front', '', 116, 0.2, 0.26],
+    ['e2e', '', 116, 0.25, 0.31],
+    ['combined', 'front', 63, 0.3, 0.37],
+    ['combined', 'back', 53, 0.7, 0.79],
+  ];
   for (let back = 30; back >= 1; back--) {
-    const executable = 116 - Math.round(back / 5);
-    const executed = Math.round(executable * (0.6 - back * 0.004));
-    COVERAGE_DAILY.push({
-      id: COVERAGE_DAILY.length + 1,
-      project_id: story.projectId,
-      day: new Date((runDay - back * 86400) * 1000).toISOString().slice(0, 10),
-      branch: '',
-      suite: 'combined',
-      commit_sha: run.commit_sha,
-      executable_lines: executable,
-      executed_lines: executed,
-      undetermined_lines: 0,
-      known_functions: 0,
-      run_functions: 0,
-      files: 0,
-      unit_only_lines: 0,
-      e2e_only_lines: 0,
-      both_lines: 0,
-      computed_at: runDay - back * 86400,
-    });
+    for (const [suite, area, lineCount, from, to] of lines) {
+      const executable = lineCount - Math.round((back * lineCount) / 600);
+      const share = from + ((to - from) * (30 - back)) / 29;
+      pushCoverageDaily(story, run, runDay - back * 86400, suite, area, executable, Math.round(executable * share));
+    }
   }
+}
+
+/** One `coverage_daily` row of the covered project. */
+function pushCoverageDaily(story, run, daySec, suite, area, executable, executed) {
+  COVERAGE_DAILY.push({
+    id: COVERAGE_DAILY.length + 1,
+    project_id: story.projectId,
+    day: new Date(daySec * 1000).toISOString().slice(0, 10),
+    branch: '',
+    suite,
+    area,
+    commit_sha: run.commit_sha,
+    executable_lines: executable,
+    executed_lines: executed,
+    undetermined_lines: 0,
+    known_functions: 0,
+    run_functions: 0,
+    files: 0,
+    unit_only_lines: 0,
+    e2e_only_lines: 0,
+    both_lines: 0,
+    computed_at: daySec,
+  });
 }
 
 /**

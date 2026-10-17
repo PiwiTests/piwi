@@ -29,6 +29,8 @@ export interface PatchCoverage {
   /** Unrun lines inside a function the browser ran. */
   undeterminedLines: number;
   suites: PatchSuiteLines[];
+  /** Per named area of the code with a changed line, in the project's order. */
+  areas: Array<{ name: string; changedLines: number; executedLines: number }>;
   /** Changed files the coverage counts lines of. */
   files: number;
 }
@@ -57,6 +59,12 @@ export function suitesOnChangedLines(file: CombinedFile, changedLines: number[])
     .sort();
 }
 
+/** The project's named areas, in order, and the area of a path. */
+export interface PatchAreas {
+  names: string[];
+  areaOf: (path: string) => string | null;
+}
+
 /**
  * Count a change's lines on a commit's combined files. `changed` maps a
  * repository-relative path to its changed lines. Null when no changed line is
@@ -67,6 +75,7 @@ export function computePatchCoverage(
   files: CombinedFile[],
   suites: Array<{ name: string; kind: CoverageSuiteKind }>,
   changed: ReadonlyMap<string, number[]>,
+  areas: PatchAreas | null = null,
 ): PatchCoverage | null {
   const byPath = new Map(files.map((f) => [f.path, f]));
   const out: PatchCoverage = {
@@ -77,8 +86,10 @@ export function computePatchCoverage(
     e2eLines: 0,
     undeterminedLines: 0,
     suites: suites.map((s) => ({ name: s.name, kind: s.kind, executedLines: 0 })),
+    areas: [],
     files: 0,
   };
+  const byArea = new Map((areas?.names ?? []).map((name) => [name, { name, changedLines: 0, executedLines: 0 }]));
   for (const [path, lines] of changed) {
     const file = byPath.get(path);
     if (!file || lines.length === 0) continue;
@@ -86,12 +97,19 @@ export function computePatchCoverage(
     if (counted.length === 0) continue;
     out.files++;
     out.changedLines += counted.length;
-    out.executedLines += countIn(file.executed, counted);
+    const executed = countIn(file.executed, counted);
+    out.executedLines += executed;
+    const area = areas ? byArea.get(areas.areaOf(path) ?? '') : undefined;
+    if (area) {
+      area.changedLines += counted.length;
+      area.executedLines += executed;
+    }
     out.unitLines += countIn(file.classes.unitOnly, counted) + countIn(file.classes.both, counted);
     out.e2eLines += countIn(file.classes.e2eOnly, counted) + countIn(file.classes.both, counted);
     out.undeterminedLines += countIn(file.classes.undetermined, counted);
     for (const suite of out.suites) suite.executedLines += countIn(file.bySuite[suite.name], counted);
   }
+  out.areas = [...byArea.values()].filter((a) => a.changedLines > 0);
   return out.changedLines > 0 ? out : null;
 }
 

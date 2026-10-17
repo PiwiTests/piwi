@@ -2,8 +2,8 @@
 /**
  * Combined line coverage over time: per bucket, the lines every suite ran
  * together over the executable lines of the projects in scope with coverage
- * on, with the change against the comparison period, and each suite's share
- * of the same lines as a dashed line.
+ * on, with the change against the comparison period, and as dashed lines each
+ * suite's share of the same lines, or each named area's (`split: 'areas'`).
  */
 import type { AnalyticsCoverageTrend } from '#shared/analytics/types';
 import { GROUP_SERIES_COLORS, type TrendLine } from '~/utils/chart';
@@ -16,12 +16,16 @@ const {
   pending,
   error,
   refresh,
-} = await useAnalyticsWidget<AnalyticsCoverageTrend>('coverage-trend', () => props.query);
+} = await useAnalyticsWidget<AnalyticsCoverageTrend>(
+  'coverage-trend',
+  () => props.query,
+  () => props.options,
+);
 
 /** A share of lines, not an outcome: the first series color. */
 const LINE_COLOR = GROUP_SERIES_COLORS[0];
 
-/** Each suite after the combined line, in the next series colors. */
+/** Each suite or area after the combined line, in the next series colors. */
 const suiteColor = (i: number) => GROUP_SERIES_COLORS[(i + 1) % GROUP_SERIES_COLORS.length]!;
 
 const lines = computed<TrendLine[]>(() => [
@@ -30,7 +34,7 @@ const lines = computed<TrendLine[]>(() => [
     color: LINE_COLOR,
     points: (trend.value?.points ?? []).map((p) => ({ date: p.date, value: p.linePercent })),
   },
-  ...(trend.value?.suites ?? []).map((suite, i) => ({
+  ...(trend.value?.series ?? []).map((suite, i) => ({
     label: suite.name,
     color: suiteColor(i),
     dashed: true,
@@ -40,7 +44,7 @@ const lines = computed<TrendLine[]>(() => [
 const hasData = computed(() => trend.value?.points.some((p) => p.linePercent !== null) ?? false);
 const legend = computed(() => [
   { color: LINE_COLOR, label: 'All suites' },
-  ...(trend.value?.suites ?? []).map((suite, i) => ({ color: suiteColor(i), label: suite.name })),
+  ...(trend.value?.series ?? []).map((suite, i) => ({ color: suiteColor(i), label: suite.name })),
 ]);
 
 const subtitle = computed(() => {
@@ -64,14 +68,14 @@ const exportData = computed(() =>
           'line coverage %',
           'executed lines',
           'executable lines',
-          ...trend.value.suites.map((s) => `${s.name} %`),
+          ...trend.value.series.map((s) => `${s.name} %`),
         ],
         rows: trend.value.points.map((p, i) => [
           p.date,
           p.linePercent,
           p.executedLines,
           p.executableLines,
-          ...trend.value!.suites.map((s) => s.points[i]?.linePercent ?? null),
+          ...trend.value!.series.map((s) => s.points[i]?.linePercent ?? null),
         ]),
       }
     : null,

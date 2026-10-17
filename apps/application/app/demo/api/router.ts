@@ -88,6 +88,7 @@ import {
 import {
   exportCommitCoverage,
   getCoverageSummary,
+  recountProjectCoverage,
   invalidateCommitCoverage,
   parseCoverageExportFormat,
   parseCoverageSummaryQuery,
@@ -166,6 +167,7 @@ import {
   getProjectSlowTests,
   getProjectTimeoutOpportunities,
   getProjectFailureClusters,
+  INVALID_COVERAGE_AREAS,
   INVALID_COVERAGE_SCOPE,
   updateProject,
   createProject,
@@ -825,9 +827,15 @@ const routes: RouteEntry[] = [
       // encryptSecret with PIWI_SECRET_KEY), so the token is stored as-is —
       // but every GET strips it, so it never leaves the browser's own DB.
       try {
-        return await updateProject(await getDemoDb(), +m[1]!, body as Parameters<typeof updateProject>[2]);
+        const update = body as Parameters<typeof updateProject>[2];
+        const project = await updateProject(await getDemoDb(), +m[1]!, update);
+        if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
+          await recountProjectCoverage(await getDemoDb(), +m[1]!);
+        }
+        return project;
       } catch (e) {
-        if (e instanceof Error && e.message === INVALID_COVERAGE_SCOPE) throw demoHttpError(400, e.message);
+        if (e instanceof Error && (e.message === INVALID_COVERAGE_SCOPE || e.message === INVALID_COVERAGE_AREAS))
+          throw demoHttpError(400, e.message);
         throw e;
       }
     },
@@ -1204,7 +1212,13 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/coverage-summary$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const parsed = parseCoverageSummaryQuery(q?.get('commit'), q?.get('branch'), q?.get('folder'), q?.get('file'));
+      const parsed = parseCoverageSummaryQuery(
+        q?.get('commit'),
+        q?.get('branch'),
+        q?.get('folder'),
+        q?.get('file'),
+        q?.get('area'),
+      );
       if ('error' in parsed) throw demoHttpError(400, parsed.error);
       const summary = await getCoverageSummary(await getDemoDb(), +m[1]!, parsed);
       if (!summary) throw demoHttpError(404, 'No coverage for this commit');

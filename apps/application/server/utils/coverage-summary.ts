@@ -20,7 +20,7 @@ import {
   type FolderEntry,
 } from '#shared/coverage-combine';
 import { eligibleRunSql } from '#shared/run-eligibility';
-import { latestCoverageCommit, loadCommitCoverage, type CommitCoverage } from './coverage-totals';
+import { latestCoverageCommit, loadCommitCoverage, scheduleCommitTotals, type CommitCoverage } from './coverage-totals';
 import { locatorBranchTag } from './locator-usages';
 import { projectDefaultBranch } from './scm/stored-default-branch';
 
@@ -61,6 +61,12 @@ export interface CoverageSummary {
   filesWithoutData: { count: number | null; paths: string[] };
   /** Files whose reference lines are a report's, no run having recorded the span table of their version. */
   filesReferencedByReports: number;
+  /** The project's named areas: each one's totals and each suite's share of its lines. */
+  areas: Array<
+    CoverageRatios & { name: string; suites: Array<CoverageRatios & { name: string; kind: CoverageSuiteKind }> }
+  >;
+  /** The area the breakdown, the least-covered files and the files without data keep to; null for every file. */
+  area: string | null;
   /** The folder broken down ('' for the repository root) and its direct children. */
   folder: string;
   entries: Array<FolderEntry & CoverageRatios>;
@@ -84,6 +90,17 @@ const cache = new Map<string, { at: number; coverage: Promise<CommitCoverage | n
 /** Forget a commit's cached coverage, as an upload or a run coverage of it arrives. */
 export function invalidateCommitCoverage(projectId: number, commit: string | null | undefined): void {
   if (commit) cache.delete(`${projectId}\0${commit}`);
+}
+
+/**
+ * After a change of the project's coverage scope or areas: forget its cached
+ * coverage, and recount its newest commit with coverage on the default branch
+ * a few seconds from now, so the stored totals and the trend follow.
+ */
+export async function recountProjectCoverage(db: DrizzleDB, projectId: number): Promise<void> {
+  for (const key of [...cache.keys()]) if (key.startsWith(`${projectId}\0`)) cache.delete(key);
+  const commit = await latestCoverageCommit(db, projectId, '');
+  if (commit) scheduleCommitTotals(async () => db, projectId, commit);
 }
 
 /** A commit's coverage, from the cache when computed within the last minute. */
@@ -124,16 +141,19 @@ export interface CoverageSummaryQuery {
   folder: string;
   /** A repository-relative file whose lines to add. */
   file?: string | null;
+  /** A named area the folder's breakdown keeps to. */
+  area?: string | null;
 }
 
 const COMMIT = /^[0-9a-f]{7,64}$/;
 
-/** The `commit`, `branch` and `folder` of a summary read, checked. */
+/** The `commit`, `branch`, `folder`, `file` and `area` of a summary read, checked. */
 export function parseCoverageSummaryQuery(
   commit: unknown,
   branch: unknown,
   folder: unknown,
   file?: unknown,
+  area?: unknown,
 ): CoverageSummaryQuery | { error: string } {
   const first = (value: unknown) => (Array.isArray(value) ? value[0] : value);
   const text = (value: unknown) => (typeof first(value) === 'string' ? (first(value) as string).trim() : '');
@@ -146,7 +166,15 @@ export function parseCoverageSummaryQuery(
     return { error: 'folder must be a repository-relative folder' };
   const path = text(file).replace(/^\/+/, '');
   if (path.length > 500 || path.split('/').includes('..')) return { error: 'file must be a repository-relative path' };
-  return { commit: sha || null, branch: name || null, folder: dir, ...(path ? { file: path } : {}) };
+  const areaName = text(area);
+  if (areaName.length > 40) return { error: 'area is at most 40 characters' };
+  return {
+    commit: sha || null,
+    branch: name || null,
+    folder: dir,
+    ...(path ? { file: path } : {}),
+    ...(areaName ? { area: areaName } : {}),
+  };
 }
 
 /** The coverage of the query's commit, else of the newest commit with coverage on its branch. */
@@ -229,6 +257,9 @@ export async function getCoverageSummary(
   const coverage = await queriedCommitCoverage(db, projectId, query);
   if (!coverage) return null;
   const { combined } = coverage;
+  const area = query.area && coverage.areas.some((a) => a.name === query.area) ? query.area : null;
+  const inArea = (path: string) => area === null || coverage.areaOf(path) === area;
+  const files = area === null ? combined.files : combined.files.filter((f) => inArea(f.path));
   return {
     commit: coverage.commit,
     branch: coverage.branch || null,
@@ -238,13 +269,19 @@ export async function getCoverageSummary(
     filesWithoutData: {
       count: combined.filesWithoutData?.length ?? null,
       paths: (combined.filesWithoutData ?? [])
-        .filter((p) => !query.folder || p.startsWith(`${query.folder}/`))
+        .filter((p) => (!query.folder || p.startsWith(`${query.folder}/`)) && inArea(p))
         .slice(0, MAX_LISTED_PATHS),
     },
     filesReferencedByReports: combined.filesReferencedByReports,
+    areas: coverage.areas.map((a) => ({
+      ...ratios(a.totals),
+      name: a.name,
+      suites: a.suites.map((s) => ({ ...ratios(s), name: s.name, kind: s.kind })),
+    })),
+    area,
     folder: query.folder,
-    entries: folderBreakdown(combined.files, query.folder).map((e) => ratios(e)),
-    leastCovered: leastCoveredFiles(combined.files, query.folder, LEAST_COVERED_FILES).map((e) => ratios(e)),
+    entries: folderBreakdown(files, query.folder).map((e) => ratios(e)),
+    leastCovered: leastCoveredFiles(files, query.folder, LEAST_COVERED_FILES).map((e) => ratios(e)),
     ...(query.file ? { file: combined.files.find((f) => f.path === query.file) ?? null } : {}),
   };
 }

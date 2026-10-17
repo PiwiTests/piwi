@@ -198,6 +198,63 @@ function functionsByStart(ranges: LineRange[]): Map<number, LineRange> {
   return out;
 }
 
+/** Each suite's totals over files, on the files' reference lines. */
+function suiteTotals(
+  files: CombinedFile[],
+  suites: Array<Pick<SuiteInput, 'name' | 'kind' | 'carriedFrom' | 'carriedFiles' | 'incomplete'>>,
+): SuiteTotals[] {
+  return suites.map((suite) => {
+    const counts = emptyCounts();
+    // Every suite counts on the same reference lines: a file it does not name is all unrun for it.
+    for (const file of files) {
+      counts.executableLines += countLines(file.executable);
+      counts.knownFunctions += file.knownFunctions.length;
+      if (!(suite.name in file.bySuite)) continue;
+      counts.files++;
+      counts.executedLines += countLines(file.bySuite[suite.name]!);
+      counts.runFunctions += file.functionsBySuite[suite.name] ?? 0;
+    }
+    return {
+      ...counts,
+      name: suite.name,
+      kind: suite.kind,
+      carriedFrom: suite.carriedFrom ?? null,
+      carriedFiles: suite.carriedFiles ?? 0,
+      incomplete: suite.incomplete === true,
+    };
+  });
+}
+
+/** One named area of a commit's coverage: its files' totals and each suite's. */
+export interface AreaCoverage {
+  name: string;
+  totals: CoverageCounts;
+  suites: SuiteTotals[];
+}
+
+/**
+ * A commit's coverage split by area: each of `names`, in order, with the
+ * files `areaOf` puts in it. An area no file of the commit falls in counts
+ * nothing.
+ */
+export function areaCoverage(
+  combined: Pick<CombinedCoverage, 'files' | 'suites'>,
+  names: string[],
+  areaOf: (path: string) => string | null,
+): AreaCoverage[] {
+  const byArea = new Map<string, CombinedFile[]>(names.map((name) => [name, []]));
+  for (const file of combined.files) {
+    const area = areaOf(file.path);
+    if (area !== null) byArea.get(area)?.push(file);
+  }
+  return names.map((name) => {
+    const files = byArea.get(name)!;
+    const totals = emptyCounts();
+    for (const file of files) addFileCounts(totals, file);
+    return { name, totals, suites: suiteTotals(files, combined.suites) };
+  });
+}
+
 /** Combine the suites' coverage of one commit. */
 export function combineCoverage(input: CombineInput): CombinedCoverage {
   // Each file's entries per suite, at the version the inventory names (else the first a suite names).
@@ -276,26 +333,7 @@ export function combineCoverage(input: CombineInput): CombinedCoverage {
   const totals = emptyCounts();
   for (const file of files) addFileCounts(totals, file);
 
-  const suites: SuiteTotals[] = input.suites.map((suite) => {
-    const counts = emptyCounts();
-    // Every suite counts on the same reference lines: a file it does not name is all unrun for it.
-    for (const file of files) {
-      counts.executableLines += countLines(file.executable);
-      counts.knownFunctions += file.knownFunctions.length;
-      if (!(suite.name in file.bySuite)) continue;
-      counts.files++;
-      counts.executedLines += countLines(file.bySuite[suite.name]!);
-      counts.runFunctions += file.functionsBySuite[suite.name] ?? 0;
-    }
-    return {
-      ...counts,
-      name: suite.name,
-      kind: suite.kind,
-      carriedFrom: suite.carriedFrom ?? null,
-      carriedFiles: suite.carriedFiles ?? 0,
-      incomplete: suite.incomplete === true,
-    };
-  });
+  const suites = suiteTotals(files, input.suites);
 
   const named = new Set(files.map((f) => f.path));
   const filesWithoutData = input.inventory

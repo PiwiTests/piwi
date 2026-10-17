@@ -3,6 +3,7 @@ import { coverageDaily, projects } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsCoverageTrend } from '../../analytics/types';
+import type { CoverageTrendOptions } from '../../analytics/registry';
 import { COMBINED_SUITE, coveragePercent } from '../../coverage-combine';
 import { resolveProjectStates } from '../capabilities';
 import { dayKey, firstNonEmptyIndex, getAnalyticsContext, type AnalyticsContext, type ProjectAccess } from './common';
@@ -34,7 +35,8 @@ function asOf(series: Series, day: string): Series[number] | null {
  * Combined line coverage over time: per bucket, the lines every suite ran
  * together over the executable lines, summed over the projects of the scope
  * with coverage on, each at its newest day with coverage on or before the
- * bucket's end, and the same for each suite by name. Read from
+ * bucket's end, and the same for each suite by name, or with `split: 'areas'`
+ * for each named area of the projects' code. Read from
  * `coverage_daily`, which keeps the totals after the reports they came from
  * are pruned.
  */
@@ -42,7 +44,9 @@ export async function getAnalyticsCoverageTrend(
   db: DrizzleDB,
   scope: AnalyticsScope,
   access: ProjectAccess = 'all',
+  options: Partial<CoverageTrendOptions> = {},
 ): Promise<AnalyticsCoverageTrend> {
+  const split = options.split ?? 'suites';
   const ctx = await getAnalyticsContext(db, scope, access);
   const empty: AnalyticsCoverageTrend = {
     points: [],
@@ -52,7 +56,8 @@ export async function getAnalyticsCoverageTrend(
     delta: null,
     executedLines: 0,
     executableLines: 0,
-    suites: [],
+    split,
+    series: [],
     projects: 0,
     declined: 0,
   };
@@ -77,6 +82,7 @@ export async function getAnalyticsCoverageTrend(
       projectId: coverageDaily.projectId,
       branch: coverageDaily.branch,
       suite: coverageDaily.suite,
+      area: coverageDaily.area,
       day: coverageDaily.day,
       executed: coverageDaily.executedLines,
       executable: coverageDaily.executableLines,
@@ -93,20 +99,30 @@ export async function getAnalyticsCoverageTrend(
     );
 
   const wanted = new Map(included.map((p) => [p.id, new Set(branchTags(ctx, p.defaultBranch))]));
-  // Per suite, one series per project and branch.
-  const bySuite = new Map<string, Map<string, Series>>();
+  // Per line of the chart (every suite together, then each suite or area), one series per project and branch.
+  const lineOf = (row: { suite: string; area: string }): string | null => {
+    if (row.area === '' && row.suite === COMBINED_SUITE) return COMBINED_SUITE;
+    if (split === 'areas') return row.suite === COMBINED_SUITE ? row.area : null;
+    return row.area === '' ? row.suite : null;
+  };
+  const byLine = new Map<string, Map<string, Series>>();
   for (const row of daily) {
     if (!wanted.get(row.projectId)?.has(row.branch)) continue;
+    const line = lineOf(row);
+    if (line === null) continue;
     const key = `${row.projectId}\0${row.branch}`;
-    const suite = bySuite.get(row.suite) ?? new Map<string, Series>();
-    suite.set(key, [...(suite.get(key) ?? []), { day: row.day, executed: row.executed, executable: row.executable }]);
-    bySuite.set(row.suite, suite);
+    const perProject = byLine.get(line) ?? new Map<string, Series>();
+    perProject.set(key, [
+      ...(perProject.get(key) ?? []),
+      { day: row.day, executed: row.executed, executable: row.executable },
+    ]);
+    byLine.set(line, perProject);
   }
-  const seriesOf = (suite: string) =>
-    [...(bySuite.get(suite)?.values() ?? [])].map((list) => list.sort((a, b) => a.day.localeCompare(b.day)));
-  const series = seriesOf(COMBINED_SUITE);
+  const seriesOf = (line: string) =>
+    [...(byLine.get(line)?.values() ?? [])].map((list) => list.sort((a, b) => a.day.localeCompare(b.day)));
+  const combinedSeries = seriesOf(COMBINED_SUITE);
 
-  const totalAsOf = (day: string, of: Series[] = series) => {
+  const totalAsOf = (day: string, of: Series[] = combinedSeries) => {
     let executed = 0;
     let executable = 0;
     let any = false;
@@ -138,7 +154,7 @@ export async function getAnalyticsCoverageTrend(
   const first = firstNonEmptyIndex(points, (p) => p.linePercent === null);
   const percentOf = (total: { any: boolean; executed: number; executable: number }) =>
     total.any ? coveragePercent(total.executed, total.executable) : null;
-  const suites = [...bySuite.keys()]
+  const lines = [...byLine.keys()]
     .filter((name) => name !== COMBINED_SUITE)
     .sort()
     .map((name) => {
@@ -167,7 +183,8 @@ export async function getAnalyticsCoverageTrend(
         : null,
     executedLines: current.executed,
     executableLines: current.executable,
-    suites,
+    split,
+    series: lines,
     projects: included.length,
     declined,
   };

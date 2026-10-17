@@ -161,6 +161,11 @@ export const ownershipOptionsSchema = z.object({
   limit: z.number().int().min(5).max(25).default(10),
 });
 
+export const coverageTrendOptionsSchema = z.object({
+  /** The dashed lines beside every suite together: one per suite, or one per named area of the code. */
+  split: z.enum(['suites', 'areas']).default('suites'),
+});
+
 export const environmentComparisonOptionsSchema = z.object({
   /** How many environments are compared, the least healthy first. */
   limit: z.number().int().min(2).max(25).default(8),
@@ -176,6 +181,7 @@ export const moversOptionsSchema = z.object({
 
 export type StatsOptions = z.infer<typeof statsOptionsSchema>;
 export type MetricOptions = z.infer<typeof metricOptionsSchema>;
+export type CoverageTrendOptions = z.infer<typeof coverageTrendOptionsSchema>;
 
 export const ANALYTICS_WIDGETS = [
   {
@@ -347,12 +353,14 @@ export const ANALYTICS_WIDGETS = [
   {
     id: 'coverage-trend',
     title: 'Coverage trend',
-    description: 'The share of lines every suite ran together, unit and end-to-end, over time.',
+    description:
+      'The share of lines every suite ran together, unit and end-to-end, over time, beside each suite’s or each area’s.',
     icon: 'i-lucide-scan-line',
     size: 'half',
     band: 'trends',
     testFilters: false,
     capability: 'coverage',
+    options: coverageTrendOptionsSchema,
   },
   {
     id: 'flaky-debt',

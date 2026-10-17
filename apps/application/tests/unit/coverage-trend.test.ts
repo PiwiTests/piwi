@@ -32,12 +32,14 @@ async function daily(
   executable: number,
   branch = '',
   suite = 'combined',
+  area = '',
 ) {
   await db.insert(schema.coverageDaily).values({
     projectId,
     day: day(daysAgo),
     branch,
     suite,
+    area,
     commit: 'c0ffee',
     executableLines: executable,
     executedLines: executed,
@@ -70,6 +72,8 @@ beforeAll(async () => {
   await daily(2, 8, 25, 100);
   // Admin's unit suite, on the same lines.
   await daily(2, 8, 20, 100, '', 'unit-back');
+  // Admin's front end, an area of half its lines.
+  await daily(2, 8, 20, 50, '', 'combined', 'front');
 });
 
 describe('coverage trend', () => {
@@ -84,8 +88,8 @@ describe('coverage trend', () => {
       projects: 2,
       declined: 0,
     });
-    expect(data.suites).toMatchObject([{ name: 'unit-back', linePercent: 20 }]);
-    expect(data.suites[0].points).toHaveLength(data.points.length);
+    expect(data.series).toMatchObject([{ name: 'unit-back', linePercent: 20 }]);
+    expect(data.series[0].points).toHaveLength(data.points.length);
     const known = data.points.filter((p: any) => p.linePercent !== null);
     expect(known[0].linePercent).toBe(60);
     expect(known.at(-1).linePercent).toBe(50);
@@ -115,5 +119,16 @@ describe('coverage trend', () => {
     const [block] = WIDGET_DOCUMENTS['coverage-trend'](data, ctxFor('en'), {});
     expect((block as any).summary).toBe('Line coverage: 25% · unit-back 20%');
     expect((block as any).series.map((s: any) => s.label)).toEqual(['Line coverage', 'unit-back']);
+  });
+
+  test('draws one line per area with split: areas, and leaves the areas out of the suites', async () => {
+    const bySuite = (await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '2' }))) as any;
+    expect(bySuite.series.map((s: any) => s.name)).toEqual(['unit-back']);
+    const byArea = (await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '2' }), 'all', {
+      split: 'areas',
+    })) as any;
+    expect(byArea.split).toBe('areas');
+    expect(byArea.series).toMatchObject([{ name: 'front', linePercent: 40 }]);
+    expect(byArea.linePercent).toBe(25);
   });
 });

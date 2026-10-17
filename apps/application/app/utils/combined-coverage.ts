@@ -105,3 +105,43 @@ export function enclosingFunction(functions: LineRange[], line: number): LineRan
   }
   return found;
 }
+
+/** Areas as the settings form writes them: one per line, `name: pattern, pattern`. */
+export function areasText(areas: Array<{ name: string; include: string[] }> | null | undefined): string {
+  return (areas ?? []).map((a) => `${a.name}: ${a.include.join(', ')}`).join('\n');
+}
+
+/**
+ * Areas read back from the settings form's text: blank lines and `#`
+ * comments skipped. An error names the first line that is not `name: patterns`.
+ */
+export function parseAreasText(
+  text: string,
+): { areas: Array<{ name: string; include: string[] }> } | { error: string } {
+  const areas: Array<{ name: string; include: string[] }> = [];
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (!line || line.startsWith('#')) continue;
+    const colon = line.indexOf(':');
+    const name = colon < 0 ? '' : line.slice(0, colon).trim();
+    const include = (colon < 0 ? '' : line.slice(colon + 1))
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (!name || include.length === 0) return { error: `Line ${i + 1}: write the area as “name: pattern, pattern”.` };
+    areas.push({ name, include });
+  }
+  return { areas };
+}
+
+/** Patterns as the settings form writes them, one per line; and read back, blank lines dropped. */
+export function patternsText(patterns: string[] | null | undefined): string {
+  return (patterns ?? []).join('\n');
+}
+export function parsePatternsText(text: string): string[] {
+  return text
+    .split('\n')
+    .map((p) => p.trim())
+    .filter(Boolean);
+}

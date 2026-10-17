@@ -61,7 +61,7 @@ import {
 } from '../analytics/timeout-hygiene';
 import { parseProjectDecisions } from '#shared/capabilities';
 import { normalizeProjectTargets } from '#shared/analytics/targets';
-import { parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
+import { parseCoverageAreas, parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -419,6 +419,10 @@ async function validTagIds(db: DrizzleDB, tagIds: number[]): Promise<number[]> {
 export const INVALID_COVERAGE_SCOPE =
   'coverageScope must be { include?: string[], exclude?: string[] }: at most 200 patterns each, 300 characters a pattern, no "!" negation';
 
+/** The error `updateProject` throws for coverage areas `parseCoverageAreas` refuses. */
+export const INVALID_COVERAGE_AREAS =
+  'coverageAreas must be a list of at most 20 { name, include: string[] }: distinct names of 1 to 40 letters, digits, spaces, ".", "_" or "-", each with at least one pattern';
+
 export async function updateProject(
   db: DrizzleDB,
   id: number,
@@ -442,6 +446,8 @@ export async function updateProject(
     targets?: unknown;
     /** The files coverage totals count (`CoverageScope`); null restores the default excludes. */
     coverageScope?: unknown;
+    /** Named areas of the code (`CoverageArea[]`), each counted apart; null or [] removes them. */
+    coverageAreas?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -463,8 +469,12 @@ export async function updateProject(
     generatedSpecs,
     targets,
     coverageScope,
+    coverageAreas,
     tagIds: dataTagIds,
   } = data;
+  const areas =
+    coverageAreas === undefined || coverageAreas === null ? coverageAreas : parseCoverageAreas(coverageAreas);
+  if (areas === null && coverageAreas !== null) throw new Error(INVALID_COVERAGE_AREAS);
   const scope: CoverageScope | null | undefined =
     coverageScope === undefined || coverageScope === null ? coverageScope : parseCoverageScope(coverageScope);
   if (scope === null && coverageScope !== null) throw new Error(INVALID_COVERAGE_SCOPE);
@@ -493,6 +503,7 @@ export async function updateProject(
         ...(scopeChanged
           ? { coverageScope: scope, coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` }
           : {}),
+        ...(areas !== undefined ? { coverageAreas: areas && areas.length > 0 ? areas : null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(projects.id, id));

@@ -260,7 +260,12 @@ async function headCommitCoverage(
     return null;
   });
   if (!coverage) return null;
-  return { commit: coverage.commit, files: coverage.combined.files, suites: coverage.combined.suites };
+  return {
+    commit: coverage.commit,
+    files: coverage.combined.files,
+    suites: coverage.combined.suites,
+    areas: { names: coverage.areas.map((a) => a.name), areaOf: coverage.areaOf },
+  };
 }
 
 /** A generic, honest draft suggestion for an uncovered changed file. */

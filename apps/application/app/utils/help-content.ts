@@ -671,6 +671,11 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/code-reach#on-the-execution-page',
   },
+  'coverage.areas': {
+    title: 'Coverage areas',
+    text: 'Name the parts of your code, `front` and `back` for instance, by the patterns of their files. Every suite’s coverage splits the same way, unit and end to end: each area gets its own totals on the coverage page, its own line in the coverage trend, and its share of a pull request’s changed lines. A file belongs to the first area whose patterns match it; a file in none counts only in the totals. The scope above decides which files count at all.',
+    doc: 'features/combined-coverage#areas',
+  },
   'coverage.least-covered': {
     title: 'Least covered',
     text: 'The files of this folder with the most executable lines no suite ran, unit or end to end, the most first, then the lowest share run. Undetermined lines (in a function the browser ran) are not counted. A file opens with each line marked by the suites that ran it, and the next gap one click away.',

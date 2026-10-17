@@ -54,6 +54,15 @@ describe('computePatchCoverage', () => {
     ]);
   });
 
+  test('counts each named area’s changed lines', () => {
+    const pc = computePatchCoverage('c0ffee', combined.files, suites, new Map([['src/cart.ts', [2, 5, 8]]]), {
+      names: ['front', 'back'],
+      areaOf: (path) => (path.startsWith('src/') ? 'front' : null),
+    });
+    expect(pc!.areas).toEqual([{ name: 'front', changedLines: 3, executedLines: 2 }]);
+    expect(renderPatchCoverage(pc!)).toContain('By area: front 2 of 3.');
+  });
+
   test('is null when no changed line is a reference line', () => {
     expect(computePatchCoverage('c0ffee', combined.files, suites, new Map([['src/cart.ts', [12]]]))).toBeNull();
     expect(computePatchCoverage('c0ffee', combined.files, suites, new Map([['src/other.ts', [1]]]))).toBeNull();

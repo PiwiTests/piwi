@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { LineRange } from '@piwitests/core/coverage';
 import {
+  areaCoverage,
   combineCoverage,
   coveragePercent,
   folderBreakdown,
@@ -253,5 +254,35 @@ describe('coveragePercent', () => {
   test('is a percentage with one decimal, null with nothing to count', () => {
     expect(coveragePercent(422, 755)).toBe(55.9);
     expect(coveragePercent(0, 0)).toBeNull();
+  });
+});
+
+describe('areaCoverage', () => {
+  test('splits every suite by area on the same lines, a file in the first area that matches it', () => {
+    const combined = combineCoverage({
+      inventory: null,
+      inScope: all,
+      spanTable: new Map(),
+      suites: [
+        unit([
+          file('apps/web/cart.ts', { executable: [[1, 10]], lines: [[1, 4]] }),
+          file('src/Api/Shop.cs', { executable: [[1, 4]], lines: [[1, 1]] }),
+          file('tools/build.ts', { executable: [[1, 2]], lines: [[1, 2]] }),
+        ]),
+        e2e([file('apps/web/cart.ts', { lines: [[5, 6]] })]),
+      ],
+    });
+    const areas = areaCoverage(combined, ['front', 'back', 'docs'], (path) =>
+      path.startsWith('apps/') ? 'front' : path.startsWith('src/') ? 'back' : null,
+    );
+    expect(areas.map((a) => [a.name, a.totals.executedLines, a.totals.executableLines, a.totals.files])).toEqual([
+      ['front', 6, 10, 1],
+      ['back', 1, 4, 1],
+      ['docs', 0, 0, 0],
+    ]);
+    expect(areas[0]!.suites.map((s) => [s.name, s.executedLines, s.executableLines])).toEqual([
+      ['unit-back', 4, 10],
+      ['e2e', 2, 10],
+    ]);
   });
 });

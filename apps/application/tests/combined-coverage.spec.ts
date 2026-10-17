@@ -93,7 +93,19 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
     'SF:src/Shop.cs\nFNF:0\nFNH:0\nDA:2,1\nDA:3,1\nDA:4,1\nDA:6,1\nDA:7,1\nDA:8,0\nLF:6\nLH:5',
   );
 
+  // An area of the code counts apart: every file here is under src/.
+  const patched = await request.patch(`/api/projects/${projectId}`, {
+    data: { coverageAreas: [{ name: 'api', include: ['src/'] }] },
+  });
+  expect(patched.ok()).toBeTruthy();
+  expect(
+    (
+      await request.patch(`/api/projects/${projectId}`, { data: { coverageAreas: [{ name: 'api', include: [] }] } })
+    ).status(),
+  ).toBe(400);
+
   await page.goto(`/projects/${projectId}/coverage`);
+  await expect(page.locator('[data-area="api"]')).toContainText('83.3% of lines · unit-back 50.0% · e2e 33.3%');
   await expect(page.getByTestId('coverage-totals')).toContainText('83.3% of 6 executable lines ran, across 2 suites.');
   await expect(page.getByTestId('coverage-suites').locator('[data-suite]')).toHaveCount(2);
   await page.getByRole('link', { name: 'src/', exact: true }).click();

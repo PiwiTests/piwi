@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { eq } from 'drizzle-orm';
 
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -22,6 +23,7 @@ const { loadCommitCoverage, storeCommitTotals, latestCoverageCommit } =
   await import('../../server/utils/coverage-totals');
 const { getCoverageSummary, invalidateCommitCoverage, parseCoverageSummaryQuery } =
   await import('../../server/utils/coverage-summary');
+const { INVALID_COVERAGE_AREAS, updateProject } = await import('../../shared/handlers/projects');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 const COMMIT_1 = '1'.repeat(40);
@@ -208,6 +210,75 @@ describe('combined coverage of a commit', () => {
     // Recomputing replaces the commit's rows.
     await storeCommitTotals(db as never, 1, COMMIT_1, now);
     expect(await db.select().from(schema.coverageTotals)).toHaveLength(2);
+  });
+
+  test('counts each named area apart, in the stored totals and in the summary, and keeps the lists to one area', async () => {
+    await db
+      .update(schema.projects)
+      .set({
+        coverageAreas: [
+          { name: 'back', include: ['*.cs'] },
+          { name: 'front', include: ['src/'] },
+        ],
+      })
+      .where(eq(schema.projects.id, 1));
+    await upload({
+      inventory,
+      files: [
+        { path: 'src/Shop.cs', blob: BLOB_A, executable: [[1, 4]], lines: [[1, 3]] },
+        { path: 'src/cart.ts', blob: BLOB_B, executable: [[1, 4]], lines: [[1, 1]] },
+      ],
+    });
+    const now = new Date(Date.UTC(2026, 9, 5, 12));
+    await storeCommitTotals(db as never, 1, COMMIT_1, now);
+    const totals = await db
+      .select()
+      .from(schema.coverageTotals)
+      .orderBy(schema.coverageTotals.area, schema.coverageTotals.suite);
+    expect(totals.map((t) => [t.area, t.suite, t.executedLines, t.executableLines])).toEqual([
+      ['', 'combined', 4, 8],
+      ['', 'unit-back', 4, 8],
+      ['back', 'combined', 3, 4],
+      ['back', 'unit-back', 3, 4],
+      ['front', 'combined', 1, 4],
+      ['front', 'unit-back', 1, 4],
+    ]);
+    expect(await db.select().from(schema.coverageDaily)).toHaveLength(6);
+
+    const summary = (await getCoverageSummary(db as never, 1, {
+      commit: COMMIT_1,
+      branch: null,
+      folder: 'src',
+      area: 'front',
+    }))!;
+    expect(summary.areas.map((a) => [a.name, a.linePercent, a.suites.map((s) => s.name)])).toEqual([
+      ['back', 75, ['unit-back']],
+      ['front', 25, ['unit-back']],
+    ]);
+    expect(summary.area).toBe('front');
+    expect(summary.entries.map((e) => e.path)).toEqual(['src/cart.ts']);
+    expect(summary.filesWithoutData.paths).toEqual(['src/idle.ts']);
+    // An area the project does not name keeps every file.
+    const unknown = (await getCoverageSummary(db as never, 1, {
+      commit: COMMIT_1,
+      branch: null,
+      folder: 'src',
+      area: 'x',
+    }))!;
+    expect(unknown.area).toBeNull();
+    expect(unknown.entries).toHaveLength(2);
+  });
+
+  test('stores the areas a project names, refuses ill-formed ones and removes them with an empty list', async () => {
+    const areasOf = async () =>
+      (await db.select({ areas: schema.projects.coverageAreas }).from(schema.projects))[0]!.areas;
+    await updateProject(db as never, 1, { coverageAreas: [{ name: 'front', include: ['apps/web/'] }] });
+    expect(await areasOf()).toEqual([{ name: 'front', include: ['apps/web/'] }]);
+    await expect(updateProject(db as never, 1, { coverageAreas: [{ name: 'front', include: [] }] })).rejects.toThrow(
+      INVALID_COVERAGE_AREAS,
+    );
+    await updateProject(db as never, 1, { coverageAreas: [] });
+    expect(await areasOf()).toBeNull();
   });
 
   test('has none for a commit without a report or a complete run', async () => {

@@ -62,6 +62,7 @@ const commit = computed(() =>
   typeof route.query.commit === 'string' && route.query.commit ? route.query.commit : undefined,
 );
 const folder = computed(() => (typeof route.query.folder === 'string' ? route.query.folder : undefined));
+const area = computed(() => (typeof route.query.area === 'string' && route.query.area ? route.query.area : undefined));
 
 // The combined coverage at the commit: the page's subject without a file, the suites of each line with one.
 const {
@@ -76,6 +77,7 @@ const {
     branch: branch.value,
     folder: file.value ? undefined : folder.value,
     file: file.value || undefined,
+    area: file.value ? undefined : area.value,
   })),
 });
 const summaryLoading = computed(() => summaryStatus.value === 'idle' || summaryStatus.value === 'pending');

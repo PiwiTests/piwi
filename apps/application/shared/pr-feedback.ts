@@ -217,7 +217,8 @@ export interface PrChangeCoverage {
 
 /**
  * The patch coverage line: "Patch coverage 82.9%: 34 of the 41 changed lines
- * ran (unit 28, end to end 19)."
+ * ran (unit 28, end to end 19)", and by area when the project names some:
+ * "By area: front 28 of 30, back 6 of 11."
  */
 export function renderPatchCoverage(pc: PatchCoverage): string {
   const percent = coveragePercent(pc.executedLines, pc.changedLines);
@@ -230,6 +231,9 @@ export function renderPatchCoverage(pc: PatchCoverage): string {
   let text = `**Patch coverage ${percent}%**: ${pc.executedLines} of the ${pc.changedLines} ${lines} ran`;
   if (parts.length > 0) text += ` (${parts.join(', ')})`;
   text += `, at ${codeSpan(pc.commit.slice(0, 7))}.`;
+  if (pc.areas.length > 0) {
+    text += ` By area: ${pc.areas.map((a) => `${escapeInline(a.name)} ${a.executedLines} of ${a.changedLines}`).join(', ')}.`;
+  }
   if (pc.undeterminedLines > 0) {
     text += ` ${pc.undeterminedLines} more ${pc.undeterminedLines === 1 ? 'is' : 'are'} undetermined: in functions the browser ran.`;
   }

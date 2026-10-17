@@ -21,8 +21,11 @@ import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { normalizeFunctionRanges, normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import {
   DEFAULT_COVERAGE_SCOPE,
+  compileCoverageAreas,
   compileCoverageScope,
+  parseCoverageAreas,
   parseCoverageScope,
+  type CoverageArea,
   type CoverageScope,
 } from '@piwitests/core/coverage-scope';
 import { coverageDaily, coverageReports, coverageTotals, projects, runCoverage, testRuns } from '../database/schema';
@@ -30,7 +33,9 @@ import type { DrizzleDB } from '#shared/handlers/db';
 import {
   COMBINED_SUITE,
   E2E_SUITE,
+  areaCoverage,
   combineCoverage,
+  type AreaCoverage,
   type CombinedCoverage,
   type CoverageCounts,
   type SuiteFile,
@@ -53,6 +58,10 @@ export interface CommitCoverage {
   scope: CoverageScope;
   scopeVersion: number;
   combined: CombinedCoverage;
+  /** The project's named areas, and the commit's coverage of each. */
+  areas: AreaCoverage[];
+  /** The area a repository-relative path belongs to; null outside every area. */
+  areaOf: (path: string) => string | null;
   /** The complete runs whose coverage makes the `e2e` suite. */
   runIds: number[];
 }
@@ -130,15 +139,19 @@ async function commitRuns(
     .orderBy(desc(testRuns.startTime), desc(testRuns.id));
 }
 
-/** The project's coverage scope and its version. */
-async function projectScope(db: DrizzleDB, projectId: number): Promise<{ scope: CoverageScope; version: number }> {
+/** The project's coverage scope, its version and its named areas. */
+async function projectScope(
+  db: DrizzleDB,
+  projectId: number,
+): Promise<{ scope: CoverageScope; version: number; areas: CoverageArea[] }> {
   const [row] = await db
-    .select({ scope: projects.coverageScope, version: projects.coverageScopeVersion })
+    .select({ scope: projects.coverageScope, version: projects.coverageScopeVersion, areas: projects.coverageAreas })
     .from(projects)
     .where(eq(projects.id, projectId));
   return {
     scope: (row?.scope ? parseCoverageScope(row.scope) : null) ?? DEFAULT_COVERAGE_SCOPE,
     version: row?.version ?? 0,
+    areas: (row?.areas ? parseCoverageAreas(row.areas) : null) ?? [],
   };
 }
 
@@ -156,7 +169,7 @@ export async function loadCommitCoverage(
   projectId: number,
   commit: string,
 ): Promise<CommitCoverage | null> {
-  const [reports, runs, { scope, version }] = await Promise.all([
+  const [reports, runs, { scope, version, areas }] = await Promise.all([
     db
       .select()
       .from(coverageReports)
@@ -202,7 +215,13 @@ export async function loadCommitCoverage(
   }
 
   const combined = combineCoverage({ inventory, inScope: compileCoverageScope(scope), spanTable, suites });
-  return { commit, branch, scope, scopeVersion: version, combined, runIds };
+  const areaOf = compileCoverageAreas(areas);
+  const byArea = areaCoverage(
+    combined,
+    areas.map((a) => a.name),
+    areaOf,
+  );
+  return { commit, branch, scope, scopeVersion: version, combined, areas: byArea, areaOf, runIds };
 }
 
 /**
@@ -300,8 +319,9 @@ function countColumns(counts: CoverageCounts) {
 
 /**
  * Compute and store a commit's totals: one `coverage_totals` row per suite and
- * one for every suite combined, replacing what the commit held, and the day's
- * `coverage_daily` rows. Returns the coverage, or null when the commit has none.
+ * one for every suite combined, for every file and for each of the project's
+ * named areas, replacing what the commit held, and the day's `coverage_daily`
+ * rows. Returns the coverage, or null when the commit has none.
  */
 export async function storeCommitTotals(
   db: DrizzleDB,
@@ -320,6 +340,7 @@ export async function storeCommitTotals(
   const withoutData = combined.filesWithoutData?.length ?? null;
   const rows = [
     {
+      area: '',
       suite: COMBINED_SUITE,
       kind: COMBINED_SUITE,
       counts: combined.totals,
@@ -328,19 +349,37 @@ export async function storeCommitTotals(
       carriedFrom: combined.suites.find((s) => s.carriedFrom)?.carriedFrom ?? null,
       incomplete: combined.suites.some((s) => s.incomplete),
     },
-    ...combined.suites.map((s) => ({
-      suite: s.name,
-      kind: s.kind,
-      counts: s as CoverageCounts,
-      filesWithoutData: null,
-      filesCarriedForward: s.carriedFiles,
-      carriedFrom: s.carriedFrom,
-      incomplete: s.incomplete,
-    })),
+    ...[{ name: '', suites: combined.suites }, ...coverage.areas].flatMap((area) => [
+      ...(area.name
+        ? [
+            {
+              area: area.name,
+              suite: COMBINED_SUITE,
+              kind: COMBINED_SUITE,
+              counts: (area as AreaCoverage).totals,
+              filesWithoutData: null,
+              filesCarriedForward: 0,
+              carriedFrom: null,
+              incomplete: combined.suites.some((s) => s.incomplete),
+            },
+          ]
+        : []),
+      ...area.suites.map((s) => ({
+        area: area.name,
+        suite: s.name,
+        kind: s.kind,
+        counts: s as CoverageCounts,
+        filesWithoutData: null,
+        filesCarriedForward: area.name ? 0 : s.carriedFiles,
+        carriedFrom: s.carriedFrom,
+        incomplete: s.incomplete,
+      })),
+    ]),
   ].map((r) => ({
     projectId,
     commit,
     branch: coverage.branch,
+    area: r.area,
     suite: r.suite,
     kind: r.kind,
     ...countColumns(r.counts),
@@ -361,6 +400,7 @@ export async function storeCommitTotals(
     const daily = {
       branch: row.branch,
       suite: row.suite,
+      area: row.area,
       commit: row.commit,
       executableLines: row.executableLines,
       executedLines: row.executedLines,
@@ -377,7 +417,13 @@ export async function storeCommitTotals(
       .insert(coverageDaily)
       .values({ ...daily, projectId, day })
       .onConflictDoUpdate({
-        target: [coverageDaily.projectId, coverageDaily.day, coverageDaily.branch, coverageDaily.suite],
+        target: [
+          coverageDaily.projectId,
+          coverageDaily.day,
+          coverageDaily.branch,
+          coverageDaily.suite,
+          coverageDaily.area,
+        ],
         set: { ...daily },
       });
   }

@@ -6,6 +6,10 @@
  * contents). No include pattern includes every file; an exclude pattern wins
  * over an include. The default excludes leave out tests, build output and
  * generated sources, whatever tool reports them.
+ *
+ * A project also names areas of its code (`front: apps/web/`, `back: src/Api/`)
+ * in the same syntax: a file belongs to the first area whose patterns match
+ * it, so every suite's coverage splits the same way.
  */
 import { pathPatternToRegExp } from './codeowners';
 
@@ -77,5 +81,45 @@ export function compileCoverageScope(scope: CoverageScope): CoverageScopeMatcher
     const file = path.replace(/\\/g, '/').replace(/^\.?\//, '');
     if (include.length > 0 && !include.some((pattern) => pattern.test(file))) return false;
     return !exclude.some((pattern) => pattern.test(file));
+  };
+}
+
+/** A named area of the code, `front` or `back`: the files its patterns match, in the scope's syntax. */
+export interface CoverageArea {
+  name: string;
+  include: string[];
+}
+
+/** Areas a project names at most. */
+export const MAX_COVERAGE_AREAS = 20;
+const AREA_NAME = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,39}$/u;
+
+/**
+ * Areas from untrusted input: each a name (1 to 40 letters, digits, spaces,
+ * `.`, `_` or `-`, starting with a letter or digit) and at least one include
+ * pattern, the names distinct. Null when the input is not such a list, or
+ * names more than 20 areas.
+ */
+export function parseCoverageAreas(raw: unknown): CoverageArea[] | null {
+  if (!Array.isArray(raw) || raw.length > MAX_COVERAGE_AREAS) return null;
+  const out: CoverageArea[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return null;
+    const record = item as Record<string, unknown>;
+    const name = typeof record.name === 'string' ? record.name.trim() : '';
+    const include = patterns(record.include);
+    if (!AREA_NAME.test(name) || !include || include.length === 0) return null;
+    if (out.some((area) => area.name.toLowerCase() === name.toLowerCase())) return null;
+    out.push({ name, include });
+  }
+  return out;
+}
+
+/** The area a repository-relative path belongs to: the first whose patterns match it, else null. */
+export function compileCoverageAreas(areas: CoverageArea[]): (path: string) => string | null {
+  const compiled = areas.map((area) => ({ name: area.name, patterns: area.include.map(pathPatternToRegExp) }));
+  return (path) => {
+    const file = path.replace(/\\/g, '/').replace(/^\.?\//, '');
+    return compiled.find((area) => area.patterns.some((pattern) => pattern.test(file)))?.name ?? null;
   };
 }

@@ -676,7 +676,8 @@ export interface AnalyticsCoverageTrendPoint {
   executableLines: number;
 }
 
-export interface AnalyticsCoverageTrendSuite {
+/** One dashed line of the coverage trend: a suite, or a named area of the code. */
+export interface AnalyticsCoverageTrendSeries {
   name: string;
   points: Array<{ date: string; linePercent: number | null }>;
   /** At the period's end. */
@@ -693,8 +694,10 @@ export interface AnalyticsCoverageTrend {
   delta: number | null;
   executedLines: number;
   executableLines: number;
-  /** Each suite's share of the same lines, by name, the suites of every project in scope summed. */
-  suites: AnalyticsCoverageTrendSuite[];
+  /** What the dashed lines are: each suite's share of the same lines, or each area's share of its own lines. */
+  split: 'suites' | 'areas';
+  /** One per suite or area name, every project in scope summed. */
+  series: AnalyticsCoverageTrendSeries[];
   /** Projects of the scope with coverage on; the widget shows nothing at 0. */
   projects: number;
   /** Projects of the scope that declined coverage, left out. */

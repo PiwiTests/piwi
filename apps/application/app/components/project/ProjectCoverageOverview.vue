@@ -5,7 +5,9 @@
  * together, each suite's share on the same lines, the folder's files with the
  * most lines no suite ran, then a folder's files and folders with theirs. A
  * folder opens its contents (`?folder=`), a file the file view marked by
- * suite (`?marks=suites`). The files of the commit no suite names close the page. The
+ * suite (`?marks=suites`). With named areas, each area's totals and its
+ * suites' shares come after the suites, and an area keeps the lists to its
+ * files (`?area=`). The files of the commit no suite names close the page. The
  * card's menu exports the commit's combined coverage as LCOV or Cobertura.
  */
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
@@ -39,11 +41,11 @@ const meta = computed(() =>
   ].filter((line): line is string => !!line),
 );
 
-/** A link to this page with other query values, the commit kept. */
+/** A link to this page with other query values, the commit and the area kept. */
 function pageLink(query: Record<string, string | undefined>) {
   return {
     path: `/projects/${props.projectId}/coverage`,
-    query: { commit: route.query.commit as string | undefined, ...query },
+    query: { commit: route.query.commit as string | undefined, area: props.summary.area ?? undefined, ...query },
   };
 }
 
@@ -166,12 +168,52 @@ const barWidth = (percent: number | null) => `${Math.max(0, Math.min(100, percen
       </ul>
     </SectionCard>
 
+    <SectionCard v-if="summary.areas.length" title="Areas" :count="summary.areas.length" help="coverage.areas">
+      <ul class="divide-y divide-default" data-testid="coverage-areas-list">
+        <li
+          v-for="area in summary.areas"
+          :key="area.name"
+          class="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:gap-4"
+          :class="summary.area === area.name ? 'bg-elevated/50 -mx-2 px-2 rounded' : ''"
+          :data-area="area.name"
+        >
+          <div class="min-w-0 sm:w-48 shrink-0">
+            <NuxtLink
+              :to="pageLink({ area: summary.area === area.name ? undefined : area.name, folder: undefined })"
+              class="text-sm font-semibold text-primary truncate hover:underline"
+              :title="summary.area === area.name ? 'Show every file' : `Keep the lists to ${area.name}`"
+            >
+              {{ area.name }}
+            </NuxtLink>
+            <p class="text-xs text-muted tabular-nums">
+              {{ formatCount(area.files) }} {{ area.files === 1 ? 'file' : 'files' }} ·
+              {{ formatCount(area.executableLines) }} lines
+            </p>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="h-1.5 rounded-full bg-[var(--color-coverage-not-run)]/25 overflow-hidden" aria-hidden="true">
+              <div class="h-full bg-[var(--color-coverage-run)]" :style="{ width: barWidth(area.linePercent) }" />
+            </div>
+          </div>
+          <p class="text-xs text-muted tabular-nums sm:w-80 sm:text-right shrink-0">
+            {{ formatPercent(area.linePercent) }} of lines<template v-for="suite in area.suites" :key="suite.name">
+              · {{ suite.name }} {{ formatPercent(suite.linePercent) }}</template
+            >
+          </p>
+        </li>
+      </ul>
+    </SectionCard>
+
     <SectionCard
       v-if="summary.leastCovered.length"
       title="Least covered"
       subtitle="The files with the most lines no suite ran: where a test is most missing."
       help="coverage.least-covered"
     >
+      <p v-if="summary.area" class="mb-2 text-xs text-muted">
+        In {{ summary.area }} ·
+        <NuxtLink :to="pageLink({ area: undefined })" class="text-primary hover:underline">every file</NuxtLink>
+      </p>
       <ol class="divide-y divide-default" data-testid="coverage-least-covered">
         <li
           v-for="entry in summary.leastCovered"
@@ -195,6 +237,11 @@ const barWidth = (percent: number | null) => `${Math.max(0, Math.min(100, percen
 
     <SectionCard title="Files" :count="summary.entries.length">
       <nav class="mb-2 flex flex-wrap items-center gap-1 text-xs text-muted" aria-label="Folder">
+        <template v-if="summary.area">
+          <span>In {{ summary.area }} ·</span>
+          <NuxtLink :to="pageLink({ area: undefined })" class="hover:underline">every file</NuxtLink>
+          <span>·</span>
+        </template>
         <NuxtLink :to="pageLink({ folder: undefined })" class="hover:underline">Repository</NuxtLink>
         <template v-for="part in trail" :key="part.path">
           <span>/</span>
