@@ -1,0 +1,1 @@
+ALTER TABLE "test_runs" ADD COLUMN "server_coverage_gaps" jsonb;
