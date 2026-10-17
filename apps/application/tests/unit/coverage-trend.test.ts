@@ -59,8 +59,9 @@ beforeAll(async () => {
   await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
   await db.insert(schema.projects).values([
     { id: 1, name: 'shop', defaultBranch: 'main' },
-    { id: 2, name: 'admin', defaultBranch: 'main' },
+    { id: 2, name: 'admin', defaultBranch: 'main', coverageAreas: [{ name: 'front', include: ['src/'] }] },
     { id: 3, name: 'docs', defaultBranch: 'main' },
+    { id: 4, name: 'billing', defaultBranch: 'main' },
   ]);
   // Shop: 60% three weeks ago (the comparison period), 70% then 75% in the period.
   await daily(1, 20, 60, 100);
@@ -72,8 +73,14 @@ beforeAll(async () => {
   await daily(2, 8, 25, 100);
   // Admin's unit suite, on the same lines.
   await daily(2, 8, 20, 100, '', 'unit-back');
-  // Admin's front end, an area of half its lines.
+  // Admin's front end, an area of half its lines, and an area it no longer names.
   await daily(2, 8, 20, 50, '', 'combined', 'front');
+  await daily(2, 8, 5, 50, '', 'combined', 'legacy');
+  // Billing: the default branch and develop, and a suite that stopped reporting two months ago.
+  await daily(4, 3, 40, 100);
+  await daily(4, 3, 90, 100, 'develop');
+  await daily(4, 1, 95, 100, 'develop');
+  await daily(4, 60, 10, 100, '', 'unit-old');
 });
 
 describe('coverage trend', () => {
@@ -130,5 +137,25 @@ describe('coverage trend', () => {
     expect(byArea.split).toBe('areas');
     expect(byArea.series).toMatchObject([{ name: 'front', linePercent: 40 }]);
     expect(byArea.linePercent).toBe(25);
+  });
+
+  test('counts a project once per bucket under a list of branches, the first listed with a value', async () => {
+    const data = (await runAnalyticsWidget(
+      db as any,
+      'coverage-trend',
+      scope({ projects: '4', branches: 'main,develop' }),
+    )) as any;
+    expect(data).toMatchObject({ linePercent: 40, executedLines: 40, executableLines: 100 });
+    const developFirst = (await runAnalyticsWidget(
+      db as any,
+      'coverage-trend',
+      scope({ projects: '4', branches: 'develop,main' }),
+    )) as any;
+    expect(developFirst.linePercent).toBe(95);
+  });
+
+  test('stops carrying a series a month after its last day', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '4' }))) as any;
+    expect(data.series.map((s: any) => s.name)).toEqual([]);
   });
 });

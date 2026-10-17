@@ -319,7 +319,7 @@ async function initialize(): Promise<void> {
     .catch((e) => console.warn('[Demo DB] could not seed the report snapshots', e));
 
   // The combined coverage of each seeded commit with uploaded reports, as the
-  // upload computes it on the server: today's point of the coverage trend.
+  // upload computes it on the server: the trend's point of the day it arrived.
   await (async () => {
     if (await getAppSetting(drizzleDb as any, COVERAGE_TOTALS_SETTING)) return;
     const commits = await drizzleDb!

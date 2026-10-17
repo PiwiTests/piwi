@@ -167,6 +167,59 @@ describe('combineCoverage', () => {
     expect(result.totals).toMatchObject({ executedLines: 1, undeterminedLines: 2, knownFunctions: 3, runFunctions: 1 });
   });
 
+  test('counts the lines of a nested function the browser did not run as not run, not undetermined', () => {
+    const result = combineCoverage({
+      inventory: null,
+      inScope: all,
+      spanTable: new Map([[`src/cart.ts\0${BLOB_A}`, [[2, 11]]]]),
+      suites: [
+        e2e([
+          file('src/cart.ts', {
+            linesRecorded: false,
+            // The outer function ran; the callback on lines 5-7 inside it never did.
+            functions: [[1, 12]],
+            allFunctions: [
+              [1, 12],
+              [5, 7],
+            ],
+          }),
+        ]),
+      ],
+    });
+    const [cart] = result.files;
+    expect(cart!.classes.undetermined).toEqual([
+      [2, 4],
+      [8, 11],
+    ]);
+    expect(cart!.classes.none).toEqual([[5, 7]]);
+  });
+
+  test('counts a function a suite names in two runtimes once', () => {
+    const result = combineCoverage({
+      inventory: null,
+      inScope: all,
+      spanTable: new Map([[`src/cart.ts\0${BLOB_A}`, [[2, 8]]]]),
+      suites: [
+        e2e([
+          file('src/cart.ts', { lines: [[2, 2]], functions: [[1, 4]], allFunctions: [[1, 4]] }),
+          file('src/cart.ts', {
+            linesRecorded: false,
+            functions: [
+              [1, 4],
+              [5, 8],
+            ],
+            allFunctions: [
+              [1, 4],
+              [5, 8],
+            ],
+          }),
+        ]),
+      ],
+    });
+    expect(result.files[0]!.functionsBySuite).toEqual({ e2e: 2 });
+    expect(result.suites[0]).toMatchObject({ runFunctions: 2, knownFunctions: 2 });
+  });
+
   test('matches functions across suites by their start line', () => {
     const result = combineCoverage({
       inventory: null,
@@ -254,6 +307,11 @@ describe('coveragePercent', () => {
   test('is a percentage with one decimal, null with nothing to count', () => {
     expect(coveragePercent(422, 755)).toBe(55.9);
     expect(coveragePercent(0, 0)).toBeNull();
+  });
+
+  test('never reads 100 while a line did not run', () => {
+    expect(coveragePercent(9999, 10000)).toBe(99.9);
+    expect(coveragePercent(10000, 10000)).toBe(100);
   });
 });
 

@@ -85,6 +85,17 @@ describe('patchCoverageWarning', () => {
     expect(patchCoverageWarning(pc, 60)).toBeNull();
   });
 
+  test('compares the lines that ran, not the rounded percentage, with the minimum', () => {
+    const almost = { ...pc, changedLines: 2000, executedLines: 1999 };
+    expect(patchCoverageWarning(almost, 100)).toBe(
+      'Patch coverage 99.9%: 1999 of the 2000 changed lines ran (minimum 100%) — warn-only.',
+    );
+    expect(patchCoverageWarning({ ...pc, changedLines: 2000, executedLines: 2000 }, 100)).toBeNull();
+    expect(patchCoverageWarning({ ...pc, changedLines: 3, executedLines: 2 }, 66.7)).toBe(
+      'Patch coverage 66.7%: 2 of the 3 changed lines ran (minimum 66.7%) — warn-only.',
+    );
+  });
+
   test('says so when the coverage names no changed line', () => {
     expect(patchCoverageWarning(null, 80)).toMatch(/could not be counted/);
   });

@@ -4007,6 +4007,7 @@ function pushCoverageDaily(story, run, daySec, suite, area, executable, executed
     unit_only_lines: 0,
     e2e_only_lines: 0,
     both_lines: 0,
+    commit_seen_at: daySec,
     computed_at: daySec,
   });
 }
@@ -4107,6 +4108,7 @@ function seedCoverageReports(story, run, fragmentIdOf) {
       incomplete: 0,
       file_count: files.length,
       inventory_payload_id: inventoryId,
+      inventory_count: inventory.length,
       created_at: run.start_time,
       updated_at: run.start_time,
     });
@@ -4918,7 +4920,7 @@ const REBASE_SQL = [
   `UPDATE coverage_fragments SET created_at = created_at + ${D}, last_seen_at = last_seen_at + ${D};`,
   `UPDATE coverage_executable SET created_at = created_at + ${D};`,
   `UPDATE coverage_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
-  `UPDATE coverage_daily SET day = date(day, printf('%+d days', ${D} / 86400)), computed_at = computed_at + ${D};`,
+  `UPDATE coverage_daily SET day = date(day, printf('%+d days', ${D} / 86400)), commit_seen_at = commit_seen_at + ${D}, computed_at = computed_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,

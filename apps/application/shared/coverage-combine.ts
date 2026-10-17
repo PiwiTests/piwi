@@ -11,8 +11,9 @@
  *    ratios share one denominator; a line a tool marks outside them is ignored.
  * 2. **Executed**: a reference line ran when any suite ran it.
  * 3. **Undetermined**: reference lines no suite ran, inside a function a suite
- *    that records functions only (the browser end-to-end suite) ran. Shown next
- *    to the ratio, never added to it.
+ *    that records functions only (the browser end-to-end suite) ran, and not
+ *    inside a function nested in it that the suite reports as not run. Shown
+ *    next to the ratio, never added to it.
  * 4. **Functions**: every function a suite knows, matched across suites by its
  *    start line; one ran when any suite ran a function starting there.
  * 5. **Files without coverage data**: files of the commit's inventory in scope
@@ -161,6 +162,29 @@ export function subtractLineRanges(a: LineRange[], b: LineRange[]): LineRange[] 
 
 const union = (...ranges: LineRange[][]) => normalizeLineRanges(ranges.flat());
 
+/**
+ * The lines of the functions a suite recording functions only ran, less the
+ * functions nested in them it lists as not run: a line counts when the
+ * innermost function around it ran.
+ */
+function linesInRunFunctions(file: SuiteFile): LineRange[] {
+  const ran = normalizeFunctionRanges(file.functions);
+  const ranStarts = new Set(ran.map((f) => f[0]));
+  const notRun = normalizeFunctionRanges(file.allFunctions)
+    .filter((f) => !ranStarts.has(f[0]))
+    .sort((a, b) => a[0] - b[0]);
+  return union(
+    ...ran.map((outer) => {
+      const nested: LineRange[] = [];
+      for (const inner of notRun) {
+        if (inner[0] > outer[1]) break;
+        if (inner[0] > outer[0] && inner[1] <= outer[1]) nested.push(inner);
+      }
+      return subtractLineRanges([outer], normalizeLineRanges(nested));
+    }),
+  );
+}
+
 function emptyCounts(): CoverageCounts {
   return {
     executableLines: 0,
@@ -289,7 +313,7 @@ export function combineCoverage(input: CombineInput): CombinedCoverage {
       const ran = intersectLineRanges(normalizeLineRanges(file.lines), executable);
       bySuite[suite.name] = union(bySuite[suite.name] ?? [], ran);
       (suite.kind === 'unit' ? unitRan : e2eRan).push(ran);
-      if (!file.linesRecorded) inFunctionsRan.push(normalizeLineRanges(file.functions));
+      if (!file.linesRecorded) inFunctionsRan.push(linesInRunFunctions(file));
     }
     const unit = union(...unitRan);
     const e2e = union(...e2eRan);
@@ -309,12 +333,19 @@ export function combineCoverage(input: CombineInput): CombinedCoverage {
       normalizeFunctionRanges(placed.flatMap((e) => [...e.file.allFunctions, ...e.file.functions])),
     );
     const ranStarts = new Set<number>();
-    const functionsBySuite: Record<string, number> = {};
+    // A suite can name a file twice (its server and browser coverage): a function counts once.
+    const startsBySuite = new Map<string, Set<number>>();
     for (const { suite, file } of placed) {
-      const starts = new Set(file.functions.map((f) => f[0]).filter((start) => known.has(start)));
-      for (const start of starts) ranStarts.add(start);
-      functionsBySuite[suite.name] = (functionsBySuite[suite.name] ?? 0) + starts.size;
+      const starts = startsBySuite.get(suite.name) ?? new Set<number>();
+      for (const [start] of file.functions) {
+        if (!known.has(start)) continue;
+        starts.add(start);
+        ranStarts.add(start);
+      }
+      startsBySuite.set(suite.name, starts);
     }
+    const functionsBySuite: Record<string, number> = {};
+    for (const [name, starts] of startsBySuite) functionsBySuite[name] = starts.size;
     const knownFunctions = [...known.values()].sort((a, b) => a[0] - b[0]);
     files.push({
       path,
@@ -343,9 +374,14 @@ export function combineCoverage(input: CombineInput): CombinedCoverage {
   return { files, totals, suites, filesWithoutData, filesReferencedByReports: referencedByReports };
 }
 
-/** A ratio as a percentage with one decimal, or null when there is nothing to count. */
+/**
+ * A ratio as a percentage with one decimal, or null when there is nothing to
+ * count. A part short of the whole never reads as 100.
+ */
 export function coveragePercent(part: number, whole: number): number | null {
-  return whole > 0 ? Math.round((part / whole) * 1000) / 10 : null;
+  if (whole <= 0) return null;
+  const percent = Math.round((part / whole) * 1000) / 10;
+  return percent >= 100 && part < whole ? 99.9 : percent;
 }
 
 /** One folder's (or file's) entry in a breakdown. */

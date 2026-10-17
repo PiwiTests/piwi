@@ -23,7 +23,14 @@ import {
   type FolderEntry,
 } from '#shared/coverage-combine';
 import { eligibleRunSql } from '#shared/run-eligibility';
-import { latestCoverageCommit, loadCommitCoverage, scheduleCommitTotals, type CommitCoverage } from './coverage-totals';
+import {
+  latestCoverageCommit,
+  loadCommitCoverage,
+  recountStaleCommits,
+  scheduleCommitTotals,
+  staleCoverageCommits,
+  type CommitCoverage,
+} from './coverage-totals';
 import { locatorBranchTag } from './locator-usages';
 import { projectDefaultBranch } from './scm/stored-default-branch';
 
@@ -102,13 +109,21 @@ export function invalidateCommitCoverage(projectId: number, commit: string | nul
 
 /**
  * After a change of the project's coverage scope or areas: forget its cached
- * coverage, and recount its newest commit with coverage on the default branch
- * a few seconds from now, so the stored totals and the trend follow.
+ * coverage, and recount the commits whose totals were computed under the
+ * previous scope, so the stored totals and the trend follow: the newest on the
+ * default branch a few seconds from now, then the others one after the other,
+ * two hundred at most.
  */
 export async function recountProjectCoverage(db: DrizzleDB, projectId: number): Promise<void> {
   for (const key of [...cache.keys()]) if (key.startsWith(`${projectId}\0`)) cache.delete(key);
-  const commit = await latestCoverageCommit(db, projectId, '');
-  if (commit) scheduleCommitTotals(async () => db, projectId, commit);
+  const [first] = await staleCoverageCommits(db, projectId, 1);
+  if (first)
+    scheduleCommitTotals(
+      async () => db,
+      projectId,
+      first,
+      (database) => recountStaleCommits(database, projectId),
+    );
 }
 
 /** A commit's coverage, from the cache when computed within the last minute. */

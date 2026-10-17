@@ -118,8 +118,9 @@ export function patchCoverageWarning(pc: PatchCoverage | null, minPercent: numbe
   if (!pc) {
     return `Patch coverage could not be counted (minimum ${minPercent}%): the head commit's coverage names no changed line — warn-only.`;
   }
+  // The counts meet the minimum, not the rounded percentage.
+  if (pc.executedLines * 100 >= minPercent * pc.changedLines) return null;
   const percent = coveragePercent(pc.executedLines, pc.changedLines) ?? 0;
-  if (percent >= minPercent) return null;
   return (
     `Patch coverage ${percent}%: ${pc.executedLines} of the ${pc.changedLines} changed lines ran ` +
     `(minimum ${minPercent}%) — warn-only.`

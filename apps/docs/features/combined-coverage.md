@@ -86,23 +86,24 @@ pipeline variables. The project must exist on the dashboard: the first Playwrigh
 
 For each commit, the dashboard counts every suite that ran the code: the reports uploaded for it, and `e2e`, the run
 coverage of the commit's complete Playwright runs (a partial run, or a probe or flake-lab run, never counts). The
-totals are recomputed a few seconds after each upload and each run coverage of the commit; read them with the
+totals are recomputed seconds after each upload or run; read them with the
 [API](https://piwitests.dev/demo/docs) or the MCP `get_coverage_summary` tool.
 
 - **One set of executable lines per file version.** Tools disagree on which lines can run, so every suite counts on
   the same lines: the span table's, from [server coverage](./server-coverage), when a run recorded them for that
   version of the file; otherwise the reports' own. A line a tool marks outside them is ignored.
-- **Undetermined lines.** The browser suite records functions, not lines. An unrun line inside a function it ran is
-  undetermined: shown beside the ratio, never counted as run.
+- **Undetermined lines.** The browser suite records functions, not lines. An unrun line inside a function it ran,
+  outside a function nested in it that did not run, is undetermined: shown beside the ratio, never counted as run.
 - **Functions** count across suites by start line: one ran when any suite ran a function starting there.
 - **Classes of lines.** Each executable line is unit only, end to end only, both, none, or undetermined. "End to end
   only" is what the Playwright suite alone protects; "unit only" is code no user path reaches in the tests.
 - **Files without coverage data** are the commit's tracked files in scope that no suite names, from the upload's
   inventory, counted apart from the percentage.
-- **Carried forward.** A suite the commit lacks comes from its newest earlier report, on the commit's branch then on
-  the default branch, file by file where the file's version is unchanged, and the totals say from which commit.
+- **Carried forward.** A suite the commit lacks comes from the newest commit whose coverage arrived before it, on
+  the commit's branch then on the default branch, file by file where the file's version is unchanged, and the totals
+  say from which commit.
 
-The project's **Coverage** page shows the newest commit with coverage, and a run's header links its commit's.
+The project's **Coverage** page shows the commit whose coverage arrived last, and a run's header links its commit's.
 
 <figure>
   <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage page">
@@ -121,17 +122,17 @@ the next lines none ran.
 ## In pull requests
 
 The [Uncovered changes](./uncovered-changes) section of the pull-request comment opens with the change's patch
-coverage: "34 of the 41 changed lines ran (unit 28, end to end 19)". A changed file a suite ran one of the changed lines
-of counts as reached, so a file only a unit test covers is no longer reported as a gap. `piwi gate
+coverage: "34 of the 41 changed lines ran (unit 28, end to end 19)". A changed file a suite ran a changed line of counts
+as reached, so a file only a unit test covers is no longer reported as a gap. `piwi gate
 --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
 
 ## Over time
 
 The **Coverage trend** [Analytics widget](./analytics) charts the combined line coverage per day, summed over the
 projects in scope, with each suite's share as a dashed line and the change against the comparison period; the engineering
-[quality report](./quality-reports) gives it as one line, "Line coverage: 61.2% (+1.4 pts)". Each project counts at
-its newest commit with coverage by each day, on the default branch unless the scope names branches. Kept per
-day, the trend outlives the reports' retention.
+[quality report](./quality-reports) gives it as one line, "Line coverage: 61.2% (+1.4 pts)". Each project counts
+once a day, at its last commit with coverage, on the default branch or the first of the scope's branches that has one.
+Kept per day, the trend outlives the reports' retention.
 
 ## Export
 
@@ -148,24 +149,25 @@ A path that names no file of the checkout is dropped and counted.
 ## The coverage scope
 
 A project's coverage scope decides which files count: include and exclude patterns over repository-relative paths, in
-the syntax CODEOWNERS uses. With no include pattern every file counts; an exclude wins. The defaults leave out tests,
-build output and generated sources. Set it in the project's **Settings › Coverage**, or with the
-[API](https://piwitests.dev/demo/docs) (`coverageScope`). The upload sends only the files in scope, with the commit's
-inventory (its tracked files in scope and their blob ids), so a file no report names still counts as without data.
+the syntax CODEOWNERS uses. With no include pattern every file counts; an exclude wins. A pattern is at most 300
+characters, with at most 20 `*`. The defaults leave out tests, build output and generated sources. Set it in the
+project's **Settings › Coverage**, or with the [API](https://piwitests.dev/demo/docs) (`coverageScope`). The upload
+sends only the files in scope, with the commit's inventory (its tracked files in scope and their blob ids), so a
+file no report names still counts as without data.
 
 ## Areas
 
 Name the parts of the code in the same settings (`coverageAreas` in the API): `front: apps/web/`, `back: src/Api/`. A
 file belongs to the first area whose patterns match it, and every suite splits the same way: the coverage page gives
-each area its totals and each suite's share, and its link keeps the lists to that area's files; the coverage trend
+each area its totals and each suite's share; the coverage trend
 draws one line per area (its *Lines beside every suite* option); the pull-request comment counts the changed lines per
-area, "By area: front 28 of 30, back 6 of 11". A change recounts the newest commit; earlier days have no area lines.
+area, "By area: front 28 of 30, back 6 of 11". A change recounts the commits still kept; a removed area leaves the
+trend.
 
 ## What is sent
 
 Paths, line numbers and blob ids: for each file, its executable lines, the lines and functions that ran, and every
-function the tool knows. No source code, no test names, no hit counts: a unit test is an input to coverage, never a
-result Piwi keeps.
+function the tool knows. No source code, no test names, no hit counts.
 
 ## Limits
 
