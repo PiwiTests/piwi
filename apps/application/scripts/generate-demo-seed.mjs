@@ -3952,6 +3952,38 @@ const COVERAGE_VERSIONS = new Map();
 /** `coverage_reports` and `coverage_report_files`: the unit-test coverage uploaded for a story's covered commit. */
 const COVERAGE_REPORTS = [];
 const COVERAGE_REPORT_FILES = [];
+/** `coverage_daily`: the combined coverage of the days before the covered commit, for the coverage trend. */
+const COVERAGE_DAILY = [];
+
+/**
+ * Thirty days of combined coverage before a story's covered run, climbing
+ * toward the commit's own totals, which the demo computes when it opens.
+ */
+function seedCoverageDaily(story, run) {
+  const runDay = Math.floor(run.start_time / 86400) * 86400;
+  for (let back = 30; back >= 1; back--) {
+    const executable = 116 - Math.round(back / 5);
+    const executed = Math.round(executable * (0.6 - back * 0.004));
+    COVERAGE_DAILY.push({
+      id: COVERAGE_DAILY.length + 1,
+      project_id: story.projectId,
+      day: new Date((runDay - back * 86400) * 1000).toISOString().slice(0, 10),
+      branch: '',
+      suite: 'combined',
+      commit_sha: run.commit_sha,
+      executable_lines: executable,
+      executed_lines: executed,
+      undetermined_lines: 0,
+      known_functions: 0,
+      run_functions: 0,
+      files: 0,
+      unit_only_lines: 0,
+      e2e_only_lines: 0,
+      both_lines: 0,
+      computed_at: runDay - back * 86400,
+    });
+  }
+}
 
 /**
  * The unit tests of the commit a story's run coverage was recorded at, as
@@ -4215,7 +4247,10 @@ function seedCoverageReports(story, run, fragmentIdOf) {
         });
       }
     }
-    if (story.runCoverage?.length) seedCoverageReports(story, run, fragmentIdOfReportFile);
+    if (story.runCoverage?.length) {
+      seedCoverageReports(story, run, fragmentIdOfReportFile);
+      seedCoverageDaily(story, run);
+    }
   }
 
   // The order-dependent flake: every execution of the toggle and of the
@@ -4857,6 +4892,7 @@ const REBASE_SQL = [
   `UPDATE coverage_fragments SET created_at = created_at + ${D}, last_seen_at = last_seen_at + ${D};`,
   `UPDATE coverage_executable SET created_at = created_at + ${D};`,
   `UPDATE coverage_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE coverage_daily SET day = date(day, printf('%+d days', ${D} / 86400)), computed_at = computed_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
@@ -5832,6 +5868,7 @@ const lines = [
   insert('run_coverage', RUN_COVERAGE),
   insert('coverage_executable', [...COVERAGE_VERSIONS.values()]),
   insert('coverage_reports', COVERAGE_REPORTS),
+  insert('coverage_daily', COVERAGE_DAILY),
   insert('coverage_report_files', COVERAGE_REPORT_FILES),
   '',
   '-- Probe ledger (Test Map, checked axis)',

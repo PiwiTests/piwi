@@ -39,6 +39,7 @@ function notes(widget) {
   if (onOverview.has(widget.id)) list.push('on the Analytics page');
   if (widget.requires === 'single-project') list.push('one project in scope');
   if (widget.capability === 'test-map') list.push('hidden where the [Test Map](/features/scenario-gaps) is declined');
+  if (widget.capability === 'coverage') list.push('hidden where [coverage](/features/combined-coverage) is declined');
   return list.length > 0 ? list.join('; ') : '';
 }
 

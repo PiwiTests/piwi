@@ -26,7 +26,8 @@ reports:
   ticketed, tests released from quarantine) and the risks (metrics moving the wrong way, projects
   failing run after run, the oldest open causes).
 - **Engineering**, for the team that owns the suite: the executive report, then the flakiest tests,
-  the failure clusters, wasted CI time, regressions, CI time, the browser matrix and slow endpoints.
+  the failure clusters, wasted CI time, regressions, CI time, the [combined coverage](./combined-coverage) trend
+  (left out when no project in scope has coverage), the browser matrix and slow endpoints.
 
 - **Team**, the engineering report for the tests one owner holds (`piwi:owner` or CODEOWNERS), offered
   when a test in scope has an owner.

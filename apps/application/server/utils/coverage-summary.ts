@@ -7,6 +7,7 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { CoverageScope } from '@piwitests/core/coverage-scope';
+import { writeCobertura, writeLcov } from '@piwitests/core/coverage-writers';
 import { runCoverage, testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import {
@@ -143,6 +144,74 @@ export function parseCoverageSummaryQuery(
   return { commit: sha || null, branch: name || null, folder: dir, ...(path ? { file: path } : {}) };
 }
 
+/** The coverage of the query's commit, else of the newest commit with coverage on its branch. */
+async function queriedCommitCoverage(
+  db: DrizzleDB,
+  projectId: number,
+  query: Pick<CoverageSummaryQuery, 'commit' | 'branch'>,
+): Promise<CommitCoverage | null> {
+  let commit = query.commit;
+  if (!commit) {
+    const tag = locatorBranchTag(query.branch, await projectDefaultBranch(db, projectId));
+    commit = (await latestCoverageCommit(db, projectId, tag)) ?? (await latestRunCommit(db, projectId, tag));
+  }
+  return commit ? cachedCommitCoverage(db, projectId, commit) : null;
+}
+
+/** The formats a commit's combined coverage is exported in. */
+export type CoverageExportFormat = 'lcov' | 'cobertura';
+
+/** The `format` of an export, checked: `lcov` when absent. */
+export function parseCoverageExportFormat(format: unknown): CoverageExportFormat | { error: string } {
+  const value = (Array.isArray(format) ? format[0] : format) ?? 'lcov';
+  if (value === 'lcov' || value === 'cobertura') return value;
+  return { error: 'format must be lcov or cobertura' };
+}
+
+/** An exported report, ready to send. */
+export interface CoverageExport {
+  commit: string;
+  filename: string;
+  contentType: string;
+  body: string;
+}
+
+/**
+ * A commit's combined coverage as an LCOV tracefile or a Cobertura report:
+ * per file, its reference lines, hit when any suite ran them, and its
+ * functions. Null when the commit has no coverage.
+ */
+export async function exportCommitCoverage(
+  db: DrizzleDB,
+  projectId: number,
+  query: Pick<CoverageSummaryQuery, 'commit' | 'branch'>,
+  format: CoverageExportFormat,
+): Promise<CoverageExport | null> {
+  const coverage = await queriedCommitCoverage(db, projectId, query);
+  if (!coverage) return null;
+  const files = coverage.combined.files.map((f) => ({
+    path: f.path,
+    executable: f.executable,
+    lines: f.executed,
+    allFunctions: f.knownFunctions,
+    functions: f.runFunctions,
+  }));
+  const name = `piwi-coverage-${coverage.commit.slice(0, 12)}`;
+  return format === 'lcov'
+    ? {
+        commit: coverage.commit,
+        filename: `${name}.info`,
+        contentType: 'text/plain; charset=utf-8',
+        body: writeLcov(files),
+      }
+    : {
+        commit: coverage.commit,
+        filename: `${name}.xml`,
+        contentType: 'application/xml; charset=utf-8',
+        body: writeCobertura(files, Date.now() / 1000),
+      };
+}
+
 /**
  * A project's combined coverage at a commit, or at the newest commit with
  * coverage on the branch. Null when there is none.
@@ -152,13 +221,7 @@ export async function getCoverageSummary(
   projectId: number,
   query: CoverageSummaryQuery,
 ): Promise<CoverageSummary | null> {
-  let commit = query.commit;
-  if (!commit) {
-    const tag = locatorBranchTag(query.branch, await projectDefaultBranch(db, projectId));
-    commit = (await latestCoverageCommit(db, projectId, tag)) ?? (await latestRunCommit(db, projectId, tag));
-  }
-  if (!commit) return null;
-  const coverage = await cachedCommitCoverage(db, projectId, commit);
+  const coverage = await queriedCommitCoverage(db, projectId, query);
   if (!coverage) return null;
   const { combined } = coverage;
   return {

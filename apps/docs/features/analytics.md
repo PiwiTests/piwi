@@ -87,7 +87,8 @@ The pass rates, run counts, durations, CI time, wasted time and regression count
 ingest and checked nightly against the stored runs. When [retention](/operate/storage#data-retention)
 deletes old runs, their numbers stay in the rollups, so a one-year pass-rate line survives a 30-day
 retention window. Lists of tests and clusters, and anything under a test filter, read the stored runs.
-The rollups also [export](/operate/metrics) to a BI tool or a Prometheus scraper.
+The rollups also [export](/operate/metrics) to a BI tool or a Prometheus scraper. The coverage trend reads the
+[combined coverage](./combined-coverage) kept per project and day, which outlives the reports it came from.
 
 ## Widgets and metrics
 

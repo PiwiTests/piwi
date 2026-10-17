@@ -4,10 +4,12 @@
  * without `?file=`): the share of lines and functions every suite ran
  * together, each suite's share on the same lines, then a folder's files and
  * folders with theirs. A folder opens its contents (`?folder=`), a file the
- * file view. The files of the commit no suite names close the page.
+ * file view. The files of the commit no suite names close the page. The
+ * card's menu exports the commit's combined coverage as LCOV or Cobertura.
  */
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 import { CODE_CHIP_CLASS } from '~/utils';
+import { downloadBlob } from '~/utils/chart-export';
 import {
   carriedSentence,
   folderTrail,
@@ -50,6 +52,32 @@ function entryLink(entry: CoverageSummary['entries'][number]) {
     : { path: `/projects/${props.projectId}/coverage`, query: { file: entry.path } };
 }
 
+const toast = useToast();
+
+/** Download the commit's combined coverage in another tool's format. */
+async function exportCoverage(format: 'lcov' | 'cobertura') {
+  try {
+    const body = await $fetch<string>(`/api/projects/${props.projectId}/coverage-export`, {
+      query: { commit: props.summary.commit, format },
+      responseType: 'text',
+    });
+    const name = `piwi-coverage-${props.summary.commit.slice(0, 12)}`;
+    downloadBlob(
+      new Blob([body], { type: format === 'lcov' ? 'text/plain' : 'application/xml' }),
+      format === 'lcov' ? `${name}.info` : `${name}.xml`,
+    );
+  } catch (error) {
+    toast.add({ title: 'Couldn’t export the coverage', description: errorMessage(error), color: 'error' });
+  }
+}
+
+const exportItems = [
+  [
+    { label: 'Download LCOV', icon: 'i-lucide-download', onSelect: () => exportCoverage('lcov') },
+    { label: 'Download Cobertura', icon: 'i-lucide-download', onSelect: () => exportCoverage('cobertura') },
+  ],
+];
+
 const entryName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 const barWidth = (percent: number | null) => `${Math.max(0, Math.min(100, percent ?? 0))}%`;
 </script>
@@ -57,6 +85,19 @@ const barWidth = (percent: number | null) => `${Math.max(0, Math.min(100, percen
 <template>
   <div class="space-y-4" data-shot="coverage-overview">
     <SectionCard title="Combined coverage" help="coverage.combined" data-tour="coverage-overview">
+      <template #actions>
+        <UDropdownMenu :items="exportItems" :content="{ align: 'end' }">
+          <UButton
+            icon="i-lucide-ellipsis-vertical"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            aria-label="Export the combined coverage"
+            title="Export as LCOV or Cobertura"
+            data-testid="coverage-export"
+          />
+        </UDropdownMenu>
+      </template>
       <div class="space-y-3">
         <p class="text-sm text-highlighted leading-relaxed" data-testid="coverage-totals">
           At <span :class="CODE_CHIP_CLASS" :title="summary.commit">{{ summary.commit.slice(0, 7) }}</span

@@ -86,8 +86,10 @@ import {
   storeCoverageReport,
 } from '~~/server/utils/coverage-reports';
 import {
+  exportCommitCoverage,
   getCoverageSummary,
   invalidateCommitCoverage,
+  parseCoverageExportFormat,
   parseCoverageSummaryQuery,
 } from '~~/server/utils/coverage-summary';
 import { demoClusterSuspectLines, demoExecutionSuspectLines } from './suspect-lines';
@@ -1207,6 +1209,26 @@ const routes: RouteEntry[] = [
       const summary = await getCoverageSummary(await getDemoDb(), +m[1]!, parsed);
       if (!summary) throw demoHttpError(404, 'No coverage for this commit');
       return summary;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/coverage-export$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = parseCoverageSummaryQuery(q?.get('commit'), q?.get('branch'), undefined);
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const format = parseCoverageExportFormat(q?.get('format') ?? undefined);
+      if (typeof format !== 'string') throw demoHttpError(400, format.error);
+      const exported = await exportCommitCoverage(await getDemoDb(), +m[1]!, parsed, format);
+      if (!exported) throw demoHttpError(404, 'No coverage for this commit');
+      return new Response(exported.body, {
+        status: 200,
+        headers: {
+          'Content-Type': exported.contentType,
+          'Content-Disposition': `attachment; filename="${exported.filename}"`,
+        },
+      });
     },
   },
   {

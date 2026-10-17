@@ -26,6 +26,7 @@ import type {
   AnalyticsSlowEndpoints,
   AnalyticsStats,
   AnalyticsSuiteGrowth,
+  AnalyticsCoverageTrend,
   AnalyticsFlakyDebt,
   AnalyticsTimeToFix,
   AnalyticsOwnership,
@@ -759,6 +760,23 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         (value) => ctx.f.value(value, 'percent', 1),
         { ...ctx, drawMarkers: false },
         `${ctx.s.title('Skipped')}${ctx.s.colon}${ctx.f.value(data.skippedPct, 'percent', 1)}, ${ctx.s.title('Did not run')}${ctx.s.colon}${ctx.f.value(data.didNotRunPct, 'percent', 1)}`,
+      ),
+    ];
+  },
+
+  'coverage-trend': (data: AnalyticsCoverageTrend, ctx) => {
+    // No project with coverage: the report leaves the widget out.
+    if (data.projects === 0 || data.linePercent === null) return [];
+    const label = ctx.s.title('Line coverage');
+    const delta = ctx.f.delta({ unit: 'percent', delta: data.delta, deltaPct: null, precision: 1 });
+    return [
+      seriesBlock(
+        'percent',
+        100,
+        [{ label, points: data.points.map((p) => ({ date: p.date, value: p.linePercent })), color: 'accent' }],
+        (value) => ctx.f.value(value, 'percent', 1),
+        ctx,
+        `${label}${ctx.s.colon}${ctx.f.value(data.linePercent, 'percent', 1)}${delta ? ` (${delta})` : ''}`,
       ),
     ];
   },

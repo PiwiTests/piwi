@@ -665,6 +665,33 @@ export interface AnalyticsSuiteGrowth {
   didNotRunPct: number | null;
 }
 
+// ── Coverage trend ───────────────────────────────────────────────────────────
+
+export interface AnalyticsCoverageTrendPoint {
+  /** Bucket start date (ISO `YYYY-MM-DD`). */
+  date: string;
+  /** Lines every suite ran together over executable lines, 0–100, as of the bucket's end; null before any coverage. */
+  linePercent: number | null;
+  executedLines: number;
+  executableLines: number;
+}
+
+export interface AnalyticsCoverageTrend {
+  points: AnalyticsCoverageTrendPoint[];
+  bucketDays: number;
+  /** The combined line coverage at the period's end and at the comparison period's end. */
+  linePercent: number | null;
+  previousLinePercent: number | null;
+  /** Percentage points gained (positive) or lost against the comparison period. */
+  delta: number | null;
+  executedLines: number;
+  executableLines: number;
+  /** Projects of the scope with coverage on; the widget shows nothing at 0. */
+  projects: number;
+  /** Projects of the scope that declined coverage, left out. */
+  declined: number;
+}
+
 export interface AnalyticsFlakyDebtPoint {
   date: string;
   /** Flaky occurrences per run in the bucket; null without a run. */

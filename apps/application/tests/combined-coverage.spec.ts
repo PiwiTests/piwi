@@ -85,6 +85,14 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
     filesWithoutData: { count: 1, paths: ['src/Idle.cs'] },
   });
 
+  // The export writes the same lines: the span table's, hit when either suite ran them.
+  const lcov = await request.get(`/api/projects/${projectId}/coverage-export?format=lcov`);
+  expect(lcov.ok()).toBeTruthy();
+  expect(lcov.headers()['content-disposition']).toContain(`piwi-coverage-${COMMIT.slice(0, 12)}.info`);
+  expect(await lcov.text()).toContain(
+    'SF:src/Shop.cs\nFNF:0\nFNH:0\nDA:2,1\nDA:3,1\nDA:4,1\nDA:6,1\nDA:7,1\nDA:8,0\nLF:6\nLH:5',
+  );
+
   await page.goto(`/projects/${projectId}/coverage`);
   await expect(page.getByTestId('coverage-totals')).toContainText('83.3% of 6 executable lines ran, across 2 suites.');
   await expect(page.getByTestId('coverage-suites').locator('[data-suite]')).toHaveCount(2);

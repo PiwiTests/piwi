@@ -114,6 +114,20 @@ coverage: "34 of the 41 changed lines ran (unit 28, end to end 19)". A changed f
 of counts as reached, so a file only a unit test covers is no longer reported as a gap. `piwi gate
 --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
 
+## Over time
+
+The **Coverage trend** [Analytics widget](./analytics) charts the combined line coverage per day, summed over the
+projects in scope, with the change against the comparison period; the engineering
+[quality report](./quality-reports) gives it as one line, "Line coverage: 61.2% (+1.4 pts)". Each project counts at
+its newest commit with coverage on or before each day, on the default branch unless the scope names branches. The
+numbers are kept per day, so the trend outlives the reports' retention.
+
+## Export
+
+The menu of the coverage page's card downloads the commit's combined coverage as LCOV or Cobertura, for Sonar,
+Codecov or an IDE; the [API](https://piwitests.dev/demo/docs) serves the same (`coverage-export?format=`). Each line
+counted is written with 1 hit when any suite ran it and 0 when none did: Piwi keeps no hit counts and no branches.
+
 ## How paths are matched
 
 A report's paths are made repository-relative before anything is sent:

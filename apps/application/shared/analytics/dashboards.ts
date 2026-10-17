@@ -194,10 +194,11 @@ export const ENGINEERING_DASHBOARD: DashboardDefinition = {
     },
     {
       title: 'Trends',
-      description: 'Regressions, CI time and the tests that moved over the period.',
+      description: 'Regressions, CI time, combined coverage and the tests that moved over the period.',
       widgets: [
         { key: 'regressions', type: 'regression-velocity', size: 'half' },
         { key: 'ci-time', type: 'ci-time-trend', size: 'half' },
+        { key: 'coverage-trend', type: 'coverage-trend', size: 'full' },
         { key: 'movers', type: 'movers', size: 'full' },
       ],
     },

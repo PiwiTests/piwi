@@ -163,6 +163,11 @@ export const HELP_TOPICS = {
     text: 'How many tests the suite has over time (the highest test count one run reported in each bucket), and the share of them skipped or not run. A growing suite whose skipped share grows too is adding tests nobody runs.',
     doc: 'reference/analytics-widgets#which-way-it-is-going',
   },
+  'analytics.coverage-trend': {
+    title: 'Coverage trend',
+    text: 'The share of executable lines the suites ran together (the unit-test reports uploaded for each commit and the Playwright runs), at the newest commit with coverage in each bucket, summed over the projects in scope. Kept per day, so it outlives the reports it came from.',
+    doc: 'features/combined-coverage#over-time',
+  },
   'analytics.flaky-debt': {
     title: 'Flaky debt',
     text: 'Whether flakiness is going down: flaky occurrences per run in each bucket (from the daily rollups, so over any window), the distinct tests that passed only on a retry (from the stored runs, so only as far back as retention keeps them) and the tests in quarantine at the end of each bucket.',

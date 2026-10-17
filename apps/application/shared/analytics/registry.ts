@@ -345,6 +345,16 @@ export const ANALYTICS_WIDGETS = [
     testFilters: true,
   },
   {
+    id: 'coverage-trend',
+    title: 'Coverage trend',
+    description: 'The share of lines every suite ran together, unit and end-to-end, over time.',
+    icon: 'i-lucide-scan-line',
+    size: 'half',
+    band: 'trends',
+    testFilters: false,
+    capability: 'coverage',
+  },
+  {
     id: 'flaky-debt',
     title: 'Flaky debt',
     description: 'Flaky occurrences per run, distinct flaky tests and the quarantine, over time.',
