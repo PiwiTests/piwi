@@ -12,7 +12,9 @@
     "start:aspnetcore": "dotnet run --project backends/aspnetcore -p:PiwiCoverage=true",
     "start:nitro": "nitro dev backends/nitro --port 4173",
     "typecheck": "tsc --noEmit",
-    "demo:functions": "node scripts/register-functions.mjs"
+    "demo:functions": "node scripts/register-functions.mjs",
+    "coverage:unit": "node scripts/unit-coverage.mjs",
+    "coverage:setup": "node scripts/coverage-setup.mjs"
   },
   "devDependencies": {
     "@piwitests/instrumentation-nitro": "0.54.0",

@@ -1,9 +1,10 @@
 node_modules/
 test-results/
 playwright-report/
-# The backends' build output
+# The backends' build output, and the coverage report their unit tests write
 bin/
 obj/
+TestResults/
 .nitro/
 .output/
 # The sample installs the published @piwitests packages: no lockfile.
