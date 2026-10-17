@@ -191,6 +191,9 @@ function markersOf(ctx: DocumentContext): Array<{ date: string; label: string }>
   }));
 }
 
+/** Each suite's line in the coverage trend, after the accent of every suite together. */
+const SUITE_SERIES_COLORS = ['#e69f00', '#009e73', '#d55e00', '#cc79a7', '#56b4e9'];
+
 function seriesBlock(
   unit: string,
   max: number | null,
@@ -769,14 +772,23 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
     if (data.projects === 0 || data.linePercent === null) return [];
     const label = ctx.s.title('Line coverage');
     const delta = ctx.f.delta({ unit: 'percent', delta: data.delta, deltaPct: null, precision: 1 });
+    const suites = data.suites.map((suite, i) => ({
+      label: suite.name,
+      points: suite.points.map((p) => ({ date: p.date, value: p.linePercent })),
+      color: SUITE_SERIES_COLORS[i % SUITE_SERIES_COLORS.length],
+    }));
+    const bySuite = data.suites.map((suite) => ` · ${suite.name} ${ctx.f.value(suite.linePercent, 'percent', 1)}`);
     return [
       seriesBlock(
         'percent',
         100,
-        [{ label, points: data.points.map((p) => ({ date: p.date, value: p.linePercent })), color: 'accent' }],
+        [
+          { label, points: data.points.map((p) => ({ date: p.date, value: p.linePercent })), color: 'accent' },
+          ...suites,
+        ],
         (value) => ctx.f.value(value, 'percent', 1),
         ctx,
-        `${label}${ctx.s.colon}${ctx.f.value(data.linePercent, 'percent', 1)}${delta ? ` (${delta})` : ''}`,
+        `${label}${ctx.s.colon}${ctx.f.value(data.linePercent, 'percent', 1)}${delta ? ` (${delta})` : ''}${bySuite.join('')}`,
       ),
     ];
   },

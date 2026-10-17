@@ -676,6 +676,13 @@ export interface AnalyticsCoverageTrendPoint {
   executableLines: number;
 }
 
+export interface AnalyticsCoverageTrendSuite {
+  name: string;
+  points: Array<{ date: string; linePercent: number | null }>;
+  /** At the period's end. */
+  linePercent: number | null;
+}
+
 export interface AnalyticsCoverageTrend {
   points: AnalyticsCoverageTrendPoint[];
   bucketDays: number;
@@ -686,6 +693,8 @@ export interface AnalyticsCoverageTrend {
   delta: number | null;
   executedLines: number;
   executableLines: number;
+  /** Each suite's share of the same lines, by name, the suites of every project in scope summed. */
+  suites: AnalyticsCoverageTrendSuite[];
   /** Projects of the scope with coverage on; the widget shows nothing at 0. */
   projects: number;
   /** Projects of the scope that declined coverage, left out. */

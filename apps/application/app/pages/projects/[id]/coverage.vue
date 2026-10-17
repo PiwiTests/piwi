@@ -18,7 +18,10 @@
  * Without `?file=`, the page is the project's combined coverage at a commit
  * (`?commit=`, else the newest with coverage on `?branch=`), broken down by
  * `?folder=` (`GET /api/projects/:id/coverage-summary`). The file view adds,
- * at the commit, which suites ran the file's lines.
+ * at the commit, which suites ran the file's lines; with `?marks=suites`, or
+ * for a file no test recorded, each line is marked by the kinds of suite that
+ * ran it, read from the commit's combined coverage alone. The previous and
+ * next gap (lines no test, or no suite, ran) are one click away.
  */
 import { countLines, decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import { coveragePercent } from '#shared/coverage-combine';
@@ -37,7 +40,7 @@ import {
   testsOnLines,
 } from '~/utils/file-coverage';
 import { lineRangesText } from '~/utils/suspect-lines';
-import { formatCount, formatPercent, suitesOnLines } from '~/utils/combined-coverage';
+import { enclosingFunction, formatCount, formatPercent, gapSteps, suitesOnLines } from '~/utils/combined-coverage';
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 
 type SourceResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/source.get').default>;
@@ -97,11 +100,28 @@ const {
   immediate: coverageActive.value && file.value !== '',
 });
 
-/** The file at the commit's combined coverage, when that is the version shown. */
+/**
+ * The file at the commit's combined coverage: when it is the version the tests
+ * recorded, or the tests recorded no version (none ran it, or they recorded it
+ * by file only).
+ */
 const combinedFile = computed(() => {
   const at = summary.value?.file;
-  return at && at.blob && at.blob === version.value?.blob ? at : null;
+  if (!at || !at.blob) return null;
+  return !version.value?.blob || at.blob === version.value.blob ? at : null;
 });
+/** How lines are marked: by the suites of the commit, or by how many tests ran them. */
+const marks = computed<'suites' | 'tests'>(() =>
+  combinedFile.value && (!version.value?.blob || route.query.marks === 'suites') ? 'suites' : 'tests',
+);
+function pickMarks(next: 'suites' | 'tests') {
+  void router.replace({ query: { ...route.query, marks: next === 'suites' ? 'suites' : undefined } });
+}
+/** The path and version the page shows: the commit's with marks by suite, else the tests'. */
+const shownPath = computed(() => (marks.value === 'suites' ? file.value : (version.value?.path ?? null)));
+const shownBlob = computed(() =>
+  marks.value === 'suites' ? (combinedFile.value?.blob ?? null) : (version.value?.blob ?? null),
+);
 const combinedFileSentence = computed(() => {
   const at = combinedFile.value;
   if (!at || !summary.value) return null;
@@ -120,7 +140,9 @@ const selectionSuitesSentence = computed(() => {
   const lines = picked[0] === picked[1] ? `Line ${picked[0]}` : `Lines ${picked[0]}–${picked[1]}`;
   return suites.length ? `${lines} ran in ${suites.join(', ')}.` : `No suite ran ${lines.toLowerCase()}.`;
 });
-const loading = computed(() => status.value === 'idle' || status.value === 'pending');
+const loading = computed(
+  () => (coverageActive.value && (status.value === 'idle' || status.value === 'pending')) || summaryLoading.value,
+);
 
 const versions = computed(() => (coverage.value ? fileCoverageVersions(coverage.value) : []));
 /** `?blob=` value of a version whose coverage names no lines. */
@@ -189,13 +211,47 @@ function selectLine(line: number, extend: boolean) {
 }
 
 const counts = computed(() => (version.value ? lineTestCounts(version.value) : new Map<number, number>()));
-const firstLine = computed(() => selection.value?.[0] ?? version.value?.executed[0]?.[0] ?? null);
+const firstLine = computed(
+  () =>
+    selection.value?.[0] ??
+    (marks.value === 'suites' ? combinedFile.value?.classes.none[0]?.[0] : version.value?.executed[0]?.[0]) ??
+    null,
+);
+
+/** Lines no test ran, or no suite with marks by suite: what to cover next. */
+const gaps = computed<LineRange[]>(() =>
+  marks.value === 'suites' ? (combinedFile.value?.classes.none ?? []) : (version.value?.notExecuted ?? []),
+);
+const steps = computed(() => gapSteps(gaps.value, selection.value));
+const sourceView = ref<{ reveal: (line: number, flash?: boolean) => void } | null>(null);
+function goToGap(gap: LineRange | null) {
+  if (!gap) return;
+  anchor = gap[0];
+  setSelection(gap);
+  sourceView.value?.reveal(gap[0], true);
+}
+const gapSentence = computed(() => {
+  const n = gaps.value.length;
+  if (n === 0) return marks.value === 'suites' ? 'Every line of this file ran in a suite.' : null;
+  const i = steps.value.index;
+  if (i === null) {
+    const lines = countLines(gaps.value);
+    return `${n} ${n === 1 ? 'gap' : 'gaps'}: ${formatCount(lines)} ${lines === 1 ? 'line' : 'lines'}.`;
+  }
+  const gap = gaps.value[i]!;
+  const functions =
+    marks.value === 'suites' ? (combinedFile.value?.knownFunctions ?? []) : (version.value?.functions ?? []);
+  const fn = enclosingFunction(functions, gap[0]);
+  const name = fn ? functionNameAt(sourceLines.value?.[fn[0] - 1]) : null;
+  const lines = gap[0] === gap[1] ? `line ${gap[0]}` : `lines ${gap[0]}–${gap[1]}`;
+  return `Gap ${i + 1} of ${n} · ${lines}${name ? ` · in ${name}` : ''}`;
+});
 
 // The source at the version shown, read when the version changes.
 const source = ref<string | null>(null);
 const sourcePending = ref(false);
 watch(
-  () => [version.value?.path, version.value?.blob] as const,
+  () => [shownPath.value, shownBlob.value] as const,
   async ([path, blob], _old, onCleanup) => {
     let stale = false;
     onCleanup(() => (stale = true));
@@ -281,12 +337,12 @@ const nearestSentence = computed(() => {
         <ProjectCoverageOverview v-else :project-id="projectId" :summary="summary" />
       </div>
       <div v-else class="p-4 space-y-4" data-shot="coverage-file">
-        <EmptyState v-if="!coverageActive" text="This project records no coverage." />
-        <LoadingState v-else-if="loading" text="Reading the file’s coverage…" />
-        <ErrorState v-else-if="error" text="The coverage of this file could not be read." />
+        <LoadingState v-if="loading" text="Reading the file’s coverage…" />
+        <EmptyState v-else-if="!coverageActive && !combinedFile" text="This project records no coverage." />
+        <ErrorState v-else-if="error && !combinedFile" text="The coverage of this file could not be read." />
         <EmptyState
-          v-else-if="!version || !coverage"
-          :text="`No test recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`"
+          v-else-if="!version && !combinedFile"
+          :text="`No test or suite recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`"
         />
 
         <template v-else>
@@ -294,14 +350,18 @@ const nearestSentence = computed(() => {
             <div class="min-w-0 space-y-1">
               <p class="text-sm text-highlighted break-words" data-testid="coverage-file-path">
                 <OpenInIdeLink
-                  :file-path="version.path"
+                  :file-path="shownPath ?? file"
                   :line="firstLine"
                   :project-key="projectId"
                   :project-name="project?.name"
-                  >{{ version.path }}</OpenInIdeLink
+                  >{{ shownPath ?? file }}</OpenInIdeLink
                 >
               </p>
-              <p class="text-sm text-highlighted leading-relaxed" data-testid="coverage-file-summary">
+              <p
+                v-if="version && coverage"
+                class="text-sm text-highlighted leading-relaxed"
+                data-testid="coverage-file-summary"
+              >
                 {{ fileCoverageSentence(version, coverage.branch) }}
               </p>
               <p
@@ -315,37 +375,114 @@ const nearestSentence = computed(() => {
                 </template>
               </p>
               <p class="text-xs text-muted inline-flex flex-wrap items-center gap-x-1">
-                <span>{{ version.runtime === 'server' ? 'Server file' : 'Browser file' }}</span>
-                ·
-                <span :title="COVERAGE_PRECISION_TITLE[version.granularity]"
-                  >recorded {{ COVERAGE_PRECISION_LABEL[version.granularity] }}</span
-                >
-                <template v-if="version.blob">
-                  · version <span class="font-mono">{{ version.blob.slice(0, 7) }}</span>
+                <span v-if="marks === 'suites'">Marked by the suites that ran each line</span>
+                <template v-else-if="version">
+                  <span>{{ version.runtime === 'server' ? 'Server file' : 'Browser file' }}</span>
+                  ·
+                  <span :title="COVERAGE_PRECISION_TITLE[version.granularity]"
+                    >recorded {{ COVERAGE_PRECISION_LABEL[version.granularity] }}</span
+                  >
+                </template>
+                <template v-if="shownBlob">
+                  · version <span class="font-mono">{{ shownBlob.slice(0, 7) }}</span>
                 </template>
                 <HelpHint topic="coverage.file" />
               </p>
             </div>
-            <USelect
-              v-if="versions.length > 1"
-              :model-value="version.key"
-              :items="versionItems"
-              color="neutral"
-              size="sm"
-              icon="i-lucide-git-commit-horizontal"
-              class="w-full sm:w-64 shrink-0"
-              aria-label="Version"
-              title="The tests recorded several versions of this file; line numbers belong to one"
-              data-testid="coverage-file-version"
-              @update:model-value="pickVersion(String($event))"
-            />
+            <div class="flex flex-col gap-2 sm:items-end shrink-0">
+              <div
+                v-if="version?.blob && combinedFile"
+                class="inline-flex rounded-md border border-default p-0.5"
+                role="group"
+                aria-label="Mark lines by"
+                data-testid="coverage-file-marks"
+              >
+                <UButton
+                  size="xs"
+                  :color="marks === 'tests' ? 'primary' : 'neutral'"
+                  :variant="marks === 'tests' ? 'soft' : 'ghost'"
+                  :aria-pressed="marks === 'tests'"
+                  @click="pickMarks('tests')"
+                  >By tests</UButton
+                >
+                <UButton
+                  size="xs"
+                  :color="marks === 'suites' ? 'primary' : 'neutral'"
+                  :variant="marks === 'suites' ? 'soft' : 'ghost'"
+                  :aria-pressed="marks === 'suites'"
+                  @click="pickMarks('suites')"
+                  >By suites</UButton
+                >
+              </div>
+              <USelect
+                v-if="versions.length > 1 && version"
+                :model-value="version.key"
+                :items="versionItems"
+                color="neutral"
+                size="sm"
+                icon="i-lucide-git-commit-horizontal"
+                class="w-full sm:w-64"
+                aria-label="Version"
+                title="The tests recorded several versions of this file; line numbers belong to one"
+                data-testid="coverage-file-version"
+                @update:model-value="pickVersion(String($event))"
+              />
+            </div>
           </div>
 
           <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-            <div v-if="version.blob" class="min-w-0">
+            <div v-if="shownBlob" class="min-w-0 space-y-2">
+              <div
+                v-if="gapSentence"
+                class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted"
+                data-testid="coverage-file-gaps"
+              >
+                <span class="tabular-nums">{{ gapSentence }}</span>
+                <span v-if="gaps.length" class="inline-flex gap-1">
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-chevron-up"
+                    :disabled="!steps.previous"
+                    data-testid="coverage-gap-previous"
+                    @click="goToGap(steps.previous)"
+                    >Previous gap</UButton
+                  >
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    trailing-icon="i-lucide-chevron-down"
+                    :disabled="!steps.next"
+                    data-testid="coverage-gap-next"
+                    @click="goToGap(steps.next)"
+                    >Next gap</UButton
+                  >
+                </span>
+              </div>
               <LoadingState v-if="sourcePending" text="Reading the source…" />
               <CoverageSourceView
-                v-else-if="source !== null"
+                v-else-if="marks === 'suites' && combinedFile"
+                ref="sourceView"
+                :key="`suites-${combinedFile.blob}`"
+                :path="shownPath ?? file"
+                :content="source"
+                :executed="combinedFile.executed"
+                :not-executed="combinedFile.classes.none"
+                :functions="combinedFile.runFunctions"
+                :classes="combinedFile.classes"
+                :focus-line="firstLine"
+                :selected="selection ? [selection] : []"
+                selectable
+                scroll-class="max-h-[60vh] lg:max-h-[calc(100vh-14rem)]"
+                executed-title="Ran in a suite"
+                not-executed-title="Ran in no suite"
+                @select-line="selectLine"
+              />
+              <CoverageSourceView
+                v-else-if="version && source !== null"
+                ref="sourceView"
                 :key="version.key"
                 :path="version.path"
                 :content="source"
@@ -405,9 +542,10 @@ const nearestSentence = computed(() => {
             <div
               ref="testsPanel"
               class="min-w-0 lg:sticky lg:top-0 scroll-mt-4"
-              :class="version.blob ? '' : 'lg:col-span-2'"
+              :class="shownBlob ? '' : 'lg:col-span-2'"
             >
               <FileCoverageTests
+                v-if="version && coverage && (marks === 'tests' || version.blob)"
                 :project-id="projectId"
                 :project-name="project?.name"
                 :tests="coverage.tests"
@@ -417,6 +555,17 @@ const nearestSentence = computed(() => {
                 :nearest-sentence="nearestSentence"
                 @clear="setSelection(null)"
               />
+              <SectionCard v-else title="Suites on these lines" data-testid="coverage-file-suites">
+                <p class="text-sm text-highlighted">
+                  {{
+                    selectionSuites
+                      ? selectionSuitesSentence
+                      : version
+                        ? 'Select a line, or a gap, to see which suites ran it. The tests recorded this file by file only.'
+                        : 'Select a line, or a gap, to see which suites ran it. No end-to-end test recorded this file.'
+                  }}
+                </p>
+              </SectionCard>
             </div>
           </div>
         </template>

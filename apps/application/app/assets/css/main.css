@@ -42,6 +42,14 @@
    */
   --color-coverage-run: #0d9488;
   --color-coverage-not-run: #94a3b8;
+  /*
+   * Combined coverage's classes of a line: both kinds of suite ran it
+   * (the run color), only unit suites, only the end-to-end suite, none (the
+   * not-run color), or undetermined (in a function the browser ran).
+   */
+  --color-coverage-unit: #2563eb;
+  --color-coverage-e2e: #7c3aed;
+  --color-coverage-undetermined: #ca8a04;
 }
 
 /*
@@ -72,6 +80,9 @@
   --color-status-fixme: var(--color-zinc-300);
   --color-coverage-run: #14b8a6;
   --color-coverage-not-run: #64748b;
+  --color-coverage-unit: #60a5fa;
+  --color-coverage-e2e: #a78bfa;
+  --color-coverage-undetermined: #eab308;
 }
 
 /* Deliberately unlayered so it beats Nuxt UI's `@layer base` body rule. */

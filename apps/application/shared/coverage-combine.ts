@@ -342,3 +342,29 @@ export function folderBreakdown(files: CombinedFile[], folder: string): FolderEn
       (a.kind === b.kind ? 0 : a.kind === 'folder' ? -1 : 1) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
   );
 }
+
+/**
+ * The files under a folder with the most lines no suite ran (not counting the
+ * undetermined ones), the most first, then the lowest share run, then by path;
+ * a file with every line run is left out.
+ */
+export function leastCoveredFiles(
+  files: CombinedFile[],
+  folder: string,
+  limit: number,
+): Array<FolderEntry & { unrunLines: number }> {
+  const prefix = folder ? `${folder.replace(/\/+$/, '')}/` : '';
+  const out: Array<FolderEntry & { unrunLines: number }> = [];
+  for (const file of files) {
+    if (!file.path.startsWith(prefix)) continue;
+    const unrunLines = countLines(file.classes.none);
+    if (unrunLines === 0) continue;
+    const entry = { ...emptyCounts(), path: file.path, kind: 'file' as const, unrunLines };
+    addFileCounts(entry, file);
+    out.push(entry);
+  }
+  const share = (e: FolderEntry) => (e.executableLines > 0 ? e.executedLines / e.executableLines : 1);
+  return out
+    .sort((a, b) => b.unrunLines - a.unrunLines || share(a) - share(b) || (a.path < b.path ? -1 : 1))
+    .slice(0, limit);
+}

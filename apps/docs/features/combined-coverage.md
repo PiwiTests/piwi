@@ -103,13 +103,21 @@ totals are recomputed a few seconds after each upload and each run coverage of t
 - **Carried forward.** A suite the commit lacks comes from its newest earlier report, on the commit's branch then on
   the default branch, file by file where the file's version is unchanged, and the totals say from which commit.
 
-The project's coverage page (**Coverage** in the project's menu) shows the newest commit with coverage, a run's header
-links its commit's, and a file's coverage page says which suites ran each line.
+The project's coverage page (**Coverage** in the project's menu) shows the newest commit with coverage, and a run's
+header links its commit's.
 
 <figure>
   <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage page">
   <figcaption>Three suites of one commit, counted on the same lines.</figcaption>
 </figure>
+
+## Find what is not covered
+
+The coverage page's **Least covered** list names the files of the folder with the most lines no suite ran. A file
+opens on its source, read through the [source control](/guide/source-control) connection, each line marked by the
+suites that ran it: both kinds, unit only, end to end only, none, or undetermined. **Next gap** jumps to the next lines
+no suite ran and names the function around them; a file the Playwright tests also recorded switches between marks
+**by tests** and **by suites**. Without a connection, the lines show as numbers.
 
 ## In pull requests
 
@@ -121,7 +129,7 @@ of counts as reached, so a file only a unit test covers is no longer reported as
 ## Over time
 
 The **Coverage trend** [Analytics widget](./analytics) charts the combined line coverage per day, summed over the
-projects in scope, with the change against the comparison period; the engineering
+projects in scope, with each suite's share as a dashed line and the change against the comparison period; the engineering
 [quality report](./quality-reports) gives it as one line, "Line coverage: 61.2% (+1.4 pts)". Each project counts at
 its newest commit with coverage on or before each day, on the default branch unless the scope names branches. The
 numbers are kept per day, so the trend outlives the reports' retention.
@@ -134,18 +142,9 @@ counted is written with 1 hit when any suite ran it and 0 when none did: Piwi ke
 
 ## How paths are matched
 
-A report's paths are made repository-relative before anything is sent:
-
-- Vitest writes paths relative to its root; the command tries them against the report's `<source>`, the current
-  directory, the report's directory and its parent (Vitest writes `coverage/` under its root), and the repository
-  root, and keeps the first that names a file of the checkout.
-- coverlet writes the common directory of a module's files as `<source>`; Microsoft code coverage writes absolute
-  paths; a .NET build with `ContinuousIntegrationBuild` writes `/_/`, read as the repository root.
-- `--root <dir>` replaces those guesses with one directory.
-
-A path that names no file of the checkout is dropped and counted: "12 paths matched no file in the checkout: check
-`--root`". Each file is named by the git blob of its content in the checkout, so its line numbers stay tied to that
-version of the file.
+Each report path is made repository-relative before anything is sent (the [CLI reference](/reference/cli#coverage)
+gives the order tried; `--root` replaces it), and each file is named by the git blob of its content in the checkout.
+A path that names no file of the checkout is dropped and counted.
 
 ## The coverage scope
 

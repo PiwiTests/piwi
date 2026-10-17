@@ -25,6 +25,38 @@ export const RAN_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--color-coverage-run)]
 /** A row of the left bar the source view draws on an executable line that did not run. */
 export const NOT_RUN_ROW_CLASS = 'shadow-[inset_3px_0_0_0_var(--color-coverage-not-run)]';
 
+/** A line's class in a commit's combined coverage. */
+export type LineClassKind = 'both' | 'unit' | 'e2e' | 'none' | 'undetermined';
+
+/** Each class's bar, color token and hover text, in the order the legend lists them. */
+export const LINE_CLASS_MARKS: Record<LineClassKind, { row: string; swatch: string; title: string }> = {
+  both: {
+    row: RAN_ROW_CLASS,
+    swatch: 'bg-coverage-run',
+    title: 'Unit and end-to-end tests ran it',
+  },
+  unit: {
+    row: 'shadow-[inset_3px_0_0_0_var(--color-coverage-unit)]',
+    swatch: 'bg-coverage-unit',
+    title: 'Only unit tests ran it',
+  },
+  e2e: {
+    row: 'shadow-[inset_3px_0_0_0_var(--color-coverage-e2e)]',
+    swatch: 'bg-coverage-e2e',
+    title: 'Only end-to-end tests ran it',
+  },
+  undetermined: {
+    row: 'shadow-[inset_3px_0_0_0_var(--color-coverage-undetermined)]',
+    swatch: 'bg-coverage-undetermined',
+    title: 'Undetermined: in a function the browser ran',
+  },
+  none: {
+    row: NOT_RUN_ROW_CLASS,
+    swatch: 'bg-coverage-not-run',
+    title: 'No suite ran it',
+  },
+};
+
 /** Rows a group shows before "Show all". */
 export const COVERAGE_ROWS_SHOWN = 20;
 

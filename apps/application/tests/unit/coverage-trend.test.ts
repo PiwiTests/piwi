@@ -25,12 +25,19 @@ const ctxFor = (lang: 'en' | 'fr') => ({
 });
 const scope = (query: Record<string, string> = {}) => parseAnalyticsScope({ days: '14', ...query });
 
-async function daily(projectId: number, daysAgo: number, executed: number, executable: number, branch = '') {
+async function daily(
+  projectId: number,
+  daysAgo: number,
+  executed: number,
+  executable: number,
+  branch = '',
+  suite = 'combined',
+) {
   await db.insert(schema.coverageDaily).values({
     projectId,
     day: day(daysAgo),
     branch,
-    suite: 'combined',
+    suite,
     commit: 'c0ffee',
     executableLines: executable,
     executedLines: executed,
@@ -61,6 +68,8 @@ beforeAll(async () => {
   await daily(1, 2, 10, 100, 'feat');
   // Admin: one day, carried forward to the period's end.
   await daily(2, 8, 25, 100);
+  // Admin's unit suite, on the same lines.
+  await daily(2, 8, 20, 100, '', 'unit-back');
 });
 
 describe('coverage trend', () => {
@@ -75,6 +84,8 @@ describe('coverage trend', () => {
       projects: 2,
       declined: 0,
     });
+    expect(data.suites).toMatchObject([{ name: 'unit-back', linePercent: 20 }]);
+    expect(data.suites[0].points).toHaveLength(data.points.length);
     const known = data.points.filter((p: any) => p.linePercent !== null);
     expect(known[0].linePercent).toBe(60);
     expect(known.at(-1).linePercent).toBe(50);
@@ -97,5 +108,12 @@ describe('coverage trend', () => {
     expect((en as any).summary).toBe('Line coverage: 75% (+15 pts)');
     const [fr] = WIDGET_DOCUMENTS['coverage-trend'](data, ctxFor('fr'), {});
     expect((fr as any).summary).toMatch(/^Couverture des lignes/);
+  });
+
+  test('names each suite’s share in the report line', async () => {
+    const data = await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '2' }));
+    const [block] = WIDGET_DOCUMENTS['coverage-trend'](data, ctxFor('en'), {});
+    expect((block as any).summary).toBe('Line coverage: 25% · unit-back 20%');
+    expect((block as any).series.map((s: any) => s.label)).toEqual(['Line coverage', 'unit-back']);
   });
 });

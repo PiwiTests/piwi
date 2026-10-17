@@ -1428,7 +1428,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     capability: 'coverage',
     description:
-      'Combined coverage of a commit: every suite that ran the code (the unit-test reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs), counted on one set of executable lines per file version. Gives the totals and each suite’s lines (`executedLines` of `executableLines`, with `linePercent`), functions, `undeterminedLines` (unrun lines inside functions the browser suite ran, never counted as run), the lines only unit tests or only end-to-end tests run, the files without coverage data, one `folder`’s breakdown, and with `file` which suites ran each of its lines. Without `commit`, the newest commit with coverage on `branch` (default branch when absent).',
+      'Combined coverage of a commit: every suite that ran the code (the unit-test reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs), counted on one set of executable lines per file version. Gives the totals and each suite’s lines (`executedLines` of `executableLines`, with `linePercent`), functions, `undeterminedLines` (unrun lines inside functions the browser suite ran, never counted as run), the lines only unit tests or only end-to-end tests run, the files without coverage data, one `folder`’s breakdown, its least-covered files (`leastCovered`, the most lines no suite ran first: where a test is most missing), and with `file` which suites ran each of its lines. Without `commit`, the newest commit with coverage on `branch` (default branch when absent).',
     inputSchema: {
       type: 'object',
       properties: {

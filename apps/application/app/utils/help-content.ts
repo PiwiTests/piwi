@@ -671,6 +671,26 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/code-reach#on-the-execution-page',
   },
+  'coverage.least-covered': {
+    title: 'Least covered',
+    text: 'The files of this folder with the most executable lines no suite ran, unit or end to end, the most first, then the lowest share run. Undetermined lines (in a function the browser ran) are not counted. A file opens with each line marked by the suites that ran it, and the next gap one click away.',
+    doc: 'features/combined-coverage#find-what-is-not-covered',
+  },
+  'coverage.combined-marks': {
+    title: 'Marks by suite',
+    text: [
+      'With every suite of the commit, the bar at the left of a line says which kinds of suite ran it:',
+      '',
+      '- **Teal**: unit tests and end-to-end tests both ran it.',
+      '- **Blue**: only unit tests ran it. No user path in the end-to-end tests reaches it.',
+      '- **Violet**: only the end-to-end tests ran it. Only the Playwright suite protects it.',
+      '- **Slate**: no suite ran it. The first place to add a test.',
+      '- **Yellow**: undetermined. It sits in a function the browser ran, and the browser records functions, not lines.',
+      '',
+      'An unmarked line is not code (a blank line, a comment, a brace the compiler does not count).',
+    ].join('\n'),
+    doc: 'features/combined-coverage#find-what-is-not-covered',
+  },
   'coverage.marks': {
     title: 'Coverage marks',
     text: [

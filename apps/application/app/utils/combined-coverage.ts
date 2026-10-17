@@ -1,6 +1,7 @@
 /**
  * The words of the combined coverage screens: the commit's totals, a suite's
- * line, a folder's ratio, and which suites ran a range of a file. Pure, so
+ * line, a folder's ratio, which suites ran a range of a file, and the steps
+ * between a file's gaps. Pure, so
  * the sentences are tested once and read the same on every screen.
  */
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
@@ -74,4 +75,33 @@ export function suitesOnLines(bySuite: Record<string, LineRange[]>, range: LineR
 export function folderTrail(folder: string): Array<{ name: string; path: string }> {
   const parts = folder.split('/').filter(Boolean);
   return parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join('/') }));
+}
+
+/** Where a selection stands among a file's gaps: the gap it is in, and the gaps before and after it. */
+export interface GapSteps {
+  /** The index of the gap the selection starts in; null when it is in none. */
+  index: number | null;
+  previous: LineRange | null;
+  next: LineRange | null;
+}
+
+/** Step through normalized gaps from a selection: without one, the first gap is next. */
+export function gapSteps(gaps: LineRange[], selection: LineRange | null): GapSteps {
+  const index = selection ? gaps.findIndex(([start, end]) => start <= selection[0] && selection[0] <= end) : -1;
+  const after = selection ? selection[1] : 0;
+  const before = selection ? selection[0] : 0;
+  return {
+    index: index < 0 ? null : index,
+    previous: selection ? ([...gaps].reverse().find(([, end]) => end < before) ?? null) : null,
+    next: gaps.find(([start]) => start > after) ?? null,
+  };
+}
+
+/** The narrowest function holding a line; null outside every function. */
+export function enclosingFunction(functions: LineRange[], line: number): LineRange | null {
+  let found: LineRange | null = null;
+  for (const range of functions) {
+    if (range[0] <= line && line <= range[1] && (!found || range[1] - range[0] < found[1] - found[0])) found = range;
+  }
+  return found;
 }

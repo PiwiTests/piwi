@@ -13,6 +13,7 @@ import type { DrizzleDB } from '#shared/handlers/db';
 import {
   coveragePercent,
   folderBreakdown,
+  leastCoveredFiles,
   type CombinedFile,
   type CoverageCounts,
   type CoverageSuiteKind,
@@ -25,6 +26,8 @@ import { projectDefaultBranch } from './scm/stored-default-branch';
 
 /** Paths of files without coverage data an answer lists at most. */
 const MAX_LISTED_PATHS = 100;
+/** Files the least-covered list names at most. */
+const LEAST_COVERED_FILES = 20;
 const CACHE_MS = 60_000;
 const CACHE_ENTRIES = 50;
 
@@ -61,6 +64,8 @@ export interface CoverageSummary {
   /** The folder broken down ('' for the repository root) and its direct children. */
   folder: string;
   entries: Array<FolderEntry & CoverageRatios>;
+  /** The folder's files with the most lines no suite ran, the most first, at most 20. */
+  leastCovered: Array<FolderEntry & CoverageRatios & { unrunLines: number }>;
   /** With `file`, that file's lines: their classes and the lines each suite ran; null when no suite names it. */
   file?: CombinedFile | null;
 }
@@ -239,6 +244,7 @@ export async function getCoverageSummary(
     filesReferencedByReports: combined.filesReferencedByReports,
     folder: query.folder,
     entries: folderBreakdown(combined.files, query.folder).map((e) => ratios(e)),
+    leastCovered: leastCoveredFiles(combined.files, query.folder, LEAST_COVERED_FILES).map((e) => ratios(e)),
     ...(query.file ? { file: combined.files.find((f) => f.path === query.file) ?? null } : {}),
   };
 }

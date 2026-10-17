@@ -2,9 +2,10 @@
 /**
  * A project's combined coverage at one commit (`/projects/:id/coverage`
  * without `?file=`): the share of lines and functions every suite ran
- * together, each suite's share on the same lines, then a folder's files and
- * folders with theirs. A folder opens its contents (`?folder=`), a file the
- * file view. The files of the commit no suite names close the page. The
+ * together, each suite's share on the same lines, the folder's files with the
+ * most lines no suite ran, then a folder's files and folders with theirs. A
+ * folder opens its contents (`?folder=`), a file the file view marked by
+ * suite (`?marks=suites`). The files of the commit no suite names close the page. The
  * card's menu exports the commit's combined coverage as LCOV or Cobertura.
  */
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
@@ -46,10 +47,13 @@ function pageLink(query: Record<string, string | undefined>) {
   };
 }
 
+/** A file's view, marked by the suites that ran each line. */
+function fileLink(path: string) {
+  return { path: `/projects/${props.projectId}/coverage`, query: { file: path, marks: 'suites' } };
+}
+
 function entryLink(entry: CoverageSummary['entries'][number]) {
-  return entry.kind === 'folder'
-    ? pageLink({ folder: entry.path })
-    : { path: `/projects/${props.projectId}/coverage`, query: { file: entry.path } };
+  return entry.kind === 'folder' ? pageLink({ folder: entry.path }) : fileLink(entry.path);
 }
 
 const toast = useToast();
@@ -160,6 +164,33 @@ const barWidth = (percent: number | null) => `${Math.max(0, Math.min(100, percen
           </p>
         </li>
       </ul>
+    </SectionCard>
+
+    <SectionCard
+      v-if="summary.leastCovered.length"
+      title="Least covered"
+      subtitle="The files with the most lines no suite ran: where a test is most missing."
+      help="coverage.least-covered"
+    >
+      <ol class="divide-y divide-default" data-testid="coverage-least-covered">
+        <li
+          v-for="entry in summary.leastCovered"
+          :key="entry.path"
+          class="flex flex-col gap-0.5 py-1.5 sm:flex-row sm:items-baseline sm:gap-4"
+          :data-least-covered="entry.path"
+        >
+          <NuxtLink
+            :to="fileLink(entry.path)"
+            class="min-w-0 flex-1 text-sm text-primary font-mono break-all hover:underline"
+          >
+            {{ entry.path }}
+          </NuxtLink>
+          <p class="text-xs text-muted tabular-nums sm:text-right shrink-0">
+            {{ formatCount(entry.unrunLines) }} {{ entry.unrunLines === 1 ? 'line' : 'lines' }} no suite ran ·
+            {{ formatPercent(entry.linePercent) }} of {{ formatCount(entry.executableLines) }} ran
+          </p>
+        </li>
+      </ol>
     </SectionCard>
 
     <SectionCard title="Files" :count="summary.entries.length">

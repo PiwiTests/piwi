@@ -168,8 +168,10 @@ npx @piwitests/reporter coverage upload "**/coverage.cobertura.xml" --suite unit
 | `-h`, `--help` | Show help |
 
 Patterns are expanded by the command, so a quoted `**` works the same in every shell. Without `--root`, a relative path
-is tried against the report's `<source>`, the current directory, the report's directory and its parent, and the
-repository root; the first that names a file of the checkout wins, and the summary counts the paths none did.
+is tried against the report's `<source>`, the current directory, the report's directory and its parent (Vitest writes
+`coverage/` under its root), and the repository root; the first that names a file of the checkout wins, and the
+summary counts the paths none did. An absolute path is taken under the repository root, and the `/_/` of a .NET build
+with `ContinuousIntegrationBuild` is read as the repository root.
 
 ## `select` / `run` {#select-run}
 
