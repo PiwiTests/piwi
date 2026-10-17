@@ -1,5 +1,5 @@
-import { and, inArray, lte } from 'drizzle-orm';
-import { coverageDaily, projects } from '../../../server/database/schema';
+import { and, eq, inArray, lte } from 'drizzle-orm';
+import { coverageDaily, coverageTotals, projects } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsCoverageTrend } from '../../analytics/types';
@@ -9,8 +9,8 @@ import { COMBINED_SUITE, coveragePercent } from '../../coverage-combine';
 import { resolveProjectStates } from '../capabilities';
 import { dayKey, firstNonEmptyIndex, getAnalyticsContext, type AnalyticsContext, type ProjectAccess } from './common';
 
-/** One series of `coverage_daily`: a project on one branch, its days ascending. */
-type Series = Array<{ day: string; executed: number; executable: number }>;
+/** One series of `coverage_daily`: a project on one branch, its days ascending, each with the commit it counts. */
+type Series = Array<{ projectId: number; day: string; commit: string; executed: number; executable: number }>;
 
 /** Days a series' last value counts after its last day: a suite, an area or a project that stopped reporting drops out. */
 const SERIES_HORIZON_DAYS = 30;
@@ -46,7 +46,9 @@ function asOf(series: Series, day: string): Series[number] | null {
  * policy that has one, and the same for each suite by name, or with
  * `split: 'areas'` for each area the projects name now. Read from
  * `coverage_daily`, which keeps the totals after the reports they came from
- * are pruned.
+ * are pruned. A bucket no project has a new day in carries the newest earlier
+ * day (`carriedFrom`); `earlierScope` says a point counts a commit whose
+ * totals were computed under an earlier coverage scope or areas.
  */
 export async function getAnalyticsCoverageTrend(
   db: DrizzleDB,
@@ -68,11 +70,18 @@ export async function getAnalyticsCoverageTrend(
     series: [],
     projects: 0,
     declined: 0,
+    carriedPoints: 0,
+    earlierScope: false,
   };
   if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return empty;
 
   const rows = await db
-    .select({ id: projects.id, defaultBranch: projects.defaultBranch, areas: projects.coverageAreas })
+    .select({
+      id: projects.id,
+      defaultBranch: projects.defaultBranch,
+      areas: projects.coverageAreas,
+      scopeVersion: projects.coverageScopeVersion,
+    })
     .from(projects)
     .where(ctx.allowed === 'all' ? undefined : inArray(projects.id, ctx.allowed));
   const included: typeof rows = [];
@@ -92,6 +101,7 @@ export async function getAnalyticsCoverageTrend(
       suite: coverageDaily.suite,
       area: coverageDaily.area,
       day: coverageDaily.day,
+      commit: coverageDaily.commit,
       executed: coverageDaily.executedLines,
       executable: coverageDaily.executableLines,
     })
@@ -127,7 +137,13 @@ export async function getAnalyticsCoverageTrend(
     const perBranch = perProject.get(row.projectId) ?? new Map<string, Series>();
     perBranch.set(row.branch, [
       ...(perBranch.get(row.branch) ?? []),
-      { day: row.day, executed: row.executed, executable: row.executable },
+      {
+        projectId: row.projectId,
+        day: row.day,
+        commit: row.commit,
+        executed: row.executed,
+        executable: row.executable,
+      },
     ]);
     perProject.set(row.projectId, perBranch);
     byLine.set(line, perProject);
@@ -147,14 +163,16 @@ export async function getAnalyticsCoverageTrend(
     let executed = 0;
     let executable = 0;
     let any = false;
+    const values: Series = [];
     for (const branches of of) {
       const value = branches.map((list) => asOf(list, day)).find((v) => v !== null);
       if (!value) continue;
       any = true;
       executed += value.executed;
       executable += value.executable;
+      values.push(value);
     }
-    return { any, executed, executable };
+    return { any, executed, executable, values };
   };
 
   const keys = ctx.buckets.keys;
@@ -162,17 +180,24 @@ export async function getAnalyticsCoverageTrend(
     const next = keys[i + 1];
     return next ? dayKey(Date.parse(`${next}T00:00:00Z`) - 1) : toDay;
   });
+  const counted: Series = [];
   const points = keys.map((date, i) => {
     const total = totalAsOf(ends[i]!);
+    counted.push(...total.values);
+    const days = total.values.map((v) => v.day).sort();
     return {
       date,
       linePercent: total.any ? coveragePercent(total.executed, total.executable) : null,
       executedLines: total.executed,
       executableLines: total.executable,
+      // No project has a day in the bucket: its value is the newest earlier day's.
+      carriedFrom: days.length > 0 && days.at(-1)! < date ? days.at(-1)! : null,
     };
   });
 
   const first = firstNonEmptyIndex(points, (p) => p.linePercent === null);
+  const shown = points.slice(first);
+  const earlierScope = await countsEarlierScope(db, counted, new Map(included.map((p) => [p.id, p.scopeVersion ?? 0])));
   const percentOf = (total: { any: boolean; executed: number; executable: number }) =>
     total.any ? coveragePercent(total.executed, total.executable) : null;
   const lines = [...byLine.keys()]
@@ -196,7 +221,7 @@ export async function getAnalyticsCoverageTrend(
     : null;
   const previousLinePercent = previous?.any ? coveragePercent(previous.executed, previous.executable) : null;
   return {
-    points: points.slice(first),
+    points: shown,
     bucketDays: ctx.buckets.bucketDays,
     linePercent,
     previousLinePercent,
@@ -210,5 +235,34 @@ export async function getAnalyticsCoverageTrend(
     series: lines,
     projects: included.length,
     declined,
+    carriedPoints: shown.filter((p) => p.carriedFrom !== null).length,
+    earlierScope,
   };
+}
+
+/** Commits a query reads at most at once. */
+const COMMIT_CHUNK = 200;
+
+/** Whether any counted commit's totals were computed under another scope version than its project's. */
+async function countsEarlierScope(db: DrizzleDB, counted: Series, versions: Map<number, number>): Promise<boolean> {
+  const byProject = new Map<number, Set<string>>();
+  for (const v of counted) byProject.set(v.projectId, (byProject.get(v.projectId) ?? new Set()).add(v.commit));
+  for (const [projectId, commits] of byProject) {
+    const list = [...commits];
+    for (let i = 0; i < list.length; i += COMMIT_CHUNK) {
+      const rows = await db
+        .select({ scopeVersion: coverageTotals.scopeVersion })
+        .from(coverageTotals)
+        .where(
+          and(
+            eq(coverageTotals.projectId, projectId),
+            inArray(coverageTotals.commit, list.slice(i, i + COMMIT_CHUNK)),
+            eq(coverageTotals.suite, COMBINED_SUITE),
+            eq(coverageTotals.area, ''),
+          ),
+        );
+      if (rows.some((r) => r.scopeVersion !== versions.get(projectId))) return true;
+    }
+  }
+  return false;
 }

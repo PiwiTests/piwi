@@ -154,6 +154,30 @@ describe('coverage trend', () => {
     expect(developFirst.linePercent).toBe(95);
   });
 
+  test('says which day a bucket with no new coverage carries', async () => {
+    const data = (await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '2' }))) as any;
+    const i = data.points.findIndex((p: any) => p.date === day(8));
+    expect(data.points[i].carriedFrom).toBeNull();
+    expect(data.points[i + 1]).toMatchObject({ linePercent: 25, carriedFrom: day(8) });
+    expect(data.carriedPoints).toBe(data.points.filter((p: any) => p.carriedFrom !== null).length);
+    expect(data.carriedPoints).toBeGreaterThan(0);
+    expect(data.earlierScope).toBe(false);
+  });
+
+  test('says when a point counts totals computed under an earlier coverage scope', async () => {
+    await db.insert(schema.projects).values({ id: 5, name: 'search', defaultBranch: 'main', coverageScopeVersion: 2 });
+    await daily(5, 4, 30, 100);
+    await db.insert(schema.coverageTotals).values({
+      projectId: 5,
+      commit: 'c0ffee',
+      suite: 'combined',
+      kind: 'combined',
+      scopeVersion: 1,
+    });
+    const data = (await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '5' }))) as any;
+    expect(data.earlierScope).toBe(true);
+  });
+
   test('stops carrying a series a month after its last day', async () => {
     const data = (await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '4' }))) as any;
     expect(data.series.map((s: any) => s.name)).toEqual([]);

@@ -674,6 +674,8 @@ export interface AnalyticsCoverageTrendPoint {
   linePercent: number | null;
   executedLines: number;
   executableLines: number;
+  /** The day (`YYYY-MM-DD`) the value is carried from when no project has coverage in the bucket itself; else null. */
+  carriedFrom: string | null;
 }
 
 /** One dashed line of the coverage trend: a suite, or a named area of the code. */
@@ -702,6 +704,10 @@ export interface AnalyticsCoverageTrend {
   projects: number;
   /** Projects of the scope that declined coverage, left out. */
   declined: number;
+  /** Points whose value is carried from an earlier day. */
+  carriedPoints: number;
+  /** A point counts a commit whose totals were computed under an earlier coverage scope or areas. */
+  earlierScope: boolean;
 }
 
 export interface AnalyticsFlakyDebtPoint {

@@ -3,7 +3,9 @@ import { combineCoverage, coverageTreeLevel, leastCoveredFiles, type SuiteFile }
 import {
   coverageFileLink,
   coverageLink,
+  dataNoteSentence,
   enclosingFunction,
+  fileViewNotes,
   gapSteps,
   plural,
   totalsSentence,
@@ -177,5 +179,45 @@ describe('withLineage', () => {
     const open = ['a', 'a/b', 'x'];
     expect(withLineage(open, 'a/b')).toBe(open);
     expect(withLineage(open, '')).toBe(open);
+  });
+});
+
+describe('dataNoteSentence', () => {
+  const text = (parts: ReturnType<typeof dataNoteSentence>) =>
+    parts.map((p) => (typeof p === 'string' ? p : `[${p.commit.slice(0, 7)}]`)).join('');
+
+  test('says each note in one plain sentence, the commits it names apart', () => {
+    const sha = 'f'.repeat(40);
+    expect(text(dataNoteSentence({ kind: 'detail-removed', supersededBy: sha }, 'feature/pay'))).toBe(
+      'Only this commit’s totals are kept: its file detail went when [fffffff] arrived on feature/pay.',
+    );
+    expect(text(dataNoteSentence({ kind: 'detail-removed', supersededBy: sha }, null))).toContain(
+      'arrived on the default branch.',
+    );
+    expect(text(dataNoteSentence({ kind: 'carried', suite: 'unit-front', from: sha, files: 12 }, null))).toBe(
+      'unit-front: 12 files carried from [fffffff], an earlier commit.',
+    );
+    expect(text(dataNoteSentence({ kind: 'incomplete', suite: 'unit-back' }, null))).toMatch(
+      /^unit-back: the report is incomplete/,
+    );
+    expect(text(dataNoteSentence({ kind: 'missing-suite', suite: 'unit-front' }, null))).toBe(
+      'unit-front: no coverage for this commit or an earlier one.',
+    );
+    expect(text(dataNoteSentence({ kind: 'no-inventory' }, null))).toBe(
+      'No inventory uploaded: files no suite names are not counted.',
+    );
+    expect(text(dataNoteSentence({ kind: 'scope-changed' }, null))).toMatch(/earlier coverage scope or areas/);
+    expect(text(dataNoteSentence({ kind: 'runs-not-counted', partial: 1, lab: 0 }, null))).toBe(
+      '1 end-to-end run of this commit doesn’t count: 1 partial or unfinished.',
+    );
+    expect(text(dataNoteSentence({ kind: 'runs-not-counted', partial: 1, lab: 2 }, null))).toBe(
+      '3 end-to-end runs of this commit don’t count: 1 partial or unfinished, 2 from a lab or a probe.',
+    );
+  });
+
+  test('keeps the notes about the totals off a file’s view', () => {
+    expect(
+      fileViewNotes([{ kind: 'no-inventory' }, { kind: 'scope-changed' }, { kind: 'missing-suite', suite: 'e2e' }]),
+    ).toEqual([{ kind: 'missing-suite', suite: 'e2e' }]);
   });
 });

@@ -1,11 +1,11 @@
 /**
  * The words of the combined coverage screens: the commit's totals, a suite's
- * line, a folder's ratio, which suites ran a range of a file, and the steps
- * between a file's gaps. Pure, so
+ * line, a folder's ratio, the notes on what the numbers leave out, which
+ * suites ran a range of a file, and the steps between a file's gaps. Pure, so
  * the sentences are tested once and read the same on every screen.
  */
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
-import type { CoverageRatios, CoverageSummary } from '~~/server/utils/coverage-summary';
+import type { CoverageDataNote, CoverageRatios, CoverageSummary } from '~~/server/utils/coverage-summary';
 
 /** A count with thousands separators, the same in every locale so the server and the browser agree. */
 export function formatCount(n: number): string {
@@ -56,6 +56,54 @@ export function suiteKindLabel(kind: 'unit' | 'e2e'): string {
 export function carriedSentence(suite: { carriedFrom: string | null; carriedFiles: number }): string | null {
   if (!suite.carriedFrom) return null;
   return `${plural(suite.carriedFiles, 'file')} carried from ${suite.carriedFrom.slice(0, 7)}`;
+}
+
+/** A note's sentence, in parts: text, and the commits it names, each shown as a link to its coverage. */
+export type NoteSentence = Array<string | { commit: string }>;
+
+/** One note on a commit's numbers as one plain sentence; `branch` is the commit's, null for the default branch. */
+export function dataNoteSentence(note: CoverageDataNote, branch: string | null): NoteSentence {
+  switch (note.kind) {
+    case 'detail-removed':
+      return note.supersededBy
+        ? [
+            'Only this commit’s totals are kept: its file detail went when ',
+            { commit: note.supersededBy },
+            ` arrived on ${branch ?? 'the default branch'}.`,
+          ]
+        : ['Only this commit’s totals are kept: its file detail is no longer stored.'];
+    case 'carried':
+      return [
+        `${note.suite}: ${plural(note.files, 'file')} carried from `,
+        { commit: note.from },
+        ', an earlier commit.',
+      ];
+    case 'incomplete':
+      return [
+        `${note.suite}: the report is incomplete, cut at a size limit or with files that disagreed with the checkout.`,
+      ];
+    case 'missing-suite':
+      return [`${note.suite}: no coverage for this commit or an earlier one.`];
+    case 'no-inventory':
+      return ['No inventory uploaded: files no suite names are not counted.'];
+    case 'scope-changed':
+      return ['These totals were computed under an earlier coverage scope or areas than the project’s current ones.'];
+    case 'runs-not-counted': {
+      const runs = note.partial + note.lab;
+      const why = [
+        note.partial ? `${formatCount(note.partial)} partial or unfinished` : null,
+        note.lab ? `${formatCount(note.lab)} from a lab or a probe` : null,
+      ].filter((part): part is string => !!part);
+      return [
+        `${plural(runs, 'end-to-end run')} of this commit ${runs === 1 ? 'doesn’t' : 'don’t'} count: ${why.join(', ')}.`,
+      ];
+    }
+  }
+}
+
+/** The notes a file's view shows: those about its marks, not about the commit's totals. */
+export function fileViewNotes(notes: CoverageDataNote[]): CoverageDataNote[] {
+  return notes.filter((n) => n.kind !== 'no-inventory' && n.kind !== 'scope-changed');
 }
 
 /** The suites that ran any line of a range of a file, by name; empty when none did. */

@@ -27,7 +27,8 @@ npx @piwitests/reporter coverage upload "**/TestResults/*/coverage.cobertura.xml
 
 The command reads the project, the dashboard URL and the API key as the reporter does (`PIWI_PROJECT_NAME`,
 `PIWI_DASHBOARD_URL`, `PIWI_API_KEY`), the commit from git and the branch from the CI or `PIWI_BRANCH`. The API key
-needs the Uploader role on the project, the one a reporter uses. Every flag is on the
+needs the Uploader role on the project, the one a reporter uses. A path naming no file of the checkout is dropped and
+counted (`--root` sets where paths start). Every flag is on the
 [CLI reference](/reference/cli#coverage).
 
 | Tool | Format | Command |
@@ -37,18 +38,17 @@ needs the Uploader role on the project, the one a reporter uses. Every flag is o
 | Microsoft code coverage | Cobertura | `dotnet test --collect "Code Coverage;Format=cobertura"` |
 | Piwi's .NET recorder | Piwi | `PIWI_COVERAGE_OUTPUT=TestResults/piwi/ dotnet test -p:PiwiCoverage=true` |
 
-On .NET, run the unit tests on the coverage build [server coverage](./server-coverage) uses: each test host writes a
-report there at exit, with the span table's lines, the ones the end-to-end suite counts, at a fraction of coverlet's
-cost. Upload `"TestResults/piwi/*.json"`; set `VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=30000`, as VSTest otherwise stops a
-host 100 ms after its tests.
+On .NET, run the unit tests on the [server coverage](./server-coverage) build: each test host writes a report at exit
+with the span table's lines, at a fraction of coverlet's cost. Upload `"TestResults/piwi/*.json"` and set
+`VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=30000`: VSTest otherwise stops a host 100 ms after its tests.
 
 Upload from the full unit-test run: Vitest lists the files nothing ran only when every test ran and `coverage.include`
 names them.
 
 ## In CI
 
-The unit tests and the Playwright suite usually run in separate jobs: what ties them together is the commit, so each
-job uploads its own report. A suite uploaded in parts (four portals, four shards) is merged on the dashboard.
+The unit tests and the Playwright suite usually run in separate jobs, tied by the commit: each job uploads its own
+report. A suite uploaded in parts (four portals, four shards) is merged on the dashboard.
 
 ::: code-group
 
@@ -97,11 +97,9 @@ totals are recomputed seconds after each upload or run; read them with the
 - **Functions** count across suites by start line: one ran when any suite ran a function starting there.
 - **Classes of lines.** Each executable line is unit only, end to end only, both, none, or undetermined. "End to end
   only" is what the Playwright suite alone protects; "unit only" is code no user path reaches in the tests.
-- **Files without coverage data** are the commit's tracked files in scope that no suite names, from the upload's
-  inventory, counted apart from the percentage.
+- **Files without coverage data** are tracked files in scope no suite names, counted apart from the percentage.
 - **Carried forward.** A suite the commit lacks comes from the newest commit whose coverage arrived before it, on
-  the commit's branch then on the default branch, file by file where the file's version is unchanged, and the totals
-  say from which commit.
+  the commit's branch then on the default branch, file by file where the file's version is unchanged.
 
 The project's **Coverage** page shows the commit whose coverage arrived last, and a run's header links its commit's.
 
@@ -109,6 +107,14 @@ The project's **Coverage** page shows the commit whose coverage arrived last, an
   <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage page">
   <figcaption>Three suites of one commit, counted on the same lines.</figcaption>
 </figure>
+
+## What the numbers leave out
+
+On a branch, each suite keeps only the report of the commit whose coverage arrived last; an earlier push keeps only
+its totals, never recounted ("totals only" on its run). The default branch keeps its newest commit and each day's last
+for 90 days, and totals for a year. Notes above the numbers say when a commit has only totals, a suite is
+carried, a report was cut, a known suite is missing, no inventory was sent, the scope changed since, or runs did not
+count.
 
 ## Find what is not covered
 
@@ -122,17 +128,16 @@ the next lines none ran.
 ## In pull requests
 
 The [Uncovered changes](./uncovered-changes) section of the pull-request comment opens with the change's patch
-coverage: "34 of the 41 changed lines ran (unit 28, end to end 19)". A changed file a suite ran a changed line of counts
-as reached, so a file only a unit test covers is no longer reported as a gap. `piwi gate
---min-patch-coverage <percent>` warns under a minimum, and never fails the build.
+coverage: "34 of the 41 changed lines ran (unit 28, end to end 19)". A changed file any suite ran a changed line of
+counts as reached. `piwi gate --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
 
 ## Over time
 
 The **Coverage trend** [Analytics widget](./analytics) charts the combined line coverage per day, summed over the
 projects in scope, with each suite's share as a dashed line and the change against the comparison period; the engineering
 [quality report](./quality-reports) gives it as one line, "Line coverage: 61.2% (+1.4 pts)". Each project counts
-once a day, at its last commit with coverage, on the default branch or the first of the scope's branches that has one.
-Kept per day, the trend outlives the reports' retention.
+once a day, at its last commit with coverage, on the default branch or the scope's first branch with one.
+Kept per day, it outlives the reports; a day without new coverage names the day it carries.
 
 ## Export
 
@@ -140,20 +145,13 @@ The coverage page's card menu downloads the commit's combined coverage as LCOV o
 IDE (`coverage-export?format=` in the API). A line any suite ran has 1 hit, else 0: Piwi keeps no hit counts and no
 branches.
 
-## How paths are matched
-
-Each report path is made repository-relative before anything is sent (the [CLI reference](/reference/cli#coverage)
-gives the order tried; `--root` replaces it), and each file is named by the git blob of its content in the checkout.
-A path that names no file of the checkout is dropped and counted.
-
 ## The coverage scope
 
 A project's coverage scope decides which files count: include and exclude patterns over repository-relative paths, in
-the syntax CODEOWNERS uses. With no include pattern every file counts; an exclude wins. A pattern is at most 300
-characters, with at most 20 `*`. The defaults leave out tests, build output and generated sources. Set it in the
-project's **Settings › Coverage**, or with the [API](https://piwitests.dev/demo/docs) (`coverageScope`). The upload
-sends only the files in scope, with the commit's inventory (its tracked files in scope and their blob ids), so a
-file no report names still counts as without data.
+the syntax CODEOWNERS uses. With no include pattern every file counts; an exclude wins. The defaults leave out tests,
+build output and generated sources. Set it in the project's **Settings › Coverage**, or with the
+[API](https://piwitests.dev/demo/docs) (`coverageScope`). The upload sends only the files in scope, and the commit's
+inventory: its tracked files in scope and their blob ids.
 
 ## Areas
 
@@ -161,8 +159,8 @@ Name the parts of the code in the same settings (`coverageAreas` in the API): `f
 file belongs to the first area whose patterns match it, and every suite splits the same way: the coverage page gives
 each area its totals and each suite's share; the coverage trend
 draws one line per area (its *Lines beside every suite* option); the pull-request comment counts the changed lines per
-area, "By area: front 28 of 30, back 6 of 11". A change recounts the commits still kept; a removed area leaves the
-trend.
+area, "By area: front 28 of 30, back 6 of 11". A change recounts the commits that keep their reports; a removed area
+leaves the trend.
 
 ## What is sent
 

@@ -86,7 +86,7 @@ import {
   parseCoverageReportUpload,
   storeCoverageReport,
 } from '~~/server/utils/coverage-reports';
-import { scheduleCommitTotals } from '~~/server/utils/coverage-totals';
+import { settleCommitCoverage } from '~~/server/utils/coverage-totals';
 import {
   exportCommitCoverage,
   getCoverageSummary,
@@ -1190,7 +1190,7 @@ const routes: RouteEntry[] = [
       const stored = await storeRunCoverage(db, +m[1]!, run.projectId, files);
       if (run.commit) {
         invalidateCommitCoverage(run.projectId, run.commit);
-        scheduleCommitTotals(getDemoDb, run.projectId, run.commit);
+        await settleCommitCoverage(getDemoDb, run.projectId, run.commit);
       }
       return { files: stored };
     },
@@ -1218,8 +1218,8 @@ const routes: RouteEntry[] = [
         throw error;
       });
       invalidateCommitCoverage(+m[1]!, upload.commit);
-      scheduleCommitTotals(getDemoDb, +m[1]!, upload.commit);
-      return stored;
+      const superseded = await settleCommitCoverage(getDemoDb, +m[1]!, upload.commit);
+      return superseded ? { ...stored, superseded } : stored;
     },
   },
   {
@@ -1255,6 +1255,7 @@ const routes: RouteEntry[] = [
       if ('error' in parsed) throw demoHttpError(400, parsed.error);
       const tree = await getCoverageTree(await getDemoDb(), +m[1]!, parsed);
       if (!tree) throw demoHttpError(404, 'No coverage for this commit');
+      if ('gone' in tree) throw demoHttpError(410, tree.message);
       return tree;
     },
   },
@@ -1269,6 +1270,7 @@ const routes: RouteEntry[] = [
       if (typeof format !== 'string') throw demoHttpError(400, format.error);
       const exported = await exportCommitCoverage(await getDemoDb(), +m[1]!, parsed, format);
       if (!exported) throw demoHttpError(404, 'No coverage for this commit');
+      if ('gone' in exported) throw demoHttpError(410, exported.message);
       return new Response(exported.body, {
         status: 200,
         headers: {

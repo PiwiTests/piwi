@@ -5,7 +5,9 @@
  * both on the run's executable lines. The overview stays in place while it
  * reads another folder, a file opened from it reads its tests' coverage, the
  * links keep the pinned commit and the area, and a line is selected from the
- * keyboard.
+ * keyboard. On a branch, a newer push supersedes an earlier one's report: the
+ * earlier commit keeps only its totals, and the notes above the numbers say
+ * so, and which suite the newer push carries from it.
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
@@ -186,4 +188,93 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
   await expect(page.getByTestId('run-coverage-fact')).toHaveText(/Coverage 83\.3% of 6 lines\s*· 2 suites/, {
     timeout: 30_000,
   });
+});
+
+test('keeps only the totals of a branch push a newer one superseded, and says what the numbers leave out', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const BRANCH = 'feature/notes';
+  const FIRST = 'feed01'.padEnd(40, '0');
+  const SECOND = 'feed02'.padEnd(40, '0');
+  const submitted = await request.post('/api/test-runs/submit', {
+    data: {
+      projectName: PROJECT.COMBINED_COVERAGE_NOTES,
+      status: 'passed',
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      duration: 1000,
+      totalTests: 1,
+      passedTests: 1,
+      failedTests: 0,
+      skippedTests: 0,
+      metadata: { scm: { commit: FIRST, branch: BRANCH }, ci: { provider: 'GitHub Actions' } },
+      testCases: [{ title: 'pays', status: 'passed', duration: 10, location: 'tests/pay.spec.ts:1:1' }],
+    },
+  });
+  expect(submitted.ok()).toBeTruthy();
+  const { projectId, runId } = (await submitted.json()) as { projectId: number; runId: number };
+  // The project's only runs are on the branch: name its default branch, or the branch would read as the default.
+  expect((await request.patch(`/api/projects/${projectId}`, { data: { defaultBranch: 'main' } })).ok()).toBeTruthy();
+
+  const report = (commit: string, suite: string, path: string, blob: string, lines: number[][]) =>
+    request.post(`/api/projects/${projectId}/coverage-reports`, {
+      data: {
+        v: 1,
+        commit,
+        branch: BRANCH,
+        suite,
+        inventory: [
+          ['src/Pay.cs', BLOB],
+          ['src/pay.ts', OTHER_BLOB],
+        ],
+        files: [{ path, blob, executable: [[1, 9]], lines }],
+      },
+    });
+  // The first push uploads both suites, the second the back end's only.
+  expect((await report(FIRST, 'unit-back', 'src/Pay.cs', BLOB, [[1, 4]])).ok()).toBeTruthy();
+  expect((await report(FIRST, 'unit-front', 'src/pay.ts', OTHER_BLOB, [[1, 3]])).ok()).toBeTruthy();
+  // A report's time is kept to the second: the second push arrives a second later, so it carries from the first.
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  expect((await report(SECOND, 'unit-back', 'src/Pay.cs', BLOB, [[1, 6]])).ok()).toBeTruthy();
+
+  // Once both commits' totals are stored, the first keeps only its totals.
+  const firstSummary = async () =>
+    (await (await request.get(`/api/projects/${projectId}/coverage-summary?commit=${FIRST}`)).json()) as {
+      detailRemoved: { supersededBy: string | null } | null;
+      totals: { executedLines: number };
+      entries: unknown[];
+    };
+  await expect
+    .poll(async () => (await firstSummary()).detailRemoved?.supersededBy ?? null, { timeout: 30_000 })
+    .toBe(SECOND);
+  expect(await firstSummary()).toMatchObject({ totals: { executedLines: 7 }, entries: [] });
+  expect((await request.get(`/api/projects/${projectId}/coverage-tree?commit=${FIRST}`)).status()).toBe(410);
+  expect((await request.get(`/api/projects/${projectId}/coverage-export?commit=${FIRST}`)).status()).toBe(410);
+  // A CI job of the first push run again: accepted, and kept out of its totals.
+  const late = await report(FIRST, 'unit-back', 'src/Pay.cs', BLOB, [[1, 9]]);
+  expect(late.ok()).toBeTruthy();
+  expect(await late.json()).toMatchObject({ superseded: { by: SECOND } });
+  expect((await firstSummary()).totals.executedLines).toBe(7);
+
+  // The branch's newest push carries the front end's suite from the first.
+  await page.goto(`/projects/${projectId}/coverage?branch=${encodeURIComponent(BRANCH)}`);
+  const notes = page.getByTestId('coverage-notes');
+  await expect(notes.locator('[data-note="carried"]')).toHaveText(
+    'unit-front: 1 file carried from feed010, an earlier commit.',
+    { timeout: 30_000 },
+  );
+  await notes.getByRole('link', { name: 'feed010' }).click();
+  await expect(page).toHaveURL(new RegExp(`commit=${FIRST}`));
+  await expect(page.getByTestId('coverage-notes').locator('[data-note="detail-removed"]')).toHaveText(
+    `Only this commit’s totals are kept: its file detail went when feed020 arrived on ${BRANCH}.`,
+  );
+  await expect(page.getByTestId('coverage-totals')).toContainText('across 2 suites');
+  await expect(page.getByTestId('coverage-files-removed')).toContainText('No file of this commit is kept');
+  await expect(page.getByTestId('coverage-tree')).toHaveCount(0);
+  await expect(page.getByTestId('coverage-export')).toHaveCount(0);
+
+  // The run of the first push says its commit's coverage is totals only.
+  await page.goto(`/test-runs/${runId}`);
+  await expect(page.getByTestId('run-coverage-fact')).toContainText('totals only', { timeout: 30_000 });
 });

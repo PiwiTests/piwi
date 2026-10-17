@@ -764,6 +764,21 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/combined-coverage#one-ratio-per-commit',
   },
+  'coverage.notes': {
+    title: 'What these numbers leave out',
+    text: [
+      'Where the commit’s numbers come from elsewhere, or miss something:',
+      '',
+      '- **Totals only** — on a branch, each suite keeps only the report of the commit whose coverage arrived last. An earlier commit keeps its totals, as computed, and no files.',
+      '- **Carried** — a suite this commit lacks counts from an earlier commit, for the files whose version is unchanged.',
+      '- **Incomplete** — the report was cut at a size limit, or its files disagreed with the checkout.',
+      '- **No coverage** — a suite the project uploads that neither this commit nor an earlier one has.',
+      '- **No inventory** — files no suite names are not counted; upload with the checkout.',
+      '- **Earlier scope** — totals kept from before the coverage scope or areas changed are not counted again.',
+      '- **Runs that don’t count** — a partial run, a lab run or a probe never counts.',
+    ].join('\n'),
+    doc: 'features/combined-coverage#what-the-numbers-leave-out',
+  },
   'coverage.file-source': {
     title: 'Source not available',
     text: 'Piwi reads a version of a file by its git blob through the project’s source control: a linked clone in the desktop app, GitHub or GitLab with a token, else the file at a run’s commit when its blob matches. Without one, the lines show as numbers.',

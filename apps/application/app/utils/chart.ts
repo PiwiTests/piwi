@@ -195,7 +195,7 @@ export interface TrendLine {
   label: string;
   /** A CSS color: a palette entry's `color`, or one of `GROUP_SERIES_COLORS`. */
   color: string;
-  /** Bucket start dates (`YYYY-MM-DD`), the same for every series. */
-  points: Array<{ date: string; value: number | null }>;
+  /** Bucket start dates (`YYYY-MM-DD`), the same for every series; `note` follows the value in the tooltip. */
+  points: Array<{ date: string; value: number | null; note?: string | null }>;
   dashed?: boolean;
 }

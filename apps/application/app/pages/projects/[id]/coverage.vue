@@ -23,7 +23,8 @@
  * ran it, read from the commit's combined coverage alone. The previous and
  * next gap (lines no test, or no suite, ran) are one click away. Every link
  * between the overview and a file keeps the pinned commit, the branch and
- * the area.
+ * the area. The notes on the commit's suites (one carried, one incomplete,
+ * only the commit's totals kept) sit above the file.
  */
 import { countLines, decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import { coveragePercent } from '#shared/coverage-combine';
@@ -46,6 +47,7 @@ import { lineRangesText } from '~/utils/suspect-lines';
 import {
   coverageLink,
   enclosingFunction,
+  fileViewNotes,
   folderTrail,
   formatCount,
   formatPercent,
@@ -385,12 +387,31 @@ const nearestSentence = computed(() => {
         <LoadingState v-if="loading" text="Reading the file’s coverage…" />
         <EmptyState v-else-if="!coverageActive && !combinedFile" text="This project records no coverage." />
         <ErrorState v-else-if="error && !combinedFile" text="The coverage of this file could not be read." />
-        <EmptyState
-          v-else-if="!version && !combinedFile"
-          :text="`No test or suite recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`"
-        />
+        <template v-else-if="!version && !combinedFile">
+          <CoverageDataNotes
+            v-if="summary"
+            :project-id="projectId"
+            :notes="fileViewNotes(summary.notes)"
+            :branch="summary.branch"
+            :link="{ branch: linkContext.branch, area: linkContext.area }"
+          />
+          <EmptyState
+            :text="
+              summary?.detailRemoved
+                ? `Only the totals of ${summary.commit.slice(0, 7)} are kept, and no test recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`
+                : `No test or suite recorded coverage of ${file} on ${coverage?.branch ?? 'this branch'}.`
+            "
+          />
+        </template>
 
         <template v-else>
+          <CoverageDataNotes
+            v-if="summary"
+            :project-id="projectId"
+            :notes="fileViewNotes(summary.notes)"
+            :branch="summary.branch"
+            :link="{ branch: linkContext.branch, area: linkContext.area }"
+          />
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0 space-y-1">
               <nav class="flex flex-wrap items-center gap-1 text-xs text-muted" aria-label="Folder">

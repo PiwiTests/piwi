@@ -13,6 +13,10 @@
  * in this browser. A file opens its view, marked by suite. Every link keeps
  * the commit `?commit=` pinned, the branch and the area. The card's menu
  * exports the commit's combined coverage as LCOV or Cobertura.
+ *
+ * The notes on what the numbers leave out open the card. A commit whose
+ * detail was removed shows its stored totals, suites and areas, and the files
+ * give way to a link to the commit that superseded it.
  */
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 import { CODE_CHIP_CLASS, SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS } from '~/utils';
@@ -123,7 +127,7 @@ const exportItems = [
   <div class="space-y-4" data-shot="coverage-overview">
     <SectionCard title="Combined coverage" help="coverage.combined" data-tour="coverage-overview">
       <template #actions>
-        <UDropdownMenu :items="exportItems" :content="{ align: 'end' }">
+        <UDropdownMenu v-if="!summary.detailRemoved" :items="exportItems" :content="{ align: 'end' }">
           <UButton
             icon="i-lucide-ellipsis-vertical"
             color="neutral"
@@ -136,6 +140,12 @@ const exportItems = [
         </UDropdownMenu>
       </template>
       <div class="space-y-3">
+        <CoverageDataNotes
+          :project-id="projectId"
+          :notes="summary.notes"
+          :branch="summary.branch"
+          :link="{ branch: linkContext.branch, area: linkContext.area }"
+        />
         <p class="text-sm text-highlighted leading-relaxed" data-testid="coverage-totals">
           At <span :class="CODE_CHIP_CLASS" :title="summary.commit">{{ summary.commit.slice(0, 7) }}</span
           ><template v-if="summary.branch"> on <BranchLabel :name="summary.branch" inherit /></template>:
@@ -165,7 +175,13 @@ const exportItems = [
           <StatTile
             label="Without data"
             :value="summary.filesWithoutData.count ?? '—'"
-            :hint="summary.filesWithoutData.count === null ? 'no inventory uploaded' : 'files in scope, greyed below'"
+            :hint="
+              summary.filesWithoutData.count === null
+                ? 'no inventory uploaded'
+                : summary.detailRemoved
+                  ? 'files in scope'
+                  : 'files in scope, greyed below'
+            "
           />
         </StatTileGrid>
       </div>
@@ -233,7 +249,20 @@ const exportItems = [
       </SectionCard>
     </div>
 
-    <SectionCard title="Files" help="coverage.tree">
+    <SectionCard v-if="summary.detailRemoved" title="Files" data-testid="coverage-files-removed">
+      <p class="text-sm text-highlighted leading-relaxed">
+        No file of this commit is kept<template v-if="summary.detailRemoved.supersededBy"
+          >: open
+          <NuxtLink
+            :to="coverageLink(projectId, { ...linkContext, commit: summary.detailRemoved.supersededBy })"
+            class="font-mono underline decoration-dotted underline-offset-2 hover:decoration-solid"
+            >{{ summary.detailRemoved.supersededBy.slice(0, 7) }}</NuxtLink
+          >, which superseded it, for the files</template
+        >.
+      </p>
+    </SectionCard>
+
+    <SectionCard v-else title="Files" help="coverage.tree">
       <template #actions>
         <USelect
           v-if="summary.areas.length"

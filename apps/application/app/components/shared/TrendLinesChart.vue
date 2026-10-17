@@ -3,7 +3,8 @@
  * Presentational line chart over time buckets: one line per series (a gap in
  * the data is a gap in the line), the x-axis dates, the timeline markers of
  * the analytics page when one provides them, and a tooltip with every series'
- * value in the hovered bucket. Place inside a `ChartCard`.
+ * value in the hovered bucket, and the point's note when it has one. Place
+ * inside a `ChartCard`.
  */
 import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate, type TrendLine } from '~/utils/chart';
 import type { MarkerInfo } from '~~/types/api';
@@ -156,7 +157,10 @@ const f = computed(() => metricFormatter());
       <div class="font-semibold mb-1">{{ f.date(series[0]!.points[tooltipData.i]!.date) }}</div>
       <div v-for="line in series" :key="line.label">
         <span :style="{ color: line.color }">&#9679;</span> {{ line.label }}:
-        {{ valueFormat(line.points[tooltipData.i]?.value ?? null, line) }}
+        {{ valueFormat(line.points[tooltipData.i]?.value ?? null, line)
+        }}<span v-if="line.points[tooltipData.i]?.note" class="opacity-70">
+          · {{ line.points[tooltipData.i]!.note }}</span
+        >
       </div>
     </ChartTooltip>
   </div>

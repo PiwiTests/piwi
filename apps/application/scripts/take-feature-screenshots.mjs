@@ -569,6 +569,65 @@ function reportNoRepositoryCluster(request, base) {
   return noRepositoryCluster;
 }
 
+/**
+ * Two pushes of a branch with unit-test reports: the first uploads the back
+ * end's and the front end's suites, the second the back end's only. Once the
+ * second push's totals are stored, the first keeps only its totals and the
+ * second carries the front end's suite from it. Reported once per session;
+ * returns the project, both commits and the first push's run.
+ */
+let supersededBranch;
+
+function reportSupersededBranch(request, base) {
+  supersededBranch ??= (async () => {
+    const post = (path, options) => postRetrying(request, base, path, options);
+    const branch = 'feature/saved-cards';
+    const first = '5ad1c0de9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b';
+    const second = '7c3e9b1a2d4f6e8a0c2b4d6f8e0a2c4b6d8f0e2a';
+    const blob = (path) => createHash('sha1').update(`branch-scene:${path}`).digest('hex');
+    const files = {
+      back: ['api/Cards/CardEndpoints.cs', 'api/Cards/CardStore.cs'],
+      front: ['src/pages/cards/index.vue', 'src/components/CardForm.vue'],
+    };
+    const inventory = [...files.back, ...files.front, 'api/Cards/CardAudit.cs'].map((path) => [path, blob(path)]);
+    const { runId } = await ingestRun(request, base, {
+      projectName: 'shop-saved-cards',
+      metadata: { scm: { commit: first, branch, author: 'Ada Lovelace', commitMessage: 'feat: save a card' } },
+      testCase: { title: 'saves a card', location: 'tests/cards.spec.ts:4:5', status: 'passed', duration: 1200 },
+      startTime: Date.now() - 10 * 60_000,
+    });
+    const run = await (await request.get(`${base}/api/test-runs/${runId}`)).json();
+    const projectId = run.projectId;
+    // The project's only runs are on the branch: name its default branch.
+    await request.patch(`${base}/api/projects/${projectId}`, { data: { defaultBranch: 'main' } });
+    const upload = (commit, suite, paths, lines) =>
+      post(`/api/projects/${projectId}/coverage-reports`, {
+        data: {
+          v: 1,
+          commit,
+          branch,
+          suite,
+          inventory,
+          files: paths.map((path) => ({ path, blob: blob(path), executable: [[1, 40]], lines })),
+        },
+      });
+    await upload(first, 'unit-back', files.back, [[1, 24]]);
+    await upload(first, 'unit-front', files.front, [[1, 18]]);
+    // A report's time is kept to the second: the second push arrives later.
+    await new Promise((r) => setTimeout(r, 1100));
+    await upload(second, 'unit-back', files.back, [[1, 30]]);
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const summary = await (
+        await request.get(`${base}/api/projects/${projectId}/coverage-summary?commit=${first}`)
+      ).json();
+      if (summary.detailRemoved) return { projectId, branch, first, second, runId };
+    }
+    throw new Error(`${first} kept its coverage reports`);
+  })();
+  return supersededBranch;
+}
+
 /** Surfaces a scene can be captured against, in the order a run boots their servers. */
 const MODES = ['web', 'tour', 'desktop'];
 
@@ -3860,6 +3919,45 @@ const SCENES = [
       await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad: 12 });
     },
   },
+  // A branch's coverage after a second push: the notes above the numbers say
+  // which suite it carries from the first push, and the first push keeps only
+  // its totals (`reportSupersededBranch`).
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 1100 }, pad: 12 },
+    { suffix: '-mobile', viewport: { width: 390, height: 2200 }, pad: 8 },
+  ].flatMap(({ suffix, viewport, pad }) => [
+    {
+      name: `coverage-notes${suffix}`,
+      description: `A branch’s combined coverage at ${viewport.width} px: the notes callout naming the suite carried from the push before`,
+      route: '/projects',
+      viewport,
+      async prepare({ request, base }) {
+        this.branch = await reportSupersededBranch(request, base);
+      },
+      async run({ page, goto, settle, shoot }) {
+        await goto(`/projects/${this.branch.projectId}/coverage?branch=${encodeURIComponent(this.branch.branch)}`);
+        await page.locator('[data-testid="coverage-notes"] [data-note="carried"]').waitFor({ timeout: 60_000 });
+        await page.locator('[data-testid="coverage-tree"] [data-entry]').first().waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad });
+      },
+    },
+    {
+      name: `coverage-totals-only${suffix}`,
+      description: `A superseded push’s combined coverage at ${viewport.width} px: its stored totals, suites and the note that its files went`,
+      route: '/projects',
+      viewport,
+      async prepare({ request, base }) {
+        this.branch = await reportSupersededBranch(request, base);
+      },
+      async run({ page, goto, settle, shoot }) {
+        await goto(`/projects/${this.branch.projectId}/coverage?commit=${this.branch.first}`);
+        await page.locator('[data-testid="coverage-files-removed"]').waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad });
+      },
+    },
+  ]),
   {
     name: 'what-changed-coverage-hint',
     description:

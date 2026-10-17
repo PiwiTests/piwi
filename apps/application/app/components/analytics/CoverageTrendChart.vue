@@ -4,6 +4,8 @@
  * together over the executable lines of the projects in scope with coverage
  * on, with the change against the comparison period, and as dashed lines each
  * suite's share of the same lines, or each named area's (`split: 'areas'`).
+ * A bucket with no new coverage says in its tooltip which day it carries, and
+ * the subtitle notes carried buckets and totals under an earlier scope.
  */
 import type { AnalyticsCoverageTrend } from '#shared/analytics/types';
 import { GROUP_SERIES_COLORS, type TrendLine } from '~/utils/chart';
@@ -28,11 +30,17 @@ const LINE_COLOR = GROUP_SERIES_COLORS[0];
 /** Each suite or area after the combined line, in the next series colors. */
 const suiteColor = (i: number) => GROUP_SERIES_COLORS[(i + 1) % GROUP_SERIES_COLORS.length]!;
 
+const f = computed(() => metricFormatter());
+
 const lines = computed<TrendLine[]>(() => [
   {
     label: 'All suites',
     color: LINE_COLOR,
-    points: (trend.value?.points ?? []).map((p) => ({ date: p.date, value: p.linePercent })),
+    points: (trend.value?.points ?? []).map((p) => ({
+      date: p.date,
+      value: p.linePercent,
+      note: p.carriedFrom ? `carried from ${f.value.date(p.carriedFrom)}` : null,
+    })),
   },
   ...(trend.value?.series ?? []).map((suite, i) => ({
     label: suite.name,
@@ -52,7 +60,11 @@ const subtitle = computed(() => {
   const t = trend.value;
   if (!t || t.linePercent === null) return undefined;
   const delta = t.delta === null ? '' : ` · ${t.delta > 0 ? '+' : ''}${t.delta} pts vs previous period`;
-  return `${formatPercent(t.linePercent)} of ${formatCount(t.executableLines)} lines${delta}`;
+  const carried = t.carriedPoints
+    ? ` · ${t.carriedPoints} ${t.carriedPoints === 1 ? 'point carries' : 'points carry'} an earlier day`
+    : '';
+  const scope = t.earlierScope ? ' · partly under an earlier coverage scope' : '';
+  return `${formatPercent(t.linePercent)} of ${formatCount(t.executableLines)} lines${delta}${carried}${scope}`;
 });
 
 const exportData = computed(() =>
