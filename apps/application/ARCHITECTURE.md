@@ -85,7 +85,9 @@ Non-obvious ones:
   `case_payloads` row); `test_coverage` holds, per test case, branch and runtime, the fragments of its latest run with
   coverage, and `code_reach` their files (or the reporter's `codeReach` list for a test without coverage), replaced the
   same way. `branch` is `''` for the default branch, and a view of another branch reads, per runtime, the branch's rows
-  of the tests that have some. `run_coverage` holds a run's coverage per file, merged across shards. Branch rows go with
+  of the tests that have some. `run_coverage` holds a run's coverage per file, merged across shards, and
+  `test_runs.server_coverage_gaps` the backends whose part of it is missing (one restarted during the run, or was
+  unreachable at its end; `#shared/run-coverage-gaps`). Branch rows go with
   the Test Map's branch rows (`graph:sweep`, 30 days); fragments nothing references go in the orphan sweep.
 - **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
   at query time.

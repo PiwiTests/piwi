@@ -7,7 +7,8 @@
  * links keep the pinned commit and the area, and a line is selected from the
  * keyboard. On a branch, a newer push supersedes an earlier one's report: the
  * earlier commit keeps only its totals, and the notes above the numbers say
- * so, and which suite the newer push carries from it.
+ * so, and which suite the newer push carries from it. A run whose backend
+ * restarted is flagged on its page, and its commit's notes name it.
  */
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
@@ -277,4 +278,53 @@ test('keeps only the totals of a branch push a newer one superseded, and says wh
   // The run of the first push says its commit's coverage is totals only.
   await page.goto(`/test-runs/${runId}`);
   await expect(page.getByTestId('run-coverage-fact')).toContainText('totals only', { timeout: 30_000 });
+});
+
+test('flags a run whose backend restarted, and notes it in its commit’s coverage', async ({ page, request }) => {
+  test.setTimeout(90_000);
+  const RESTART_COMMIT = 'dead01'.padEnd(40, '0');
+  const submitted = await request.post('/api/test-runs/submit', {
+    data: {
+      projectName: PROJECT.COMBINED_COVERAGE_RESTART,
+      status: 'passed',
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      duration: 1000,
+      totalTests: 1,
+      passedTests: 1,
+      failedTests: 0,
+      skippedTests: 0,
+      metadata: { scm: { commit: RESTART_COMMIT, branch: 'main' }, ci: { provider: 'GitHub Actions' } },
+      testCases: [{ title: 'pays', status: 'passed', duration: 10, location: 'tests/pay.spec.ts:1:1' }],
+    },
+  });
+  expect(submitted.ok()).toBeTruthy();
+  const { projectId, runId } = (await submitted.json()) as { projectId: number; runId: number };
+
+  // The reporter's run coverage: the lines the tests ran, and the backend that restarted meanwhile.
+  const put = await request.put(`/api/test-runs/${runId}/coverage`, {
+    data: {
+      v: 1,
+      files: [{ path: 'src/Shop.cs', runtime: 'server', blob: BLOB, lines: [[2, 3]], executable: [[2, 8]] }],
+      incomplete: [{ origin: 'http://localhost:5080', reason: 'restarted', at: new Date().toISOString() }],
+    },
+  });
+  expect(put.ok()).toBeTruthy();
+  const coverage = (await (await request.get(`/api/test-runs/${runId}/coverage?limit=0`)).json()) as {
+    incomplete: Array<{ origin: string; reason: string }>;
+  };
+  expect(coverage.incomplete).toMatchObject([{ origin: 'http://localhost:5080', reason: 'restarted' }]);
+
+  await page.goto(`/test-runs/${runId}`);
+  await expect(page.getByTestId('run-coverage-incomplete')).toHaveText(
+    'Coverage incomplete: the backend restarted during the run',
+    { timeout: 30_000 },
+  );
+
+  await page.goto(`/projects/${projectId}/coverage?commit=${RESTART_COMMIT}`);
+  const note = page.getByTestId('coverage-notes').locator('[data-note="runs-incomplete"]');
+  await expect(note).toContainText(`e2e: incomplete: the backend restarted during run #${runId}.`, {
+    timeout: 30_000,
+  });
+  await note.getByRole('link', { name: `#${runId}` }).click();
+  await expect(page).toHaveURL(new RegExp(`/test-runs/${runId}$`));
 });

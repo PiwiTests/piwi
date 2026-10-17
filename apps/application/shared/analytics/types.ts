@@ -676,6 +676,8 @@ export interface AnalyticsCoverageTrendPoint {
   executableLines: number;
   /** The day (`YYYY-MM-DD`) the value is carried from when no project has coverage in the bucket itself; else null. */
   carriedFrom: string | null;
+  /** The value counts a commit whose `e2e` suite is incomplete: a backend restarted or was unreachable in every run it counts. */
+  e2eIncomplete: boolean;
 }
 
 /** One dashed line of the coverage trend: a suite, or a named area of the code. */

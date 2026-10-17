@@ -38,6 +38,7 @@ export const PROJECT = {
   CODE_REACH: 'code-reach-test',
   COMBINED_COVERAGE: 'combined-coverage-test',
   COMBINED_COVERAGE_NOTES: 'combined-coverage-notes-test',
+  COMBINED_COVERAGE_RESTART: 'combined-coverage-restart-test',
   COVERAGE_INSIGHTS: 'coverage-insights-test',
   COVERAGE_INSIGHTS_OFF: 'coverage-insights-off-test',
   // Deliberately does not contain "projects" (case-insensitive substring) — the

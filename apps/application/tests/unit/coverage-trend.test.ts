@@ -178,6 +178,39 @@ describe('coverage trend', () => {
     expect(data.earlierScope).toBe(true);
   });
 
+  test('marks the points that count a commit whose e2e suite is incomplete', async () => {
+    await db.insert(schema.projects).values({ id: 6, name: 'orders', defaultBranch: 'main' });
+    await db.insert(schema.coverageDaily).values(
+      [
+        [6, 'aaa111'],
+        [3, 'bbb222'],
+      ].map(([daysAgo, commit]) => ({
+        projectId: 6,
+        day: day(daysAgo as number),
+        branch: '',
+        suite: 'combined',
+        area: '',
+        commit: commit as string,
+        executableLines: 100,
+        executedLines: 40,
+        computedAt: new Date(),
+      })),
+    );
+    // The newer commit's only run lost part of its server coverage: a backend restarted.
+    await db.insert(schema.coverageTotals).values({
+      projectId: 6,
+      commit: 'bbb222',
+      suite: 'e2e',
+      kind: 'e2e',
+      incomplete: true,
+    });
+    const data = (await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '6' }))) as any;
+    const at = (daysAgo: number) => data.points.find((p: any) => p.date === day(daysAgo));
+    expect(at(6).e2eIncomplete).toBe(false);
+    expect(at(3).e2eIncomplete).toBe(true);
+    expect(data.points.at(-1).e2eIncomplete).toBe(true);
+  });
+
   test('stops carrying a series a month after its last day', async () => {
     const data = (await runAnalyticsWidget(db as any, 'coverage-trend', scope({ projects: '4' }))) as any;
     expect(data.series.map((s: any) => s.name)).toEqual([]);

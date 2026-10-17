@@ -6,6 +6,8 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
 import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 import { readShuffleSeed } from '#shared/utils/run-metadata';
+import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
+import { coverageGapDetail } from '~/utils/combined-coverage';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -59,6 +61,14 @@ const incidentBadges = computed(() =>
 const customDataHtml = computed(() =>
   customData.value ? highlightCode(JSON.stringify(customData.value, null, 2), 'json').html : '',
 );
+
+// The run's commit, when it names one coverage can be read at.
+const coverageCommit = computed(() => {
+  const commit = scm.value?.commit;
+  return typeof commit === 'string' && /^[0-9a-f]{7,64}$/i.test(commit) ? commit.toLowerCase() : null;
+});
+// The backends whose part of the run's server coverage is missing; empty for a run whose coverage is whole.
+const coverageGaps = computed(() => readRunCoverageGaps(props.testRun?.serverCoverageGaps));
 
 // What ingest left out or rebuilt, one sentence each; empty for a run stored whole.
 const ingestNotes = computed(() => describeIngestHealth(readIngestHealth(props.testRun?.metadata)));
@@ -277,9 +287,10 @@ function onLabelKeydown(e: KeyboardEvent) {
       </template>
       <ClientOnly>
         <RunCoverageFact
-          v-if="testRun?.projectId && typeof scm?.commit === 'string' && /^[0-9a-f]{7,64}$/i.test(scm.commit)"
+          v-if="testRun?.projectId && (coverageCommit || coverageGaps.length)"
           :project-id="testRun.projectId"
-          :commit="scm.commit.toLowerCase()"
+          :commit="coverageCommit"
+          :gaps="coverageGaps"
         />
       </ClientOnly>
       <template v-if="testRun?.environment">
@@ -362,6 +373,18 @@ function onLabelKeydown(e: KeyboardEvent) {
         <ul class="space-y-1">
           <li v-for="note in ingestNotes" :key="note">{{ note }}</li>
         </ul>
+      </div>
+      <div v-if="coverageGaps.length" class="flex items-start gap-1.5" data-shot="run-coverage-gaps">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Coverage <HelpHint topic="run.coverageIncomplete"
+        /></span>
+        <ClientOnly>
+          <ul class="space-y-1">
+            <li v-for="gap in coverageGaps" :key="`${gap.origin}-${gap.reason}`">
+              {{ coverageGapDetail(gap, prettyDateFormat) }}
+            </li>
+          </ul>
+        </ClientOnly>
       </div>
       <div v-if="showStorage" class="flex items-center gap-1.5">
         <span class="text-muted">Storage</span>

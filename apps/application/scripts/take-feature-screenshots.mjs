@@ -3105,6 +3105,40 @@ const SCENES = [
       await shoot('details');
     },
   },
+  // Seeded run #63's backend restarted halfway through: the run header flags its
+  // coverage, Details says what the backend lost, and its commit's combined
+  // coverage notes the run.
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 900 } },
+    { suffix: '-mobile', viewport: { width: 390, height: 1800 } },
+  ].flatMap(({ suffix, viewport }) => [
+    {
+      name: `run-coverage-incomplete${suffix}`,
+      description: `Run page at ${viewport.width} px of a run whose backend restarted: the Coverage incomplete flag on the facts line, and the Coverage row in Details`,
+      route: '/test-runs/63',
+      viewport,
+      async run({ page, shoot, settle }) {
+        await page.locator('[data-shot="run-coverage-incomplete"]').waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+        await page.getByRole('button', { name: 'Details' }).click();
+        await page.locator('[data-shot="run-coverage-gaps"]').waitFor();
+        await settle();
+        await shoot('details');
+      },
+    },
+    {
+      name: `coverage-restart-note${suffix}`,
+      description: `A commit’s combined coverage at ${viewport.width} px whose only run’s backend restarted: the note naming the run`,
+      route: '/projects/5/coverage',
+      viewport,
+      async run({ page, settle, shoot }) {
+        await page.locator('[data-testid="coverage-notes"] [data-note="runs-incomplete"]').waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot(undefined, { of: '[data-shot="coverage-headline"]', pad: 8 });
+      },
+    },
+  ]),
   {
     name: 'run-keep-modal',
     description: 'Run page menu: Keep forever… asks for an optional reason',

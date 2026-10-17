@@ -9,7 +9,10 @@
  * - The **`e2e` suite** is the union of the run coverage of the commit's
  *   complete Playwright runs (no lab run, no partial run), per runtime: server
  *   files with their executed lines, browser files with the functions that ran
- *   and every function known in their version.
+ *   and every function known in their version. A run whose server coverage is
+ *   incomplete (a backend restarted or was unreachable) joins the union: it
+ *   adds only lines that ran, against executable lines a span table gives per
+ *   file version. The suite is incomplete when every run is.
  * - The commit **arrived** when its coverage first did: its first report or
  *   complete run with coverage, kept on its totals. Commits follow that order:
  *   the latest commit with coverage, the day a commit counts on in
@@ -53,6 +56,7 @@ import {
   type SuiteInput,
 } from '#shared/coverage-combine';
 import { eligibleRunSql } from '#shared/run-eligibility';
+import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import {
   fileVersionKey,
   getFileVersions,
@@ -147,14 +151,30 @@ function runSuiteFiles(runs: RunCoverageFile[][]): SuiteFile[] {
   return [...byFile.values()];
 }
 
-/** The complete runs of a commit that recorded run coverage, newest first. */
+/**
+ * Whether the run coverage of a commit's runs leaves part of the suite out:
+ * when every run's server coverage is incomplete (a backend restarted or was
+ * unreachable). A complete run of the commit ran the whole suite, and an
+ * incomplete one adds only lines that ran, so one complete run keeps the
+ * union whole.
+ */
+function runsIncomplete(runs: Array<{ gaps: unknown }>): boolean {
+  return runs.length > 0 && runs.every((r) => readRunCoverageGaps(r.gaps).length > 0);
+}
+
+/** The complete runs of a commit that recorded run coverage, newest first, with their server coverage gaps. */
 async function commitRuns(
   db: DrizzleDB,
   projectId: number,
   commit: string,
-): Promise<Array<{ id: number; branch: string | null; startTime: Date }>> {
+): Promise<Array<{ id: number; branch: string | null; startTime: Date; gaps: unknown }>> {
   return db
-    .select({ id: testRuns.id, branch: testRuns.branch, startTime: testRuns.startTime })
+    .select({
+      id: testRuns.id,
+      branch: testRuns.branch,
+      startTime: testRuns.startTime,
+      gaps: testRuns.serverCoverageGaps,
+    })
     .from(testRuns)
     .where(
       and(
@@ -278,7 +298,12 @@ export async function loadCommitCoverage(
     files.map((f) => withFileVersion(f, f.blob ? versions.get(fileVersionKey({ ...f, blob: f.blob })) : undefined));
 
   if (runIds.length > 0)
-    suites.push({ name: E2E_SUITE, kind: 'e2e', files: runSuiteFiles(runFiles.map(withVersions)) });
+    suites.push({
+      name: E2E_SUITE,
+      kind: 'e2e',
+      files: runSuiteFiles(runFiles.map(withVersions)),
+      incomplete: runsIncomplete(runs),
+    });
   suites.push(...carriedSuites.reports);
   if (carriedSuites.e2e) {
     const files = runSuiteFiles(carriedSuites.e2e.runs.map(withVersions));
@@ -288,6 +313,7 @@ export async function loadCommitCoverage(
       files,
       carriedFrom: carriedSuites.e2e.commit,
       carriedFiles: new Set(files.map((f) => f.path)).size,
+      incomplete: carriedSuites.e2e.incomplete,
     });
   }
 
@@ -313,6 +339,13 @@ function runBranchIs(tag: string, defaultBranch: string | null): SQL {
     : sql`trim(${testRuns.branch}) = ${tag}`;
 }
 
+/** An `e2e` suite carried forward: its commit, the run coverage of its runs, and whether it is incomplete. */
+interface CarriedRuns {
+  commit: string;
+  runs: RunCoverageFile[][];
+  incomplete: boolean;
+}
+
 /**
  * The suites the commit lacks, from the newest commit that arrived before it
  * with each, on the commit's branch, then on the default branch: the files
@@ -330,10 +363,10 @@ async function carryForward(
   seenAt: Date,
   inventory: ReadonlyMap<string, string>,
   present: string[],
-): Promise<{ reports: SuiteInput[]; e2e: { commit: string; runs: RunCoverageFile[][] } | null }> {
+): Promise<{ reports: SuiteInput[]; e2e: CarriedRuns | null }> {
   const have = new Set(present);
   const branches = branch ? [branch, ''] : [''];
-  const out: { reports: SuiteInput[]; e2e: { commit: string; runs: RunCoverageFile[][] } | null } = {
+  const out: { reports: SuiteInput[]; e2e: CarriedRuns | null } = {
     reports: [],
     e2e: null,
   };
@@ -417,7 +450,7 @@ async function carryForward(
         .map((list) => carried(list, inventory))
         .filter((list) => list.length > 0);
       if (files.length === 0) continue;
-      out.e2e = { commit: source, runs: files };
+      out.e2e = { commit: source, runs: files, incomplete: runsIncomplete(sourceRuns) };
       return out;
     }
   }

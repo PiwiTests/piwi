@@ -2,9 +2,10 @@
 /**
  * What a commit's coverage numbers leave out or take from elsewhere, one
  * plain sentence per note (`dataNoteSentence`): only its totals kept, a suite
- * carried from an earlier commit, an incomplete report, a suite the commit
- * lacks, no inventory, an earlier scope, runs that do not count. Each commit a
- * note names links to the coverage at that commit. Renders nothing without a
+ * carried from an earlier commit, an incomplete report, runs whose backend
+ * restarted or was unreachable, a suite the commit lacks, no inventory, an
+ * earlier scope, runs that do not count. Each commit a note names links to the
+ * coverage at that commit, each run to its page. Renders nothing without a
  * note.
  */
 import type { CoverageDataNote } from '~~/server/utils/coverage-summary';
@@ -39,6 +40,13 @@ const sentences = computed(() =>
       <li v-for="(sentence, i) in sentences" :key="i" :data-note="sentence.kind">
         <template v-for="(part, j) in sentence.parts" :key="j">
           <template v-if="typeof part === 'string'">{{ part }}</template>
+          <NuxtLink
+            v-else-if="'run' in part"
+            :to="`/test-runs/${part.run}`"
+            :class="LINK_CLASS"
+            :title="`Run #${part.run}`"
+            >#{{ part.run }}</NuxtLink
+          >
           <NuxtLink
             v-else
             :to="coverageLink(projectId, { ...link, commit: part.commit })"

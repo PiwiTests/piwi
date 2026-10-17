@@ -24,6 +24,7 @@ export interface DemoExampleExpect {
     | 'flaked-again';
   resources?: 'leaky';
   incident?: true;
+  coverageGap?: 'restarted' | 'unreachable';
   gaps?: { detectors: string[] };
   suspects?: { path: string; granularity?: 'lines' | 'functions' | 'files' };
   coverage?: { serverFiles: number; browserFiles: number; runCoverage?: true };

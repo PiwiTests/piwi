@@ -4294,6 +4294,15 @@ function seedCoverageReports(story, run, fragmentIdOf) {
       }
     }
     if (story.runCoverage?.length) {
+      // Its backend restarted halfway through: the run's server coverage is incomplete, and the
+      // commit's e2e suite with it (the run is its only one).
+      run.server_coverage_gaps = JSON.stringify([
+        {
+          origin: 'http://localhost:5080',
+          reason: 'restarted',
+          at: new Date((run.start_time + Math.round((run.duration ?? 0) / 2000)) * 1000).toISOString(),
+        },
+      ]);
       seedCoverageReports(story, run, fragmentIdOfReportFile);
       seedCoverageDaily(story, run);
     }
@@ -4974,6 +4983,9 @@ const REBASE_SQL = [
   `UPDATE test_runs SET metadata = json_set(metadata, '$.incident.decidedAt', ` +
     `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(metadata, '$.incident.decidedAt'), '+' || ${D} || ' seconds')) ` +
     `WHERE json_valid(metadata) AND json_extract(metadata, '$.incident.decidedAt') IS NOT NULL;`,
+  `UPDATE test_runs SET server_coverage_gaps = json_set(server_coverage_gaps, '$[0].at', ` +
+    `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(server_coverage_gaps, '$[0].at'), '+' || ${D} || ' seconds')) ` +
+    `WHERE json_valid(server_coverage_gaps) AND json_extract(server_coverage_gaps, '$[0].at') IS NOT NULL;`,
   '',
   '-- Millisecond timestamps embedded in JSON columns',
   shiftJsonMs('test_runs_cases', 'steps', 'startTime'),
