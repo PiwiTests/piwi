@@ -125,7 +125,12 @@ const exportItems = [
 
 <template>
   <div class="space-y-4" data-shot="coverage-overview">
-    <SectionCard title="Combined coverage" help="coverage.combined" data-tour="coverage-overview">
+    <SectionCard
+      title="Combined coverage"
+      help="coverage.combined"
+      data-tour="coverage-overview"
+      data-shot="coverage-headline"
+    >
       <template #actions>
         <UDropdownMenu v-if="!summary.detailRemoved" :items="exportItems" :content="{ align: 'end' }">
           <UButton

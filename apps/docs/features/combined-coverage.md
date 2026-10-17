@@ -6,10 +6,10 @@ lang: en-US
 
 # Combined coverage
 
-Your Playwright suite is not the only one that runs your code: the unit tests of the front end and the back end do
-too. `piwi coverage upload` sends their coverage reports to the dashboard, keyed by the commit they ran on and a suite
-name you choose (`unit-front`, `unit-back`), so their coverage sits next to the coverage Piwi records from
-[code reach](./code-reach) and [server coverage](./server-coverage) for the same commit.
+The unit tests of the front end and the back end run your code too. `piwi coverage upload` sends their coverage
+reports to the dashboard, keyed by the commit they ran on and a suite name you choose (`unit-front`, `unit-back`), to
+sit beside the coverage Piwi records from [code reach](./code-reach) and [server coverage](./server-coverage) for the
+same commit.
 
 ## Upload a report
 
@@ -27,7 +27,7 @@ npx @piwitests/reporter coverage upload "**/TestResults/*/coverage.cobertura.xml
 
 The command reads the project, the dashboard URL and the API key as the reporter does (`PIWI_PROJECT_NAME`,
 `PIWI_DASHBOARD_URL`, `PIWI_API_KEY`), the commit from git and the branch from the CI or `PIWI_BRANCH`. The API key
-needs the Uploader role on the project, the one a reporter uses. A path naming no file of the checkout is dropped and
+needs the Uploader role, as a reporter's does. A path naming no file of the checkout is dropped and
 counted (`--root` sets where paths start). Every flag is on the
 [CLI reference](/reference/cli#coverage).
 
@@ -47,8 +47,8 @@ names them.
 
 ## In CI
 
-The unit tests and the Playwright suite usually run in separate jobs, tied by the commit: each job uploads its own
-report. A suite uploaded in parts (four portals, four shards) is merged on the dashboard.
+The unit tests and the Playwright suite usually run in separate jobs, tied by the commit: each uploads its own report,
+and a suite uploaded in parts (shards, portals) is merged on the dashboard.
 
 ::: code-group
 
@@ -79,13 +79,13 @@ report. A suite uploaded in parts (four portals, four shards) is merged on the d
 
 :::
 
-On Bitbucket and Azure DevOps, set `PIWI_DASHBOARD_URL`, `PIWI_PROJECT_NAME` and `PIWI_API_KEY` as repository or
-pipeline variables. The project must exist on the dashboard: the first Playwright run creates it.
+On Bitbucket and Azure DevOps, set the three `PIWI_` variables as repository or pipeline variables. The first
+Playwright run creates the project.
 
 ## One ratio per commit
 
 For each commit, the dashboard counts every suite that ran the code: the reports uploaded for it, and `e2e`, the run
-coverage of the commit's complete Playwright runs (a partial run, or a probe or flake-lab run, never counts). The
+coverage of the commit's complete Playwright runs (never a partial, probe or flake-lab run). The
 totals are recomputed seconds after each upload or run; read them with the
 [API](https://piwitests.dev/demo/docs) or the MCP `get_coverage_summary` tool.
 
@@ -116,6 +116,11 @@ for 90 days, and totals for a year. Notes above the numbers say when a commit ha
 carried, a report was cut, a known suite is missing, no inventory was sent, the scope changed since, or runs did not
 count.
 
+<figure>
+  <img src="/screenshots/coverage-notes.png" alt="A note above a branch's coverage">
+  <figcaption>A suite carried from the push before.</figcaption>
+</figure>
+
 ## Find what is not covered
 
 Every bar on the coverage page splits lines as a file's marks do: both kinds of suite, unit only, end to end only,
@@ -125,19 +130,29 @@ folder's suites and least-covered files. A file opens on its source, through the
 [source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next gap** jumps to
 the next lines none ran.
 
+<figure>
+  <img src="/screenshots/combined-coverage-file.png" alt="A file's lines marked by suite">
+  <figcaption>Line 40 ran in e2e and unit-back.</figcaption>
+</figure>
+
 ## In pull requests
 
 The [Uncovered changes](./uncovered-changes) section of the pull-request comment opens with the change's patch
-coverage: "34 of the 41 changed lines ran (unit 28, end to end 19)". A changed file any suite ran a changed line of
-counts as reached. `piwi gate --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
+coverage, the share of its changed lines any suite ran; a changed file any suite ran a changed line of counts as
+reached. `piwi gate --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
 
 ## Over time
 
 The **Coverage trend** [Analytics widget](./analytics) charts the combined line coverage per day, summed over the
 projects in scope, with each suite's share as a dashed line and the change against the comparison period; the engineering
-[quality report](./quality-reports) gives it as one line, "Line coverage: 61.2% (+1.4 pts)". Each project counts
+[quality report](./quality-reports) gives it as one line. Each project counts
 once a day, at its last commit with coverage, on the default branch or the scope's first branch with one.
 Kept per day, it outlives the reports; a day without new coverage names the day it carries.
+
+<figure>
+  <img src="/screenshots/combined-coverage-trend.png" alt="The Coverage trend widget">
+  <figcaption>A month of coverage, each suite dashed.</figcaption>
+</figure>
 
 ## Export
 
@@ -159,7 +174,7 @@ Name the parts of the code in the same settings (`coverageAreas` in the API): `f
 file belongs to the first area whose patterns match it, and every suite splits the same way: the coverage page gives
 each area its totals and each suite's share; the coverage trend
 draws one line per area (its *Lines beside every suite* option); the pull-request comment counts the changed lines per
-area, "By area: front 28 of 30, back 6 of 11". A change recounts the commits that keep their reports; a removed area
+area. A change recounts the commits that keep their reports; a removed area
 leaves the trend.
 
 ## What is sent
@@ -170,8 +185,8 @@ function the tool knows. No source code, no test names, no hit counts.
 ## Limits
 
 - **Formats:** Cobertura, LCOV and Piwi's own. Istanbul JSON, OpenCover and JaCoCo are not read.
-- **A tool can leave code out without failing.** coverlet does not instrument an assembly it cannot resolve the
-  dependencies of, and says so only in its diagnostic log.
+- **A tool can leave code out without failing.** coverlet does not instrument an assembly whose dependencies it
+  cannot resolve, and says so only in its diagnostic log.
 - **One commit, one checkout.** Upload from the checkout the tests ran in: the blob ids and the inventory come from it.
 - **Functions match by start line.** coverlet starts a method at its opening brace, the compiler's span table at its
   declaration, so a .NET function both report can count twice.

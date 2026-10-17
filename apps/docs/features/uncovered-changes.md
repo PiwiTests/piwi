@@ -57,6 +57,11 @@ coverage, counted on the lines that can run:
 **Patch coverage 82.9%**: 34 of the 41 changed lines ran (unit 28, end to end 19), at `a1b2c3d`.
 ```
 
+<figure>
+  <img src="/screenshots/uncovered-changes.png" alt="The Uncovered changes section of a pull-request comment">
+  <figcaption>Patch coverage, then the changed files no test reaches.</figcaption>
+</figure>
+
 A coverage report uploaded for the commit after the comment, or the run's own coverage arriving after it, posts the
 comment again a few seconds later; a later push's comment is never overwritten by an earlier commit's.
 

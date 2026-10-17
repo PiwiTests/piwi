@@ -56,6 +56,7 @@ import {
   COVERAGE_SCENE_EXECUTION,
   COVERAGE_SCENE_PROJECT,
   COVERAGE_SCENE_SUSPECT_LINES,
+  SERVER_COVERAGE_SCENE_EXECUTION,
   coverageSceneSource,
 } from './lib/coverage-scene.mjs';
 import { ORDER_SCENE, orderSceneSource } from './lib/coverage-insights-scene.mjs';
@@ -3781,6 +3782,30 @@ const SCENES = [
     },
     outputs: [`execution-coverage-${suffix}-section.png`, `execution-coverage-${suffix}-page.png`],
   })),
+  // A passing test of the same run, `invites a user by email`: the backend
+  // files it ran, recorded by line, and the session handler unfolded to the
+  // lines it ran and the executable lines it did not.
+  {
+    name: 'server-coverage',
+    description:
+      'Execution page, Source tab: the server files one test ran, recorded by line, with the session handler unfolded to its source',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, goto, settle, shoot }) {
+      await serveCoverageSceneSource(page);
+      await goto(`/test-run-cases/${SERVER_COVERAGE_SCENE_EXECUTION}?evidence=source`);
+      const section = page.locator('[data-shot="execution-coverage"]');
+      await section
+        .getByRole('button', { name: 'Show the source of api/Auth/SessionAuthenticationHandler.cs' })
+        .click({ timeout: 60_000 });
+      await section.locator('[data-coverage-source] [data-not-executed]').first().waitFor({ timeout: 30_000 });
+      await page.mouse.move(0, 0);
+      await settle();
+      await shoot(undefined, { of: '[data-shot="execution-coverage"]', pad: 12 });
+    },
+  },
   // The coverage insights, on the demo seed's order-dependent flake: Web
   // Dashboard's `toggles dark mode` fails its first attempt when `updates the
   // organization name` has not finished (`lib/coverage-insights-scene.mjs`).
@@ -3904,31 +3929,110 @@ const SCENES = [
   })),
   // The combined coverage of the web dashboard's covered commit: its two unit
   // reports and the Playwright run, the API files counted on the span table's
-  // lines, and the two tracked files no suite names.
+  // lines, and the two tracked files no suite names. `src/` is selected, so the
+  // folder aside lists its least-covered files, and `src/components/` is open
+  // to its files.
   {
     name: 'combined-coverage',
     description:
-      'A project’s combined coverage page: the share of lines every suite ran at one commit, each suite’s share, and the folders',
+      'A project’s combined coverage page: the share of lines every suite ran at one commit, each suite’s share, and the folders with src/ open beside its least-covered files',
     tags: ['docs'],
     out: 'docs',
-    route: `/projects/${COVERAGE_SCENE_PROJECT}/coverage`,
-    viewport: { width: 1280, height: 1100 },
+    route: `/projects/${COVERAGE_SCENE_PROJECT}/coverage?folder=src`,
+    viewport: { width: 1280, height: 1400 },
     async run({ page, settle, shoot }) {
-      await page.locator('[data-testid="coverage-tree"] [data-entry]').first().waitFor({ timeout: 60_000 });
+      const tree = page.locator('[data-testid="coverage-tree"]');
+      await tree.locator('[data-entry="src/components"]').waitFor({ timeout: 60_000 });
+      await tree.getByRole('button', { name: 'Open src/components' }).click();
+      await tree.locator('[data-entry^="src/components/"]').first().waitFor({ timeout: 30_000 });
+      await page.locator('[data-testid="coverage-least-covered"] li').first().waitFor({ timeout: 30_000 });
+      await page.mouse.move(0, 0);
       await settle();
       await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad: 12 });
     },
   },
+  // The same commit's file view of the users endpoints, marked by suite: line
+  // 40, which the back end's unit tests and the Playwright suite both ran, is
+  // selected, and the gaps no suite ran are one click away.
+  {
+    name: 'combined-coverage-file',
+    description:
+      'A file’s view marked by suite at the covered commit: each line by the kinds of suite that ran it, the gap controls, and the suites of the selected line',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 1200 },
+    async run({ page, goto, settle, shoot }) {
+      await serveCoverageSceneSource(page);
+      await goto(`/projects/${COVERAGE_SCENE_PROJECT}/coverage?file=api/Users/UsersEndpoints.cs&marks=suites&line=40`);
+      const view = page.locator('[data-shot="coverage-file"]');
+      await view.locator('[data-coverage-source] [data-line="40"][data-selected]').waitFor({ timeout: 60_000 });
+      await view.getByTestId('coverage-gap-next').waitFor({ timeout: 30_000 });
+      await view.locator('[data-coverage-test]').first().waitFor({ timeout: 30_000 });
+      // The source scrolls inside its own box: show ListUsers and UpdateUser, lines 28–65, and end the image there.
+      const scroller = view.getByLabel('Source of api/Users/UsersEndpoints.cs');
+      await scroller.evaluate((el) => {
+        el.scrollTop = el.querySelector('[data-line="28"]').offsetTop - 4;
+      });
+      await settle();
+      const box = await view.boundingBox();
+      const last = await scroller.locator('[data-line="65"]').boundingBox();
+      const top = box.y - 12;
+      await shoot(undefined, {
+        of: false,
+        clip: { x: box.x - 12, y: top, width: box.width + 24, height: last.y + last.height + 4 - top },
+      });
+    },
+  },
+  // The pull-request comment's Uncovered changes section, rendered from
+  // `renderChangeCoverage` with a change's patch coverage and laid out like a
+  // code host's comment: no screen of the dashboard shows the comment.
+  {
+    name: 'uncovered-changes',
+    description:
+      'The pull-request comment’s Uncovered changes section: the patch coverage line, then the changed files no test reaches, by ticket',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 900, height: 900 },
+    async run({ page, settle, shoot }) {
+      await page.setContent(await prCommentPage(await uncoveredChangesMarkdown()));
+      await settle();
+      await shoot(undefined, { of: '[data-shot="pr-comment"]', pad: 12 });
+    },
+  },
+  // The Coverage trend widget of the Engineering dashboard on the web
+  // dashboard alone: the thirty seeded days of combined coverage, each suite
+  // as a dashed line.
+  {
+    name: 'combined-coverage-trend',
+    description:
+      'The Coverage trend widget: a month of combined line coverage, with each suite’s share as a dashed line',
+    tags: ['docs'],
+    out: 'docs',
+    route: `/analytics/d/engineering?projects=${COVERAGE_SCENE_PROJECT}&period=last-30d`,
+    viewport: { width: 1280, height: 1800 },
+    async run({ page, settle, shoot }) {
+      const widget = page.locator('[data-shot="analytics-coverage-trend"]');
+      await widget.locator('svg path').first().waitFor({ timeout: 90_000 });
+      await widget.scrollIntoViewIfNeeded();
+      await page.mouse.move(0, 0);
+      await settle();
+      await shoot(undefined, { of: '[data-shot="analytics-coverage-trend"]', pad: 12 });
+    },
+  },
   // A branch's coverage after a second push: the notes above the numbers say
   // which suite it carries from the first push, and the first push keeps only
-  // its totals (`reportSupersededBranch`).
+  // its totals (`reportSupersededBranch`). The wide notes image is the
+  // Combined coverage card alone, the notes above its headline.
   ...[
-    { suffix: '', viewport: { width: 1280, height: 1100 }, pad: 12 },
-    { suffix: '-mobile', viewport: { width: 390, height: 2200 }, pad: 8 },
-  ].flatMap(({ suffix, viewport, pad }) => [
+    { suffix: '', viewport: { width: 1280, height: 1100 }, pad: 12, docs: true },
+    { suffix: '-mobile', viewport: { width: 390, height: 2200 }, pad: 8, docs: false },
+  ].flatMap(({ suffix, viewport, pad, docs }) => [
     {
       name: `coverage-notes${suffix}`,
       description: `A branch’s combined coverage at ${viewport.width} px: the notes callout naming the suite carried from the push before`,
+      ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
       route: '/projects',
       viewport,
       async prepare({ request, base }) {
@@ -3939,7 +4043,7 @@ const SCENES = [
         await page.locator('[data-testid="coverage-notes"] [data-note="carried"]').waitFor({ timeout: 60_000 });
         await page.locator('[data-testid="coverage-tree"] [data-entry]').first().waitFor({ timeout: 60_000 });
         await settle();
-        await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad });
+        await shoot(undefined, { of: `[data-shot="${docs ? 'coverage-headline' : 'coverage-overview'}"]`, pad });
       },
     },
     {
@@ -5282,6 +5386,130 @@ async function openQuarantineLossScene(page, goto, settle, reach) {
   const right = Math.min(viewport.width, Math.max(...boxes.map((b) => b.x + b.width)) + 12);
   const bottom = Math.min(viewport.height, Math.max(...boxes.map((b) => b.y + b.height)) + 24);
   return { x, y, width: right - x, height: bottom - y };
+}
+
+/**
+ * The Uncovered changes section of a pull request that changed seven files
+ * across two tickets, three of which no test reaches, with the head commit's
+ * patch coverage: the bytes `renderChangeCoverage` posts.
+ */
+async function uncoveredChangesMarkdown() {
+  const { renderChangeCoverage } = await import('../shared/pr-feedback.ts');
+  return renderChangeCoverage({
+    totalFiles: 7,
+    uncoveredFiles: 3,
+    reachedFiles: 4,
+    ticketCount: 2,
+    windowRuns: 30,
+    baseBranch: 'main',
+    patchCoverage: {
+      commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+      changedLines: 41,
+      executedLines: 34,
+      unitLines: 28,
+      e2eLines: 19,
+      undeterminedLines: 0,
+      suites: [
+        { name: 'unit-front', kind: 'unit', executedLines: 22 },
+        { name: 'unit-back', kind: 'unit', executedLines: 6 },
+        { name: 'e2e', kind: 'e2e', executedLines: 19 },
+      ],
+      areas: [
+        { name: 'front', changedLines: 30, executedLines: 28 },
+        { name: 'back', changedLines: 11, executedLines: 6 },
+      ],
+      files: 6,
+    },
+    tickets: [
+      {
+        ticket: 'PROJ-418',
+        files: [
+          {
+            filePath: 'server/api/orders/[id].patch.ts',
+            additions: 41,
+            deletions: 3,
+            reachedInRun: false,
+            reachedCountHistory: 0,
+            draftTitle: 'a scenario that exercises [id].patch.ts',
+          },
+          {
+            filePath: 'server/utils/order-status.ts',
+            additions: 12,
+            deletions: 4,
+            reachedInRun: false,
+            reachedCountHistory: 0,
+            draftTitle: 'a scenario that moves an order to shipped',
+          },
+          {
+            filePath: 'app/pages/orders/[id].vue',
+            additions: 9,
+            deletions: 2,
+            reachedInRun: true,
+            reachedCountHistory: 30,
+            suites: ['unit-front', 'e2e'],
+          },
+        ],
+      },
+      {
+        ticket: 'PROJ-421',
+        files: [
+          {
+            filePath: 'app/components/RefundDialog.vue',
+            additions: 28,
+            deletions: 0,
+            reachedInRun: false,
+            reachedCountHistory: 0,
+            draftTitle: 'a scenario that opens the refund dialog',
+          },
+        ],
+      },
+    ],
+  });
+}
+
+/**
+ * A comment's Markdown as a code host shows it: rendered with `marked`, a
+ * line break kept as one, in a bordered card under its author line, in the
+ * hosts' system font stack. The
+ * emoji become drawn circles, since the capture browser may have no emoji font.
+ */
+async function prCommentPage(markdown) {
+  const { marked } = await import('marked');
+  const body = marked
+    .parse(markdown, { gfm: true, breaks: true })
+    .replaceAll('🟣', '<span class="emoji" role="img" aria-label="purple circle"></span>');
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><style>
+  body { width: fit-content; margin: 0; padding: 24px; background: #fff; color: #1f2328;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Inter, sans-serif; }
+  .comment { display: flex; gap: 16px; width: 760px; }
+  .avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; background: #10b981; color: #fff;
+    display: grid; place-items: center; font-weight: 600; font-size: 18px; }
+  .card { flex: 1; min-width: 0; border: 1px solid #d1d9e0; border-radius: 6px; }
+  .head { padding: 8px 16px; background: #f6f8fa; border-bottom: 1px solid #d1d9e0;
+    border-radius: 6px 6px 0 0; color: #59636e; }
+  .head strong { color: #1f2328; }
+  .badge { margin-left: 6px; padding: 0 6px; border: 1px solid #d1d9e0; border-radius: 2em; font-size: 12px; }
+  .body { padding: 16px; }
+  .body > :first-child { margin-top: 0; }
+  .body > :last-child { margin-bottom: 0; }
+  h4 { margin: 0 0 16px; font-size: 1em; font-weight: 600; }
+  p, ul { margin: 0 0 16px; }
+  ul { padding-left: 2em; }
+  li + li { margin-top: 4px; }
+  code { padding: 0.2em 0.4em; border-radius: 6px; background: rgba(129, 139, 152, 0.12); font-size: 85%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace; }
+  .emoji { display: inline-block; width: 1em; height: 1em; border-radius: 50%; background: #a371f7;
+    vertical-align: -0.125em; }
+</style></head><body>
+  <div class="comment" data-shot="pr-comment">
+    <div class="avatar" aria-hidden="true">P</div>
+    <div class="card">
+      <div class="head"><strong>piwi-dashboard</strong><span class="badge">bot</span> commented 2 minutes ago</div>
+      <div class="body">${body}</div>
+    </div>
+  </div>
+</body></html>`;
 }
 
 /** Serve the demo's sources of the web dashboard's covered server files, by blob. */

@@ -42,6 +42,11 @@ reporter also sends each backend's run-level coverage, attributed to no test, wi
 `lines`: the lines no test runs, in every assembly built with coverage, including those whose code never ran. A test
 whose coverage the backend no longer held, or that could not be collected, is marked incomplete.
 
+<figure>
+  <img src="/screenshots/server-coverage.png" alt="The backend files one test ran, recorded by line">
+  <figcaption>One test's backend files, with the lines it ran.</figcaption>
+</figure>
+
 The backend names the checksum of the source each file was compiled from. When the file in the reporter's checkout
 differs (the backend was built from another commit), the reporter keeps the file's path but drops its line numbers,
 which would point at the wrong lines, and marks the test incomplete; the run-level coverage drops them the same way.

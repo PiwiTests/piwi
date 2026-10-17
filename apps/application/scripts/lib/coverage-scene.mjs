@@ -18,6 +18,9 @@ const newer = commits.slice(0, -1);
 /** The execution the scenes open: the users story's failing test in its covered run. */
 export const COVERAGE_SCENE_EXECUTION = 711;
 
+/** A passing test of the same run, `invites a user by email`, which ran five server files by line. */
+export const SERVER_COVERAGE_SCENE_EXECUTION = 712;
+
 /** The project the execution belongs to. */
 export const COVERAGE_SCENE_PROJECT = story.projectId;
 
