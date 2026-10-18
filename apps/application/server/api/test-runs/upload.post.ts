@@ -3,7 +3,8 @@ import { projects, testRuns, files } from '../../database/schema';
 import type { Project } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { upsertTraceBlob, findTraceBlob } from '../../utils/trace-blobs';
-import { join } from 'path';
+import { join, posix } from 'path';
+import { randomBytes } from 'node:crypto';
 import { decompressDirectory } from '../../utils/compression';
 import { requireAuth } from '../../utils/auth';
 import { getStorage } from '../../storage';
@@ -11,7 +12,7 @@ import { uploadDirectory } from '../../utils/storage-helpers';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
 import { attachmentStoragePaths } from '../../utils/attachment-paths';
 import { tmpdir } from 'os';
-import { rm, mkdir, readdir, readFile } from 'fs/promises';
+import { rm, mkdtemp, readdir, readFile } from 'fs/promises';
 import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
@@ -75,6 +76,11 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
   monocart: 'Monocart Report',
   blob: 'Blob Report',
 };
+
+/** A name under the project's storage folder no other report takes: the upload time, then a random part. */
+function uniqueReportName(suffix: string): string {
+  return `run-${Date.now()}-${randomBytes(4).toString('hex')}-${suffix}`;
+}
 
 /** Return a human-readable label for a report type */
 function getReportLabel(type: string, override?: string): string {
@@ -273,12 +279,9 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
     // Helper: store a report file and return { path, size }
     async function storeReport(type: string, report: UploadedFile): Promise<{ path: string; size: number }> {
       if (report.filename.endsWith('.gz')) {
-        // Extract gzip compressed archive to temp directory first
-        const ts = Date.now();
-        const reportDirName = `run-${ts}-${type}-report`;
-        const tempDir = join(tmpdir(), `playwright-report-${ts}-${type}`);
-
-        await mkdir(tempDir, { recursive: true });
+        // Extract the gzip compressed archive to a temp directory of its own first
+        const reportDir = posix.join(projectPath, uniqueReportName(`${type}-report`));
+        const tempDir = await mkdtemp(join(tmpdir(), `piwi-report-${type}-`));
 
         try {
           await decompressDirectory(await readFile(report.path), tempDir);
@@ -293,39 +296,29 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
             if (zipFile) entryFile = zipFile;
           }
 
-          const storagePath = join(`project-${project!.id}`, reportDirName, entryFile);
-
-          const size = await uploadDirectory(tempDir, join(`project-${project!.id}`, reportDirName), storage);
-
-          await rm(tempDir, { recursive: true, force: true });
-          return { path: storagePath, size };
+          const size = await uploadDirectory(tempDir, reportDir, storage);
+          return { path: posix.join(reportDir, entryFile), size };
         } catch (error) {
           console.error(`Failed to extract ${type} report: ${error}`);
-          // Save as gz file if extraction fails
-          const reportFilename = `run-${Date.now()}-${report.filename}`;
-          await storage.writeFile(join(`project-${project!.id}`, reportFilename), await readFile(report.path));
-          return {
-            path: join(`project-${project!.id}`, reportFilename),
-            size: report.size,
-          };
+          // Drop what was copied of it, then save it as a gz file
+          await storage
+            .deleteDirectory(reportDir)
+            .catch((e) => console.warn(`[Upload] Failed to remove the partial ${type} report at ${reportDir}: ${e}`));
+          return storeReportFile(report);
+        } finally {
+          await rm(tempDir, { recursive: true, force: true });
         }
-      } else if (report.filename.endsWith('.zip')) {
-        // Store zip as-is (e.g. blob reports are downloadable zip archives)
-        const reportFilename = `run-${Date.now()}-${report.filename}`;
-        await storage.writeFile(join(`project-${project!.id}`, reportFilename), await readFile(report.path));
-        return {
-          path: join(`project-${project!.id}`, reportFilename),
-          size: report.size,
-        };
-      } else {
-        // Save as regular file (backward compatibility for unknown formats)
-        const reportFilename = `run-${Date.now()}-${report.filename}`;
-        await storage.writeFile(join(`project-${project!.id}`, reportFilename), await readFile(report.path));
-        return {
-          path: join(`project-${project!.id}`, reportFilename),
-          size: report.size,
-        };
       }
+      // A zip is stored as is (blob reports are downloadable zip archives), as is
+      // any other format
+      return storeReportFile(report);
+    }
+
+    /** Store a report as the single file it was uploaded as. */
+    async function storeReportFile(report: UploadedFile): Promise<{ path: string; size: number }> {
+      const path = posix.join(projectPath, uniqueReportName(report.filename));
+      await storage.writeFile(path, await readFile(report.path));
+      return { path, size: report.size };
     }
 
     // Store all reports and collect their metadata. Reports are processed one at a

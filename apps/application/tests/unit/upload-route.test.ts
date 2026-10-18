@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
+import { readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { gzipSync } from 'node:zlib';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -22,7 +25,13 @@ vi.mock('../../server/utils/auth', () => ({
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
     mkdir: async () => {},
-    writeFile: async (path: string, data: Buffer) => void state.written.set(path, data),
+    writeFile: async (path: string, data: Buffer) => {
+      if (path.endsWith('unwritable.js')) throw new Error(`503 Slow Down: ${path}`);
+      state.written.set(path, data);
+    },
+    deleteDirectory: async (path: string) => {
+      for (const key of [...state.written.keys()]) if (key.startsWith(`${path}/`)) state.written.delete(key);
+    },
   }),
 }));
 vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceBlob: vi.fn(), findTraceBlob: vi.fn() }));
@@ -182,5 +191,56 @@ describe('POST /api/test-runs/upload', () => {
     expect(new Set(paths).size).toBe(2);
     expect(paths.map((p) => p.split('/').pop())).toEqual(['screenshot.png', 'screenshot.png']);
     expect(paths.map((p) => state.written.get(p)?.toString())).toEqual(['first', 'second']);
+  });
+
+  /** A report directory packed as the reporter packs it: path and content lengths, then the bytes, gzipped. */
+  function reportArchive(files: Record<string, string>): Buffer {
+    const parts: Buffer[] = [];
+    for (const [path, content] of Object.entries(files)) {
+      const name = Buffer.from(path);
+      const data = Buffer.from(content);
+      const lengths = (n: number) => {
+        const b = Buffer.alloc(4);
+        b.writeUInt32LE(n);
+        return b;
+      };
+      parts.push(lengths(name.length), name, lengths(data.length), data);
+    }
+    return gzipSync(Buffer.concat(parts));
+  }
+
+  const reportTempDirs = () => readdirSync(tmpdir()).filter((name) => name.startsWith('piwi-report-html-'));
+
+  const reportUpload = (archive: Buffer) => [
+    field('projectName', 'upload-report'),
+    field('testRun', { status: 'passed', startTime: '2026-09-30T10:00:00Z' }),
+    { name: 'htmlReport', filename: 'report.gz', data: archive },
+  ];
+
+  test('extracts a report into a folder of its own and removes its temp copy', async () => {
+    const tempBefore = reportTempDirs();
+    await upload({ parts: reportUpload(reportArchive({ 'index.html': '<html>', 'data/app.js': 'app()' })) });
+    await upload({ parts: reportUpload(reportArchive({ 'index.html': '<html>', 'data/app.js': 'app()' })) });
+
+    const reports = await db.select().from(schema.files).where(eq(schema.files.type, 'report'));
+    expect(reports).toHaveLength(2);
+    expect(reports[0]!.path).not.toBe(reports[1]!.path);
+    for (const report of reports) {
+      expect(report.path).toMatch(/^project-\d+\/run-\d+-[0-9a-f]{8}-html-report\/index\.html$/);
+      expect(state.written.get(report.path.replace('index.html', 'data/app.js'))?.toString()).toBe('app()');
+    }
+    expect(reportTempDirs()).toEqual(tempBefore);
+  });
+
+  test('a report whose copy fails halfway keeps no partial folder and is stored as its archive', async () => {
+    const tempBefore = reportTempDirs();
+    const archive = reportArchive({ 'index.html': '<html>', 'data/unwritable.js': 'app()' });
+    await upload({ parts: reportUpload(archive) });
+
+    const [report] = await db.select().from(schema.files).where(eq(schema.files.type, 'report'));
+    expect(report!.path).toMatch(/^project-\d+\/run-\d+-[0-9a-f]{8}-report\.gz$/);
+    expect([...state.written.keys()].filter((key) => key.includes('html-report'))).toEqual([]);
+    expect(state.written.get(report!.path)).toEqual(archive);
+    expect(reportTempDirs()).toEqual(tempBefore);
   });
 });
