@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
+import { multipartEvent, type MultipartPart as Part } from './multipart-event';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route module (which imports the barrel) is loaded.
@@ -28,22 +29,18 @@ vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceBlob: vi.fn(), fin
 vi.mock('../../server/utils/trace-fallback-evidence', () => ({ deriveTraceEvidence: vi.fn() }));
 vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSideEffects: vi.fn(async () => {}) }));
 
-interface Part {
-  name: string;
-  data: Buffer;
-  filename?: string;
-}
-
 vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
-vi.stubGlobal('readMultipartFormData', async (event: { parts: Part[] }) => event.parts);
 vi.stubGlobal('getRequestHeader', () => undefined);
 vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('durationStats', durationStats);
 
-const upload = (await import('../../server/api/test-runs/upload.post')).default as unknown as (event: {
-  parts: Part[];
-}) => Promise<{ runId: number; projectId: number }>;
+const route = (await import('../../server/api/test-runs/upload.post')).default as unknown as (
+  event: unknown,
+) => Promise<{ runId: number; projectId: number }>;
+
+/** Post the parts to the route as the reporter does: a chunked multipart body. */
+const upload = ({ parts }: { parts: Part[] }) => route(multipartEvent(parts));
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 
@@ -104,5 +101,23 @@ describe('POST /api/test-runs/upload', () => {
     expect(attachments.map((f) => [f.testRunId, f.testRunsCaseId, f.path.split('/').pop()])).toEqual([
       [runId, paysId, 'pays.png'],
     ]);
+  });
+
+  test('refuses a chunked upload past the size cap, counted on the bytes read', async () => {
+    process.env.PIWI_IMPORT_MAX_BYTES = String(1024 * 1024);
+    try {
+      await expect(
+        upload({
+          parts: [
+            field('projectName', 'upload-cap'),
+            field('testRun', { status: 'passed', startTime: '2026-09-30T10:00:00Z' }),
+            { name: 'htmlReport', filename: 'report.gz', data: Buffer.alloc(2 * 1024 * 1024, 1) },
+          ],
+        }),
+      ).rejects.toMatchObject({ statusCode: 413 });
+      expect(await db.select().from(schema.testRuns)).toHaveLength(0);
+    } finally {
+      delete process.env.PIWI_IMPORT_MAX_BYTES;
+    }
   });
 });
