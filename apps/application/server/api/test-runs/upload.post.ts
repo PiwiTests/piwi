@@ -9,6 +9,7 @@ import { requireAuth } from '../../utils/auth';
 import { getStorage } from '../../storage';
 import { uploadDirectory } from '../../utils/storage-helpers';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
+import { attachmentStoragePaths } from '../../utils/attachment-paths';
 import { tmpdir } from 'os';
 import { rm, mkdir, readdir, readFile } from 'fs/promises';
 import { parseLocation } from '#shared/parse-location';
@@ -608,12 +609,18 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
           const testRunsCaseId = inserted.id;
           const filesList = attachmentFiles.get(index) || [];
 
-          for (let fi = 0; fi < Math.min(metaList.length, filesList.length); fi++) {
+          const attachmentDir = `${testRunPath}/${testRunsCaseId}`;
+          await storage.mkdir(attachmentDir);
+          const count = Math.min(metaList.length, filesList.length);
+          const storagePaths = attachmentStoragePaths(
+            attachmentDir,
+            filesList.slice(0, count).map((f) => f.filename),
+          );
+
+          for (let fi = 0; fi < count; fi++) {
             const meta = metaList[fi]!;
             const fileEntry = filesList[fi]!;
-            const attachmentDir = `${testRunPath}/${testRunsCaseId}`;
-            await storage.mkdir(attachmentDir);
-            const storagePath = `${attachmentDir}/${fileEntry.filename}`;
+            const storagePath = storagePaths[fi]!;
 
             try {
               await storage.writeFile(storagePath, await readFile(fileEntry.path));

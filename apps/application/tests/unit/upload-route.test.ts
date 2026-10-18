@@ -160,4 +160,26 @@ describe('POST /api/test-runs/upload', () => {
     expect(await db.select().from(schema.testRuns)).toHaveLength(1);
     expect(await db.select().from(schema.files)).toHaveLength(1);
   });
+
+  test('keeps two attachments of one case that share a file name, each under that name', async () => {
+    const { runId } = await upload({
+      parts: [
+        field('projectName', 'upload-same-name'),
+        field('testRun', { status: 'failed', startTime: '2026-09-30T10:00:00Z' }),
+        field('testCases', [{ title: 'pays', status: 'failed', location: 'tests/pays.spec.ts:1:1' }]),
+        field('attach_meta_0', [
+          { name: 'screenshot', contentType: 'image/png', originalName: 'screenshot.png' },
+          { name: 'screenshot', contentType: 'image/png', originalName: 'screenshot.png' },
+        ]),
+        { name: 'attach_file_0', filename: 'screenshot.png', data: Buffer.from('first') },
+        { name: 'attach_file_0', filename: 'screenshot.png', data: Buffer.from('second') },
+      ],
+    });
+
+    const attachments = await db.select().from(schema.files).where(eq(schema.files.testRunId, runId));
+    const paths = attachments.map((f) => f.path);
+    expect(new Set(paths).size).toBe(2);
+    expect(paths.map((p) => p.split('/').pop())).toEqual(['screenshot.png', 'screenshot.png']);
+    expect(paths.map((p) => state.written.get(p)?.toString())).toEqual(['first', 'second']);
+  });
 });
