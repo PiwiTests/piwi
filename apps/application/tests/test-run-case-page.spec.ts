@@ -592,13 +592,23 @@ test.describe('Situation block on seeded cases', () => {
     await expect(dialog.getByText('No DOM snapshot or ARIA data available')).toHaveCount(0);
   });
 
-  test('#587 proposes replacing the locator and opens the Locator fix section', async ({ page }) => {
-    test.skip(!(await (await page.request.get('/api/test-run-cases/587')).ok()), 'no #587');
-    await page.goto('/test-run-cases/587');
+  test('#533 proposes replacing the locator and opens the Locator fix section', async ({ page }) => {
+    test.skip(!(await (await page.request.get('/api/test-run-cases/533')).ok()), 'no #533');
+    await page.goto('/test-run-cases/533');
     await waitForHydration(page);
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Replace the locator');
     await expect(page.locator('[data-shot="fix-locator-fix"] [aria-expanded="true"]')).toBeVisible();
+  });
+
+  // #587 waits for `.modal.is-open`, a modal the app never opens: no element of
+  // the failing page relates to that CSS locator, so nothing is offered to replace it.
+  test('#587 proposes no locator replacement for a CSS locator with no related element', async ({ page }) => {
+    test.skip(!(await (await page.request.get('/api/test-run-cases/587')).ok()), 'no #587');
+    await page.goto('/test-run-cases/587');
+    await waitForHydration(page);
+    await expect(page.locator('[data-shot="next-step"]')).toBeVisible();
+    await expect(page.locator('[data-shot="next-step"]')).not.toContainText('Replace the locator');
   });
 
   test('#587 has no line edit, so it shows and copies the recommended locator, even from a folded section', async ({
