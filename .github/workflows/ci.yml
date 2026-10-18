@@ -181,24 +181,21 @@ jobs:
         uses: ./.github/actions/setup-workspace
 
       # Restored after the install so the postinstall `nuxt prepare` cannot
-      # clobber it. `experimental.buildCache` reuses whatever still matches.
-      # npm hoists the workspace, so the build cache lands in the root
-      # node_modules; the application copy holds the font and jiti caches.
-      - name: Cache Nuxt build
+      # clobber it. It holds the tool caches (jiti, Vite, fonts), never a Nuxt
+      # build: `experimental.buildCache` is off on CI (nuxt.config.ts), so every
+      # build compiles the client from the commit's own sources.
+      - name: Cache build tools
         uses: actions/cache@v6
         with:
           path: |
             node_modules/.cache
             apps/application/node_modules/.cache
-          # `nuxt-build-v2-` carries a manual cache version — bump the token to
-          # discard a poisoned build cache. `experimental.buildCache` does not hash
-          # the `#shared` modules (apps/application/shared/**), so a source-only
-          # change there — e.g. the DOCS_BASE_URL constant — can otherwise be served
-          # from a stale cached chunk and inline the old value into the built output.
-          key: nuxt-build-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          # `nuxt-build-v3-` carries a manual cache version — bump the token to
+          # discard the cached content.
+          key: nuxt-build-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
           restore-keys: |
-            nuxt-build-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-            nuxt-build-v2-${{ runner.os }}-
+            nuxt-build-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nuxt-build-v3-${{ runner.os }}-
 
       # The reporter dist is imported by playwright.config.ts.
       - name: Build reporter
