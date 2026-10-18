@@ -508,6 +508,7 @@ export class PiwiDashboardReporter {
 
     const testCase: CollectedTestCase = {
       type: 'complete',
+      testId: test.id,
       title: test.title,
       location: testLocation(test),
       status,
@@ -764,6 +765,7 @@ export class PiwiDashboardReporter {
       const locks = collectTestLocks(test);
       const testCase: CollectedTestCase = {
         type: 'complete',
+        testId: test.id,
         title: test.title,
         location: testLocation(test),
         status: 'didnotrun',
