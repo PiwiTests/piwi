@@ -1,7 +1,6 @@
-import { sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { testRuns } from '../../database/schema';
-import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
@@ -9,6 +8,13 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
+import {
+  addBatchShard,
+  batchShardRun,
+  batchShardTally,
+  finalizeShardedRun,
+  publishShardProgress,
+} from '../../utils/sharded-runs';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { getProjectScope } from '../../utils/project-access';
@@ -70,151 +76,21 @@ export default eventHandler(async (event) => {
   const instanceId = body.instanceId || null;
   const isSharded = !!(shardTotal && shardTotal > 1);
 
+  const testCases: any[] = Array.isArray(body.testCases) ? body.testCases : [];
+
   if (isSharded && instanceId) {
-    // Batch sharded submission: find existing sharded run for this instanceId
-    const existingRuns = await db
-      .select()
-      .from(testRuns)
-      .where(
-        and(
-          eq(testRuns.projectId, project.id),
-          eq(testRuns.instanceId, instanceId),
-          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
-        ),
-      );
-
-    const existingRun = existingRuns.find((r) => r.shardTotal && r.shardTotal > 1);
-
-    if (existingRun) {
-      // Accumulate into the existing run
-      const flakyTestCount =
-        body.testCases && Array.isArray(body.testCases)
-          ? body.testCases.filter(
-              (tc: { status: string; retries?: number }) => tc.status === 'passed' && (tc.retries || 0) > 0,
-            ).length
-          : 0;
-
-      await db
-        .update(testRuns)
-        .set({
-          updatedAt: new Date(),
-          status: 'running',
-          totalTests: sql`${testRuns.totalTests} + ${body.totalTests ?? 0}`,
-          passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
-          failedTests: sql`${testRuns.failedTests} + ${sumFailedAndTimedOut(body.failedTests, body.timedOutTests)}`,
-          skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
-          didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
-          flakyTests: sql`${testRuns.flakyTests} + ${flakyTestCount}`,
-          shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-          // Portable "max of two values": SQLite's scalar MAX(a,b) is an aggregate in
-          // Postgres, so use a CASE expression that runs on both dialects.
-          duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${body.duration ?? 0} THEN coalesce(${testRuns.duration}, 0) ELSE ${body.duration ?? 0} END`,
-        })
-        .where(eq(testRuns.id, existingRun.id));
-      // This shard's resource report, in its own row next to the other shards'.
-      if (incomingResources) await saveResourceReportPart(db, existingRun.id, incomingResources);
-      await applyReporterKeep(db, existingRun.id, body.keep);
-
-      // Insert test cases if provided
-      if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
-        const cases: RunCaseInput[] = body.testCases.map((testCase: any) => {
-          const { filePath, line, column } = testCase.location
-            ? parseLocation(testCase.location)
-            : { filePath: 'unknown', line: null, column: null };
-          return {
-            filePath,
-            suitePath: testCase.suitePath ?? null,
-            suiteConfig: testCase.suiteConfig ?? null,
-            testAnnotations: testCase.testAnnotations ?? null,
-            tags: testCase.tags ?? null,
-            locks: testCase.locks ?? null,
-            testMeta: testCase.testMeta ?? null,
-            title: testCase.title,
-            status: testCase.status,
-            duration: testCase.duration,
-            timeout: testCase.timeout,
-            error: testCase.error,
-            retries: testCase.retries,
-            attempts: (testCase as { attempts?: unknown }).attempts ?? null,
-            line,
-            column,
-            steps: testCase.steps,
-            stepEvents: testCase.stepEvents,
-            slowestStep: testCase.slowestStep,
-            slowestStepDuration: testCase.slowestStepDuration,
-            wastedTimeMs: testCase.wastedTimeMs,
-            networkRequests: testCase.networkRequests,
-            webVitals: testCase.webVitals,
-            pageState: testCase.pageState,
-            pageInventory: testCase.pageInventory,
-            locatorPages: testCase.locatorPages,
-            codeReach: testCase.codeReach,
-            coverage: testCase.coverage,
-            resources: testCase.resources ?? null,
-            aiUsage: testCase.aiUsage,
-            consoleLogs: testCase.consoleLogs,
-            dialogs: testCase.dialogs,
-            ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
-            ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
-            testSource: testCase.testSource ?? null,
-            testSourceFrames: testCase.testSourceFrames ?? null,
-            workerIndex: testCase.workerIndex,
-            shardIndex: testCase.shardIndex ?? null,
-            startedAt: testCase.startedAt ?? null,
-            browser: testCase.browser ?? null,
-            locatorSnapshots: testCase.locatorSnapshots ?? null,
-            didNotRunReason: testCase.didNotRunReason ?? null,
-            expectedStatus: testCase.expectedStatus ?? null,
-            blockedBy: testCase.blockedBy ?? null,
-          };
-        });
-        await persistRunCases(db, project.id, existingRun.id, cases);
-      }
-
-      // Check if all shards have finished
-      const updated = await db.select().from(testRuns).where(eq(testRuns.id, existingRun.id));
-      const updatedRun = updated[0];
-      if (
-        updatedRun &&
-        updatedRun.shardsFinished != null &&
-        updatedRun.shardTotal != null &&
-        updatedRun.shardsFinished >= updatedRun.shardTotal
-      ) {
-        const finalStatus = (updatedRun.failedTests ?? 0) > 0 ? 'failed' : 'passed';
-
-        const durations =
-          body.testCases && Array.isArray(body.testCases)
-            ? body.testCases.map((tc: any) => tc.duration).filter((d: any) => d != null)
-            : [];
-        const stats = durations.length > 0 ? durationStats(durations) : null;
-
-        await db
-          .update(testRuns)
-          .set({
-            status: finalStatus,
-            avgTestDuration: stats?.avg ?? null,
-            p90TestDuration: stats?.p90 ?? null,
-            updatedAt: new Date(),
-          })
-          .where(eq(testRuns.id, existingRun.id));
-
-        runEventBus.publishGlobal({
-          type: 'run-submitted',
-          runId: existingRun.id,
-          projectId: project.id,
-          status: finalStatus,
-        });
-      }
-
-      return {
-        success: true,
-        runId: existingRun.id,
-        projectId: project.id,
-      };
-    }
+    // A shard of a batch run: its executions join the run its instance's shards
+    // share, and the last shard to arrive settles it.
+    const run = await batchShardRun(db, project.id, instanceId, body);
+    if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
+    await applyReporterKeep(db, run.id, body.keep);
+    if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(toRunCase));
+    await addBatchShard(db, run.id, batchShardTally(body, testCases));
+    if (!(await finalizeShardedRun(db, run.id, 'run-submitted'))) await publishShardProgress(db, run.id);
+    return { success: true, runId: run.id, projectId: project.id };
   }
 
-  // Non-sharded or first shard of a sharded batch run: create a new run
+  // A run of its own: not sharded, or sharded with no instance id to join its shards by
   await cancelInstanceRuns(db, project.id, instanceId, undefined, isSharded);
 
   const metadata = sanitizeMetadata(body.metadata || null);
@@ -265,102 +141,7 @@ export default eventHandler(async (event) => {
       (testCase: { status: string; retries?: number }) => testCase.status === 'passed' && (testCase.retries || 0) > 0,
     ).length;
 
-    const cases: RunCaseInput[] = body.testCases.map(
-      (testCase: {
-        title: string;
-        status: string;
-        duration?: number;
-        timeout?: number;
-        error?: string;
-        location?: string;
-        retries?: number;
-        steps?: unknown;
-        stepEvents?: unknown;
-        slowestStep?: string;
-        slowestStepDuration?: number;
-        wastedTimeMs?: number;
-        networkRequests?: unknown;
-        webVitals?: unknown;
-        pageState?: unknown;
-        pageInventory?: unknown;
-        locatorPages?: unknown;
-        codeReach?: unknown;
-        coverage?: unknown;
-        resources?: unknown;
-        aiUsage?: unknown;
-        consoleLogs?: unknown;
-        dialogs?: unknown;
-        ariaSnapshot?: unknown;
-        ariaSnapshotJson?: unknown;
-        testSource?: string | null;
-        testSourceFrames?: unknown;
-        startedAt?: number | null;
-        workerIndex?: number | null;
-        shardIndex?: number | null;
-        browser?: unknown;
-        suitePath?: string[] | null;
-        suiteConfig?: unknown;
-        testAnnotations?: unknown;
-        tags?: unknown;
-        locks?: unknown;
-        testMeta?: unknown;
-        locatorSnapshots?: unknown;
-        didNotRunReason?: string | null;
-        expectedStatus?: string | null;
-        blockedBy?: string | null;
-      }) => {
-        const { filePath, line, column } = testCase.location
-          ? parseLocation(testCase.location)
-          : { filePath: 'unknown', line: null, column: null };
-
-        return {
-          filePath,
-          suitePath: testCase.suitePath ?? null,
-          suiteConfig: testCase.suiteConfig ?? null,
-          testAnnotations: testCase.testAnnotations ?? null,
-          tags: testCase.tags ?? null,
-          locks: testCase.locks ?? null,
-          testMeta: testCase.testMeta ?? null,
-          title: testCase.title,
-          status: testCase.status,
-          duration: testCase.duration,
-          timeout: testCase.timeout,
-          error: testCase.error,
-          retries: testCase.retries,
-          attempts: (testCase as { attempts?: unknown }).attempts ?? null,
-          line,
-          column,
-          steps: testCase.steps,
-          stepEvents: testCase.stepEvents,
-          slowestStep: testCase.slowestStep,
-          slowestStepDuration: testCase.slowestStepDuration,
-          wastedTimeMs: testCase.wastedTimeMs,
-          networkRequests: testCase.networkRequests,
-          webVitals: testCase.webVitals,
-          pageState: testCase.pageState,
-          pageInventory: testCase.pageInventory,
-          locatorPages: testCase.locatorPages,
-          codeReach: testCase.codeReach,
-          coverage: testCase.coverage,
-          resources: testCase.resources ?? null,
-          aiUsage: testCase.aiUsage,
-          consoleLogs: testCase.consoleLogs,
-          dialogs: testCase.dialogs,
-          ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
-          ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
-          testSource: testCase.testSource ?? null,
-          testSourceFrames: testCase.testSourceFrames ?? null,
-          workerIndex: testCase.workerIndex,
-          shardIndex: testCase.shardIndex ?? null,
-          startedAt: testCase.startedAt ?? null,
-          browser: testCase.browser ?? null,
-          locatorSnapshots: testCase.locatorSnapshots ?? null,
-          didNotRunReason: testCase.didNotRunReason ?? null,
-          expectedStatus: testCase.expectedStatus ?? null,
-          blockedBy: testCase.blockedBy ?? null,
-        };
-      },
-    );
+    const cases: RunCaseInput[] = body.testCases.map(toRunCase);
 
     await persistRunCases(db, project.id, testRun.id, cases);
   }
@@ -396,3 +177,56 @@ export default eventHandler(async (event) => {
     projectId: project.id,
   };
 });
+
+/** A submitted test case, as `persistRunCases` stores it. */
+function toRunCase(testCase: any): RunCaseInput {
+  const { filePath, line, column } = testCase.location
+    ? parseLocation(testCase.location)
+    : { filePath: 'unknown', line: null, column: null };
+  return {
+    filePath,
+    suitePath: testCase.suitePath ?? null,
+    suiteConfig: testCase.suiteConfig ?? null,
+    testAnnotations: testCase.testAnnotations ?? null,
+    tags: testCase.tags ?? null,
+    locks: testCase.locks ?? null,
+    testMeta: testCase.testMeta ?? null,
+    title: testCase.title,
+    status: testCase.status,
+    duration: testCase.duration,
+    timeout: testCase.timeout,
+    error: testCase.error,
+    retries: testCase.retries,
+    attempts: testCase.attempts ?? null,
+    line,
+    column,
+    steps: testCase.steps,
+    stepEvents: testCase.stepEvents,
+    slowestStep: testCase.slowestStep,
+    slowestStepDuration: testCase.slowestStepDuration,
+    wastedTimeMs: testCase.wastedTimeMs,
+    networkRequests: testCase.networkRequests,
+    webVitals: testCase.webVitals,
+    pageState: testCase.pageState,
+    pageInventory: testCase.pageInventory,
+    locatorPages: testCase.locatorPages,
+    codeReach: testCase.codeReach,
+    coverage: testCase.coverage,
+    resources: testCase.resources ?? null,
+    aiUsage: testCase.aiUsage,
+    consoleLogs: testCase.consoleLogs,
+    dialogs: testCase.dialogs,
+    ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+    ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
+    testSource: testCase.testSource ?? null,
+    testSourceFrames: testCase.testSourceFrames ?? null,
+    workerIndex: testCase.workerIndex,
+    shardIndex: testCase.shardIndex ?? null,
+    startedAt: testCase.startedAt ?? null,
+    browser: testCase.browser ?? null,
+    locatorSnapshots: testCase.locatorSnapshots ?? null,
+    didNotRunReason: testCase.didNotRunReason ?? null,
+    expectedStatus: testCase.expectedStatus ?? null,
+    blockedBy: testCase.blockedBy ?? null,
+  };
+}

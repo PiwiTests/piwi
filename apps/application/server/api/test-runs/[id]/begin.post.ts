@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { getDatabase } from '../../../database';
+import { getDatabase, type DbClient } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
@@ -9,6 +9,8 @@ import { resolveRunBranch } from '../../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
 import { pinProjectRepository } from '../../../utils/scm/project-repository';
+import { withInstanceRunLock } from '../../../utils/ingest-locks';
+import { updateRunMetadata } from '../../../utils/run-metadata';
 import {
   knownShardTokens,
   matchesShardToken,
@@ -66,7 +68,23 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
+  const [instance] = await db
+    .select({ projectId: testRuns.projectId, instanceId: testRuns.instanceId })
+    .from(testRuns)
+    .where(eq(testRuns.id, id));
+  if (!instance) {
+    throw apiError({
+      statusCode: 404,
+      message: 'Test run not found',
+    });
+  }
 
+  // Shards of one run begin one at a time: the first turns the run to running,
+  // and each later one sees it running and joins it.
+  return withInstanceRunLock(instance.projectId, instance.instanceId, () => beginRun(db, id, body));
+});
+
+async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
   // Verify the run exists and the setup token matches
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
   const testRun = testRunResults[0];
@@ -124,25 +142,34 @@ export default eventHandler(async (event) => {
       ...(shardTokens ? { shardTokens } : {}),
     });
 
-    const metadata = carryIngestHealth(sanitizeMetadata(body.metadata || testRun.metadata), testRun.metadata);
+    const running = {
+      status: 'running',
+      streamToken: streamTokenDigest(streamToken),
+      totalTests: body.totalTests || 0,
+      branch: resolveRunBranch(body.metadata) ?? testRun.branch,
+      playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
+      reporterVersion: body.reporterVersion || testRun.reporterVersion,
+      isFullRun: body.isFullRun !== false ? 1 : 0,
+      filterDetails: body.filterDetails ?? testRun.filterDetails,
+    };
+    const reported = (stored: unknown) => carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored);
 
-    await db
-      .update(testRuns)
-      .set({
-        status: 'running',
-        streamToken: streamTokenDigest(streamToken),
-        totalTests: body.totalTests || 0,
-        metadata: shardTokens ? withShardTokens(metadata, shardTokens) : metadata,
-        origin: runOrigin(metadata),
-        commit: runCommit(metadata),
-        branch: resolveRunBranch(body.metadata) ?? testRun.branch,
-        playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
-        reporterVersion: body.reporterVersion || testRun.reporterVersion,
-        isFullRun: body.isFullRun !== false ? 1 : 0,
-        filterDetails: body.filterDetails ?? testRun.filterDetails,
-        ...(isSharded ? { shardTotal: testRun.shardTotal, shardsFinished: testRun.shardsFinished } : {}),
-      })
-      .where(eq(testRuns.id, id));
+    let metadata: Record<string, unknown> | null;
+    if (isSharded) {
+      // Other requests of the run may write its metadata meanwhile.
+      metadata = await updateRunMetadata(
+        db,
+        id,
+        (stored) => withShardTokens(reported(stored), swapShardToken(id, stored, body.setupToken, streamToken)),
+        running,
+      );
+    } else {
+      metadata = reported(testRun.metadata);
+      await db
+        .update(testRuns)
+        .set({ ...running, metadata, origin: runOrigin(metadata), commit: runCommit(metadata) })
+        .where(eq(testRuns.id, id));
+    }
 
     await pinProjectRepository(db, testRun.projectId, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
@@ -153,16 +180,15 @@ export default eventHandler(async (event) => {
     const cachedState = runEventBus.getRunState(id);
     if (cachedState) runEventBus.cacheRunState(id, { ...cachedState, shardTokens });
 
-    await db
-      .update(testRuns)
-      .set({
-        metadata: withShardTokens(testRun.metadata, shardTokens),
-        origin: runOrigin(testRun.metadata),
-        commit: runCommit(testRun.metadata),
+    await updateRunMetadata(
+      db,
+      id,
+      (stored) => withShardTokens(stored, swapShardToken(id, stored, body.setupToken, streamToken)),
+      {
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
         updatedAt: new Date(),
-      })
-      .where(eq(testRuns.id, id));
+      },
+    );
   } else {
     // Run is already running and the caller presented its stream token: hand
     // the same token back so the caller can continue streaming. This can happen
@@ -182,7 +208,7 @@ export default eventHandler(async (event) => {
     projectId: testRun.projectId,
     streamToken,
   };
-});
+}
 
 /**
  * A sharded run's shard tokens, from memory and its metadata, with the setup

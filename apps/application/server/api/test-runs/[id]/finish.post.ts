@@ -1,14 +1,20 @@
 import { sql, eq } from 'drizzle-orm';
-import { getDatabase } from '../../../database';
+import { getDatabase, type DbClient } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
-import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
-import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
+import { matchesShardToken, readShardTokensFromMeta, withoutShardToken } from '../../../utils/shard-tokens';
+import { updateRunMetadata } from '../../../utils/run-metadata';
+import {
+  finalizeShardedRun,
+  longestDuration,
+  publishShardProgress,
+  withShardDurations,
+} from '../../../utils/sharded-runs';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
 import { keepIncidentMetadata } from '#shared/run-incident';
 import { withPendingStatus } from '../../../utils/finalizing-runs';
@@ -84,11 +90,14 @@ export default eventHandler(async (event) => {
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
   const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
+
+  const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
+  if (isSharded) return finishShard(db, id, body, duration);
+
   await applyReporterKeep(db, id, body.keep);
 
   // Determine final status
   const status = body.status ?? 'failed';
-  const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
 
   // Compute performance metrics
   let avgTestDuration: number | null = null;
@@ -107,156 +116,8 @@ export default eventHandler(async (event) => {
 
   const hasPendingUploads = body.hasPendingUploads === true;
 
-  // This reporter's resource report, in its own row: shards finishing at once
-  // each write theirs, and none overwrites another's.
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
-
-  if (isSharded) {
-    // Sharded run: track shardsFinished; duration is the maximum across shards.
-    // The test counters are NOT touched here — every case (including
-    // synthesized didnotrun ones) arrives as a streamed event, and the events
-    // endpoint already increments the counters per inserted row. Adding the
-    // shards' finish totals on top would count every execution twice. Only
-    // flakyTests accumulates here: the events tally has no flaky notion, so
-    // the shards' finish bodies are its single source.
-
-    // Merge this shard's durations with any previously accumulated ones
-    const allDurations: number[] = [];
-    const currentMeta = (testRun.metadata as Record<string, unknown>) ?? {};
-    const prevDurations = currentMeta.shardDurations as number[] | undefined;
-    if (prevDurations) allDurations.push(...prevDurations);
-    if (body.durations && Array.isArray(body.durations)) allDurations.push(...body.durations);
-
-    const updateData: Record<string, unknown> = {
-      updatedAt: new Date(),
-      status: 'running', // keep running until all shards finish
-      flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
-      shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-      // Portable "max of two values": SQLite's scalar MAX(a,b) is an aggregate in
-      // Postgres, so use a CASE expression that runs on both dialects.
-      duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${duration} THEN coalesce(${testRuns.duration}, 0) ELSE ${duration} END`,
-      metadata: { ...currentMeta, shardDurations: allDurations },
-      origin: runOrigin(currentMeta),
-      commit: runCommit(currentMeta),
-      // The first shard to report a branch names the run's branch.
-      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
-      ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
-      ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
-    };
-
-    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
-
-    // Remove this shard's token so it cannot send more events
-    runEventBus.removeShardToken(id, body.streamToken);
-    await removeStoredShardToken(db, id, body.streamToken);
-
-    // Re-read the updated row to check if all shards have finished
-    const updated = await db.select().from(testRuns).where(eq(testRuns.id, id));
-    const updatedRun = updated[0];
-
-    let finalStatus: string | undefined;
-
-    if (
-      updatedRun &&
-      updatedRun.shardsFinished != null &&
-      updatedRun.shardTotal != null &&
-      updatedRun.shardsFinished >= updatedRun.shardTotal
-    ) {
-      // All shards done — recompute distinct-test counters from the persisted
-      // rows (the per-shard events counted attempts) and derive the final status
-      // from them, so a flaky-only sharded run reads as passed with no failures.
-      const counts = await computeRunCountsFromRows(db, id);
-      finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
-
-      if (allDurations.length > 0) {
-        const aggStats = durationStats(allDurations);
-        if (aggStats) {
-          avgTestDuration = aggStats.avg;
-          p90TestDuration = aggStats.p90;
-        }
-      }
-
-      // Store accumulated durations in metadata for future shards (if somehow more arrive)
-      // Preserve existing metadata (including shardTokens) and merge in aggregated durations
-      const existingMeta = (updatedRun.metadata as Record<string, unknown>) ?? {};
-      const finalMeta = { ...existingMeta, shardDurations: allDurations };
-
-      await db
-        .update(testRuns)
-        .set({
-          status: finalStatus,
-          streamToken: null,
-          duration: updatedRun.duration, // keep max duration
-          // The planned total (summed across shards at /start), or the distinct
-          // rows when a shard reported no planned count.
-          totalTests: Math.max(updatedRun.totalTests ?? 0, counts.totalTests),
-          passedTests: counts.passedTests,
-          failedTests: counts.failedTests,
-          skippedTests: counts.skippedTests,
-          didNotRunTests: counts.didNotRunTests,
-          flakyTests: counts.flakyTests,
-          avgTestDuration,
-          p90TestDuration,
-          metadata: finalMeta,
-          origin: runOrigin(finalMeta),
-          commit: runCommit(finalMeta),
-          updatedAt: new Date(),
-        })
-        .where(eq(testRuns.id, id));
-
-      // Publish run-finished event
-      runEventBus.publish(id, {
-        type: 'run-finished',
-        data: {
-          status: finalStatus,
-          duration: updatedRun.duration,
-          totalTests: Math.max(updatedRun.totalTests ?? 0, counts.totalTests),
-          passedTests: counts.passedTests,
-          failedTests: counts.failedTests,
-          skippedTests: counts.skippedTests,
-          didNotRunTests: counts.didNotRunTests,
-          flakyTests: counts.flakyTests,
-        },
-      });
-
-      runEventBus.publishGlobal({
-        type: 'run-finished',
-        runId: id,
-        projectId: testRun.projectId,
-        status: finalStatus,
-      });
-
-      await runFinalizeSideEffects(db, id, {
-        projectId: testRun.projectId,
-        metadata: testRun.metadata,
-        isFullRun: updatedRun.isFullRun,
-        status: finalStatus,
-      });
-
-      runEventBus.cleanup(id);
-    } else {
-      // Not all shards done yet — publish progress update
-      runEventBus.publish(id, {
-        type: 'run-progress',
-        data: {
-          totalTests: updatedRun?.totalTests ?? testRun.totalTests,
-          passedTests: updatedRun?.passedTests ?? testRun.passedTests,
-          failedTests: updatedRun?.failedTests ?? testRun.failedTests,
-          skippedTests: updatedRun?.skippedTests ?? testRun.skippedTests,
-          didNotRunTests: updatedRun?.didNotRunTests ?? testRun.didNotRunTests,
-          shardsFinished: updatedRun?.shardsFinished ?? 0,
-          shardTotal: updatedRun?.shardTotal,
-        },
-      });
-    }
-
-    return {
-      success: true,
-      runId: id,
-      status: finalStatus ?? 'running',
-    };
-  }
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
 
@@ -384,3 +245,50 @@ export default eventHandler(async (event) => {
     status: hasPendingUploads ? 'finalizing' : status,
   };
 });
+
+/**
+ * One shard of a sharded run reports its end. The shard's token leaves the
+ * run's shard tokens in the same write that records its test durations, so a
+ * replayed `/finish` finds it gone and changes nothing. The run's test counters
+ * are not touched: every case (synthesized didnotrun ones included) arrives as
+ * a streamed event, which the events endpoint already counted. Only flakyTests
+ * adds up here, since the events tally has no flaky notion. The run settles
+ * once every shard finished.
+ */
+async function finishShard(db: DbClient, id: number, body: Record<string, any>, duration: number) {
+  const recorded = await updateRunMetadata(db, id, (metadata) => {
+    const remaining = withoutShardToken(metadata, body.streamToken);
+    return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
+  });
+  runEventBus.removeShardToken(id, body.streamToken);
+
+  if (!recorded) {
+    const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, id));
+    return { success: true, runId: id, status: current?.status ?? 'running' };
+  }
+
+  await applyReporterKeep(db, id, body.keep);
+  // This shard's resource report, in its own row: shards finishing at once
+  // each write theirs, and none overwrites another's.
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+  if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+
+  await db
+    .update(testRuns)
+    .set({
+      updatedAt: new Date(),
+      flakyTests: sql`${testRuns.flakyTests} + ${body.flakyTests ?? 0}`,
+      shardsFinished: sql`${testRuns.shardsFinished} + 1`,
+      duration: longestDuration(duration),
+      // The first shard to report a branch names the run's branch.
+      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
+      ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
+      ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
+    })
+    .where(eq(testRuns.id, id));
+
+  const finalStatus = await finalizeShardedRun(db, id, 'run-finished');
+  if (!finalStatus) await publishShardProgress(db, id);
+
+  return { success: true, runId: id, status: finalStatus ?? 'running' };
+}

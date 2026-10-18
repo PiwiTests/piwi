@@ -20,6 +20,13 @@ import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
+import {
+  addBatchShard,
+  batchShardRun,
+  batchShardTally,
+  finalizeShardedRun,
+  publishShardProgress,
+} from '../../utils/sharded-runs';
 import { settleFinalizingRun } from '../../utils/finalizing-runs';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
@@ -333,10 +340,21 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
   let testRun: { id: number; projectId: number; isFullRun?: number; status?: string };
   const incomingResources = sanitizeResourceReport(testRunData.resourceReport);
 
+  // A shard of a batch run: its executions join the run its instance's shards
+  // share, and the last shard to arrive settles it.
+  const instanceId = (testRunData.instanceId as string | null | undefined) || null;
+  const shardTotal = testRunData.shardTotal as number | undefined;
+  const isBatchShard = !attachingToExistingRun && !!instanceId && !!(shardTotal && shardTotal > 1);
+
   if (attachingToExistingRun && existingTestRunId) {
     // Attach reports to an already-created streaming run — do not create a new run
     testRun = { id: existingTestRunId, projectId: project.id };
     await applyReporterKeep(db, existingTestRunId, testRunData.keep);
+  } else if (isBatchShard) {
+    const run = await batchShardRun(db, project.id, instanceId!, testRunData);
+    testRun = { id: run.id, projectId: run.projectId };
+    if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
+    await applyReporterKeep(db, run.id, testRunData.keep);
   } else {
     // Create a new test run (standard batch upload)
     const metadata = sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null);
@@ -614,7 +632,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
 
   // Compute and store performance summary (avgTestDuration, p90TestDuration) + flaky count
   // Only applicable for new (non-streaming) runs that include test case data
-  if (!attachingToExistingRun && testCasesData && testCasesData.length > 0) {
+  if (!attachingToExistingRun && !isBatchShard && testCasesData && testCasesData.length > 0) {
     const durations = testCasesData.map((tc: Record<string, unknown>) => tc.duration as number | null | undefined);
 
     // Flaky count is independent of whether duration data is present
@@ -634,9 +652,12 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
     }
   }
 
-  // For new (non-streaming) runs, fire the finalize side effects after cases are
-  // persisted — probe-aware, so a probe-stamped upload stays silent.
-  if (!attachingToExistingRun) {
+  if (isBatchShard) {
+    await addBatchShard(db, testRun.id, batchShardTally(testRunData, testCasesData));
+    if (!(await finalizeShardedRun(db, testRun.id, 'run-submitted'))) await publishShardProgress(db, testRun.id);
+  } else if (!attachingToExistingRun) {
+    // For new (non-streaming) runs, fire the finalize side effects after cases are
+    // persisted — probe-aware, so a probe-stamped upload stays silent.
     await runFinalizeSideEffects(db, testRun.id, {
       projectId: project.id,
       metadata: testRunData?.metadata,

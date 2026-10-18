@@ -97,8 +97,9 @@ How the merge works:
 1. Each shard derives a **run label**, a stable identifier for the CI pipeline, from the provider's build id
    (`GITHUB_RUN_ID` with `GITHUB_RUN_ATTEMPT`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID` and their equivalents on the
    systems listed above). A re-run of a GitHub Actions workflow is a new attempt, so it starts a new run.
-2. Shards sharing a run label **and** a `projectName` resolve to the same run when streaming.
-3. Each shard streams independently; the run stays `running` until the **last** shard calls finish.
+2. Shards sharing a run label **and** a `projectName` resolve to the same run, whether they stream their results or
+   send them in one batch at the end (streaming off, or its fallback).
+3. Each shard reports independently; the run stays `running` until the **last** shard reports its end.
 4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
    shard progress badge (`2/3`) while shards are still arriving.
 
@@ -259,8 +260,9 @@ reach, or a missing API key while authentication is on.
 [`wrapConfig`](./reporter#installing-via-wrapconfig), which sets both when they are unset.
 
 **A run is stuck as `interrupted`.** A run silent for two minutes (a cancelled job, a killed runner, a dropped
-network) is marked `interrupted` until its next event revives it. A run still uploading its report (`finalizing`) waits
-ten minutes, then keeps the status the reporter sent. [Analytics](/features/analytics#scope) counts interrupted runs as
+network) is marked `interrupted` until its next event revives it. A sharded run whose shards send their results in one
+batch waits an hour for the missing shards. A run still uploading its report (`finalizing`) waits ten minutes, then
+keeps the status the reporter sent. [Analytics](/features/analytics#scope) counts interrupted runs as
 failing; **full runs only** drops only partial runs.
 
 ## Related

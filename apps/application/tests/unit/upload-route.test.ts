@@ -120,4 +120,29 @@ describe('POST /api/test-runs/upload', () => {
       delete process.env.PIWI_IMPORT_MAX_BYTES;
     }
   });
+
+  test('shards of a batch run join one run, which the last shard settles', async () => {
+    const shard = (shardIndex: number, title: string) => [
+      field('projectName', 'upload-shards'),
+      field('testRun', {
+        status: 'passed',
+        startTime: '2026-09-30T10:00:00Z',
+        totalTests: 1,
+        passedTests: 1,
+        instanceId: 'ci-42',
+        shardIndex,
+        shardTotal: 2,
+      }),
+      field('testCases', [{ title, status: 'passed', location: `tests/${title}.spec.ts:1:1`, duration: 5 }]),
+    ];
+
+    const one = await upload({ parts: shard(1, 'pays') });
+    expect((await db.select().from(schema.testRuns))[0]).toMatchObject({ status: 'running', shardsFinished: 1 });
+
+    const two = await upload({ parts: shard(2, 'adds') });
+    expect(two.runId).toBe(one.runId);
+    const runs = await db.select().from(schema.testRuns);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ status: 'passed', shardsFinished: 2, passedTests: 2 });
+  });
 });
