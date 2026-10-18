@@ -8,6 +8,7 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
+import { pinProjectRepository } from '../../utils/scm/project-repository';
 import { persistShardToken, shardTokenDigest, streamTokenDigest } from '../../utils/shard-tokens';
 import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
@@ -158,6 +159,7 @@ export default eventHandler(async (event) => {
     }
 
     await applyReporterKeep(db, testRun.id, body.keep);
+    await pinProjectRepository(db, project.id, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
     runEventBus.cacheRunState(testRun.id, {
       streamToken: streamTokenDigest(streamToken),
@@ -216,6 +218,7 @@ export default eventHandler(async (event) => {
   }
 
   await applyReporterKeep(db, testRun.id, body.keep);
+  await pinProjectRepository(db, project.id, metadata);
   runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
   runEventBus.cacheRunState(testRun.id, { streamToken: streamTokenDigest(streamToken), projectId: project.id });
 

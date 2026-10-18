@@ -211,9 +211,11 @@ const PROJECTS = [
 ];
 
 // Record each project's default branch from its SCM repo, so branch-aware
-// baselines, flakiness scoping and the default-branch resolver have real data.
+// baselines, flakiness scoping and the default-branch resolver have real data,
+// and the repository its runs name, as the first of them pins it.
 for (const project of PROJECTS) {
   project.default_branch = SCM_REPOS[project.id]?.defaultBranch ?? 'main';
+  project.repository_url = SCM_REPOS[project.id]?.repositoryUrl ?? null;
 }
 
 // Project-tag associations

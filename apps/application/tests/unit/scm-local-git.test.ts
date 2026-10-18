@@ -277,7 +277,7 @@ describe('createScmProvider on the desktop app', () => {
     await migrate(db, {
       migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
     });
-    await db.insert(schema.projects).values({ id: PROJECT_ID, name: 'shop' });
+    await db.insert(schema.projects).values({ id: PROJECT_ID, name: 'shop', repositoryUrl: REPO_URL });
   });
 
   test('reads a linked clone with local git when no token is set', async () => {

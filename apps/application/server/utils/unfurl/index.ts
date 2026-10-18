@@ -10,6 +10,8 @@ import { JiraUnfurlProvider } from './JiraUnfurlProvider';
 import type { AtlassianConfig } from './JiraUnfurlProvider';
 import { ScmUnfurlProvider } from './ScmUnfurlProvider';
 import type { DbClient } from '../../database';
+import type { ProjectScope } from '../project-access';
+import { isRepositoryPinnedInScope } from '../scm/project-repository';
 
 /** The SCM link providers, whose entity is unfurled through `server/utils/scm/`. */
 const SCM_PROVIDERS: ReadonlySet<LinkProvider> = new Set([
@@ -67,8 +69,17 @@ export function unfurlProviderForProvider(
   }
 }
 
-/** Construct a provider for a URL, loading config from DB if needed. */
-export async function createUnfurlProvider(url: string, db: DbClient): Promise<UnfurlProvider | null> {
+/**
+ * Construct a provider for a URL, loading config from DB if needed. `readable`
+ * is the projects the caller can read: the instance SCM token reads only a
+ * repository one of them is pinned to, and any other SCM link is unfurled with
+ * no token, as a public one.
+ */
+export async function createUnfurlProvider(
+  url: string,
+  db: DbClient,
+  readable: ProjectScope,
+): Promise<UnfurlProvider | null> {
   const providerType = detectProvider(url);
 
   // Jira reads its config from the matching connection; Confluence is unreachable.
@@ -80,10 +91,11 @@ export async function createUnfurlProvider(url: string, db: DbClient): Promise<U
     return null;
   }
 
-  // SCM providers — try token from DB for private repos, but also work without it
+  // SCM providers — the instance token for a repository a readable project is pinned to, else none.
   if (SCM_PROVIDERS.has(providerType)) {
-    const token = await loadScmToken(db);
-    return unfurlProviderForProvider(providerType, url, null, token);
+    const repositoryUrl = repositoryUrlFromLink(url, providerType);
+    const pinned = repositoryUrl ? await isRepositoryPinnedInScope(db, readable, repositoryUrl) : false;
+    return unfurlProviderForProvider(providerType, url, null, pinned ? await loadScmToken(db) : null);
   }
 
   return null;
@@ -92,11 +104,12 @@ export async function createUnfurlProvider(url: string, db: DbClient): Promise<U
 /**
  * Main unfurl entry point.
  * Tries rich (API-based) unfurl first when a database connection is available,
- * falls back to generic OpenGraph parsing.
+ * falls back to generic OpenGraph parsing. `readable` is the projects the
+ * caller can read (see {@link createUnfurlProvider}).
  */
-export async function unfurlUrl(url: string, db?: DbClient): Promise<UnfurlResult> {
+export async function unfurlUrl(url: string, db?: DbClient, readable: ProjectScope = new Set()): Promise<UnfurlResult> {
   if (db) {
-    const provider = await createUnfurlProvider(url, db);
+    const provider = await createUnfurlProvider(url, db, readable);
     if (provider) {
       const key = extractKey(url, detectProvider(url));
       const result = await provider.unfurl(url, key);

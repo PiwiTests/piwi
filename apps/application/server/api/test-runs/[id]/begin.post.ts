@@ -8,6 +8,7 @@ import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
+import { pinProjectRepository } from '../../../utils/scm/project-repository';
 import {
   knownShardTokens,
   matchesShardToken,
@@ -143,6 +144,7 @@ export default eventHandler(async (event) => {
       })
       .where(eq(testRuns.id, id));
 
+    await pinProjectRepository(db, testRun.projectId, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
   } else if (isSharded) {
     // Another shard began the run: this shard streams on a token of its own and

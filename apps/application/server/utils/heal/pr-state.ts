@@ -18,6 +18,7 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { healActions, testRunsCases } from '../../database/schema';
 import { resolveScmToken, scmProviderForUrl } from '../scm';
+import { projectRepositoryFor } from '../scm/project-repository';
 import { recordOutcome } from '../outcomes';
 import { healEditKey, type HealActionPayload, type HealActionResult } from '#shared/auto-heal';
 import type { DbClient } from '../../database';
@@ -67,7 +68,13 @@ export async function refreshOpenHealActions(
       if (!tokens.has(row.projectId)) tokens.set(row.projectId, await resolveScmToken(db, row.projectId));
       const token = tokens.get(row.projectId);
       if (!token) continue;
-      const provider = scmProviderForUrl((row.payload as HealActionPayload).repositoryUrl, token);
+      // Only the project's pinned repository is read with its token.
+      const repository = await projectRepositoryFor(
+        db,
+        row.projectId,
+        (row.payload as HealActionPayload).repositoryUrl,
+      );
+      const provider = repository ? scmProviderForUrl(repository, token) : null;
       if (!provider) continue;
 
       const state = (await provider.fetchPullRequest(prNumber))?.state;

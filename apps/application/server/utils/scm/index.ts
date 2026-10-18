@@ -6,6 +6,7 @@ import { GitHubProvider } from './GitHubProvider';
 import { GitLabProvider } from './GitLabProvider';
 import { BitbucketProvider } from './BitbucketProvider';
 import { localGitProvider, type LocalGitProvider } from './local-git';
+import { projectRepositoryFor } from './project-repository';
 import { detectScmHost, type ScmProviderName } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 
@@ -70,9 +71,13 @@ export function scmProviderForUrl(
 }
 
 /**
- * Instantiate the correct provider, loading the SCM token from:
- * 1. Per-project scmToken (if projectId is provided)
+ * Instantiate the provider of a project's repository, loading the SCM token from:
+ * 1. Per-project scmToken
  * 2. Global scm_token app setting (fallback)
+ *
+ * The provider reads the project's pinned repository only
+ * (`project-repository.ts`): `repositoryUrl`, which usually comes from a run's
+ * metadata, must name it, or there is no provider.
  *
  * On the desktop app with no token, a project linked to a clone of the
  * repository reads its history with local git in that folder, and asks the host
@@ -81,12 +86,14 @@ export function scmProviderForUrl(
 export async function createScmProvider(
   repositoryUrl: string,
   db: DbClient,
-  projectId?: number,
+  projectId: number,
 ): Promise<GitHubProvider | GitLabProvider | BitbucketProvider | LocalGitProvider | null> {
+  const repository = await projectRepositoryFor(db, projectId, repositoryUrl);
+  if (!repository) return null;
   const token = await resolveScmToken(db, projectId);
-  const hosted = scmProviderForUrl(repositoryUrl, token);
-  if (hosted && !token && projectId) {
-    return (await localGitProvider(projectId, repositoryUrl, hosted)) ?? hosted;
+  const hosted = scmProviderForUrl(repository, token);
+  if (hosted && !token) {
+    return (await localGitProvider(projectId, repository, hosted)) ?? hosted;
   }
   return hosted;
 }

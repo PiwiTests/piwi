@@ -137,7 +137,7 @@ beforeAll(async () => {
   await migrate(db, {
     migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
   });
-  await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main' });
+  await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main', repositoryUrl: REMOTE });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/pay.spec.ts', title: 'pays' });
   await setAppSetting(db as never, AUTO_HEAL_KEY, { enabled: true, projects: [1], minScore: 80 });
 });

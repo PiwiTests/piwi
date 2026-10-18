@@ -1,4 +1,4 @@
-import { requireResolvedProjectAccess, resolveLinkProjectId } from '../../../utils/project-access';
+import { getProjectScope, requireResolvedProjectAccess, resolveLinkProjectId } from '../../../utils/project-access';
 import { entityLinks } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { refreshLinkMeta } from '#shared/handlers/links';
@@ -21,7 +21,7 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Invalid link ID' });
   }
 
-  const { db } = await requireResolvedProjectAccess(event, id, resolveLinkProjectId, 'Link');
+  const { db, user } = await requireResolvedProjectAccess(event, id, resolveLinkProjectId, 'Link');
 
   let result: { link: any };
   try {
@@ -39,7 +39,8 @@ export default eventHandler(async (event) => {
 
   // Unfurl enrichment (server-only) — through the connection when one matched,
   // otherwise the rich provider / OpenGraph path.
-  const { title, statusText, statusColor } = await unfurlLink(db, link);
+  const readable = await getProjectScope(db, user, 'project:read');
+  const { title, statusText, statusColor } = await unfurlLink(db, link, readable);
 
   await db
     .update(entityLinks)

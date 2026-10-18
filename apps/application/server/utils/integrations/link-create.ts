@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { createLink, type LinkEntityType } from '#shared/handlers/links';
 import { entityLinks, type EntityLink } from '../../database/schema';
 import type { DbClient } from '../../database';
+import type { ProjectScope } from '../project-access';
 import { detectProviderWithConnections } from './link-resolve';
 import { unfurlLink } from './link-unfurl';
 import { mergeEntityLinkMetadata } from './entity-links';
@@ -13,18 +14,20 @@ import { mergeEntityLinkMetadata } from './entity-links';
  *
  * A tracker issue's status category is recorded as the link is made, as for an
  * issue Piwi files, so the status pull counts the issue's first move (to Done,
- * or out of it) and its policies act on it.
+ * or out of it) and its policies act on it. `readable` is the projects the
+ * caller can read, for the unfurl (`unfurlLink`).
  */
 export async function createEnrichedLink(
   db: DbClient,
   input: { entityType: LinkEntityType; entityId: number; url: string; title?: string | null },
+  readable: ProjectScope,
 ): Promise<EntityLink | null> {
   const { link } = await createLink(db, input, (u) => detectProviderWithConnections(db, u));
   if (!link) return null;
 
   // Through the connection when the link matched one, otherwise the rich
   // provider / OpenGraph path.
-  const { title, statusText, statusColor, statusCategory, assignee } = await unfurlLink(db, link);
+  const { title, statusText, statusColor, statusCategory, assignee } = await unfurlLink(db, link, readable);
   if (statusCategory) await mergeEntityLinkMetadata(db, link.id, { statusCategory, assignee: assignee ?? null });
   if (!title && !statusText) return link;
   await db
