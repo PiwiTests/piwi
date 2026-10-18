@@ -18,8 +18,14 @@ channel, so a per-user install pulls a per-user update.
    dir (`app_data_dir()/.data`), and spawns the bundled server as a **Node
    sidecar** (`src-tauri/binaries/node-<triple>` running
    `src-tauri/resources/app-server/.output/server/index.mjs`).
-2. It polls `GET /api/health` (200 = database migrated) and then points the
-   window at the server via a one-time token bootstrap (`/__piwi/session`).
+2. It polls `GET /api/health` (200 = database migrated) until the answer
+   carries the random nonce the shell gave this launch's sidecar
+   (`PIWI_DESKTOP_LAUNCH_NONCE`, echoed in `X-Piwi-Desktop-Nonce`), so another
+   process that took the port never receives the token, then points the window
+   at the server via a one-time token bootstrap (`/__piwi/session`). The
+   window may only navigate to its bundled pages and that server's exact origin,
+   and the app's IPC commands are granted to that origin alone
+   (`src-tauri/runtime-capabilities/remote.json`, added at startup for the port).
 3. The tray offers **Run in background** (keep serving after the window closes),
    **Start on login**, and **Open data folder**.
 4. The dashboard can link a Piwi project to a folder on this machine and run

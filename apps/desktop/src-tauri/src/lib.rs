@@ -368,7 +368,7 @@ fn desktop_set_run_progress(
     });
 }
 
-fn random_hex_32() -> String {
+pub(crate) fn random_hex_32() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -389,9 +389,15 @@ fn pick_port() -> u16 {
         .expect("failed to acquire a free loopback port")
 }
 
+/// The response header the sidecar's `/api/health` echoes the launch nonce in.
+const LAUNCH_NONCE_HEADER: &str = "x-piwi-desktop-nonce";
+
 /// Dependency-free readiness probe. `/api/health` returns 200 only after the
-/// database has migrated, so a 200 means the app is ready to load.
-fn health_ok(port: u16) -> bool {
+/// database has migrated, so a 200 means the app is ready to load — when it
+/// also carries this launch's nonce, which only the sidecar this app spawned
+/// knows. Another process that took the port first never gets the session
+/// bootstrap and its token.
+fn health_ok(port: u16, nonce: &str) -> bool {
     use std::io::{Read, Write};
     let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) else {
         return false;
@@ -402,11 +408,68 @@ fn health_ok(port: u16) -> bool {
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }
-    let mut buf = [0u8; 128];
-    match stream.read(&mut buf) {
-        Ok(n) => String::from_utf8_lossy(&buf[..n]).contains(" 200 "),
-        Err(_) => false,
+    // The headers fit well within this; a read cut short by the timeout keeps what arrived.
+    let mut buf = Vec::new();
+    let _ = stream.take(16 * 1024).read_to_end(&mut buf);
+    health_response_proves(&String::from_utf8_lossy(&buf), nonce)
+}
+
+/// Whether a raw `/api/health` response is a 200 carrying `nonce` in
+/// [`LAUNCH_NONCE_HEADER`].
+fn health_response_proves(response: &str, nonce: &str) -> bool {
+    let head = response.split("\r\n\r\n").next().unwrap_or("");
+    let mut lines = head.split("\r\n");
+    let ok = lines
+        .next()
+        .is_some_and(|status| status.split_whitespace().nth(1) == Some("200"));
+    ok && !nonce.is_empty()
+        && lines.any(|line| {
+            line.split_once(':').is_some_and(|(name, value)| {
+                name.trim().eq_ignore_ascii_case(LAUNCH_NONCE_HEADER) && value.trim() == nonce
+            })
+        })
+}
+
+/// The origin the bundled server is served from: the only web origin the
+/// dashboard window may show, and the only one granted the app's IPC.
+fn sidecar_origin(port: u16) -> String {
+    format!("http://127.0.0.1:{port}")
+}
+
+/// Whether `url` is on the sidecar's origin: plain `http` to `127.0.0.1` on its
+/// port, with no credentials (`http://127.0.0.1:3000@evil.example` is not).
+fn is_sidecar_url(url: &tauri::Url, port: u16) -> bool {
+    url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && url.port_or_known_default() == Some(port)
+        && url.username().is_empty()
+        && url.password().is_none()
+}
+
+/// Where the dashboard window may navigate: the app's own bundled pages (the
+/// splash), the sidecar's origin once its port is known, and the non-web
+/// schemes a page uses (`about:`, `blob:`, `data:`, an IDE's URL scheme). Any
+/// other web origin, and a local file, is refused.
+fn main_window_may_navigate(url: &tauri::Url, sidecar_port: Option<u16>) -> bool {
+    match url.scheme() {
+        "tauri" => true,
+        "http" | "https" => {
+            url.host_str() == Some("tauri.localhost")
+                || sidecar_port.is_some_and(|port| is_sidecar_url(url, port))
+        }
+        "file" => false,
+        _ => true,
     }
+}
+
+/// The IPC grants of the dashboard (`runtime-capabilities/remote.json`), scoped
+/// to the exact origin of the sidecar this launch spawned.
+fn remote_capability(port: u16) -> String {
+    let mut capability: serde_json::Value =
+        serde_json::from_str(include_str!("../runtime-capabilities/remote.json"))
+            .expect("runtime-capabilities/remote.json is valid JSON");
+    capability["remote"] = json!({ "urls": [sidecar_origin(port)] });
+    capability.to_string()
 }
 
 /// Restrict a file holding a secret to its owner (0600). Unix only — on Windows
@@ -582,6 +645,8 @@ struct ServerConfig {
     storage_dir: PathBuf,
     secret: String,
     token: String,
+    /// Random per launch: `/api/health` echoes it, so `health_ok` knows its own server.
+    launch_nonce: String,
     port: u16,
     log_path: PathBuf,
 }
@@ -606,6 +671,7 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
         .env("PIWI_STORAGE_PATH", node_path(&cfg.storage_dir))
         .env("PIWI_SECRET_KEY", cfg.secret.clone())
         .env("PIWI_DESKTOP_TOKEN", cfg.token.clone())
+        .env("PIWI_DESKTOP_LAUNCH_NONCE", cfg.launch_nonce.clone())
         // Tell the bundled Nuxt app it is running in the desktop shell so it hides
         // account/user management (single-user, auth off) and surfaces the local
         // connection details (data location, reporter token, MCP endpoint).
@@ -884,20 +950,38 @@ fn ide_launcher_args(
     }
 }
 
-/// A launcher command the webview may spawn: a bare executable name, looked up on
-/// the PATH and in the IDEs' install folders. No path separators, whitespace or
-/// shell metacharacters, so a stray call can neither name a binary by path nor
-/// smuggle in extra arguments; any bare name found in those places passes.
-fn is_safe_launcher_command(command: &str) -> bool {
-    !command.is_empty()
-        && command.len() <= 64
-        && command
-            .bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_alphanumeric())
-        && command
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'+' | b'-'))
+/// The launchers the VS Code flavors put on the PATH.
+const VSCODE_LAUNCHERS: &[&str] = &["code", "code-insiders", "codium", "cursor"];
+
+/// The JetBrains IDEs' launchers: the names Toolbox gives its shell scripts and
+/// an install's `bin` folder uses.
+const JETBRAINS_LAUNCHERS: &[&str] = &[
+    "idea",
+    "webstorm",
+    "pycharm",
+    "phpstorm",
+    "goland",
+    "rubymine",
+    "clion",
+    "rider",
+    "rustrover",
+    "datagrip",
+    "dataspell",
+    "aqua",
+    "fleet",
+    "studio",
+    "writerside",
+];
+
+/// Whether the webview may have `command` spawned for `family`: only a known
+/// IDE launcher of that family, looked up on the PATH and in the IDEs' install
+/// folders. Any other name, a path or an interpreter (`sh`, `python3`) never is.
+fn is_known_launcher(family: &str, command: &str) -> bool {
+    match family {
+        "vscode" => VSCODE_LAUNCHERS.contains(&command),
+        "jetbrains" => JETBRAINS_LAUNCHERS.contains(&command),
+        _ => false,
+    }
 }
 
 /// Open a source file in a local IDE by spawning its command-line launcher
@@ -906,12 +990,12 @@ fn is_safe_launcher_command(command: &str) -> bool {
 /// open-project name to match or "allow unsigned requests", which the URL
 /// schemes depend on.
 ///
-/// Resolves `true` when the launcher started, `false` when no IDE installed it
-/// where the shell looks (so the webview can fall back to a URL scheme), and
-/// errors on a bad command, a non-absolute path or a file that does not exist.
-/// The command is restricted to a bare name, found on the PATH or in the folders
-/// the IDEs install their launchers to (`ide_launcher`); the path must be an
-/// existing file.
+/// Resolves `true` when the launcher started, `false` when the command is not
+/// a known IDE launcher or no IDE installed it where the shell looks (so the
+/// webview can fall back to a URL scheme), and errors on a non-absolute path or
+/// a file that does not exist. The command must be one of the known launchers
+/// (`is_known_launcher`), found on the PATH or in the folders the IDEs install
+/// their launchers to (`ide_launcher`); the path must be an existing file.
 #[tauri::command]
 fn desktop_open_in_ide(
     app: tauri::AppHandle,
@@ -921,8 +1005,8 @@ fn desktop_open_in_ide(
     line: Option<u32>,
     column: Option<u32>,
 ) -> Result<bool, String> {
-    if !is_safe_launcher_command(&command) {
-        return Err(format!("unsupported IDE launcher command: {command}"));
+    if !is_known_launcher(&family, &command) {
+        return Ok(false);
     }
     let file = std::path::Path::new(&path);
     if !file.is_absolute() {
@@ -983,18 +1067,19 @@ static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
 /// Open a dashboard URL in a new app window. `target="_blank"` and `window.open`
 /// are dropped inside the webview, so a link that should open a standalone
 /// window — the Playwright trace viewer, a captured attachment — does nothing
-/// there without this. Restricted to the bundled server's loopback origin so a
-/// stray call can't point a window at an external site; because the new window
+/// there without this. Restricted to the bundled server's exact origin
+/// (`is_sidecar_url`) so a stray call can't point a window at an external site
+/// or another local server; because the new window
 /// belongs to this app it shares the webview's cookie jar, so the desktop
 /// access-token cookie rides along and the guarded file routes it loads
 /// (`/api/files/...`, and the trace the viewer fetches) are authorized.
 #[tauri::command]
 async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    let allowed = url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:");
-    if !allowed {
+    let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
+    let port = app.state::<mcp_clients::ServerInfo>().port;
+    if !is_sidecar_url(&parsed, port) {
         return Err("unsupported url".into());
     }
-    let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
     let label = format!("aux-{}", AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed));
     let window = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
         .title("Piwi Dashboard")
@@ -1291,7 +1376,20 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
         ))
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        // The dashboard window, which holds the IPC bridge, stays on the app's
+        // own pages and the sidecar's origin (`main_window_may_navigate`).
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("piwi-navigation")
+                .on_navigation(|webview, url| {
+                    webview.label() != "main"
+                        || main_window_may_navigate(
+                            url,
+                            webview.try_state::<mcp_clients::ServerInfo>().map(|s| s.port),
+                        )
+                })
+                .build(),
+        );
 
     // e2e builds embed the Playwright control plugin so a test runner can drive
     // the real webview over a local socket. Gated behind the `e2e-testing`
@@ -1389,6 +1487,10 @@ pub fn run() {
             let secret = load_or_create_secret(&app_data_dir);
             let token = load_or_create_token(&app_data_dir);
             let port = pick_port();
+            let launch_nonce = random_hex_32();
+
+            // The dashboard's IPC grants, for this sidecar's exact origin only.
+            app.handle().add_capability(remote_capability(port))?;
 
             app.manage(DataDir(data_dir.clone()));
             app.manage(mcp_clients::ServerInfo { port, token: token.clone() });
@@ -1469,6 +1571,7 @@ pub fn run() {
                 storage_dir: storage_dir.clone(),
                 secret,
                 token: token.clone(),
+                launch_nonce: launch_nonce.clone(),
                 port,
                 log_path: log_path.clone(),
             };
@@ -1484,7 +1587,7 @@ pub fn run() {
                 let deadline = Instant::now() + Duration::from_secs(READY_TIMEOUT_SECS);
                 let mut ready = false;
                 while Instant::now() < deadline {
-                    if health_ok(port) {
+                    if health_ok(port, &launch_nonce) {
                         ready = true;
                         break;
                     }
@@ -1698,7 +1801,8 @@ pub fn run() {
 mod tests {
     use super::{
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
-        ide_launcher_args, is_safe_launcher_command, is_truthy_flag, progress_bar_status,
+        health_response_proves, ide_launcher_args, is_known_launcher, is_sidecar_url,
+        is_truthy_flag, main_window_may_navigate, progress_bar_status, remote_capability,
         render_status_dot, status_dot_color, write_new_download,
     };
     use std::fs;
@@ -1880,24 +1984,87 @@ mod tests {
     }
 
     #[test]
-    fn launcher_command_allows_bare_names_and_rejects_anything_path_or_shell_like() {
-        for ok in ["code", "code-insiders", "rider", "idea", "webstorm64", "rustrover"] {
-            assert!(is_safe_launcher_command(ok), "{ok} should be allowed");
-        }
-        for bad in [
-            "",
-            " code",
-            "-rf",
-            "/usr/bin/code",
-            "code me",
-            "code;rm -rf /",
-            "code$(whoami)",
-            "code|cat",
-            "..",
-            &"c".repeat(65),
+    fn only_known_ide_launchers_of_the_family_are_spawned() {
+        for (family, ok) in [
+            ("vscode", "code"),
+            ("vscode", "cursor"),
+            ("jetbrains", "rider"),
+            ("jetbrains", "idea"),
         ] {
-            assert!(!is_safe_launcher_command(bad), "{bad:?} should be rejected");
+            assert!(is_known_launcher(family, ok), "{family} {ok} should be allowed");
         }
+        for (family, bad) in [
+            ("jetbrains", "sh"),
+            ("jetbrains", "python3"),
+            ("vscode", "rm"),
+            ("jetbrains", "wscript"),
+            ("vscode", "rider"),
+            ("jetbrains", "code"),
+            ("emacs", "code"),
+            ("vscode", "/usr/bin/code"),
+            ("vscode", "code;rm -rf /"),
+            ("vscode", ""),
+        ] {
+            assert!(!is_known_launcher(family, bad), "{family} {bad:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn the_readiness_probe_needs_a_200_carrying_the_launch_nonce() {
+        let ok = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                  X-Piwi-Desktop-Nonce: abc123\r\n\r\n{}";
+        assert!(health_response_proves(ok, "abc123"));
+        // Another server on the port: a 200 without the nonce, or with another one.
+        assert!(!health_response_proves("HTTP/1.1 200 OK\r\n\r\n{}", "abc123"));
+        assert!(!health_response_proves(&ok.replace("abc123", "zzz"), "abc123"));
+        // The nonce in the body, not a header, proves nothing.
+        let in_body = "HTTP/1.1 200 OK\r\n\r\nx-piwi-desktop-nonce: abc123";
+        assert!(!health_response_proves(in_body, "abc123"));
+        let unavailable = ok.replace(" 200 OK", " 503 Service Unavailable");
+        assert!(!health_response_proves(&unavailable, "abc123"));
+        assert!(!health_response_proves(ok, ""));
+    }
+
+    #[test]
+    fn the_sidecar_origin_is_matched_exactly() {
+        let url = |s: &str| tauri::Url::parse(s).unwrap();
+        assert!(is_sidecar_url(&url("http://127.0.0.1:3000/projects/1?x=1"), 3000));
+        for bad in [
+            "http://127.0.0.1:3001/",
+            "http://localhost:3000/",
+            "https://127.0.0.1:3000/",
+            "http://localhost:@evil.example/",
+            "http://127.0.0.1:3000@evil.example/",
+            "http://user:pw@127.0.0.1:3000/",
+        ] {
+            assert!(!is_sidecar_url(&url(bad), 3000), "{bad} should be rejected");
+        }
+    }
+
+    #[test]
+    fn the_dashboard_window_stays_on_the_app_and_its_sidecar() {
+        let url = |s: &str| tauri::Url::parse(s).unwrap();
+        assert!(main_window_may_navigate(&url("tauri://localhost/index.html"), None));
+        assert!(main_window_may_navigate(&url("http://tauri.localhost/index.html"), None));
+        assert!(main_window_may_navigate(&url("http://127.0.0.1:3000/__piwi/session"), Some(3000)));
+        assert!(main_window_may_navigate(&url("about:blank"), Some(3000)));
+        assert!(!main_window_may_navigate(&url("http://127.0.0.1:3000/"), None));
+        assert!(!main_window_may_navigate(&url("http://127.0.0.1:8080/"), Some(3000)));
+        assert!(!main_window_may_navigate(&url("https://evil.example/"), Some(3000)));
+        assert!(!main_window_may_navigate(&url("file:///etc/passwd"), Some(3000)));
+    }
+
+    #[test]
+    fn the_remote_capability_grants_only_the_sidecar_origin() {
+        let capability: serde_json::Value =
+            serde_json::from_str(&remote_capability(41234)).unwrap();
+        assert_eq!(capability["remote"]["urls"], serde_json::json!(["http://127.0.0.1:41234"]));
+        assert_eq!(capability["windows"], serde_json::json!(["main"]));
+        assert!(capability["permissions"].as_array().is_some_and(|p| !p.is_empty()));
+        // `add_capability` panics on a capability it cannot parse.
+        assert!(remote_capability(41234)
+            .parse::<tauri::utils::acl::capability::CapabilityFile>()
+            .is_ok());
     }
 
     #[test]

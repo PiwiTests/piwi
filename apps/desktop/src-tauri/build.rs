@@ -4,8 +4,9 @@ use tauri_build::{AppManifest, Attributes};
 // permission for each. The dashboard is served from a real loopback server, so
 // the webview runs at a *remote* origin (`http://127.0.0.1:<port>`) — and Tauri
 // refuses to expose app commands to remote content unless a capability
-// explicitly grants them (see `capabilities/remote.json`). Without this, every
-// `invoke(...)` from the window is rejected by the ACL.
+// explicitly grants them (`runtime-capabilities/remote.json`, added at startup
+// for the sidecar's exact origin). Without this, every `invoke(...)` from the
+// window is rejected by the ACL.
 //
 // Command names here MUST stay in sync with `tauri::generate_handler!` in
 // `src/lib.rs` and the `allow-*` grants in the capability files; the

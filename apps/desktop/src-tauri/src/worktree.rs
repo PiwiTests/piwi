@@ -882,6 +882,9 @@ fn resolve_repo(
     app: &AppHandle,
     project_id: &str,
 ) -> Result<(LinkRecord, PathBuf, PathBuf), String> {
+    if !crate::runner::valid_project_id(project_id) {
+        return Err("invalid project id".into());
+    }
     let record = linked_folder(app, project_id).ok_or("no folder is linked to this project")?;
     let folder = PathBuf::from(&record.path);
     if !folder.is_dir() {
@@ -918,6 +921,9 @@ pub(crate) fn add_worktree_in(
     prefix: &str,
     commit: &str,
 ) -> Result<PathBuf, String> {
+    if !crate::runner::valid_project_id(project_id) {
+        return Err("invalid project id".into());
+    }
     if !commit_exists(git, folder, commit) {
         return Err(format!(
             "commit {} is unknown to the linked repository — run `git fetch` in it first.",

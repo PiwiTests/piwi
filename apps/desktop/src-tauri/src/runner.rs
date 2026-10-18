@@ -290,6 +290,15 @@ pub async fn desktop_pick_import_files(
     .unwrap_or_default()
 }
 
+/// Whether `project_id` is a Piwi project id: digits only. The webview names a
+/// project by it, and it becomes a folder name under the worktrees dir, so
+/// nothing else is accepted.
+pub(crate) fn valid_project_id(project_id: &str) -> bool {
+    !project_id.is_empty()
+        && project_id.len() <= 20
+        && project_id.bytes().all(|b| b.is_ascii_digit())
+}
+
 #[tauri::command]
 pub fn desktop_get_project_link(app: AppHandle, project_id: String) -> Option<ProjectLink> {
     read_links(&app).get(&project_id).map(|r| ProjectLink {
@@ -309,8 +318,8 @@ pub fn desktop_set_project_link(
     project_id: String,
     path: Option<String>,
 ) -> Result<(), String> {
-    if project_id.trim().is_empty() {
-        return Err("missing project id".into());
+    if !valid_project_id(&project_id) {
+        return Err("invalid project id".into());
     }
     let mut links = read_links(&app);
     match path {
@@ -743,6 +752,15 @@ fn after_grace(app: &AppHandle, force: impl FnOnce(&LocalRuns) + Send + 'static)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_project_id_is_digits_only() {
+        assert!(valid_project_id("1"));
+        assert!(valid_project_id("4021"));
+        for bad in ["", "../../etc", "1/2", "1.0", "-1", " 1", "abc", &"9".repeat(21)] {
+            assert!(!valid_project_id(bad), "{bad:?} should be rejected");
+        }
+    }
 
     #[test]
     fn nothing_is_running_before_a_run_starts() {

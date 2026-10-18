@@ -309,6 +309,14 @@ export const PIWI_ENV_VARS = {
     runtimeOnly: true,
     since: '0.16.0',
   },
+  PIWI_DESKTOP_LAUNCH_NONCE: {
+    description:
+      'Random value the desktop (Tauri) app gives its local server at each launch; `/api/health` echoes it so the app only loads its session from the server it started. Set automatically by the desktop shell — not user-configurable. Absent on the server build.',
+    category: 'desktop',
+    secret: true,
+    runtimeOnly: true,
+    since: '0.55.1',
+  },
 
   // ── Database ─────────────────────────────────────────────────────────────
   PIWI_DATABASE_PATH: {
