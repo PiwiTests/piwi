@@ -156,7 +156,8 @@ describe('POST /api/test-runs/upload', () => {
 
     const [first, second] = await Promise.all([upload({ parts: parts() }), upload({ parts: parts() })]);
     expect(second.runId).toBe(first.runId);
-    expect(second).toMatchObject({ duplicate: true });
+    // Either upload may reach the server first; the other answers as the repeat.
+    expect([first, second].filter((r) => (r as { duplicate?: boolean }).duplicate)).toHaveLength(1);
     expect(await db.select().from(schema.testRuns)).toHaveLength(1);
     expect(await db.select().from(schema.files)).toHaveLength(1);
   });
