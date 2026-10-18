@@ -172,8 +172,9 @@ export class RunSubmitter {
       auth = sm?.auth ?? (await this.httpClient.resolveAuth(run.options));
     } catch (error) {
       this.logger.error(`Authentication failed: ${errorMessage(error)}`);
+      this.logRecoverySaved();
       this.saveRecovery(this.buildRunPayload(run, overallStatus, duration));
-      throw error;
+      return null;
     }
 
     // A streaming session retries the recovery file when it opens; without one,
@@ -357,11 +358,7 @@ export class RunSubmitter {
       this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
-      if (error instanceof HttpError && error.status === 401 && !auth) {
-        this.logAuthRequired(run.options.serverUrl);
-        this.saveRecovery(payload);
-        throw error;
-      }
+      if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.warn(`Failed to upload with files: ${errorMessage(error)}`);
       this.logger.info('Falling back to JSON upload...');
       return { done: false, output: null };
@@ -380,17 +377,10 @@ export class RunSubmitter {
       this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
-      // If the server returned 401 and no auth was configured, this is a
-      // configuration error — throw so the caller knows it's fatal.
-      if (error instanceof HttpError && error.status === 401 && !auth) {
-        this.logAuthRequired(run.options.serverUrl);
-        this.saveRecovery(payload);
-        throw error;
-      }
+      if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.error(`All upload methods failed: ${errorMessage(error)}`);
-      this.logger.info(
-        `Saved a local recovery copy — it will be uploaded automatically on your next test run. ` +
-          `If this keeps happening, check that serverUrl (${run.options.serverUrl ?? 'not set'}) is correct and reachable.`,
+      this.logRecoverySaved(
+        `If this keeps happening, check that serverUrl (${run.options.serverUrl ?? 'not set'}) is correct and reachable.`,
       );
       this.saveRecovery(payload);
       // The ladder is exhausted; nothing to surface to CI.
@@ -412,12 +402,26 @@ export class RunSubmitter {
     this.recovery.save(serializeRun(payload, { includeTestCases: true }));
   }
 
-  /** Log one actionable line explaining how to fix a 401 caused by a missing credential. */
-  private logAuthRequired(serverUrl?: string | null): void {
+  /**
+   * The dashboard asked for a credential the reporter has none of: no other
+   * rung can succeed, so the ladder stops with the run saved for the next one.
+   * The test run's own result stays what Playwright made it.
+   */
+  private stopForMissingAuth(run: CollectedRun, payload: RunPayload): SubmitOutcome {
     this.logger.error(
-      `Authentication is required by ${serverUrl ?? 'the dashboard'} but no credentials were configured. ` +
+      `Authentication is required by ${run.options.serverUrl ?? 'the dashboard'} but no credentials were configured. ` +
         `Create an API key (Settings → Users on the dashboard) and set the reporter's \`apiKey\` option ` +
         `or the PIWI_API_KEY environment variable.`,
+    );
+    this.logRecoverySaved();
+    this.saveRecovery(payload);
+    return { done: true, output: null };
+  }
+
+  /** Say where the run went when the dashboard did not take it, with an optional hint. */
+  private logRecoverySaved(hint?: string): void {
+    this.logger.info(
+      `Saved a local recovery copy — it will be uploaded automatically on your next test run.${hint ? ` ${hint}` : ''}`,
     );
   }
 }

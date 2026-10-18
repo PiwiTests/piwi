@@ -519,7 +519,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(fs.existsSync(recoveryFilePath(projectName))).toBe(false);
   });
 
-  it('401 with no auth propagates (does not fall back) and saves a recovery copy', async () => {
+  it('a 401 with no credential stops the ladder and saves a recovery copy, leaving the run result alone', async () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/submit') {
         textRes(res, 401, 'unauthorized');
@@ -539,12 +539,42 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       liveFileUploads: false,
       reports: [{ type: 'missing-type', dir: '/nonexistent' }],
     });
-    await expect(runOneTest(reporter, 'auth-fail-test')).rejects.toThrow(/401/);
+    // onEnd never throws: Playwright would count it as a failure of a green run.
+    await expect(runOneTest(reporter, 'auth-fail-test')).resolves.toBeUndefined();
 
-    // The run is not lost: a recovery copy is written before the throw.
+    // No other rung can succeed without a credential.
+    expect(urlsHit(server)).not.toContain('/api/test-runs/submit');
+    // The run is not lost: a recovery copy is written.
     const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
     expect(recovered.projectName).toBe(projectName);
     expect(recovered.testCases[0].title).toBe('auth-fail-test');
+  });
+
+  it('a failed login saves a recovery copy without failing the run', async () => {
+    server = await startServer((req, res) => {
+      if (req.url === '/api/auth/login') textRes(res, 401, 'bad credentials');
+      else textRes(res, 404, 'nope');
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      username: 'ci',
+      password: 'wrong',
+      streaming: false,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+    });
+    await expect(runOneTest(reporter, 'login-fail-test')).resolves.toBeUndefined();
+
+    expect(urlsHit(server)).toEqual(['/api/auth/login']);
+    const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
+    expect(recovered.testCases[0].title).toBe('login-fail-test');
+  });
+
+  it('leaves the terminal output to Playwright', () => {
+    expect(new PiwiDashboardReporter({ serverUrl: 'http://localhost:1', projectName }).printsToStdio()).toBe(false);
   });
 });
 
