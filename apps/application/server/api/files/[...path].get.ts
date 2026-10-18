@@ -6,10 +6,10 @@ import {
   resolveBugReportProjectId,
 } from '../../utils/project-access';
 import { getStorage } from '../../storage';
-import { gunzip } from 'zlib';
-import { promisify } from 'util';
 import { resolveStoredTrace } from '../../utils/trace-reconstruct';
 import { prepareHtmlReport } from '../../utils/html-report';
+import { readReportArchiveIndex } from '../../utils/report-archive';
+import { getDatabase } from '../../database';
 import sharp from 'sharp';
 
 defineRouteMeta({
@@ -38,43 +38,6 @@ defineRouteMeta({
     'x-required-permission': 'project:read',
   },
 });
-
-const gunzipAsync = promisify(gunzip);
-
-// Cap decompressed archive size to prevent gzip bombs. Stored report archives
-// originate from uploads (open when auth is disabled) and are inflated fully
-// into memory here, so an unbounded ratio could expand a few kilobytes to
-// gigabytes and OOM the server. 1 GiB exceeds any realistic report while
-// stopping bombs; zlib throws ERR_BUFFER_TOO_LARGE past the cap (callers
-// already treat a decompression failure as "not found" and fall through).
-const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024; // 1 GiB
-
-/**
- * Parse a compressed report archive and find a specific file by name.
- * Archive format: custom binary with LE length-prefixed path+content pairs.
- */
-async function findInArchive(buffer: Buffer, targetName: string): Promise<Buffer | null> {
-  const uncompressed = await gunzipAsync(buffer, { maxOutputLength: MAX_ARCHIVE_BYTES });
-  let offset = 0;
-  while (offset < uncompressed.length) {
-    if (offset + 4 > uncompressed.length) break;
-    const pathLength = uncompressed.readUInt32LE(offset);
-    offset += 4;
-    if (pathLength === 0 || pathLength > 10000) break;
-    if (offset + pathLength > uncompressed.length) break;
-    const filePath = uncompressed.toString('utf8', offset, offset + pathLength);
-    offset += pathLength;
-    if (offset + 4 > uncompressed.length) break;
-    const contentLength = uncompressed.readUInt32LE(offset);
-    offset += 4;
-    if (offset + contentLength > uncompressed.length) break;
-    if (filePath === targetName || filePath.endsWith(targetName)) {
-      return uncompressed.subarray(offset, offset + contentLength);
-    }
-    offset += contentLength;
-  }
-  return null;
-}
 
 const COMPRESSIBLE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
@@ -123,6 +86,13 @@ export default eventHandler(async (event) => {
   }
 
   const storage = getStorage();
+  const projectId = projectMatch ? Number(projectMatch[1]) : null;
+
+  /** The `index.html` inside the report archive stored at `archivePath`, or null. */
+  async function reportIndex(archivePath: string): Promise<Buffer | null> {
+    if (projectId === null) return null;
+    return readReportArchiveIndex(await getDatabase(), projectId, archivePath, () => storage.readFile(archivePath));
+  }
 
   // Security headers applied to all file responses
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
@@ -257,8 +227,18 @@ export default eventHandler(async (event) => {
 
   // 1. Try exact path
   if (await storage.exists(path)) {
-    const fileContent = await storage.readFile(path);
     const ext = extname(path).toLowerCase();
+
+    // An uploaded report archive (.gz): serve the index.html inside it
+    if (ext === '.gz') {
+      const htmlContent = await reportIndex(path);
+      if (htmlContent) {
+        setResponseHeader(event, 'Content-Type', 'text/html');
+        return prepareHtmlResponse(htmlContent);
+      }
+    }
+
+    const fileContent = await storage.readFile(path);
 
     // Slim trace blob: reconstruct full ZIP from shared resource pool
     if (ext === '.zip' && path.includes('/blobs/')) {
@@ -278,19 +258,6 @@ export default eventHandler(async (event) => {
         return fullZip;
       }
       // Not a slim blob, or it could not be parsed — fall through to serve it as stored
-    }
-
-    // If the file is a .gz archive, try to serve index.html from inside
-    if (ext === '.gz') {
-      try {
-        const htmlContent = await findInArchive(fileContent, 'index.html');
-        if (htmlContent) {
-          setResponseHeader(event, 'Content-Type', 'text/html');
-          return prepareHtmlResponse(htmlContent);
-        }
-      } catch {
-        // Fall through to serve raw gzip
-      }
     }
 
     const contentType = resolveContentType(ext);
@@ -330,18 +297,13 @@ export default eventHandler(async (event) => {
     return prepareHtmlResponse(fileContent);
   }
 
-  // 3. Try path + .gz (compressed archive - decompress and serve index.html)
+  // 3. Try path + .gz (an uploaded report archive - serve the index.html inside it)
   const gzPath = `${path}.gz`;
   if (await storage.exists(gzPath)) {
-    const gzContent = await storage.readFile(gzPath);
-    try {
-      const htmlContent = await findInArchive(gzContent, 'index.html');
-      if (htmlContent) {
-        setResponseHeader(event, 'Content-Type', 'text/html');
-        return prepareHtmlResponse(htmlContent);
-      }
-    } catch {
-      // Fall through to 404
+    const htmlContent = await reportIndex(gzPath);
+    if (htmlContent) {
+      setResponseHeader(event, 'Content-Type', 'text/html');
+      return prepareHtmlResponse(htmlContent);
     }
   }
 
