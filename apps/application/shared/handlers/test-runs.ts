@@ -1,4 +1,4 @@
-import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt } from 'drizzle-orm';
+import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt, getTableColumns } from 'drizzle-orm';
 import {
   testRuns,
   testCases,
@@ -172,15 +172,15 @@ export async function getTestRun(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, id));
 
-  const suites = await fetchAndFormatSuites(
-    db,
-    testSuites,
-    testRun.projectId,
-    [...new Set(runsCases.map((tc: any) => tc.filePath))],
-    eq,
-    and,
-    inArray,
-  );
+  // The run's spec files, the run's executions and their links are selected
+  // through the run, never as a list of ids: a large run would pass the
+  // database's limit on bound parameters (32,766 in SQLite).
+  const runFilePaths = db
+    .selectDistinct({ filePath: testCases.filePath })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(eq(testRunsCases.testRunId, id));
+  const suites = await fetchAndFormatSuites(db, testSuites, testRun.projectId, runFilePaths, eq, and, inArray);
 
   const formattedTestCases = runsCases.map((tc: any) => ({
     executionId: tc.id,
@@ -225,13 +225,13 @@ export async function getTestRun(
     blockedBy: (tc.blockedBy as string | null) ?? null,
   }));
 
-  const runsCaseIds = runsCases.map((tc: any) => tc.id);
   const linksForRun = await db.select().from(entityLinks).where(eq(entityLinks.testRunId, id));
 
-  const linksForCases =
-    runsCaseIds.length > 0
-      ? await db.select().from(entityLinks).where(inArray(entityLinks.testRunsCaseId, runsCaseIds))
-      : [];
+  const linksForCases = await db
+    .select(getTableColumns(entityLinks))
+    .from(entityLinks)
+    .innerJoin(testRunsCases, eq(entityLinks.testRunsCaseId, testRunsCases.id))
+    .where(eq(testRunsCases.testRunId, id));
 
   const caseLinksMap = new Map<number, typeof linksForCases>();
   for (const link of linksForCases) {

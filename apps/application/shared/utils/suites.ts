@@ -31,16 +31,21 @@ function formatSuites(suiteRows: SuiteRow[]): FormattedSuite[] {
   }));
 }
 
+/**
+ * The suites of a project in the given spec files: a list of paths, or a
+ * subquery selecting them, which keeps a run of any size within the database's
+ * limit on bound parameters.
+ */
 export async function fetchAndFormatSuites(
   db: any,
   testSuitesTable: any,
   projectId: number,
-  filePaths: string[],
+  filePaths: string[] | object,
   eq: any,
   and: any,
   inArray: any,
 ): Promise<FormattedSuite[]> {
-  if (filePaths.length === 0) return [];
+  if (Array.isArray(filePaths) && filePaths.length === 0) return [];
   const suiteRows = await db
     .select({
       filePath: testSuitesTable.filePath,
