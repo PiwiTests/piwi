@@ -7,6 +7,8 @@
  * exact one-line change rather than only a copyable locator string.
  */
 
+import { safeLocator } from './codegen';
+
 /** Escape a string for literal use inside a RegExp. */
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -50,9 +52,14 @@ function matchingParen(s: string, open: number): number {
  * recommendation (`getByTestId('x').getByRole('button')`) therefore slots in
  * ahead of any trailing `.click()`.
  *
- * Returns null when the method isn't found on the line, the parens are
- * unbalanced, or the replacement would be a no-op — the caller then falls back
- * to showing the line number and a copy button.
+ * The recommendation goes in only as {@link safeLocator} re-renders it: a
+ * chain of known Playwright methods with literal arguments, in canonical form.
+ * Anything else is refused, so no generated text is pasted into a test as is.
+ *
+ * Returns null when the recommendation is not such a locator, the method isn't
+ * found on the line, the parens are unbalanced, or the replacement would be a
+ * no-op — the caller then falls back to showing the line number and a copy
+ * button.
  */
 export function buildLocatorEdit(
   sourceLine: string,
@@ -60,6 +67,8 @@ export function buildLocatorEdit(
   recommendedLocator: string,
 ): { old: string; new: string } | null {
   if (!sourceLine || !failingMethod || !recommendedLocator) return null;
+  const safe = safeLocator(recommendedLocator);
+  if (!safe) return null;
   const re = new RegExp(`${escapeRegExp(failingMethod)}\\s*\\(`, 'g');
   let m: RegExpExecArray | null;
   while ((m = re.exec(sourceLine)) !== null) {
@@ -70,15 +79,20 @@ export function buildLocatorEdit(
     const openParen = methodStart + m[0].lastIndexOf('(');
     const close = matchingParen(sourceLine, openParen);
     if (close === -1) return null;
-    const next = sourceLine.slice(0, methodStart) + recommendedLocator + sourceLine.slice(close + 1);
+    const next = sourceLine.slice(0, methodStart) + safe.text + sourceLine.slice(close + 1);
     return next === sourceLine ? null : { old: sourceLine, new: next };
   }
   return null;
 }
 
-/** Escape a value for a string literal delimited by `quote`. */
+/** Escape a value for a string literal delimited by `quote`, on one line. */
 function escapeForQuote(value: string, quote: string): string {
-  let out = value.replace(/\\/g, '\\\\').replace(/\n/g, '\\n');
+  let out = value
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
   out = out.split(quote).join(`\\${quote}`);
   return quote === '`' ? out.replace(/\$\{/g, '\\${') : out;
 }

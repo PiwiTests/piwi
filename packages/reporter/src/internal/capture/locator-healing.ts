@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { fingerprintPresent, matchRenamedElement, parseAriaCandidates } from '@piwitests/core/locator-fingerprint';
 import type { ElementFingerprint } from '@piwitests/core/locator-fingerprint';
 import { LOCATOR_BUILDER_METHODS } from '@piwitests/core/locator-methods';
+import { quoteJsString } from '@piwitests/core/locator-chain';
 
 /**
  * Reporter-local locator healing.
@@ -310,8 +311,6 @@ const NAME_BASED_METHODS = new Set([
   'getByAltText',
 ]);
 
-const escAttr = (s: string): string => s.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
-
 const SUGG_TEXT_ROLES = new Set([
   'button',
   'link',
@@ -353,10 +352,10 @@ export function renderFailing(failed: FailedLocatorInfo): string {
   const { role, name } = failedNameAndRole(failed);
   if (failed.method === 'getByRole') {
     return name
-      ? `getByRole('${escAttr(role ?? '')}', { name: '${escAttr(name)}' })`
-      : `getByRole('${escAttr(role ?? '')}')`;
+      ? `getByRole(${quoteJsString(role ?? '')}, { name: ${quoteJsString(name)} })`
+      : `getByRole(${quoteJsString(role ?? '')})`;
   }
-  return `${failed.method}('${escAttr(name ?? '')}')`;
+  return `${failed.method}(${quoteJsString(name ?? '')})`;
 }
 
 /** Build fresh locator suggestions for a matched candidate, with the failed method's style first. */
@@ -372,9 +371,9 @@ function freshSuggestions(
   };
 
   const levelPart = candidate.level != null ? `, level: ${candidate.level}` : '';
-  const roleLoc = `getByRole('${escAttr(role)}', { name: '${escAttr(name)}'${levelPart} })`;
-  const textLoc = `getByText('${escAttr(name)}')`;
-  const labelLoc = `getByLabel('${escAttr(name)}')`;
+  const roleLoc = `getByRole(${quoteJsString(role)}, { name: ${quoteJsString(name)}${levelPart} })`;
+  const textLoc = `getByText(${quoteJsString(name)})`;
+  const labelLoc = `getByLabel(${quoteJsString(name)})`;
 
   // Same-style first: a broken getByText is re-suggested as getByText where viable.
   if (failedMethod === 'getByText' && SUGG_TEXT_ROLES.has(role)) push(textLoc);
