@@ -107,6 +107,14 @@ describe('matchRenamedElement', () => {
     expect(m?.candidate.name).toBe('Open page');
   });
 
+  test('a shared short or function word is no match', () => {
+    const m = matchRenamedElement({ role: 'link', name: 'Go to your cart' }, [
+      { role: 'link', name: 'Back to top', level: null },
+      { role: 'link', name: 'Update your profile', level: null },
+    ]);
+    expect(m).toBeNull();
+  });
+
   test('returns null when several candidates and none clears the similarity floor', () => {
     const m = matchRenamedElement({ role: 'button', name: 'Delete' }, [
       { role: 'button', name: 'Save', level: null },
@@ -258,23 +266,86 @@ describe('elementMatchOutcome', () => {
 describe('generateFromAriaSnapshot', () => {
   const failing = { method: 'getByText', args: { text: 'Save changes' } };
 
-  test('ranks token-overlap with the failing text above unrelated candidates', () => {
-    const aria = '- button "Cancel"\n- button "Save changes"';
+  test('ranks the closest name first and leaves out unrelated candidates', () => {
+    const aria = '- button "Save changes"\n- button "Save"\n- button "Cancel"';
     const alts = generateFromAriaSnapshot(aria, failing)!;
     expect(alts[0]).toMatchObject({ method: 'getByRole', args: { role: 'button', name: 'Save changes' } });
-    const save = alts.find((a) => a.args.name === 'Save changes')!;
-    const cancel = alts.find((a) => a.args.name === 'Cancel')!;
-    expect(save.score).toBeGreaterThan(cancel.score);
+    const exact = alts.find((a) => a.args.name === 'Save changes')!;
+    const partial = alts.find((a) => a.args.name === 'Save')!;
+    expect(exact.score).toBeGreaterThan(partial.score);
+    expect(alts.some((a) => a.args.name === 'Cancel' || a.args.text === 'Cancel')).toBe(false);
   });
 
-  test('position bonus lifts later (content-area) candidates over an earlier match-less one', () => {
-    // Neither name overlaps the failing text, so only the position bonus ranks
-    // them — the later candidate (content, not sidebar) must win.
-    const aria = '- link "Home"\n- link "Docs"';
-    const alts = generateFromAriaSnapshot(aria, { method: 'getByText', args: { text: 'zzz' } })!;
-    const docs = alts.find((a) => a.args.name === 'Docs')!;
-    const home = alts.find((a) => a.args.name === 'Home')!;
-    expect(docs.score).toBeGreaterThan(home.score);
+  test('keeps only the candidates that share a word with the failing text', () => {
+    const aria = [
+      '- navigation:',
+      '  - link "Home"',
+      '  - link "Orders"',
+      '- main:',
+      '  - heading "Unsaved changes" [level=2]',
+      '  - button "Save draft"',
+      '  - button "Cancel"',
+      '- contentinfo:',
+      '  - link "Privacy policy"',
+      '  - link "Contact us"',
+    ].join('\n');
+    const alts = generateFromAriaSnapshot(aria, failing)!;
+    const names = new Set(alts.map((a) => a.args.name ?? a.args.text));
+    expect(names).toEqual(new Set(['Unsaved changes', 'Save draft']));
+  });
+
+  test('returns null when no candidate relates to the failing text', () => {
+    const aria = '- link "Home"\n- link "Docs"\n- link "Privacy policy"';
+    expect(generateFromAriaSnapshot(aria, { method: 'getByText', args: { text: 'Checkout' } })).toBeNull();
+  });
+
+  test('a shared short or function word does not relate two labels', () => {
+    const aria = '- link "Back to top"\n- link "Update your profile"';
+    expect(generateFromAriaSnapshot(aria, { method: 'getByText', args: { text: 'Go to your cart' } })).toBeNull();
+  });
+
+  test('ranks the role the failing getByRole named above another role at equal overlap', () => {
+    const aria = '- button "Export"\n- link "Export"';
+    const alts = generateFromAriaSnapshot(aria, {
+      method: 'getByRole',
+      args: { role: 'button', name: 'Export all' },
+    })!;
+    expect(alts[0]).toMatchObject({ method: 'getByRole', args: { role: 'button', name: 'Export' } });
+    expect(alts.some((a) => a.args.role === 'link')).toBe(true);
+  });
+
+  test('keeps the lone candidate of the failing role even with no shared word', () => {
+    const failingSubmit = { method: 'getByRole', args: { role: 'button', name: 'Submit' } };
+    const lone = generateFromAriaSnapshot('- link "Home"\n- button "Send"', failingSubmit)!;
+    expect(lone.map((a) => a.locator)).toEqual(["getByRole('button', { name: 'Send' })", "getByText('Send')"]);
+    expect(generateFromAriaSnapshot('- button "Send"\n- button "Cancel"', failingSubmit)).toBeNull();
+  });
+
+  test('a getByRole with no name keeps the candidates of its role', () => {
+    const alts = generateFromAriaSnapshot('- link "Home"\n- button "Pay"\n- button "Cancel"', {
+      method: 'getByRole',
+      args: { role: 'button' },
+    })!;
+    expect(new Set(alts.map((a) => a.args.name ?? a.args.text))).toEqual(new Set(['Pay', 'Cancel']));
+  });
+
+  test('reads the words of a test id', () => {
+    const aria = '- link "Home"\n- button "Submit order"';
+    const alts = generateFromAriaSnapshot(aria, { method: 'getByTestId', args: { testId: 'submitOrder-btn' } })!;
+    expect(alts[0]!.locator).toBe("getByRole('button', { name: 'Submit order' })");
+    expect(alts.some((a) => a.args.name === 'Home')).toBe(false);
+  });
+
+  test('a CSS locator gets no alternative', () => {
+    expect(
+      generateFromAriaSnapshot('- button "Login"', { method: 'locator', args: { selector: '#login' } }),
+    ).toBeNull();
+  });
+
+  test('tree order breaks a tie, later first (content sits after the sidebar)', () => {
+    const aria = '- link "Billing settings"\n- link "Account settings"';
+    const alts = generateFromAriaSnapshot(aria, { method: 'getByText', args: { text: 'Settings' } })!;
+    expect(alts[0]!.args.name).toBe('Account settings');
   });
 
   test('emits getByText for text-bearing roles and getByLabel for fields, below the role locator', () => {

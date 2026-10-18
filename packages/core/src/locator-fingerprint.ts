@@ -49,10 +49,10 @@ const MATCH_SIMILARITY = 0.2;
 /**
  * Roles whose accessible name comes from their visible text — `getByText` is
  * viable. The single source of truth shared by fresh-locator generation
- * (`freshLocatorsFromCandidate`, below) and the server's ARIA-fallback healing
- * (`generateFromAriaSnapshot` in server/utils/locator-healing.ts): both emit a
- * `getByText` alternative for these roles, whose visible text content is exactly
- * what `getByText` matches.
+ * (`freshLocatorsFromCandidate`) and the ARIA-fallback healing
+ * (`generateFromAriaSnapshot`), both below: both emit a `getByText` alternative
+ * for these roles, whose visible text content is exactly what `getByText`
+ * matches.
  */
 const TEXT_CONTENT_ROLES = new Set([
   'button',
@@ -132,6 +132,46 @@ export function textSimilarity(a: string | null | undefined, b: string | null | 
   return (2 * common) / (sa.size + sb.size);
 }
 
+/**
+ * Function words of three letters or more that relate two labels by accident
+ * ("Add to your cart" and "Update your profile" share "your"), in English and
+ * French. Shorter words ("to", "of", "de") are dropped by their length.
+ */
+const FUNCTION_WORDS = new Set(
+  'the and for with from your you our this that les des une pour avec par sur aux dans vos votre nos notre'.split(' '),
+);
+
+/**
+ * The words of a label that carry its meaning, lowercased. The label is split
+ * on anything but letters and digits and where a lowercase letter meets an
+ * uppercase one (a test id `submitOrder` reads as "submit order"); words of
+ * three letters or more that are not function words are kept. A label with no
+ * such word keeps all its words ("OK").
+ */
+function significantWords(text: string | null | undefined): Set<string> {
+  const all = (text ?? '')
+    .replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  const meaningful = all.filter((w) => w.length >= 3 && !FUNCTION_WORDS.has(w));
+  return new Set(meaningful.length > 0 ? meaningful : all);
+}
+
+/**
+ * `textSimilarity` over the significant words of each label, so two labels
+ * that share only short or function words ("Go to cart", "Back to top") score 0.
+ */
+function significantWordSimilarity(a: string | null | undefined, b: string | null | undefined): number {
+  const sa = significantWords(a);
+  const sb = significantWords(b);
+  if (sa.size === 0 && sb.size === 0) return 1;
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let common = 0;
+  for (const w of sa) if (sb.has(w)) common++;
+  return (2 * common) / (sa.size + sb.size);
+}
+
 /** True when an element with this fingerprint is still present among the candidates (so it was NOT renamed). */
 export function fingerprintPresent(fp: ElementFingerprint, candidates: AriaCandidate[]): boolean {
   if (!fp.name) return false; // no name to compare — can't confirm presence
@@ -148,7 +188,8 @@ export function fingerprintPresent(fp: ElementFingerprint, candidates: AriaCandi
  *  - a single remaining candidate is a confident match even if the name changed
  *    completely (the canonical "button text changed" case);
  *  - with several, the best name-similarity wins, and must clear a small floor
- *    so we don't emit a noisy guess;
+ *    so we don't emit a noisy guess; short and function words do not count
+ *    (`significantWordSimilarity`), so a shared "to" is no match;
  *  - on a total rename (no shared tokens), the element at the captured
  *    document-order index among same-role elements is used as a last resort —
  *    only when the same-role count is unchanged since capture, so DOM-vs-ARIA
@@ -177,7 +218,7 @@ export function matchRenamedElement(fp: ElementFingerprint, candidates: AriaCand
   let best: AriaCandidate | null = null;
   let bestScore = -1;
   for (const c of pool) {
-    const s = textSimilarity(c.name, fp.name);
+    const s = significantWordSimilarity(c.name, fp.name);
     if (s > bestScore) {
       bestScore = s;
       best = c;
@@ -251,60 +292,54 @@ export function freshLocatorsFromCandidate(c: AriaCandidate): RankedLocator[] {
 //     failing element (element-match healing) in a FIXED band (role 60 / text 55
 //     / label 50): confidence comes from the match, not the text.
 //   • generateFromAriaSnapshot is the last-resort fallback with NO matched
-//     element — it ranks EVERY named candidate on the page by RELEVANCE to the
-//     failing locator's text: base 40 + Jaccard token overlap (0–25) + a
-//     position bonus (0–10; content sits after the sidebar in tree order).
+//     element — it keeps only the candidates RELATED to the failing locator
+//     (a shared significant word, or the role it named) and ranks them by
+//     relevance: base 40 + word overlap (0–25) + 5 for the failing role, with
+//     tree order breaking ties (later first: content sits after the sidebar).
+
+/** Score bonus of a candidate with the role the failing `getByRole` named. */
+const SAME_ROLE_BONUS = 5;
+
+/** The most alternatives the ARIA fallback returns. */
+const ARIA_FALLBACK_LIMIT = 8;
 
 /**
- * Generate alternatives from an ARIA snapshot, filtered and scored by relevance
- * to the failing locator's text — the fallback used when no prior snapshot or
- * element match exists. Accepts the failing locator's args so it can:
- * 1. filter to elements whose accessible name overlaps the failing text,
- * 2. score proportionally to token overlap, and
- * 3. also emit `getByText` for text-bearing roles.
+ * Generate alternatives from an ARIA snapshot for a failing locator — the
+ * fallback used when no prior snapshot or element match exists. With no
+ * element to start from, a candidate is kept only when it relates to the
+ * failing locator:
+ * 1. its accessible name shares a significant word with the failing text;
+ * 2. it is the one named candidate with the role the failing `getByRole`
+ *    named, whatever its name (the element match's lone same-role rule);
+ * 3. when the failing locator has no text, it has the role it named.
+ * A locator with neither text nor role (a CSS selector) gets no alternative.
+ * Each kept candidate emits `getByRole`, plus `getByText` for text-bearing
+ * roles or `getByLabel` for fields.
  */
 export function generateFromAriaSnapshot(
   ariaSnapshot: string | null,
   failingLocator: { method: string; args: Record<string, unknown> } | null,
 ): RankedLocator[] | null {
-  if (!ariaSnapshot) return null;
+  if (!ariaSnapshot || !failingLocator) return null;
+  const { role: failingRole, text: failingText } = failingTarget(failingLocator);
+  if (!failingRole && !failingText) return null;
 
-  const alts: RankedLocator[] = [];
-  const seen = new Set<string>();
-  const add = (l: RankedLocator) => {
-    if (!seen.has(l.locator)) {
-      seen.add(l.locator);
-      alts.push(l);
-    }
-  };
-
-  // The failing text: the string literal(s) the test was searching for.
-  const failingText = extractFailingText(failingLocator);
-  const failingTokens = failingText ? tokenize(failingText) : null;
-
-  // Collect all candidates first so the position bonus (content-area elements
-  // appear later in the ARIA tree than sidebar/nav) can rank them apart.
   const candidates = parseAriaCandidates(ariaSnapshot);
-  const totalCandidates = candidates.length;
+  const sameRoleCount = failingRole ? candidates.filter((c) => c.name && c.role === failingRole).length : 0;
 
-  for (let idx = 0; idx < candidates.length; idx++) {
-    const { role, name, level } = candidates[idx]!;
+  // Every alternative with its candidate's place in tree order, the tiebreak.
+  const ranked: Array<{ alt: RankedLocator; order: number }> = [];
+  for (let order = 0; order < candidates.length; order++) {
+    const { role, name, level } = candidates[order]!;
     if (!name) continue;
 
-    // Score: 40 base + text-overlap bonus (Jaccard, 0–25) + position bonus
-    // (0–10, linear across tree order — content sits after the sidebar).
-    let score = 40;
-    if (failingTokens && failingTokens.size > 0) {
-      const nameTokens = tokenize(name);
-      const intersection = [...nameTokens].filter((t) => failingTokens.has(t)).length;
-      const union = failingTokens.size + nameTokens.size - intersection;
-      if (intersection > 0 && union > 0) {
-        score += Math.round((intersection / union) * 25);
-      }
-    }
-    if (totalCandidates > 1) {
-      score += Math.round((idx / (totalCandidates - 1)) * 10);
-    }
+    const sameRole = role === failingRole;
+    const overlap = failingText ? significantWordSimilarity(failingText, name) : 0;
+    const related = failingText ? overlap > 0 || (sameRole && sameRoleCount === 1) : sameRole;
+    if (!related) continue;
+
+    const score = 40 + Math.round(overlap * 25) + (sameRole ? SAME_ROLE_BONUS : 0);
+    const add = (alt: RankedLocator) => ranked.push({ alt, order });
 
     add(
       level != null
@@ -342,29 +377,33 @@ export function generateFromAriaSnapshot(
     }
   }
 
-  if (alts.length === 0) return null;
-  return alts.sort((a, b) => b.score - a.score).slice(0, 8);
+  ranked.sort((a, b) => b.alt.score - a.alt.score || b.order - a.order);
+  const alts: RankedLocator[] = [];
+  const seen = new Set<string>();
+  for (const { alt } of ranked) {
+    if (seen.has(alt.locator)) continue;
+    seen.add(alt.locator);
+    alts.push(alt);
+    if (alts.length === ARIA_FALLBACK_LIMIT) break;
+  }
+  return alts.length > 0 ? alts : null;
 }
 
 /**
- * The first meaningful string argument of a failing locator, lowercased, for
- * relevance comparison. For getByText/getByLabel/getByPlaceholder/getByAltText/
- * getByTitle it's the primary text argument; for getByRole, the name option.
+ * What a failing locator searched for: the role its `getByRole` named, and its
+ * text — the text, label, placeholder, alt text, title or accessible name it
+ * matched by, or else its test id, which often spells the element's purpose
+ * (`submit-order`).
  */
-function extractFailingText(locator: { method: string; args: Record<string, unknown> } | null): string | null {
-  if (!locator) return null;
+function failingTarget(locator: { method: string; args: Record<string, unknown> }): {
+  role: string | null;
+  text: string | null;
+} {
   const a = locator.args;
-  const text = (a.text ?? a.label ?? a.placeholder ?? a.alt ?? a.title ?? a.name) as string | undefined;
-  return text?.toLowerCase().trim() || null;
-}
-
-function tokenize(text: string): Set<string> {
-  return new Set(
-    text
-      .toLowerCase()
-      .split(/[\s\-_.:,;!?()[\]{}'"\\/]+/)
-      .filter((t) => t.length > 0),
-  );
+  const role = locator.method === 'getByRole' && typeof a.role === 'string' ? a.role : null;
+  const raw = a.text ?? a.label ?? a.placeholder ?? a.alt ?? a.title ?? a.name ?? a.testId;
+  const text = typeof raw === 'string' && /[\p{L}\p{N}]/u.test(raw) ? raw : null;
+  return { role, text };
 }
 
 /**
