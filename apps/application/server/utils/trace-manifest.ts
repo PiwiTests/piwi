@@ -8,8 +8,9 @@ import { safeStorageSegment } from './sanitize-filename';
  * because it lives in the project's shared pool (`project-<id>/trace-resources/`).
  *
  * - `resources` — the names of the trace's `resources/<name>` entries (network
- *   bodies, DOM snapshot assets), pooled under the name Playwright gave them,
- *   which is already their content hash.
+ *   bodies, DOM snapshot assets) pooled under the name Playwright gave them: the
+ *   SHA-1 of their bytes, checked when the trace is stored. A `resources/` entry
+ *   with any other name stays in the slim ZIP.
  * - `pooledEntries` — the other entries moved to the pool, by archive entry
  *   name → pool name: the per-action screenshots (`screenshots/`) and the
  *   screencast frames (`screencast/`) of a Playwright 1.63+ trace. Their names
