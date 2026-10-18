@@ -38,6 +38,22 @@ export function readSourceSnippet(
   }
 }
 
+/** How much of an error text the stack-frame scans read: the frames follow the message. */
+const MAX_SCANNED_ERROR_CHARS = 64 * 1024;
+
+/**
+ * The stack frames of an error text (`    at fn (file:line:col)` or
+ * `    at file:line:col`): the file and the line of each, from the first
+ * {@link MAX_SCANNED_ERROR_CHARS} characters.
+ */
+function* stackFrames(errorText: string): Generator<{ file: string; line: number }> {
+  const frameRe = /^[ \t]+at (?:[^(\n]*\()?(.+?):(\d+):\d+\)?[ \t]*$/gm;
+  const text = errorText.slice(0, MAX_SCANNED_ERROR_CHARS);
+  for (let m = frameRe.exec(text); m; m = frameRe.exec(text)) {
+    yield { file: m[1]!, line: parseInt(m[2]!, 10) };
+  }
+}
+
 /**
  * Collect source snippets for every in-project frame in a failure's call stack,
  * innermost first — the line that actually threw plus the callers above it, so
@@ -71,20 +87,18 @@ export function collectSourceFrames(
 
   // Walk the stack in order (innermost frame first), keeping in-project frames.
   if (errorText) {
-    const stackRe = /^\s+at (?:[^(]*\()?(.+?):(\d+):\d+\)?\s*$/gm;
-    let m: RegExpExecArray | null;
-    while ((m = stackRe.exec(errorText)) !== null && picked.length < maxFrames) {
+    for (const frame of stackFrames(errorText)) {
+      if (picked.length >= maxFrames) break;
       let abs: string;
       try {
-        abs = path.resolve(m[1]!);
+        abs = path.resolve(frame.file);
       } catch {
         continue;
       }
       if (abs.includes(`${path.sep}node_modules${path.sep}`)) continue;
       const rel = path.relative(projectRoot, abs);
       if (rel.startsWith('..') || path.isAbsolute(rel)) continue; // outside the project
-      const line = parseInt(m[2]!, 10);
-      if (!isNaN(line)) add(abs, line);
+      if (!isNaN(frame.line)) add(abs, frame.line);
     }
   }
 
@@ -116,15 +130,9 @@ export function extractFailingLine(
 ): number {
   if (!errorText) return declarationLine;
   const expectedFile = path.resolve(testFile);
-  const stackRe = /^\s+at (?:[^(]*\()?(.+?):(\d+):\d+\)?\s*$/gm;
-  let m: RegExpExecArray | null;
-  while ((m = stackRe.exec(errorText)) !== null) {
+  for (const frame of stackFrames(errorText)) {
     try {
-      const frameFile = path.resolve(m[1]!);
-      if (frameFile === expectedFile) {
-        const line = parseInt(m[2]!, 10);
-        if (!isNaN(line)) return line;
-      }
+      if (path.resolve(frame.file) === expectedFile && !isNaN(frame.line)) return frame.line;
     } catch {
       /* skip unresolvable paths */
     }
