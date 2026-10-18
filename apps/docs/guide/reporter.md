@@ -232,11 +232,10 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 `@playwright/test`, and `collectPerformanceMetrics` must not be `false`. See
 [Capture fixtures → Troubleshooting](./capture-fixtures#troubleshooting).
 
-**Connection errors.** Check that `serverUrl` answers from where the tests run, and run with `PIWI_VERBOSE=true` for
-the full request trace. A run the reporter could not deliver (dashboard down, or a 401 because no credential was set)
-is saved locally and submitted on the project's next run, without traces or attachments; the Playwright run keeps its
-own result either way. An interrupted stream is retried, then sent as a batch. Every attempt to deliver a run carries
-the same key, so a run sent again after a slow upload, or from the saved copy, is stored once.
+**Connection errors.** Check that `serverUrl` answers from where the tests run; `PIWI_VERBOSE=true` logs every
+request. A run the reporter could not deliver (dashboard down, or a 401 with no credential set) is saved locally and
+submitted on the project's next run, without traces or attachments; it never fails the Playwright run. An interrupted
+stream is retried, then sent as a batch.
 [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so
 an unresponsive dashboard does not hold the CI job.
 

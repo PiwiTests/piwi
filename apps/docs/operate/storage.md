@@ -129,14 +129,14 @@ A kept run cannot be deleted until it is released; a selection skips kept runs.
 
 A nightly sweep (03:17 server time) handles recurring cleanup:
 
-- **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: deleting history is opt-in, so nothing is pruned until you set the variable. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying.
+- **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: nothing is pruned until you set it. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying.
 - **Analytics rollups** — pruned runs' numbers are moved into the [daily rollups](/features/analytics#where-the-numbers-come-from) in the transaction that deletes them, so the analytics trends keep the days that retention empties; deleting a single run by hand removes its numbers instead. Hand-back outcomes are counted the same way.
 - **Notification outbox pruning** — removes sent/failed delivery rows older than `PIWI_RETENTION_NOTIFICATION_DAYS` days (default 30).
-- **Report snapshot pruning** — removes the stored [quality reports](/features/quality-reports#report-schedules) older than `PIWI_RETENTION_REPORT_DAYS` days (default 365; 0 keeps them).
+- **Report snapshot pruning** — removes [quality reports](/features/quality-reports#report-schedules) older than `PIWI_RETENTION_REPORT_DAYS` days (default 365; 0 keeps them).
 - **Diagnosis history capping** — keeps the newest `PIWI_RETENTION_DIAGNOSIS_VERSIONS` versions per AI diagnosis (default 20).
-- **Unlinked traces** — deletes a stored trace no execution has linked for a day (an import that left an execution out, an upload that failed halfway), with the shared trace resources only it used.
+- **Unlinked traces** — deletes traces no execution has used for a day.
 
-The manual **Settings › Storage** cleanup remains available for one-off bulk deletes and uses the same deletion logic.
+**Settings › Storage** runs the same deletion by hand, for one-off bulk deletes.
 
 ### Keeping runs forever
 
