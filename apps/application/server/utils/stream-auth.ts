@@ -3,8 +3,7 @@ import { apiError } from './api-error';
 import { testRuns } from '../database/schema';
 import { runEventBus } from './run-events';
 import { validateAndReviveRun } from './revive-run';
-import { matchesShardToken, readShardTokensFromMeta } from './shard-tokens';
-import { timingSafeEqualStr } from './timing-safe';
+import { matchesShardToken, matchesStreamToken, readShardTokensFromMeta } from './shard-tokens';
 import type { DbClient as DB } from '../database';
 
 /**
@@ -23,7 +22,7 @@ export async function authorizeStreamToken(db: DB, runId: number, streamToken: s
   const cachedState = runEventBus.getRunState(runId);
   if (cachedState) {
     const valid =
-      timingSafeEqualStr(cachedState.streamToken, streamToken) ||
+      matchesStreamToken(cachedState.streamToken, streamToken) ||
       matchesShardToken(cachedState.shardTokens, streamToken);
     if (!valid) throw apiError({ statusCode: 403, message: 'Invalid stream token' });
     return { projectId: cachedState.projectId };

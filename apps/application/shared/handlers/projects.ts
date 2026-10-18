@@ -38,6 +38,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
+import { publicRunColumns } from './public-run';
 import { testSearchConditions } from '#shared/utils/test-search-sql';
 import {
   CATALOG_SEARCH_FIELDS,
@@ -153,9 +154,11 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
     .where(eq(rankedRuns.rn, 1));
   const latestRunIds: number[] = latestIdRows.map((r) => r.id);
 
-  // 2. Fetch full latest run rows
+  // 2. Fetch the latest run rows
   const latestRuns: any[] =
-    latestRunIds.length > 0 ? await db.select().from(testRuns).where(inArray(testRuns.id, latestRunIds)) : [];
+    latestRunIds.length > 0
+      ? await db.select(publicRunColumns()).from(testRuns).where(inArray(testRuns.id, latestRunIds))
+      : [];
   const fixmeByRunId = await fixmeTestsByRunId(db, latestRuns);
   const latestRunByProjectId = new Map<number, any>();
   for (const r of latestRuns) {

@@ -1,6 +1,6 @@
 import { testRuns } from '../database/schema';
 import { apiError } from './api-error';
-import { timingSafeEqualStr } from './timing-safe';
+import { matchesStreamToken } from './shard-tokens';
 import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
 
@@ -37,9 +37,7 @@ export async function validateAndReviveRun(
     });
   }
 
-  const valid =
-    (testRun.streamToken != null && timingSafeEqualStr(testRun.streamToken, bodyStreamToken)) ||
-    (isShardToken?.(bodyStreamToken) ?? false);
+  const valid = matchesStreamToken(testRun.streamToken, bodyStreamToken) || (isShardToken?.(bodyStreamToken) ?? false);
   if (!valid) {
     throw apiError({
       statusCode: 403,

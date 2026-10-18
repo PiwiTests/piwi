@@ -133,6 +133,8 @@ export default eventHandler(async (event) => {
 - `requireAuth(event, permission)` is an **explicit override** for handlers computing their own authorization (e.g.
   `users/[id].patch.ts` self-or-admin); the meta then documents but does not drive it.
 - Streaming endpoints (`start`, `events`, `finish`, `case-files`) keep **stream-token** auth instead of `requireAuth`.
+  A run stores its main stream or setup token only as a digest (`streamTokenDigest`, checked with `matchesStreamToken`),
+  and no response carries `test_runs.stream_token`: a handler returning run rows selects `publicRunColumns()`.
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
   `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
   `Access-Control-Allow-Origin` except trace archives for the hosted trace viewer. Browser clients are same-origin

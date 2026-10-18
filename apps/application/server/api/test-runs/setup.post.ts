@@ -5,7 +5,7 @@ import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
-import { persistShardToken, shardTokenDigest } from '../../utils/shard-tokens';
+import { persistShardToken, shardTokenDigest, streamTokenDigest } from '../../utils/shard-tokens';
 import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -126,7 +126,7 @@ export default eventHandler(async (event) => {
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
-        streamToken: setupToken,
+        streamToken: streamTokenDigest(setupToken),
         shardTotal,
         shardIndex: body.shardIndex ?? null,
         shardsFinished: 0,
@@ -146,7 +146,11 @@ export default eventHandler(async (event) => {
 
     await applyReporterKeep(db, testRun.id, body.keep);
     runEventBus.publishGlobal({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
-    runEventBus.cacheRunState(testRun.id, { streamToken: setupToken, projectId: project.id, shardTokens: new Set() });
+    runEventBus.cacheRunState(testRun.id, {
+      streamToken: streamTokenDigest(setupToken),
+      projectId: project.id,
+      shardTokens: new Set(),
+    });
 
     return {
       success: true,
@@ -182,7 +186,7 @@ export default eventHandler(async (event) => {
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,
-      streamToken: setupToken,
+      streamToken: streamTokenDigest(setupToken),
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? null,
     })
