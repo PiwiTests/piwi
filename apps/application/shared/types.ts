@@ -179,6 +179,11 @@ export interface TestRunSubmitPayload {
   filterDetails?: FilterDetails | null;
   /** The run's resource findings and what it cost its machine, measured by the reporter. */
   resourceReport?: WireResourceReport | null;
+  /**
+   * An id the client generates once for these results and sends with every attempt to deliver them: a delivery
+   * repeating a key the project already took answers with the run it went to and stores nothing.
+   */
+  deliveryKey?: string;
 }
 
 // ── Streaming event payload ───────────────────────────────────────────────────

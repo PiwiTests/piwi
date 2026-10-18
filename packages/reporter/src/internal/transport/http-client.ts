@@ -48,6 +48,8 @@ interface HttpRequestOptions {
   /** Multipart form (piped into the request). Mutually exclusive with `body`. */
   form?: FormData;
   auth?: string | null;
+  /** Socket inactivity timeout for this request, in ms; the client's own by default. */
+  timeout?: number;
 }
 
 /**
@@ -70,11 +72,15 @@ export class HttpClient {
    * @param logger    Prefixed logger for verbose diagnostics.
    * @param timeout   Socket inactivity timeout in ms (default 30s), so a hung
    *                  server fails fast rather than stalling the reporter.
+   * @param uploadTimeout Socket inactivity timeout of a multipart upload in ms
+   *                  (default 10 min): the dashboard answers one only once it
+   *                  has stored every report and trace in it.
    */
   constructor(
     private readonly serverUrl: string,
     private readonly logger: Logger = new Logger(),
     private readonly timeout = 30000,
+    private readonly uploadTimeout = 10 * 60 * 1000,
   ) {
     this.warnIfInsecureTransport();
   }
@@ -234,7 +240,7 @@ export class HttpClient {
   /** Send a multipart form-data POST request. Used for report and trace uploads. */
   async postFormData(pathname: string, form: FormData, auth?: string | null): Promise<any> {
     const headers = form.getHeaders() as Record<string, string>;
-    const res = await this.request('POST', pathname, { headers, form, auth });
+    const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
       const detail = parseErrorMessage(res.text);
@@ -292,8 +298,9 @@ export class HttpClient {
       this.inFlight.add(req);
       req.on('close', () => this.inFlight.delete(req));
       req.on('error', reject);
-      req.setTimeout(this.timeout, () => {
-        req.destroy(new Error(`Request to ${pathname} timed out after ${this.timeout}ms`));
+      const timeout = opts.timeout ?? this.timeout;
+      req.setTimeout(timeout, () => {
+        req.destroy(new Error(`Request to ${pathname} timed out after ${timeout}ms`));
       });
 
       if (opts.form) {

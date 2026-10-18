@@ -2713,3 +2713,29 @@ export const testRunResourceReports = sqliteTable(
     runShardIdx: uniqueIndex('idx_test_run_resource_reports_run_shard').on(t.runId, t.shard),
   }),
 );
+
+// One batch delivery of a run's results (`/submit`, `/upload`, a shard's for a
+// sharded run), under the key the reporter generated for it, and the run it
+// went to. A delivery repeated with the same key, such as a slow upload the
+// reporter gave up on and sent again, answers with that run instead of storing
+// the results twice.
+export const runDeliveries = sqliteTable(
+  'run_deliveries',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    deliveryKey: text('delivery_key').notNull(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectKeyIdx: uniqueIndex('idx_run_deliveries_project_key').on(t.projectId, t.deliveryKey),
+    runIdx: index('idx_run_deliveries_run_id').on(t.runId),
+  }),
+);

@@ -349,6 +349,12 @@ describe('serializeRun', () => {
     ]);
   });
 
+  it('carries the delivery key when the run has one', () => {
+    expect(serializeRun({ ...makePayload(), deliveryKey: 'key-1' }, { includeTestCases: true }).deliveryKey).toBe(
+      'key-1',
+    );
+  });
+
   it('sends keep: true only when the run asked to be kept', () => {
     expect(serializeRun(makePayload(), { includeTestCases: false }).keep).toBe(false);
     expect(serializeRun({ ...makePayload(), keep: true }, { includeTestCases: false }).keep).toBe(true);

@@ -235,7 +235,8 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 **Connection errors.** Check that `serverUrl` answers from where the tests run, and run with `PIWI_VERBOSE=true` for
 the full request trace. A run the reporter could not deliver (dashboard down, or a 401 because no credential was set)
 is saved locally and submitted on the project's next run, without traces or attachments. An interrupted stream is
-retried, then sent as a batch.
+retried, then sent as a batch. Every attempt to deliver a run carries the same key, so a run sent again after a slow
+upload, or from the saved copy, is stored once.
 [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so
 an unresponsive dashboard does not hold the CI job.
 

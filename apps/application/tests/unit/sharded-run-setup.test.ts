@@ -6,6 +6,7 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
+import { durationStats } from '#shared/utils/stats';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) load.
@@ -30,6 +31,7 @@ vi.stubGlobal('readBody', async (event: RouteEvent) => event.body);
 vi.stubGlobal('getRouterParam', (event: RouteEvent, name: string) => event.params?.[name]);
 vi.stubGlobal('getRequestHeader', () => undefined);
 vi.stubGlobal('apiError', apiError);
+vi.stubGlobal('durationStats', durationStats);
 
 type Route = (event: RouteEvent) => Promise<Record<string, any>>;
 const setup = (await import('../../server/api/test-runs/setup.post')).default as unknown as Route;
@@ -360,5 +362,47 @@ describe('a sharded run delivered by batch submissions', () => {
     expect(shards[1]!.runId).toBe(shards[0]!.runId);
     expect(await readRun(shards[0]!.runId)).toMatchObject({ status: 'passed', passedTests: 2 });
     expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a batch delivery repeated under its delivery key', () => {
+  const delivery = (deliveryKey: string, extra: Record<string, unknown> = {}) => ({
+    projectName: PROJECT,
+    status: 'passed',
+    startTime: new Date().toISOString(),
+    totalTests: 1,
+    passedTests: 1,
+    deliveryKey,
+    testCases: [{ title: 'pays', location: 'tests/pays.spec.ts:1:1', status: 'passed', duration: 10 }],
+    ...extra,
+  });
+
+  test('answers with the run its first delivery stored, sent again or at once', async () => {
+    const key = 'c0ffee00-0000-4000-8000-000000000001';
+    const [first, second] = await Promise.all([submit({ body: delivery(key) }), submit({ body: delivery(key) })]);
+    const third = await submit({ body: delivery(key) });
+
+    expect(second.runId).toBe(first.runId);
+    expect(third).toMatchObject({ runId: first.runId, duplicate: true });
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
+    expect(await db.select().from(schema.testRunsCases)).toHaveLength(1);
+    expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+
+  test('counts a shard of a batch run once', async () => {
+    const shard = (key: string, shardIndex: number) => delivery(key, { ...SHARDS, shardIndex });
+    const one = await submit({ body: shard('shard-one-delivery-key', 1) });
+    await submit({ body: shard('shard-one-delivery-key', 1) });
+    expect(await readRun(one.runId)).toMatchObject({ status: 'running', shardsFinished: 1 });
+
+    await submit({ body: shard('shard-two-delivery-key', 2) });
+    expect(await readRun(one.runId)).toMatchObject({ status: 'passed', shardsFinished: 2 });
+  });
+
+  test('a delivery with another key, or none, stores a run of its own', async () => {
+    await submit({ body: delivery('first-delivery-key-0001') });
+    await submit({ body: delivery('second-delivery-key-0002') });
+    await submit({ body: delivery('short') });
+    expect(await db.select().from(schema.testRuns)).toHaveLength(3);
   });
 });

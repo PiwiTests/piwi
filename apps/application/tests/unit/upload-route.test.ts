@@ -145,4 +145,19 @@ describe('POST /api/test-runs/upload', () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ status: 'passed', shardsFinished: 2, passedTests: 2 });
   });
+
+  test('an upload repeated under its delivery key answers with the first run and stores nothing again', async () => {
+    const parts = () => [
+      field('projectName', 'upload-repeat'),
+      field('testRun', { status: 'passed', startTime: '2026-09-30T10:00:00Z', deliveryKey: 'upload-delivery-key-1' }),
+      field('testCases', [{ title: 'pays', status: 'passed', location: 'tests/pays.spec.ts:1:1' }]),
+      ...screenshot(0, 'pays.png'),
+    ];
+
+    const [first, second] = await Promise.all([upload({ parts: parts() }), upload({ parts: parts() })]);
+    expect(second.runId).toBe(first.runId);
+    expect(second).toMatchObject({ duplicate: true });
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
+    expect(await db.select().from(schema.files)).toHaveLength(1);
+  });
 });

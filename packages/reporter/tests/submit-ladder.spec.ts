@@ -225,8 +225,10 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
 
   it('fallback: /upload fails → /submit succeeds', async () => {
     let submitBody: any;
+    let uploadBody = '';
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/upload') {
+        uploadBody = req.body;
         textRes(res, 500, 'boom');
       } else if (req.url === '/api/test-runs/submit') {
         submitBody = JSON.parse(req.body);
@@ -255,6 +257,9 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(uploadIdx < submitIdx, 'upload must be tried before submit').toBeTruthy();
     // The dashboard learns which rung delivered the run, and why.
     expect(submitBody.metadata.ingestHealth).toEqual({ submitFallback: { path: 'submit', reason: 'upload-failed' } });
+    // Both rungs deliver the run under one key, so a dashboard that stored the upload stores the run once.
+    expect(submitBody.deliveryKey).toMatch(/^[0-9a-f-]{36}$/);
+    expect(uploadBody).toContain(`"deliveryKey":"${submitBody.deliveryKey}"`);
   });
 
   it('a failed /finish falls back to /upload and names the fallback in the run metadata', async () => {

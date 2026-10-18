@@ -8,6 +8,7 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
+import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
 import {
   addBatchShard,
   batchShardRun,
@@ -42,6 +43,11 @@ defineRouteMeta({
               startTime: { type: 'string', format: 'date-time' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
+              deliveryKey: {
+                type: 'string',
+                description:
+                  'An id the client generates once for these results and sends with every attempt to deliver them (16 to 128 letters, digits, `-` or `_`). A delivery repeating a key the project already took stores nothing and answers with the run it went to, with `duplicate: true`.',
+              },
             },
             required: ['projectName', 'status', 'startTime'],
           },
@@ -72,110 +78,114 @@ export default eventHandler(async (event) => {
 
   const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
-  const shardTotal = body.shardTotal as number | undefined;
-  const instanceId = body.instanceId || null;
-  const isSharded = !!(shardTotal && shardTotal > 1);
+  // A repeated delivery (the reporter gave up waiting and sent the run again)
+  // answers with the run its first delivery stored.
+  return deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
+    const shardTotal = body.shardTotal as number | undefined;
+    const instanceId = body.instanceId || null;
+    const isSharded = !!(shardTotal && shardTotal > 1);
 
-  const testCases: any[] = Array.isArray(body.testCases) ? body.testCases : [];
+    const testCases: any[] = Array.isArray(body.testCases) ? body.testCases : [];
 
-  if (isSharded && instanceId) {
-    // A shard of a batch run: its executions join the run its instance's shards
-    // share, and the last shard to arrive settles it.
-    const run = await batchShardRun(db, project.id, instanceId, body);
-    if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
-    await applyReporterKeep(db, run.id, body.keep);
-    if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(toRunCase));
-    await addBatchShard(db, run.id, batchShardTally(body, testCases));
-    if (!(await finalizeShardedRun(db, run.id, 'run-submitted'))) await publishShardProgress(db, run.id);
-    return { success: true, runId: run.id, projectId: project.id };
-  }
-
-  // A run of its own: not sharded, or sharded with no instance id to join its shards by
-  await cancelInstanceRuns(db, project.id, instanceId, undefined, isSharded);
-
-  const metadata = sanitizeMetadata(body.metadata || null);
-  const testRunResult = await db
-    .insert(testRuns)
-    .values({
-      projectId: project.id,
-      status: body.status,
-      startTime: new Date(body.startTime),
-      duration: body.duration || null,
-      totalTests: body.totalTests || 0,
-      passedTests: body.passedTests || 0,
-      failedTests: sumFailedAndTimedOut(body.failedTests, body.timedOutTests),
-      skippedTests: body.skippedTests || 0,
-      didNotRunTests: body.didNotRunTests || 0,
-      environment: body.environment || null,
-      branch: resolveRunBranch(body.metadata),
-      label: body.label || null,
-      metadata,
-      origin: runOrigin(metadata),
-      commit: runCommit(metadata),
-      instanceId,
-      playwrightVersion: body.playwrightVersion || null,
-      reporterVersion: body.reporterVersion || null,
-      shardTotal: isSharded ? shardTotal : null,
-      shardIndex: isSharded ? ((body.shardIndex as number | undefined) ?? null) : null,
-      shardsFinished: isSharded ? 0 : undefined,
-      isFullRun: body.isFullRun !== false ? 1 : 0,
-      filterDetails: body.filterDetails ?? null,
-    })
-    .returning();
-
-  const testRun = testRunResult[0];
-
-  if (!testRun) {
-    throw apiError({
-      statusCode: 500,
-      message: 'Failed to create test run',
-    });
-  }
-  if (incomingResources) await saveResourceReportPart(db, testRun.id, incomingResources);
-  await applyReporterKeep(db, testRun.id, body.keep);
-
-  // Insert test cases if provided and calculate flaky tests
-  let flakyTestCount = 0;
-  if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
-    flakyTestCount = body.testCases.filter(
-      (testCase: { status: string; retries?: number }) => testCase.status === 'passed' && (testCase.retries || 0) > 0,
-    ).length;
-
-    const cases: RunCaseInput[] = body.testCases.map(toRunCase);
-
-    await persistRunCases(db, project.id, testRun.id, cases);
-  }
-
-  // Update test run with flaky test count if any were found
-  if (flakyTestCount > 0) {
-    await db.update(testRuns).set({ flakyTests: flakyTestCount }).where(eq(testRuns.id, testRun.id));
-  }
-
-  // Compute and store performance summary (avgTestDuration, p90TestDuration)
-  if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
-    const stats = durationStats(body.testCases.map((tc: { duration?: number | null }) => tc.duration));
-    if (stats) {
-      await db
-        .update(testRuns)
-        .set({ avgTestDuration: stats.avg, p90TestDuration: stats.p90 })
-        .where(eq(testRuns.id, testRun.id));
+    if (isSharded && instanceId) {
+      // A shard of a batch run: its executions join the run its instance's shards
+      // share, and the last shard to arrive settles it.
+      const run = await batchShardRun(db, project.id, instanceId, body);
+      if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
+      await applyReporterKeep(db, run.id, body.keep);
+      if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(toRunCase));
+      await addBatchShard(db, run.id, batchShardTally(body, testCases));
+      if (!(await finalizeShardedRun(db, run.id, 'run-submitted'))) await publishShardProgress(db, run.id);
+      return { success: true, runId: run.id, projectId: project.id };
     }
-  }
 
-  runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
+    // A run of its own: not sharded, or sharded with no instance id to join its shards by
+    await cancelInstanceRuns(db, project.id, instanceId, undefined, isSharded);
 
-  await runFinalizeSideEffects(db, testRun.id, {
-    projectId: project.id,
-    metadata: testRun.metadata,
-    isFullRun: testRun.isFullRun,
-    status: testRun.status,
+    const metadata = sanitizeMetadata(body.metadata || null);
+    const testRunResult = await db
+      .insert(testRuns)
+      .values({
+        projectId: project.id,
+        status: body.status,
+        startTime: new Date(body.startTime),
+        duration: body.duration || null,
+        totalTests: body.totalTests || 0,
+        passedTests: body.passedTests || 0,
+        failedTests: sumFailedAndTimedOut(body.failedTests, body.timedOutTests),
+        skippedTests: body.skippedTests || 0,
+        didNotRunTests: body.didNotRunTests || 0,
+        environment: body.environment || null,
+        branch: resolveRunBranch(body.metadata),
+        label: body.label || null,
+        metadata,
+        origin: runOrigin(metadata),
+        commit: runCommit(metadata),
+        instanceId,
+        playwrightVersion: body.playwrightVersion || null,
+        reporterVersion: body.reporterVersion || null,
+        shardTotal: isSharded ? shardTotal : null,
+        shardIndex: isSharded ? ((body.shardIndex as number | undefined) ?? null) : null,
+        shardsFinished: isSharded ? 0 : undefined,
+        isFullRun: body.isFullRun !== false ? 1 : 0,
+        filterDetails: body.filterDetails ?? null,
+      })
+      .returning();
+
+    const testRun = testRunResult[0];
+
+    if (!testRun) {
+      throw apiError({
+        statusCode: 500,
+        message: 'Failed to create test run',
+      });
+    }
+    if (incomingResources) await saveResourceReportPart(db, testRun.id, incomingResources);
+    await applyReporterKeep(db, testRun.id, body.keep);
+
+    // Insert test cases if provided and calculate flaky tests
+    let flakyTestCount = 0;
+    if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
+      flakyTestCount = body.testCases.filter(
+        (testCase: { status: string; retries?: number }) => testCase.status === 'passed' && (testCase.retries || 0) > 0,
+      ).length;
+
+      const cases: RunCaseInput[] = body.testCases.map(toRunCase);
+
+      await persistRunCases(db, project.id, testRun.id, cases);
+    }
+
+    // Update test run with flaky test count if any were found
+    if (flakyTestCount > 0) {
+      await db.update(testRuns).set({ flakyTests: flakyTestCount }).where(eq(testRuns.id, testRun.id));
+    }
+
+    // Compute and store performance summary (avgTestDuration, p90TestDuration)
+    if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
+      const stats = durationStats(body.testCases.map((tc: { duration?: number | null }) => tc.duration));
+      if (stats) {
+        await db
+          .update(testRuns)
+          .set({ avgTestDuration: stats.avg, p90TestDuration: stats.p90 })
+          .where(eq(testRuns.id, testRun.id));
+      }
+    }
+
+    runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
+
+    await runFinalizeSideEffects(db, testRun.id, {
+      projectId: project.id,
+      metadata: testRun.metadata,
+      isFullRun: testRun.isFullRun,
+      status: testRun.status,
+    });
+
+    return {
+      success: true,
+      runId: testRun.id,
+      projectId: project.id,
+    };
   });
-
-  return {
-    success: true,
-    runId: testRun.id,
-    projectId: project.id,
-  };
 });
 
 /** A submitted test case, as `persistRunCases` stores it. */

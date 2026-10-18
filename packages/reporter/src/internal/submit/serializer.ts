@@ -204,6 +204,7 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     filterDetails: payload.filterDetails ?? null,
   };
   if (payload.resourceReport) body.resourceReport = payload.resourceReport;
+  if (payload.deliveryKey) body.deliveryKey = payload.deliveryKey;
   if (opts.includeTestCases) {
     body.testCases = payload.testCases.map((tc) => toWireTestCase(tc));
   }

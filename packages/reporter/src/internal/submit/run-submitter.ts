@@ -1,4 +1,5 @@
-﻿import type { FullResult } from '@playwright/test/reporter';
+﻿import { randomUUID } from 'node:crypto';
+import type { FullResult } from '@playwright/test/reporter';
 import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import { errorMessage } from '../support/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
@@ -82,6 +83,9 @@ function markSubmitFallback(run: CollectedRun, path: 'upload' | 'submit', reason
  *      recovery payload on total failure.
  */
 export class RunSubmitter {
+  /** The key every batch delivery of this run carries, so the dashboard stores the run once. */
+  private readonly deliveryKey = randomUUID();
+
   /**
    * @param httpClient    HTTP client for auth resolution and the finish call.
    * @param uploader      Upload strategies (multipart + JSON).
@@ -270,6 +274,7 @@ export class RunSubmitter {
       isFullRun: run.isFullRun,
       filterDetails: run.filterDetails,
       resourceReport: run.resourceReport ?? null,
+      deliveryKey: this.deliveryKey,
     };
   }
 
