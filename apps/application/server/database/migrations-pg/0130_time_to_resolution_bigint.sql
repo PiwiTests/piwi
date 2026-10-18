@@ -1,0 +1,1 @@
+ALTER TABLE "failure_clusters" ALTER COLUMN "time_to_resolution_ms" SET DATA TYPE bigint;

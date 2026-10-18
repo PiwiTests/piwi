@@ -279,7 +279,7 @@ export const failureClusters = pgTable(
     fixLandedRunId: integer('fix_landed_run_id'), // the run in which every affected test passed again
     fixLandedAt: timestamp('fix_landed_at', { mode: 'date' }),
     fixCommit: text('fix_commit'), // commit of that run, when the reporter recorded one
-    timeToResolutionMs: integer('time_to_resolution_ms'), // first seen → fix landed
+    timeToResolutionMs: bigint('time_to_resolution_ms', { mode: 'number' }), // first seen → fix landed, in ms (exceeds 32-bit int range past 24.8 days)
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
     flakeEvidenceRunId: integer('flake_evidence_run_id'), // latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix
     lastRerunDispatch: jsonb('last_rerun_dispatch'), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
