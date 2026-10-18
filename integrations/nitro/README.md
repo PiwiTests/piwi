@@ -6,7 +6,7 @@ During a Playwright test run, the reporter reads this header from every response
 
 **Active in development and test only, by default.** Capture and probe verification run only outside production, using the same Development/Test allow-list as the ASP.NET package. Controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
 
-- unset — capture is on when `NODE_ENV` is unset, `development`, or `test`; off for any other value (`production`, `staging`, `prod`, …)
+- unset — capture is on when `NODE_ENV` is `development` or `test`; off for any other value (`production`, `staging`, `prod`, …) and when `NODE_ENV` is not set at all, as when a built server is started with `node .output/server/index.mjs`
 - `PIWI_TEST_LOGS_DISABLED=true` — capture is off everywhere
 - `PIWI_TEST_LOGS_DISABLED=false` — capture is on even in production builds (useful for a production-mode test deployment)
 

@@ -161,6 +161,35 @@ describe('piwiTestLogs wrapped handler (through toNodeListener)', () => {
   });
 });
 
+describe('when capture is on', () => {
+  async function traceHeader(env: Record<string, string>): Promise<string | null> {
+    const mod = await loadWithEnv(env);
+    const app = createApp();
+    app.use(
+      '/api/cart',
+      eventHandler(() => ({ items: 1 })),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+    let header: string | null = null;
+    await withServer(app, async (base) => {
+      header = (await fetch(`${base}/api/cart`)).headers.get('x-piwi-trace');
+    });
+    return header;
+  }
+
+  it('is on in development and test', async () => {
+    expect(await traceHeader({ NODE_ENV: 'development' })).toBeTruthy();
+    expect(await traceHeader({ NODE_ENV: 'test' })).toBeTruthy();
+  });
+
+  it('is off when NODE_ENV is not set, as for a built server started with node, unless opted in', async () => {
+    expect(await traceHeader({ NODE_ENV: '' })).toBeNull();
+    expect(await traceHeader({ NODE_ENV: 'production' })).toBeNull();
+    expect(await traceHeader({ NODE_ENV: '', PIWI_TEST_LOGS_DISABLED: 'false' })).toBeTruthy();
+    expect(await traceHeader({ NODE_ENV: 'test', PIWI_TEST_LOGS_DISABLED: 'true' })).toBeNull();
+  });
+});
+
 describe('the route manifest', () => {
   it('records a route by the pattern h3 1.x matched it with, not by the requested path', async () => {
     const mod = await loadWithEnv({ PIWI_TEST_LOGS_DISABLED: 'false', NODE_ENV: 'test' });
