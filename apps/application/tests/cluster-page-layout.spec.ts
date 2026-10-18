@@ -659,7 +659,7 @@ test.describe('Cluster situation block on seeded clusters', () => {
     );
   });
 
-  for (const id of [6, 2]) {
+  for (const id of [6, 2, 11]) {
     test(`#${id}'s locator step names locator healing as its source`, async ({ page, request }) => {
       const res = await request.get(`/api/failure-clusters/${id}`);
       test.skip(!res.ok(), `no cluster #${id} on this database`);
@@ -821,7 +821,7 @@ test.describe('Cluster situation block on seeded clusters', () => {
   // The Locator fix section reads the execution the next step checked (the
   // latest occurrence). After a client-side navigation the section and its
   // panel are in the page's first render, from one healing request.
-  for (const id of [2, 5]) {
+  for (const id of [2, 11]) {
     test(`#${id} reads its Locator fix from the latest occurrence, in the first render`, async ({ page, request }) => {
       const res = await request.get(`/api/failure-clusters/${id}`);
       test.skip(!res.ok(), `no cluster #${id} on this database`);

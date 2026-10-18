@@ -560,6 +560,7 @@ const MOBILE_LANDING_VUE = [
 
 const MOBILE_FORMS_SPEC = [
   "import { test, expect } from '@playwright/test';",
+  "import { openDeliveryDatePicker } from '../helpers/delivery';",
   '',
   "test.describe('Forms', () => {",
   "  test('Text input shows keyboard on focus', async ({ page }) => {",
@@ -570,10 +571,32 @@ const MOBILE_FORMS_SPEC = [
   '',
   "  test('Date picker works correctly', async ({ page }) => {",
   "    await page.goto('https://m.shop.example.com/checkout');",
-  "    await page.getByLabel('Delivery date').tap();",
+  '    await openDeliveryDatePicker(page);',
   "    await expect(page.getByRole('dialog', { name: 'Choose date' })).toBeVisible();",
   '  });',
   '});',
+];
+
+const DELIVERY_HELPER = [
+  "import type { Page } from '@playwright/test';",
+  '',
+  '/** Opens the date picker of the checkout delivery form. */',
+  'export async function openDeliveryDatePicker(page: Page) {',
+  "  await page.getByLabel('Delivery date').click();",
+  '}',
+];
+
+const MOBILE_CHECKOUT_VUE = [
+  '<template>',
+  '  <form class="delivery">',
+  '    <label for="delivery-notes">Delivery notes</label>',
+  '    <textarea id="delivery-notes" />',
+  '    <label for="delivery-date">Date of delivery</label>',
+  '    <input id="delivery-date" type="date" />',
+  '    <SignaturePad />',
+  '    <button type="submit">Continue to payment</button>',
+  '  </form>',
+  '</template>',
 ];
 
 const SIGNATURE_PAD = [
@@ -1609,6 +1632,8 @@ export const SOURCE_FILES = {
   'tests/mobile/navigation.spec.ts': MOBILE_NAV_SPEC,
   'src/pages/index.vue': MOBILE_LANDING_VUE,
   'tests/mobile/forms.spec.ts': MOBILE_FORMS_SPEC,
+  'tests/helpers/delivery.ts': DELIVERY_HELPER,
+  'src/pages/checkout.vue': MOBILE_CHECKOUT_VUE,
   'src/lib/signature-pad.ts': SIGNATURE_PAD,
   'tests/admin/reports.spec.ts': REPORTS_SPEC,
   'src/styles/theme.css': THEME_CSS,
@@ -1791,6 +1816,9 @@ const REPORTS_DARK_DOM = `<!DOCTYPE html><html lang="en"><head><meta charset="ut
 // ── Failure stories ─────────────────────────────────────────────────────────
 
 const checkoutPayLocator = "getByRole('button', { name: 'Pay' })";
+const deliveryDateLocator = "getByLabel('Delivery date')";
+const deliveryDateClickLine = lineOf(DELIVERY_HELPER, `${deliveryDateLocator}.click()`);
+const datePickerCallLine = lineOf(MOBILE_FORMS_SPEC, 'await openDeliveryDatePicker(page);');
 const payClickLine = lineOf(PAYMENT_HELPER, ".getByRole('button', { name: 'Pay' }).click()");
 
 const PAY_CALL_LOG = [
@@ -2654,6 +2682,73 @@ export const FAILURE_STORIES = [
     // own coverage adds what the API ran at startup and its executable lines.
     coverage: USERS_STORY_COVERAGE,
     runCoverage: apiRunCoverage(USERS_STORY_COVERAGE),
+  },
+
+  {
+    // The hero-image commit also relabeled the checkout's delivery date field
+    // "Date of delivery"; the test's helper still finds it by its old label.
+    // No locator snapshot was captured for this test, so locator healing reads
+    // the failure-time ARIA snapshot, and the locator lives in the helper, so
+    // the test's own line has nothing to rewrite: the fix is a locator to copy.
+    key: 'mobile-delivery-date-relabeled',
+    clusterId: 11,
+    projectId: 4,
+    specFile: 'tests/mobile/forms.spec.ts',
+    locator: deliveryDateLocator,
+    failingCases: [
+      failingCase(
+        'Date picker works correctly',
+        'tests/mobile/forms.spec.ts',
+        datePickerCallLine,
+        MOBILE_FORMS_SPEC[datePickerCallLine - 1].indexOf('openDeliveryDatePicker(') + 1,
+        (frames) =>
+          buildActionTimeoutError({
+            action: 'locator.click',
+            timeoutMs: 10000,
+            callLog: [`waiting for ${deliveryDateLocator}`],
+            frames,
+          }),
+        [
+          {
+            file: 'tests/helpers/delivery.ts',
+            line: deliveryDateClickLine,
+            column: DELIVERY_HELPER[deliveryDateClickLine - 1].indexOf('click(') + 1,
+            fn: 'openDeliveryDatePicker',
+          },
+        ],
+        { call: clickCall(deliveryDateLocator, actionTimeout(10000)) },
+      ),
+    ],
+    aria:
+      '- document:\n  - banner:\n    - link "Shop home"\n    - button "Open cart"\n  - main:\n' +
+      '    - heading "Checkout" [level=1]\n    - textbox "Delivery notes"\n    - textbox "Date of delivery"\n' +
+      '    - button "Continue to payment"',
+    // The page as it last passed, with the field still labeled "Delivery date".
+    baselineAria:
+      '- document:\n  - banner:\n    - link "Shop home"\n    - button "Open cart"\n  - main:\n' +
+      '    - heading "Checkout" [level=1]\n    - textbox "Delivery notes"\n    - textbox "Delivery date"\n' +
+      '    - button "Continue to payment"',
+    evidence: {},
+    appFiles: ['tests/helpers/delivery.ts', 'src/pages/checkout.vue'],
+    suspectSha: '6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90',
+    diagnosis: {
+      seeded: false,
+      kind: 'stale-locator',
+      area: 'mobile forms',
+      fix: {
+        description: 'Find the delivery date field by its new label, “Date of delivery”, in the date picker helper.',
+        file: 'tests/helpers/delivery.ts',
+        patch: derivePatch('tests/helpers/delivery.ts', DELIVERY_HELPER, {
+          at: deliveryDateClickLine,
+          remove: 1,
+          add: ["  await page.getByLabel('Date of delivery').click();"],
+        }),
+      },
+    },
+    media: {},
+    // The three newest runs, which fail already: naming them draws nothing from
+    // the seed's random stream, so every other row stays as it was.
+    firing: { runs: [0, 1, 2] },
   },
 ];
 
@@ -3850,6 +3945,13 @@ export const SCM_REPOS = {
             additions: 5,
             deletions: 0,
             patch: `@@ -1,6 +1,11 @@\n <template>\n   <main>\n+    <img\n+      src="/hero-4k.png"\n+      alt="Hero"\n+      class="hero"\n+    />\n     <Nav />`,
+          },
+          {
+            filename: 'src/pages/checkout.vue',
+            status: 'modified',
+            additions: 1,
+            deletions: 1,
+            patch: `@@ -2,6 +2,6 @@\n   <form class="delivery">\n     <label for="delivery-notes">Delivery notes</label>\n     <textarea id="delivery-notes" />\n-    <label for="delivery-date">Delivery date</label>\n+    <label for="delivery-date">Date of delivery</label>\n     <input id="delivery-date" type="date" />\n     <SignaturePad />`,
           },
         ],
       },
