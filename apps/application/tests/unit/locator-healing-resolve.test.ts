@@ -94,10 +94,27 @@ describe('resolveHealingForCase — ladder', () => {
   });
 
   test('ladder 3: ARIA fallback when nothing is stored', async () => {
-    const r = await resolveHealingForCase({ error: chainError(FAILING), ariaSnapshot: '- button "Pay"' }, [], () =>
+    const r = await resolveHealingForCase({ error: chainError(FAILING), ariaSnapshot: '- button "Pay now"' }, [], () =>
       Promise.resolve(null),
     );
     expect(r.source).toBe('aria-snapshot');
+    expect(r.recommendation?.recommended?.locator).toBe("getByRole('button', { name: 'Pay now' })");
+  });
+
+  test('ladder 3 never recommends the element the failing getByRole already names', async () => {
+    const aria = '- button "Pay"\n- link "Pay"';
+    const r = await resolveHealingForCase({ error: chainError(FAILING), ariaSnapshot: aria }, [], null);
+    expect(r.source).toBe('aria-snapshot');
+    // Listed for context, never recommended: each finds the button "Pay", or one named like it.
+    expect(r.fromAriaSnapshot?.map((a) => a.locator)).toContain(FAILING);
+    expect(r.recommendation).toBeNull();
+  });
+
+  test('ladder 3 can recommend a getByRole with the name of a failing getByText', async () => {
+    // An aria-label names the button: getByText does not read it, getByRole does.
+    const error = chainError("getByText('Pay')");
+    const r = await resolveHealingForCase({ error, ariaSnapshot: '- button "Pay"' }, [], null);
+    expect(r.recommendation?.recommended?.locator).toBe("getByRole('button', { name: 'Pay' })");
   });
 });
 

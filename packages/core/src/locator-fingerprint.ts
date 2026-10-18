@@ -161,8 +161,9 @@ function significantWords(text: string | null | undefined): Set<string> {
 /**
  * `textSimilarity` over the significant words of each label, so two labels
  * that share only short or function words ("Go to cart", "Back to top") score 0.
+ * The measure every "is this element related to that name" decision uses.
  */
-function significantWordSimilarity(a: string | null | undefined, b: string | null | undefined): number {
+export function significantWordSimilarity(a: string | null | undefined, b: string | null | undefined): number {
   const sa = significantWords(a);
   const sb = significantWords(b);
   if (sa.size === 0 && sb.size === 0) return 1;

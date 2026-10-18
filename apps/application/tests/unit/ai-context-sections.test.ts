@@ -8,6 +8,7 @@ import {
   findLiteralInPatch,
   resolveImportPath,
   candidateFilePaths,
+  nearestAriaNamesSection,
 } from '../../server/utils/ai-context';
 import type { ContextLimits } from '#shared/ai-context-limits';
 import {
@@ -334,5 +335,42 @@ describe('candidateFilePaths', () => {
     expect(c).toContain('tests/pages/LoginPage.ts');
     expect(c).toContain('tests/pages/LoginPage.tsx');
     expect(c).toContain('tests/pages/LoginPage/index.ts');
+  });
+});
+
+describe('nearestAriaNamesSection', () => {
+  const error = (locator: string) =>
+    `TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for ${locator}\n    at tests/cart.spec.ts:9:5`;
+  const aria = [
+    '- link "Home"',
+    '- link "Back to top"',
+    '- link "Update your profile"',
+    '- link "Open cart"',
+    '- button "Checkout"',
+  ].join('\n');
+
+  test('lists only the elements related to the requested name', () => {
+    const section = nearestAriaNamesSection({
+      error: error("getByRole('link', { name: 'Go to your cart' })"),
+      ariaSnapshot: aria,
+    })!;
+    expect(section).toContain('Present:   link "Open cart"');
+    expect(section).not.toContain('Home');
+    expect(section).not.toContain('Back to top');
+    expect(section).not.toContain('Update your profile');
+  });
+
+  test('null when nothing on the page relates', () => {
+    expect(
+      nearestAriaNamesSection({ error: error("getByRole('link', { name: 'Pricing' })"), ariaSnapshot: aria }),
+    ).toBeNull();
+  });
+
+  test('keeps the lone element of the requested role, said as such', () => {
+    const section = nearestAriaNamesSection({
+      error: error("getByRole('button', { name: 'Pay' })"),
+      ariaSnapshot: aria,
+    })!;
+    expect(section).toContain('Present:   button "Checkout" — the only button on the page');
   });
 });
