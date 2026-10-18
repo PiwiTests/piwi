@@ -134,6 +134,7 @@ A nightly sweep (03:17 server time) handles recurring cleanup:
 - **Notification outbox pruning** — removes sent/failed delivery rows older than `PIWI_RETENTION_NOTIFICATION_DAYS` days (default 30).
 - **Report snapshot pruning** — removes the stored [quality reports](/features/quality-reports#report-schedules) older than `PIWI_RETENTION_REPORT_DAYS` days (default 365; 0 keeps them).
 - **Diagnosis history capping** — keeps the newest `PIWI_RETENTION_DIAGNOSIS_VERSIONS` versions per AI diagnosis (default 20).
+- **Unlinked traces** — deletes a stored trace no execution has linked for a day (an import that left an execution out, an upload that failed halfway), with the shared trace resources only it used.
 
 The manual **Settings › Storage** cleanup remains available for one-off bulk deletes and uses the same deletion logic.
 
