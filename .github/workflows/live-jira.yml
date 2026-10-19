@@ -22,11 +22,6 @@ jobs:
     name: Live Jira E2E
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      PIWI_JIRA_BASE_URL: ${{ secrets.PIWI_JIRA_BASE_URL }}
-      PIWI_JIRA_EMAIL: ${{ secrets.PIWI_JIRA_EMAIL }}
-      PIWI_JIRA_API_TOKEN: ${{ secrets.PIWI_JIRA_API_TOKEN }}
-      PIWI_LIVE_JIRA_PROJECT_KEY: ${{ secrets.PIWI_LIVE_JIRA_PROJECT_KEY }}
 
     steps:
       - name: Checkout
@@ -45,5 +40,11 @@ jobs:
       - name: Build the app
         run: npm run app:build
 
+      # The Jira credentials reach this step only, never the install and build scripts above.
       - name: Run the live Jira E2E
+        env:
+          PIWI_JIRA_BASE_URL: ${{ secrets.PIWI_JIRA_BASE_URL }}
+          PIWI_JIRA_EMAIL: ${{ secrets.PIWI_JIRA_EMAIL }}
+          PIWI_JIRA_API_TOKEN: ${{ secrets.PIWI_JIRA_API_TOKEN }}
+          PIWI_LIVE_JIRA_PROJECT_KEY: ${{ secrets.PIWI_LIVE_JIRA_PROJECT_KEY }}
         run: npm run app:test:jira:live
