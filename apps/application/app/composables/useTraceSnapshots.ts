@@ -12,7 +12,8 @@ export function useTraceSnapshots(testRunsCaseId: MaybeRefOrGetter<number>) {
 
   const { data, pending, error } = useFetch<TraceSnapshotsResponse>(
     () => `/api/test-run-cases/${toValue(testRunsCaseId)}/trace-snapshots`,
-    { lazy: true, key: `trace-snapshots-${toValue(testRunsCaseId)}` },
+    // A reactive key: when the execution changes, its own snapshots load.
+    { lazy: true, key: () => `trace-snapshots-${toValue(testRunsCaseId)}` },
   );
 
   /** URL of one action's aria (JSON) or screen (PNG) snapshot, respecting the app base path. */
