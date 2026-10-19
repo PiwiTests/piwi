@@ -33,7 +33,7 @@ jobs:
       OVSX_CONFIGURED: ${{ secrets.OVSX_PAT != '' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
@@ -49,7 +49,7 @@ jobs:
 
       # Uploaded as is: it downloads as the .vsix, not inside a zip.
       - name: Upload the package
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           path: apps/vscode/dist/piwi-${{ env.VERSION }}.vsix
           archive: false

@@ -74,7 +74,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
@@ -82,8 +82,9 @@ jobs:
           install: 'false'
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       # Tauri's Linux prerequisites: WebKitGTK for the webview, appindicator for
@@ -110,7 +111,7 @@ jobs:
             squashfs-tools
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/desktop/src-tauri
 
@@ -119,7 +120,7 @@ jobs:
         run: npm install
 
       - name: Download server bundle
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ inputs.server-artifact }}
           path: apps/application/.output
@@ -150,7 +151,7 @@ jobs:
         run: npx tauri icon ../application/public/logo.svg
 
       - name: Build & release desktop app
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Linux AppImage bundling runs linuxdeploy (and its plugins), each a
@@ -238,7 +239,7 @@ jobs:
       # (no .sig produced), matching the .msi channel's "updates unsupported".
       - name: Publish NSIS updater manifest (latest-nsis.json)
         if: ${{ matrix.bundles == 'nsis' && startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require('fs');
@@ -281,7 +282,7 @@ jobs:
       # artifact name to keep them from colliding.
       - name: Upload installers (dry-run)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: piwi-desktop-${{ matrix.target }}-${{ matrix.bundles }}
           path: |

@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # ── Build VitePress docs ──────────────────────────────────────────────
       - name: Set up the docs workspace
@@ -64,7 +64,7 @@ jobs:
 
       # ── Deploy to piwitests.github.io (org-level Pages) ───────────────────
       - name: Deploy to piwitests.github.io
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           personal_token: ${{ secrets.GH_PAGES_TOKEN }}
           external_repository: piwitests/piwitests.github.io

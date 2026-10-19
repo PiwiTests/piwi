@@ -67,6 +67,10 @@ and reports a regression in its comment without failing. The release PR runs the
   protection rules and secrets are set in the repository settings. `id-token: write` only where a step uses it (npm
   provenance). `.github/` is owned by its maintainer (`CODEOWNERS`).
 - **Bounded.** `timeout-minutes` on every job, about three times its usual duration.
+- **Actions pinned by commit.** Every `uses:` of an action outside this repository names the full commit SHA of a
+  release, with its tag in a trailing comment: `uses: actions/checkout@<sha> # v7.0.1`. Resolve it with
+  `git ls-remote https://github.com/<owner>/<repo> refs/tags/<tag>` (the `^{}` line of an annotated tag). An action
+  followed by branch, such as `dtolnay/rust-toolchain`, is pinned to that branch's commit, with its inputs named.
 - **Readable.** A `name` on every step, and a `name:` on every workflow that says what it does.
 - **Superseded runs cancelled.** Every pull-request workflow has
   `concurrency: { group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}, cancel-in-progress: true }`.
@@ -83,4 +87,5 @@ and reports a regression in its comment without failing. The release PR runs the
 - A change under `.github/workflows/` or `.github/actions/` runs every suite on its pull request, which exercises it.
   A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request: every target
   builds and packs, and nothing is published.
-- Dependabot updates the actions of the workflows and of `.github/actions/*`.
+- Dependabot updates the actions of the workflows and of `.github/actions/*`: the commit SHA and the version comment
+  together.
