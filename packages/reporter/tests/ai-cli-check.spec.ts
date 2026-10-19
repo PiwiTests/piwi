@@ -127,13 +127,12 @@ describe('runCheck / runAi', () => {
 });
 
 describe('buildResolveInvocation', () => {
-  it('runs playwright in resolve mode, single-worker, threading grep/project/env', () => {
+  it('runs playwright test in resolve mode, single-worker, threading grep/project/env', () => {
     const inv = buildResolveInvocation(
       ['--grep', 'checkout', '--project', 'chromium', '--update-ai', '--env', 'FLAG=on'],
       { PIWI_DASHBOARD_URL: 'https://d', PATH: '/usr/bin' },
     );
-    expect(inv.command).toBe('npx');
-    expect(inv.args).toEqual(['playwright', 'test', '--grep', 'checkout', '--project', 'chromium', '--workers=1']);
+    expect(inv.args).toEqual(['--grep', 'checkout', '--project', 'chromium', '--workers=1']);
     expect(inv.env.PIWI_AI).toBe('resolve');
     expect(inv.env.PIWI_AI_UPDATE).toBe('true');
     expect(inv.env.FLAG).toBe('on');
@@ -142,7 +141,7 @@ describe('buildResolveInvocation', () => {
 
   it('omits the update flag when --update-ai is absent', () => {
     const inv = buildResolveInvocation([], {});
-    expect(inv.args).toEqual(['playwright', 'test', '--workers=1']);
+    expect(inv.args).toEqual(['--workers=1']);
     expect(inv.env.PIWI_AI_UPDATE).toBeUndefined();
   });
 });
