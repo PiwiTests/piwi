@@ -501,6 +501,37 @@ fn worktrees_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// The prefix of a worktrees folder moved aside for deletion.
+const DISCARDED_PREFIX: &str = "worktrees-discarded-";
+
+/// Discard the worktrees an earlier launch left behind (a crash skips the
+/// cleanup on quit). Called at startup, before any job can start: the folder is
+/// moved aside at once, then deleted in the background together with any folder
+/// an interrupted deletion left. A linked repository forgets the removed
+/// worktrees at its next `git worktree prune`.
+pub(crate) fn discard_leftover_worktrees(app_data_dir: &Path) {
+    let root = app_data_dir.join("worktrees");
+    if root.is_dir() {
+        let aside = app_data_dir.join(format!("{DISCARDED_PREFIX}{}", &crate::random_hex_32()[..8]));
+        let _ = std::fs::rename(&root, aside);
+    }
+    let Ok(entries) = std::fs::read_dir(app_data_dir) else {
+        return;
+    };
+    let discarded: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(DISCARDED_PREFIX))
+        .map(|entry| entry.path())
+        .collect();
+    if !discarded.is_empty() {
+        std::thread::spawn(move || {
+            for dir in discarded {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        });
+    }
+}
+
 /// Validate a `cwd` a local run was pointed at: it must canonicalize to a real
 /// directory inside this app's worktrees dir. Used by `desktop_run_local_tests`
 /// so the webview cannot redirect a run at an arbitrary folder.
@@ -897,22 +928,36 @@ fn resolve_repo(
     Ok((record, folder, git))
 }
 
-/// Prepare a worktree of `commit` under the worktrees dir, keyed by project and
-/// short sha. Returns the worktree path.
+/// Prepare job `id`'s worktree of `commit` under the worktrees dir. Returns the
+/// worktree path.
 fn add_worktree(
     app: &AppHandle,
     git: &Path,
     folder: &Path,
     project_id: &str,
     commit: &str,
+    id: u32,
 ) -> Result<PathBuf, String> {
-    add_worktree_in(&worktrees_root(app)?, git, folder, project_id, "", commit)
+    add_worktree_in(&worktrees_root(app)?, git, folder, project_id, "", commit, id)
 }
 
-/// Prepare a worktree of `commit` at `<root>/<project>/<prefix><short sha>`,
-/// detached, from the repository at `folder`. The folder's HEAD, index and
-/// working files are left as they are. A lab session uses its own prefix so
-/// it never removes a reproduction's worktree of the same commit.
+/// Where job `id` checks out `commit`: `<root>/<project>/<prefix><short sha>-<id>`.
+/// One folder per job, so jobs at the same commit never share or remove each
+/// other's worktree.
+pub(crate) fn job_worktree_path(
+    root: &Path,
+    project_id: &str,
+    prefix: &str,
+    commit: &str,
+    id: u32,
+) -> PathBuf {
+    root.join(project_id)
+        .join(format!("{prefix}{}-{id}", &commit[..commit.len().min(12)]))
+}
+
+/// Prepare job `id`'s worktree of `commit` ([`job_worktree_path`]), detached,
+/// from the repository at `folder`. The folder's HEAD, index and working files
+/// are left as they are.
 pub(crate) fn add_worktree_in(
     root: &Path,
     git: &Path,
@@ -920,6 +965,7 @@ pub(crate) fn add_worktree_in(
     project_id: &str,
     prefix: &str,
     commit: &str,
+    id: u32,
 ) -> Result<PathBuf, String> {
     if !crate::runner::valid_project_id(project_id) {
         return Err("invalid project id".into());
@@ -930,10 +976,9 @@ pub(crate) fn add_worktree_in(
             &commit[..commit.len().min(12)]
         ));
     }
-    let worktree = root
-        .join(project_id)
-        .join(format!("{prefix}{}", &commit[..commit.len().min(12)]));
-    // A stale worktree from a previous run at the same commit blocks `add`.
+    let worktree = job_worktree_path(root, project_id, prefix, commit, id);
+    // Run ids restart at each launch: a folder already there is a leftover of
+    // an earlier launch, which no running job owns, and it blocks `add`.
     if worktree.exists() {
         let _ = Command::new(git)
             .arg("-C")
@@ -984,7 +1029,7 @@ pub async fn desktop_reproduce_here(
     let id = state.allocate_id();
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
-    let worktree = add_worktree(&app, &git, &folder, &project_id, &commit)?;
+    let worktree = add_worktree(&app, &git, &folder, &project_id, &commit, id)?;
     state.register_job(
         id,
         Job {
@@ -1127,7 +1172,7 @@ pub async fn desktop_bisect_here(
     let id = state.allocate_id();
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
-    let worktree = add_worktree(&app, &git, &folder, &project_id, &bad)?;
+    let worktree = add_worktree(&app, &git, &folder, &project_id, &bad, id)?;
     state.register_job(
         id,
         Job {
@@ -1405,6 +1450,7 @@ pub async fn desktop_flake_lab_here(
         &project_id,
         "flake-",
         &commit,
+        id,
     )?;
     state.register_job(
         id,
@@ -1547,8 +1593,10 @@ pub async fn desktop_flake_lab_job(
         .map(|out| is_dirty(&out))
         .unwrap_or(false);
 
+    let state = app.state::<LocalRuns>();
+    let id = state.allocate_id();
     let root = worktrees_root(&app)?;
-    let worktree = add_worktree_in(&root, &git, &folder, &project_id, "lab-job-", &commit)?;
+    let worktree = add_worktree_in(&root, &git, &folder, &project_id, "lab-job-", &commit, id)?;
     let cleanup = Cleanup {
         git: git.clone(),
         folder: folder.clone(),
@@ -1564,8 +1612,6 @@ pub async fn desktop_flake_lab_job(
         return Err(e);
     }
 
-    let state = app.state::<LocalRuns>();
-    let id = state.allocate_id();
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
     state.register_job(
@@ -2109,11 +2155,11 @@ mod tests {
 
         let root = repo.dir.join("worktrees");
         let worktree =
-            add_worktree_in(&root, &repo.git, &repo.folder(), "3", "flake-", &head).unwrap();
+            add_worktree_in(&root, &repo.git, &repo.folder(), "3", "flake-", &head, 7).unwrap();
 
         assert_eq!(
             worktree,
-            root.join("3").join(format!("flake-{}", &head[..12]))
+            root.join("3").join(format!("flake-{}-7", &head[..12]))
         );
         assert_eq!(
             std::fs::read_to_string(worktree.join("a.spec.ts")).unwrap(),
@@ -2153,9 +2199,60 @@ mod tests {
             "3",
             "flake-",
             "0123456789abcdef0123456789abcdef01234567",
+            1,
         )
         .unwrap_err();
         assert!(err.contains("git fetch"), "{err}");
+    }
+
+    #[test]
+    fn jobs_at_the_same_commit_each_get_their_own_worktree() {
+        let Some(repo) = Repo::new("same-commit") else {
+            return;
+        };
+        let head = repo.run(&["rev-parse", "HEAD"]).trim().to_string();
+        let root = repo.dir.join("worktrees");
+        let first = add_worktree_in(&root, &repo.git, &repo.folder(), "3", "", &head, 1).unwrap();
+        let second = add_worktree_in(&root, &repo.git, &repo.folder(), "3", "", &head, 2).unwrap();
+        assert_ne!(first, second);
+        assert!(first.join("a.spec.ts").is_file());
+
+        perform_cleanup(
+            &Cleanup {
+                git: repo.git.clone(),
+                folder: repo.folder(),
+                worktree: second.clone(),
+                bisect: false,
+            },
+            &AtomicBool::new(false),
+        );
+        assert!(!second.exists());
+        assert!(first.join("a.spec.ts").is_file());
+    }
+
+    #[test]
+    fn leftover_worktrees_are_moved_aside_and_deleted() {
+        let dir = std::env::temp_dir().join(format!("piwi-leftover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("worktrees").join("3").join("abc-1")).unwrap();
+        std::fs::create_dir_all(dir.join(format!("{DISCARDED_PREFIX}old"))).unwrap();
+        std::fs::create_dir_all(dir.join(".data")).unwrap();
+
+        discard_leftover_worktrees(&dir);
+        assert!(!dir.join("worktrees").exists());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let left = || {
+            std::fs::read_dir(&dir)
+                .unwrap()
+                .flatten()
+                .map(|entry| entry.file_name().to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+        };
+        while left() != [".data"] && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(left(), [".data"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

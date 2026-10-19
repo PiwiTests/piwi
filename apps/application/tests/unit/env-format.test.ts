@@ -233,9 +233,11 @@ describe('emitFlyToml', () => {
     expect(out.split('[mounts]')[0]).not.toContain('PIWI_AUTH_SECRET =');
   });
 
-  test('derives the public URL from the app name', () => {
+  test('leaves the public URL to the app name the server reads at start', () => {
     const named = emitFlyToml([{ name: 'PIWI_SITE_URL', value: '', platformValue: 'url' }], { name: 'piwi-tests' });
-    expect(named).toContain('PIWI_SITE_URL = "https://piwi-tests.fly.dev"');
+    expect(named).not.toContain('PIWI_SITE_URL =');
+    expect(named).not.toContain('piwi-tests.fly.dev');
+    expect(named).toContain('# PIWI_SITE_URL defaults to https://<app>.fly.dev');
     expect(named).toContain('source = "piwi_tests_data"');
   });
 });
@@ -287,9 +289,15 @@ describe('emitCoolifyCompose', () => {
   ]);
 
   test('uses Coolify magic variables for the domain and the secrets', () => {
-    expect(out).toContain('- SERVICE_FQDN_PIWI_3000\n');
+    expect(out).toContain('- SERVICE_URL_PIWI_3000\n');
     expect(out).toContain('- PIWI_AUTH_SECRET=${SERVICE_PASSWORD_64_PIWIAUTHSECRET}');
-    expect(out).toContain('- PIWI_SITE_URL=${SERVICE_FQDN_PIWI_3000}');
+    // The URL variable, unlike SERVICE_FQDN_*, carries the scheme the site URL needs.
+    expect(out).toContain('- PIWI_SITE_URL=${SERVICE_URL_PIWI_3000}');
+    expect(out).not.toContain('SERVICE_FQDN_');
+  });
+
+  test("keys the URL variable by the service's name", () => {
+    expect(emitCoolifyCompose([], { name: 'piwi-tests' })).toContain('- SERVICE_URL_PIWI_TESTS_3000\n');
   });
 
   test('declares a named volume at the data mount and a health check', () => {

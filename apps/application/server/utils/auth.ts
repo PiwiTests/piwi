@@ -3,7 +3,7 @@ import { apiError } from './api-error';
 import { useSession, updateSession, clearSession as h3ClearSession } from 'h3';
 import { getDatabase } from '../database';
 import { users, apiKeys, appSettings } from '../database/schema';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import type { User } from '../database/schema';
 import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -198,11 +198,26 @@ export async function verifyUser(username: string, password: string): Promise<Us
 }
 
 // Create a new user
-/** Whether the users table is empty — i.e. initial setup (`POST /api/auth/setup`) is still available. */
+/**
+ * Whether no administrator exists, so first-admin setup (`POST /api/auth/setup`)
+ * is open: on a new instance, and on one whose only accounts are members (the
+ * first OAuth sign-ins create members).
+ */
 export async function needsInitialSetup(): Promise<boolean> {
   const db = await getDatabase();
-  const existing = await db.select({ id: users.id }).from(users).limit(1);
-  return existing.length === 0;
+  const admin = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.role, InstanceRole.ADMINISTRATOR))
+    .limit(1);
+  return admin.length === 0;
+}
+
+/** Whether an account already uses `username`. */
+export async function usernameTaken(username: string): Promise<boolean> {
+  const db = await getDatabase();
+  const existing = await db.select({ id: users.id }).from(users).where(eq(users.username, username)).limit(1);
+  return existing.length > 0;
 }
 
 export async function createUser(username: string, password: string, role: InstanceRole, name?: string): Promise<User> {
@@ -227,31 +242,61 @@ export async function createUser(username: string, password: string, role: Insta
   return user;
 }
 
-/** Sentinel key marking that initial setup has been performed. */
+/** Whether `PIWI_SETUP_TOKEN` is set, so first-admin setup asks for it. */
+export function setupTokenRequired(): boolean {
+  return Boolean(process.env.PIWI_SETUP_TOKEN?.trim());
+}
+
+/** Whether `given` is the setup token (always true when none is set), compared in constant time. */
+export function setupTokenMatches(given: unknown): boolean {
+  const expected = process.env.PIWI_SETUP_TOKEN?.trim();
+  if (!expected) return true;
+  if (typeof given !== 'string') return false;
+  return timingSafeEqual(Buffer.from(hashToken(given.trim()), 'hex'), Buffer.from(hashToken(expected), 'hex'));
+}
+
+/** The setup record: `claimed` while a setup creates the administrator, anything else once one did. */
 const INITIAL_SETUP_KEY = 'initial_setup_completed';
+const SETUP_CLAIMED = 'claimed';
 
 /**
- * Atomically claim the one-time initial-setup slot, returning true for exactly
- * one caller.
+ * Atomically claim first-admin setup, returning true for exactly one caller.
  *
  * `needsInitialSetup` (a SELECT) and `createUser` (a later INSERT) are separate
  * statements, so two concurrent `POST /api/auth/setup` requests could both see
- * an empty users table and each create an administrator. Claiming a sentinel row
- * with `INSERT ... ON CONFLICT DO NOTHING` closes that window: SQLite and
- * Postgres both resolve the primary-key conflict atomically, so only the first
- * of any set of concurrent callers inserts the row (and goes on to create the
- * admin) while the rest conflict and get false. Callers must still gate on
- * `needsInitialSetup()` first, so an instance seeded by other means (OAuth, a
- * fixture) is never re-opened merely because the sentinel is absent.
+ * no administrator and each create one. The first claim inserts the setup
+ * record with `INSERT ... ON CONFLICT DO NOTHING`, which SQLite and PostgreSQL
+ * resolve atomically, so the other callers conflict and get false. A record
+ * left by an earlier, finished setup (its administrator since gone) is taken
+ * over by one caller, with an UPDATE that only changes a record not claimed
+ * yet. Callers gate on `needsInitialSetup()` first, so a finished setup is only
+ * taken over while no administrator exists.
  */
 export async function claimInitialSetup(db?: DrizzleDB): Promise<boolean> {
   const database = db ?? (await getDatabase());
+  const now = new Date();
   const inserted = await database
     .insert(appSettings)
-    .values({ key: INITIAL_SETUP_KEY, value: true, updatedAt: new Date() })
+    .values({ key: INITIAL_SETUP_KEY, value: SETUP_CLAIMED, updatedAt: now })
     .onConflictDoNothing({ target: appSettings.key })
     .returning({ key: appSettings.key });
-  return inserted.length > 0;
+  if (inserted.length > 0) return true;
+
+  const taken = await database
+    .update(appSettings)
+    .set({ value: SETUP_CLAIMED, updatedAt: now })
+    .where(and(eq(appSettings.key, INITIAL_SETUP_KEY), ne(appSettings.value, SETUP_CLAIMED)))
+    .returning({ key: appSettings.key });
+  return taken.length > 0;
+}
+
+/** Record that the claimed setup created its administrator. */
+export async function completeInitialSetup(db?: DrizzleDB): Promise<void> {
+  const database = db ?? (await getDatabase());
+  await database
+    .update(appSettings)
+    .set({ value: true, updatedAt: new Date() })
+    .where(eq(appSettings.key, INITIAL_SETUP_KEY));
 }
 
 /**

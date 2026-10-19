@@ -99,11 +99,11 @@ Create a file in your project's server plugins directory:
 export { default } from '@piwitests/instrumentation-nitro'
 ```
 
-The plugin is auto-loaded by Nitro. It captures `consola` Warning/Error entries (bare `console.*` calls are not captured) and unhandled H3 errors, then writes the header just before each response goes out — including error responses. Capture is on outside production; override either way with `PIWI_TEST_LOGS_DISABLED` (`true` = always off, `false` = on even in production).
+Nitro loads the plugin itself. It captures `consola` Warning/Error entries (not bare `console.*` calls) and unhandled H3 errors, a server-side render's own `$fetch` calls included, and writes the header as each response, error responses too, goes out. Capture is on outside production; override either way with `PIWI_TEST_LOGS_DISABLED` (`true` = always off, `false` = on even in production).
 
 **Requirements:** Nuxt 3+ / Nitro 2+ (peer deps `nitropack ≥2`, `h3 ≥1`, `consola ≥3` — all included in any Nuxt project).
 
-[`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app) runs a standalone Nitro app with this package wired in, and the same Playwright suite.
+[`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app) runs a standalone Nitro app with this package and the same Playwright suite.
 
 ### Reporter setup
 

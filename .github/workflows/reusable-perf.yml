@@ -25,7 +25,7 @@ jobs:
     steps:
       # The merge commit and its first parent: the base the pull request is measured against.
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
@@ -44,7 +44,7 @@ jobs:
           playwright: shell
 
       - name: Download build output
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-output
 
@@ -58,14 +58,14 @@ jobs:
       # A base commit is built once; every pull request on it reuses the build.
       - name: Restore the base build
         id: base-build
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
 
       - name: Check out the base
         if: steps.base-build.outputs.cache-hit != 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.base.outputs.sha }}
           path: base
@@ -83,7 +83,7 @@ jobs:
 
       - name: Save the base build
         if: steps.base-build.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
@@ -110,7 +110,7 @@ jobs:
 
       - name: Upload the results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: perf-results
           path: perf
@@ -122,7 +122,7 @@ jobs:
       # A pull request from a fork gets a read-only token: the report stays in the job summary and the artifact.
       - name: Comment on the pull request
         continue-on-error: true
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require('node:fs');

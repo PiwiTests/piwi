@@ -29,6 +29,7 @@ import {
   type QuarantinedTest,
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
+import { shellWord } from './commands.js';
 import type {
   BaselineChoice,
   ConnectionSource,
@@ -292,7 +293,8 @@ export function withServerUrl(
 ): string {
   const own = resolvePiwiConnection({ env, dotEnv: readDotEnv(root), desktop });
   const target = serverUrl.replace(/\/+$/, '');
-  return own?.serverUrl === target ? command : `${command} --server-url ${target}`;
+  const word = shellWord(target);
+  return own?.serverUrl === target || !word ? command : `${command} --server-url ${word}`;
 }
 
 /**

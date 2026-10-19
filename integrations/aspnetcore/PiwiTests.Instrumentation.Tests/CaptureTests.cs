@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -86,6 +87,40 @@ public class CaptureTests
         var logs = PiwiTestLogCapture.Stop()!;
 
         Assert.Equal(["failed", "boom"], logs.Select(e => e.Message));
+    }
+
+    [Fact]
+    public async Task Parallel_tasks_of_one_request_share_its_capped_buffer()
+    {
+        PiwiTestLogCapture.Begin();
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(task => Task.Run(() =>
+        {
+            for (var i = 0; i < 20; i++)
+                PiwiTestLogCapture.TryAdd(LogLevel.Warning, "Orders", $"task {task}", null);
+        })));
+
+        var logs = PiwiTestLogCapture.Stop()!;
+
+        Assert.Equal(50, logs.Count);
+    }
+
+    [Fact]
+    public async Task What_a_task_logs_once_the_capture_stopped_is_dropped()
+    {
+        PiwiTestLogCapture.Begin();
+        var stopped = new TaskCompletionSource();
+        var task = Task.Run(async () =>
+        {
+            await stopped.Task;
+            PiwiTestLogCapture.TryAdd(LogLevel.Warning, "Orders", "late", null);
+        });
+        PiwiTestLogCapture.TryAdd(LogLevel.Warning, "Orders", "kept", null);
+
+        var logs = PiwiTestLogCapture.Stop()!;
+        stopped.SetResult();
+        await task;
+
+        Assert.Equal(["kept"], logs.Select(e => e.Message));
     }
 
     [Fact]

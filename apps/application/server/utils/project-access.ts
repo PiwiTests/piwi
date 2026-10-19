@@ -80,6 +80,16 @@ export async function requireProjectAccess(
   return user;
 }
 
+/** Whether the caller holds at least one of `permissions` on `projectId`. */
+export async function holdsProjectPermission(
+  event: H3Event,
+  projectId: number,
+  permissions: readonly ProjectPermission[],
+): Promise<boolean> {
+  const access = await getRequestAccess(event);
+  return permissions.some((permission) => can(access, permission, projectId));
+}
+
 /** Parse and validate a numeric route param, throwing 400 if missing/invalid. */
 export function requireRouteId(event: H3Event, paramName = 'id', label = 'ID'): number {
   const id = parseInt(getRouterParam(event, paramName) || '0');

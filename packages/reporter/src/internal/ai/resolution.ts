@@ -24,6 +24,9 @@ const MAX_SNAPSHOT_CHARS = 24_000;
 
 /** Default ceiling on how many steps one flow resolution may take. */
 const DEFAULT_MAX_STEPS = 20;
+/** The most response URLs one wait request sends, and the longest URL kept (the dashboard bounds both). */
+const MAX_OBSERVED_RESPONSES = 50;
+const MAX_OBSERVED_URL_CHARS = 4_000;
 
 // ── Wire contract (mirror of #shared/ai-step-resolution) ─────────────────────
 
@@ -324,14 +327,17 @@ export async function resolveRun(template: string, ctx: ResolutionContext): Prom
 
     // Let the model pick the network response replay should wait for, from the
     // real (masked) URLs the action produced. Prompt URLs never contain them.
-    if (observed.length > 0) {
+    const observedResponses = [...new Set(observed.map((url) => maskValues(url, ctx.params)))]
+      .filter((url) => url.length <= MAX_OBSERVED_URL_CHARS)
+      .slice(0, MAX_OBSERVED_RESPONSES);
+    if (observedResponses.length > 0) {
       const waitDecision = await ctx.resolver.resolveStep({
         kind: 'wait',
         template,
         paramNames,
         ariaSnapshot: '',
         history,
-        observedResponses: observed.map((url) => maskValues(url, ctx.params)),
+        observedResponses,
       });
       if (waitDecision.waitForResponse) step.waitForResponse = waitDecision.waitForResponse;
     }

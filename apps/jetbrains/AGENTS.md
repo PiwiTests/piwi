@@ -22,6 +22,11 @@ later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `P
 (`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
 while it does not run.
 
+- **Nothing starts in an untrusted project.** In a project opened in safe mode (`PiwiProjectService.trusted`, the
+  platform's `isTrusted`), the plugin starts no editor service, runs no command (`PiwiCommands.run`, `startRun`) and
+  reads no `.env` for Open in IDE: each of them runs or believes what the repository holds. A supported file opened
+  meanwhile says once that Piwi waits for the trust (`Glue.UNTRUSTED`); the next file opened once it is trusted
+  starts the service.
 - `PiwiLspServerSupportProvider.kt` registers the service; the LSP client renders its diagnostics, quick fixes and
   hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`; `piwi.desktopJob`,
   from a quick fix or a flaky test's Code Vision line, and the `piwi/desktopJobChanged` notifications, with the share

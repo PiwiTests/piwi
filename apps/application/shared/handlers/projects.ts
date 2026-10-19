@@ -1720,6 +1720,12 @@ export interface FlakyTestsFilter {
   tags?: string[];
   owner?: string;
   priority?: string;
+  /** Only these test cases (an analytics test filter). */
+  testCaseIds?: ReadonlySet<number>;
+  /** Only the executions of these Playwright projects (browsers). */
+  browsers?: string[];
+  /** Conditions on `test_runs` (an analytics scope's period and run filters), replacing the environment, branch and run scope. */
+  runConditions?: SQL[];
 }
 
 export async function getProjectFlakyTests(
@@ -1761,10 +1767,11 @@ export async function getProjectFlakyTestsWithVerified(
   const effectiveLimit = Math.min(200, Math.max(1, runsLimit));
 
   // Step 1: Last N terminal runs. An explicit branch filter scopes to exactly
-  // that branch. Otherwise, when the project's default branch is known, the
-  // leaderboard reads default-branch runs (plus runs with no branch, e.g. local
-  // or pre-migration) so a work-in-progress branch stops contaminating the
-  // project's health signal. Environment scopes independently. A project run
+  // that branch. Otherwise the leaderboard reads the runs of the project's
+  // default branch (`resolveStoredDefaultBranch`, as the project tabs do) plus
+  // runs with no branch (local or pre-migration), so a work-in-progress branch
+  // stops contaminating the project's health signal. Environment scopes
+  // independently. A project run
   // scope replaces all three with the project page's filters. Only runs the
   // `flakiness` use reads count: lab runs inject faults and conditions,
   // bisect and reproduction runs replay an older commit, and an environment
@@ -1774,14 +1781,17 @@ export async function getProjectFlakyTestsWithVerified(
     inArray(testRuns.status, TERMINAL_STATUSES),
     eligibleRunSql('flakiness'),
   ];
-  if (scope) {
+  if (filter?.runConditions) {
+    runsConditions.push(...filter.runConditions);
+  } else if (scope) {
     runsConditions.push(...(await projectRunScopeConditions(db, projectId, scope)));
   } else {
     if (environment) runsConditions.push(eq(testRuns.environment, environment));
     if (branch) {
       runsConditions.push(eq(testRuns.branch, branch));
-    } else if (project.defaultBranch) {
-      runsConditions.push(or(eq(testRuns.branch, project.defaultBranch), isNull(testRuns.branch))!);
+    } else {
+      const defaultBranch = await resolveStoredDefaultBranch(db, project);
+      runsConditions.push(or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''))!);
     }
   }
   const filteredRuns: any[] = await db
@@ -1807,7 +1817,12 @@ export async function getProjectFlakyTestsWithVerified(
       browser: testRunsCases.browser,
     })
     .from(testRunsCases)
-    .where(inArray(testRunsCases.testRunId, filteredRunIds));
+    .where(
+      and(
+        inArray(testRunsCases.testRunId, filteredRunIds),
+        filter?.browsers?.length ? inArray(testRunsCases.browserName, filter.browsers) : undefined,
+      ),
+    );
 
   // Step 3: Per (testCaseId, runId, browserKey): group rows
   type BrowserGroup = { rows: any[]; finalStatus: string; retryPass: boolean };
@@ -1950,6 +1965,7 @@ export async function getProjectFlakyTestsWithVerified(
 
   for (const [testCaseId, agg] of caseAggMap) {
     if (allowedCaseIds && !allowedCaseIds.has(testCaseId)) continue;
+    if (filter?.testCaseIds && !filter.testCaseIds.has(testCaseId)) continue;
     if (agg.totalRuns < 3) continue;
     if (agg.retryPassRuns < 1 && agg.alternations < 2) continue;
 

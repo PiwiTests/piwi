@@ -113,6 +113,7 @@ import {
   type FixPlan,
   type FlakeLabEntry,
 } from './piwi-client.js';
+import { playwrightArgsOf, playwrightTestCommand, verificationCommand } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
 import { RunWatch, newRunRef } from './run-watch.js';
 import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
@@ -1962,7 +1963,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         actions.push(...desktopJobActions(owner, failure, diagnostic));
         const fixPlan = await fixPlanAsked;
         const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
-        if (fixPlan && planEdit) {
+        const verification = fixPlan ? verificationCommand(fixPlan.verify.command) : null;
+        if (planEdit && verification) {
           actions.push({
             title: `Apply the fix plan (${plural(planEdit.files, 'file')}), then run its verification`,
             kind: CodeActionKind.QuickFix,
@@ -1972,13 +1974,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               title: 'Run the verification',
               command: 'piwi.runCommand',
               arguments: [
-                {
-                  cwd: commandFolder(owner),
-                  command: fixPlan.verify.command,
-                  env: editorRunEnv(),
-                } satisfies RunCommandArgs,
+                { cwd: commandFolder(owner), command: verification, env: editorRunEnv() } satisfies RunCommandArgs,
               ],
             },
+          });
+        } else if (planEdit) {
+          actions.push({
+            title: `Apply the fix plan (${plural(planEdit.files, 'file')})`,
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            edit: planEdit.edit,
           });
         }
         // Offered once the failure is known to have no ticket.
@@ -2519,13 +2524,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
     if (!context?.client || !context.project || !params.testIds.length) return null;
-    const { args, command } = await context.client.runArgs(context.project.id, params.testIds);
+    const answer = await context.client.runArgs(context.project.id, params.testIds);
+    const args = Array.isArray(answer.args) && answer.args.length ? answer.args : playwrightArgsOf(answer.command);
+    const command = args?.length ? playwrightTestCommand(args) : null;
+    if (!args || !command) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref);
     const run: RunCommand = {
       cwd: commandFolder(context),
       args,
-      command: command || `npx playwright test ${args.join(' ')}`,
+      command,
       env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
@@ -2578,13 +2586,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const file = uriToPath(params.uri);
     const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.selections.length) ?? null;
     const selection = context?.selections.find((s) => s.key === params.key);
-    if (!context || !selection?.command) return null;
+    const args = selection ? playwrightArgsOf(selection.command) : null;
+    const command = args?.length ? playwrightTestCommand(args) : null;
+    if (!context || !args || !command) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref);
     const run: RunCommand = {
       cwd: commandFolder(context),
-      command: selection.command,
-      args: [],
+      command,
+      args,
       env: editorRunEnv(ref),
       ref,
     };

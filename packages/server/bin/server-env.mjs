@@ -40,6 +40,13 @@ const RUNTIME_CONFIG_ENV = {
   PIWI_OAUTH_ALLOWED_DOMAINS: 'NUXT_OAUTH_ALLOWED_DOMAINS',
   PIWI_OAUTH_GITHUB_ALLOWED_ORGS: 'NUXT_OAUTH_GITHUB_ALLOWED_ORGS',
 }
+// On Fly.io an app answers at https://<app>.fly.dev, and `fly launch` may rename the app when its
+// name is taken: without a site URL of its own, the instance takes it from the app's name.
+const flyApp = process.env.FLY_APP_NAME
+if (!process.env.PIWI_SITE_URL && !process.env.NUXT_PUBLIC_SITE_URL && flyApp && /^[a-z0-9-]+$/i.test(flyApp)) {
+  process.env.PIWI_SITE_URL = `https://${flyApp}.fly.dev`
+}
+
 for (const [piwiName, nuxtName] of Object.entries(RUNTIME_CONFIG_ENV)) {
   if (process.env[piwiName]) process.env[nuxtName] ??= process.env[piwiName]
 }

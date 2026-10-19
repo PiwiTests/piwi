@@ -22,6 +22,12 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): bo
   return true;
 }
 
+/** Give back one slot `checkRateLimit` took under `key`, for a request that turned out not to count. */
+export function releaseRateLimit(key: string): void {
+  const entry = store.get(key);
+  if (entry && entry.resetAt >= Date.now() && entry.count > 0) entry.count--;
+}
+
 /** Whether `key` has reached `limit` within its current window, without counting this call. */
 export function isRateLimited(key: string, limit: number): boolean {
   const entry = store.get(key);

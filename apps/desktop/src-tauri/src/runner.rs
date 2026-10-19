@@ -75,6 +75,10 @@ pub struct Job {
     pub cleaned: Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// How long the runs still going when the app quits get to wind down after a
+/// Ctrl+C before their process trees are killed.
+const QUIT_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Running local processes, keyed by run id so the webview can stop one. Plain
 /// test runs live in `children`; reproduce/bisect drivers live in `jobs` because
 /// they also own a worktree that must be removed when they stop or the app quits.
@@ -85,6 +89,9 @@ pub struct LocalRuns {
     /// Plain runs already asked to stop gracefully — a second stop kills them.
     stopping: Mutex<HashSet<u32>>,
     jobs: Mutex<HashMap<u32, Job>>,
+    /// Reproduction specs written into a linked folder, by run id: removed when
+    /// their run ends, or when the app quits.
+    specs: Mutex<HashMap<u32, PathBuf>>,
 }
 
 impl LocalRuns {
@@ -127,6 +134,18 @@ impl LocalRuns {
         self.drop_child(id);
     }
 
+    /// Record a reproduction spec run `id` wrote into a linked folder.
+    pub(crate) fn track_spec(&self, id: u32, spec: PathBuf) {
+        self.specs.lock().unwrap().insert(id, spec);
+    }
+
+    /// Remove run `id`'s reproduction spec, if it still has one.
+    pub(crate) fn remove_spec(&self, id: u32) {
+        if let Some(spec) = self.specs.lock().unwrap().remove(&id) {
+            crate::repro::remove_spec(&spec);
+        }
+    }
+
     /// Forget a plain run once its process has exited.
     fn drop_child(&self, id: u32) {
         self.children.lock().unwrap().remove(&id);
@@ -152,21 +171,55 @@ impl LocalRuns {
         }
     }
 
-    /// Kill every process still tracked and tear down every worktree — called
-    /// when the app exits so no orphaned test run, browser fleet or worktree
-    /// outlives the shell.
+    /// Stop every process still tracked, tear down every worktree and remove
+    /// every reproduction spec — called when the app exits so no orphaned test
+    /// run, webServer, browser fleet, worktree or spec outlives the shell.
+    ///
+    /// Each test run is first asked to stop as Ctrl+C would, so Playwright
+    /// closes its webServer and browsers itself; whatever still runs
+    /// `QUIT_GRACE` later is killed with its process tree.
     pub fn kill_all(&self) {
+        let mut interrupted = false;
+        for child in self.children.lock().unwrap().values() {
+            interrupted |= crate::interrupt::interrupt(child.pid());
+        }
+        for job in self.jobs.lock().unwrap().values() {
+            job.stop.store(true, Ordering::SeqCst);
+            if let Some(child) = job.child.lock().unwrap().filter(|c| c.interruptible) {
+                interrupted |= crate::interrupt::interrupt(child.pid);
+            }
+        }
+        if interrupted {
+            let deadline = std::time::Instant::now() + QUIT_GRACE;
+            while self.any_test_running() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
         for (_, child) in self.children.lock().unwrap().drain() {
+            crate::worktree::kill_child_tree(child.pid());
             let _ = child.kill();
         }
         self.stopping.lock().unwrap().clear();
         for (_, job) in self.jobs.lock().unwrap().drain() {
-            job.stop.store(true, Ordering::SeqCst);
             if let Some(child) = *job.child.lock().unwrap() {
                 crate::worktree::kill_child_tree(child.pid);
             }
             crate::worktree::perform_cleanup(&job.cleanup, &job.cleaned);
         }
+        for (_, spec) in self.specs.lock().unwrap().drain() {
+            crate::repro::remove_spec(&spec);
+        }
+    }
+
+    /// Whether a plain run, or a job's test or browser install, is still running.
+    fn any_test_running(&self) -> bool {
+        !self.children.lock().unwrap().is_empty()
+            || self
+                .jobs
+                .lock()
+                .unwrap()
+                .values()
+                .any(|job| job.child.lock().unwrap().is_some_and(|c| c.interruptible))
     }
 }
 
@@ -752,6 +805,22 @@ fn after_grace(app: &AppHandle, force: impl FnOnce(&LocalRuns) + Send + 'static)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quitting_removes_the_reproduction_specs_still_on_disk() {
+        let dir = std::env::temp_dir().join(format!("piwi-quit-spec-{}", std::process::id()));
+        let specs = dir.join("tests").join("piwi-repro");
+        std::fs::create_dir_all(&specs).unwrap();
+        let spec = specs.join("piwi-repro-abc.spec.ts");
+        std::fs::write(&spec, "").unwrap();
+
+        let runs = LocalRuns::default();
+        runs.track_spec(1, spec.clone());
+        runs.kill_all();
+        assert!(!spec.exists());
+        assert!(!specs.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_project_id_is_digits_only() {

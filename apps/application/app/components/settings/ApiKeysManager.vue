@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ApiKeySummary, ApiKeysResponse, CreateApiKeyResponse } from '~~/types/api';
+import { endOfLocalDay, localDateInputValue } from '~/utils/local-date';
 
 /**
  * Manages the API keys of a single user: lists them, creates one (revealing the
@@ -58,9 +59,9 @@ function cancelCreateKey() {
 async function handleCreateApiKey() {
   try {
     const body: { name: string; expiresAt?: string } = { name: newKeyName.value };
-    if (newKeyExpiry.value) {
-      body.expiresAt = new Date(newKeyExpiry.value).toISOString();
-    }
+    // The key works through the whole chosen day, in the viewer's time zone.
+    const expiresAt = newKeyExpiry.value ? endOfLocalDay(newKeyExpiry.value) : null;
+    if (expiresAt) body.expiresAt = expiresAt.toISOString();
 
     const result = await $fetch<CreateApiKeyResponse>(`/api/users/${props.userId}/api-keys`, {
       method: 'POST',
@@ -179,7 +180,7 @@ async function handleRevokeApiKey() {
         </UFormField>
 
         <UFormField label="Expires at (optional)" name="expiresAt">
-          <UInput v-model="newKeyExpiry" type="date" size="sm" :min="new Date().toISOString().split('T')[0]" />
+          <UInput v-model="newKeyExpiry" type="date" size="sm" :min="localDateInputValue()" />
         </UFormField>
 
         <div class="flex gap-2">

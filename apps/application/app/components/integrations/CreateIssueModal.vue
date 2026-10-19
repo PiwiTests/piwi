@@ -156,6 +156,8 @@ const description = computed(() => {
 // Setting the project's default Jira project needs the binding's permission.
 const { can } = useAuth();
 const canBind = computed(() => (draft.value ? can('project:manage', draft.value.projectId) : false));
+/** A share link is public: only someone who may create one can put it in the ticket. */
+const canShareLink = computed(() => draft.value != null && can('share:create', draft.value.projectId));
 
 const canCreate = computed(
   () =>
@@ -521,7 +523,8 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
               <USwitch
                 v-model="include.includeShareLink"
                 label="Share link"
-                :disabled="!draft.linksBack"
+                :disabled="!draft.linksBack || !canShareLink"
+                :title="canShareLink ? undefined : 'A share link needs the Maintainer role or above on this project'"
                 @update:model-value="refreshPreview"
               />
             </div>

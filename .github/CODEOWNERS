@@ -1,0 +1,3 @@
+# The CI workflows, the release pipeline and the actions they share: a change here runs with the repository's tokens
+# and decides what is published, so it needs the maintainer's review.
+/.github/ @PhenX

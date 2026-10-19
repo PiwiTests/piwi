@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../../database/schema';
-import { requireProjectAccess } from '../../../utils/project-access';
+import { holdsProjectPermission, requireProjectAccess } from '../../../utils/project-access';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { evaluateGatePolicy, isEmptyPolicy, type GateFacts, type GatePolicy } from '@piwitests/core/gate';
 import { parseTagFilter } from '#shared/utils/tag-filter';
@@ -24,7 +24,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Evaluate a CI gate policy against a finished run',
     description:
-      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch). A leak rule on a run that sent no resource report is a violation. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only in its first release: it reports the run’s uncovered changed files without changing the verdict. `minPatchCoverage` (a percentage) is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Evaluation does not modify the run. Each evaluation is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, the verdict is also posted as the `<statusContext>/gate` commit status.',
+      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch). A leak rule on a run that sent no resource report is a violation. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only in its first release: it reports the run’s uncovered changed files without changing the verdict. `minPatchCoverage` (a percentage) is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Evaluation does not modify the run. Any reader of the project may evaluate a policy. An evaluation by a caller who holds `run:submit` or `run:control` on the project (the CI key `piwi gate` sends) is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, its verdict is also posted as the `<statusContext>/gate` commit status. Any other caller gets the verdict only.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
     requestBody: {
@@ -292,6 +292,11 @@ export default eventHandler(async (event) => {
     }
   }
 
+  // Only a caller who submits or controls the project's runs stores the
+  // evaluation and posts its commit status; anyone else gets the verdict only.
+  const response = warnings.length > 0 ? { ...result, warnings } : result;
+  if (!(await holdsProjectPermission(event, run.projectId, ['run:submit', 'run:control']))) return response;
+
   // Store the evaluation for the PR state sweep, then post the opt-in commit
   // status. Neither can fail the request: the verdict is the answer.
   const clusterByExecution = new Map(caseRows.map((row) => [row.id, row.failureClusterId]));
@@ -320,5 +325,5 @@ export default eventHandler(async (event) => {
     result,
   });
 
-  return warnings.length > 0 ? { ...result, warnings } : result;
+  return response;
 });

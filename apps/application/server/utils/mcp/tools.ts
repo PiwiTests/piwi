@@ -190,6 +190,7 @@ import type { HandbackActor } from '#shared/handback-outcomes';
 import type { FailureCluster, FailureDiagnosis, User } from '../../database/schema';
 import {
   PROJECT_ROLE_LABELS,
+  PROJECT_ROLES,
   can,
   holdsAnywhere,
   isProjectPermission,
@@ -338,26 +339,34 @@ async function loadCluster(db: DbClient, id: number): Promise<FailureCluster | n
   return cluster ?? null;
 }
 
-/** The refusal naming a missing permission and who holds it, so the agent can tell its user what to ask for. */
-function permissionRefusal(permission: Permission, projectId?: number): string {
+/** The refusal naming the missing permissions and who holds them, so the agent can tell its user what to ask for. */
+function permissionRefusal(permissions: readonly Permission[], projectId?: number): string {
   const where = projectId === undefined ? '' : ` on project ${projectId}`;
+  const granting = new Set(permissions.filter(isProjectPermission).flatMap(rolesGranting));
   let holders = 'administrators only';
-  if (isProjectPermission(permission)) {
-    const labels = rolesGranting(permission).map((role) => PROJECT_ROLE_LABELS[role]);
+  if (granting.size > 0) {
+    const labels = PROJECT_ROLES.filter((role) => granting.has(role)).map((role) => PROJECT_ROLE_LABELS[role]);
     const last = labels.pop();
     holders = labels.length ? `held by the ${labels.join(', ')} and ${last} roles` : `held by the ${last} role`;
   }
-  return `This action requires the ${permission} permission${where} (${holders})`;
+  return `This action requires the ${permissions.join(' or ')} permission${where} (${holders})`;
 }
 
 /**
- * Throw unless the caller holds `permission` on `projectId`, as `can` decides:
- * a write tool checks the permission its REST twin declares on the project it
- * acts on, and an instance permission (no project) needs an administrator.
- * Reading a project is not enough to write to it.
+ * Throw unless the caller holds `permission` (or one of the list) on
+ * `projectId`, as `can` decides: a write tool checks the permission its REST
+ * twin declares on the project it acts on, and an instance permission (no
+ * project) needs an administrator. Reading a project is not enough to write to it.
  */
-export function assertPermission(ctx: McpContext, permission: Permission, projectId?: number): void {
-  if (!can(ctx.access, permission, projectId)) throw new Error(permissionRefusal(permission, projectId));
+export function assertPermission(
+  ctx: McpContext,
+  permission: Permission | readonly Permission[],
+  projectId?: number,
+): void {
+  const permissions = typeof permission === 'string' ? [permission] : permission;
+  if (!permissions.some((p) => can(ctx.access, p, projectId))) {
+    throw new Error(permissionRefusal(permissions, projectId));
+  }
 }
 
 /** The refusal of a diagnosis run on an instance with no AI provider, naming the way that still works. */
@@ -2515,7 +2524,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     // projects where they hold it.
     const permission: ProjectPermission =
       action === 'quarantine' || action === 'release' ? 'quarantine:write' : 'triage:write';
-    if (!holdsAnywhere(ctx.access, permission)) throw new Error(permissionRefusal(permission));
+    if (!holdsAnywhere(ctx.access, permission)) throw new Error(permissionRefusal([permission]));
     const rows = await db
       .select({ id: failureClusters.id, projectId: failureClusters.projectId })
       .from(failureClusters)
@@ -2772,7 +2781,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const id = numericParam(params.runId, 'runId');
     const input = parseSetRunIncident({ incident: params.incident, reason: params.reason });
     if (typeof input === 'string') throw new Error(input);
-    if ((await checkEntityScope(db, ctx, id, resolveRunProjectId, 'project:read')) === 'not-found') return null;
+    const projectId = await checkEntityScope(db, ctx, id, resolveRunProjectId);
+    if (projectId === 'not-found') return null;
+    assertPermission(ctx, ['run:submit', 'run:control'], projectId);
     const by = ctx.user?.id ? ctx.user.name || ctx.user.username : null;
     const state = await decideRunIncident(db, id, input, by);
     return dropNulls({

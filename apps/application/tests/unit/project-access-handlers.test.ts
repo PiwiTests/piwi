@@ -406,6 +406,17 @@ describe('users', () => {
       expect(instanceRoleChanged).toBe(true);
     });
 
+    test('two administrators demoted at once leave one administrator', async () => {
+      await db.update(schema.users).set({ role: 'administrator' }).where(eq(schema.users.id, 4));
+      const results = await Promise.allSettled([
+        updateUserAccount(db, 1, { role: InstanceRole.MEMBER }, asAdmin, guard),
+        updateUserAccount(db, 4, { role: InstanceRole.MEMBER }, asAdmin, guard),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const admins = await db.select().from(schema.users).where(eq(schema.users.role, 'administrator'));
+      expect(admins).toHaveLength(1);
+    });
+
     test('without authentication the rule does not apply', async () => {
       const { user } = await updateUserAccount(db, 1, { role: InstanceRole.MEMBER }, asAdmin, {
         guardLastAdministrator: false,
@@ -459,5 +470,16 @@ describe('users', () => {
       message: 'Cannot delete the last administrator',
     });
     expect((await refusal(deleteUserAccount(db, 99, 1, { guard: true }))).statusCode).toBe(404);
+  });
+
+  test('two administrators deleted at once leave one administrator', async () => {
+    await db.update(schema.users).set({ role: 'administrator' }).where(eq(schema.users.id, 4));
+    const results = await Promise.allSettled([
+      deleteUserAccount(db, 1, 2, { guard: true }),
+      deleteUserAccount(db, 4, 2, { guard: true }),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const admins = await db.select().from(schema.users).where(eq(schema.users.role, 'administrator'));
+    expect(admins).toHaveLength(1);
   });
 });

@@ -11,8 +11,7 @@ primary_region = "cdg"
 [env]
   # A one-click deploy is reachable from the internet — authentication stays on.
   PIWI_AUTH_ENABLED = "true"
-  # Update this if `fly launch` picked a different app name.
-  PIWI_SITE_URL = "https://piwi.fly.dev"
+  # PIWI_SITE_URL defaults to https://<app>.fly.dev, from the app's name; set it for a custom domain.
 
 [mounts]
   source = "piwi_data"
@@ -41,4 +40,8 @@ primary_region = "cdg"
 # Secrets are never committed to fly.toml. Set them once, after `fly launch --no-deploy`:
 #
 #   fly secrets set PIWI_AUTH_SECRET=$(openssl rand -hex 32) \
-#     PIWI_SECRET_KEY=$(openssl rand -hex 32)
+#     PIWI_SECRET_KEY=$(openssl rand -hex 32) \
+#     PIWI_SETUP_TOKEN=$(openssl rand -hex 32)
+#
+# PIWI_SETUP_TOKEN: The first-admin form asks for this value, so only you can create the administrator.
+# Read it back with: fly ssh console -C "printenv PIWI_SETUP_TOKEN"

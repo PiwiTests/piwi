@@ -44,10 +44,17 @@ const body = ref<TraceBodyResponse | null>(null);
 const bodyPending = ref(false);
 const bodyCache = new Map<string, TraceBodyResponse>();
 
+// A response that arrives after the drawer moved to another request (or closed)
+// is cached but never shown: only the current request's body is.
 watch(
   () => [props.open, props.entry?.bodySha1] as const,
-  async ([open, sha1]) => {
+  async ([open, sha1], _before, onCleanup) => {
+    let stale = false;
+    onCleanup(() => {
+      stale = true;
+    });
     body.value = null;
+    bodyPending.value = false;
     if (!open || !sha1 || !props.runId) return;
     const cached = bodyCache.get(sha1);
     if (cached) {
@@ -55,17 +62,18 @@ watch(
       return;
     }
     bodyPending.value = true;
+    let result: TraceBodyResponse;
     try {
-      const result = await $fetch<TraceBodyResponse>(`/api/test-run-cases/${props.testRunsCaseId}/trace-network-body`, {
+      result = await $fetch<TraceBodyResponse>(`/api/test-run-cases/${props.testRunsCaseId}/trace-network-body`, {
         query: { sha1 },
       });
       bodyCache.set(sha1, result);
-      body.value = result;
     } catch {
-      body.value = { status: 'not-found' };
-    } finally {
-      bodyPending.value = false;
+      result = { status: 'not-found' };
     }
+    if (stale || props.entry?.bodySha1 !== sha1) return;
+    body.value = result;
+    bodyPending.value = false;
   },
   { immediate: true },
 );

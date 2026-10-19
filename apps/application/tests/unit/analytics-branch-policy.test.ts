@@ -8,6 +8,7 @@ import * as schema from '../../server/database/schema.sqlite';
 delete process.env.PIWI_DATABASE_URL;
 const { resolveBranchPolicy } = await import('../../shared/handlers/analytics/common');
 const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
+const { projectDefaultBranch } = await import('../../server/utils/scm/stored-default-branch');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 const NOW = Date.parse('2026-09-24T12:00:00Z');
@@ -18,25 +19,30 @@ beforeAll(async () => {
   await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
   await db.insert(schema.projects).values([
     { id: 1, name: 'configured', defaultBranch: 'develop' },
-    { id: 2, name: 'reported' },
-    { id: 3, name: 'latest run silent' },
+    { id: 2, name: 'mostly develop' },
+    { id: 3, name: 'tied' },
     { id: 4, name: 'no runs' },
+    { id: 5, name: 'no branch' },
   ]);
-  const run = (projectId: number, days: number, metadata: Record<string, unknown>) => ({
+  const run = (projectId: number, days: number, branch: string | null, metadata: Record<string, unknown> = {}) => ({
     projectId,
     status: 'passed',
     startTime: daysAgo(days),
+    branch,
     metadata,
   });
-  await db
-    .insert(schema.testRuns)
-    .values([
-      run(1, 1, { defaultBranch: 'ignored' }),
-      run(2, 3, { defaultBranch: 'master' }),
-      run(2, 1, { defaultBranch: 'trunk' }),
-      run(3, 2, { defaultBranch: 'older' }),
-      run(3, 1, {}),
-    ]);
+  await db.insert(schema.testRuns).values([
+    run(1, 1, 'main'),
+    run(1, 2, 'main'),
+    // A run's reported default branch is not what the project tabs read: the branch most runs are on is.
+    run(2, 4, 'develop', { defaultBranch: 'master' }),
+    run(2, 3, 'develop'),
+    run(2, 1, 'feature/x', { defaultBranch: 'trunk' }),
+    // A tie goes to the branch of the latest run.
+    run(3, 2, 'release'),
+    run(3, 1, 'trunk'),
+    run(5, 1, null),
+  ]);
 });
 
 async function defaultsOf(allowed: 'all' | number[]) {
@@ -46,21 +52,27 @@ async function defaultsOf(allowed: 'all' | number[]) {
 }
 
 describe('resolveBranchPolicy', () => {
-  test('a project uses its setting, else what its latest run reported, else main', async () => {
+  test('a project uses its setting, else the branch most of its runs are on, else main', async () => {
     expect(await defaultsOf('all')).toEqual(
       new Map([
         [1, 'develop'],
-        [2, 'trunk'],
-        [3, 'main'],
+        [2, 'develop'],
+        [3, 'trunk'],
         [4, 'main'],
+        [5, 'main'],
       ]),
     );
+  });
+
+  test('agrees with the project tabs for every project', async () => {
+    const defaults = await defaultsOf('all');
+    for (const [projectId, branch] of defaults) expect(await projectDefaultBranch(db as any, projectId)).toBe(branch);
   });
 
   test('only the allowed projects are resolved', async () => {
     expect(await defaultsOf([2, 4])).toEqual(
       new Map([
-        [2, 'trunk'],
+        [2, 'develop'],
         [4, 'main'],
       ]),
     );

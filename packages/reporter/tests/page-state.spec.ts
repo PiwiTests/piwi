@@ -49,6 +49,19 @@ describe('buildPageState', () => {
     expect(JSON.stringify(state)).not.toContain('SUPER-SECRET-SESSION-TOKEN');
   });
 
+  it('masks the credentials a URL fragment carries, and sends the URL without it', () => {
+    const state = buildPageState(
+      raw({
+        url: 'https://app.example.com/callback#access_token=ya29.secret&expires_in=3599',
+        hash: '#access_token=ya29.secret&expires_in=3599',
+      }),
+      null,
+    );
+    expect(state.url).toBe('https://app.example.com/callback');
+    expect(state.hash).toBe('#access_token=[masked]&expires_in=3599');
+    expect(JSON.stringify(state)).not.toContain('ya29.secret');
+  });
+
   it('masks token-shaped strings in history state', () => {
     const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV';
     const state = buildPageState(raw({ historyState: `{"token":"${jwt}"}` }), null);

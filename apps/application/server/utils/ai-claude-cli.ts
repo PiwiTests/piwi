@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, dirname, join, win32 } from 'node:path';
 import type { AiCallOptions, AiCallResult, StreamChunk } from './ai-provider';
 import type { ClaudeCliStatus, ClaudeCliUsageTotals, ResolvedAiRole } from '~~/types/api';
 
@@ -37,9 +37,42 @@ export function claudeCliEnabled(): boolean {
 
 const isWindows = process.platform === 'win32';
 
-/** Executable names to try, in order (Windows adds the shim/exe suffixes). */
+/** Executable names to try, in order: on Windows the native `claude.exe` before npm's `claude.cmd` shim. */
 function binaryNames(): string[] {
-  return isWindows ? ['claude.cmd', 'claude.exe', 'claude'] : ['claude'];
+  return isWindows ? ['claude.exe', 'claude.cmd', 'claude'] : ['claude'];
+}
+
+/**
+ * The script an npm `.cmd` shim runs (`"%dp0%\node_modules\…\cli.js" %*`),
+ * resolved against the shim's folder; null when the shim names none.
+ */
+export function cmdShimTarget(shim: string, shimDir: string): string | null {
+  const match = /"%~?dp0%?\\?([^"]+\.(?:js|mjs|cjs|exe))"/i.exec(shim);
+  return match ? win32.join(shimDir, match[1]!) : null;
+}
+
+/**
+ * The command and arguments that run `binary` without a shell. A script runs
+ * with this process's Node; npm's `claude.cmd` shim, which Node cannot spawn
+ * without a shell, runs the script (or executable) it points at.
+ */
+export function cliCommand(binary: string, args: string[]): { command: string; args: string[] } {
+  if (/\.cmd$/i.test(binary)) {
+    let target: string | null = null;
+    try {
+      target = cmdShimTarget(readFileSync(binary, 'utf8'), win32.dirname(binary));
+    } catch {
+      target = null;
+    }
+    if (!target) {
+      throw new Error(
+        `Could not read the Claude Code launcher ${binary}. Set PIWI_CLAUDE_CLI_PATH to claude.exe or to the package's cli.js.`,
+      );
+    }
+    return cliCommand(target, args);
+  }
+  if (/\.(?:js|mjs|cjs)$/i.test(binary)) return { command: process.execPath, args: [binary, ...args] };
+  return { command: binary, args };
 }
 
 /**
@@ -181,27 +214,78 @@ export function resetClaudeCliCache(): void {
   supportedFlags = undefined;
 }
 
+/** Variables the CLI runs with besides `PATH`: the user's home, temp and locale, the network, and Windows' own. */
+const ENV_ALLOWLIST = new Set([
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'USERNAME',
+  'SHELL',
+  'TERM',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'TZ',
+  'LANG',
+  'LANGUAGE',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
+  'XDG_CACHE_HOME',
+  'XDG_STATE_HOME',
+  'XDG_RUNTIME_DIR',
+  'DBUS_SESSION_BUS_ADDRESS',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'NODE_EXTRA_CA_CERTS',
+  'SSL_CERT_FILE',
+  'USERPROFILE',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'PROGRAMDATA',
+  'PROGRAMFILES',
+  'SYSTEMROOT',
+  'SYSTEMDRIVE',
+  'WINDIR',
+  'COMSPEC',
+  'PATHEXT',
+]);
+/** Prefixes of the locale and of Claude Code's own settings and sign-in (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`). */
+const ENV_PREFIXES = ['LC_', 'CLAUDE_', 'ANTHROPIC_'];
+/** API credentials that would bill pay-as-you-go API credits instead of the user's Claude Code sign-in. */
+const ENV_DROPPED = new Set(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']);
+/** The cloud credentials Claude Code reads when it is set to Bedrock or Vertex, and only then. */
+const BEDROCK_PREFIXES = ['AWS_'];
+const VERTEX_PREFIXES = ['GOOGLE_', 'CLOUD_ML_', 'VERTEX_'];
+
 /**
- * Spawn env with a `PATH` broad enough for the CLI to run: the process PATH, the
- * login shell's PATH (when captured), the fallback dirs, and the resolved
- * binary's own dir — deduped. This matters because `claude` may itself need
- * `node` or other tools the bare GUI PATH lacks.
+ * The environment the CLI runs with: the allowlisted variables of `source`
+ * (never the server's own secrets, such as `PIWI_SECRET_KEY` or database and
+ * SMTP credentials), and a `PATH` broad enough for the CLI to run (the process
+ * PATH, the login shell's PATH when captured, the fallback dirs and the
+ * resolved binary's own dir, deduped), since `claude` may itself need `node`
+ * or other tools a bare GUI PATH lacks.
  */
-function spawnEnv(): NodeJS.ProcessEnv {
-  const parts = [process.env.PATH || '', cachedShellPath || '', fallbackDirs().join(delimiter)];
+export function cliEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const prefixes = [...ENV_PREFIXES];
+  if (source.CLAUDE_CODE_USE_BEDROCK) prefixes.push(...BEDROCK_PREFIXES);
+  if (source.CLAUDE_CODE_USE_VERTEX) prefixes.push(...VERTEX_PREFIXES);
+  const env: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(source)) {
+    const upper = name.toUpperCase();
+    if (value === undefined || ENV_DROPPED.has(upper)) continue;
+    if (ENV_ALLOWLIST.has(upper) || prefixes.some((prefix) => upper.startsWith(prefix))) env[name] = value;
+  }
+
+  const parts = [source.PATH || source.Path || '', cachedShellPath || '', fallbackDirs().join(delimiter)];
   if (cachedBinary) parts.push(dirname(cachedBinary));
   const seen = new Set<string>();
-  const path = parts
+  env.PATH = parts
     .flatMap((p) => p.split(delimiter))
     .filter((d) => d && !seen.has(d) && seen.add(d))
     .join(delimiter);
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: path };
-  // This provider is subscription-first. An ANTHROPIC_API_KEY / auth token in the
-  // app's environment would make the CLI bill to pay-as-you-go API credits and
-  // override the user's Claude Code sign-in — the opposite of "no API key". Drop
-  // them so the CLI uses its own stored login.
-  delete env.ANTHROPIC_API_KEY;
-  delete env.ANTHROPIC_AUTH_TOKEN;
   return env;
 }
 
@@ -235,9 +319,10 @@ function runClaude(
     };
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(binary, args, {
+      const command = cliCommand(binary, args);
+      child = spawn(command.command, command.args, {
         cwd,
-        env: spawnEnv(),
+        env: cliEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -419,17 +504,29 @@ interface ClaudeCallOutcome extends AiCallResult {
   costUsd: number | null;
 }
 
-// Some flags are version-gated: `--restricted` (added after 2.1.220) and
-// `--strict-mcp-config` don't exist on older installs and error as "unknown
-// option". Detect what the installed binary accepts from `claude --help` and
-// only pass those; cached for the process, empty on failure (fewest flags).
+// Generation runs with every tool turned off (`--tools ""`), no MCP server
+// (`--strict-mcp-config`) and one turn (`--max-turns 1`), so text in a prompt
+// (a test's error message) cannot make the CLI run a command or fetch a page.
+// `--tools` and `--strict-mcp-config` are read from `claude --help`, cached once
+// the probe succeeds; `--max-turns` is a print-mode option `--help` does not
+// list, which every CLI with `--tools` accepts. `--restricted` is added when the
+// CLI has it. A CLI without the required flags is refused.
 let supportedFlags: Set<string> | undefined;
+
+const REQUIRED_FLAGS = ['--tools', '--strict-mcp-config'];
 
 async function getSupportedFlags(binary: string): Promise<Set<string>> {
   if (supportedFlags) return supportedFlags;
   const res = await runClaude(binary, ['--help'], { timeoutMs: PROBE_TIMEOUT_MS });
   const flags = new Set<string>();
   for (const match of res.stdout.matchAll(/--[a-z][a-z0-9-]+/g)) flags.add(match[0]);
+  if (res.code !== 0 || flags.size === 0) {
+    throw new Error(
+      `Could not read the options of the Claude CLI (\`claude --help\`: ${
+        res.timedOut ? 'timed out' : cleanErr(res.stderr || res.stdout)
+      }), so it cannot be run with its tools turned off.`,
+    );
+  }
   supportedFlags = flags;
   return flags;
 }
@@ -439,8 +536,8 @@ async function getSupportedFlags(binary: string): Promise<Set<string>> {
  * default (so the model behaves like the API providers' plain assistant); the
  * temp cwd keeps project files out of context; the JSON schema is inlined into
  * the system prompt (as the OpenAI path does) since the CLI has no
- * structured-output flag. Hardening/streaming flags are added only when the
- * installed CLI advertises them, so older versions don't reject the call.
+ * structured-output flag. Tools, MCP servers and extra turns are always off;
+ * streaming flags are added only when the installed CLI advertises them.
  */
 async function buildArgs(
   binary: string,
@@ -450,6 +547,12 @@ async function buildArgs(
 ): Promise<string[]> {
   const supported = await getSupportedFlags(binary);
   const has = (flag: string) => supported.has(flag);
+  const missing = REQUIRED_FLAGS.filter((flag) => !has(flag));
+  if (missing.length > 0) {
+    throw new Error(
+      `This Claude Code version cannot run with its tools turned off (no ${missing.join(' or ')} option). Update Claude Code (\`claude update\`) to use it for AI features.`,
+    );
+  }
 
   const system = opts.jsonSchema
     ? `${opts.system}\n\nRespond ONLY with a JSON object matching this schema, with no prose and no markdown fences:\n${JSON.stringify(opts.jsonSchema)}`
@@ -464,8 +567,8 @@ async function buildArgs(
   }
   args.push('--system-prompt', system);
   if (config.model) args.push('--model', config.model);
+  args.push('--tools', '', '--strict-mcp-config', '--max-turns', '1');
   if (has('--restricted')) args.push('--restricted');
-  if (has('--strict-mcp-config')) args.push('--strict-mcp-config');
   return args;
 }
 

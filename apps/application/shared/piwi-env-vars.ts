@@ -257,7 +257,7 @@ export const PIWI_ENV_VARS = {
     type: 'url',
     example: 'https://piwi.example.com',
     notes:
-      'When unset, links in emails point to http://localhost:3000 and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy.',
+      'When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy.',
   },
   PIWI_SECRET_KEY: {
     description:
@@ -451,6 +451,14 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
     notes: 'The server refuses to start when auth is enabled and this is unset.',
+  },
+  PIWI_SETUP_TOKEN: {
+    description:
+      "A token the first-admin form asks for (`setupToken` in `POST /api/auth/setup`), so only whoever can read the server's settings creates the first administrator. The one-click deploy templates generate it. Unset, the first visitor to an instance with no administrator can create one.",
+    category: 'auth',
+    secret: true,
+    relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
+    since: '0.55.1',
   },
   PIWI_METRICS_ENABLED: {
     description:

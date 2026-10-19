@@ -22,7 +22,7 @@ permissions:
 
 env:
   # Match the runtime the app bundles (apps/application/engines / reusable-publish-desktop.yml).
-  PIWI_NODE_VERSION: 24.4.1
+  PIWI_NODE_VERSION: 24.22.0
 
 jobs:
   e2e:
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
@@ -43,7 +43,7 @@ jobs:
 
       - name: Download the server bundle
         if: inputs.build-artifact != ''
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ inputs.build-artifact }}
 
@@ -68,10 +68,12 @@ jobs:
           npm run stage
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
       - name: Cache cargo
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/desktop/src-tauri
 
@@ -103,7 +105,7 @@ jobs:
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-e2e-report
           path: apps/desktop/playwright-report

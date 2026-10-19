@@ -197,6 +197,12 @@ needs the extension's sources, and a change to the recorder there changes what t
 - **The protocol is a contract.** A client of an older version talks to this server, and a published client's
   commands (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`) are named in `SummaryLine.command`. A change to `protocol.ts`
   lands with both clients in the same change, and a renamed request or command is a breaking change.
+- **A command is built here, never taken from the instance** (`src/commands.ts`): a test run is `npx playwright test`
+  with the instance's arguments (`materialization.args`, else the words of its `npx playwright test` command line,
+  split as every shell splits plain words and double quotes), each checked (a test filter, or an option of
+  `PLAYWRIGHT_OPTIONS`: none that loads or writes a file) and quoted (`shellWord`); a fix plan's verification is its
+  `npx playwright test` commands built again; a Flake Lab line is `npx @piwitests/reporter flake [verify] <id>`.
+  An argument that is anything else refuses the whole command, and the clients run only what the service built.
 - **A command runs in the config's folder as the file system spells it** (`commandFolder`, `canonicalPath`): every
   `cwd` the service hands a client (`piwi/runArgs`, `piwi/runSelection`, the trace, `piwi.runCommand` lines), never the
   folder as the editor spelled it, which on Windows may carry a lower-case drive letter.
