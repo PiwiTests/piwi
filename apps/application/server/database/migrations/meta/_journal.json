@@ -904,6 +904,13 @@
       "when": 1792365198773,
       "tag": "0128_run_deliveries",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "6",
+      "when": 1792393295631,
+      "tag": "0129_drop_unused_columns_and_indexes",
+      "breakpoints": true
     }
   ]
 }

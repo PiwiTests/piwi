@@ -918,6 +918,13 @@
       "when": 1792366135248,
       "tag": "0130_time_to_resolution_bigint",
       "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1792393297908,
+      "tag": "0131_drop_unused_columns_and_indexes",
+      "breakpoints": true
     }
   ]
 }
