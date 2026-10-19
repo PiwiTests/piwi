@@ -11,7 +11,7 @@ import { verifyProbeHeader, ProbeNonceCache, type PiwiProbeSpec } from './probe.
 import {
   buildRouteManifest,
   recordObservedRoute,
-  collapsePathPattern,
+  matchedRoutePattern,
   type ManifestRouteEntry,
 } from './manifest.js';
 import { declaredRoutes } from './route-table.js';
@@ -341,13 +341,9 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
           parseTraceparent(event.node.req.headers['traceparent']) ?? randomBytes(16).toString('hex');
         const handlerFile = resolveHandlerFile(event);
 
-        // Record this route for the declared-surface manifest. Prefer the matched
-        // route's own pattern (`path` in h3 1.x, `route` in later versions); fall
-        // back to collapsing the concrete path.
-        const matchedRoute = event.context?.matchedRoute as { route?: unknown; path?: unknown } | undefined;
-        const matchedPattern = matchedRoute?.route ?? matchedRoute?.path;
-        const pattern = typeof matchedPattern === 'string' && matchedPattern ? matchedPattern : collapsePathPattern(path);
-        recordObservedRoute(observedRoutes, { method, pattern, handler: handlerFile });
+        // Record the route the router matched for the declared-surface manifest.
+        const pattern = matchedRoutePattern(event.context?.matchedRoute);
+        if (pattern) recordObservedRoute(observedRoutes, { method, pattern, handler: handlerFile });
 
         const rootSpan: PiwiServerSpan = {
           id: randomBytes(8).toString('hex'),
