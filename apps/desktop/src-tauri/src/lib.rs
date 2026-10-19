@@ -69,7 +69,14 @@ const RUN_BG_KEY: &str = "runInBackground";
 /// Persisted maximized state of the main window. Absent on first launch, when
 /// the window opens maximized by default.
 const WINDOW_MAXIMIZED_KEY: &str = "windowMaximized";
+/// How long the splash waits for the server before it says the start is slow; it keeps waiting after.
 const READY_TIMEOUT_SECS: u64 = 60;
+/// The splash's status line once the server takes longer than `READY_TIMEOUT_SECS`.
+const SPLASH_SLOW: &str =
+    "The local server is taking longer than usual to start. Still waiting: the window opens the dashboard once it is up.";
+/// The splash's status line once the supervisor stopped restarting the server.
+const SPLASH_STOPPED: &str =
+    "The local server stopped and could not be restarted. Quit and relaunch, or open the logs from the tray.";
 /// Backoff before each auto-restart of a crashed server, capped at the last value.
 const RESTART_BACKOFFS_SECS: [u64; 4] = [1, 2, 4, 8];
 /// Stop auto-restarting once the server has crashed this many times inside
@@ -93,6 +100,10 @@ struct ServerProcess(Mutex<Option<CommandChild>>);
 /// supervisor treats the deliberate `kill()` on quit as expected and does not
 /// restart the server it is about to stop.
 struct ShuttingDown(Arc<AtomicBool>);
+
+/// Set once the supervisor stopped restarting the server: the readiness wait ends then.
+#[derive(Default)]
+struct ServerGaveUp(AtomicBool);
 
 /// Shared "keep serving after the window closes" flag (tray toggle + close handler).
 struct RunInBackground(Arc<AtomicBool>);
@@ -729,7 +740,7 @@ fn supervise_server(
                     &cfg.log_path,
                     "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
                 );
-                let _ = app.emit("server-status", "crashed");
+                give_up_server(&app);
                 break;
             }
 
@@ -750,10 +761,38 @@ fn supervise_server(
                     let _ = app.emit("server-status", "ready");
                 }
                 None => {
-                    let _ = app.emit("server-status", "crashed");
+                    give_up_server(&app);
                     break;
                 }
             }
+        }
+    });
+}
+
+/// The server is down for good: end the readiness wait, which says so on the
+/// splash, and tell the dashboard (`server-status`).
+fn give_up_server(app: &AppHandle) {
+    app.state::<ServerGaveUp>().0.store(true, Ordering::SeqCst);
+    let _ = app.emit("server-status", "crashed");
+}
+
+/// The script writing `text` in the splash page's status line: a no-op on any
+/// other page, such as the dashboard once the window loaded it.
+fn splash_status_script(text: &str) -> String {
+    format!(
+        "var s=document.getElementById('splash-status');if(s){{s.textContent={};}}",
+        serde_json::to_string(text).unwrap_or_else(|_| "''".into())
+    )
+}
+
+/// Write `text` in the splash's status line and bring the window up: a launch
+/// to the tray hides it.
+fn show_splash_status(app: &AppHandle, text: &'static str) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(w) = handle.get_webview_window("main") {
+            let _ = w.eval(&splash_status_script(text));
+            let _ = w.show();
         }
     });
 }
@@ -1438,6 +1477,7 @@ pub fn run() {
             desktop_set_run_progress
         ])
         .manage(ServerProcess::default())
+        .manage(ServerGaveUp::default())
         .manage(runner::LocalRuns::default())
         .manage(TrayStatus::default())
         .manage(QuitConfirmed::default())
@@ -1563,41 +1603,49 @@ pub fn run() {
             };
             if let Some(initial) = spawn_server_process(app.handle(), &server_config) {
                 supervise_server(app.handle().clone(), server_config, initial, shutting_down.clone());
+            } else {
+                give_up_server(app.handle());
             }
 
             // --- when the server is ready, navigate the window to it ---
+            // The wait goes on past READY_TIMEOUT_SECS, which only changes what the
+            // splash says, and ends when the supervisor gives up or the app quits.
             let nav_handle = app.handle().clone();
             let ready_log = log_path.clone();
             let bootstrap_url = format!("http://127.0.0.1:{port}/__piwi/session?token={token}");
+            let quitting = shutting_down.clone();
             std::thread::spawn(move || {
-                let deadline = Instant::now() + Duration::from_secs(READY_TIMEOUT_SECS);
-                let mut ready = false;
-                while Instant::now() < deadline {
+                let started = Instant::now();
+                let mut slow = false;
+                let ready = loop {
                     if health_ok(port, &launch_nonce) {
-                        ready = true;
-                        break;
+                        break true;
                     }
-                    std::thread::sleep(Duration::from_millis(250));
-                }
-                append_log(
-                    &ready_log,
-                    if ready { "server ready" } else { "server NOT ready within timeout" },
-                );
+                    let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
+                    if gave_up || quitting.load(Ordering::SeqCst) {
+                        break false;
+                    }
+                    if !slow && started.elapsed() >= Duration::from_secs(READY_TIMEOUT_SECS) {
+                        slow = true;
+                        append_log(&ready_log, "server not ready yet, still waiting");
+                        show_splash_status(&nav_handle, SPLASH_SLOW);
+                    }
+                    std::thread::sleep(Duration::from_millis(if slow { 1000 } else { 250 }));
+                };
+                append_log(&ready_log, if ready { "server ready" } else { "server never became ready" });
                 // Startup has settled: look for an update and announce one
                 // (a no-op when the build cannot update or the user opted out).
                 tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
+                if !ready {
+                    if !quitting.load(Ordering::SeqCst) {
+                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                    }
+                    return;
+                }
                 let inner = nav_handle.clone();
                 let _ = nav_handle.run_on_main_thread(move || {
                     if let Some(w) = inner.get_webview_window("main") {
-                        if ready {
-                            let _ =
-                                w.eval(&format!("window.location.replace('{bootstrap_url}')"));
-                        } else {
-                            let _ = w.eval(
-                                "var s=document.querySelector('.status');if(s){s.textContent='The server did not start in time. Quit and relaunch, or check the logs.';}",
-                            );
-                            let _ = w.show();
-                        }
+                        let _ = w.eval(&format!("window.location.replace('{bootstrap_url}')"));
                     }
                 });
             });
@@ -1789,7 +1837,7 @@ mod tests {
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
         health_response_proves, ide_launcher_args, is_known_launcher, is_sidecar_url,
         is_truthy_flag, main_window_may_navigate, progress_bar_status, remote_capability,
-        render_status_dot, status_dot_color, write_new_download,
+        render_status_dot, splash_status_script, status_dot_color, write_new_download,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
@@ -1993,6 +2041,13 @@ mod tests {
         ] {
             assert!(!is_known_launcher(family, bad), "{family} {bad:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn the_splash_status_script_writes_the_text_as_a_string_literal() {
+        let script = splash_status_script("It's \"slow\"</div>\n");
+        assert!(script.contains(r#"s.textContent="It's \"slow\"</div>\n";"#), "{script}");
+        assert!(script.starts_with("var s=document.getElementById('splash-status');"));
     }
 
     #[test]
