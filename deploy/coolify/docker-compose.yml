@@ -6,14 +6,14 @@ services:
   piwi:
     image: phenx/piwitests-server:latest
     environment:
-      - SERVICE_FQDN_PIWI_3000
+      - SERVICE_URL_PIWI_3000
       # A one-click deploy is reachable from the internet — authentication stays on.
       - PIWI_AUTH_ENABLED=true
       - PIWI_AUTH_SECRET=${SERVICE_PASSWORD_64_PIWIAUTHSECRET}
       - PIWI_SECRET_KEY=${SERVICE_PASSWORD_64_PIWISECRETKEY}
       # The first-admin form asks for this value, so only you can create the administrator.
       - PIWI_SETUP_TOKEN=${SERVICE_PASSWORD_64_PIWISETUPTOKEN}
-      - PIWI_SITE_URL=${SERVICE_FQDN_PIWI_3000}
+      - PIWI_SITE_URL=${SERVICE_URL_PIWI_3000}
     volumes:
       - piwi-data:/app/.data
     healthcheck:
