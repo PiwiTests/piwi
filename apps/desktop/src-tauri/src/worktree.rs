@@ -134,12 +134,6 @@ pub(crate) fn files_equal(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Whether `candidate` sits inside `base`. Both must be canonicalized by the
-/// caller so `..` and symlinks cannot escape the containment check.
-pub(crate) fn path_within(base: &Path, candidate: &Path) -> bool {
-    candidate.starts_with(base)
-}
-
 /// git's own bisect progress, parsed from the output of a `bisect` step:
 /// `Bisecting: N revisions left to test after this (roughly M steps)` names the
 /// remaining work, and the following `[<sha>] <subject>` line names the commit it
@@ -530,22 +524,6 @@ pub(crate) fn discard_leftover_worktrees(app_data_dir: &Path) {
             }
         });
     }
-}
-
-/// Validate a `cwd` a local run was pointed at: it must canonicalize to a real
-/// directory inside this app's worktrees dir. Used by `desktop_run_local_tests`
-/// so the webview cannot redirect a run at an arbitrary folder.
-pub(crate) fn validate_worktree_cwd(app: &AppHandle, dir: &str) -> Result<PathBuf, String> {
-    let root = worktrees_root(app)?
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
-    let candidate = PathBuf::from(dir)
-        .canonicalize()
-        .map_err(|_| "the worktree no longer exists".to_string())?;
-    if !path_within(&root, &candidate) {
-        return Err("the run folder must be inside the app's worktrees directory".into());
-    }
-    Ok(candidate)
 }
 
 // ── Process-tree kill + cleanup (called from LocalRuns stop / kill_all) ─────────
@@ -1752,18 +1730,6 @@ mod tests {
         assert!(!valid_sha("")); // empty
         assert!(!valid_sha("0123456789abcdef0123456789abcdef012345678")); // 41 chars
         assert!(!valid_sha("abc 123")); // space
-    }
-
-    #[test]
-    fn path_within_only_accepts_descendants() {
-        let base = PathBuf::from("/data/worktrees");
-        assert!(path_within(
-            &base,
-            &PathBuf::from("/data/worktrees/proj/abc123")
-        ));
-        assert!(path_within(&base, &base));
-        assert!(!path_within(&base, &PathBuf::from("/data/other")));
-        assert!(!path_within(&base, &PathBuf::from("/data")));
     }
 
     #[test]

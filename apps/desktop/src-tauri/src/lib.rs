@@ -57,7 +57,7 @@ use updates::{
 use runner::{
     desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
     desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
-    desktop_set_project_link, desktop_set_project_start_command, desktop_stop_local_tests,
+    desktop_set_project_link, desktop_stop_local_tests,
 };
 use repro::desktop_run_repro;
 use worktree::{
@@ -1466,7 +1466,6 @@ pub fn run() {
             desktop_run_local_tests,
             desktop_stop_local_tests,
             desktop_run_repro,
-            desktop_set_project_start_command,
             desktop_reproduce_here,
             desktop_bisect_here,
             desktop_flake_lab_here,

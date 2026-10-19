@@ -98,8 +98,8 @@ linked folder, **without touching your checkout**:
   the worktree. The first bad commit is linked to your SCM host and recorded on the failure cluster.
 
 It needs `git` and your package manager on this machine, and bisects one repository. The application under test has
-to build from the same checkout: a Playwright `webServer` starts it at each commit, or set a **start command** and a
-readiness URL under **Reproduce and bisect**.
+to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or a
+bisect exercises the changes to the tests only.
 
 ### Jobs from your editor
 

@@ -33,7 +33,6 @@ fn main() {
             "desktop_run_local_tests",
             "desktop_stop_local_tests",
             "desktop_run_repro",
-            "desktop_set_project_start_command",
             "desktop_reproduce_here",
             "desktop_bisect_here",
             "desktop_flake_lab_here",

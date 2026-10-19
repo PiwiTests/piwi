@@ -223,17 +223,11 @@ impl LocalRuns {
     }
 }
 
-/// A project's linked folder plus an optional start command (and readiness URL)
-/// for reproduce/bisect steps when the Playwright config has no `webServer`.
-/// The command is stored only: no reproduce, bisect or lab driver runs it.
+/// A project's linked folder.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LinkRecord {
     pub path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_command: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub readiness_url: Option<String>,
 }
 
 /// Links written by older builds stored a bare path string; accept either shape
@@ -248,11 +242,7 @@ enum StoredLink {
 impl From<StoredLink> for LinkRecord {
     fn from(stored: StoredLink) -> Self {
         match stored {
-            StoredLink::Path(path) => LinkRecord {
-                path,
-                start_command: None,
-                readiness_url: None,
-            },
+            StoredLink::Path(path) => LinkRecord { path },
             StoredLink::Record(record) => record,
         }
     }
@@ -288,8 +278,6 @@ pub(crate) fn linked_folder(app: &AppHandle, project_id: &str) -> Option<LinkRec
 pub struct ProjectLink {
     path: String,
     exists: bool,
-    start_command: Option<String>,
-    readiness_url: Option<String>,
 }
 
 /// Native folder picker. Returns `None` when the user cancels.
@@ -357,14 +345,10 @@ pub fn desktop_get_project_link(app: AppHandle, project_id: String) -> Option<Pr
     read_links(&app).get(&project_id).map(|r| ProjectLink {
         exists: Path::new(&r.path).is_dir(),
         path: r.path.clone(),
-        start_command: r.start_command.clone(),
-        readiness_url: r.readiness_url.clone(),
     })
 }
 
-/// Set (`path: Some`) or clear (`path: None`) the folder linked to a project. A
-/// re-link to the same folder keeps its start command; a different folder starts
-/// fresh.
+/// Set (`path: Some`) or clear (`path: None`) the folder linked to a project.
 #[tauri::command]
 pub fn desktop_set_project_link(
     app: AppHandle,
@@ -384,44 +368,12 @@ pub fn desktop_set_project_link(
             if !folder.is_dir() {
                 return Err("the folder does not exist".into());
             }
-            let previous = links.get(&project_id);
-            let keep = previous.filter(|r| r.path == p);
-            links.insert(
-                project_id,
-                LinkRecord {
-                    path: p,
-                    start_command: keep.and_then(|r| r.start_command.clone()),
-                    readiness_url: keep.and_then(|r| r.readiness_url.clone()),
-                },
-            );
+            links.insert(project_id, LinkRecord { path: p });
         }
         None => {
             links.remove(&project_id);
         }
     }
-    write_links(&app, &links)
-}
-
-/// Store (or clear) the start command for reproduce/bisect steps when the
-/// Playwright config has no `webServer`, and the URL to poll until the app
-/// answers. Requires a linked folder. Stored only: no driver reads either value.
-#[tauri::command]
-pub fn desktop_set_project_start_command(
-    app: AppHandle,
-    project_id: String,
-    start_command: Option<String>,
-    readiness_url: Option<String>,
-) -> Result<(), String> {
-    let mut links = read_links(&app);
-    let record = links
-        .get_mut(&project_id)
-        .ok_or("no folder is linked to this project")?;
-    record.start_command = start_command
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    record.readiness_url = readiness_url
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
     write_links(&app, &links)
 }
 
@@ -658,20 +610,14 @@ impl RunEventPayload {
     }
 }
 
-/// Run `playwright test <args>` for `project_id`, using the bundled Node sidecar
-/// and the run folder's own Playwright package. Returns a run id; progress
-/// arrives as `piwi:local-run` events carrying that id.
-///
-/// The default run folder is the linked checkout. A `cwd` may point the run at a
-/// throwaway worktree instead — the reproduce/bisect drivers use this — but only
-/// one that canonicalizes inside this app's worktrees dir, so the webview can
-/// never redirect a run at an arbitrary folder.
+/// Run `playwright test <args>` for `project_id` in its linked folder, using the
+/// bundled Node sidecar and the folder's own Playwright package. Returns a run
+/// id; progress arrives as `piwi:local-run` events carrying that id.
 #[tauri::command]
 pub async fn desktop_run_local_tests(
     app: AppHandle,
     project_id: String,
     args: Vec<String>,
-    cwd: Option<String>,
     origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
@@ -680,19 +626,13 @@ pub async fn desktop_run_local_tests(
         crate::worktree::origin_reference(None, origin_ref)?.as_deref(),
     );
 
-    let folder = match cwd {
-        Some(dir) => crate::worktree::validate_worktree_cwd(&app, &dir)?,
-        None => {
-            let f = read_links(&app)
-                .get(&project_id)
-                .map(|r| PathBuf::from(&r.path))
-                .ok_or("no folder is linked to this project")?;
-            if !f.is_dir() {
-                return Err("the linked folder no longer exists — pick it again".into());
-            }
-            f
-        }
-    };
+    let folder = read_links(&app)
+        .get(&project_id)
+        .map(|r| PathBuf::from(&r.path))
+        .ok_or("no folder is linked to this project")?;
+    if !folder.is_dir() {
+        return Err("the linked folder no longer exists — pick it again".into());
+    }
     let cli = resolve_playwright_cli(&folder).ok_or(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
