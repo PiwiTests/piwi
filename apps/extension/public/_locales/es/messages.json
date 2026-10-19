@@ -104,6 +104,9 @@
   "common_desktopUnsupported": {
     "message": "Esta dirección no es una aplicación de escritorio de Piwi que pueda ejecutar informes de errores."
   },
+  "common_desktopNotProven": {
+    "message": "El programa en esta dirección no demostró ser la aplicación de escritorio vinculada, así que no se envió el token. Comprueba que la aplicación esté abierta y actualizada, y vuelve a vincularla."
+  },
   "common_desktopStatus": {
     "message": "La aplicación de escritorio respondió $status$.",
     "placeholders": {

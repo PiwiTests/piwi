@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { H3Event } from 'h3';
 import {
+  DESKTOP_CHALLENGE_HEADER,
+  DESKTOP_PROOF_HEADER,
+  desktopTokenProof,
+  newDesktopChallenge,
+} from '@piwitests/core/desktop-proof';
+import {
   DESKTOP_LAUNCH_NONCE_HEADER,
+  answerDesktopChallenge,
   desktopLaunchNonce,
   presentsDesktopToken,
 } from '../../server/utils/desktop-access';
@@ -57,5 +64,36 @@ describe('the desktop launch nonce', () => {
       vi.unstubAllGlobals();
       vi.doUnmock('../../server/database');
     }
+  });
+});
+
+describe("Piwi Picker's challenge", () => {
+  /** A request to `/api/health` on loopback port `port`, and the response headers it gets. */
+  function healthRequest(headers: Record<string, string>, port = 3000) {
+    const sent = new Map<string, string>();
+    const event = {
+      context: {},
+      node: {
+        req: { headers, socket: { localPort: port } },
+        res: { setHeader: (name: string, value: string) => sent.set(name.toLowerCase(), value) },
+      },
+    } as unknown as H3Event;
+    return { event, sent };
+  }
+
+  it('is answered with the proof of the token, for the port the request reached', async () => {
+    const challenge = newDesktopChallenge();
+    const { event, sent } = healthRequest({ [DESKTOP_CHALLENGE_HEADER]: challenge }, 4318);
+    await answerDesktopChallenge(event, TOKEN);
+    expect(sent.get(DESKTOP_PROOF_HEADER)).toBe(await desktopTokenProof(TOKEN, 4318, challenge));
+  });
+
+  it('is left unanswered outside the desktop app, and when it is not a challenge', async () => {
+    const outside = healthRequest({ [DESKTOP_CHALLENGE_HEADER]: newDesktopChallenge() });
+    await answerDesktopChallenge(outside.event, '');
+    expect(outside.sent.size).toBe(0);
+    const malformed = healthRequest({ [DESKTOP_CHALLENGE_HEADER]: 'not-a-challenge' });
+    await answerDesktopChallenge(malformed.event, TOKEN);
+    expect(malformed.sent.size).toBe(0);
   });
 });

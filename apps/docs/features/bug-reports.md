@@ -127,6 +127,8 @@ For the exact verdict and a trace, the [desktop app](./desktop) runs a report's 
 Pair it once: in the extension's settings, under **Desktop app**, click **Pair**, then **Allow** in the app's window,
 which shows the same code. The address is the one on the app's **Setup** page, under **Connect Piwi Picker**
 (`http://127.0.0.1:3000` unless another program holds that port); **Pair by hand** takes the token shown there instead.
+Before each request that carries the token, the extension asks the app at that address to prove it holds it, so a
+program that took the port never receives it; after the app moves to another port, pair it again.
 
 **Run with Playwright…**, in Replay's chooser or on a finished replay, shows what it sends (the title and the steps,
 with the values typed in them) and sends it on **Send**. The request holds steps, never code. The app's window shows
