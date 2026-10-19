@@ -63,7 +63,7 @@ Each captured entry contains:
 | `message`   | Log message (truncated at 500 characters)                                            |
 | `stack`     | Shrunk stack trace when an `Error` was logged (max 5 frames, internal frames dropped) |
 
-Up to 50 entries per request are included. The header is always emitted (with an empty array when no entries were captured) so the Piwi reporter can confirm the plugin is active.
+Up to 50 entries per request are included, the first ones logged; an entry logged once the response ended (a timer or a lazy client the request started) is dropped. A request the server makes to itself while rendering a page (`$fetch` or `useFetch` during server-side rendering) adds its entries and spans to the page's request. The header is always emitted (with an empty array when no entries were captured) so the Piwi reporter can confirm the plugin is active.
 
 ## How it works
 
