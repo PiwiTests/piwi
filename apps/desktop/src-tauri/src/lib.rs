@@ -15,6 +15,7 @@ mod inspect;
 mod interrupt;
 mod mcp_clients;
 mod mcp_stdio;
+mod private_fs;
 mod repro;
 mod runner;
 #[cfg(windows)]
@@ -472,19 +473,6 @@ fn remote_capability(port: u16) -> String {
     capability.to_string()
 }
 
-/// Restrict a file holding a secret to its owner (0600). Unix only — on Windows
-/// the per-user profile is already ACL-protected and `std::fs` cannot express
-/// ACLs. Best-effort: a filesystem that ignores modes must not block startup.
-fn restrict_to_owner(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    #[cfg(not(unix))]
-    let _ = path;
-}
-
 /// Read the persisted master encryption key, or generate + persist one on first
 /// run. Kept stable so secrets stored in the DB (AI keys, SCM tokens) stay
 /// readable across launches. Lives in the user-scoped app-data dir.
@@ -497,8 +485,7 @@ fn load_or_create_secret(app_data_dir: &PathBuf) -> String {
         }
     }
     let secret = random_hex_32();
-    let _ = std::fs::write(&key_path, &secret);
-    restrict_to_owner(&key_path);
+    let _ = private_fs::write_private(&key_path, secret.as_bytes());
     secret
 }
 
@@ -516,8 +503,7 @@ fn load_or_create_token(app_data_dir: &PathBuf) -> String {
         }
     }
     let token = format!("pd_{}", random_hex_32());
-    let _ = std::fs::write(&path, &token);
-    restrict_to_owner(&path);
+    let _ = private_fs::write_private(&path, token.as_bytes());
     token
 }
 
@@ -536,10 +522,9 @@ fn write_discovery_file(
     links: &HashMap<String, runner::LinkRecord>,
 ) -> std::io::Result<PathBuf> {
     let dir = home.join(DISCOVERY_DIR);
-    std::fs::create_dir_all(&dir)?;
+    private_fs::create_private_dir(&dir)?;
     let path = dir.join(DISCOVERY_FILE);
-    std::fs::write(&path, discovery_body(port, token, links).to_string())?;
-    restrict_to_owner(&path);
+    private_fs::write_private(&path, discovery_body(port, token, links).to_string().as_bytes())?;
     Ok(path)
 }
 
@@ -576,9 +561,7 @@ pub(crate) fn refresh_discovery_file(app: &AppHandle) {
         return;
     }
     let body = discovery_body(info.port, &info.token, &runner::read_links(app));
-    if std::fs::write(&file.0, body.to_string()).is_ok() {
-        restrict_to_owner(&file.0);
-    }
+    let _ = private_fs::write_private(&file.0, body.to_string().as_bytes());
 }
 
 /// Convert a path to a string Node can consume as a CLI arg / env value. On
@@ -1464,6 +1447,8 @@ pub fn run() {
         .setup(move |app| {
             // --- data locations (survive app updates; outside the read-only bundle) ---
             let app_data_dir = app.path().app_data_dir()?;
+            // Holds the encryption key, the access token and the database.
+            private_fs::create_private_dir(&app_data_dir)?;
             let data_dir = app_data_dir.join(".data");
             let storage_dir = data_dir.join("storage");
             // Setting PIWI_DATABASE_PATH disables the server's own auto-mkdir, and
