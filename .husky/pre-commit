@@ -1,25 +1,59 @@
 #!/usr/bin/env sh
-# Keep committed code formatted — but only ever re-stage the files THIS commit
-# already staged. `git add -u <dir>` was wrong: it stages every modified tracked
-# file under the dir, so an unrelated work-in-progress edit gets swept into the
-# commit alongside the files you meant to commit.
+# Formats what the commit takes, and only that: the staged files of each workspace, within the paths its
+# `format:check` covers, with the same oxfmt and config.
 #
-# We still run the same whole-workspace formatter the CI `format:check` gate
-# uses (so formatting coverage can't drift), then hand `git add` the exact list
-# of already-staged files. Files you did not stage are left untouched in the
-# working tree.
+# A file staged whole (no change left out of the index) is formatted in place and staged again. A file staged in
+# part is never written: its staged version is checked, and the commit stops when it is not formatted, since
+# formatting the file would also format the changes left out, and staging it would commit them.
 
-# $1: workspace dir to format in   $2: format npm script   $3: pathspec of that
-# workspace's files (matches which staged paths get re-added).
+root=$(pwd)
+oxfmt="$root/node_modules/.bin/oxfmt"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+failed=0
+
+# $1: workspace directory   $2: its oxfmt config, relative to it   $3...: the paths its format script covers
 format_staged() {
-  staged=$(git diff --cached --name-only --diff-filter=ACMR -- "$3")
-  [ -z "$staged" ] && return 0
-  (cd "$1" && npm run "$2") || exit 1
-  printf '%s\n' "$staged" | tr '\n' '\0' | xargs -0 git add --
+  dir=$1
+  config=$2
+  shift 2
+  git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR -- "$@" >"$tmp/staged"
+  [ -s "$tmp/staged" ] || return 0
+  [ -x "$oxfmt" ] || {
+    echo "pre-commit: $oxfmt is missing; run npm install at the repository root." >&2
+    exit 1
+  }
+
+  : >"$tmp/whole"
+  while IFS= read -r file; do
+    if git diff --quiet -- "$file"; then
+      printf '%s\n' "${file#"$dir"/}" >>"$tmp/whole"
+      continue
+    fi
+    git show ":$file" >"$tmp/index"
+    # A type oxfmt does not format, or a file it cannot parse, is left to the format check.
+    if (cd "$dir" && "$oxfmt" -c "$config" --stdin-filepath "${file#"$dir"/}" <"$tmp/index" >"$tmp/formatted" 2>/dev/null) &&
+      ! git diff --no-index --quiet -- "$tmp/index" "$tmp/formatted"; then
+      echo "pre-commit: $file is not formatted, and it has changes this commit leaves out." >&2
+      echo "  Format it (oxfmt in $dir) and stage it again, or stash what you left out: git stash push --keep-index" >&2
+      failed=1
+    fi
+  done <"$tmp/staged"
+
+  [ -s "$tmp/whole" ] || return 0
+  (cd "$dir" && tr '\n' '\0' <"$tmp/whole" | xargs -0 "$oxfmt" -c "$config" --no-error-on-unmatched-pattern) >/dev/null || {
+    echo "pre-commit: oxfmt could not format the staged files of $dir." >&2
+    exit 1
+  }
+  sed "s|^|$dir/|" "$tmp/whole" | tr '\n' '\0' | xargs -0 git add --
 }
 
-format_staged apps/application app:format apps/application/
-format_staged packages/reporter reporter:format packages/reporter/src/
-format_staged packages/core core:format packages/core/
-format_staged packages/picker-dom picker-dom:format packages/picker-dom/
-format_staged apps/extension extension:format apps/extension/
+format_staged apps/application oxfmt.config.ts apps/application/
+format_staged packages/reporter oxfmt.config.mts packages/reporter/src/
+format_staged packages/core oxfmt.config.mts packages/core/src/ packages/core/tests/
+format_staged packages/picker-dom oxfmt.config.mts packages/picker-dom/src/ packages/picker-dom/tests/
+format_staged packages/editor oxfmt.config.mts packages/editor/src/ packages/editor/tests/
+format_staged apps/extension oxfmt.config.mts apps/extension/src/ apps/extension/tests/ apps/extension/scripts/
+format_staged apps/vscode oxfmt.config.mts apps/vscode/src/ apps/vscode/tests/ apps/vscode/build.mjs
+
+exit "$failed"
