@@ -19,7 +19,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
-import { eligibleRunSql } from '../run-eligibility';
+import { eligibleExecutionInProject } from '../run-eligibility';
 import { getHoldingVerifiedFixes, type VerifiedFix } from './flake-verified';
 import { listOutcomes, recordOutcome } from '../../server/utils/outcomes';
 import { proposeQuarantineCandidates } from '../../server/utils/quarantine-candidates';
@@ -109,14 +109,21 @@ export async function countQuarantinedClusterTests(
  *
  * One query for the whole list: each test's executions since its own quarantine
  * run are ranked newest-first with a window function, and only the first
- * `STREAK_SCAN_LIMIT` of each are read back.
+ * `STREAK_SCAN_LIMIT` of each are read back. The project's runs since the
+ * earliest quarantine run that the use leaves out are listed once for it
+ * (`eligibleExecutionInProject`).
  */
 async function computeStreaks(
   db: DrizzleDB,
+  projectId: number,
   entries: Array<{ testCaseId: number; quarantinedAtRunId: number | null }>,
 ): Promise<Map<number, { passes: number; runs: number }>> {
   const streaks = new Map<number, { passes: number; runs: number }>();
   if (entries.length === 0) return streaks;
+
+  // Every execution read is of a run after the earliest quarantine run, unless an entry names none.
+  const quarantineRuns = entries.map((entry) => entry.quarantinedAtRunId);
+  const earliestRun = quarantineRuns.every((id) => id != null) ? Math.min(...(quarantineRuns as number[])) : null;
 
   const sinceQuarantine = or(
     ...entries.map((entry) =>
@@ -138,8 +145,17 @@ async function computeStreaks(
         ),
     })
     .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(sinceQuarantine, eligibleRunSql('flakiness')))
+    .where(
+      and(
+        sinceQuarantine,
+        eligibleExecutionInProject(
+          'flakiness',
+          projectId,
+          testRunsCases.testRunId,
+          earliestRun != null ? gt(testRuns.id, earliestRun) : undefined,
+        ),
+      ),
+    )
     .as('ranked');
 
   const rows = await db
@@ -184,9 +200,10 @@ interface ReleaseProgress {
 
 async function releaseProposals(
   db: DrizzleDB,
+  projectId: number,
   entries: Array<{ testCaseId: number; quarantinedAtRunId: number | null; createdAt: Date | string | number }>,
 ): Promise<Map<number, ReleaseProgress>> {
-  const streaks = await computeStreaks(db, entries);
+  const streaks = await computeStreaks(db, projectId, entries);
   const fixes = await getHoldingVerifiedFixes(
     db,
     entries.map((entry) => entry.testCaseId),
@@ -225,7 +242,7 @@ export async function listQuarantine(
     .where(and(eq(quarantinedTests.projectId, projectId), isNull(quarantinedTests.releasedAt)))
     .orderBy(asc(quarantinedTests.createdAt));
 
-  const proposals = await releaseProposals(db, rows);
+  const proposals = await releaseProposals(db, projectId, rows);
   const now = Date.now();
 
   const entries: QuarantineEntry[] = rows.map((row) => {
@@ -347,7 +364,7 @@ export async function releaseQuarantine(
     );
   if (active.length === 0) return { released: false };
 
-  const proposal = (await releaseProposals(db, active)).get(testCaseId);
+  const proposal = (await releaseProposals(db, projectId, active)).get(testCaseId);
   const releasedAt = new Date();
   await db
     .update(quarantinedTests)
@@ -413,7 +430,7 @@ export async function dismissQuarantineProposal(
     );
   if (proposal === 'release') {
     if (!active) return false;
-    const progress = (await releaseProposals(db, [active])).get(testCaseId);
+    const progress = (await releaseProposals(db, projectId, [active])).get(testCaseId);
     if (!progress?.earned && !progress?.verifiedFix) return false;
   } else {
     if (active) return false;
