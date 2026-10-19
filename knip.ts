@@ -7,6 +7,9 @@ process.env.PIWI_JIRA_BASE_URL ||= 'https://knip.atlassian.net';
 process.env.PIWI_JIRA_EMAIL ||= 'knip@example.com';
 process.env.PIWI_JIRA_API_TOKEN ||= 'knip';
 process.env.PIWI_LIVE_JIRA_PROJECT_KEY ||= 'KNIP';
+// Knip reads every config as a local run does, so the result is the same in CI: the app's Playwright
+// config names `monocart-reporter` only outside CI.
+delete process.env.CI;
 
 const config: KnipConfig = {
   // Report exports nothing imports; an export used only inside its own module is not flagged.
