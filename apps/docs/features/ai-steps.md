@@ -149,6 +149,9 @@ On the **server** side, two limits bound each authoring iteration (see the
 - `PIWI_AI_STEP_MAX_OUTPUT_TOKENS`: output tokens the model may return. **Reasoning models** spend tokens on hidden
   chain-of-thought, so raise this (up to `8192`) when authoring with one, or the JSON decision can be truncated.
 
+Each key may make 300 authoring calls in five minutes; a 20-step flow takes about 40. Past that the server answers
+429 and the authoring run stops, so split a large first authoring run or run it again a few minutes later.
+
 ## Related
 
 - [Reporter](/guide/reporter) — installing and configuring the reporter.
