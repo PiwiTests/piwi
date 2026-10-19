@@ -59,22 +59,29 @@ export function sanitizeWebVitals(vitals: Record<string, unknown> | null | undef
   };
 }
 
+/** The URL schemes a git remote may have. */
+const GIT_REMOTE_PROTOCOLS = new Set(['https:', 'http:', 'ssh:', 'git:']);
+
 /**
  * Strip userinfo (username:password) from a Git remote URL.
  * Handles `https://token@host/repo` and `https://user:pass@host/repo` patterns.
- * Returns the sanitized URL, or the original string if parsing fails.
+ * An SSH remote (`git@host:owner/repo`) and a local path come back unchanged.
+ * Null for a URL of any scheme a git remote does not use (`javascript:`, `data:`…).
  */
-export function sanitizeGitRemoteUrl(url: string): string {
+export function sanitizeGitRemoteUrl(url: string): string | null {
+  if (/^[^\s/:@]+@[^\s/:]+:/.test(url)) return url;
+  let parsed: URL;
   try {
-    const parsed = new URL(url);
-    if (parsed.username) {
-      parsed.username = '';
-      parsed.password = '';
-    }
-    return parsed.toString();
+    parsed = new URL(url);
   } catch {
     return url;
   }
+  if (!GIT_REMOTE_PROTOCOLS.has(parsed.protocol)) return null;
+  if (parsed.username) {
+    parsed.username = '';
+    parsed.password = '';
+  }
+  return parsed.toString();
 }
 
 /**
@@ -93,7 +100,9 @@ export function sanitizeMetadata(metadata: Record<string, unknown> | null | unde
   // Sanitize scm.remoteUrl
   const scm = meta.scm as Record<string, unknown> | null | undefined;
   if (scm && typeof scm.remoteUrl === 'string') {
-    meta.scm = { ...scm, remoteUrl: sanitizeGitRemoteUrl(scm.remoteUrl) };
+    const { remoteUrl: _remoteUrl, ...rest } = scm;
+    const remoteUrl = sanitizeGitRemoteUrl(scm.remoteUrl);
+    meta.scm = remoteUrl === null ? rest : { ...rest, remoteUrl };
   }
 
   if (RUN_ORIGIN_METADATA_KEY in meta) {

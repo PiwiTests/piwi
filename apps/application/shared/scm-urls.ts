@@ -14,12 +14,14 @@ export type ScmProviderName = 'github' | 'gitlab' | 'bitbucket';
 
 /**
  * The SCM provider a repository URL points at, or null when the host is not one
- * Piwi links to. Same hostname rules as the server's `detectScmProvider`.
+ * Piwi links to or the URL is not `http:` or `https:`, so no other scheme ever
+ * becomes a link. Same hostname rules as the server's `detectScmProvider`.
  */
 export function detectScmHost(repositoryUrl: string | null | undefined): ScmProviderName | null {
   if (!repositoryUrl) return null;
   try {
-    const { hostname } = new URL(repositoryUrl);
+    const { protocol, hostname } = new URL(repositoryUrl);
+    if (protocol !== 'https:' && protocol !== 'http:') return null;
     if (hostname === 'github.com' || hostname.endsWith('.github.com')) return 'github';
     if (hostname === 'gitlab.com' || hostname.includes('gitlab')) return 'gitlab';
     if (hostname === 'bitbucket.org') return 'bitbucket';

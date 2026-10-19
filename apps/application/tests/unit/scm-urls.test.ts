@@ -11,6 +11,14 @@ describe('scm-urls', () => {
     expect(detectScmHost('not a url')).toBeNull();
   });
 
+  it('links only http and https repository URLs', () => {
+    expect(detectScmHost('javascript://github.com/%0aalert(1)')).toBeNull();
+    expect(commitUrl('javascript://github.com/%0aalert(1)', 'abc123')).toBeNull();
+    expect(compareUrl('data://github.com/acme/web', 'a', 'b')).toBeNull();
+    expect(detectScmHost('ssh://github.com/acme/web')).toBeNull();
+    expect(detectScmHost('http://gitlab.internal/acme/web')).toBe('gitlab');
+  });
+
   it('builds provider-specific commit URLs', () => {
     expect(commitUrl('https://github.com/acme/web', 'abc123')).toBe('https://github.com/acme/web/commit/abc123');
     expect(commitUrl('https://gitlab.com/acme/web', 'abc123')).toBe('https://gitlab.com/acme/web/-/commit/abc123');

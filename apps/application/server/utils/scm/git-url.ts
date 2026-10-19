@@ -4,7 +4,9 @@ export const FALLBACK_DEFAULT_BRANCH = 'main';
 /**
  * Normalize a git remote URL (SSH or HTTPS, with or without a `.git` suffix or
  * embedded credentials) into a clean `https://host/owner/repo` form the SCM
- * providers can parse. Returns null when there is nothing to normalize.
+ * providers can parse. An SSH or `git://` remote reads over https on its host.
+ * Returns null when there is nothing to normalize, and for a URL of any other
+ * scheme (`file:`, `javascript:`…), which is never a repository link.
  *
  * Lives in its own module so both `regression-context` (which re-exports it for
  * its many callers) and the default-branch resolver can use it without a
@@ -19,11 +21,15 @@ export function normalizeGitUrl(remoteUrl: string | null | undefined): string | 
   url = url.replace(/\.git$/, '');
   try {
     const parsed = new URL(url);
+    if (parsed.protocol === 'ssh:' || parsed.protocol === 'git:') {
+      return parsed.hostname ? `https://${parsed.hostname}${parsed.pathname}`.replace(/\/$/, '') : null;
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
     parsed.username = '';
     parsed.password = '';
     return parsed.toString().replace(/\/$/, '');
   } catch {
-    return url;
+    return null;
   }
 }
 
