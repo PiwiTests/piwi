@@ -62,7 +62,7 @@ migrations are forward-only. Browse the published tags on
 
 | Property | Value |
 |----------|-------|
-| Base image | `node:24-alpine` |
+| Base image | `node:24-alpine`, pinned by digest |
 | Image size | ~400 MB |
 | Platforms | `linux/amd64`, `linux/arm64` |
 

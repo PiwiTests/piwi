@@ -89,4 +89,6 @@ pull request's later runs only) and reports a regression in its comment without 
   A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request: every target
   builds and packs, and nothing is published.
 - Dependabot updates the actions of the workflows and of `.github/actions/*`: the commit SHA and the version comment
-  together.
+  together. It also updates the npm lockfiles (the root's, `apps/desktop`'s and `apps/docs`'s), the desktop shell's
+  crates, the JetBrains plugin's Gradle dependencies, the .NET packages (within their major) and the Dockerfile's base
+  image, whose tag and digest move together.

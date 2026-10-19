@@ -35,7 +35,7 @@ Then point the [Playwright reporter](https://piwitests.dev/guide/reporter) at it
 
 | Property   | Value                              |
 |------------|------------------------------------|
-| Base image | `node:24-alpine`                   |
+| Base image | `node:24-alpine`, pinned by digest |
 | Platforms  | `linux/amd64`, `linux/arm64`       |
 | Image size | ~400 MB                            |
 | Run as     | Non-root (`nodejs`, UID 1001)      |

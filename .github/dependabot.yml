@@ -1,13 +1,68 @@
 version: 2
 updates:
-  # Root lockfile covers the npm workspaces (apps/*, packages/*, integrations/nitro)
+  # The root lockfile covers the npm workspaces (apps/*, packages/*, integrations/nitro); the desktop shell and the
+  # docs site install from lockfiles of their own.
   - package-ecosystem: npm
-    directory: "/"
+    directories:
+      - "/"
+      - "/apps/desktop"
+      - "/apps/docs"
     schedule:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # The desktop shell's Rust crates
+  - package-ecosystem: cargo
+    directory: "/apps/desktop/src-tauri"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # The JetBrains plugin's Gradle plugins and libraries, and the Gradle wrapper
+  - package-ecosystem: gradle
+    directory: "/apps/jetbrains"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # The .NET instrumentation packages, their tests and the sample app's backend. A library's dependency versions are
+  # the oldest its users may run, so they move within their major only; release-please stamps PiwiTests.* itself.
+  - package-ecosystem: nuget
+    directories:
+      - "/integrations/aspnetcore/*"
+      - "/integrations/serilog/*"
+      - "/examples/sample-app/backends/*"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "PiwiTests.*"
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     groups:
       minor-and-patch:
         update-types:
@@ -28,6 +83,7 @@ updates:
         patterns:
           - "*"
 
+  # The server image's base, pinned by tag and digest in the Dockerfile
   - package-ecosystem: docker
     directory: "/"
     schedule:
