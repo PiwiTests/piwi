@@ -21,8 +21,8 @@ function redirectTarget(): string {
   return safeReturnPath(route.query.redirect) ?? '/';
 }
 
-// Fresh instance with auth enabled and zero users: the login form can never
-// succeed, so show a first-admin setup form instead (mirrors the documented
+// Auth enabled and no administrator yet (a fresh instance, or only OAuth
+// members): show a first-admin setup form instead (mirrors the documented
 // `POST /api/auth/setup` curl flow, but reachable from the UI).
 const needsSetup = ref<boolean | null>(null);
 // With PIWI_SETUP_TOKEN set, only someone who can read the server's settings may create the first admin.
@@ -181,7 +181,7 @@ definePageMeta({
       <template #header>
         <h1 class="text-xl font-semibold">Create the first admin account</h1>
         <p class="text-sm text-muted mt-1">
-          Authentication is enabled and no accounts exist yet. Create the administrator account to sign in.
+          Authentication is enabled and no administrator exists yet. Create the administrator account to sign in.
         </p>
       </template>
 

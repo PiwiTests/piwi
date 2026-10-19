@@ -5,7 +5,9 @@ import {
   needsInitialSetup,
   claimInitialSetup,
   releaseInitialSetup,
+  completeInitialSetup,
   setupTokenMatches,
+  usernameTaken,
 } from '../../utils/auth';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
 import { z } from 'zod';
@@ -15,7 +17,7 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Initial setup',
     description:
-      'Creates the first administrator user. Only available when no users exist yet. Accepts username, password, and optional name in the request body. When `PIWI_SETUP_TOKEN` is set, the body must also carry it as `setupToken` (403 otherwise).',
+      'Creates the first administrator user. Only available while no administrator exists (a new instance, or one where only members signed in through OAuth). Accepts username, password, and optional name in the request body. When `PIWI_SETUP_TOKEN` is set, the body must also carry it as `setupToken` (403 otherwise).',
     security: [],
   },
 });
@@ -43,7 +45,7 @@ export default eventHandler(async (event) => {
   if (!(await needsInitialSetup())) {
     throw apiError({
       statusCode: 400,
-      message: 'Users already exist. This endpoint is only for initial setup.',
+      message: 'An administrator already exists. This endpoint is only for initial setup.',
     });
   }
 
@@ -66,6 +68,10 @@ export default eventHandler(async (event) => {
       message: 'The setup token is missing or wrong. It is the value of PIWI_SETUP_TOKEN on the server.',
     });
   }
+  // Members who signed in through OAuth may already hold usernames.
+  if (await usernameTaken(username)) {
+    throw apiError({ statusCode: 409, message: 'An account already uses this username. Choose another one.' });
+  }
 
   // Two concurrent setup requests can both pass the needsInitialSetup() check
   // above. claimInitialSetup() lets exactly one of them create the
@@ -73,12 +79,13 @@ export default eventHandler(async (event) => {
   if (!(await claimInitialSetup())) {
     throw apiError({
       statusCode: 400,
-      message: 'Users already exist. This endpoint is only for initial setup.',
+      message: 'An administrator already exists. This endpoint is only for initial setup.',
     });
   }
 
   try {
     const user = await createUser(username, password, InstanceRole.ADMINISTRATOR, name);
+    await completeInitialSetup();
 
     return {
       success: true,

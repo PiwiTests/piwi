@@ -38,7 +38,7 @@ What a Member can do inside a project comes from the **project roles** (Viewer, 
 
 ## Initial setup
 
-When authentication is enabled and no users exist yet, opening the dashboard lands on the login page, which shows a **Create the first admin account** form in place of the sign-in form. Fill it in and you are signed in as the administrator, with no API call needed.
+When authentication is enabled and no administrator exists yet, opening the dashboard lands on the login page, which shows a **Create the first admin account** form in place of the sign-in form. Fill it in and you are signed in as the administrator, with no API call needed.
 
 For provisioning an instance from a script, the same step is available as an API call:
 
@@ -56,7 +56,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
 
 :::
 
-Both routes go through the same setup endpoint, which is only available while the users table is empty and is rate-limited per client address.
+Both go through the same setup endpoint, rate-limited per client address and open while no administrator exists, even after members signed in through OAuth.
 
 On an instance reachable from the internet, set `PIWI_SETUP_TOKEN` to a random value before you start it: the form then
 asks for that value, and the API call carries it as `"setupToken"`, so a stranger who opens the URL first cannot

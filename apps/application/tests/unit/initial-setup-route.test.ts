@@ -7,8 +7,9 @@ import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 
 /**
- * First-admin setup through its routes: with `PIWI_SETUP_TOKEN` set, the form
- * says it needs the token and the setup refuses a request without it.
+ * First-admin setup through its routes: it stays open while no administrator
+ * exists, and with `PIWI_SETUP_TOKEN` set the form says it needs the token and
+ * the setup refuses a request without it.
  */
 
 delete process.env.PIWI_DATABASE_URL;
@@ -56,6 +57,24 @@ describe('first-admin setup with PIWI_SETUP_TOKEN set', () => {
       user: { username: 'admin', role: 'administrator' },
     });
     expect(await setupStatus(request())).toEqual({ needsSetup: false, setupTokenRequired: false });
+  });
+});
+
+describe('first-admin setup while only members exist', () => {
+  beforeEach(async () => {
+    vi.stubEnv('PIWI_SETUP_TOKEN', '');
+    // The first OAuth sign-ins create members, never an administrator.
+    await (state.db as ReturnType<typeof drizzle<typeof schema>>)
+      .insert(schema.users)
+      .values({ username: 'ada@example.com', password: '', role: 'member', oauthProvider: 'github' });
+  });
+
+  test('stays open, refuses a username a member holds, and closes once an administrator exists', async () => {
+    expect(await setupStatus(request())).toEqual({ needsSetup: true, setupTokenRequired: false });
+    await expect(setup(request({ username: 'ada@example.com' }))).rejects.toMatchObject({ statusCode: 409 });
+    expect(await setup(request())).toMatchObject({ success: true, user: { role: 'administrator' } });
+    expect(await setupStatus(request())).toEqual({ needsSetup: false, setupTokenRequired: false });
+    await expect(setup(request({ username: 'second' }))).rejects.toMatchObject({ statusCode: 400 });
   });
 });
 
