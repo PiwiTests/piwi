@@ -25,6 +25,9 @@ interface CompleteEvent {
 
 let simulator: typeof import('~~/app/demo/simulator');
 
+/** The real `setTimeout`, captured before any test installs fake timers. */
+const realSetTimeout = globalThis.setTimeout;
+
 // The simulator's module graph is large: loaded before the tests, its import
 // never counts against the first test's timeout when the whole suite runs.
 // It reads `$fetch` at call time, so the stub below still applies.
@@ -52,7 +55,18 @@ async function streamScenario(id: string): Promise<CompleteEvent[]> {
   );
   const { DEMO_SCENARIOS, runSimulation } = simulator;
   const run = runSimulation(DEMO_SCENARIOS.find((s) => s.id === id)!);
-  await vi.runAllTimersAsync();
+  let settled = false;
+  void run.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+  // Between its fake timers the simulator awaits real work (SHA-256 digests on the
+  // thread pool), so the timer queue can be empty while the run is still going:
+  // keep advancing until the run settles.
+  while (!settled) {
+    await vi.runAllTimersAsync();
+    if (!settled) await new Promise((resolve) => realSetTimeout(resolve, 1));
+  }
   await run;
   return completes;
 }
