@@ -128,11 +128,11 @@ function listen(server) {
 }
 
 function runPlaywright(env) {
-  // `playwright/cli` is not an exported subpath; resolve the package root and
-  // point at its `cli.js` entry (the `playwright` bin) directly. Spawn async (not
-  // spawnSync): the app + stub servers live on THIS process's event loop, and a
-  // synchronous child would block it — the browser could never reach them.
-  const cli = path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js');
+  // The `playwright` bin of the peer dependency, `@playwright/test/cli`. Spawn
+  // async (not spawnSync): the app + stub servers live on THIS process's event
+  // loop, and a synchronous child would block it — the browser could never reach
+  // them.
+  const cli = require.resolve('@playwright/test/cli');
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [cli, 'test', '--config', path.join(here, 'playwright.config.ts')], {
       cwd: here,

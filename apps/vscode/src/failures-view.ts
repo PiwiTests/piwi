@@ -1,7 +1,7 @@
 /**
- * The Piwi view in the Panel: the latest run's failures as a tree (`failureTree` in `glue.ts`), as
- * `piwi/failuresChanged` pushes them, read from `piwi/failures` when the extension starts and when the connection
- * changes. A failure's click opens its line; its
+ * The Piwi view in the Panel: the latest run's failures as the tree the service groups (`FailuresResult.tree`, drawn
+ * by `failureNodes` in `glue.ts`), as `piwi/failuresChanged` pushes them, read from `piwi/failures` with the grouping
+ * when the extension starts, when the connection changes and when the grouping does. A failure's click opens its line; its
  * inline actions and context menu run the commands `package.json` binds to its `contextValue`. The grouping and
  * whether the view follows the active editor are kept in `workspaceState`.
  */
@@ -9,11 +9,13 @@ import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import {
   FAILURES_REQUEST,
+  type FailuresGrouping,
+  type FailuresParams,
   type FailuresResult,
   type RunStatusResult,
   type StatusResult,
 } from '@piwitests/editor/protocol';
-import { FAILURES_GROUPINGS, failingCount, failureTree, type FailureNode, type FailuresGrouping } from './glue';
+import { FAILURES_GROUPINGS, failureNodes, type FailureNode } from './glue';
 
 const GROUPING = 'piwi.failuresGrouping';
 const FOLLOW = 'piwi.followEditor';
@@ -93,10 +95,14 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     }, DEBOUNCE_MS);
   }
 
-  /** Read the failures now and draw them. */
+  /** Read the failures now, grouped as the view groups them, and draw them. */
   async read(): Promise<FailuresResult | null> {
     try {
-      this.show(await this.lc.sendRequest<FailuresResult>(FAILURES_REQUEST));
+      this.show(
+        await this.lc.sendRequest<FailuresResult>(FAILURES_REQUEST, {
+          grouping: this.grouping,
+        } satisfies FailuresParams),
+      );
     } catch {
       this.result = null;
       this.render();
@@ -114,10 +120,10 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     void vscode.commands.executeCommand('setContext', 'piwi.failuresView', state);
   }
 
-  /** Draw the failures as they were read last, for a new grouping or the run in progress. */
+  /** Draw the failures as they were read last, for the run in progress. */
   render(): void {
     const live = this.runs()?.contexts.find((c) => c.live?.own)?.live ?? null;
-    this.roots = failureTree(this.result, this.grouping, { live });
+    this.roots = failureNodes(this.result, { live });
     this.parents.clear();
     const walk = (nodes: FailureNode[], parent: FailureNode | undefined) => {
       for (const node of nodes) {
@@ -126,11 +132,12 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       }
     };
     walk(this.roots, undefined);
-    const failing = failingCount(this.result);
+    const failing = this.result?.failing ?? 0;
     this.view.badge = failing
       ? { value: failing, tooltip: `${failing} failing ${failing === 1 ? 'test' : 'tests'}` }
       : undefined;
-    this.view.description = `by ${FAILURES_GROUPINGS.find((g) => g.grouping === this.grouping)!.label.toLowerCase()}`;
+    const grouping = this.result?.grouping ?? this.grouping;
+    this.view.description = `by ${FAILURES_GROUPINGS.find((g) => g.grouping === grouping)!.label.toLowerCase()}`;
     const run = this.result?.run;
     this.view.message =
       run && !this.result?.items.length
@@ -189,7 +196,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     );
     if (!picked) return;
     await this.context.workspaceState.update(GROUPING, picked.grouping);
-    this.render();
+    await this.read();
   }
 
   /** Turn following the active editor on or off, and keep the choice for this workspace. */

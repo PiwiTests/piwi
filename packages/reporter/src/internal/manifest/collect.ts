@@ -97,13 +97,6 @@ export function readCommittedManifest(configDir: string): ReporterManifest | nul
   }
 }
 
-/** The directory holding the committed manifest: the config file's dir, else rootDir, else cwd. */
-export function configDirFromConfig(config: { configFile?: string; rootDir?: string }): string {
-  if (config?.configFile) return path.dirname(config.configFile);
-  if (config?.rootDir) return config.rootDir;
-  return process.cwd();
-}
-
 /** A fetch-shaped function, so the instrumentation fetch is testable without a server. */
 export type FetchLike = (
   url: string,

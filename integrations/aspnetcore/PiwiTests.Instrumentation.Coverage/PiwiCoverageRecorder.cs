@@ -64,11 +64,13 @@ public static class PiwiCoverageRecorder
 
     /// <summary>
     /// Adds the coverage <paramref name="request"/> recorded to the shared payloads, so it counts at run level
-    /// once the request is no longer kept on its own.
+    /// once the request is no longer kept on its own. The work the request started and that still runs records into
+    /// the shared payloads from then on.
     /// </summary>
     public static void AddToRunLevel(PiwiRequestCoverage request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request.Close();
         foreach (var (module, row, payload) in request.Payloads())
             module.AddToShared(row, payload);
     }
@@ -155,7 +157,7 @@ public static class PiwiCoverageRecorder
             return slot = module.SharedPayload(row, length);
 
         var request = t_request;
-        return request is null ? module.SharedPayload(row, length) : request.Payload(module, row, length);
+        return request is null || request.IsClosed ? module.SharedPayload(row, length) : request.Payload(module, row, length);
     }
 
     private static void OnRequestChanged(AsyncLocalValueChangedArgs<PiwiRequestCoverage?> args) => t_request = args.CurrentValue;

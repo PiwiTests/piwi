@@ -75,6 +75,10 @@ pub struct Job {
     pub cleaned: Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// How long the runs still going when the app quits get to wind down after a
+/// Ctrl+C before their process trees are killed.
+const QUIT_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Running local processes, keyed by run id so the webview can stop one. Plain
 /// test runs live in `children`; reproduce/bisect drivers live in `jobs` because
 /// they also own a worktree that must be removed when they stop or the app quits.
@@ -85,6 +89,9 @@ pub struct LocalRuns {
     /// Plain runs already asked to stop gracefully — a second stop kills them.
     stopping: Mutex<HashSet<u32>>,
     jobs: Mutex<HashMap<u32, Job>>,
+    /// Reproduction specs written into a linked folder, by run id: removed when
+    /// their run ends, or when the app quits.
+    specs: Mutex<HashMap<u32, PathBuf>>,
 }
 
 impl LocalRuns {
@@ -127,6 +134,18 @@ impl LocalRuns {
         self.drop_child(id);
     }
 
+    /// Record a reproduction spec run `id` wrote into a linked folder.
+    pub(crate) fn track_spec(&self, id: u32, spec: PathBuf) {
+        self.specs.lock().unwrap().insert(id, spec);
+    }
+
+    /// Remove run `id`'s reproduction spec, if it still has one.
+    pub(crate) fn remove_spec(&self, id: u32) {
+        if let Some(spec) = self.specs.lock().unwrap().remove(&id) {
+            crate::repro::remove_spec(&spec);
+        }
+    }
+
     /// Forget a plain run once its process has exited.
     fn drop_child(&self, id: u32) {
         self.children.lock().unwrap().remove(&id);
@@ -152,35 +171,63 @@ impl LocalRuns {
         }
     }
 
-    /// Kill every process still tracked and tear down every worktree — called
-    /// when the app exits so no orphaned test run, browser fleet or worktree
-    /// outlives the shell.
+    /// Stop every process still tracked, tear down every worktree and remove
+    /// every reproduction spec — called when the app exits so no orphaned test
+    /// run, webServer, browser fleet, worktree or spec outlives the shell.
+    ///
+    /// Each test run is first asked to stop as Ctrl+C would, so Playwright
+    /// closes its webServer and browsers itself; whatever still runs
+    /// `QUIT_GRACE` later is killed with its process tree.
     pub fn kill_all(&self) {
+        let mut interrupted = false;
+        for child in self.children.lock().unwrap().values() {
+            interrupted |= crate::interrupt::interrupt(child.pid());
+        }
+        for job in self.jobs.lock().unwrap().values() {
+            job.stop.store(true, Ordering::SeqCst);
+            if let Some(child) = job.child.lock().unwrap().filter(|c| c.interruptible) {
+                interrupted |= crate::interrupt::interrupt(child.pid);
+            }
+        }
+        if interrupted {
+            let deadline = std::time::Instant::now() + QUIT_GRACE;
+            while self.any_test_running() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
         for (_, child) in self.children.lock().unwrap().drain() {
+            crate::worktree::kill_child_tree(child.pid());
             let _ = child.kill();
         }
         self.stopping.lock().unwrap().clear();
         for (_, job) in self.jobs.lock().unwrap().drain() {
-            job.stop.store(true, Ordering::SeqCst);
             if let Some(child) = *job.child.lock().unwrap() {
                 crate::worktree::kill_child_tree(child.pid);
             }
             crate::worktree::perform_cleanup(&job.cleanup, &job.cleaned);
         }
+        for (_, spec) in self.specs.lock().unwrap().drain() {
+            crate::repro::remove_spec(&spec);
+        }
+    }
+
+    /// Whether a plain run, or a job's test or browser install, is still running.
+    fn any_test_running(&self) -> bool {
+        !self.children.lock().unwrap().is_empty()
+            || self
+                .jobs
+                .lock()
+                .unwrap()
+                .values()
+                .any(|job| job.child.lock().unwrap().is_some_and(|c| c.interruptible))
     }
 }
 
-/// A project's linked folder plus an optional start command (and readiness URL)
-/// for reproduce/bisect steps when the Playwright config has no `webServer`.
-/// The command is stored only: no reproduce, bisect or lab driver runs it.
+/// A project's linked folder.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LinkRecord {
     pub path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_command: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub readiness_url: Option<String>,
 }
 
 /// Links written by older builds stored a bare path string; accept either shape
@@ -195,11 +242,7 @@ enum StoredLink {
 impl From<StoredLink> for LinkRecord {
     fn from(stored: StoredLink) -> Self {
         match stored {
-            StoredLink::Path(path) => LinkRecord {
-                path,
-                start_command: None,
-                readiness_url: None,
-            },
+            StoredLink::Path(path) => LinkRecord { path },
             StoredLink::Record(record) => record,
         }
     }
@@ -235,8 +278,6 @@ pub(crate) fn linked_folder(app: &AppHandle, project_id: &str) -> Option<LinkRec
 pub struct ProjectLink {
     path: String,
     exists: bool,
-    start_command: Option<String>,
-    readiness_url: Option<String>,
 }
 
 /// Native folder picker. Returns `None` when the user cancels.
@@ -290,27 +331,32 @@ pub async fn desktop_pick_import_files(
     .unwrap_or_default()
 }
 
+/// Whether `project_id` is a Piwi project id: digits only. The webview names a
+/// project by it, and it becomes a folder name under the worktrees dir, so
+/// nothing else is accepted.
+pub(crate) fn valid_project_id(project_id: &str) -> bool {
+    !project_id.is_empty()
+        && project_id.len() <= 20
+        && project_id.bytes().all(|b| b.is_ascii_digit())
+}
+
 #[tauri::command]
 pub fn desktop_get_project_link(app: AppHandle, project_id: String) -> Option<ProjectLink> {
     read_links(&app).get(&project_id).map(|r| ProjectLink {
         exists: Path::new(&r.path).is_dir(),
         path: r.path.clone(),
-        start_command: r.start_command.clone(),
-        readiness_url: r.readiness_url.clone(),
     })
 }
 
-/// Set (`path: Some`) or clear (`path: None`) the folder linked to a project. A
-/// re-link to the same folder keeps its start command; a different folder starts
-/// fresh.
+/// Set (`path: Some`) or clear (`path: None`) the folder linked to a project.
 #[tauri::command]
 pub fn desktop_set_project_link(
     app: AppHandle,
     project_id: String,
     path: Option<String>,
 ) -> Result<(), String> {
-    if project_id.trim().is_empty() {
-        return Err("missing project id".into());
+    if !valid_project_id(&project_id) {
+        return Err("invalid project id".into());
     }
     let mut links = read_links(&app);
     match path {
@@ -322,44 +368,12 @@ pub fn desktop_set_project_link(
             if !folder.is_dir() {
                 return Err("the folder does not exist".into());
             }
-            let previous = links.get(&project_id);
-            let keep = previous.filter(|r| r.path == p);
-            links.insert(
-                project_id,
-                LinkRecord {
-                    path: p,
-                    start_command: keep.and_then(|r| r.start_command.clone()),
-                    readiness_url: keep.and_then(|r| r.readiness_url.clone()),
-                },
-            );
+            links.insert(project_id, LinkRecord { path: p });
         }
         None => {
             links.remove(&project_id);
         }
     }
-    write_links(&app, &links)
-}
-
-/// Store (or clear) the start command for reproduce/bisect steps when the
-/// Playwright config has no `webServer`, and the URL to poll until the app
-/// answers. Requires a linked folder. Stored only: no driver reads either value.
-#[tauri::command]
-pub fn desktop_set_project_start_command(
-    app: AppHandle,
-    project_id: String,
-    start_command: Option<String>,
-    readiness_url: Option<String>,
-) -> Result<(), String> {
-    let mut links = read_links(&app);
-    let record = links
-        .get_mut(&project_id)
-        .ok_or("no folder is linked to this project")?;
-    record.start_command = start_command
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    record.readiness_url = readiness_url
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
     write_links(&app, &links)
 }
 
@@ -596,20 +610,14 @@ impl RunEventPayload {
     }
 }
 
-/// Run `playwright test <args>` for `project_id`, using the bundled Node sidecar
-/// and the run folder's own Playwright package. Returns a run id; progress
-/// arrives as `piwi:local-run` events carrying that id.
-///
-/// The default run folder is the linked checkout. A `cwd` may point the run at a
-/// throwaway worktree instead — the reproduce/bisect drivers use this — but only
-/// one that canonicalizes inside this app's worktrees dir, so the webview can
-/// never redirect a run at an arbitrary folder.
+/// Run `playwright test <args>` for `project_id` in its linked folder, using the
+/// bundled Node sidecar and the folder's own Playwright package. Returns a run
+/// id; progress arrives as `piwi:local-run` events carrying that id.
 #[tauri::command]
 pub async fn desktop_run_local_tests(
     app: AppHandle,
     project_id: String,
     args: Vec<String>,
-    cwd: Option<String>,
     origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
@@ -618,19 +626,13 @@ pub async fn desktop_run_local_tests(
         crate::worktree::origin_reference(None, origin_ref)?.as_deref(),
     );
 
-    let folder = match cwd {
-        Some(dir) => crate::worktree::validate_worktree_cwd(&app, &dir)?,
-        None => {
-            let f = read_links(&app)
-                .get(&project_id)
-                .map(|r| PathBuf::from(&r.path))
-                .ok_or("no folder is linked to this project")?;
-            if !f.is_dir() {
-                return Err("the linked folder no longer exists — pick it again".into());
-            }
-            f
-        }
-    };
+    let folder = read_links(&app)
+        .get(&project_id)
+        .map(|r| PathBuf::from(&r.path))
+        .ok_or("no folder is linked to this project")?;
+    if !folder.is_dir() {
+        return Err("the linked folder no longer exists — pick it again".into());
+    }
     let cli = resolve_playwright_cli(&folder).ok_or(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
@@ -743,6 +745,31 @@ fn after_grace(app: &AppHandle, force: impl FnOnce(&LocalRuns) + Send + 'static)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quitting_removes_the_reproduction_specs_still_on_disk() {
+        let dir = std::env::temp_dir().join(format!("piwi-quit-spec-{}", std::process::id()));
+        let specs = dir.join("tests").join("piwi-repro");
+        std::fs::create_dir_all(&specs).unwrap();
+        let spec = specs.join("piwi-repro-abc.spec.ts");
+        std::fs::write(&spec, "").unwrap();
+
+        let runs = LocalRuns::default();
+        runs.track_spec(1, spec.clone());
+        runs.kill_all();
+        assert!(!spec.exists());
+        assert!(!specs.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_project_id_is_digits_only() {
+        assert!(valid_project_id("1"));
+        assert!(valid_project_id("4021"));
+        for bad in ["", "../../etc", "1/2", "1.0", "-1", " 1", "abc", &"9".repeat(21)] {
+            assert!(!valid_project_id(bad), "{bad:?} should be rejected");
+        }
+    }
 
     #[test]
     fn nothing_is_running_before_a_run_starts() {

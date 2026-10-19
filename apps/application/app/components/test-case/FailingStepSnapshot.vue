@@ -224,7 +224,7 @@ const canPick = computed(() => dom.hasSnapshot.value);
 const pickerOpen = ref(false);
 const { data: healing, execute: loadHealing } = useFetch<LocatorHealingResult>(
   () => `/api/test-run-cases/${props.testRunsCaseId}/locator-healing`,
-  { key: `locator-healing-${props.testRunsCaseId}`, immediate: false, lazy: true },
+  { key: () => `locator-healing-${props.testRunsCaseId}`, immediate: false, lazy: true },
 );
 async function openPicker() {
   if (!healing.value) await loadHealing().catch(() => {});

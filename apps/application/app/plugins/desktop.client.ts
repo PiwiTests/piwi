@@ -8,7 +8,9 @@
  *     webview would either navigate away from the app or silently drop the
  *     `target="_blank"` new-window request, so we hand them to the OS browser;
  *   - the Web Notification API is unavailable / permission-denied in the
- *     webview, so we shim it onto native OS notifications.
+ *     webview, so we shim it onto native OS notifications;
+ *   - the shell restarts the bundled server when it stops, and gives up after
+ *     repeated crashes: a toast says so, since the API stops answering meanwhile.
  *
  * All of this activates only when the native bridge is actually present —
  * plain browsers (including one opened at the same loopback URL) have no
@@ -23,6 +25,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   installExternalLinkHandler(core);
   installNativeNotifications(core);
   installErrorForwarding(core);
+  installServerStatus();
 
   // Vue's own error channels don't reach window.onerror — hook them explicitly
   // so a render/lifecycle error or a Nuxt app error also lands in the log. The
@@ -40,6 +43,33 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 interface Bridge {
   invoke: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+}
+
+/**
+ * Say what the shell's `server-status` events report about the bundled server:
+ * `restarting` once it stopped, `ready` once the shell started it again,
+ * `crashed` once the shell gave up on it. One toast, updated in place.
+ */
+function installServerStatus() {
+  const events = tauriEvent();
+  if (!events) return;
+  const toast = useToast();
+  const id = 'desktop-server-status';
+  void events.listen<string>('server-status', ({ payload }) => {
+    if (payload === 'restarting') {
+      toast.add({ id, title: 'The local server stopped', description: 'Restarting it…', color: 'warning' });
+    } else if (payload === 'ready') {
+      toast.add({ id, title: 'The local server restarted', description: undefined, color: 'success' });
+    } else if (payload === 'crashed') {
+      toast.add({
+        id,
+        title: 'The local server keeps stopping',
+        description: 'Quit and relaunch the app, or open its logs from the tray.',
+        color: 'error',
+        duration: 0,
+      });
+    }
+  });
 }
 
 /** Render an error/rejection reason as one string, keeping the stack when there is one. */

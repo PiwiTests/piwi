@@ -6,7 +6,7 @@ During a Playwright test run, the reporter reads this header from every response
 
 **Active in development and test only, by default.** Capture and probe verification run only outside production, using the same Development/Test allow-list as the ASP.NET package. Controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
 
-- unset — capture is on when `NODE_ENV` is unset, `development`, or `test`; off for any other value (`production`, `staging`, `prod`, …)
+- unset — capture is on when `NODE_ENV` is `development` or `test`; off for any other value (`production`, `staging`, `prod`, …) and when `NODE_ENV` is not set at all, as when a built server is started with `node .output/server/index.mjs`
 - `PIWI_TEST_LOGS_DISABLED=true` — capture is off everywhere
 - `PIWI_TEST_LOGS_DISABLED=false` — capture is on even in production builds (useful for a production-mode test deployment)
 
@@ -42,7 +42,7 @@ export default defineNitroConfig({ modules: ['@piwitests/instrumentation-nitro/m
 export default defineNuxtConfig({ nitro: { modules: ['@piwitests/instrumentation-nitro/module'] } })
 ```
 
-The manifest then lists every route Nitro scanned (`routes/`, `api/`) and every handler the config declares, middleware and a fallback catch-all (`/**`) left out, each with its method (`GET` for a route that answers any method), its pattern (`/api/orders/:id`) and its file relative to the git repository. Without the module, it lists only the routes the server has answered since it started, which the reporter, reading it before any test runs, rarely sees. Nuxt pages are rendered by one catch-all route, so they are not listed: name them in a `piwi.manifest.json`.
+The manifest then lists every route Nitro scanned (`routes/`, `api/`) and every handler the config declares, middleware and a fallback catch-all (`/**`) left out, each with its method (`GET` for a route that answers any method), its pattern (`/api/orders/:id`) and its file relative to the git repository. Without the module, it lists only the routes the server has answered since it started (a route handler matched, so neither a 404 nor a public asset), which the reporter, reading it before any test runs, rarely sees. Nuxt pages are rendered by one catch-all route, so they are not listed: name them in a `piwi.manifest.json`.
 
 ## What gets captured
 
@@ -63,7 +63,7 @@ Each captured entry contains:
 | `message`   | Log message (truncated at 500 characters)                                            |
 | `stack`     | Shrunk stack trace when an `Error` was logged (max 5 frames, internal frames dropped) |
 
-Up to 50 entries per request are included. The header is always emitted (with an empty array when no entries were captured) so the Piwi reporter can confirm the plugin is active.
+Up to 50 entries per request are included, the first ones logged; an entry logged once the response ended (a timer or a lazy client the request started) is dropped. A request the server makes to itself while rendering a page (`$fetch` or `useFetch` during server-side rendering) adds its entries and spans to the page's request. The header is always emitted (with an empty array when no entries were captured) so the Piwi reporter can confirm the plugin is active.
 
 ## How it works
 

@@ -30,6 +30,47 @@ export interface UseStreamingDiagnosisReturn {
   reset: () => void;
 }
 
+/** How often, and how long, a diagnosis another request is running is checked on. */
+const RUNNING_POLL_MS = 3_000;
+const RUNNING_WAIT_MS = 10 * 60_000;
+
+/** The text of a response body, whatever shape `$fetch.raw` gave it. */
+async function bodyText(raw: unknown): Promise<string> {
+  if (raw == null) return '';
+  if (typeof raw === 'string') return raw;
+  if (raw instanceof Uint8Array || raw instanceof ArrayBuffer) {
+    return new TextDecoder().decode(raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw);
+  }
+  if (typeof (raw as ReadableStream).getReader === 'function') return new Response(raw as ReadableStream).text();
+  return '';
+}
+
+/** The message of an API error response, else a sentence naming its status. */
+export function refusalMessage(statusCode: number, text: string): string {
+  try {
+    const message = (JSON.parse(text) as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  } catch {
+    // Not JSON: the status says enough.
+  }
+  return `The diagnosis could not start (HTTP ${statusCode})`;
+}
+
+/** Wait `ms`, or reject with an AbortError when `signal` aborts first. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
+}
+
 export function useStreamingDiagnosis(clusterId: Ref<number> | number): UseStreamingDiagnosisReturn {
   const thinkingText = ref('');
   const stage = ref<DiagnosisStage | null>(null);
@@ -68,6 +109,7 @@ export function useStreamingDiagnosis(clusterId: Ref<number> | number): UseStrea
 
     const cid = unref(clusterId);
     abortController = new AbortController();
+    const signal = abortController.signal;
 
     // Build query params
     const query = new URLSearchParams();
@@ -87,13 +129,24 @@ export function useStreamingDiagnosis(clusterId: Ref<number> | number): UseStrea
           executionId: body.testRunsCaseId,
         },
         responseType: 'stream',
-        signal: abortController.signal,
+        signal,
         // Do not throw on non-2xx — we read the body ourselves
         ignoreResponseError: true,
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rawBody = response._data ?? (response.body as any);
+      if (!response.ok) {
+        // Another request is already diagnosing: follow the stored diagnosis until it is done.
+        if (response.status === 409) {
+          await rawBody?.cancel?.().catch(() => {});
+          await waitForRunningDiagnosis(cid, body, signal);
+          return;
+        }
+        error.value = refusalMessage(response.status, await bodyText(rawBody));
+        status.value = 'error';
+        return;
+      }
       if (!rawBody) {
         throw new Error('No response body from streaming endpoint');
       }
@@ -192,6 +245,34 @@ export function useStreamingDiagnosis(clusterId: Ref<number> | number): UseStrea
     } finally {
       abortController = null;
     }
+  }
+
+  /**
+   * Check on the stored diagnosis another request is running, until it
+   * completes or fails (or the wait runs out), and take its outcome.
+   */
+  async function waitForRunningDiagnosis(cid: number, body: DiagnosisStreamBody, signal: AbortSignal): Promise<void> {
+    const url =
+      body.scope === 'execution' && body.testRunsCaseId
+        ? `/api/test-run-cases/${body.testRunsCaseId}/diagnosis`
+        : `/api/failure-clusters/${cid}/diagnosis`;
+    const deadline = Date.now() + RUNNING_WAIT_MS;
+    while (Date.now() < deadline) {
+      await pause(RUNNING_POLL_MS, signal);
+      const { diagnosis } = await $fetch<{ diagnosis: FailureDiagnosis | null }>(url, { signal });
+      if (diagnosis?.status === 'completed') {
+        result.value = diagnosis;
+        status.value = 'complete';
+        return;
+      }
+      if (diagnosis?.status === 'failed' || !diagnosis) {
+        error.value = diagnosis?.error || 'The diagnosis another request was running did not finish';
+        status.value = 'error';
+        return;
+      }
+    }
+    error.value = 'The diagnosis another request is running is taking too long. Reload the page later.';
+    status.value = 'error';
   }
 
   /**

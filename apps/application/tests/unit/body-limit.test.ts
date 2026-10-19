@@ -14,14 +14,30 @@ describe('bodyLimitError', () => {
   });
 
   test('multipart uploads, bodiless requests and the batch submit are left to their routes', () => {
-    expect(
-      bodyLimitError({ ...json, contentType: 'multipart/form-data; boundary=x', transferEncoding: 'chunked' }),
-    ).toBeNull();
+    const multipart = { method: 'POST', contentType: 'multipart/form-data; boundary=x', transferEncoding: 'chunked' };
+    for (const path of [
+      '/api/test-runs/upload',
+      '/api/test-runs/import',
+      '/api/test-runs/12/case-files',
+      '/api/projects/3/bug-reports',
+    ]) {
+      expect(bodyLimitError({ ...multipart, path })).toBeNull();
+    }
     expect(bodyLimitError({ method: 'DELETE', path: '/api/links/1' })).toBeNull();
     expect(bodyLimitError({ method: 'GET', path: '/api/projects', transferEncoding: 'chunked' })).toBeNull();
     expect(
       bodyLimitError({ ...json, path: '/api/test-runs/submit', contentLength: String(MAX_REQUEST_BODY_BYTES * 4) }),
     ).toBeNull();
+  });
+
+  test('a multipart body sent to a route that buffers it follows the same rules as any other body', () => {
+    const multipart = { method: 'POST', path: '/api/projects', contentType: 'multipart/form-data; boundary=x' };
+    expect(bodyLimitError({ ...multipart, transferEncoding: 'chunked' })?.statusCode).toBe(411);
+    expect(bodyLimitError({ ...multipart, contentLength: String(MAX_REQUEST_BODY_BYTES + 1) })?.statusCode).toBe(413);
+    expect(
+      bodyLimitError({ ...multipart, path: '/api/test-runs/12/case-files/extra', transferEncoding: 'chunked' })
+        ?.statusCode,
+    ).toBe(411);
   });
 });
 

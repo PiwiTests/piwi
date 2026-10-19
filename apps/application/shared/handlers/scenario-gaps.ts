@@ -3840,7 +3840,6 @@ export async function triageGap(
       set.snoozedUntil = snoozeUntil(input.snooze, now);
       set.snoozedAtSignature = null;
     }
-    set.snoozedAtRunId = null;
   } else if (input.verb === 'dismiss') {
     set.status = 'dismissed';
     set.dismissReason = input.reason ?? 'wrong';

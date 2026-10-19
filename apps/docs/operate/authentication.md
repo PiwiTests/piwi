@@ -38,9 +38,9 @@ What a Member can do inside a project comes from the **project roles** (Viewer, 
 
 ## Initial setup
 
-When authentication is enabled and no users exist yet, opening the dashboard lands on the login page, which shows a **Create the first admin account** form in place of the sign-in form. Fill it in and you are signed in as the administrator, with no API call needed.
-
-For provisioning an instance from a script, the same step is available as an API call:
+While authentication is on and no administrator exists (even after members signed in through OAuth), the login page
+shows a **Create the first admin account** form instead of the sign-in form, which signs you in as the administrator.
+A script can make the same call:
 
 ::: code-group
 
@@ -56,11 +56,13 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
 
 :::
 
-Both routes go through the same setup endpoint, which is only available while the users table is empty and is rate-limited per client address.
+The endpoint is rate-limited per client address. On an instance reachable from the internet, set `PIWI_SETUP_TOKEN` to
+a random value: the form asks for it, and the API call carries it as `"setupToken"`, so a stranger cannot create the
+administrator first. The [one-click deploy templates](./one-click-deploy) generate it.
 
 ## Logging in
 
-Sign in at `/login`. Sessions are stored in encrypted cookies and last for 7 days. The session cookie is marked `Secure`, so browser sign-in needs HTTPS — over plain `http://` it only works on `localhost`.
+Sign in at `/login`. A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends every session of the account, in every browser.
 
 ## OAuth (Google, GitHub)
 

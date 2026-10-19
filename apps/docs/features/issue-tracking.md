@@ -8,9 +8,9 @@ lang: en-US
 
 <Needs reporter admin />
 
-Piwi already ends an investigation with everything a ticket needs: a headline, the affected tests and owners, the
-diagnosis, a validated patch, the verify command. **Create issue** turns that into a Jira issue in one click: the body is the fix plan, the issue is linked back as the cluster's *known issue*, and from then on
-the key travels wherever the failure appears.
+An investigation ends with what a ticket needs: a headline, the affected tests and owners, the diagnosis, a
+validated patch, the verify command. **Create issue** makes it a Jira issue: the body is the fix plan, the issue
+is linked back as the cluster's *known issue*, and the key travels wherever the failure appears.
 
 It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**.
 
@@ -27,8 +27,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps), *Related issues* fixed before and *Links*
   back to Piwi. Every section degrades independently.
-- Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer, so
-  a JQL filter finds every Piwi-filed issue.
+- Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer
+  for JQL.
 - **Filing is deduped by cluster** — a second click, a duplicate event, a [rule](./issue-automation) or a create from
   another of its executions names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
   Done issue stays linked. Before creating, the modal surfaces any issue that already tracks the failure (a pinned
@@ -121,6 +121,7 @@ refusal naming the field.
 
 The modal prefills its fields from the [project binding](#the-project-binding), else offers pickers over the
 connected site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
+A share link needs the **Maintainer** role and is created when the issue is filed.
 From an AI agent, the [`create_issue` MCP tool](/reference/mcp-tools#create_issue) files the same ticket once the
 binding names a Jira project and issue type.
 

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { createHash } from 'crypto';
 import { PROJECT } from '#shared/test-project-names';
 
 test.describe('Traces API', () => {
@@ -69,7 +70,8 @@ test.describe('Traces API', () => {
     expect(traces.length).toBe(1);
     expect(traces[0].id).toBeDefined();
     expect(traces[0].filePath).toBeDefined();
-    expect(traces[0].filePath).toContain('trace.zip');
+    const hash = createHash('sha256').update(traceContent).digest('hex');
+    expect(traces[0].filePath).toMatch(new RegExp(`/blobs/${hash}\\.zip$`));
     expect(traces[0].createdAt).toBeDefined();
   });
 

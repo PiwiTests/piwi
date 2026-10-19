@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { describeConnectRequest, CONNECT_RATE_LIMITS } from '../../../utils/extension-connect';
-import { isRateLimited, rateLimitClientIp, rateLimitedError, recordRateLimitHit } from '../../../utils/rate-limit';
+import { limitLookupMisses, rateLimitClientIp } from '../../../utils/rate-limit';
 
 defineRouteMeta({
   openAPI: {
@@ -17,11 +17,14 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const missKey = `extension-connect:miss:${user.id}:${rateLimitClientIp(event)}`;
-  if (isRateLimited(missKey, CONNECT_RATE_LIMITS.lookupMiss.limit)) throw rateLimitedError(event, [missKey]);
-  const view = await describeConnectRequest(await getDatabase(), getQuery(event).code);
-  if (!view) {
-    recordRateLimitHit(missKey, CONNECT_RATE_LIMITS.lookupMiss.windowMs);
-    throw apiError({ statusCode: 404, message: 'No connect request has this code' });
-  }
+  const db = await getDatabase();
+  const view = await limitLookupMisses(
+    event,
+    missKey,
+    CONNECT_RATE_LIMITS.lookupMiss,
+    () => describeConnectRequest(db, getQuery(event).code),
+    (found) => !found,
+  );
+  if (!view) throw apiError({ statusCode: 404, message: 'No connect request has this code' });
   return view;
 });

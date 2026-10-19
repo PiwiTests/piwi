@@ -2,8 +2,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { H3Event } from 'h3';
 import {
   checkRateLimit,
-  isRateLimited,
-  recordRateLimitHit,
+  limitLookupMisses,
   resetRateLimit,
   rateLimitResetSeconds,
   rateLimitedError,
@@ -52,29 +51,73 @@ describe('checkRateLimit', () => {
   });
 });
 
-describe('isRateLimited', () => {
-  test('peeks without counting', () => {
-    recordRateLimitHit('peek:key', WINDOW_MS);
-    expect(isRateLimited('peek:key', 2)).toBe(false);
-    expect(isRateLimited('peek:key', 2)).toBe(false);
-    recordRateLimitHit('peek:key', WINDOW_MS);
-    expect(isRateLimited('peek:key', 2)).toBe(true);
+describe('limitLookupMisses', () => {
+  const limit = { limit: 2, windowMs: WINDOW_MS };
+  const status = (promise: Promise<unknown>) =>
+    promise.then(
+      () => 200,
+      (error: { statusCode?: number }) => error.statusCode ?? 500,
+    );
+
+  test('counts only the lookups that miss, and refuses once they reach the limit', async () => {
+    const { event } = fakeEvent();
+    const lookup = (found: boolean) =>
+      limitLookupMisses(
+        event,
+        'miss:basic',
+        limit,
+        async () => found,
+        (f) => !f,
+      );
+    for (let i = 0; i < 5; i++) expect(await status(lookup(true))).toBe(200);
+    expect(await status(lookup(false))).toBe(200);
+    expect(await status(lookup(false))).toBe(200);
+    expect(await status(lookup(true))).toBe(429);
   });
 
-  test('an expired window no longer limits', () => {
-    recordRateLimitHit('peek:expired', WINDOW_MS);
-    expect(isRateLimited('peek:expired', 1)).toBe(true);
-    vi.advanceTimersByTime(WINDOW_MS + 1);
-    expect(isRateLimited('peek:expired', 1)).toBe(false);
+  test('concurrent misses cannot all pass the check', async () => {
+    const { event } = fakeEvent();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const miss = () =>
+      limitLookupMisses(
+        event,
+        'miss:concurrent',
+        limit,
+        async () => {
+          await gate;
+          return null;
+        },
+        (found) => !found,
+      );
+    const statuses = Promise.all(Array.from({ length: 5 }, () => status(miss())));
+    release();
+    expect((await statuses).sort()).toEqual([200, 200, 429, 429, 429]);
+  });
+
+  test('a lookup that throws gives its slot back', async () => {
+    const { event } = fakeEvent();
+    const failing = () =>
+      limitLookupMisses(
+        event,
+        'miss:throws',
+        { limit: 1, windowMs: WINDOW_MS },
+        async () => {
+          throw new Error('database down');
+        },
+        () => true,
+      );
+    expect(await status(failing())).toBe(500);
+    expect(await status(failing())).toBe(500);
   });
 });
 
-describe('recordRateLimitHit / resetRateLimit', () => {
+describe('resetRateLimit', () => {
   test('reset clears the counter', () => {
-    recordRateLimitHit('reset:key', WINDOW_MS);
-    expect(isRateLimited('reset:key', 1)).toBe(true);
+    expect(checkRateLimit('reset:key', 1, WINDOW_MS)).toBe(true);
+    expect(checkRateLimit('reset:key', 1, WINDOW_MS)).toBe(false);
     resetRateLimit('reset:key');
-    expect(isRateLimited('reset:key', 1)).toBe(false);
+    expect(checkRateLimit('reset:key', 1, WINDOW_MS)).toBe(true);
   });
 });
 
@@ -84,7 +127,7 @@ describe('rateLimitResetSeconds', () => {
   });
 
   test('reports the remaining window, rounded up, and counts down', () => {
-    recordRateLimitHit('seconds:live', WINDOW_MS);
+    checkRateLimit('seconds:live', 1, WINDOW_MS);
     expect(rateLimitResetSeconds('seconds:live')).toBe(WINDOW_MS / 1000);
     vi.advanceTimersByTime(WINDOW_MS / 3);
     expect(rateLimitResetSeconds('seconds:live')).toBe(600);
@@ -95,8 +138,8 @@ describe('rateLimitResetSeconds', () => {
 
 describe('rateLimitedError', () => {
   test('is a 429 with a Retry-After header from the longest-lived window', () => {
-    recordRateLimitHit('err:short', 60 * 1000);
-    recordRateLimitHit('err:long', 300 * 1000);
+    checkRateLimit('err:short', 1, 60 * 1000);
+    checkRateLimit('err:long', 1, 300 * 1000);
     const { event, setHeader } = fakeEvent();
     const error = rateLimitedError(event, ['err:short', 'err:long']);
     expect(error.statusCode).toBe(429);

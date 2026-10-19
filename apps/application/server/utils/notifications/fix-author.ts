@@ -21,6 +21,7 @@ import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { notificationChannels, notificationDeliveries, users } from '../../database/schema';
 import { isEmailConfigured } from '../email';
 import { sweepOutbox } from './dispatch';
+import { emailDestinationVerified } from './email-verified';
 import {
   buildNotificationDedupeKey,
   type NotificationEvent,
@@ -111,7 +112,10 @@ export async function notifyFixAuthor(
 
     // Email is best-effort on top of the targeted browser notification: a
     // registered author is targeted in the browser whether or not SMTP is up.
-    if (isEmailConfigured()) {
+    if (
+      isEmailConfigured() &&
+      (await emailDestinationVerified(db, { type: 'personal_email', userId: recipient.userId }))
+    ) {
       const channelId = await personalEmailChannelId(db, recipient.userId);
       const dedupeKey = `${buildNotificationDedupeKey(event, payload, channelId)}:fixauthor${recipient.userId}`;
       try {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Project settings → Source control: the repository token and default branch,
+ * Project settings → Source control: the repository, its token and default branch,
  * whether quarantined failures fail the commit status, whether the gate verdict
  * gets a commit status of its own, the CI re-run target per
  * provider with its optional Flake Lab target, and where the specs generated from bug reports go. The token is write-only: a blank field keeps the stored one.
@@ -13,6 +13,7 @@ const emit = defineEmits<{ saved: [] }>();
 const { state, dirty } = useStoredForm(() => {
   const ci = props.project.ciRerun;
   return {
+    repositoryUrl: props.project.repositoryUrl || '',
     defaultBranch: props.project.defaultBranch || '',
     quarantineFailsStatus: props.project.quarantineFailsStatus === true,
     gateStatus: props.project.gateStatus === true,
@@ -53,6 +54,7 @@ async function submit() {
   const stored = await save(
     {
       scmToken: scmToken.value.trim() || undefined,
+      repositoryUrl: state.value.repositoryUrl.trim() || null,
       defaultBranch: state.value.defaultBranch || null,
       quarantineFailsStatus: state.value.quarantineFailsStatus,
       gateStatus: state.value.gateStatus,
@@ -82,6 +84,18 @@ async function removeToken() {
       subtitle="The repository behind this project, and what Piwi may run or write in it"
     >
       <div class="space-y-5">
+        <UFormField
+          label="Repository"
+          name="repositoryUrl"
+          description="The repository Piwi reads commits, diffs and source from with the SCM token. The first run that names one sets it; runs from another repository are left out of every SCM call."
+        >
+          <UInput
+            v-model="state.repositoryUrl"
+            placeholder="https://git.example.com/owner/repo"
+            class="w-full font-mono"
+          />
+        </UFormField>
+
         <UFormField
           name="scmToken"
           :description="

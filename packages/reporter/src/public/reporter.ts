@@ -70,7 +70,8 @@ import { FailureLinks, failureHeadline } from '../internal/support/failure-links
 import { coverageSettings, type CoverageSettings } from '../internal/collect/coverage-settings.js';
 import { CoverageCollection, LastTestWatch } from '../internal/collect/test-coverage.js';
 import { baseUrlsFromConfig, ignoresHttpsErrors } from '../internal/collect/server-coverage.js';
-import { backendManifestFetch, configDirFromConfig } from '../internal/manifest/collect.js';
+import { backendManifestFetch } from '../internal/manifest/collect.js';
+import { configDirFromConfig, relativeTestPath } from '../internal/support/test-paths.js';
 import { RunManifests } from '../internal/manifest/run-manifests.js';
 import type {
   CollectedTestCase,
@@ -86,13 +87,13 @@ import type {
  * path separators so Playwright's CLI file filter (and the dashboard's copyable
  * retry command) match on every platform — `path.relative` yields backslashes on Windows.
  */
-function testLocation(test: TestCase): string {
-  return `${testFile(test)}:${test.location.line}:${test.location.column}`;
+function testLocation(test: TestCase, base: string): string {
+  return `${testFile(test, base)}:${test.location.line}:${test.location.column}`;
 }
 
-/** Spec path relative to the working directory, POSIX separators — the `filePath` the dashboard stores. */
-function testFile(test: TestCase): string {
-  return path.relative(process.cwd(), test.location.file).split(path.sep).join('/');
+/** Spec path relative to `base` (the config's folder), POSIX separators — the `filePath` the dashboard stores. */
+function testFile(test: TestCase, base: string): string {
+  return relativeTestPath(test.location.file, base);
 }
 
 /**
@@ -124,6 +125,8 @@ export class PiwiDashboardReporter {
     string,
     Array<{ retry: number; status: string; duration: number; startedAt: number | null }>
   >();
+  /** The folder test files are named relative to: the Playwright config's, set in `onBegin`. */
+  private testPathBase = process.cwd();
   /** Derived in `onBegin`, once the shard is known. */
   private instanceId = '';
   private shardInfo: ShardInfo | null = null;
@@ -191,7 +194,7 @@ export class PiwiDashboardReporter {
     this.httpClient = new HttpClient(this.options.serverUrl ?? 'http://localhost:3000', logger);
     this.fileHandler = new FileHandler(logger);
     this.uploader = new Uploader(this.httpClient, this.fileHandler, logger);
-    this.recovery = new CrashRecovery(this.options.projectName!, logger);
+    this.recovery = new CrashRecovery(this.httpClient.baseUrl, this.options.projectName!, logger);
     this.metadataCollector = new MetadataCollector(logger);
     this.failureLinks = new FailureLinks(this.httpClient.baseUrl, logger);
 
@@ -220,6 +223,16 @@ export class PiwiDashboardReporter {
     );
   }
 
+  /**
+   * Playwright reporter hook: whether this reporter writes the run's progress to
+   * the terminal. It does not (it prints only its own `[Piwi Dashboard]` lines),
+   * so Playwright keeps its own terminal reporter when Piwi is the only one
+   * configured.
+   */
+  printsToStdio(): boolean {
+    return false;
+  }
+
   /** Playwright reporter hook: called once at the start of the test run */
   onBegin(config: FullConfig, suite: Suite): void {
     if (this.listMode) {
@@ -236,6 +249,7 @@ export class PiwiDashboardReporter {
       this.logger.info(`Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`);
     }
     this.startTime = new Date().toISOString();
+    this.testPathBase = configDirFromConfig(config);
     this.playwrightVersion = config.version;
     this.maxFailures = config.maxFailures ?? 0;
 
@@ -380,7 +394,7 @@ export class PiwiDashboardReporter {
     const beginEvent: CollectedTestCase = {
       type: 'begin',
       title: test.title,
-      location: testLocation(test),
+      location: testLocation(test, this.testPathBase),
       workerIndex: workerIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
@@ -498,8 +512,9 @@ export class PiwiDashboardReporter {
 
     const testCase: CollectedTestCase = {
       type: 'complete',
+      testId: test.id,
       title: test.title,
-      location: testLocation(test),
+      location: testLocation(test, this.testPathBase),
       status,
       duration: result.duration,
       // Effective per-test timeout (reflects project config + describe-level
@@ -507,7 +522,7 @@ export class PiwiDashboardReporter {
       timeout: test.timeout ?? null,
       // A `test.fail()` test that passed is now `failed` with no recorded error;
       // Playwright reports the same line, so synthesize it.
-      error: expectedFailureError(result.status, annotations) ?? buildErrorText(result),
+      error: expectedFailureError(result.status, annotations) ?? buildErrorText(result, this.testPathBase),
       retries: result.retry,
       attempts: attempts.map((a) => ({ ...a })),
       workerIndex: workerIndexOf(result),
@@ -625,7 +640,7 @@ export class PiwiDashboardReporter {
     if (isFailure && result.retry >= (test.retries ?? 0)) {
       this.failureLinks.add({
         title: test.title,
-        file: testFile(test),
+        file: testFile(test, this.testPathBase),
         retry: result.retry,
         browser: typeof testCase.browser?.projectName === 'string' ? testCase.browser.projectName : null,
         headline: failureHeadline(testCase.error, testCase.performanceMetrics?.steps),
@@ -684,7 +699,7 @@ export class PiwiDashboardReporter {
       return;
     }
     if (!result.steps?.length) return;
-    const tally = tallyLifecycleSteps(testFile(test), result.steps);
+    const tally = tallyLifecycleSteps(testFile(test, this.testPathBase), result.steps);
     if (tally.opened.length > 0 || tally.closed.context > 0 || tally.closed.browser > 0)
       this.lifecycleTallies.push(tally);
   }
@@ -754,8 +769,9 @@ export class PiwiDashboardReporter {
       const locks = collectTestLocks(test);
       const testCase: CollectedTestCase = {
         type: 'complete',
+        testId: test.id,
         title: test.title,
-        location: testLocation(test),
+        location: testLocation(test, this.testPathBase),
         status: 'didnotrun',
         duration: 0,
         timeout: test.timeout ?? null,
@@ -844,6 +860,10 @@ export class PiwiDashboardReporter {
         const branch = resolveScmBranch(process.env) ?? null;
         await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
       }
+    } catch (error) {
+      // Playwright counts an error thrown by a reporter as a failure of the
+      // run: reaching the dashboard never decides whether the tests passed.
+      this.logger.error(`Could not report the run to the dashboard: ${errorMessage(error)}`);
     } finally {
       this.coverage?.close();
       // Body-only attachments were staged as temp files for the uploads above.

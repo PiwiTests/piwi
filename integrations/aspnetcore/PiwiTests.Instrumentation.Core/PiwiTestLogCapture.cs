@@ -44,22 +44,28 @@ public static class PiwiTestLogCapture
     public static void Begin() => Buffer.Value = new RequestBuffer();
 
     /// <summary>
-    /// Stops capturing and returns the entries collected since <see cref="Begin"/>, or
-    /// <c>null</c> if capture was never started for the current async context.
+    /// Stops capturing and returns a copy of the entries collected since <see cref="Begin"/>, or
+    /// <c>null</c> if capture was never started for the current async context. A task the request
+    /// started still holds the buffer: what it logs afterwards is dropped, never added to the copy.
     /// </summary>
     public static List<PiwiTestLogEntry>? Stop()
     {
         var buffer = Buffer.Value;
         Buffer.Value = null;
-        return buffer?.Entries;
+        if (buffer is null) return null;
+        lock (buffer)
+        {
+            buffer.Stopped = true;
+            return [.. buffer.Entries];
+        }
     }
 
     /// <summary>
     /// Adds an entry to the active buffer, applying the shared level filter
     /// (<see cref="MinimumLevel"/>), the entry cap and the message truncation. A no-op when no
     /// buffer is active, when <paramref name="level"/> is below <see cref="MinimumLevel"/>, or
-    /// when the cap is already reached. Safe to call from any source; calls within one async
-    /// context share one unsynchronized list.
+    /// when the cap is already reached. Safe to call from any source and any thread: the tasks a
+    /// request runs in parallel share its buffer, which a lock guards.
     /// </summary>
     public static void TryAdd(LogLevel level, string category, string message, Exception? exception)
     {
@@ -67,18 +73,22 @@ public static class PiwiTestLogCapture
         // bridges (e.g. Serilog's LoggerProviderCollectionSink) emit without checking, which
         // would otherwise over-capture Information/Debug.
         if (level < MinimumLevel) return;
-        if (Buffer.Value is not { } buffer || buffer.Entries.Count >= MaxEntries) return;
+        if (Buffer.Value is not { } buffer) return;
 
-        buffer.Entries.Add(new PiwiTestLogEntry(
-            Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            Level: level.ToString(),
-            Category: category,
-            Message: Truncate(message, MessageMaxLength),
-            ExceptionMessage: exception?.Message,
-            StackTrace: ShrinkStackTrace(exception)
-        ));
-        if (exception is not null)
-            (buffer.Exceptions ??= []).Add(exception);
+        lock (buffer)
+        {
+            if (buffer.Stopped || buffer.Entries.Count >= MaxEntries) return;
+            buffer.Entries.Add(new PiwiTestLogEntry(
+                Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Level: level.ToString(),
+                Category: category,
+                Message: Truncate(message, MessageMaxLength),
+                ExceptionMessage: exception?.Message,
+                StackTrace: ShrinkStackTrace(exception)
+            ));
+            if (exception is not null)
+                (buffer.Exceptions ??= []).Add(exception);
+        }
     }
 
     /// <summary>
@@ -90,17 +100,27 @@ public static class PiwiTestLogCapture
     /// </summary>
     public static void TryAddUnhandled(Exception exception)
     {
-        if (Buffer.Value?.Exceptions?.Exists(e => ReferenceEquals(e, exception)) == true) return;
+        if (Buffer.Value is { } buffer)
+        {
+            lock (buffer)
+            {
+                if (buffer.Exceptions?.Exists(e => ReferenceEquals(e, exception)) == true) return;
+            }
+        }
 
         var type = exception.GetType();
         TryAdd(LogLevel.Error, type.FullName ?? type.Name, exception.Message, exception);
     }
 
-    /// <summary>One request's entries, and the exceptions they carry.</summary>
+    /// <summary>
+    /// One request's entries, and the exceptions they carry. Locked on itself: the parallel tasks
+    /// of one request add to it from several threads.
+    /// </summary>
     private sealed class RequestBuffer
     {
         public readonly List<PiwiTestLogEntry> Entries = [];
         public List<Exception>? Exceptions;
+        public bool Stopped;
     }
 
     private static string Truncate(string s, int maxLength) =>

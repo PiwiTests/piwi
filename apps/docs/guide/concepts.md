@@ -54,8 +54,8 @@ Two things commonly surprise people:
 
 ### Test case
 
-The **identity of a test across time**, keyed by project + file path + `describe` path + title. It is
-not a row you submit — it's created and reused as results arrive, so renaming a test creates a new one
+The **identity of a test across time**, keyed by project + file path (relative to the folder holding your
+Playwright config, whatever directory Playwright runs from) + `describe` path + title. It is not a row you submit — it's created and reused as results arrive, so renaming a test creates a new one
 and moving a spec file does too.
 
 A test case is browser-independent: `login.spec.ts › signs in` is one test case whether it ran on

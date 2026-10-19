@@ -162,7 +162,7 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
 
 `replay-panel.js` is registered for the replay's whole origin, so every tab of it loads the script. The worker keeps
 the replay's tab under `piwiReplayTab` (`getReplayTab`, which only the worker writes): the tab the replay started in,
-or the first to ask (`piwi-replay-tab`) when an extension page started it. Only that tab plays the steps, gets a driver,
+or the first to ask (`piwi-replay-tab`) when none is bound. Only that tab plays the steps, gets a driver,
 sends input and finishes the replay; the popup's Replay says so in any other tab (`popup_replayElsewhere`). Closing the
 tab ends the replay (`finished`), and a replay stopped while no page of its tab ran shows its verdict on that tab's next
 page, or ends when another tab asks. The page writes the replay's state only through
@@ -260,13 +260,17 @@ explains once what connected mode now sends (`piwiBugSendExplained`).
 
 **Run with Playwright** (`desktop-run-panel.ts`, worker side `background/desktop-repro.ts`) sends a report's title and
 steps, nothing else, to the desktop app paired in the options (its loopback address and token, together in the
-secret area; `desktop-settings.ts` accepts only plain http on 127.0.0.1, localhost or [::1]). **Pair** asks the app at the address
+secret area; `desktop-settings.ts` accepts only plain http on 127.0.0.1, localhost or [::1], and keeps it as
+127.0.0.1, the one address the app binds). **Pair** asks the app at the address
 typed (`DESKTOP_DEFAULT_URL`, the app's preferred port, unless changed) for a pairing
 (`POST /api/desktop/picker-pairings`, open without the token; see `apps/application/shared/desktop-pairing.ts`): the
 app's window shows who asks with a code the card shows too, and the poll after the developer's **Allow** carries the
 app's token, once, which the card keeps after `testDesktop` accepts it. **Pair by hand** takes the token pasted from the
 app's **Connect Piwi Picker** instead. Either way the options page requests that one loopback origin inside the click,
-and **Unpair** gives it back. The dialog shows the payload before **Send**. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
+and **Unpair** gives it back. Every request that carries the token (`testDesktop`, `sendReproRequest`,
+`fetchReproRequest`) first has `/api/health` answer a new random challenge with the proof only the token's holder can
+compute, for the address's port (`proveDesktop`, `@piwitests/core/desktop-proof`): an app that moved, an older app or
+another program on the port never receives the token, and the user is asked to pair again. The dialog shows the payload before **Send**. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
 before the developer confirms it in its window; the dialog then polls the request for the verdict, read field by field
 (`reproStatus`, `asReplayVerdict`): a status or a verdict it does not know says so in one line.
 

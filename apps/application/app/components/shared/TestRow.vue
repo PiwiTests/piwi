@@ -117,6 +117,20 @@ const title = computed(() => props.title ?? tc.value?.title ?? '');
 const status = computed(() => props.status ?? tc.value?.status ?? 'unknown');
 const failed = computed(() => isFailedStatus(status.value));
 const href = computed(() => props.href ?? (tc.value ? `/test-run-cases/${tc.value.executionId}` : '#'));
+/** The link's href, under the base path the app is served at (`/demo/` in the demo). */
+const router = useRouter();
+const linkHref = computed(() => (href.value === '#' ? '#' : router.resolve(href.value).href));
+
+/** A plain click selects the row or routes in the app; a modified click opens the link as the browser does. */
+function onTitleClick(event: MouseEvent) {
+  if (isModifiedClick(event)) {
+    event.stopPropagation();
+    return;
+  }
+  event.preventDefault();
+  if (props.selectOnClick) emit('select');
+  else void navigateTo(href.value);
+}
 // A live-streamed row carries a negative placeholder executionId until its
 // run-case row is persisted — render its title as plain text, not a link to
 // some unrelated execution that happens to own the fabricated id.
@@ -197,10 +211,10 @@ const clusterLabel = computed(() =>
             <!-- Neutral title: a primary-green title reads as "passed" on a failed row. -->
             <a
               v-if="linkable"
-              :href="href"
+              :href="linkHref"
               class="text-highlighted hover:text-primary hover:underline font-medium"
               :title="title"
-              @click.prevent="selectOnClick ? emit('select') : navigateTo(href)"
+              @click="onTitleClick"
               ><SearchHighlight v-if="titleMarks.length" :text="title" :patterns="titleMarks" /><template v-else>{{
                 title
               }}</template></a

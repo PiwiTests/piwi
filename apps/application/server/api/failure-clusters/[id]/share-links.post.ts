@@ -1,7 +1,6 @@
-import { z } from 'zod';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
-import { mintShareLink, resolveShareLinkMaxTtlDays, shareLinksEnabled } from '../../../utils/share-links';
-import { publicBaseUrl } from '../../../utils/public-base-url';
+import { mintShareLink } from '../../../utils/share-links';
+import { mintedShareLinkResponse, readMintTtlDays, requireShareLinksEnabled } from '../../../utils/share-view';
 
 defineRouteMeta({
   openAPI: {
@@ -14,8 +13,6 @@ defineRouteMeta({
   },
 });
 
-const bodySchema = z.object({ ttlDays: z.number().int().min(1).max(3650).nullish() });
-
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'failure cluster ID');
   const { db, projectId, user } = await requireResolvedProjectAccess(
@@ -25,37 +22,17 @@ export default eventHandler(async (event) => {
     'Failure cluster',
   );
 
-  if (!shareLinksEnabled()) {
-    throw apiError({
-      statusCode: 403,
-      message: 'Share links are disabled. Set PIWI_SHARE_LINKS_ENABLED=true to allow them.',
-    });
-  }
+  requireShareLinksEnabled();
 
-  const validation = bodySchema.safeParse((await readBody(event).catch(() => null)) ?? {});
-  if (!validation.success) {
-    throw apiError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
-  }
+  const ttlDays = await readMintTtlDays(event);
 
   const minted = await mintShareLink(db, {
     projectId,
     entityKind: 'cluster',
     entityId: id,
     createdBy: user.id || null,
-    ttlDays: validation.data.ttlDays,
+    ttlDays,
   });
 
-  const base = publicBaseUrl(event);
-
-  return {
-    token: minted.token,
-    url: `${base}/share/${minted.token}`,
-    maxTtlDays: resolveShareLinkMaxTtlDays(),
-    link: {
-      id: minted.link.id,
-      tokenPrefix: minted.link.tokenPrefix,
-      expiresAt: minted.link.expiresAt,
-      createdAt: minted.link.createdAt,
-    },
-  };
+  return mintedShareLinkResponse(event, minted);
 });

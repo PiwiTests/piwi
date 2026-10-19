@@ -1,8 +1,22 @@
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { createServer, IncomingMessage, ServerResponse, type Server } from 'node:http';
+import { Socket, type AddressInfo } from 'node:net';
 import { gunzipSync } from 'node:zlib';
+import { consola } from 'consola';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, createRouter, eventHandler, toNodeListener } from 'h3';
+
+/** Decode an X-Piwi-Logs or X-Piwi-Trace header. */
+function decodeHeader<T>(header: string | null): T[] {
+  return header ? (JSON.parse(gunzipSync(Buffer.from(header, 'base64')).toString('utf8')) as T[]) : [];
+}
+
+/** Call the app in process, as Nitro's `localFetch` does for a `$fetch` made during server-side rendering. */
+async function localCall(app: ReturnType<typeof createApp>, url: string): Promise<void> {
+  const req = new IncomingMessage(new Socket());
+  req.url = url;
+  req.method = 'GET';
+  await toNodeListener(app)(req, new ServerResponse(req));
+}
 
 /** Decode the root-span `piwi.probe.applied` attribute from an X-Piwi-Trace header. */
 function appliedFaultFromTrace(header: string | null): string | undefined {
@@ -161,6 +175,119 @@ describe('piwiTestLogs wrapped handler (through toNodeListener)', () => {
   });
 });
 
+describe('when capture is on', () => {
+  async function traceHeader(env: Record<string, string>): Promise<string | null> {
+    const mod = await loadWithEnv(env);
+    const app = createApp();
+    app.use(
+      '/api/cart',
+      eventHandler(() => ({ items: 1 })),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+    let header: string | null = null;
+    await withServer(app, async (base) => {
+      header = (await fetch(`${base}/api/cart`)).headers.get('x-piwi-trace');
+    });
+    return header;
+  }
+
+  it('is on in development and test', async () => {
+    expect(await traceHeader({ NODE_ENV: 'development' })).toBeTruthy();
+    expect(await traceHeader({ NODE_ENV: 'test' })).toBeTruthy();
+  });
+
+  it('is off when NODE_ENV is not set, as for a built server started with node, unless opted in', async () => {
+    expect(await traceHeader({ NODE_ENV: '' })).toBeNull();
+    expect(await traceHeader({ NODE_ENV: 'production' })).toBeNull();
+    expect(await traceHeader({ NODE_ENV: '', PIWI_TEST_LOGS_DISABLED: 'false' })).toBeTruthy();
+    expect(await traceHeader({ NODE_ENV: 'test', PIWI_TEST_LOGS_DISABLED: 'true' })).toBeNull();
+  });
+});
+
+describe('the logs of a request', () => {
+  const load = async () => {
+    const mod = await loadWithEnv({ PIWI_TEST_LOGS_DISABLED: 'false', NODE_ENV: 'test' });
+    const app = createApp();
+    return { mod, app };
+  };
+
+  it('keeps at most 50 entries as they are logged', async () => {
+    const { mod, app } = await load();
+    app.use(
+      '/api/noisy',
+      eventHandler((event) => {
+        for (let i = 0; i < 120; i++) consola.warn(`retrying ${i}`);
+        return { kept: (event.context._piwiLogs as unknown[]).length };
+      }),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+    await withServer(app, async (base) => {
+      const res = await fetch(`${base}/api/noisy`);
+      expect(await res.json()).toEqual({ kept: 50 });
+      expect(decodeHeader(res.headers.get('x-piwi-logs'))).toHaveLength(50);
+    });
+  });
+
+  it('records nothing once the response ended', async () => {
+    const { mod, app } = await load();
+    let logs: Array<{ message: string }> = [];
+    let late!: Promise<void>;
+    app.use(
+      '/api/lazy',
+      eventHandler((event) => {
+        logs = event.context._piwiLogs as typeof logs;
+        late = new Promise((resolve) =>
+          setTimeout(() => {
+            consola.warn('reconnecting');
+            resolve();
+          }, 20),
+        );
+        return { ok: true };
+      }),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+    await withServer(app, async (base) => {
+      await (await fetch(`${base}/api/lazy`)).json();
+      await late;
+      expect(logs).toEqual([]);
+    });
+  });
+
+  it('adds the logs and spans of an internal call to the request it runs in', async () => {
+    const { mod, app } = await load();
+    const router = createRouter()
+      .get(
+        '/api/cart',
+        eventHandler(() => {
+          consola.warn('cart service slow');
+          return { items: 1 };
+        }),
+      )
+      .get(
+        '/shop',
+        eventHandler(async () => {
+          await localCall(app, '/api/cart');
+          consola.warn('rendered without a price');
+          return '<html></html>';
+        }),
+      );
+    app.use(router);
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+    await withServer(app, async (base) => {
+      const res = await fetch(`${base}/shop`);
+      const logs = decodeHeader<{ message: string }>(res.headers.get('x-piwi-logs'));
+      expect(logs.map((l) => l.message)).toEqual(['cart service slow', 'rendered without a price']);
+      const spans = decodeHeader<{ id: string; name: string; parentId?: string }>(res.headers.get('x-piwi-trace'));
+      const root = spans.find((s) => !s.parentId)!;
+      expect(root.name).toBe('GET /shop');
+      expect(spans.find((s) => s.name === 'GET /api/cart')?.parentId).toBe(root.id);
+    });
+  });
+});
+
 describe('the route manifest', () => {
   it('records a route by the pattern h3 1.x matched it with, not by the requested path', async () => {
     const mod = await loadWithEnv({ PIWI_TEST_LOGS_DISABLED: 'false', NODE_ENV: 'test' });
@@ -179,6 +306,33 @@ describe('the route manifest', () => {
       };
       expect(manifest.routes.map((r) => `${r.method} ${r.pattern}`)).toContain('GET /api/products/:slug');
       expect(manifest.routes.map((r) => r.pattern)).not.toContain('/api/products/trail-shoes');
+    });
+  });
+
+  it('records only the routes a router handler matched: no 404, no asset served before the router', async () => {
+    const mod = await loadWithEnv({ PIWI_TEST_LOGS_DISABLED: 'false', NODE_ENV: 'test' });
+    const app = createApp();
+    // Nitro serves public assets in a handler that runs before the router.
+    app.use(
+      '/_nuxt',
+      eventHandler(() => 'asset'),
+    );
+    app.use(
+      createRouter().get(
+        '/api/cart',
+        eventHandler(() => ({ items: 1 })),
+      ),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+    await withServer(app, async (base) => {
+      expect((await fetch(`${base}/_nuxt/entry.js`)).status).toBe(200);
+      expect((await fetch(`${base}/api/missing/42`)).status).toBe(404);
+      expect((await fetch(`${base}/api/cart`)).status).toBe(200);
+      const manifest = (await (await fetch(`${base}/__piwi/manifest`)).json()) as {
+        routes: Array<{ method: string; pattern: string }>;
+      };
+      expect(manifest.routes.map((r) => `${r.method} ${r.pattern}`)).toEqual(['GET /api/cart']);
     });
   });
 

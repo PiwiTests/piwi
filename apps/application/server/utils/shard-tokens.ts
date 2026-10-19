@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { testRuns } from '../database/schema';
-import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { timingSafeEqualStr } from './timing-safe';
+import { updateRunMetadata, type MetadataObject } from './run-metadata';
 
 /**
  * How a shard token is kept, in run metadata (which every project member can
@@ -10,6 +9,26 @@ import { runCommit, runOrigin } from '#shared/run-eligibility';
  */
 export function shardTokenDigest(token: string): string {
   return `sha256:${createHash('sha256').update(token).digest('hex')}`;
+}
+
+/**
+ * How a run's main stream or setup token is kept, in `test_runs.stream_token`
+ * and in the in-memory run state: its digest, like a shard token.
+ */
+export function streamTokenDigest(token: string): string {
+  return shardTokenDigest(token);
+}
+
+/**
+ * Whether `token` is the run's main stream or setup token, given the stored
+ * value. A plain stored token still matches, but a presented digest never
+ * matches a stored digest: reading the stored value back must not yield a
+ * usable token.
+ */
+export function matchesStreamToken(stored: string | null | undefined, token: string | null | undefined): boolean {
+  if (!stored || !token || typeof token !== 'string') return false;
+  if (stored.startsWith('sha256:')) return timingSafeEqualStr(stored, streamTokenDigest(token));
+  return !token.startsWith('sha256:') && timingSafeEqualStr(stored, token);
 }
 
 /**
@@ -52,56 +71,31 @@ export function withShardTokens(metadata: unknown, tokens: Set<string>): Record<
   return meta;
 }
 
-/**
- * Append a shard token's digest to a test run's stored metadata in the database.
- * Reads current metadata, appends the token, writes back via Drizzle JSON serialization.
- */
-export async function persistShardToken(
-  db: DB,
-  runId: number,
-  token: string,
-  existingMetadata?: Record<string, unknown> | null,
-): Promise<void> {
-  let meta: Record<string, unknown>;
-  if (existingMetadata) {
-    meta = { ...existingMetadata };
-  } else {
-    const row = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, runId));
-    meta = (row[0]?.metadata as Record<string, unknown>) ?? {};
-  }
-
-  const tokens: string[] = Array.isArray(meta.shardTokens) ? [...meta.shardTokens] : [];
+/** Add a shard token's digest to a test run's stored metadata. */
+export async function persistShardToken(db: DB, runId: number, token: string): Promise<void> {
   const digest = shardTokenDigest(token);
-  if (tokens.includes(digest)) return;
-  tokens.push(digest);
-  meta.shardTokens = tokens;
-
-  await db
-    .update(testRuns)
-    .set({ metadata: meta, origin: runOrigin(meta), commit: runCommit(meta), updatedAt: new Date() })
-    .where(eq(testRuns.id, runId));
+  await updateRunMetadata(
+    db,
+    runId,
+    (metadata) => {
+      const tokens = Array.isArray(metadata.shardTokens) ? (metadata.shardTokens as string[]) : [];
+      return tokens.includes(digest) ? null : { ...metadata, shardTokens: [...tokens, digest] };
+    },
+    { updatedAt: new Date() },
+  );
 }
 
 /**
- * Remove a shard token from a test run's stored metadata in the database.
+ * A copy of a run's metadata without the shard token `token` (its digest, or a
+ * plain entry kept by an older build), or null when the metadata does not hold it.
  */
-export async function removeStoredShardToken(db: DB, runId: number, token: string): Promise<void> {
-  const row = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, runId));
-
-  const meta = (row[0]?.metadata as Record<string, unknown>) ?? {};
-  const tokens: string[] = Array.isArray(meta.shardTokens) ? meta.shardTokens : [];
+export function withoutShardToken(metadata: MetadataObject, token: string): MetadataObject | null {
+  const tokens: unknown[] = Array.isArray(metadata.shardTokens) ? metadata.shardTokens : [];
   const digest = shardTokenDigest(token);
-  const filtered = tokens.filter((t) => t !== token && t !== digest);
-  if (filtered.length === tokens.length) return;
-
-  if (filtered.length > 0) {
-    meta.shardTokens = filtered;
-  } else {
-    delete meta.shardTokens;
-  }
-
-  await db
-    .update(testRuns)
-    .set({ metadata: meta, origin: runOrigin(meta), commit: runCommit(meta), updatedAt: new Date() })
-    .where(eq(testRuns.id, runId));
+  const kept = tokens.filter((t) => t !== token && t !== digest);
+  if (kept.length === tokens.length) return null;
+  const next = { ...metadata };
+  if (kept.length > 0) next.shardTokens = kept;
+  else delete next.shardTokens;
+  return next;
 }

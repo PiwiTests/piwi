@@ -1,9 +1,13 @@
-import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { dashboardActor, dashboardRoute } from '../../../utils/dashboards';
 import { mintShareLink } from '../../../utils/share-links';
-import { mintedShareLinkResponse, requireShareLinksEnabled, savedDashboardId } from '../../../utils/share-view';
+import {
+  mintedShareLinkResponse,
+  readMintTtlDays,
+  requireShareLinksEnabled,
+  savedDashboardId,
+} from '../../../utils/share-view';
 import { loadDashboardDefinition } from '#shared/handlers/dashboards';
 
 defineRouteMeta({
@@ -17,8 +21,6 @@ defineRouteMeta({
   },
 });
 
-const bodySchema = z.object({ ttlDays: z.number().int().min(1).max(3650).nullish() });
-
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const db = await getDatabase();
@@ -28,16 +30,13 @@ export default eventHandler(async (event) => {
   );
   requireShareLinksEnabled();
 
-  const validation = bodySchema.safeParse((await readBody(event).catch(() => null)) ?? {});
-  if (!validation.success) {
-    throw apiError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
-  }
+  const ttlDays = await readMintTtlDays(event);
   const minted = await mintShareLink(db, {
     projectId: null,
     entityKind: 'dashboard',
     entityId: id,
     createdBy: user.id || null,
-    ttlDays: validation.data.ttlDays,
+    ttlDays,
   });
   return mintedShareLinkResponse(event, minted);
 });

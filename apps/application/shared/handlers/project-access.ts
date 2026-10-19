@@ -5,7 +5,7 @@
  * which turn an `AccessError` (or a `GroupError`) into an HTTP error with its
  * status. The shapes are in `#shared/project-access`.
  */
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { groups, projects, users } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
@@ -162,9 +162,31 @@ async function requireBindableSubject(db: DrizzleDB, subject: AccessSubject): Pr
   if (!row) throw new AccessError(404, 'Group not found');
 }
 
-async function administratorCount(db: DrizzleDB): Promise<number> {
-  const rows = await db.select({ id: users.id }).from(users).where(eq(users.role, InstanceRole.ADMINISTRATOR));
-  return rows.length;
+/**
+ * Give an administrator the role `role` only while another administrator
+ * remains, so two demotions or deletions at once cannot both pass. False when
+ * `userId` is the last administrator.
+ *
+ * One transaction first writes every administrator row, which locks them:
+ * a concurrent demotion waits there until this one commits, and its
+ * conditional UPDATE then reads the administrators this one left. PostgreSQL's
+ * read-committed statements each see what was committed when they start;
+ * SQLite runs one writing transaction at a time.
+ */
+async function dropAdministratorRole(db: DrizzleDB, userId: number, role: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ role: sql`${users.role}` })
+      .where(eq(users.role, InstanceRole.ADMINISTRATOR));
+    const anotherAdministrator = sql`exists (select 1 from ${users} where ${users.role} = ${InstanceRole.ADMINISTRATOR} and ${users.id} <> ${userId})`;
+    const changed = await tx
+      .update(users)
+      .set({ role, updatedAt: new Date() })
+      .where(and(eq(users.id, userId), anotherAdministrator))
+      .returning({ id: users.id });
+    return changed.length > 0;
+  });
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -267,10 +289,10 @@ export async function updateUserAccount(
   if (!target) throw new AccessError(404, 'User not found');
   const demoted =
     patch.role !== undefined && patch.role !== InstanceRole.ADMINISTRATOR && target.role === InstanceRole.ADMINISTRATOR;
-  if (options.guardLastAdministrator && demoted && (await administratorCount(db)) <= 1) {
+  if (patch.groupIds) await assertGroupsExist(db, patch.groupIds);
+  if (options.guardLastAdministrator && demoted && !(await dropAdministratorRole(db, userId, patch.role!))) {
     throw new AccessError(400, 'Cannot demote the last administrator');
   }
-  if (patch.groupIds) await assertGroupsExist(db, patch.groupIds);
 
   const { groupIds, ...fields } = patch;
   try {
@@ -301,7 +323,8 @@ export async function deleteUserAccount(
     if (actorId === userId) throw new AccessError(400, 'You cannot delete your own account');
     const [target] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId));
     if (!target) throw new AccessError(404, 'User not found');
-    if (target.role === InstanceRole.ADMINISTRATOR && (await administratorCount(db)) <= 1) {
+    // The administrator role goes first, in one conditional statement, so the last one is never deleted.
+    if (target.role === InstanceRole.ADMINISTRATOR && !(await dropAdministratorRole(db, userId, InstanceRole.MEMBER))) {
       throw new AccessError(400, 'Cannot delete the last administrator');
     }
   }

@@ -10,30 +10,6 @@
 export interface DesktopProjectLink {
   path: string;
   exists: boolean;
-  /** Command that starts the app under test (e.g. `npm run dev`), when set. */
-  startCommand?: string | null;
-  /** URL polled until it answers before the test runs (e.g. `http://localhost:3000`). */
-  readinessUrl?: string | null;
-}
-
-/**
- * Store (or clear) the start command the shell runs before each reproduce/bisect
- * step when the Playwright config has no `webServer`. Kept in the shell's own
- * settings beside the folder path; the webview never passes the command at run
- * time, so the stored text is the single source of truth. Pass `null` to clear.
- */
-export async function setDesktopProjectStartCommand(
-  projectId: string | number,
-  startCommand: string | null,
-  readinessUrl: string | null,
-): Promise<void> {
-  const core = tauriCore();
-  if (!core) throw new Error('not running inside the desktop shell');
-  await core.invoke('desktop_set_project_start_command', {
-    projectId: String(projectId),
-    startCommand: startCommand?.trim() || null,
-    readinessUrl: readinessUrl?.trim() || null,
-  });
 }
 
 /** One-shot read of a project's linked folder; `null` without bridge or link. */

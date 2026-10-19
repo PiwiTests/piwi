@@ -21,7 +21,7 @@ export interface StorageAdapter {
   /**
    * Check if a file exists
    * @param path - Relative path of the file to check
-   * @returns Promise that resolves to true if the file exists
+   * @returns Promise that resolves to true if a file (never a directory) is stored there
    */
   exists(path: string): Promise<boolean>;
 

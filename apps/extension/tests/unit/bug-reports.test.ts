@@ -10,6 +10,7 @@ import { newReplayState, setReplayState } from '../../src/shared/replay-storage'
 import { setActiveProjectOverride } from '../../src/shared/active-project';
 import { setConnectionSettings, setInstanceApiKey } from '../../src/shared/connection-settings';
 import { memoryLocalStorage, memorySecretArea } from './memory-secret-area';
+import { desktopHealth } from './desktop-health';
 import type * as SecretStore from '../../src/shared/secret-store';
 
 // The extension's IndexedDB, in memory: the worker reads the key from it.
@@ -77,6 +78,7 @@ function instance() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/health')) return desktopHealth(url, init, 'pd_desktop');
       if (init?.method === 'POST') {
         posts.push(url);
         return new Response(JSON.stringify(url.endsWith('/repro-requests') ? { id: 'ab12' } : {}), { status: 201 });

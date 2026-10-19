@@ -1,10 +1,13 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import {
   callClaudeCli,
   claudeCliEnabled,
+  cliCommand,
+  cliEnv,
+  cmdShimTarget,
   getClaudeCliStatus,
   getUsageTotals,
   isDesktopRuntime,
@@ -24,14 +27,17 @@ const args = process.argv.slice(2);
 const outFmt = args[args.indexOf('--output-format') + 1];
 if (args.includes('--version')) { process.stdout.write('9.9.9 (stub)\\n'); process.exit(0); }
 if (args.includes('--help')) {
-  // STUB_OLD models a pre-\\u2011--restricted CLI: those flags are absent from --help.
+  // CLAUDE_STUB_OLD models a CLI without --restricted; CLAUDE_STUB_ANCIENT one without --tools;
+  // CLAUDE_STUB_HELP_FAIL a --help that fails.
+  if (process.env.CLAUDE_STUB_HELP_FAIL) { process.stderr.write('help exploded\\n'); process.exit(1); }
   const base = ['--print', '--output-format', '--system-prompt', '--model', '--verbose', '--include-partial-messages'];
-  const extra = process.env.STUB_OLD ? [] : ['--restricted', '--strict-mcp-config'];
-  process.stdout.write('Usage: claude [options]\\nOptions:\\n  ' + base.concat(extra).join('\\n  ') + '\\n');
+  const hardening = process.env.CLAUDE_STUB_ANCIENT ? [] : ['--tools', '--strict-mcp-config'];
+  const extra = process.env.CLAUDE_STUB_OLD || process.env.CLAUDE_STUB_ANCIENT ? [] : ['--restricted'];
+  process.stdout.write('Usage: claude [options]\\nOptions:\\n  ' + base.concat(hardening, extra).join('\\n  ') + '\\n');
   process.exit(0);
 }
 if (args[0] === 'auth' && args[1] === 'status') {
-  const loggedIn = process.env.STUB_LOGGED_IN !== '0';
+  const loggedIn = process.env.CLAUDE_STUB_LOGGED_IN !== '0';
   process.stdout.write(JSON.stringify({ loggedIn, authMethod: 'oauth_token', apiProvider: 'firstParty' }));
   process.exit(0);
 }
@@ -48,11 +54,17 @@ process.stdin.on('end', () => {
       usage: { input_tokens: 11, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 },
       modelUsage: { 'claude-sonnet-5': {} } });
   } else {
-    if (process.env.STUB_OLD && args.includes('--restricted')) {
+    if (process.env.CLAUDE_STUB_OLD && args.includes('--restricted')) {
       process.stderr.write("error: unknown option '--restricted'\\n");
       process.exit(1);
     }
-    const body = input.trim() === 'ENVCHECK' ? 'API_KEY=' + (process.env.ANTHROPIC_API_KEY || 'unset') : 'ECHO:' + input.trim();
+    const env = (name) => process.env[name] || 'unset';
+    const body =
+      input.trim() === 'ENVCHECK'
+        ? ['ANTHROPIC_API_KEY', 'PIWI_SECRET_KEY', 'CLAUDE_CONFIG_DIR', 'HOME'].map((n) => n + '=' + env(n)).join(';')
+        : input.trim() === 'ARGS'
+          ? JSON.stringify(args)
+          : 'ECHO:' + input.trim();
     process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false,
       result: body, total_cost_usd: 0.02,
       usage: { input_tokens: 5, output_tokens: 7, cache_read_input_tokens: 1, cache_creation_input_tokens: 2 },
@@ -75,8 +87,10 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     writeFileSync(stubPath, STUB);
     chmodSync(stubPath, 0o755);
     process.env.PIWI_CLAUDE_CLI_PATH = stubPath;
-    delete process.env.STUB_LOGGED_IN;
-    delete process.env.STUB_OLD;
+    delete process.env.CLAUDE_STUB_LOGGED_IN;
+    delete process.env.CLAUDE_STUB_OLD;
+    delete process.env.CLAUDE_STUB_ANCIENT;
+    delete process.env.CLAUDE_STUB_HELP_FAIL;
     delete process.env.PIWI_DESKTOP_TOKEN;
     delete process.env.NUXT_PUBLIC_DESKTOP;
     resetClaudeCliCache();
@@ -123,7 +137,7 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
         await run();
       } finally {
         Object.assign(process.env, saved);
-        delete process.env.STUB_PATH;
+        delete process.env.CLAUDE_STUB_PATH;
       }
     };
   }
@@ -141,12 +155,12 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
   it(
     'falls back to the login shell PATH when the quick scan misses',
     withNoQuickScanHit(async () => {
-      // A POSIX-sh stub that ignores its args and prints STUB_PATH as the shell PATH.
+      // A POSIX-sh stub that ignores its args and prints CLAUDE_STUB_PATH as the shell PATH.
       const shellStub = join(dir, 'shell');
-      writeFileSync(shellStub, '#!/bin/sh\nprintf %s "$STUB_PATH"\n');
+      writeFileSync(shellStub, '#!/bin/sh\nprintf %s "$CLAUDE_STUB_PATH"\n');
       chmodSync(shellStub, 0o755);
       process.env.SHELL = shellStub; // the login shell "knows" where claude is
-      process.env.STUB_PATH = dir;
+      process.env.CLAUDE_STUB_PATH = dir;
 
       expect(resolveClaudeBinary()).toBeNull();
       expect(await resolveClaudeBinaryDeep()).toBe(stubPath);
@@ -163,7 +177,7 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
   });
 
   it('reports not-signed-in when the CLI has no account', async () => {
-    process.env.STUB_LOGGED_IN = '0';
+    process.env.CLAUDE_STUB_LOGGED_IN = '0';
     const status = await getClaudeCliStatus({ force: true });
     expect(status.available).toBe(true);
     expect(status.loggedIn).toBe(false);
@@ -216,28 +230,125 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
   it('omits version-gated flags an older CLI does not advertise (no --restricted)', async () => {
     // The stub errors on --restricted in this mode; the call must still succeed
     // because buildArgs only passes flags the CLI's --help lists.
-    process.env.STUB_OLD = '1';
+    process.env.CLAUDE_STUB_OLD = '1';
     try {
       const res = await callClaudeCli(role, { system: 'x', user: 'ping' });
       expect(res.text).toBe('ECHO:ping');
     } finally {
-      delete process.env.STUB_OLD;
+      delete process.env.CLAUDE_STUB_OLD;
     }
   });
 
-  it('does not leak ANTHROPIC_API_KEY to the CLI (keeps subscription billing)', async () => {
+  it('passes the CLI its own settings and none of the server secrets or ANTHROPIC_API_KEY', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-should-be-stripped';
+    process.env.PIWI_SECRET_KEY = 'server-secret';
+    process.env.CLAUDE_CONFIG_DIR = '/home/ada/.claude-work';
     try {
       const res = await callClaudeCli(role, { system: 'x', user: 'ENVCHECK' });
-      expect(res.text).toBe('API_KEY=unset');
+      expect(res.text).toBe(
+        `ANTHROPIC_API_KEY=unset;PIWI_SECRET_KEY=unset;CLAUDE_CONFIG_DIR=/home/ada/.claude-work;HOME=${process.env.HOME}`,
+      );
     } finally {
       delete process.env.ANTHROPIC_API_KEY;
+      delete process.env.PIWI_SECRET_KEY;
+      delete process.env.CLAUDE_CONFIG_DIR;
     }
+  });
+
+  it('turns every tool and MCP server off and allows one turn', async () => {
+    const args = JSON.parse((await callClaudeCli(role, { system: 'x', user: 'ARGS' })).text) as string[];
+    expect(args[args.indexOf('--tools') + 1]).toBe('');
+    expect(args[args.indexOf('--max-turns') + 1]).toBe('1');
+    expect(args).toContain('--strict-mcp-config');
+    expect(args).toContain('--restricted');
+  });
+
+  it('refuses to run a CLI that cannot turn its tools off', async () => {
+    process.env.CLAUDE_STUB_ANCIENT = '1';
+    await expect(callClaudeCli(role, { system: 'x', user: 'ping' })).rejects.toThrow(/Update Claude Code/);
+  });
+
+  it('refuses to run when --help fails, and reads it again on the next call', async () => {
+    process.env.CLAUDE_STUB_HELP_FAIL = '1';
+    await expect(callClaudeCli(role, { system: 'x', user: 'ping' })).rejects.toThrow(/tools turned off/);
+    delete process.env.CLAUDE_STUB_HELP_FAIL;
+    expect((await callClaudeCli(role, { system: 'x', user: 'ping' })).text).toBe('ECHO:ping');
   });
 
   it('refuses to generate when the CLI is not signed in', async () => {
-    process.env.STUB_LOGGED_IN = '0';
+    process.env.CLAUDE_STUB_LOGGED_IN = '0';
     resetClaudeCliCache();
     await expect(callClaudeCli(role, { system: 'x', user: 'y' })).rejects.toThrow(/sign/i);
+  });
+});
+
+describe('launching the CLI without a shell', () => {
+  const NPM_SHIM = [
+    '@ECHO off',
+    'GOTO start',
+    ':find_dp0',
+    'SET dp0=%~dp0',
+    'EXIT /b',
+    ':start',
+    'SETLOCAL',
+    'CALL :find_dp0',
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js" %*',
+  ].join('\r\n');
+
+  it("reads the script npm's claude.cmd shim runs", () => {
+    expect(cmdShimTarget(NPM_SHIM, 'C:\\Users\\ada\\AppData\\Roaming\\npm')).toBe(
+      'C:\\Users\\ada\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js',
+    );
+    expect(cmdShimTarget('@ECHO off\r\nclaude %*', 'C:\\npm')).toBeNull();
+  });
+
+  it('runs the shim target with Node, and a script with Node', () => {
+    const shimDir = mkdtempSync(join(tmpdir(), 'claude-shim-'));
+    try {
+      const shim = join(shimDir, 'claude.cmd');
+      writeFileSync(shim, NPM_SHIM);
+      const { command, args } = cliCommand(shim, ['--version']);
+      expect(command).toBe(process.execPath);
+      expect(args[0]).toMatch(/node_modules[\\/]@anthropic-ai[\\/]claude-code[\\/]cli\.js$/);
+      expect(args.slice(1)).toEqual(['--version']);
+
+      writeFileSync(join(shimDir, 'broken.cmd'), '@ECHO off');
+      expect(() => cliCommand(join(shimDir, 'broken.cmd'), [])).toThrow(/PIWI_CLAUDE_CLI_PATH/);
+    } finally {
+      rmSync(shimDir, { recursive: true, force: true });
+    }
+    expect(cliCommand('/opt/claude/cli.js', ['-p'])).toEqual({
+      command: process.execPath,
+      args: ['/opt/claude/cli.js', '-p'],
+    });
+    expect(cliCommand('/usr/local/bin/claude', ['-p'])).toEqual({ command: '/usr/local/bin/claude', args: ['-p'] });
+  });
+});
+
+describe('the CLI environment', () => {
+  it('keeps the allowlist, the locale and the cloud credentials only of the provider Claude Code is set to', () => {
+    const env = cliEnv({
+      HOME: '/home/ada',
+      LC_ALL: 'fr_FR.UTF-8',
+      CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-1',
+      ANTHROPIC_API_KEY: 'sk-ant-api',
+      PIWI_SECRET_KEY: 'secret',
+      PIWI_DATABASE_URL: 'postgres://u:p@db/piwi',
+      PIWI_SMTP_PASSWORD: 'smtp',
+      AWS_SECRET_ACCESS_KEY: 'aws',
+      PATH: '/usr/bin',
+    });
+    expect(env).toMatchObject({ HOME: '/home/ada', LC_ALL: 'fr_FR.UTF-8', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-1' });
+    for (const name of [
+      'ANTHROPIC_API_KEY',
+      'PIWI_SECRET_KEY',
+      'PIWI_DATABASE_URL',
+      'PIWI_SMTP_PASSWORD',
+      'AWS_SECRET_ACCESS_KEY',
+    ]) {
+      expect(env[name], name).toBeUndefined();
+    }
+    expect(env.PATH?.split(delimiter)).toContain('/usr/bin');
+    expect(cliEnv({ CLAUDE_CODE_USE_BEDROCK: '1', AWS_SECRET_ACCESS_KEY: 'aws' }).AWS_SECRET_ACCESS_KEY).toBe('aws');
   });
 });

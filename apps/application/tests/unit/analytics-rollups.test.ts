@@ -21,6 +21,7 @@ vi.mock('../../server/storage', () => ({
 delete process.env.PIWI_DATABASE_URL;
 
 const rollups = await import('../../shared/handlers/analytics/rollups');
+const { groupRows } = await import('../../shared/handlers/analytics/scalar-rows');
 const { deleteRunsByIds, deleteRunsOlderThan } = await import('../../server/utils/retention');
 const { releaseRun, keepRun } = await import('../../shared/handlers/run-keep');
 const { dayKey } = await import('../../shared/handlers/analytics/common');
@@ -129,10 +130,15 @@ function wholeRange(fromDaysAgo = 400) {
   };
 }
 
+/** The rows summed into one totals object, as the analytics handlers sum them. */
+function sumRows(rows: Awaited<ReturnType<typeof rollups.readRollupSeries>>) {
+  return groupRows(rows, () => 'all').get('all') ?? rollups.emptyRollupTotals();
+}
+
 async function dayTotals(daysAgo: number) {
   const day = dayKey(Date.now() - daysAgo * DAY_MS);
   const rows = await rollups.readRollupSeries(db as any, { ...wholeRange(), fromDay: day, toDay: day });
-  return rows.reduce((acc, row) => rollups.addRollupTotals(acc, row), rollups.emptyRollupTotals());
+  return sumRows(rows);
 }
 
 describe('the ingest hook', () => {
@@ -229,7 +235,7 @@ describe('the rollups agree with the stored runs', () => {
     const raw = await db.select().from(schema.testRuns);
     const counted = raw.filter((r) => ['passed', 'failed', 'timedout', 'interrupted'].includes(r.status));
     const series = await rollups.readRollupSeries(db as any, wholeRange());
-    const sum = series.reduce((acc, row) => rollups.addRollupTotals(acc, row), rollups.emptyRollupTotals());
+    const sum = sumRows(series);
 
     expect(sum.runs).toBe(counted.length);
     expect(sum.passedTests).toBe(counted.reduce((a, r) => a + r.passedTests, 0));

@@ -14,11 +14,10 @@ describe('computeDistinctRunCounts', () => {
       { title: 't', location: 'a.spec.ts:1:1', status: 'failed', retries: 0 },
       { title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 1 },
     ]);
-    // The final (highest-retry) attempt wins: one test, passed, and flaky.
+    // The final (highest-retry) attempt wins: one test, passed.
     expect(counts.totalTests).toBe(1);
     expect(counts.passedTests).toBe(1);
     expect(counts.failedTests).toBe(0);
-    expect(counts.flakyTests).toBe(1);
   });
 
   it('keeps the same title in different browsers as separate tests', () => {
@@ -44,14 +43,35 @@ describe('computeDistinctRunCounts', () => {
       didNotRunTests: 1,
       failedTests: 0,
       passedTests: 0,
-      flakyTests: 0,
     });
   });
 
-  it('does not count a first-try pass as flaky', () => {
-    const counts = computeDistinctRunCounts([{ title: 'a', location: 'a.spec.ts:1:1', status: 'passed', retries: 0 }]);
-    expect(counts.passedTests).toBe(1);
-    expect(counts.flakyTests).toBe(0);
+  it('counts tests that share a title and a line once each, by their test id', () => {
+    // A parameterized test (`for (const user of users) test(...)`) and a --repeat-each repetition.
+    const counts = computeDistinctRunCounts([
+      { testId: 'alice', title: 'logs in', location: 'a.spec.ts:3:5', status: 'failed', retries: 0 },
+      { testId: 'bob', title: 'logs in', location: 'a.spec.ts:3:5', status: 'passed', retries: 0 },
+      { testId: 'repeat-1', title: 'pays', location: 'a.spec.ts:9:5', status: 'passed', retries: 0 },
+      { testId: 'repeat-2', title: 'pays', location: 'a.spec.ts:9:5', status: 'passed', retries: 0 },
+    ]);
+    expect(counts).toMatchObject({ totalTests: 4, passedTests: 3, failedTests: 1 });
+  });
+
+  it('keeps tests apart by their describe path when they carry no test id', () => {
+    const counts = computeDistinctRunCounts([
+      { title: 'logs in', location: 'a.spec.ts:3:5', suitePath: ['as Alice'], status: 'failed', retries: 0 },
+      { title: 'logs in', location: 'a.spec.ts:3:5', suitePath: ['as Bob'], status: 'passed', retries: 0 },
+    ]);
+    expect(counts).toMatchObject({ totalTests: 2, passedTests: 1, failedTests: 1 });
+  });
+
+  it('lets the failing attempt decide between two with the same retry index, whatever their order', () => {
+    const attempts = [
+      { title: 't', location: 'a.spec.ts:1:1', status: 'failed', retries: 0 },
+      { title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 0 },
+    ];
+    expect(computeDistinctRunCounts(attempts)).toMatchObject({ totalTests: 1, failedTests: 1, passedTests: 0 });
+    expect(computeDistinctRunCounts([...attempts].reverse())).toMatchObject({ failedTests: 1, passedTests: 0 });
   });
 });
 
@@ -347,6 +367,12 @@ describe('serializeRun', () => {
       'timedOutTests',
       'totalTests',
     ]);
+  });
+
+  it('carries the delivery key when the run has one', () => {
+    expect(serializeRun({ ...makePayload(), deliveryKey: 'key-1' }, { includeTestCases: true }).deliveryKey).toBe(
+      'key-1',
+    );
   });
 
   it('sends keep: true only when the run asked to be kept', () => {

@@ -18,6 +18,8 @@
 //     with comments, trailing commas) is reported as `manual` and left alone;
 //   - the previous content is copied to `<name>.piwi-backup.json` (the file's
 //     extension replaced) before a write;
+//   - the file is replaced through a temporary copy, keeping its permissions
+//     (owner-only for a new file, since the entry carries the access token);
 //   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
 //     everything else in the file is preserved as parsed.
 //
@@ -355,7 +357,7 @@ fn write_config(path: &PathBuf, doc: &Value) -> Result<(), String> {
         let _ = std::fs::copy(path, path.with_extension("piwi-backup.json"));
     }
     let body = serde_json::to_string_pretty(doc).map_err(|e| e.to_string())? + "\n";
-    std::fs::write(path, body).map_err(|e| e.to_string())
+    crate::private_fs::write_keeping_mode(path, body.as_bytes()).map_err(|e| e.to_string())
 }
 
 fn set_entry(app: &AppHandle, id: &str, connect: bool) -> Result<McpClientStatus, String> {

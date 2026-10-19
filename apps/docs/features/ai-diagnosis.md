@@ -24,7 +24,7 @@ not merged automatically. When AI is configured, a model judges the pair from it
 tests and overlap: it merges on a confident yes, turns a less confident yes into a **merge suggestion** on the
 project's Failure clusters tab, for a Maintainer or above to approve or dismiss, and leaves a no apart. Without AI, or
 past five model calls in a run, the pair becomes a suggestion directly. This runs after every finished run
-whenever an embedding role is configured, independently of auto-diagnose.
+with an embedding role, independently of auto-diagnose.
 
 Each pair is judged once: the model's no is kept. A pair that someone dismissed, or that came from [moving tests to a
 new cluster](#split-a-cluster-by-hand), is never merged automatically, however close the two clusters score.
@@ -78,7 +78,7 @@ diagnoses are stored separately, and running one never overwrites the other.
 
 A stored diagnosis stays on screen even with no provider configured. With no result and no provider, **Copy prompt**
 copies the exact request the model would receive, trimmed to the
-[context limits](/guide/ai-provider#context-limits-and-token-cost), so you can paste it into your own AI tool.
+[context limits](/guide/ai-provider#context-limits-and-token-cost), to paste into your own AI tool.
 
 ## SCM-grounded context
 
@@ -111,10 +111,11 @@ deterministic locator edits.
 ## Diagnoses written by an agent
 
 A coding agent can record its own diagnosis on a cluster, or on one failure, with the MCP tool `record_diagnosis`, in
-the same JSON a model returns here. It needs no AI provider on this instance, its patch is validated against the
-source the failure happened at when [source control](/guide/source-control) is connected, and the panel shows it as
-**written by an agent** with the model it named. It replaces the current diagnosis, which stays in the history.
-Declining the **Agent diagnoses** capability refuses them; declining AI diagnosis does not.
+the same JSON a model returns here. On one failure, the [REST API](https://piwitests.dev/demo/docs) records it too.
+It needs no AI provider, its patch is validated against the failing commit's source when
+[source control](/guide/source-control) is connected, and the panel shows it as **written by an agent** with the
+model it named. It replaces the current diagnosis, which stays in the history. Declining the **Agent diagnoses**
+capability refuses them; declining AI diagnosis does not.
 
 For one failure, `run_execution_diagnosis` runs the diagnosis of the failure page, and `get_execution_diagnosis` reads
 what is stored, whoever wrote it.

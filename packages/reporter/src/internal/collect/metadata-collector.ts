@@ -6,8 +6,27 @@ import { Logger } from '../support/logger.js';
 import type { SuiteConfigEntry } from '../../types.js';
 import { isRunOriginKind, parseRunOriginRef, RUN_ORIGIN_METADATA_KEY, type RunOrigin } from '@piwitests/core/wire';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { configDirFromConfig } from '../support/test-paths.js';
 
 type Env = Record<string, string | undefined>;
+
+/**
+ * A git remote without the credentials a URL can carry (`https://gitlab-ci-token:<token>@host/repo`): its user name
+ * and password are dropped. A remote with none, an scp-like one (`git@host:owner/repo`) and a local path come back
+ * as they are.
+ */
+export function withoutCredentials(remoteUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(remoteUrl);
+  } catch {
+    return remoteUrl;
+  }
+  if (!url.username && !url.password) return remoteUrl;
+  url.username = '';
+  url.password = '';
+  return url.toString();
+}
 
 /** git's answer for a detached HEAD checkout — a state, not a branch name. */
 const DETACHED_HEAD = 'HEAD';
@@ -152,10 +171,10 @@ export class MetadataCollector {
 
   /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
-    // The directory spec paths are made relative to (see `testFile` in the reporter); the
-    // dashboard strips it from the absolute locations Playwright gives steps.
+    // The directory spec paths are made relative to, the config's (see `testFile` in the
+    // reporter); the dashboard strips it from the absolute locations Playwright gives steps.
     const metadata: Record<string, unknown> = {
-      workingDir: process.cwd(),
+      workingDir: configDirFromConfig(config),
       [RUN_ORIGIN_METADATA_KEY]: resolveRunOrigin(process.env, (message) => this.logger.warn(message)),
     };
 
@@ -288,7 +307,7 @@ export class MetadataCollector {
       scm.author = execSync('git log -1 --pretty=format:"%an"', execOpts).trim();
       scm.commitMessage = execSync('git log -1 --pretty=format:"%s"', execOpts).trim();
       try {
-        scm.remoteUrl = execSync('git config --get remote.origin.url', execOpts).trim();
+        scm.remoteUrl = withoutCredentials(execSync('git config --get remote.origin.url', execOpts).trim());
       } catch {
         /* optional */
       }

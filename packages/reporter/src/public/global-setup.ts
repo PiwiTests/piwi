@@ -13,11 +13,8 @@ import { getSetupFilePath } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
 import { checkBaseUrls } from '../internal/support/base-url-check.js';
-import {
-  readCommittedManifest,
-  fetchInstrumentationManifest,
-  configDirFromConfig,
-} from '../internal/manifest/collect.js';
+import { readCommittedManifest, fetchInstrumentationManifest } from '../internal/manifest/collect.js';
+import { configDirFromConfig } from '../internal/support/test-paths.js';
 import { lookupProjectId, uploadManifest } from '../internal/manifest/run-manifests.js';
 import { baseUrlsFromConfig } from '../internal/collect/server-coverage.js';
 

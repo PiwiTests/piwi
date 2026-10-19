@@ -99,7 +99,7 @@ async function persistBatch(run: { branch: string | null; metadata?: Record<stri
 const count = (statements: string[], pattern: RegExp) => statements.filter((q) => pattern.test(q)).length;
 const RUN_READ = /^select .* from "test_runs" where "test_runs"."id" (= \?|in \()/;
 const PROJECT_READ = /^select .* from "projects" where "projects"."id" = \?/;
-const MOST_COMMON_BRANCH = /^select "branch", count\(\*\)/;
+const MOST_COMMON_BRANCH = /^select "project_id", "branch" from "test_runs" .*group by/;
 
 async function seedRunsOn(branch: string, runs: number) {
   for (let i = 0; i < runs; i++) {

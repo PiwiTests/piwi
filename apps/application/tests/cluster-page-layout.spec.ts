@@ -729,8 +729,9 @@ test.describe('Cluster situation block on seeded clusters', () => {
     const change = page.locator('[data-shot="next-step-change"]');
     await expect(change).toHaveAttribute('data-copies', 'copy-git-apply');
     // On the cluster page Diagnosis leads, open in its own card, when the next step
-    // applies its patch; folded among More ways to fix otherwise.
-    const diagnosis = page.locator('[data-shot="fix-diagnosis"] button[aria-expanded]').first();
+    // applies its patch; folded among More ways to fix otherwise. Only that card's
+    // fold toggle counts: the lead card's buttons (its help hint) open popovers.
+    const diagnosis = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded]').first();
     if (await diagnosis.count()) {
       if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
       await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');

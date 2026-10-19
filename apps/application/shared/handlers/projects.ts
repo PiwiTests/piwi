@@ -38,6 +38,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
+import { publicRunColumns } from './public-run';
 import { testSearchConditions } from '#shared/utils/test-search-sql';
 import {
   CATALOG_SEARCH_FIELDS,
@@ -66,6 +67,7 @@ import {
 import { parseProjectDecisions } from '#shared/capabilities';
 import { normalizeProjectTargets } from '#shared/analytics/targets';
 import { parseCoverageAreas, parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
+import { repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -153,9 +155,11 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
     .where(eq(rankedRuns.rn, 1));
   const latestRunIds: number[] = latestIdRows.map((r) => r.id);
 
-  // 2. Fetch full latest run rows
+  // 2. Fetch the latest run rows
   const latestRuns: any[] =
-    latestRunIds.length > 0 ? await db.select().from(testRuns).where(inArray(testRuns.id, latestRunIds)) : [];
+    latestRunIds.length > 0
+      ? await db.select(publicRunColumns()).from(testRuns).where(inArray(testRuns.id, latestRunIds))
+      : [];
   const fixmeByRunId = await fixmeTestsByRunId(db, latestRuns);
   const latestRunByProjectId = new Map<number, any>();
   for (const r of latestRuns) {
@@ -419,6 +423,9 @@ async function validTagIds(db: DrizzleDB, tagIds: number[]): Promise<number[]> {
 
 // ─── updateProject ───────────────────────────────────────────────
 
+/** The error `updateProject` throws for a repository URL `repositoryUrlFromRemote` refuses. */
+export const INVALID_REPOSITORY_URL = 'repositoryUrl must be a repository URL, such as https://host/owner/repo';
+
 /** The error `updateProject` throws for a coverage scope `parseCoverageScope` refuses. */
 export const INVALID_COVERAGE_SCOPE =
   'coverageScope must be { include?: string[], exclude?: string[] }: at most 200 patterns each, 300 characters and 20 "*" a pattern, no "!" negation';
@@ -436,6 +443,8 @@ export async function updateProject(
     diagnosisInstructions?: string | null;
     aiLanguage?: string | null;
     scmToken?: string | null;
+    /** The repository the project's SCM calls read; null or '' clears it, and the next run that names one pins it. */
+    repositoryUrl?: string | null;
     defaultBranch?: string | null;
     openApiUrl?: string | null;
     serverProbes?: unknown;
@@ -464,6 +473,7 @@ export async function updateProject(
     diagnosisInstructions,
     aiLanguage,
     scmToken,
+    repositoryUrl,
     defaultBranch,
     openApiUrl,
     serverProbes,
@@ -476,6 +486,10 @@ export async function updateProject(
     coverageAreas,
     tagIds: dataTagIds,
   } = data;
+  // null or '' clears the repository; any other value must name one.
+  const repository =
+    repositoryUrl === undefined ? undefined : repositoryUrl?.trim() ? repositoryUrlFromRemote(repositoryUrl) : null;
+  if (repository === null && repositoryUrl?.trim()) throw new Error(INVALID_REPOSITORY_URL);
   const areas =
     coverageAreas === undefined || coverageAreas === null ? coverageAreas : parseCoverageAreas(coverageAreas);
   if (areas === null && coverageAreas !== null) throw new Error(INVALID_COVERAGE_AREAS);
@@ -500,6 +514,7 @@ export async function updateProject(
         diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
         aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
         scmToken: scmToken !== undefined ? scmToken : undefined,
+        repositoryUrl: repository,
         defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
         serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
@@ -1117,7 +1132,7 @@ export async function getProjectTestCaseFacets(
 /**
  * Group a project's recent test executions by spec-file prefix and compute
  * pass rate, flaky rate, failure count, execution count, and average duration over
- * the last `days` days. Shared by the REST spec-health endpoint and the MCP
+ * the last `days` days. Shared by the spec-health widget and the MCP
  * `get_spec_health` tool.
  */
 export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, days: number) {
@@ -1411,10 +1426,20 @@ export async function getProjectTimeoutOpportunities(
   const effectiveLimit = Math.min(runsCount, 100);
   const scopeConditions = scope ? await projectRunScopeConditions(db, projectId, scope) : [];
 
+  // Finished runs the `flakiness` use reads: a lab run injects conditions, a
+  // bisect or reproduction run replays an older commit, and an unfinished run's
+  // durations are partial.
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), ...scopeConditions))
+    .where(
+      and(
+        eq(testRuns.projectId, projectId),
+        inArray(testRuns.status, TERMINAL_STATUSES),
+        eligibleRunSql('flakiness'),
+        ...scopeConditions,
+      ),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
@@ -1705,6 +1730,12 @@ export interface FlakyTestsFilter {
   tags?: string[];
   owner?: string;
   priority?: string;
+  /** Only these test cases (an analytics test filter). */
+  testCaseIds?: ReadonlySet<number>;
+  /** Only the executions of these Playwright projects (browsers). */
+  browsers?: string[];
+  /** Conditions on `test_runs` (an analytics scope's period and run filters), replacing the environment, branch and run scope. */
+  runConditions?: SQL[];
 }
 
 export async function getProjectFlakyTests(
@@ -1746,10 +1777,11 @@ export async function getProjectFlakyTestsWithVerified(
   const effectiveLimit = Math.min(200, Math.max(1, runsLimit));
 
   // Step 1: Last N terminal runs. An explicit branch filter scopes to exactly
-  // that branch. Otherwise, when the project's default branch is known, the
-  // leaderboard reads default-branch runs (plus runs with no branch, e.g. local
-  // or pre-migration) so a work-in-progress branch stops contaminating the
-  // project's health signal. Environment scopes independently. A project run
+  // that branch. Otherwise the leaderboard reads the runs of the project's
+  // default branch (`resolveStoredDefaultBranch`, as the project tabs do) plus
+  // runs with no branch (local or pre-migration), so a work-in-progress branch
+  // stops contaminating the project's health signal. Environment scopes
+  // independently. A project run
   // scope replaces all three with the project page's filters. Only runs the
   // `flakiness` use reads count: lab runs inject faults and conditions,
   // bisect and reproduction runs replay an older commit, and an environment
@@ -1759,14 +1791,17 @@ export async function getProjectFlakyTestsWithVerified(
     inArray(testRuns.status, TERMINAL_STATUSES),
     eligibleRunSql('flakiness'),
   ];
-  if (scope) {
+  if (filter?.runConditions) {
+    runsConditions.push(...filter.runConditions);
+  } else if (scope) {
     runsConditions.push(...(await projectRunScopeConditions(db, projectId, scope)));
   } else {
     if (environment) runsConditions.push(eq(testRuns.environment, environment));
     if (branch) {
       runsConditions.push(eq(testRuns.branch, branch));
-    } else if (project.defaultBranch) {
-      runsConditions.push(or(eq(testRuns.branch, project.defaultBranch), isNull(testRuns.branch))!);
+    } else {
+      const defaultBranch = await resolveStoredDefaultBranch(db, project);
+      runsConditions.push(or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''))!);
     }
   }
   const filteredRuns: any[] = await db
@@ -1792,7 +1827,12 @@ export async function getProjectFlakyTestsWithVerified(
       browser: testRunsCases.browser,
     })
     .from(testRunsCases)
-    .where(inArray(testRunsCases.testRunId, filteredRunIds));
+    .where(
+      and(
+        inArray(testRunsCases.testRunId, filteredRunIds),
+        filter?.browsers?.length ? inArray(testRunsCases.browserName, filter.browsers) : undefined,
+      ),
+    );
 
   // Step 3: Per (testCaseId, runId, browserKey): group rows
   type BrowserGroup = { rows: any[]; finalStatus: string; retryPass: boolean };
@@ -1935,6 +1975,7 @@ export async function getProjectFlakyTestsWithVerified(
 
   for (const [testCaseId, agg] of caseAggMap) {
     if (allowedCaseIds && !allowedCaseIds.has(testCaseId)) continue;
+    if (filter?.testCaseIds && !filter.testCaseIds.has(testCaseId)) continue;
     if (agg.totalRuns < 3) continue;
     if (agg.retryPassRuns < 1 && agg.alternations < 2) continue;
 

@@ -7,20 +7,21 @@ import type { ModelInfo } from '~~/types/api';
  * a full pinned model id, and resolves whichever the signed-in account grants —
  * so the picker lists them all and the field also accepts a free-typed value.
  * Pricing is the per-million-token list rate the CLI reports as `total_cost_usd`
- * (reported even for subscription accounts that are not billed per token).
+ * (reported even for subscription accounts that are not billed per token). The
+ * CLI takes the prompt as text, so no model lists the image modality.
  */
 const M = 1_000_000;
 
 function model(id: string, label: string, contextLength: number, prompt: string, completion: string): ModelInfo {
-  return { id, label, contextLength, pricing: { prompt, completion }, modalities: ['image', 'thinking'] };
+  return { id, label, contextLength, pricing: { prompt, completion }, modalities: ['thinking'] };
 }
 
 export const CLAUDE_CLI_MODELS: ModelInfo[] = [
   // Family aliases — always resolve to the latest model in the family.
-  { id: 'opus', label: 'Opus — latest', modalities: ['image', 'thinking'] },
-  { id: 'sonnet', label: 'Sonnet — latest', modalities: ['image', 'thinking'] },
-  { id: 'haiku', label: 'Haiku — latest', modalities: ['image', 'thinking'] },
-  { id: 'fable', label: 'Fable — latest', modalities: ['image', 'thinking'] },
+  { id: 'opus', label: 'Opus — latest', modalities: ['thinking'] },
+  { id: 'sonnet', label: 'Sonnet — latest', modalities: ['thinking'] },
+  { id: 'haiku', label: 'Haiku — latest', modalities: ['thinking'] },
+  { id: 'fable', label: 'Fable — latest', modalities: ['thinking'] },
 
   // Pinned versions, newest first within each family.
   model('claude-fable-5-1', 'Fable 5.1', M, '10', '50'),

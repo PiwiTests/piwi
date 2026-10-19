@@ -7,10 +7,10 @@ import {
   MAX_SCM_FILES_TOTAL,
   MAX_FILE_BYTES,
   FETCH_TIMEOUT_MS,
-  isGitObjectId,
   type RerunDispatchRequest,
   type RerunDispatchResult,
 } from './ScmProvider';
+import { isGitObjectId } from '#shared/utils/hash';
 import type {
   ChangedFile,
   ScmChanges,

@@ -306,8 +306,13 @@ test.describe.serial('Integrations — automatic tracker writes', () => {
   });
 
   test('the preview shows the failure waiting on its rule', async ({ request }) => {
+    // The run's finalize work runs after the submit answers; wait for the cluster to reach the preview.
+    await expect
+      .poll(async () => (await preview(request)).find((i) => i.clusterId === checkoutCluster)?.decision.verdict, {
+        timeout: 10_000,
+      })
+      .toBe('wait');
     const item = (await preview(request)).find((i) => i.clusterId === checkoutCluster);
-    expect(item?.decision.verdict).toBe('wait');
     expect(item?.description).toBe('Waiting on rule 1: 1 of 2 occurrences, 1 of 2 runs');
   });
 
@@ -340,8 +345,16 @@ test.describe.serial('Integrations — automatic tracker writes', () => {
     expect(body).toContain('Counted on main.');
     expect(body).toContain(`Piwi-Cluster: ${checkoutCluster}`);
 
-    const cluster = await (await request.get(`/api/failure-clusters/${checkoutCluster}`)).json();
-    expect(cluster.links.some((l: { key: string | null }) => l.key === issue.key)).toBe(true);
+    // The link is stored once the tracker has answered, after the mock records the issue.
+    await expect
+      .poll(
+        async () => {
+          const cluster = await (await request.get(`/api/failure-clusters/${checkoutCluster}`)).json();
+          return cluster.links.some((l: { key: string | null }) => l.key === issue.key);
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
   });
 
   test('a diagnosis comments on the issue and rewrites its description', async ({ request }) => {

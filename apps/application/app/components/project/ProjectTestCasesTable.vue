@@ -141,7 +141,8 @@ watch(
 );
 const scopeQuery = computed(() => (props.scope ? projectRunScopeQuery(props.scope) : {}));
 
-watch([q, statuses, age, sort, dir, pageSize, grouped, scopeQuery], () => {
+// A scope that is rebuilt with the same values is not a change, so the page stays.
+watch([q, statuses, age, sort, dir, pageSize, grouped, () => JSON.stringify(scopeQuery.value)], () => {
   page.value = 1;
 });
 

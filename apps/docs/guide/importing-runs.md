@@ -128,8 +128,8 @@ Spec files recorded as (these must match the paths your live runs report for his
   tests/checkout.spec.ts
 ```
 
-If those look different from the paths on your existing test cases, the archive was produced from a different working
-directory, and the imported executions will land on separate test cases.
+If those differ from your existing test cases' paths (another config, or live runs from a reporter that named files
+from the directory Playwright ran in), the imported executions land on separate test cases.
 
 A trace records only the path Playwright displays (`checkout.spec.ts`), with no way to recover the directory it sits in.
 Piwi therefore matches it against the paths the project already knows: a stored `tests/checkout.spec.ts` claims an

@@ -6,7 +6,7 @@ import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { RunSubmitter, type CollectedRun } from '../src/internal/submit/run-submitter.js';
 import { HttpClient } from '../src/internal/transport/http-client.js';
 import { Uploader } from '../src/internal/submit/uploader.js';
-import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
+import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { Logger } from '../src/internal/support/logger.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
@@ -22,17 +22,16 @@ import {
   type FakeServer,
 } from './_helpers.js';
 
-const RECOVERY_PREFIX = 'piwi-dashboard-recovery-';
 const STREAM_PREFIX = 'piwi-dashboard-stream-';
 const SETUP_PREFIX = 'piwi-dashboard-setup-';
 
-function cleanupProjectArtifacts(projectName: string): void {
-  // Recovery and stream-buffer files are keyed by a sha1 hash of the project
-  // name, so match on the hash rather than the raw name.
+function cleanupProjectArtifacts(projectName: string, server?: FakeServer): void {
+  // Stream-buffer files are keyed by a sha1 hash of the project name, so match
+  // on the hash rather than the raw name; a recovery file by the server too.
   const tmp = os.tmpdir();
   const hash = hashForProject(projectName);
   for (const f of fs.readdirSync(tmp)) {
-    if (f.startsWith(RECOVERY_PREFIX) || f.startsWith(STREAM_PREFIX) || f.startsWith(SETUP_PREFIX)) {
+    if (f.startsWith(STREAM_PREFIX) || f.startsWith(SETUP_PREFIX)) {
       if (f.includes(hash) || f.includes(projectName)) {
         try {
           fs.unlinkSync(path.join(tmp, f));
@@ -42,10 +41,12 @@ function cleanupProjectArtifacts(projectName: string): void {
       }
     }
   }
+  if (server) fs.rmSync(recoveryFilePath(server.url, projectName), { force: true });
 }
 
-function recoveryFilePath(projectName: string): string {
-  return path.join(os.tmpdir(), `${RECOVERY_PREFIX}${hashForProject(projectName)}.json`);
+/** The run the recovery file of `server` holds. */
+function recoveredRun(server: FakeServer, projectName: string): any {
+  return JSON.parse(fs.readFileSync(recoveryFilePath(server.url, projectName), 'utf8')).payload;
 }
 
 async function runOneTest(reporter: PiwiDashboardReporter, title: string, status = 'passed'): Promise<void> {
@@ -68,7 +69,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
 
   afterEach(async () => {
     if (server) await server.close();
-    cleanupProjectArtifacts(projectName);
+    cleanupProjectArtifacts(projectName, server);
   });
 
   it('a run that stopped before any test began (its global setup threw) sends and saves nothing', async () => {
@@ -81,7 +82,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     });
     await reporter.onEnd({ status: 'failed' } as any);
     expect(urlsHit(server)).toEqual([]);
-    expect(fs.existsSync(recoveryFilePath(projectName))).toBe(false);
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
   });
 
   it('streaming success path: /start → /events → /finish', async () => {
@@ -225,8 +226,10 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
 
   it('fallback: /upload fails → /submit succeeds', async () => {
     let submitBody: any;
+    let uploadBody = '';
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/upload') {
+        uploadBody = req.body;
         textRes(res, 500, 'boom');
       } else if (req.url === '/api/test-runs/submit') {
         submitBody = JSON.parse(req.body);
@@ -255,6 +258,9 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(uploadIdx < submitIdx, 'upload must be tried before submit').toBeTruthy();
     // The dashboard learns which rung delivered the run, and why.
     expect(submitBody.metadata.ingestHealth).toEqual({ submitFallback: { path: 'submit', reason: 'upload-failed' } });
+    // Both rungs deliver the run under one key, so a dashboard that stored the upload stores the run once.
+    expect(submitBody.deliveryKey).toMatch(/^[0-9a-f-]{36}$/);
+    expect(uploadBody).toContain(`"deliveryKey":"${submitBody.deliveryKey}"`);
   });
 
   it('a failed /finish falls back to /upload and names the fallback in the run metadata', async () => {
@@ -314,12 +320,23 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     await runOneTest(reporter, 'recovery-test');
 
     // A recovery file should now exist in tmpdir for this project.
-    const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
+    const recovered = recoveredRun(server, projectName);
     expect(recovered.projectName).toBe(projectName);
   });
 
   it('batch mode retries a saved recovery payload on the next run', async () => {
-    server = await startServer((_req, res) => textRes(res, 500, 'down'));
+    let up = false;
+    const submits: any[] = [];
+    server = await startServer((req, res) => {
+      if (!up) {
+        textRes(res, 500, 'down');
+      } else if (req.url === '/api/test-runs/submit') {
+        submits.push(JSON.parse(req.body));
+        jsonRes(res, 200, { runId: 30 + submits.length, projectId: 20 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
     const failing = new PiwiDashboardReporter({
       serverUrl: server.url,
       projectName,
@@ -329,18 +346,13 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       liveFileUploads: false,
     });
     await runOneTest(failing, 'lost-run-test');
-    await server.close();
-    expect(fs.existsSync(recoveryFilePath(projectName)), 'expected a recovery file after the failed run').toBe(true);
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'expected a recovery file after the failed run').toBe(
+      true,
+    );
+    const mode = fs.statSync(recoveryFilePath(server.url, projectName)).mode & 0o777;
+    if (process.platform !== 'win32') expect(mode, 'readable by its owner only').toBe(0o600);
 
-    const submits: any[] = [];
-    server = await startServer((req, res) => {
-      if (req.url === '/api/test-runs/submit') {
-        submits.push(JSON.parse(req.body));
-        jsonRes(res, 200, { runId: 30 + submits.length, projectId: 20 });
-      } else {
-        textRes(res, 404, 'nope');
-      }
-    });
+    up = true;
     const reporter = new PiwiDashboardReporter({
       serverUrl: server.url,
       projectName,
@@ -359,7 +371,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     // A run delivered by its usual rung names no fallback.
     expect(second.metadata.ingestHealth).toBeUndefined();
     expect(titles, `submits: ${titles.join(', ')}`).toContain('second-run-test');
-    expect(fs.existsSync(recoveryFilePath(projectName)), 'recovery file is cleared after the retry').toBe(false);
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'recovery file is cleared after the retry').toBe(false);
   });
 
   it('buffer overflow drops results → skips /finish and re-sends the full run via /submit', async () => {
@@ -490,7 +502,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
 
     // Each request alone would wait for the 30 s socket timeout.
     expect(Date.now() - started).toBeLessThan(10_000);
-    const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
+    const recovered = recoveredRun(server, projectName);
     expect(recovered.testCases[0].title).toBe('hung-dashboard-test');
     server.server.closeAllConnections();
   });
@@ -511,10 +523,10 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     await runOneTest(reporter, 'unbounded-test');
 
     expect(urlsHit(server)).toContain('/api/test-runs/submit');
-    expect(fs.existsSync(recoveryFilePath(projectName))).toBe(false);
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
   });
 
-  it('401 with no auth propagates (does not fall back) and saves a recovery copy', async () => {
+  it('a 401 with no credential stops the ladder and saves a recovery copy, leaving the run result alone', async () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/submit') {
         textRes(res, 401, 'unauthorized');
@@ -534,12 +546,42 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       liveFileUploads: false,
       reports: [{ type: 'missing-type', dir: '/nonexistent' }],
     });
-    await expect(runOneTest(reporter, 'auth-fail-test')).rejects.toThrow(/401/);
+    // onEnd never throws: Playwright would count it as a failure of a green run.
+    await expect(runOneTest(reporter, 'auth-fail-test')).resolves.toBeUndefined();
 
-    // The run is not lost: a recovery copy is written before the throw.
-    const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
+    // No other rung can succeed without a credential.
+    expect(urlsHit(server)).not.toContain('/api/test-runs/submit');
+    // The run is not lost: a recovery copy is written.
+    const recovered = recoveredRun(server, projectName);
     expect(recovered.projectName).toBe(projectName);
     expect(recovered.testCases[0].title).toBe('auth-fail-test');
+  });
+
+  it('a failed login saves a recovery copy without failing the run', async () => {
+    server = await startServer((req, res) => {
+      if (req.url === '/api/auth/login') textRes(res, 401, 'bad credentials');
+      else textRes(res, 404, 'nope');
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      username: 'ci',
+      password: 'wrong',
+      streaming: false,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+    });
+    await expect(runOneTest(reporter, 'login-fail-test')).resolves.toBeUndefined();
+
+    expect(urlsHit(server)).toEqual(['/api/auth/login']);
+    const recovered = recoveredRun(server, projectName);
+    expect(recovered.testCases[0].title).toBe('login-fail-test');
+  });
+
+  it('leaves the terminal output to Playwright', () => {
+    expect(new PiwiDashboardReporter({ serverUrl: 'http://localhost:1', projectName }).printsToStdio()).toBe(false);
   });
 });
 
@@ -550,7 +592,7 @@ describe('RunSubmitter local copies', () => {
   beforeEach(() => cleanupProjectArtifacts(projectName));
   afterEach(async () => {
     if (server) await server.close();
-    cleanupProjectArtifacts(projectName);
+    cleanupProjectArtifacts(projectName, server);
   });
 
   function collectedRun(serverUrl: string): CollectedRun {
@@ -596,7 +638,7 @@ describe('RunSubmitter local copies', () => {
     return new RunSubmitter(
       http,
       new Uploader(http, new FileHandler(logger), logger),
-      new CrashRecovery(projectName, logger),
+      new CrashRecovery(url, projectName, logger),
       sm as any,
       logger,
     );
@@ -621,11 +663,22 @@ describe('RunSubmitter local copies', () => {
     expect(sm.discardBuffered).toHaveBeenCalledOnce();
   });
 
+  it("keeps an earlier run's recovery file when the run itself goes through: only its own replay deletes it", async () => {
+    server = await startServer((req, res) =>
+      req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 3 }) : textRes(res, 404, 'nope'),
+    );
+    new CrashRecovery(server.url, projectName).save({ projectName, testCases: [] });
+    const sm = streamSession({ lostResults: true });
+    await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+    expect(sm.discardBuffered).toHaveBeenCalledOnce();
+    expect(recoveredRun(server, projectName)).toEqual({ projectName, testCases: [] });
+  });
+
   it('keeps the buffered live events when no rung reaches the server', async () => {
     server = await startServer((_req, res) => textRes(res, 500, 'down'));
     const sm = streamSession();
     await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
     expect(sm.discardBuffered).not.toHaveBeenCalled();
-    expect(fs.existsSync(recoveryFilePath(projectName))).toBe(true);
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(true);
   });
 });

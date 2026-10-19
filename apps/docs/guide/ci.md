@@ -97,10 +97,10 @@ How the merge works:
 1. Each shard derives a **run label**, a stable identifier for the CI pipeline, from the provider's build id
    (`GITHUB_RUN_ID` with `GITHUB_RUN_ATTEMPT`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID` and their equivalents on the
    systems listed above). A re-run of a GitHub Actions workflow is a new attempt, so it starts a new run.
-2. Shards sharing a run label **and** a `projectName` resolve to the same run when streaming.
-3. Each shard streams independently; the run stays `running` until the **last** shard calls finish.
+2. Shards sharing a run label **and** a `projectName` resolve to the same run, streamed or batched.
+3. The run stays `running` until the **last** shard reports; batched shards may arrive an hour apart.
 4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
-   shard progress badge (`2/3`) while shards are still arriving.
+   shard progress badge (`2/3`) while shards are arriving.
 
 **All shards must use the same `projectName`.** That's the one requirement.
 
@@ -233,10 +233,10 @@ Four behaviors worth knowing:
 - **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
   `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded.
 
-- **A test that failed and then passed on retry satisfies `--require-tag`.** Flakiness is what `--max-new-flaky` is
-  for.
-- **A required tag that matches no test in the run is a violation**, so a misspelled tag cannot pass silently.
-- **Every evaluation is stored**: [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict) are counted.
+- **A test that passed on retry satisfies `--require-tag`.** `--max-new-flaky` covers flakiness.
+- **A required tag that matches no test is a violation**, so a typo cannot pass.
+- **The CI key's evaluations are stored**, so [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict)
+  are counted; a read-only key gets the verdict only.
 
 `npx @piwitests/reporter gate --help` lists every option; `--json` prints the raw result for a pipeline to parse.
 

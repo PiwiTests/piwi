@@ -1,0 +1,34 @@
+name: Check the server image answers
+description: >-
+  Starts a server image with an empty data folder and waits for /api/health, as an operator's first start would.
+  Fails when the container exits or does not answer within two minutes, and prints its log.
+
+inputs:
+  image:
+    description: The image to start, by tag or digest, already on this runner.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Start the image and wait for /api/health
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        name="piwi-health-$GITHUB_RUN_ID-$GITHUB_JOB"
+        docker run -d --name "$name" -p 127.0.0.1:3000:3000 \
+          -e PIWI_SECRET_KEY="$(openssl rand -hex 32)" "$IMAGE" > /dev/null
+        trap 'docker rm -f "$name" > /dev/null 2>&1 || true' EXIT
+        for _ in $(seq 1 60); do
+          if curl -fsS http://127.0.0.1:3000/api/health; then
+            echo
+            echo "The image answered /api/health"
+            exit 0
+          fi
+          [ "$(docker inspect -f '{{.State.Running}}' "$name")" = true ] || break
+          sleep 2
+        done
+        docker logs "$name"
+        echo "::error::The image did not answer /api/health"
+        exit 1

@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
 import { requireAuth, hashPassword, verifyPassword, revokeUserSessions, setUserSession } from '../../utils/auth';
-import type { InstanceRole } from '#shared/permissions';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -51,8 +50,6 @@ export default eventHandler(async (event) => {
   const epoch = await revokeUserSessions(user.id);
   await setUserSession(event, {
     userId: user.id,
-    username: user.username,
-    role: user.role as InstanceRole,
     sessionEpoch: epoch,
   });
 

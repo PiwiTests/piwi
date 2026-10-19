@@ -110,12 +110,16 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     scmChanges: ScmChanges | null;
   }
 
+  /** Counts context requests, so an answer for an older baseline never replaces a newer one. */
+  let contextRequest = 0;
   async function refreshContext() {
+    const asked = ++contextRequest;
     contextLoading.value = true;
     try {
       const res = await $fetch<ContextJsonResponse>(`/api/failure-clusters/${clusterId}/context`, {
         query: { ...buildContextQuery(), format: 'json' },
       });
+      if (asked !== contextRequest) return;
       contextText.value = res.text;
       currentContextSha.value = res.contextSha ?? null;
       contextSections.value = res.sections;
@@ -124,6 +128,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
       coverage.value = res.coverage;
       scmChanges.value = res.scmChanges ?? null;
     } catch {
+      if (asked !== contextRequest) return;
       contextText.value = '(failed to load context)';
       currentContextSha.value = null;
       contextSections.value = [];
@@ -132,8 +137,10 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
       coverage.value = null;
       scmChanges.value = null;
     } finally {
-      contextLoading.value = false;
-      contextLoaded.value = true;
+      if (asked === contextRequest) {
+        contextLoading.value = false;
+        contextLoaded.value = true;
+      }
     }
   }
 

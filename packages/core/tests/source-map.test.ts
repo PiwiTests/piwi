@@ -101,7 +101,7 @@ describe('decodeSourceMap', () => {
     expect(indexed.sourceAt(5, 3)).toBe(1);
     // The lines between two sections have no segment.
     expect(indexed.sourceAt(3, 0)).toBeNull();
-    expect(indexed.mapsBetween(1, { line: 0, column: 1 }, { line: 6, column: 0 })).toBe(true);
+    expect(indexed.firstOriginalLineBetween(1, { line: 0, column: 1 }, { line: 6, column: 0 })).not.toBeNull();
     expect(indexed.originalLinesBetween(0, { line: 1, column: 0 }, { line: 6, column: 0 })).toBeNull();
   });
 
@@ -124,7 +124,7 @@ describe('decodeSourceMap', () => {
   test('answers nothing outside the generated lines', () => {
     expect(map.originalAt(-1, 0)).toBeNull();
     expect(map.originalAt(3, 0)).toBeNull();
-    expect(map.mapsBetween(0, { line: -2, column: 0 }, { line: 0, column: 5 })).toBe(true);
+    expect(map.firstOriginalLineBetween(0, { line: -2, column: 0 }, { line: 0, column: 5 })).not.toBeNull();
   });
 
   test('refuses another version', () => {
@@ -167,7 +167,7 @@ describe('positions and comments', () => {
 });
 
 describe('code reach', async () => {
-  const { executedFunctionOffsets, finalizeCodeReach, reachedSources, scriptRan } = await import('../src/code-reach');
+  const { finalizeCodeReach, reachedFunctionLines, scriptRan } = await import('../src/code-reach');
   const source = 'import x from "./x";\nfunction pay() { return 1 }\nfunction idle() {}\npay();\n';
   const entry = {
     url: 'http://localhost:5173/src/pay.ts',
@@ -180,18 +180,18 @@ describe('code reach', async () => {
   };
 
   test('the top level and functions that did not run are left out', () => {
-    expect(executedFunctionOffsets(entry)).toEqual([21]);
+    expect([...reachedFunctionLines(entry, null)]).toEqual([[-1, [[2, 2]]]]);
     expect(scriptRan(entry)).toBe(true);
     expect(scriptRan({ ...entry, functions: [entry.functions[0]!, entry.functions[2]!] })).toBe(false);
   });
 
-  test('offsets map to sources through the map', () => {
+  test('functions map to sources through the map', () => {
     const map = decodeSourceMap({ version: 3, sources: ['a.ts', 'b.ts'], mappings: 'AAAA;ACAA' })!;
     // Line 1 (0-based) starts with source 1: the `pay` function.
-    expect([...reachedSources(entry, map)]).toEqual([1]);
+    expect([...reachedFunctionLines(entry, map).keys()]).toEqual([1]);
   });
 
-  test('mapsBetween looks from a position up to an end, across lines', () => {
+  test('a segment is looked for from a position up to an end, across lines', () => {
     // Line 0: source 0 at 0, source 1 at 10; line 1: nothing; line 2: source 0 at 4.
     const map = decodeSourceMap({
       version: 3,
@@ -205,10 +205,10 @@ describe('code reach', async () => {
         [[4, 0]],
       ]),
     })!;
-    expect(map.mapsBetween(1, { line: 0, column: 5 }, { line: 0, column: 20 })).toBe(true);
-    expect(map.mapsBetween(1, { line: 0, column: 5 }, { line: 0, column: 10 })).toBe(false);
-    expect(map.mapsBetween(0, { line: 0, column: 5 }, { line: 2, column: 5 })).toBe(true);
-    expect(map.mapsBetween(0, { line: 0, column: 5 }, { line: 2, column: 4 })).toBe(false);
+    expect(map.firstOriginalLineBetween(1, { line: 0, column: 5 }, { line: 0, column: 20 })).not.toBeNull();
+    expect(map.firstOriginalLineBetween(1, { line: 0, column: 5 }, { line: 0, column: 10 })).toBeNull();
+    expect(map.firstOriginalLineBetween(0, { line: 0, column: 5 }, { line: 2, column: 5 })).not.toBeNull();
+    expect(map.firstOriginalLineBetween(0, { line: 0, column: 5 }, { line: 2, column: 4 })).toBeNull();
   });
 
   test('generated code takes no source from the code before it', () => {
@@ -231,7 +231,7 @@ describe('code reach', async () => {
     });
     const bundle = { url: 'http://localhost/app.js', source: line, functions: [fn(0, line.length)] };
     const reached = (start: number, end: number) => [
-      ...reachedSources({ ...bundle, functions: [...bundle.functions, fn(start, end)] }, map),
+      ...reachedFunctionLines({ ...bundle, functions: [...bundle.functions, fn(start, end)] }, map).keys(),
     ];
     // The helper at 28 starts after cart.ts's segment at 13 but holds none of its code.
     expect(reached(28, 48)).toEqual([]);

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, lt, ne, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, lt, ne, type SQL } from 'drizzle-orm';
 import { markers, projects, testRuns, testRunsCases, projectTags, tags } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import { notLabRun } from '../probes';
@@ -15,6 +15,7 @@ import {
 } from '../../analytics/period';
 import type { AnalyticsTagInfo } from '../../analytics/types';
 import { branchPolicyCondition, defaultBranchPolicy, type BranchPolicy } from './branch-policy';
+import { resolveStoredDefaultBranches } from '../../../server/utils/scm/stored-default-branch';
 
 export type ProjectAccess = 'all' | Set<number>;
 
@@ -22,9 +23,6 @@ export const TERMINAL_RUN_STATUSES = ['passed', 'failed', 'timedout', 'interrupt
 export const FAILING_RUN_STATUSES = ['failed', 'timedout', 'interrupted'];
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** The branch every project falls back to when neither it nor its runs name one. */
-const FALLBACK_DEFAULT_BRANCH = 'main';
 
 /**
  * Intersect the requested project filter with the caller's access scope.
@@ -181,9 +179,10 @@ async function loadPeriodMarkers(
 
 /**
  * The branch policy of a scope: the branches chosen by hand, every branch, or
- * each project's default branch (the project's setting, else the default
- * branch its latest run reported, else `main`). The unknown branch counts only
- * in projects that never recorded a branch on a run.
+ * each project's default branch (`resolveStoredDefaultBranches`: the project's
+ * setting, else the branch most of its runs are on, else `main`), as the
+ * project tabs read it. The unknown branch counts only in projects that never
+ * recorded a branch on a run.
  */
 export async function resolveBranchPolicy(
   db: DrizzleDB,
@@ -198,15 +197,7 @@ export async function resolveBranchPolicy(
     .select({ id: projects.id, defaultBranch: projects.defaultBranch })
     .from(projects)
     .where(allowed === 'all' ? undefined : inArray(projects.id, allowed));
-  const reported = await reportedDefaultBranches(
-    db,
-    rows.filter((row) => !row.defaultBranch?.trim()).map((row) => row.id),
-  );
-  const defaults = new Map<number, string>();
-  for (const row of rows) {
-    const configured = row.defaultBranch?.trim();
-    defaults.set(row.id, configured || reported.get(row.id) || FALLBACK_DEFAULT_BRANCH);
-  }
+  const defaults = await resolveStoredDefaultBranches(db, rows);
   const withBranch = await projectsWithKnownBranch(
     db,
     rows.map((row) => row.id),
@@ -234,38 +225,6 @@ async function projectsWithKnownBranch(db: DrizzleDB, projectIds: number[]): Pro
     for (const row of rows) found.add(row.projectId);
   }
   return found;
-}
-
-/**
- * The default branch the latest run of each project reported in its metadata, for those that reported one:
- * one query per 500 projects, not one per project, since every analytics request resolves the policy.
- */
-async function reportedDefaultBranches(db: DrizzleDB, projectIds: number[]): Promise<Map<number, string>> {
-  const reported = new Map<number, string>();
-  for (let i = 0; i < projectIds.length; i += 500) {
-    const rows: { projectId: number; metadata: unknown }[] = await db
-      .select({ projectId: testRuns.projectId, metadata: testRuns.metadata })
-      .from(testRuns)
-      .where(
-        and(
-          inArray(testRuns.projectId, projectIds.slice(i, i + 500)),
-          eq(
-            testRuns.startTime,
-            sql`(SELECT MAX(latest.start_time) FROM ${testRuns} latest WHERE latest.project_id = ${testRuns.projectId})`,
-          ),
-        ),
-      )
-      .orderBy(desc(testRuns.id));
-    // Runs that started at the same instant: the last one written is the latest.
-    const seen = new Set<number>();
-    for (const row of rows) {
-      if (seen.has(row.projectId)) continue;
-      seen.add(row.projectId);
-      const value = (row.metadata as { defaultBranch?: unknown } | null)?.defaultBranch;
-      if (typeof value === 'string' && value.trim()) reported.set(row.projectId, value.trim());
-    }
-  }
-  return reported;
 }
 
 /**
@@ -363,17 +322,6 @@ function runConditions(
   return conditions;
 }
 
-/**
- * The run conditions of a scope from a start instant on, with an explicit
- * branch list only (no default-branch resolution). For callers outside a
- * resolved context.
- */
-function scopedRunConditions(scope: AnalyticsScope, allowed: 'all' | number[], sinceMs: number): SQL[] {
-  const policy: BranchPolicy =
-    scope.branches && scope.branches.length > 0 ? { kind: 'list', branches: scope.branches } : { kind: 'any' };
-  return runConditions(scope, allowed, policy, sinceMs, null);
-}
-
 // ── Projects and tags ────────────────────────────────────────────────────────
 
 export interface ScopedProject {
@@ -456,26 +404,6 @@ export async function fetchContextRuns(
     .select(SCOPED_RUN_FIELDS)
     .from(testRuns)
     .where(and(...contextRunConditions(ctx, fromMs, toMs)))
-    .orderBy(testRuns.startTime);
-  return rows;
-}
-
-/**
- * Terminal runs matching the scope, starting `sinceDays` ago (ordered oldest →
- * newest), with the explicit run filters only.
- */
-export async function fetchScopedRuns(
-  db: DrizzleDB,
-  scope: AnalyticsScope,
-  access: ProjectAccess,
-  sinceDays: number,
-): Promise<ScopedRun[]> {
-  const allowed = resolveAllowedProjects(scope, access);
-  if (allowed !== 'all' && allowed.length === 0) return [];
-  const rows: any[] = await db
-    .select(SCOPED_RUN_FIELDS)
-    .from(testRuns)
-    .where(and(...scopedRunConditions(scope, allowed, Date.now() - sinceDays * DAY_MS)))
     .orderBy(testRuns.startTime);
   return rows;
 }

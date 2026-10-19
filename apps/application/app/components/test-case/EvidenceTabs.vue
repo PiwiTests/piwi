@@ -266,7 +266,11 @@ const citedTabs = computed(
 
 // The trace the header opens: this execution's own (one per attempt row).
 const primaryTrace = computed(() => props.traces[0] ?? null);
-const { viewUrl: traceViewUrl, onView: onViewTrace } = useTraceLinks(primaryTrace);
+const {
+  viewUrl: traceViewUrl,
+  viewUnavailable: traceViewUnavailable,
+  onView: onViewTrace,
+} = useTraceLinks(primaryTrace);
 
 // Nothing was captured for a test that never started — the Most likely line above
 // says why, so the evidence card stays away rather than showing empty tabs.
@@ -540,7 +544,8 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             color="neutral"
             variant="outline"
             label="Open trace"
-            title="Open the Playwright trace of this execution in the trace viewer"
+            :title="traceViewUnavailable ?? 'Open the Playwright trace of this execution in the trace viewer'"
+            :disabled="!!traceViewUnavailable"
             class="ml-auto"
             @click="onViewTrace"
           />

@@ -9,9 +9,9 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execFileSync, spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import { originEnv } from '../internal/config/env.js';
+import { resolvePlaywrightCli, spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
 const EXIT_OK = 0;
 const EXIT_RUN_FAILED = 1;
@@ -166,37 +166,9 @@ function fileFilter(file: string): string {
   return `${escape(path.basename(path.dirname(file)))}[\\\\/]${escape(path.basename(file))}$`;
 }
 
-function resolvePlaywrightCli(cwd: string): string | null {
-  const require = createRequire(path.join(cwd, 'noop.js'));
-  for (const id of ['playwright/cli', '@playwright/test/cli', 'playwright/lib/cli/cli']) {
-    try {
-      return require.resolve(id);
-    } catch {
-      // try the next candidate
-    }
-  }
-  return null;
-}
-
 /** Run the written spec, stamped as a `bug` run of report `id`. */
 function runPlaywright(file: string, cwd: string, id: number, env: NodeJS.ProcessEnv): Promise<number> {
-  const cli = resolvePlaywrightCli(cwd);
-  const filter = fileFilter(file);
-  const childEnv = { ...env, ...originEnv('bug', id) };
-  const child = cli
-    ? spawn(process.execPath, [cli, 'test', filter], { stdio: 'inherit', cwd, env: childEnv })
-    : spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['playwright', 'test', filter], {
-        stdio: 'inherit',
-        cwd,
-        env: childEnv,
-      });
-  return new Promise((resolve) => {
-    child.on('error', (err) => {
-      console.error(`piwi bug: could not start Playwright — ${err.message}`);
-      resolve(EXIT_ERROR);
-    });
-    child.on('exit', (code) => resolve(code ?? EXIT_ERROR));
-  });
+  return spawnPlaywright([fileFilter(file)], { ...env, ...originEnv('bug', id) }, { cwd, command: 'piwi bug' });
 }
 
 export async function runBug(

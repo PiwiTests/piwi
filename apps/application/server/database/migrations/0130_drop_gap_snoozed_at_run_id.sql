@@ -1,0 +1,1 @@
+ALTER TABLE `scenario_gaps` DROP COLUMN `snoozed_at_run_id`;

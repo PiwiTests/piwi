@@ -22,6 +22,7 @@ vi.stubGlobal('useRuntimeConfig', () => ({ ai: envAi }));
 const { resolveAiConfig } = await import('../../server/utils/ai-provider');
 const { readAiSettings } = await import('../../server/utils/ai-settings');
 const { setAppSetting, deleteAppSetting } = await import('../../server/utils/app-settings');
+const { encryptSecret } = await import('../../server/utils/crypto');
 
 let db: DbClient;
 
@@ -114,5 +115,67 @@ describe('resolveAiConfig under env-managed AI', () => {
     expect(settings.roles.research?.model).toBe(config?.roles.research?.model);
     expect(settings.roles.embedding).toMatchObject({ reuse: 'diagnosis', model: 'embed-model' });
     expect(config?.roles.embedding?.model).toBe('embed-model');
+  });
+});
+
+describe('the research and embedding roles of the environment', () => {
+  test('take the main provider, base URL and key for each one they do not set', async () => {
+    envAi = { ...envAi, researchApiKey: 'research-key', embeddingModel: 'embed-model' };
+
+    const [config, settings] = await Promise.all([resolveAiConfig(db), readAiSettings(db)]);
+    expect(config?.roles.research).toEqual({
+      provider: 'openai',
+      apiKey: 'research-key',
+      model: 'env-research-model',
+      baseUrl: 'https://llm.internal/v1',
+      temperature: null,
+    });
+    expect(settings.roles.research).toMatchObject({ provider: 'openai', baseUrl: 'https://llm.internal/v1' });
+    expect(config?.roles.embedding).toMatchObject({ provider: 'openai', apiKey: 'env-key', model: 'embed-model' });
+  });
+
+  test('a research provider of its own keeps the main base URL when it sets none', async () => {
+    envAi = { ...envAi, researchProvider: 'openai' };
+
+    const config = await resolveAiConfig(db);
+    expect(config?.roles.research).toMatchObject({ provider: 'openai', baseUrl: 'https://llm.internal/v1' });
+  });
+});
+
+describe('resolveAiConfig from settings saved in the flat shape of earlier versions', () => {
+  const secret = 'test-encryption-secret-for-ai-roles';
+
+  beforeEach(() => {
+    envAi = {};
+    vi.stubEnv('PIWI_SECRET_KEY', secret);
+  });
+
+  afterAll(() => {
+    vi.unstubAllEnvs();
+  });
+
+  test('reads the diagnosis and research roles, research taking the main base URL and key', async () => {
+    await setAppSetting(db, 'ai', {
+      provider: 'openai',
+      apiKey: encryptSecret('stored-key', secret),
+      model: 'stored-model',
+      baseUrl: 'https://llm.internal/v1',
+      researchModel: 'stored-research-model',
+      researchProvider: 'openai',
+    });
+
+    const [config, settings] = await Promise.all([resolveAiConfig(db), readAiSettings(db)]);
+    expect(config).toMatchObject({ source: 'settings', model: 'stored-model', apiKey: 'stored-key' });
+    expect(config?.roles.research).toEqual({
+      provider: 'openai',
+      apiKey: 'stored-key',
+      model: 'stored-research-model',
+      baseUrl: 'https://llm.internal/v1',
+      temperature: null,
+    });
+    expect(settings.roles.research).toMatchObject({
+      model: 'stored-research-model',
+      baseUrl: 'https://llm.internal/v1',
+    });
   });
 });

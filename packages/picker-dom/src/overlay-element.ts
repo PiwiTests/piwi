@@ -190,35 +190,42 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   };
   mount(highlight, label, banner);
 
-  // Short descriptor of an element for the banner breadcrumb.
-  const escJs = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  // Short descriptor of an element for the banner breadcrumb. The overlay runs
+  // serialized in the page, so it carries its own copy of core's `quoteJsString`.
+  const quoteJs = (s: string) =>
+    `'${JSON.stringify(s)
+      .slice(1, -1)
+      .replace(/\\"/g, '"')
+      .replace(/'/g, "\\'")
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029')}'`;
   const describe = (el: any): string => {
     const tag = (el.tagName || '?').toLowerCase();
 
     const testId = el.getAttribute && el.getAttribute(testIdAttr);
-    if (testId) return `getByTestId('${escJs(testId)}')`;
+    if (testId) return `getByTestId(${quoteJs(testId)})`;
 
     if (el.labels && el.labels.length > 0) {
       const labelText = (el.labels[0].textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-      if (labelText) return `getByLabel('${escJs(labelText)}')`;
+      if (labelText) return `getByLabel(${quoteJs(labelText)})`;
     }
 
     const ariaLabel = el.getAttribute && el.getAttribute('aria-label');
-    if (ariaLabel) return `getByLabel('${escJs(ariaLabel)}')`;
+    if (ariaLabel) return `getByLabel(${quoteJs(ariaLabel)})`;
 
     const placeholder = el.getAttribute && el.getAttribute('placeholder');
-    if (placeholder) return `getByPlaceholder('${escJs(placeholder)}')`;
+    if (placeholder) return `getByPlaceholder(${quoteJs(placeholder)})`;
 
     const alt = el.getAttribute && el.getAttribute('alt');
-    if (alt) return `getByAltText('${escJs(alt)}')`;
+    if (alt) return `getByAltText(${quoteJs(alt)})`;
 
     const titleAttr = el.getAttribute && el.getAttribute('title');
-    if (titleAttr) return `getByTitle('${escJs(titleAttr)}')`;
+    if (titleAttr) return `getByTitle(${quoteJs(titleAttr)})`;
 
-    if (el.id) return `locator('#${escJs(el.id)}')`;
+    if (el.id) return `locator(${quoteJs(`#${el.id}`)})`;
 
     const cls = ((el.getAttribute && el.getAttribute('class')) || '').split(/\s+/).find((c: string) => c.length > 1);
-    return cls ? `locator('.${escJs(cls)}')` : tag;
+    return cls ? `locator(${quoteJs(`.${cls}`)})` : tag;
   };
 
   // The hover chain: raw target up to (not including) body, capped.

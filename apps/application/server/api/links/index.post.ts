@@ -1,4 +1,4 @@
-import { requireProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
+import { getProjectScope, requireProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { getDatabase } from '../../database';
 import { createLinkSchema } from '#shared/handlers/links';
 import { createEnrichedLink } from '../../utils/integrations/link-create';
@@ -30,11 +30,12 @@ export default eventHandler(async (event) => {
 
   const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
-  await requireProjectAccess(event, projectId);
+  const user = await requireProjectAccess(event, projectId);
+  const readable = await getProjectScope(db, user, 'project:read');
 
   let link: Awaited<ReturnType<typeof createEnrichedLink>>;
   try {
-    link = await createEnrichedLink(db, { entityType, entityId, url, title });
+    link = await createEnrichedLink(db, { entityType, entityId, url, title }, readable);
   } catch (err) {
     throw apiError({
       statusCode: 404,

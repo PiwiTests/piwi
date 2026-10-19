@@ -12,6 +12,7 @@
  * bundles this at build time).
  */
 import type { RankedLocator, RolePosition } from './locator-healing-types';
+import { quoteJsString } from './locator-chain';
 
 /** One element parsed out of an ariaSnapshot() dump: its role and accessible name. */
 export interface AriaCandidate {
@@ -76,8 +77,6 @@ const TEXT_CONTENT_ROLES = new Set([
 
 /** Roles that are form fields — their name comes from a `<label>`, so `getByLabel` is viable. */
 const FORM_FIELD_ROLES = new Set(['textbox', 'combobox', 'searchbox', 'spinbutton', 'slider']);
-
-const escapeQuote = (s: string): string => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
 /**
  * Parse a Playwright `ariaSnapshot()` dump into role/name candidates.
@@ -251,13 +250,13 @@ export function freshLocatorsFromCandidate(c: AriaCandidate): RankedLocator[] {
   out.push(
     c.level != null
       ? {
-          locator: `getByRole('${escapeQuote(c.role)}', { name: '${escapeQuote(name)}', level: ${c.level} })`,
+          locator: `getByRole(${quoteJsString(c.role)}, { name: ${quoteJsString(name)}, level: ${c.level} })`,
           method: 'getByRole',
           args: { role: c.role, name, level: c.level },
           score: ELEMENT_MATCH_SCORES.role,
         }
       : {
-          locator: `getByRole('${escapeQuote(c.role)}', { name: '${escapeQuote(name)}' })`,
+          locator: `getByRole(${quoteJsString(c.role)}, { name: ${quoteJsString(name)} })`,
           method: 'getByRole',
           args: { role: c.role, name },
           score: ELEMENT_MATCH_SCORES.role,
@@ -266,14 +265,14 @@ export function freshLocatorsFromCandidate(c: AriaCandidate): RankedLocator[] {
 
   if (TEXT_CONTENT_ROLES.has(c.role)) {
     out.push({
-      locator: `getByText('${escapeQuote(name)}')`,
+      locator: `getByText(${quoteJsString(name)})`,
       method: 'getByText',
       args: { text: name },
       score: ELEMENT_MATCH_SCORES.text,
     });
   } else if (FORM_FIELD_ROLES.has(c.role)) {
     out.push({
-      locator: `getByLabel('${escapeQuote(name)}')`,
+      locator: `getByLabel(${quoteJsString(name)})`,
       method: 'getByLabel',
       args: { label: name },
       score: ELEMENT_MATCH_SCORES.label,
@@ -345,13 +344,13 @@ export function generateFromAriaSnapshot(
     add(
       level != null
         ? {
-            locator: `getByRole('${escapeQuote(role)}', { name: '${escapeQuote(name)}', level: ${level} })`,
+            locator: `getByRole(${quoteJsString(role)}, { name: ${quoteJsString(name)}, level: ${level} })`,
             method: 'getByRole',
             args: { role, name, level },
             score,
           }
         : {
-            locator: `getByRole('${escapeQuote(role)}', { name: '${escapeQuote(name)}' })`,
+            locator: `getByRole(${quoteJsString(role)}, { name: ${quoteJsString(name)} })`,
             method: 'getByRole',
             args: { role, name },
             score,
@@ -361,7 +360,7 @@ export function generateFromAriaSnapshot(
     // getByText for roles whose visible text `getByText` inspects.
     if (TEXT_CONTENT_ROLES.has(role)) {
       add({
-        locator: `getByText('${escapeQuote(name)}')`,
+        locator: `getByText(${quoteJsString(name)})`,
         method: 'getByText',
         args: { text: name },
         score: score - 5, // slightly below the role-based locator
@@ -370,7 +369,7 @@ export function generateFromAriaSnapshot(
 
     if (['textbox', 'combobox', 'searchbox'].includes(role)) {
       add({
-        locator: `getByLabel('${escapeQuote(name)}')`,
+        locator: `getByLabel(${quoteJsString(name)})`,
         method: 'getByLabel',
         args: { label: name },
         score: score - 5,

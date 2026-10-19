@@ -4,7 +4,8 @@ import { traceBlobs, traceResources, traceBlobResources } from '../database/sche
 import { eq, and, inArray, gt, isNull } from 'drizzle-orm';
 import { getStorage } from '../storage';
 import type { StorageAdapter } from '../storage/types';
-import { parseZipDirectory, decompressEntry, buildZip } from './trace-zip';
+import { createHash } from 'node:crypto';
+import { parseZipDirectory, decompressEntry, buildZip, ZipLimitError } from './trace-zip';
 import type { ZipEntry, ZipEntryMeta } from './trace-zip';
 import { safeStorageSegment } from './sanitize-filename';
 import { compressResource } from './resource-compression';
@@ -18,6 +19,8 @@ import {
   type TraceBlobManifest,
 } from './trace-manifest';
 import { withTracePoolIngest } from './trace-pool-guard';
+import { forEachLimited } from './storage-helpers';
+import { apiError } from './api-error';
 
 const ID_BATCH_SIZE = 500;
 
@@ -31,13 +34,13 @@ const STORAGE_CONCURRENCY = 8;
  */
 const POOLED_CHUNK_BYTES = 32 * 1024 * 1024;
 
-/** Run `task` over `items`, at most `limit` at a time. */
-async function forEachLimited<T>(items: T[], limit: number, task: (item: T) => Promise<void>): Promise<void> {
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) await task(items[next++]!);
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+/** A `resources/` entry name Playwright gives a snapshot resource: the SHA-1 of its bytes, then an extension. */
+const SHA1_RESOURCE_NAME = /^([0-9a-f]{40})(?:\.[a-z0-9]{1,16})?$/i;
+
+/** Whether a `resources/` entry's bytes are what its name says: only such an entry is pooled under its name. */
+function isContentAddressedResource(name: string, data: Buffer): boolean {
+  const sha1 = SHA1_RESOURCE_NAME.exec(name)?.[1];
+  return !!sha1 && createHash('sha1').update(data).digest('hex') === sha1.toLowerCase();
 }
 
 /**
@@ -131,10 +134,15 @@ export async function checkExistingBlobs(projectId: number, hashes: string[]): P
 /**
  * Store a trace blob with resource-level deduplication.
  *
+ * `hash` must be the SHA-256 of `data`: the blob is stored and found again
+ * under it, so a hash that is not the bytes' own is refused (400).
+ *
  * Process:
  *  1. Read the ZIP central directory (names + offsets only — no decompression yet).
  *  2. Look up which `resources/` names the project's shared pool already holds,
  *     then decompress and store the new ones, one at a time, to bound peak memory.
+ *     Only a resource named by the SHA-1 of its bytes is pooled under that name;
+ *     any other stays in the slim ZIP.
  *  3. Pool the screenshots and screencast frames under names derived from their
  *     bytes (see `TraceBlobManifest`), in chunks of bounded size: inflate and
  *     name each, look the chunk's names up, write the new ones.
@@ -145,10 +153,32 @@ export async function checkExistingBlobs(projectId: number, hashes: string[]): P
  * Runs inside the pool guard of the project, so no reclaim frees a pool file
  * between the moment this finds it stored and the moment the blob links to it.
  *
- * Falls back to storing the original ZIP if parsing fails.
+ * Falls back to storing the original ZIP if parsing fails, except for an
+ * archive over the ZIP limits (`ZipLimitError`), which is refused.
  * Returns the canonical record — if the hash already existed nothing is written.
  */
 export async function upsertTraceBlob(
+  projectId: number,
+  hash: string,
+  data: Buffer,
+): Promise<{ id: number; path: string; size: number }> {
+  if (sha256(data) !== hash.toLowerCase()) {
+    throw apiError({ statusCode: 400, message: 'The trace does not match its SHA-256 hash' });
+  }
+  return upsertHashedTraceBlob(projectId, hash, data);
+}
+
+/** Store a trace under the SHA-256 of its bytes, as {@link upsertTraceBlob} does. */
+export function upsertTraceFile(projectId: number, data: Buffer): Promise<{ id: number; path: string; size: number }> {
+  return upsertHashedTraceBlob(projectId, sha256(data), data);
+}
+
+function sha256(data: Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+/** The work of {@link upsertTraceBlob} once `hash` is known to be the SHA-256 of `data`. */
+async function upsertHashedTraceBlob(
   projectId: number,
   hash: string,
   data: Buffer,
@@ -212,16 +242,27 @@ async function storeTraceBlob(
       await storage.mkdir(`project-${projectId}/trace-resources`);
       let written = 0;
 
-      // 2. Network resources: one lookup, then the new ones one at a time.
-      const resourceNames = [...new Set(safeResources.map((r) => r.name))];
-      const knownResources = await poolIdsByName(db, projectId, resourceNames);
-      const storedResources = new Set<string>();
+      // 2. Network resources: one lookup, then the new ones one at a time. A
+      //    resource whose bytes are not what its name says stays in the slim ZIP.
+      const knownResources = await poolIdsByName(db, projectId, [...new Set(safeResources.map((r) => r.name))]);
+      const pooledResources = new Set<string>();
+      const inlineEntries: ZipEntry[] = [];
       for (const { meta, name } of safeResources) {
-        if (knownResources.has(name) || storedResources.has(name)) continue;
-        await storePoolResource(db, storage, projectId, name, await decompressEntry(data, meta));
-        storedResources.add(name);
+        if (pooledResources.has(name)) continue;
+        if (knownResources.has(name)) {
+          pooledResources.add(name);
+          continue;
+        }
+        const resource = await decompressEntry(data, meta);
+        if (!isContentAddressedResource(name, resource)) {
+          inlineEntries.push({ name: meta.name, data: resource });
+          continue;
+        }
+        await storePoolResource(db, storage, projectId, name, resource);
+        pooledResources.add(name);
         written++;
       }
+      const resourceNames = [...pooledResources];
 
       // 3. Screenshots and screencast frames, by chunks: each entry is inflated
       //    once, held until its chunk is written, then released.
@@ -261,7 +302,7 @@ async function storeTraceBlob(
       if (chunk.length > 0) await flushChunk();
 
       // 4. Decompress the remaining entries for the slim ZIP
-      let eventEntries: ZipEntry[] = [];
+      let eventEntries: ZipEntry[] = inlineEntries;
       for (const meta of eventMetas) {
         try {
           eventEntries.push({ name: meta.name, data: await decompressEntry(data, meta) });
@@ -289,6 +330,7 @@ async function storeTraceBlob(
       );
     }
   } catch (err) {
+    if (err instanceof ZipLimitError) throw err;
     // Malformed or unsupported ZIP — store as-is, deduplication skipped
     console.warn(`[TraceBlob] Could not extract resources from trace: ${err}`);
     dataToStore = data;

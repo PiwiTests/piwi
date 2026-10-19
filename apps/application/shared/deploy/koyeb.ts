@@ -56,6 +56,7 @@ export function emitKoyebDeployUrl(entries: readonly EnvEntry[], opts: EmitOptio
       '#',
       `# Set in the Koyeb console: ${deferred.join(', ')}. Generate each secret with: openssl rand -hex 32.`,
       '# Authentication is enabled above, so the service stays down until PIWI_AUTH_SECRET is set.',
+      ...entries.filter((entry) => entry.platformValue && entry.comment).map((e) => `# ${e.name}: ${e.comment}`),
     );
   }
   return commentBlock(opts.header) + `https://app.koyeb.com/deploy?${params.join('&')}\n` + notes.join('\n') + '\n';

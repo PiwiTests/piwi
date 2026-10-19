@@ -14,6 +14,7 @@ import {
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
   STOP_RECORDING_REQUEST,
+  type FileEdit,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type PiwiCommand,
@@ -38,6 +39,7 @@ import {
   recordingSummary,
   recordingView,
   writeBlock,
+  followEdit,
   type RecordedBlock,
   type TextChange,
   type TextSpan,
@@ -321,16 +323,17 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
   };
 
   /**
-   * Writes the block's new text, with the imports it lacks, as one edit. Every write joins the undo stop the first
+   * Writes the block's new text, with the service's import edit, as one edit. Every write joins the undo stop the first
    * one opened, so that one undo removes the whole recording; a write starts a new undo stop only when something
    * else edited the file since the last one. A write the editor refuses because the file changed meanwhile is made
    * again from the block's new place.
    */
-  const write = async (s: Session, text: string, imports: string[], last: boolean): Promise<boolean> => {
+  const write = async (s: Session, text: string, importEdit: FileEdit | null, last: boolean): Promise<boolean> => {
+    let edit = importEdit;
     for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
       const { document } = s;
       if (s.edited || s.keep || document.isClosed) return false;
-      const plan = writeBlock(documentLines(document), s.block, text, imports);
+      const plan = writeBlock(documentLines(document), s.block, text, edit);
       const unchanged =
         s.written &&
         plan.changes.length === 1 &&
@@ -352,6 +355,11 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
       }
       if (!applied) {
         for (const change of seen) follow(s, change.changes);
+        if (edit)
+          edit = followEdit(
+            edit,
+            seen.flatMap((change) => change.changes),
+          );
         continue;
       }
       // The change that made the document's next version is this write; any other one came after it.
@@ -370,7 +378,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     s.steps = update.steps.length;
     const ending = update.state === 'stopped' || update.state === 'failed';
     const writes = update.state !== 'failed' && !s.edited && !s.keep && (s.written || !!update.code || !ending);
-    if (writes && (await write(s, recordedBlockText(update.code, s.indent), update.imports, ending))) {
+    if (writes && (await write(s, recordedBlockText(update.code, s.indent), update.importEdit, ending))) {
       s.warnings = update.warnings;
       showWarnings(s);
     }

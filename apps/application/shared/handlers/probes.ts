@@ -239,50 +239,6 @@ export function selectDependencyProbeItems(
   return items;
 }
 
-// ── Server-probe outcome + resilience (pure) ─────────────────────────────────
-
-/**
- * Resolve a server probe's oracle outcome. A fault the server did not honor —
- * the applied fault reported in X-Piwi-Trace differs from the one requested, or
- * none was applied — is inconclusive, never a pass. Otherwise a failing test
- * noticed the fault and a passing test did not.
- */
-export function resolveServerProbeOutcome(
-  requestedFault: string,
-  appliedFault: string | null | undefined,
-  testPassed: boolean,
-): ProbeOutcome {
-  if (!appliedFault || appliedFault.split(':', 1)[0] !== requestedFault) return 'inconclusive';
-  return testPassed ? 'not-noticed' : 'noticed';
-}
-
-/** The resilience signals the capture fixtures record while a server fault is applied. */
-export interface ResilienceCapture {
-  consoleErrors?: number;
-  uncaughtExceptions?: number;
-  dialogs?: number;
-  /** The page rendered blank (empty ARIA snapshot / no main content). */
-  blankPage?: boolean;
-  /** A backend error log or a 5xx was recorded during the probe. */
-  backendErrors?: number;
-}
-
-/**
- * Classify how the application handled a server fault from the captured signals:
- * an uncaught exception (or a blank page under a backend error) is `unhandled`, a
- * visible degradation (console error, dialog, blank page, backend error) is
- * `degraded`, and anything else is `graceful`.
- */
-export function classifyHandled(capture: ResilienceCapture): 'graceful' | 'degraded' | 'unhandled' {
-  const uncaught = (capture.uncaughtExceptions ?? 0) > 0;
-  const backend = (capture.backendErrors ?? 0) > 0;
-  const consoleErr = (capture.consoleErrors ?? 0) > 0;
-  const dialog = (capture.dialogs ?? 0) > 0;
-  if (uncaught || (backend && capture.blankPage)) return 'unhandled';
-  if (consoleErr || dialog || capture.blankPage || backend) return 'degraded';
-  return 'graceful';
-}
-
 // ── Loaders + orchestration (impure) ─────────────────────────────────────────
 
 /** The step categories that come from the test's own code. */

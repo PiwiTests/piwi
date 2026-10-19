@@ -4,6 +4,8 @@
  * `chrome.cookies` and the page answered.
  */
 
+import { quoteJsString } from '@piwitests/core/locator-chain';
+
 /** A cookie as `chrome.cookies.getAll` answers it: the fields the file needs. */
 export interface BrowserCookie {
   name: string;
@@ -106,10 +108,10 @@ export function setupSnippet(path = STORAGE_STATE_PATH): string {
     '',
     "setup('log in', async ({ page }) => {",
     '  // The login steps, or none: the saved file is enough until the session expires.',
-    `  await page.context().storageState({ path: '${path}' });`,
+    `  await page.context().storageState({ path: ${quoteJsString(path)} });`,
     '});',
     '',
     '// In a test file, or in the project’s `use`:',
-    `test.use({ storageState: '${path}' });`,
+    `test.use({ storageState: ${quoteJsString(path)} });`,
   ].join('\n');
 }

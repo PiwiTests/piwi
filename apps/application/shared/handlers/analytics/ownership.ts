@@ -5,7 +5,7 @@ import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsOwnership, AnalyticsOwnershipRow } from '../../analytics/types';
 import { ownershipOptionsSchema } from '../../analytics/registry';
 import { contextRunConditions, DAY_MS, getAnalyticsContext, minutes, type ProjectAccess } from './common';
-import { median } from './metric-values';
+import { median } from '../../utils/stats';
 
 /** The owner key of the *Unowned* row. */
 const UNOWNED = '';

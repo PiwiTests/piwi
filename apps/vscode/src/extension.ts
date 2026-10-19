@@ -41,6 +41,7 @@ import {
   type DesktopJobResult,
   type DesktopJobUpdate,
   type FailuresResult,
+  type FileEdit,
   type Notice,
   type PageCandidatesParams,
   type PageCandidatesResult,
@@ -58,6 +59,7 @@ import {
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
   DESKTOP_REQUEST,
+  RUN_ID_REQUEST,
   RUN_SELECTION_REQUEST,
   SELECTIONS_REQUEST,
   SET_BASELINE_NOTIFICATION,
@@ -69,6 +71,8 @@ import {
   TRACE_REQUEST,
   type DesktopResult,
   type BaselineChoice,
+  type RunIdParams,
+  type RunIdResult,
   type EditorCredentials,
   type SetBaselineParams,
   type FileSummary,
@@ -110,12 +114,9 @@ import {
   type TestDecoration,
   disconnectQuestion,
   filesRedraw,
-  importInsertion,
-  indentBlock,
   mcpConfiguration,
   ownLiveRun,
   refreshingText,
-  rerunFailingArgs,
   failureRunArgs,
   runVerdict,
   VERDICT_ACTIONS,
@@ -125,7 +126,6 @@ import {
   pickNotice,
   statusBarView,
   baselinePicks,
-  runIdOf,
   withBaseline,
   type FailureNode,
 } from './glue';
@@ -775,7 +775,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       else if ((target as RunTestsArgs)?.testIds) await runTests(target as RunTestsArgs);
     }),
     vscode.commands.registerCommand('piwi.rerunFailing', async () => {
-      const runs = rerunFailingArgs(await failuresView.read());
+      const runs = (await failuresView.read())?.rerun ?? [];
       if (!runs.length) {
         void vscode.window.showInformationMessage('Piwi: no failing test to re-run.');
         return;
@@ -811,12 +811,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (!picked) return;
       let choice: BaselineChoice;
       if (picked.choice === 'run-by-id') {
+        const runIdOf = async (text: string) =>
+          (await lc.sendRequest<RunIdResult>(RUN_ID_REQUEST, { text } satisfies RunIdParams).catch(() => null))
+            ?.runId ?? null;
         const typed = await vscode.window.showInputBox({
           prompt: 'The id of the run to compare with (its page in the dashboard shows it)',
           placeHolder: '118',
-          validateInput: (text) => (runIdOf(text) ? null : 'A run id: a positive number, such as 118'),
+          validateInput: async (text) => ((await runIdOf(text)) ? null : 'A run id: a positive number, such as 118'),
         });
-        const runId = typed === undefined ? null : runIdOf(typed);
+        const runId = typed === undefined ? null : await runIdOf(typed);
         if (!runId) return;
         choice = { kind: 'run', runId };
       } else {
@@ -1131,7 +1134,7 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
   }
   const active = vscode.window.activeTextEditor;
   let text: string;
-  let imports: string[] = [];
+  let importEdit: FileEdit | null = null;
   if (payload.kind === 'locator') {
     text = payload.text;
   } else {
@@ -1145,27 +1148,25 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
     } satisfies RenderStepsParams);
     if (!rendered.code) throw new Error(rendered.warnings.join('; ') || 'nothing to insert');
     text = rendered.code;
-    imports = rendered.imports ?? [];
+    importEdit = rendered.importEdit ?? null;
   }
   if (!active) {
-    const content = imports.length ? `${imports.join('\n')}\n\n${text}` : text;
+    const content = `${importEdit?.newText ?? ''}${text}`;
     const document = await vscode.workspace.openTextDocument({ language: 'typescript', content });
     await vscode.window.showTextDocument(document);
     return { inserted: true, file: null };
   }
-  const { document, selection } = active;
-  const line = document.lineAt(selection.active.line).text;
-  const indent = line.slice(0, line.length - line.trimStart().length);
-  const lines = Array.from({ length: document.lineCount }, (_, i) => document.lineAt(i).text);
-  const insertion = importInsertion(lines, imports);
+  const { selection } = active;
+  // The code goes at the caret, indented by the service for its line; the import lines go where the service placed
+  // them, in the text before the code goes in.
   const inserted = await active.edit((edit) => {
-    if (insertion) {
-      const at = new vscode.Position(insertion.range.start.line, insertion.range.start.character);
+    if (importEdit) {
+      const at = new vscode.Position(importEdit.range.start.line, importEdit.range.start.character);
       // Inside the selection the code replaces, the imports go at the start of its first line.
       const within = selection.start.isBefore(at) && at.isBefore(selection.end);
-      edit.insert(within ? new vscode.Position(selection.start.line, 0) : at, insertion.text);
+      edit.insert(within ? new vscode.Position(selection.start.line, 0) : at, importEdit.newText);
     }
-    edit.replace(selection, indentBlock(text, indent));
+    edit.replace(selection, text);
   });
   if (inserted) {
     void vscode.window.showInformationMessage(

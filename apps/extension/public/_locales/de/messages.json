@@ -104,6 +104,9 @@
   "common_desktopUnsupported": {
     "message": "Diese Adresse ist keine Piwi-Desktop-App, die Fehlerberichte ausführen kann."
   },
+  "common_desktopNotProven": {
+    "message": "Das Programm unter dieser Adresse hat nicht nachgewiesen, dass es die gekoppelte Desktop-App ist, daher wurde das Token nicht gesendet. Prüfen Sie, ob die App läuft und aktuell ist, und koppeln Sie sie erneut."
+  },
   "common_desktopStatus": {
     "message": "Die Desktop-App hat mit $status$ geantwortet.",
     "placeholders": {

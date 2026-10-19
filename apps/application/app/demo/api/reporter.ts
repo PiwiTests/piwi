@@ -21,7 +21,7 @@ import {
   networkRequests,
 } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '#shared/parse-location';
-import { mapCompleteEventToRunCase } from '~~/server/utils/map-complete-event';
+import { mapWireCaseToRunCase } from '~~/server/utils/map-wire-case';
 import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
 import {
   buildNetworkRequestItems,
@@ -965,17 +965,8 @@ export async function apiPostRunEvents(
     return { success: true, processed: beginEvents.length + stepRunEvents.length, watched: DEMO_RUN_WATCHED };
   }
 
-  const parsedEvents = completeEvents.map((tc) => {
-    const { filePath, line, column } = tc.location
-      ? parseLocation(tc.location)
-      : { filePath: 'unknown', line: null, column: null };
-    return { ...tc, filePath, line, column };
-  });
-
-  // Use the shared wire-field → RunCaseInput mapping so demo-mode ingest cannot
-  // drift from the live server ingest (a prior drift here dropped stepEvents,
-  // which made timeline wasted-time bars disappear after a reload).
-  const cases: RunCaseInput[] = parsedEvents.map((tc) => mapCompleteEventToRunCase(tc));
+  // The wire-field → RunCaseInput mapping the server's ingest routes use.
+  const cases: RunCaseInput[] = completeEvents.map(mapWireCaseToRunCase);
 
   const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true);
 
@@ -1013,27 +1004,27 @@ export async function apiPostRunEvents(
     insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
   );
 
-  for (const [index, tc] of parsedEvents.entries()) {
+  for (const [index, tc] of completeEvents.entries()) {
     const persisted = persistedByInputIndex.get(index);
     publishDemoRunEvent(id, {
       type: 'test-completed',
       data: {
         title: tc.title,
-        filePath: tc.filePath,
-        suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
+        filePath: cases[index]!.filePath,
+        suitePath: tc.suitePath ?? null,
         status: tc.status,
         duration: tc.duration,
         location: tc.location,
         error: tc.error ?? null,
-        stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
-        wastedTimeMs: (tc as { wastedTimeMs?: number | null }).wastedTimeMs ?? null,
+        stepEvents: tc.stepEvents ?? null,
+        wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
         // Mirrors the server: the attempt number lets the live page mark a
         // passed-on-retry (flaky) test as passing rather than failing.
-        retries: (tc as { retries?: number | null }).retries ?? null,
+        retries: tc.retries ?? null,
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
       },

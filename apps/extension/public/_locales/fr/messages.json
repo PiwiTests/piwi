@@ -104,6 +104,9 @@
   "common_desktopUnsupported": {
     "message": "Cette adresse n’est pas une application de bureau Piwi qui peut lancer des rapports de bug."
   },
+  "common_desktopNotProven": {
+    "message": "Le programme à cette adresse n’a pas prouvé qu’il est l’application de bureau associée : le jeton n’a pas été envoyé. Vérifiez que l’application est lancée et à jour, puis associez-la de nouveau."
+  },
   "common_desktopStatus": {
     "message": "L’application de bureau a répondu $status$.",
     "placeholders": {

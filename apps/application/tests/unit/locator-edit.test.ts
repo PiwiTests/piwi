@@ -36,6 +36,20 @@ describe('buildLocatorEdit', () => {
     expect(buildLocatorEdit('  myGetByRole(1)', 'getByRole', "getByRole('x')")).toBeNull();
   });
 
+  test('writes the recommendation only as the locator grammar re-renders it', () => {
+    // A role that closes the call and runs code, as an element's raw role attribute could carry.
+    const injected = "getByRole('button'), require('child_process').execSync('id'), ('x')";
+    expect(buildLocatorEdit("  await page.getByRole('button').click();", 'getByRole', injected)).toBeNull();
+    expect(buildLocatorEdit("  await page.getByText('x').click();", 'getByText', 'getByText(x)')).toBeNull();
+    expect(
+      buildLocatorEdit("  await page.getByText('x').click();", 'getByText', 'getByRole("link", {name: "Pay"})')!.new,
+    ).toBe("  await page.getByRole('link', { name: 'Pay' }).click();");
+    // A line break in a name is escaped, so the edit stays on its line.
+    expect(
+      buildLocatorEdit("  await page.getByText('x').click();", 'getByText', "getByText('a\\nb\u2028c')")!.new,
+    ).toBe("  await page.getByText('a\\nb\\u2028c').click();");
+  });
+
   test('returns null when the method is absent, unbalanced, or a no-op', () => {
     expect(buildLocatorEdit('  page.click()', 'getByRole', "getByRole('x')")).toBeNull();
     expect(buildLocatorEdit("  page.getByRole('x'", 'getByRole', "getByRole('y')")).toBeNull();

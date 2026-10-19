@@ -4,7 +4,7 @@ import { eq, sql } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
-import { mapCompleteEventToRunCase } from '../../../utils/map-complete-event';
+import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import type { StreamEventPayload } from '#shared/types';
@@ -120,21 +120,7 @@ export default eventHandler(async (event) => {
     };
   }
 
-  // Parse all locations up front
-  interface ParsedEvent extends Omit<StreamEventPayload, 'type'> {
-    filePath: string;
-    line: number | null;
-    column: number | null;
-  }
-
-  const parsedEvents: ParsedEvent[] = completeEvents.map((tc: Omit<ParsedEvent, 'filePath' | 'line' | 'column'>) => {
-    const { filePath, line, column } = tc.location
-      ? parseLocation(tc.location)
-      : { filePath: 'unknown', line: null, column: null };
-    return { ...tc, filePath, line, column };
-  });
-
-  const cases: RunCaseInput[] = parsedEvents.map((tc) => mapCompleteEventToRunCase(tc));
+  const cases: RunCaseInput[] = completeEvents.map((tc: StreamEventPayload) => mapWireCaseToRunCase(tc));
 
   const insertedRunCases = await persistRunCases(db, projectId, id, cases);
 
@@ -173,7 +159,7 @@ export default eventHandler(async (event) => {
     insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
   );
 
-  for (const [index, tc] of parsedEvents.entries()) {
+  for (const [index, tc] of (completeEvents as StreamEventPayload[]).entries()) {
     const persisted = persistedByInputIndex.get(index);
     // The case now has a DB row, so the catch-up will replay it as
     // `test-completed` — drop the running-case entry that stood in for it.
@@ -182,13 +168,13 @@ export default eventHandler(async (event) => {
       type: 'test-completed',
       data: {
         title: tc.title,
-        filePath: tc.filePath,
-        suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
+        filePath: cases[index]!.filePath,
+        suitePath: tc.suitePath ?? null,
         status: tc.status,
         duration: tc.duration,
         location: tc.location,
         error: tc.error ?? null,
-        stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
+        stepEvents: tc.stepEvents ?? null,
         wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,
         shardIndex: tc.shardIndex ?? null,

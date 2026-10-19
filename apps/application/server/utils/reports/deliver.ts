@@ -14,6 +14,7 @@ import { EMAIL_CHART, emailTrendBlock } from '#shared/reports/render-email';
 import { isEmailConfigured, renderQualityReportEmail, sendEmail, type EmailAttachment } from '../email';
 import { chartPng } from './chart-png';
 import { runEventBus } from '../run-events';
+import { slackEscape } from '../notifications/slack';
 
 const siteBase = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 
@@ -59,7 +60,6 @@ export async function sendReportEmail(
   await sendEmail({ to, subject, html, text, attachments });
 }
 
-const slackEscape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const clip = (text: string) => (text.length > SLACK_TEXT_MAX ? `${text.slice(0, SLACK_TEXT_MAX)}…` : text);
 
 /**
@@ -132,7 +132,7 @@ export function reportSlackMessage(
     },
     { type: 'context', elements: [{ type: 'mrkdwn', text: slackEscape(bundle.period.label) }] },
   );
-  return { text: `${s.labels.qualityReport}${s.colon}${bundle.title}`, blocks };
+  return { text: `${s.labels.qualityReport}${s.colon}${slackEscape(bundle.title)}`, blocks };
 }
 
 /** The webhook body of a quality report: the event, its payload with the snapshot link (and share link), and the bundle. */

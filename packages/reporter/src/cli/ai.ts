@@ -9,9 +9,9 @@
  * shape is stable, and report clearly when their engine is not wired in a build.
  */
 import * as path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { checkAiTree, hasBlockingFindings, type CheckFinding } from '../internal/ai/check.js';
 import { DEFAULT_AI_DIR } from '../internal/ai/keys.js';
+import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
 const EXIT_OK = 0; // scan clean / help
 const EXIT_ISSUES = 1; // hygiene issues found (gates CI)
@@ -97,16 +97,15 @@ export function runCheck(argv: string[], env: NodeJS.ProcessEnv): number {
   return hasBlockingFindings(findings) ? EXIT_ISSUES : EXIT_OK;
 }
 
-/** The `playwright test` invocation a `resolve` run shells out to (pure, for testing). */
+/** The `playwright test` arguments and environment of a `resolve` run (pure, for testing). */
 export interface ResolveInvocation {
-  command: string;
   args: string[];
   env: NodeJS.ProcessEnv;
 }
 
-/** Build the resolve-mode `playwright test` invocation from CLI args. */
+/** Build the resolve-mode `playwright test` arguments and environment from CLI args. */
 export function buildResolveInvocation(argv: string[], env: NodeJS.ProcessEnv): ResolveInvocation {
-  const args = ['playwright', 'test'];
+  const args: string[] = [];
   const grep = readOption(argv, '--grep');
   if (grep) args.push('--grep', grep);
   const project = readOption(argv, '--project');
@@ -120,22 +119,17 @@ export function buildResolveInvocation(argv: string[], env: NodeJS.ProcessEnv): 
     const eq = pair.indexOf('=');
     if (eq > 0) childEnv[pair.slice(0, eq)] = pair.slice(eq + 1);
   }
-  return { command: 'npx', args, env: childEnv };
+  return { args, env: childEnv };
 }
 
 /** `piwi ai resolve` — run the suite in resolve mode so misses get authored + committed. */
-function runResolve(argv: string[], env: NodeJS.ProcessEnv): number {
+function runResolve(argv: string[], env: NodeJS.ProcessEnv): Promise<number> {
   if (!env.PIWI_DASHBOARD_URL) {
     console.error('piwi ai resolve: set PIWI_DASHBOARD_URL (the authoring server) before resolving.');
-    return EXIT_ERROR;
+    return Promise.resolve(EXIT_ERROR);
   }
   const invocation = buildResolveInvocation(argv, env);
-  const result = spawnSync(invocation.command, invocation.args, { stdio: 'inherit', env: invocation.env });
-  if (result.error) {
-    console.error(`piwi ai resolve: ${result.error.message}`);
-    return EXIT_ERROR;
-  }
-  return result.status ?? EXIT_ERROR;
+  return spawnPlaywright(invocation.args, invocation.env, { command: 'piwi ai resolve' });
 }
 
 /** Dispatch a `piwi ai` subcommand. */

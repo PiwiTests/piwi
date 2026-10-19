@@ -96,11 +96,18 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
 1. **streaming `/finish`** — when a streaming session is open (`internal/streaming/`),
 2. **multipart `/upload`** — when there are reports or traces to attach,
 3. **plain JSON `/submit`** — last resort,
-4. **crash recovery** — on total failure, persist the payload to disk for the next run.
+4. **crash recovery** — on total failure, persist the payload to disk for the next run: one owner-only file per
+   dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
+   invalid).
 
 The ladder, including the stream drain and the remaining file uploads, runs within
 the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request
 in flight and every later one, so the ladder falls through to crash recovery.
+
+A 401 with no credential configured, or a failed login, stops the ladder at once: no other rung can succeed, so
+the run goes to crash recovery. Nothing in the ladder throws out of `onEnd`, since Playwright counts a reporter's
+error as a failure of the run. Every rung carries one `deliveryKey` per run, so a dashboard that stored a slow
+upload stores the `/submit` that follows it, or the recovery copy, once.
 
 A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
 (`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,

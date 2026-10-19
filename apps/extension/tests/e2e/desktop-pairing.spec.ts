@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Page } from '@playwright/test';
+import { DESKTOP_CHALLENGE_HEADER, DESKTOP_PROOF_HEADER, desktopTokenProof } from '@piwitests/core/desktop-proof';
 import { test, expect, openOptions, optionsReady } from './fixtures.js';
 import { localStorageText, storedSecret } from './secrets.js';
 
@@ -26,16 +27,23 @@ test.beforeAll(async () => {
   server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
-    req.on('end', () => {
+    req.on('end', async () => {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Headers', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Expose-Headers', DESKTOP_PROOF_HEADER);
       res.setHeader('Content-Type', 'application/json');
       if (req.method === 'OPTIONS') return res.end();
       const json = (status: number, body: unknown) => {
         res.statusCode = status;
         res.end(JSON.stringify(body));
       };
+      if (req.method === 'GET' && req.url === '/api/health') {
+        const challenge = String(req.headers[DESKTOP_CHALLENGE_HEADER] ?? '');
+        const port = (server.address() as AddressInfo).port;
+        res.setHeader(DESKTOP_PROOF_HEADER, await desktopTokenProof(TOKEN, port, challenge));
+        return json(200, { status: 'ok' });
+      }
       if (req.method === 'POST' && req.url === '/api/desktop/picker-pairings') {
         starts.push({
           origin: req.headers.origin,

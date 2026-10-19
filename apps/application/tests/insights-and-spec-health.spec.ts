@@ -1,6 +1,6 @@
 /**
- * Behavioral tests for the run-insights, spec-health and flaky-classify
- * endpoints. Seeds a two-run history (a clean baseline followed by a run where
+ * Behavioral tests for the run-insights, flaky-classify and spec-health
+ * widget endpoints. Seeds a two-run history (a clean baseline followed by a run where
  * one test regresses with a timeout) and asserts the actual computed output —
  * not just status codes.
  */
@@ -91,9 +91,11 @@ test.describe.serial('Insights, spec health & flaky classification', () => {
   });
 
   test('spec-health groups by spec prefix with pass/failure stats', async ({ request }) => {
-    const res = await request.get(`/api/projects/${projectId}/spec-health`);
+    const res = await request.get(`/api/widgets/spec-health?projects=${projectId}&days=30`);
     expect(res.ok()).toBeTruthy();
-    const { specs } = (await res.json()) as { specs: SpecHealthRow[] };
+    const { project, data } = (await res.json()) as { project: { id: number }; data: { specs: SpecHealthRow[] } };
+    expect(project.id).toBe(projectId);
+    const { specs } = data;
 
     const auth = specs.find((s) => s.prefix === 'tests/auth');
     const checkout = specs.find((s) => s.prefix === 'tests/checkout');
@@ -130,8 +132,6 @@ test.describe.serial('Insights, spec health & flaky classification', () => {
     ).toBe(404);
     // Unknown run for insights → 404
     expect((await request.get('/api/test-runs/9999999/insights')).status()).toBe(404);
-    // Unknown project for spec-health → 404
-    expect((await request.get('/api/projects/9999999/spec-health')).status()).toBe(404);
   });
 });
 

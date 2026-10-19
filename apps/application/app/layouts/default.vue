@@ -45,15 +45,19 @@ const searchResults = ref<SearchResult | null>(null);
 /** The palette's own items (pages, project tabs) match as `/api/search` does: ignoring case and accents. */
 const searchFuse = { fuseOptions: { ignoreDiacritics: true } };
 
+/** Counts searches, so the answer to an older query never replaces a newer one. */
+let searchRequest = 0;
 const debouncedSearch = useDebounceFn(async (q: string) => {
+  const asked = ++searchRequest;
   if (q.trim().length < 2) {
     searchResults.value = null;
     return;
   }
   try {
-    searchResults.value = await $fetch<SearchResult>('/api/search', { query: { q: q.trim() } });
+    const results = await $fetch<SearchResult>('/api/search', { query: { q: q.trim() } });
+    if (asked === searchRequest) searchResults.value = results;
   } catch {
-    searchResults.value = null;
+    if (asked === searchRequest) searchResults.value = null;
   }
 }, 250);
 
@@ -62,6 +66,7 @@ watch(
   () => open.value,
   (v) => {
     if (!v) {
+      searchRequest++;
       searchTerm.value = '';
       searchResults.value = null;
     }
@@ -293,15 +298,14 @@ const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => (
   onSelect: item.onSelect,
 });
 
-// The source file for a dynamic route (e.g. /projects/:id) can't be derived
-// from the URL — it may be `[id].vue` or `[id]/index.vue` — so for dynamic
-// routes we link to the pages directory instead of a guessed (404-ing) file.
+// The matched page's component file, which the build records on its route
+// (`sourceFile`, from the `pages:extend` hook); the pages directory otherwise.
 const pageSourceUrl = computed(() => {
-  const blobBase = 'https://github.com/piwitests/platform/blob/main/application/app/pages';
-  const treeBase = 'https://github.com/piwitests/platform/tree/main/application/app/pages';
-  const pattern = route.matched[route.matched.length - 1]?.path ?? route.path;
-  if (pattern.includes(':')) return treeBase;
-  return `${blobBase}${pattern === '/' ? '/index' : pattern}.vue`;
+  const repository = 'https://github.com/piwitests/platform';
+  const file = route.matched.at(-1)?.meta.sourceFile;
+  return typeof file === 'string'
+    ? `${repository}/blob/main/apps/application/app/pages/${file}`
+    : `${repository}/tree/main/apps/application/app/pages`;
 });
 
 function runStatusIcon(status: string) {

@@ -1,7 +1,7 @@
-ARG NODE_VERSION=24
-
+# Node 24 on Alpine, pinned by digest: the major the desktop app bundles and the root package.json's engines name.
+# Dependabot moves the tag and the digest together.
 # Stage 1: Build stage
-FROM node:${NODE_VERSION}-alpine AS builder
+FROM node:24.22.0-alpine3.24@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS builder
 
 WORKDIR /app
 
@@ -66,7 +66,7 @@ RUN set -eux; \
     rm -rf apps/application/.output/public/demo
 
 # Stage 2: Production stage
-FROM node:${NODE_VERSION}-alpine AS production
+FROM node:24.22.0-alpine3.24@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS production
 
 WORKDIR /app
 
@@ -95,8 +95,10 @@ COPY --chown=nodejs:nodejs package.json package-lock.json ./
 # Trim workspaces to just application
 RUN printf "import{readFileSync,writeFileSync}from'node:fs';const p=JSON.parse(readFileSync('package.json','utf8'));p.workspaces=['apps/application'];writeFileSync('package.json',JSON.stringify(p));" > /tmp/fix.mjs && node /tmp/fix.mjs && rm /tmp/fix.mjs
 
-# Install only the native packages needed at runtime (sharp + libsql + sql.js)
-# All pure-JS deps ship in .output/server/node_modules, traced by Nitro
+# Install only the native packages needed at runtime (sharp + libsql + sql.js), at
+# the exact versions package-lock.json resolved: the ones the server was built and
+# traced with (`packages/server/package.json` pins the same). All pure-JS deps ship
+# in .output/server/node_modules, traced by Nitro.
 # Run as nodejs to avoid a duplicate chown layer
 USER nodejs
 
@@ -115,15 +117,20 @@ RUN --mount=type=cache,target=/home/nodejs/.npm,uid=1001,gid=1001 \
       arm64) NODE_ARCH=arm64 ;; \
       *) echo "unsupported TARGETARCH: '${TARGETARCH:-}'" >&2; exit 1 ;; \
     esac; \
+    locked() { node -p "require('./package-lock.json').packages['node_modules/' + process.argv[1]].version" "$1"; }; \
+    SHARP_VERSION="$(locked sharp)"; \
+    LIBSQL_VERSION="$(locked @libsql/client)"; \
+    BINDING_VERSION="$(locked "@libsql/linux-${NODE_ARCH}-musl")"; \
     npm install --omit=dev --ignore-scripts \
-      sharp @libsql/client "@libsql/linux-${NODE_ARCH}-musl"; \
+      "sharp@${SHARP_VERSION}" "@libsql/client@${LIBSQL_VERSION}" \
+      "@libsql/linux-${NODE_ARCH}-musl@${BINDING_VERSION}"; \
     npm cache clean --force; \
     rm -rf "node_modules/@img/sharp-libvips-linux-${NODE_ARCH}"; \
     rm -rf "node_modules/@img/sharp-linux-${NODE_ARCH}"; \
     rm -rf "node_modules/@libsql/linux-${NODE_ARCH}-gnu"; \
     rm -rf node_modules/sql.js; \
     find node_modules -type d \( -name "test" -o -name "tests" -o -name ".devcontainer" \) -exec rm -rf {} + 2>/dev/null || true; \
-    node -e "require.resolve('sharp'); require.resolve('@libsql/client')"
+    node -e "require('sharp'); require.resolve('@libsql/client'); require('@libsql/linux-${NODE_ARCH}-musl')"
 
 # Copy built application — pure-JS deps travel in .output/server/node_modules
 COPY --chown=nodejs:nodejs --from=builder /app/apps/application/.output ./apps/application/.output

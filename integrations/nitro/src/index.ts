@@ -11,7 +11,7 @@ import { verifyProbeHeader, ProbeNonceCache, type PiwiProbeSpec } from './probe.
 import {
   buildRouteManifest,
   recordObservedRoute,
-  collapsePathPattern,
+  matchedRoutePattern,
   type ManifestRouteEntry,
 } from './manifest.js';
 import { declaredRoutes } from './route-table.js';
@@ -115,6 +115,13 @@ interface RequestStore {
   logs: PiwiTestLogEntry[];
   spans: PiwiServerSpan[];
   startMs: number;
+  /** Set once the response ended: work the request left running (timers, a lazy client) records nothing more. */
+  ended?: boolean;
+  /**
+   * The request this one runs inside: an internal call (`$fetch` or `localFetch` during server-side rendering) whose
+   * response never reaches the browser. Its logs and spans join the enclosing request's when it ends.
+   */
+  parent?: RequestStore;
   /** A verified probe fault for this request, when one was signed and honored. */
   probe?: PiwiProbeSpec;
   /** The verified fault targets this request and server probes are on: apply it where it takes effect. */
@@ -136,6 +143,16 @@ function markProbeApplied(store: RequestStore): void {
   if (store.probe) store.probeApplied = appliedFaultLabel(store.probe);
 }
 
+/** Record a log entry on a request still in flight, up to `MAX_ENTRIES`. */
+function pushLog(store: RequestStore, entry: PiwiTestLogEntry): void {
+  if (!store.ended && store.logs.length < MAX_ENTRIES) store.logs.push(entry);
+}
+
+/** Record a span on a request still in flight, up to `MAX_SPANS`. */
+function pushSpan(store: RequestStore, span: PiwiServerSpan): void {
+  if (!store.ended && store.spans.length < MAX_SPANS) store.spans.push(span);
+}
+
 /** Signed probe nonces already honored this process, so a header is single-use. */
 const probeNonces = new ProbeNonceCache();
 
@@ -147,25 +164,25 @@ const als = new AsyncLocalStorage<RequestStore>();
 /**
  * Record a server-side span for the in-flight request. Shows up in the Piwi
  * Dashboard test-case view (and AI diagnosis) under the request's root span.
- * No-op outside a request scope or once the per-request span cap is reached.
+ * No-op outside a request scope, once the per-request span cap is reached, or
+ * once the request's response has ended.
  */
 export function recordServerSpan(span: PiwiServerSpan): void {
   const store = als.getStore();
-  if (!store || store.spans.length >= MAX_SPANS) return;
-  store.spans.push(span);
+  if (store) pushSpan(store, span);
 }
 
 // The consola reporter is process-global — register it only once.
 let reporterAdded = false;
 
-// Capture and probe verification run only outside production (the ASP.NET
-// package's default allow-list is Development and Test): only an unset/empty
-// NODE_ENV or `development`/`test` is treated as non-production. Any other value
-// (`production`, `staging`, `prod`, …) disables capture unless
-// PIWI_TEST_LOGS_DISABLED is explicitly `false`, so a signed probe header is
-// never honored on a production-like deployment that skipped `NODE_ENV=production`.
+// Capture and probe verification run only in development and test (the ASP.NET
+// package's default allow-list is Development and Test): NODE_ENV must be
+// `development` or `test`. Any other value, or none at all (`node
+// .output/server/index.mjs` sets none), disables capture unless
+// PIWI_TEST_LOGS_DISABLED is explicitly `false`, so a deployment that never set
+// NODE_ENV exposes no server logs, handler files or route manifest.
 const NODE_ENV = process.env.NODE_ENV;
-const IS_DEV_OR_TEST = !NODE_ENV || NODE_ENV === 'development' || NODE_ENV === 'test';
+const IS_DEV_OR_TEST = NODE_ENV === 'development' || NODE_ENV === 'test';
 const TEST_LOGS_DISABLED =
   process.env.PIWI_TEST_LOGS_DISABLED === 'true' ||
   (!IS_DEV_OR_TEST && process.env.PIWI_TEST_LOGS_DISABLED !== 'false');
@@ -211,10 +228,10 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
       log(logObj) {
         if (logObj.level > 1) return; // Warning (1) and Error/Fatal (0) only
         const store = als.getStore();
-        if (!store) return;
+        if (!store || store.ended) return;
         const msg = logObj.args.map(String).join(' ');
         const stack = logObj.args.map(extractStack).find(Boolean);
-        store.logs.push({
+        pushLog(store, {
           timestamp: Date.now(),
           level: logObj.level <= 0 ? 'Error' : 'Warning',
           category: logObj.tag ?? '',
@@ -244,7 +261,13 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
       return;
     }
 
-    const store: RequestStore = { logs: [], spans: [], startMs: Date.now() };
+    const enclosing = als.getStore();
+    const store: RequestStore = {
+      logs: [],
+      spans: [],
+      startMs: Date.now(),
+      ...(enclosing && !enclosing.ended ? { parent: enclosing } : {}),
+    };
     event.context._piwiLogs = store.logs;
     event.context._piwiSpans = store.spans;
     // The beforeResponse hook fires outside this handler's async scope (it is
@@ -295,7 +318,7 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
         if (nitroErrors?.length) {
           for (const { error } of nitroErrors) {
             const msg = error instanceof Error ? (error.message || String(error)) : String(error);
-            store.logs.push({
+            pushLog(store, {
               timestamp: Date.now(),
               level: 'Error',
               category: 'server',
@@ -304,8 +327,7 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
             });
           }
         }
-        const logPayload = store.logs.length > MAX_ENTRIES ? store.logs.slice(0, MAX_ENTRIES) : store.logs;
-        res.setHeader('X-Piwi-Logs', gzipSync(Buffer.from(JSON.stringify(logPayload))).toString('base64'));
+        res.setHeader('X-Piwi-Logs', gzipSync(Buffer.from(JSON.stringify(store.logs))).toString('base64'));
 
         // Synthesize the root request span (server-side processing time, route,
         // status), correlate any app-recorded child spans under it, and ship the
@@ -319,13 +341,9 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
           parseTraceparent(event.node.req.headers['traceparent']) ?? randomBytes(16).toString('hex');
         const handlerFile = resolveHandlerFile(event);
 
-        // Record this route for the declared-surface manifest. Prefer the matched
-        // route's own pattern (`path` in h3 1.x, `route` in later versions); fall
-        // back to collapsing the concrete path.
-        const matchedRoute = event.context?.matchedRoute as { route?: unknown; path?: unknown } | undefined;
-        const matchedPattern = matchedRoute?.route ?? matchedRoute?.path;
-        const pattern = typeof matchedPattern === 'string' && matchedPattern ? matchedPattern : collapsePathPattern(path);
-        recordObservedRoute(observedRoutes, { method, pattern, handler: handlerFile });
+        // Record the route the router matched for the declared-surface manifest.
+        const pattern = matchedRoutePattern(event.context?.matchedRoute);
+        if (pattern) recordObservedRoute(observedRoutes, { method, pattern, handler: handlerFile });
 
         const rootSpan: PiwiServerSpan = {
           id: randomBytes(8).toString('hex'),
@@ -349,7 +367,12 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
         for (const s of store.spans) if (!s.parentId) s.parentId = rootSpan.id;
         const spanPayload = [rootSpan, ...store.spans].slice(0, MAX_SPANS);
         res.setHeader('X-Piwi-Trace', gzipSync(Buffer.from(JSON.stringify(spanPayload))).toString('base64'));
+        if (store.parent) {
+          for (const entry of store.logs) pushLog(store.parent, entry);
+          for (const span of spanPayload) pushSpan(store.parent, span);
+        }
       }
+      store.ended = true;
       return originalEnd(...args);
     };
 

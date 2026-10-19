@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
+import { multipartEvent, type MultipartPart } from './multipart-event';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) are loaded.
@@ -27,21 +28,22 @@ vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSide
 interface FakeEvent {
   body?: unknown;
   params?: Record<string, string>;
-  parts?: Array<{ name: string; data: Buffer }>;
 }
 
 vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
-vi.stubGlobal('readMultipartFormData', async (event: FakeEvent) => event.parts);
 vi.stubGlobal('getRequestHeader', () => undefined);
 vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('durationStats', durationStats);
 
 type Handler = (event: FakeEvent) => Promise<{ status?: string }>;
 const finish = (await import('../../server/api/test-runs/[id]/finish.post')).default as unknown as Handler;
-const upload = (await import('../../server/api/test-runs/upload.post')).default as unknown as Handler;
+const uploadRoute = (await import('../../server/api/test-runs/upload.post')).default as unknown as (
+  event: unknown,
+) => Promise<unknown>;
+const upload = ({ parts }: { parts: MultipartPart[] }) => uploadRoute(multipartEvent(parts));
 const { settleFinalizingRun } = await import('../../server/utils/finalizing-runs');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;

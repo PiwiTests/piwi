@@ -81,6 +81,7 @@ function readCluster(id: number) {
       signature: schema.failureClusters.signature,
       occurrences: schema.failureClusters.occurrences,
       lastSeenRunId: schema.failureClusters.lastSeenRunId,
+      firstSeenRunId: schema.failureClusters.firstSeenRunId,
     })
     .from(schema.failureClusters)
     .where(eq(schema.failureClusters.id, id))
@@ -131,5 +132,30 @@ describe('getOrCreateFailureClusters exemplar refresh', () => {
     expect(row.fingerprintSample).toBe(richError);
     expect(row.occurrences).toBe(2); // still counted
     expect(row.lastSeenRunId).toBe(200);
+  });
+});
+
+describe('getOrCreateFailureClusters first and last seen runs', () => {
+  const run = (id: number, startTime: string) => ({
+    id,
+    projectId: 1,
+    status: 'failed',
+    startTime: new Date(startTime),
+  });
+
+  test('a run imported from the past moves the first seen run back and leaves the last seen run', async () => {
+    await db
+      .insert(schema.testRuns)
+      .values([run(10, '2026-10-01T10:00:00Z'), run(11, '2026-10-17T10:00:00Z'), run(12, '2026-08-01T10:00:00Z')]);
+    const { map, fp } = await pendingFor(plainError);
+    const ids = await getOrCreateFailureClusters(dbc, 1, 10, map);
+    const clusterId = ids.get(fp.fingerprint)!;
+
+    await getOrCreateFailureClusters(dbc, 1, 11, (await pendingFor(plainError)).map);
+    expect(await readCluster(clusterId)).toMatchObject({ firstSeenRunId: 10, lastSeenRunId: 11 });
+
+    // Run 12 has a higher id but started two months earlier.
+    await getOrCreateFailureClusters(dbc, 1, 12, (await pendingFor(plainError)).map);
+    expect(await readCluster(clusterId)).toMatchObject({ firstSeenRunId: 12, lastSeenRunId: 11, occurrences: 3 });
   });
 });

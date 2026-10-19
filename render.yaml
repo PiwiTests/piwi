@@ -24,4 +24,7 @@ services:
         generateValue: true
       - key: PIWI_SECRET_KEY
         generateValue: true
+      # The first-admin form asks for this value, so only you can create the administrator.
+      - key: PIWI_SETUP_TOKEN
+        generateValue: true
       # Set PIWI_SITE_URL to the service's public URL once Render has assigned it.

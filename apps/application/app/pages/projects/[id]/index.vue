@@ -10,7 +10,7 @@ import type {
 } from '~~/types/api';
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
-import { parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
+import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 
@@ -591,6 +591,18 @@ function openRun(runId: number) {
   navigateTo(`/test-runs/${runId}`);
 }
 
+/** A run's page as an href, under the base path the app is served at (`/demo/` in the demo). */
+function runHref(runId: number): string {
+  return router.resolve(`/test-runs/${runId}`).href;
+}
+
+/** A plain click on a run link routes in the app; a modified click opens it as the browser does. */
+function onRunLinkClick(event: MouseEvent, runId: number) {
+  if (isModifiedClick(event)) return;
+  event.preventDefault();
+  openRun(runId);
+}
+
 // The report links and the delete action share one row overflow menu, so the
 // table fits without a horizontal scroll at 1280 px.
 function runMenuItems(run: TestRunSummary) {
@@ -646,12 +658,14 @@ const { data: markersData, refresh: refreshMarkers } = await useFetch<MarkersRes
 );
 const markers = computed(() => markersData.value?.items ?? []);
 
-// The drill-down period resolves in the viewer's zone, so it applies once mounted.
+// The drill-down period resolves in the viewer's zone, so it applies once mounted,
+// and again only when the drill-down's own query keys change (a new link), not
+// on any other change of the URL (a tab, a page of a list, a filter).
 onMounted(readDrill);
 watch(
-  () => route.query.source === 'analytics' && route.fullPath,
-  (drilled, before) => {
-    if (drilled && before !== undefined) readDrill();
+  () => drillQueryKey(route.query as Record<string, unknown>),
+  (drilled) => {
+    if (drilled) readDrill();
   },
 );
 
@@ -699,8 +713,11 @@ const {
 });
 
 // The slowest tests follow the run scope, not the window, so they are read
-// again only when the scope changes.
+// again only when the scope changes. Each read counts its requests, so an
+// answer to an older window or scope never replaces a newer one.
 let slowTestsScope: string | null = null;
+let performanceRequest = 0;
+let slowTestsRequest = 0;
 watch(
   [activeTab, perfRunsWindow, runScopeQuery],
   async ([tab, runsWindow, scopeQuery]) => {
@@ -711,26 +728,32 @@ watch(
     if (readSlowTests) slowTestsLoading.value = true;
     if (import.meta.server) return;
     if (aiStepsStatus.value === 'idle') void checkAiSteps();
+    const performanceAsked = ++performanceRequest;
+    const slowTestsAsked = readSlowTests ? ++slowTestsRequest : 0;
+    if (readSlowTests) slowTestsScope = scopeKey;
     const perfRes = await $fetch<{ items: PerformanceTrendPoint[] }>(`/api/projects/${projectId}/performance`, {
       query: { runs: runsWindow, ...scopeQuery },
     }).catch((err) => {
       console.warn('[PerformanceTab] Failed to fetch performance trend:', err);
       return null;
     });
-    performanceData.value = perfRes?.items ?? null;
-    performanceLoading.value = false;
+    if (performanceAsked === performanceRequest) {
+      performanceData.value = perfRes?.items ?? null;
+      performanceLoading.value = false;
+    }
     if (readSlowTests) {
-      slowTestsScope = scopeKey;
       slowTestsError.value = false;
       const slowRes = await $fetch<{ items: SlowTest[] }>(`/api/projects/${projectId}/slow-tests`, {
         query: scopeQuery,
       }).catch((err) => {
-        slowTestsError.value = true;
+        if (slowTestsAsked === slowTestsRequest) slowTestsError.value = true;
         console.warn('[PerformanceTab] Failed to fetch slow tests:', err);
         return null;
       });
-      slowTests.value = slowRes?.items ?? null;
-      slowTestsLoading.value = false;
+      if (slowTestsAsked === slowTestsRequest) {
+        slowTests.value = slowRes?.items ?? null;
+        slowTestsLoading.value = false;
+      }
     }
   },
   { immediate: true },
@@ -1052,9 +1075,9 @@ const moreMenuItems = computed(() => {
                 <template #id-cell="{ row }">
                   <div class="flex items-center gap-2">
                     <a
-                      :href="`/test-runs/${row.original.id}`"
+                      :href="runHref(row.original.id)"
                       class="text-primary hover:underline font-medium"
-                      @click.prevent="openRun(row.original.id)"
+                      @click="onRunLinkClick($event, row.original.id)"
                     >
                       Run #{{ row.original.id }}
                     </a>

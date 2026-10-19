@@ -37,6 +37,8 @@ export function emitRailwayTemplate(entries: readonly EnvEntry[], opts: EmitOpti
       '|---|---|',
       ...entries.map((entry) => `| \`${entry.name}\` | ${railwayValue(entry)} |`),
     );
+    const notes = entries.filter((entry) => entry.platformValue === 'generate' && entry.comment);
+    if (notes.length) lines.push('', ...notes.map((entry) => `\`${entry.name}\`: ${entry.comment}`));
   }
   const header = opts.header?.length ? opts.header.map((line) => `> ${line}`).join('\n') + '\n\n' : '';
   return header + lines.join('\n') + '\n';

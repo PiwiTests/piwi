@@ -16,6 +16,7 @@ import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { runEventBus } from './run-events';
 import { matchCiRerunRun } from './ci-rerun';
 import { inferRunOutcomes } from './outcome-inference';
+import { pinProjectRepository } from './scm/project-repository';
 
 /** A run's metadata without its incident flag, for the rules that read the run apart from the flag. */
 function withoutIncidentFlag(metadata: unknown): unknown {
@@ -70,6 +71,9 @@ export async function runFinalizeSideEffects(
   run: { projectId: number; metadata?: unknown; isFullRun?: number | boolean | null; status?: string | null },
 ): Promise<void> {
   if (!isEligibleRun(run, 'run-health')) return;
+  await pinProjectRepository(db, run.projectId, run.metadata).catch((e) =>
+    console.error('[scm] pinning the project repository failed', e),
+  );
   const health = await recordRunHealth(db, id).catch((e) => {
     console.error('[run-health] recordRunHealth failed', e);
     return null;

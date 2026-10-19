@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { AnalyticsCiTimeTrend } from '#shared/analytics/types';
-import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate } from '~/utils/chart';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -25,10 +24,12 @@ const lineColor = 'rgb(59, 130, 246)';
 
 const yMax = computed(() => Math.max(1, ...chartData.value.map((d) => d.totalMinutes)));
 
-function centers(plotWidth: number): number[] {
-  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
-  return chartData.value.map((_, i) => centerOf(i));
-}
+const { markers, tooltip, centers, layout, xTicks, markerX, drill, openBucket } = useDailyBarChart({
+  points: chartData,
+  bucketDays: () => trend.value?.bucketDays,
+  query: () => props.query,
+});
+const { data: tooltipData, pos: tooltipPos, show, move, hide } = tooltip;
 
 function linePath(plotWidth: number, yScale: (value: number) => number): string {
   const xs = centers(plotWidth);
@@ -41,17 +42,6 @@ function areaPath(plotWidth: number, plotHeight: number, yScale: (value: number)
   const line = linePath(plotWidth, yScale);
   return `${line}L${xs[xs.length - 1]},${plotHeight}L${xs[0]},${plotHeight}Z`;
 }
-
-function xTicks(plotWidth: number) {
-  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
-  const dates = chartData.value.map((d) => d.date);
-  return dayTickIndices(dates, Math.max(2, Math.floor(plotWidth / 80))).map((i) => ({
-    x: centerOf(i),
-    label: formatTickDate(dates[i] as Date),
-  }));
-}
-
-const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip<DataPoint>(240);
 
 const deltaBadge = computed(() => {
   if (!trend.value || trend.value.deltaPct === null) return null;
@@ -79,25 +69,6 @@ const subtitle = computed(() => {
   const label = total < 60 ? `${Math.round(total)} min` : `${Math.round((total / 60) * 10) / 10} h`;
   return `${label} across ${trend.value.runCount} runs`;
 });
-// Timeline markers of the period, drawn over the bars (provided by the analytics page).
-const scopeSummary = injectAnalyticsScopeSummary();
-const markers = computed(() => scopeSummary.value?.markers ?? []);
-function markerX(plotWidth: number, occurredAt: string | Date): number | null {
-  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
-  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
-  return bucketTimeToX(
-    chartData.value.map((d) => d.date),
-    chartData.value.map((_, i) => centerOf(i)),
-    new Date(occurredAt).getTime(),
-    end,
-  );
-}
-
-/** With one project in scope, a bucket opens that project's runs of those days. */
-const drill = computed(() => (trend.value ? bucketDrill(props.query, trend.value.bucketDays) : null));
-function isoDay(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 </script>
 
 <template>
@@ -145,16 +116,16 @@ function isoDay(date: Date): string {
         </text>
 
         <rect
-          v-for="(d, i) in chartData"
-          :key="`hover-${d.date.getTime()}`"
-          :x="i * (plotWidth / chartData.length)"
+          v-for="slot in layout(plotWidth, plotHeight, yScale)"
+          :key="`hover-${slot.d.date.getTime()}`"
+          :x="slot.slotX"
           :y="0"
-          :width="plotWidth / chartData.length"
+          :width="slot.slotWidth"
           :height="plotHeight"
-          :fill="tooltipData === d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+          :fill="tooltipData === slot.d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
           :class="drill ? 'cursor-pointer' : ''"
-          @click="drill && navigateTo(drill(isoDay(d.date)))"
-          @mouseenter="show($event, d)"
+          @click="openBucket(slot.d.date)"
+          @mouseenter="show($event, slot.d)"
           @mousemove="move($event)"
           @mouseleave="hide()"
         />

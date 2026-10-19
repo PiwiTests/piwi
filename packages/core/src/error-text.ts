@@ -46,6 +46,6 @@ export function appendErrorLocation(
   text: string,
   location: { file?: string; line?: number; column?: number } | null | undefined,
 ): string {
-  if (!location?.file || /\n\s+at\s/.test(text)) return text;
+  if (!location?.file || /\n[ \t]+at\s/.test(text)) return text;
   return `${text}\n    at ${location.file}:${location.line}:${location.column}`;
 }

@@ -57,6 +57,8 @@ const KNOWN_DIALECT_DIFFS: Record<string, [string, string]> = {
   'analytics_daily_rollups.p90_test_duration_sum_ms': ['int', 'bigint'],
   'analytics_daily_rollups.wait_ms': ['int', 'bigint'],
   'analytics_daily_rollups.failed_exec_ms': ['int', 'bigint'],
+  // A cluster open past 24.8 days takes more milliseconds than int32 holds on PostgreSQL.
+  'failure_clusters.time_to_resolution_ms': ['int', 'bigint'],
 };
 
 interface ColumnShape {

@@ -24,7 +24,7 @@ const props = defineProps<{
   readOnly?: boolean;
 }>();
 
-const { copy, copied } = useCopy();
+const { copyRich, copied } = useCopyRich();
 const sectionLocator = useClusterSectionLocator();
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -217,18 +217,7 @@ async function copyDiagnosis() {
   const md = diagnosisMarkdown();
   const html = diagnosisHtml();
   if (!md && !html) return;
-  try {
-    await navigator.clipboard.write([
-      new ClipboardItem({
-        'text/plain': new Blob([md], { type: 'text/plain' }),
-        'text/html': new Blob([html], { type: 'text/html' }),
-      }),
-    ]);
-    const toast = useToast();
-    toast.add({ title: 'Diagnosis copied', icon: 'i-lucide-check', color: 'success', duration: 2000 });
-  } catch {
-    copy(md, { toast: 'Diagnosis copied' });
-  }
+  await copyRich(md, html, { toast: 'Diagnosis copied' });
 }
 
 const patchValidation = computed<PatchValidation | null>(() => storedPatchValidation(details.value));

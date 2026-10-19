@@ -1,5 +1,6 @@
 import { getDatabase } from '../database';
 import { appSettings } from '../database/schema';
+import { DESKTOP_LAUNCH_NONCE_HEADER, answerDesktopChallenge, desktopLaunchNonce } from '../utils/desktop-access';
 
 defineRouteMeta({
   openAPI: {
@@ -12,6 +13,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
+  // Piwi Picker checks this before it sends the desktop app's token.
+  await answerDesktopChallenge(event);
   try {
     const db = await getDatabase();
     await db.select({ key: appSettings.key }).from(appSettings).limit(1);
@@ -21,5 +24,8 @@ export default eventHandler(async (event) => {
     return { status: 'error', database: 'unreachable' };
   }
 
+  // The desktop shell checks this before it loads its session bootstrap.
+  const nonce = desktopLaunchNonce();
+  if (nonce) setResponseHeader(event, DESKTOP_LAUNCH_NONCE_HEADER, nonce);
   return { status: 'ok', database: 'ok' };
 });

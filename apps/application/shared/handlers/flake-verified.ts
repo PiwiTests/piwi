@@ -8,7 +8,8 @@
  *   `reproduced` it again, clears it. An `inconclusive` verify decides nothing.
  * - "Flakes again" is a retry-pass (a failed and a passed attempt of the test
  *   in one run, on one browser) in a run that started after the verify
- *   experiment finished. Lab runs never count, and every branch and
+ *   experiment finished, among the runs the `flakiness` use reads: lab,
+ *   bisect, reproduction and incident runs never count, and every branch and
  *   environment does: the mark is about the test, not about one view of it.
  *
  * Every comparison happens in JavaScript on the dates the ORM returns, so the
@@ -17,7 +18,7 @@
 import { and, asc, eq, gt, inArray, isNotNull, or } from 'drizzle-orm';
 import { flakeExperiments, testRuns, testRunsCases } from '../../server/database/schema';
 import { isFailedStatus } from '../utils/test-counts';
-import { notLabRun } from './probes';
+import { eligibleRunSql } from '../run-eligibility';
 import type { DrizzleDB } from './db';
 
 /** A test's verified fix, and whether it still holds. */
@@ -156,7 +157,7 @@ export async function getVerifiedFixes(db: DrizzleDB, testCaseIds: number[]): Pr
       and(
         inArray(testRunsCases.testCaseId, [...marks.keys()]),
         gt(testRuns.startTime, earliest),
-        notLabRun(testRuns.origin),
+        eligibleRunSql('flakiness'),
       ),
     )
     .orderBy(asc(testRuns.startTime));

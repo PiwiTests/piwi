@@ -312,9 +312,36 @@ data class FailuresOverlay(
 )
 
 /**
+ * A node of the failures tree the service groups (`FailuresResult.tree`): the run, the runs laid over it, the groups and
+ * the failures. `kind` is `run`, `runs`, `overlay`, `group` or `failure`; `key` stays the same across answers;
+ * `description` is a group's counts or a failure's place, after which a client adds the age of `startTime` (a run's);
+ * `tooltip` its lines, plain text; `note` what a failure says about its run when that is not the tree's run failing as it
+ * stands; `icon` one of `run`, `history`, `failed`, `passed`, `file`, `cluster`, `owner`, `failing`, `edited`, `fixed`;
+ * `expanded` whether a node with children opens expanded; `executionId` a failure's item in `FailuresResult.items`.
+ */
+data class FailureTreeNode(
+    val key: String = "",
+    val kind: String = "",
+    val label: String = "",
+    val description: String = "",
+    val startTime: String? = null,
+    val tooltip: List<String>? = null,
+    val note: String? = null,
+    val icon: String = "",
+    val expanded: Boolean = false,
+    val url: String? = null,
+    val executionId: Int? = null,
+    val children: List<FailureTreeNode>? = null,
+)
+
+/** `piwi/failures`: `grouping` (`file`, `cluster`, `owner` or `flat`) is kept by the service for what it pushes after. */
+data class FailuresParams(val grouping: String? = null)
+
+/**
  * `piwi/failures`: the failures, the baseline run of the first context that has one (`run`, null when a developer's
  * own runs are read alone), the runs laid over it, newest first, when they were read (ISO 8601) and the baseline
- * chosen; the last four null from an older service.
+ * chosen; then the tree in `grouping`, the run as its root names it (`runLabel`, with or without a failure), how many
+ * tests still fail (`failing`) and what Re-run the Failing Tests runs (`rerun`, one run per Playwright config).
  */
 data class FailuresResult(
     val items: List<WorkspaceFailure>? = null,
@@ -322,7 +349,17 @@ data class FailuresResult(
     val overlays: List<FailuresOverlay>? = null,
     val updatedAt: String? = null,
     val baseline: Baseline? = null,
+    val grouping: String? = null,
+    val tree: List<FailureTreeNode>? = null,
+    val runLabel: String? = null,
+    val failing: Int = 0,
+    val rerun: List<RunTestsArgs>? = null,
 )
+
+/** `piwi/runId`: the run id typed for A run by id… (`118`, `#118`); null in the answer when the text is not one. */
+data class RunIdParams(val text: String)
+
+data class RunIdResult(val runId: Int? = null)
 
 /** `piwi/agentContext`: one block about a failure for a coding agent: the failure, its healing and its fix plan. */
 data class AgentContextResult(val text: String? = null)
@@ -333,8 +370,10 @@ data class McpServersResult(val servers: List<McpServerDefinition>? = null)
 
 /**
  * `piwi/renderSteps`: a steps document from Piwi Picker, rendered for the file at `uri`. `line` and `character` are
- * the caret (0-based), whose page expression the steps run on; with `imports` `separate`, the import lines the code
- * needs and the file does not bind come in the result's `imports` rather than as comments in its `code`.
+ * the caret (0-based), whose page expression the steps run on and whose line's indentation the code's lines after the
+ * first take; with `imports` `separate`, the edit that adds the import lines the code needs and the file does not
+ * bind comes in the result's `importEdit`, placed in the file's text before the code goes in, rather than as comments
+ * in its `code`.
  */
 data class RenderStepsParams(
     val uri: String,
@@ -344,7 +383,7 @@ data class RenderStepsParams(
     val imports: String? = null,
 )
 
-data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null, val imports: List<String>? = null)
+data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null, val importEdit: FileEdit? = null)
 
 /**
  * `piwi/record`: open a browser through the Playwright of the file's config and write what is done there into the
@@ -402,9 +441,10 @@ data class RecordingWarning(val step: Int = 0, val line: Int = 0, val message: S
 
 /**
  * `piwi/recordingChanged`: what the recorded block holds now (`code`: its lines joined with `\n`, not indented) and
- * the session's `state` (`starting`, `recording`, `paused`, `stopped` or `failed`), with the import lines the code
- * needs whose names the file does not bind yet, its steps and warnings, and a sentence on what happened with the action
- * it offers.
+ * the session's `state` (`starting`, `recording`, `paused`, `stopped` or `failed`), with the edit that adds the import
+ * lines the code needs whose names the file does not bind yet (`importEdit`, placed in the file's text as the service
+ * holds it, the previous block included), its steps and warnings, and a sentence on what happened with the action it
+ * offers.
  */
 data class RecordingUpdate(
     val sessionId: String? = null,
@@ -412,7 +452,7 @@ data class RecordingUpdate(
     val into: String? = null,
     val state: String? = null,
     val code: String? = null,
-    val imports: List<String>? = null,
+    val importEdit: FileEdit? = null,
     val steps: List<RecordingStep>? = null,
     val warnings: List<RecordingWarning>? = null,
     val message: String? = null,
@@ -451,14 +491,15 @@ data class RunSelectionParams(val uri: String, val key: String, val breakpoints:
  */
 data class ApplyPickParams(val uri: String? = null, val file: String? = null, val line: Int, val locator: String)
 
-data class PickPosition(val line: Int = 0, val character: Int = 0)
+data class EditPosition(val line: Int = 0, val character: Int = 0)
 
-data class PickRange(val start: PickPosition? = null, val end: PickPosition? = null)
+data class EditRange(val start: EditPosition? = null, val end: EditPosition? = null)
 
-data class PickEdit(val range: PickRange? = null, val newText: String? = null)
+/** An edit of a file, as the language server protocol's `TextEdit`: `newText` in place of `range` (0-based). */
+data class FileEdit(val range: EditRange? = null, val newText: String? = null)
 
 /** The file found (null when none is) and the edit on its line; `edit` is null when the line holds no locator. */
-data class ApplyPickResult(val uri: String? = null, val edit: PickEdit? = null)
+data class ApplyPickResult(val uri: String? = null, val edit: FileEdit? = null)
 
 data class ProjectRef(val id: Int = 0, val name: String = "")
 
@@ -532,7 +573,10 @@ interface PiwiLanguageServer : LanguageServer {
     fun runStatus(): CompletableFuture<RunStatusResult?>
 
     @JsonRequest("piwi/failures")
-    fun failures(): CompletableFuture<FailuresResult?>
+    fun failures(params: FailuresParams): CompletableFuture<FailuresResult?>
+
+    @JsonRequest("piwi/runId")
+    fun runId(params: RunIdParams): CompletableFuture<RunIdResult?>
 
     @JsonRequest("piwi/trace")
     fun trace(params: TraceParams): CompletableFuture<TraceResult?>

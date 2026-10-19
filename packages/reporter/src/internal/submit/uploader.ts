@@ -53,6 +53,11 @@ export interface RunPayload {
   filterDetails?: FilterDetails | null;
   /** The run's resource findings and what it cost its machine, when the reporter measured them */
   resourceReport?: WireResourceReport | null;
+  /**
+   * Generated once per run (per shard) and sent with every attempt to deliver it, so the dashboard
+   * stores a delivery it already took once: a slow upload the reporter gave up on, then sent again.
+   */
+  deliveryKey?: string;
 }
 
 /** Options controlling which report files and traces to upload */

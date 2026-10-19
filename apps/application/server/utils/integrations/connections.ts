@@ -21,6 +21,7 @@ import {
 import type { DbClient } from '../../database';
 import { randomBytes } from 'node:crypto';
 import { decryptSecret, encryptSecret, getEncryptionKey } from '../crypto';
+import { hashToken } from '../token-hash';
 import { JiraClient } from './jira/client';
 import { jiraCheckFailure } from './jira/check';
 import { jiraFailureHint, normalizeJiraSiteUrl, type JiraTokenKind } from '#shared/integrations/jira-setup';
@@ -69,7 +70,7 @@ export async function ensureEnvManagedConnections(db: DbClient): Promise<void> {
 
   if (existing) {
     if (existing.baseUrl !== env.baseUrl) {
-      // Preserve any admin-set config (e.g. the webhook token) across a base-URL change.
+      // Preserve any admin-set config (e.g. the webhook token's digest) across a base-URL change.
       const config = {
         ...((existing.config as Record<string, unknown> | null) ?? {}),
         flavor: jiraFlavor(),
@@ -125,19 +126,50 @@ function resolveTrackerCredentials(row: IntegrationConnection): TrackerCredentia
   return null;
 }
 
-/** The connection's config with the webhook token stripped — it is never returned. */
-function publicConfig(row: IntegrationConnection): Record<string, unknown> | null {
-  const config = (row.config as Record<string, unknown> | null) ?? null;
-  if (!config || !('webhookToken' in config)) return config;
-  const { webhookToken: _omit, ...rest } = config;
+/**
+ * A config without its inbound-webhook entries: the token's SHA-256 digest
+ * (`webhookTokenDigest`) and a token kept in plain text
+ * (`webhookToken`). Neither is ever returned or accepted from a client.
+ */
+function configWithoutWebhookToken(config: unknown): Record<string, unknown> | null {
+  if (!config || typeof config !== 'object') return null;
+  const { webhookToken: _token, webhookTokenDigest: _digest, ...rest } = config as Record<string, unknown>;
   return rest;
 }
 
-/** The stored inbound-webhook token for a connection, or null. */
-export function webhookTokenFor(row: IntegrationConnection): string | null {
-  const config = (row.config as Record<string, unknown> | null) ?? null;
-  const token = config?.webhookToken;
+/** The connection's config as the API returns it, without the webhook token. */
+function publicConfig(row: IntegrationConnection): Record<string, unknown> | null {
+  return configWithoutWebhookToken(row.config);
+}
+
+/** A connection's inbound-webhook token kept in plain text (`config.webhookToken`), or null. */
+function plainWebhookToken(row: IntegrationConnection): string | null {
+  const token = (row.config as Record<string, unknown> | null)?.webhookToken;
   return typeof token === 'string' && token.length > 0 ? token : null;
+}
+
+/** The SHA-256 digest of a connection's inbound-webhook token, or null when the webhook is off. */
+function webhookTokenDigestFor(row: IntegrationConnection): string | null {
+  const digest = (row.config as Record<string, unknown> | null)?.webhookTokenDigest;
+  if (typeof digest === 'string' && digest.length > 0) return digest;
+  const plain = plainWebhookToken(row);
+  return plain ? hashToken(plain) : null;
+}
+
+/** A row's config with its webhook token kept as a digest only. */
+function webhookDigestConfig(row: IntegrationConnection, digest: string): Record<string, unknown> {
+  return { ...configWithoutWebhookToken(row.config), webhookTokenDigest: digest };
+}
+
+/** Replace the plain webhook token of each of `rows` that still holds one with its digest. */
+async function hashPlainWebhookTokens(db: DbClient, rows: IntegrationConnection[]): Promise<void> {
+  for (const row of rows) {
+    const plain = plainWebhookToken(row);
+    if (!plain) continue;
+    const config = webhookDigestConfig(row, hashToken(plain));
+    await db.update(integrationConnections).set({ config }).where(eq(integrationConnections.id, row.id));
+    row.config = config;
+  }
 }
 
 function toSummary(row: IntegrationConnection): ConnectionSummary {
@@ -153,7 +185,7 @@ function toSummary(row: IntegrationConnection): ConnectionSummary {
     managedBy: row.managedBy as ConnectionSummary['managedBy'],
     hasCredentials: hasStoredCredentials(row),
     credentialValues: nonSecretCredentials(row.provider as IntegrationProviderName, credentialMap(row)),
-    hasWebhookToken: webhookTokenFor(row) != null,
+    hasWebhookToken: webhookTokenDigestFor(row) != null,
     createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
     updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
   };
@@ -162,6 +194,7 @@ function toSummary(row: IntegrationConnection): ConnectionSummary {
 export async function listConnections(db: DbClient): Promise<ConnectionSummary[]> {
   await ensureEnvManagedConnections(db);
   const rows = await db.select().from(integrationConnections).orderBy(integrationConnections.id);
+  await hashPlainWebhookTokens(db, rows);
   return rows.map(toSummary);
 }
 
@@ -196,7 +229,7 @@ export async function createConnection(db: DbClient, input: ConnectionInput): Pr
       provider: input.provider,
       name: input.name,
       baseUrl: input.baseUrl,
-      config: input.config ?? null,
+      config: configWithoutWebhookToken(input.config),
       credentials: encryptCredentials(input.credentials),
       status: 'unverified',
       managedBy: 'db',
@@ -219,8 +252,9 @@ export async function updateConnection(
   if (input.config !== undefined) {
     // The webhook token is never returned, so a submitted config cannot carry it;
     // it changes only through the webhook-token endpoints.
-    const webhookToken = webhookTokenFor(row);
-    updates.config = webhookToken ? { ...(input.config ?? {}), webhookToken } : input.config;
+    const digest = webhookTokenDigestFor(row);
+    const config = configWithoutWebhookToken(input.config);
+    updates.config = digest ? { ...config, webhookTokenDigest: digest } : config;
   }
 
   // Merge the submitted credential fields onto the stored ones. A blank field is
@@ -283,15 +317,15 @@ export async function listTrackerConnections(db: DbClient): Promise<TrackerSumma
 }
 
 /**
- * Generate (or rotate) the inbound-webhook token for a connection and store it
- * in `config.webhookToken`. Returns the token so the caller can show it once; it
- * is never returned by any read endpoint afterward.
+ * Generate (or rotate) the inbound-webhook token for a connection and store its
+ * SHA-256 digest in `config.webhookTokenDigest`. Returns the token so the caller
+ * can show it once; the database never holds it.
  */
 export async function setWebhookToken(db: DbClient, id: number): Promise<string | null> {
   const row = await getConnectionRow(db, id);
   if (!row) return null;
   const token = randomBytes(24).toString('base64url');
-  const config = { ...((row.config as Record<string, unknown> | null) ?? {}), webhookToken: token };
+  const config = webhookDigestConfig(row, hashToken(token));
   await db
     .update(integrationConnections)
     .set({ config, updatedAt: new Date() })
@@ -303,18 +337,23 @@ export async function setWebhookToken(db: DbClient, id: number): Promise<string 
 export async function clearWebhookToken(db: DbClient, id: number): Promise<void> {
   const row = await getConnectionRow(db, id);
   if (!row) return;
-  const { webhookToken: _omit, ...rest } = (row.config as Record<string, unknown> | null) ?? {};
   await db
     .update(integrationConnections)
-    .set({ config: rest, updatedAt: new Date() })
+    .set({ config: configWithoutWebhookToken(row.config), updatedAt: new Date() })
     .where(eq(integrationConnections.id, id));
 }
 
-/** The connection whose stored webhook token matches, or null (constant work per row). */
+/**
+ * The connection whose webhook token digest is the digest of `token`, or null.
+ * The few connections an instance has are read whole, since the digest lives
+ * in the JSON config; a token kept in plain text is replaced by its digest on the way.
+ */
 export async function connectionByWebhookToken(db: DbClient, token: string): Promise<IntegrationConnection | null> {
   if (!token) return null;
+  const digest = hashToken(token);
   const rows = await db.select().from(integrationConnections);
-  return rows.find((r) => webhookTokenFor(r) === token) ?? null;
+  await hashPlainWebhookTokens(db, rows);
+  return rows.find((r) => webhookTokenDigestFor(r) === digest) ?? null;
 }
 
 /** The per-project binding for a connection, or the first binding, or null. */

@@ -396,6 +396,8 @@ export interface ProjectWithTestRuns {
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
   hasScmToken?: boolean;
+  /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
+  repositoryUrl?: string | null;
   defaultBranch?: string | null;
   /** The project's setting, else its most common run branch, else `main`: what a run scope reads with no branch picked. */
   effectiveDefaultBranch?: string;

@@ -22,10 +22,6 @@ export interface ProjectRunScope {
   fullRunsOnly: boolean;
 }
 
-export function defaultProjectRunScope(): ProjectRunScope {
-  return { environments: [], branches: [], allBranches: false, fullRunsOnly: true };
-}
-
 /**
  * The keys a scoped request carries. `fullRunsOnly` alone does not make a
  * request scoped: the performance endpoint took it before scopes existed.

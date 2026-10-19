@@ -13,7 +13,7 @@ clients stay thin and both editors give the same answers.
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, `piwi/applyPick`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
+  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
   `piwi/desktopJobChanged`, `piwi/recordingChanged` and `piwi/coverageChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
@@ -21,7 +21,12 @@ clients stay thin and both editors give the same answers.
   owner, project, duration and whether it is new, and the answer the latest complete run of the first context that has
   one (`run`), the runs laid over it (`overlays`) and when they were read (`updatedAt`, which alone changing sends no
   `piwi/failuresChanged`). Each item names the folder of its Playwright config (`root`), which a run of its test takes
-  (`RunTestsArgs.root`), whatever file the failure shows in. `piwi/agentContext` answers the block **Copy context for
+  (`RunTestsArgs.root`), whatever file the failure shows in. The answer also holds the tree both clients draw
+  (`tree`, `src/failure-tree.ts`: the run, the runs laid over it, the failures grouped as the last `piwi/failures`
+  asked, `grouping`, which the service keeps for what it pushes), the run as its root names it (`runLabel`), the tests
+  still failing (`failing`) and what **Re-run the failing tests** runs (`rerun`); a client adds a run's age and its own
+  run in progress. `piwi/runId` reads a run id typed for **A run by id…** (1 to 2147483647, the run ids of an
+  instance). `piwi/agentContext` answers the block **Copy context for
   agent** copies, for a failure the view names or the quick fix (`piwi.copyAgentContext`) names once it is picked.
 - `piwi/status` says what keeps a context from the instance's data (`problemKind`: `not-configured`, `no-project`,
   `refused`, `unreachable`), so a client tells an instance that did not answer apart from a missing connection. While
@@ -174,8 +179,11 @@ clients stay thin and both editors give the same answers.
   the page expressions at a caret (`piwi/pageCandidates`, also the default of `piwi/renderSteps` given a `line`), the
   context there (`test`, `function`, `class` or `file`, which `piwi/record` checks against `into`), the names declared
   before it (a page object already declared is not instantiated again), where the block goes and how it is indented,
-  and the module the file's `test` comes from. `imports.ts` reads the names a file's import statements bind, with the
-  same scanner: the imports of an update and of `piwi/renderSteps` hold only the lines the file's text lacks.
+  and the module the file's `test` comes from. `imports.ts` reads the names a file's import statements bind and where
+  each top-level statement ends, over several lines too, with the same scanner: an update and `piwi/renderSteps` carry
+  the edit that adds the lines the file's text lacks (`importEdit`), after its last import statement, else at its top,
+  placed in the text the service holds, which the client makes with the block's write. `piwi/renderSteps` indents the
+  code for the caret's line (`indentBlock`).
 
 `npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
 JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`
@@ -197,6 +205,12 @@ needs the extension's sources, and a change to the recorder there changes what t
 - **The protocol is a contract.** A client of an older version talks to this server, and a published client's
   commands (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`) are named in `SummaryLine.command`. A change to `protocol.ts`
   lands with both clients in the same change, and a renamed request or command is a breaking change.
+- **A command is built here, never taken from the instance** (`src/commands.ts`): a test run is `npx playwright test`
+  with the instance's arguments (`materialization.args`, else the words of its `npx playwright test` command line,
+  split as every shell splits plain words and double quotes), each checked (a test filter, or an option of
+  `PLAYWRIGHT_OPTIONS`: none that loads or writes a file) and quoted (`shellWord`); a fix plan's verification is its
+  `npx playwright test` commands built again; a Flake Lab line is `npx @piwitests/reporter flake [verify] <id>`.
+  An argument that is anything else refuses the whole command, and the clients run only what the service built.
 - **A command runs in the config's folder as the file system spells it** (`commandFolder`, `canonicalPath`): every
   `cwd` the service hands a client (`piwi/runArgs`, `piwi/runSelection`, the trace, `piwi.runCommand` lines), never the
   folder as the editor spelled it, which on Windows may carry a lower-case drive letter.
@@ -210,8 +224,10 @@ needs the extension's sources, and a change to the recorder there changes what t
   or a hover for 1.5 s at most (`within`, `LOOKUP_WAIT_MS`), the fetch going on for the next ask; one that failed
   without the instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again next time (`once` in
   `src/context.ts`). A canceled quick fix or hover is not answered further. A stored file (a trace, a screenshot) is
-  written to `EVIDENCE_ROOT` as it arrives, never held in memory (`PiwiClient.download`), and the files not used for a
-  week are deleted when the service starts (`pruneEvidence`). A
+  written to `EVIDENCE_ROOT` as it arrives, never held in memory (`PiwiClient.download`): `piwi-editor` in this user's
+  cache folder, created owner-only and never written to when another user owns it or it is a link (`privateFolder`).
+  The files not used for a week are deleted when the service starts (`pruneEvidence`), and a file another window
+  deleted meanwhile is downloaded again. A
   failure's files at its run's commit are read once too, as many as the failures go through, and its diagnostics wait
   for nothing: the files as saved stand in until they are read. The translation values of `HEAD` are read once per
   `HEAD`, those of the working tree once per refresh, each once for every document that asks meanwhile. An edit costs

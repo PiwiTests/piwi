@@ -29,6 +29,14 @@ test.describe('request guards', () => {
     expect(res.status()).toBe(400);
   });
 
+  test('no other site may frame a dashboard page or an API response', async ({ request }) => {
+    for (const path of ['/', '/api/health']) {
+      const headers = (await request.get(path)).headers();
+      expect(headers['x-frame-options']).toBe('SAMEORIGIN');
+      expect(headers['content-security-policy']).toBe("frame-ancestors 'self'");
+    }
+  });
+
   test('a stored-file path that names no project is refused', async ({ request }) => {
     const res = await request.get('/api/files/somewhere-else/secret.txt');
     expect(res.status()).toBe(404);

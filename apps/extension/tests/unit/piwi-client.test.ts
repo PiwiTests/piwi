@@ -11,6 +11,7 @@ import {
 import { normalizeBaseUrl, projectCatalogUrl, projectLocatorsUrl, testCaseUrl } from '../../src/shared/instance-links';
 import { setInstanceApiKey } from '../../src/shared/connection-settings';
 import { memoryLocalStorage, memorySecretArea } from './memory-secret-area';
+import { desktopHealth } from './desktop-health';
 import type * as SecretStore from '../../src/shared/secret-store';
 
 // The extension's IndexedDB, in memory: the client reads the key from it.
@@ -82,6 +83,16 @@ describe('responses as the dashboard sends them', () => {
       'fetch',
       vi.fn(
         async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }),
+      ),
+    );
+  /** A desktop app holding `token`: it answers the health challenge, and every other request with JSON. */
+  const desktopApp = (token: string) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) =>
+        url.endsWith('/api/health')
+          ? desktopHealth(url, init, token)
+          : new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
       ),
     );
   const lastCall = () => {
@@ -169,8 +180,23 @@ describe('responses as the dashboard sends them', () => {
     answer({ items: [] });
     await fetchCatalog(settings, 1);
     expect(lastCall()[1].redirect).toBe('error');
-    await testDesktop({ url: 'http://127.0.0.1:4318', token: 'pd_desktop' });
-    expect(lastCall()[1]).toMatchObject({ redirect: 'error', headers: { 'x-piwi-token': 'pd_desktop' } });
+    desktopApp('pd_desktop');
+    expect(await testDesktop({ url: 'http://127.0.0.1:4318', token: 'pd_desktop' })).toEqual({ ok: true });
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>;
+    expect(calls.map(([, init]) => init.redirect)).toEqual(['error', 'error']);
+    expect(lastCall()[1]).toMatchObject({ headers: { 'x-piwi-token': 'pd_desktop' } });
+  });
+
+  test('the desktop token goes only to the app that proves it holds it', async () => {
+    // Another program on the port, or an app paired with another token, answers no proof of this one.
+    desktopApp('pd_other');
+    expect(await testDesktop({ url: 'http://127.0.0.1:4318', token: 'pd_desktop' })).toEqual({
+      ok: false,
+      error: expect.stringContaining('did not prove'),
+    });
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>;
+    expect(calls.map(([url]) => url)).toEqual(['http://127.0.0.1:4318/api/health']);
+    expect(JSON.stringify(calls[0]![1].headers)).not.toContain('pd_desktop');
   });
 
   test('fetchLocatorIndex explains a rejected key, a missing endpoint and a malformed answer', async () => {

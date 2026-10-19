@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.credentialStore.generateServiceName
+import com.intellij.ide.impl.isTrusted
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
@@ -144,6 +145,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var startProblem: String? = null
         private set
 
+    /** Whether the project's wait for trust was said already. */
+    private val trustAsked = AtomicBoolean()
+
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /** Guards the answers and how many of each the service pushed: a read started before a push keeps the pushed one. */
@@ -185,6 +189,20 @@ class PiwiProjectService(private val project: Project) : Disposable {
     fun onChange(parent: Disposable, listener: () -> Unit) {
         listeners += listener
         com.intellij.openapi.util.Disposer.register(parent) { listeners -= listener }
+    }
+
+    /**
+     * Whether the project is trusted. In a project opened in safe mode Piwi starts no editor service, runs no command
+     * and reads no `.env`: each of them runs what the repository says.
+     */
+    fun trusted(): Boolean = project.isTrusted()
+
+    /** Say once that the editor service starts once the project is trusted. */
+    fun waitForTrust() {
+        if (!trustAsked.compareAndSet(false, true)) return
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(Glue.UNTRUSTED, NotificationType.INFORMATION)
+            .notify(project)
     }
 
     /** Whether a Playwright config sits in the project; false until the search started with the project ends. */
@@ -523,6 +541,18 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
+     * Read the failures grouped as the tool window groups them now, which the service keeps for what it pushes after,
+     * then tell the listeners. The answer is taken as a push is, where it comes among them.
+     */
+    fun regroup() {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            server()?.failures(FailuresParams(local().failuresGrouping))?.thenAccept { read ->
+                if (read != null && !gone.value(null)) failuresChanged(read)
+            }
+        }
+    }
+
+    /**
      * Read the status, the latest run and its failures again, on a pooled thread, then tell the listeners. A read asked
      * for while one runs follows it, once.
      */
@@ -545,7 +575,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val pushes = synchronized(lock) { Triple(statusPushes, runsPushes, failuresPushes) }
         val readStatus = server?.status()?.orNull()
         val readRuns = server?.runStatus()?.orNull()
-        val readFailures = server?.failures()?.orNull()
+        val readFailures = server?.failures(FailuresParams(local().failuresGrouping))?.orNull()
         synchronized(lock) {
             if (statusPushes == pushes.first) status = readStatus
             if (runsPushes == pushes.second) runs = readRuns
