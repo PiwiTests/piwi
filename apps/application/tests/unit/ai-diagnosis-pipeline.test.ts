@@ -391,7 +391,7 @@ describe('the stage frame', () => {
       value && typeof value === 'object' && 'value' in value ? value.value : value,
     );
     vi.stubGlobal('onScopeDispose', () => {});
-    vi.stubGlobal('$fetch', { raw: async () => ({ _data: body }) });
+    vi.stubGlobal('$fetch', { raw: async () => ({ ok: true, status: 200, _data: body }) });
 
     const streaming = useStreamingDiagnosis(7);
     const seen: Array<DiagnosisStage | null> = [];
@@ -401,5 +401,64 @@ describe('the stage frame', () => {
     expect(seen).toEqual(['research', 'diagnosis']);
     expect(streaming.thinkingText.value).toBe('Looking at the button');
     expect(streaming.status.value).toBe('complete');
+  });
+
+  /** Stub what the streaming composable reads from Nuxt, with `$fetch` answering `raw` and plain calls. */
+  function stubStreamingGlobals(
+    raw: () => Promise<unknown>,
+    get: (url: string) => Promise<unknown> = async () => ({}),
+  ) {
+    vi.stubGlobal('ref', ref);
+    vi.stubGlobal('unref', (value: unknown) =>
+      value && typeof value === 'object' && 'value' in value ? value.value : value,
+    );
+    vi.stubGlobal('onScopeDispose', () => {});
+    vi.stubGlobal('$fetch', Object.assign(get, { raw }));
+  }
+
+  const jsonStream = (value: unknown) =>
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(value)));
+        controller.close();
+      },
+    });
+
+  test('a refusal is an error carrying its message, not a silent success', async () => {
+    stubStreamingGlobals(async () => ({
+      ok: false,
+      status: 503,
+      _data: jsonStream({ statusCode: 503, message: 'AI diagnosis is not configured' }),
+    }));
+    const streaming = useStreamingDiagnosis(7);
+    await streaming.startStream();
+    expect(streaming.status.value).toBe('error');
+    expect(streaming.error.value).toBe('AI diagnosis is not configured');
+  });
+
+  test('a diagnosis already running is followed until it completes', async () => {
+    vi.useFakeTimers();
+    try {
+      const answers = [{ diagnosis: { id: 3, status: 'running' } }, { diagnosis: { id: 3, status: 'completed' } }];
+      const polled: string[] = [];
+      stubStreamingGlobals(
+        async () => ({ ok: false, status: 409, _data: jsonStream({ message: 'Diagnosis is already running' }) }),
+        async (url) => {
+          polled.push(url);
+          return answers.shift();
+        },
+      );
+      const streaming = useStreamingDiagnosis(7);
+      const done = streaming.startStream();
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(streaming.status.value).toBe('streaming');
+      await vi.advanceTimersByTimeAsync(3_000);
+      await done;
+      expect(polled).toEqual(['/api/failure-clusters/7/diagnosis', '/api/failure-clusters/7/diagnosis']);
+      expect(streaming.status.value).toBe('complete');
+      expect(streaming.result.value).toMatchObject({ id: 3, status: 'completed' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
