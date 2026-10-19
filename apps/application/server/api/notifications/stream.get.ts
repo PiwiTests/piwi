@@ -110,7 +110,7 @@ export default eventHandler(async (event) => {
   return createSSEEndpoint(event, (controller, encoder) => {
     // Re-check the caller and reload their scope and subscriptions on a timer, so
     // role, event and mute changes apply to a long-lived connection without a
-    // reconnect, and the stream ends once its session or API key no longer works.
+    // reconnect, and the stream ends once its session or API key stops working.
     // A failed reload for any other reason keeps the last snapshot.
     const refresh = setInterval(() => {
       requireAuth(event)

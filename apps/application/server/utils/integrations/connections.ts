@@ -128,8 +128,8 @@ function resolveTrackerCredentials(row: IntegrationConnection): TrackerCredentia
 
 /**
  * A config without its inbound-webhook entries: the token's SHA-256 digest
- * (`webhookTokenDigest`) and the plain token a connection stored before
- * digests (`webhookToken`). Neither is ever returned or accepted from a client.
+ * (`webhookTokenDigest`) and a token kept in plain text
+ * (`webhookToken`). Neither is ever returned or accepted from a client.
  */
 function configWithoutWebhookToken(config: unknown): Record<string, unknown> | null {
   if (!config || typeof config !== 'object') return null;
@@ -142,7 +142,7 @@ function publicConfig(row: IntegrationConnection): Record<string, unknown> | nul
   return configWithoutWebhookToken(row.config);
 }
 
-/** The plain inbound-webhook token a connection stored before digests, or null. */
+/** A connection's inbound-webhook token kept in plain text (`config.webhookToken`), or null. */
 function plainWebhookToken(row: IntegrationConnection): string | null {
   const token = (row.config as Record<string, unknown> | null)?.webhookToken;
   return typeof token === 'string' && token.length > 0 ? token : null;
@@ -346,7 +346,7 @@ export async function clearWebhookToken(db: DbClient, id: number): Promise<void>
 /**
  * The connection whose webhook token digest is the digest of `token`, or null.
  * The few connections an instance has are read whole, since the digest lives
- * in the JSON config; a plain token stored before digests is hashed on the way.
+ * in the JSON config; a token kept in plain text is replaced by its digest on the way.
  */
 export async function connectionByWebhookToken(db: DbClient, token: string): Promise<IntegrationConnection | null> {
   if (!token) return null;

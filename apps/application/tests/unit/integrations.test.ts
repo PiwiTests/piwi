@@ -455,7 +455,7 @@ describe('connections and link resolution', () => {
     expect((await getConnectionRow(dbc, created.id))?.config).toEqual({});
   });
 
-  test('a plain webhook token stored before digests keeps working and is hashed on read', async () => {
+  test('a webhook token kept in plain text keeps working and is replaced by its digest on read', async () => {
     const created = await createConnection(dbc, {
       provider: 'jira',
       name: 'Legacy',

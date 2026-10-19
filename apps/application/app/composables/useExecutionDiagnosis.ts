@@ -4,7 +4,7 @@ import { errorMessage } from '~/utils';
 
 /** How often a diagnosis running elsewhere (another tab, a policy) is read again. */
 const RUNNING_POLL_MS = 4_000;
-/** A diagnosis still running after this long is stuck: the panel offers to restart it, and it is no longer polled. */
+/** A diagnosis still running after this long is stuck: the panel offers to restart it, and it is not polled. */
 const RUNNING_STALE_MS = 5 * 60 * 1000;
 
 /**
