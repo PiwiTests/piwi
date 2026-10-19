@@ -45,7 +45,6 @@ async function uploadRunWithEvidence(request: APIRequestContext, projectName: st
         },
       ]),
       trace_0: { name: 'trace.zip', mimeType: 'application/zip', buffer: traceZip },
-      trace_hashes: JSON.stringify({ 0: traceHash }),
     },
   });
   expect(response.ok(), `upload failed: ${response.status()} ${await response.text()}`).toBeTruthy();
@@ -110,7 +109,6 @@ async function uploadRunSharingOneTrace(request: APIRequestContext, projectName:
         error: `boom ${i}`,
       })),
     ),
-    trace_hashes: JSON.stringify(Object.fromEntries(Array.from({ length: caseCount }, (_, i) => [i, traceHash]))),
   };
   // Same bytes for every case → one deduplicated blob, `caseCount` files rows.
   for (let i = 0; i < caseCount; i++) {
@@ -178,7 +176,6 @@ async function uploadRunWithTrace(request: APIRequestContext, projectName: strin
         { title: 'refcount case', status: 'failed', duration: 500, location: 'tests/rc.spec.ts:1:1', error: 'boom' },
       ]),
       trace_0: { name: 'trace.zip', mimeType: 'application/zip', buffer: trace },
-      trace_hashes: JSON.stringify({ 0: hash }),
     },
   });
   expect(response.ok(), `upload failed: ${response.status()} ${await response.text()}`).toBeTruthy();

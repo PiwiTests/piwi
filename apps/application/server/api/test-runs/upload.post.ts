@@ -2,7 +2,7 @@ import { getDatabase } from '../../database';
 import { projects, testRuns, files } from '../../database/schema';
 import type { Project } from '../../database/schema';
 import { eq } from 'drizzle-orm';
-import { upsertTraceBlob, findTraceBlob } from '../../utils/trace-blobs';
+import { upsertTraceFile } from '../../utils/trace-blobs';
 import { join, posix } from 'path';
 import { randomBytes } from 'node:crypto';
 import { decompressDirectory } from '../../utils/compression';
@@ -135,9 +135,6 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
   const reportFiles: Map<string, UploadedFile & { label?: string }> = new Map();
   // Trace files attached for specific test case indices: index -> file
   const traceFiles: Map<number, UploadedFile> = new Map();
-  // SHA-256 hashes for traces, keyed by the same index as traceFiles.
-  // Sent by the reporter for all traces (including those not uploaded due to deduplication).
-  const traceHashes: Map<number, string> = new Map();
   // Non-trace attachments: test case index -> array of { name, contentType, originalName }
   const attachmentMeta: Map<number, { name: string; contentType: string; originalName: string }[]> = new Map();
   const attachmentFiles: Map<number, UploadedFile[]> = new Map();
@@ -191,18 +188,6 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       // Optional label override: 'report_label_<type>'
       const entry = reportFiles.get(name.slice('report_label_'.length));
       if (entry) entry.label = value;
-    } else if (name === 'trace_hashes') {
-      try {
-        const parsed = JSON.parse(value);
-        for (const [indexStr, hash] of Object.entries(parsed)) {
-          const idx = parseInt(indexStr, 10);
-          if (!isNaN(idx) && typeof hash === 'string' && /^[0-9a-f]{64}$/i.test(hash)) {
-            traceHashes.set(idx, hash);
-          }
-        }
-      } catch {
-        // Deduplication metadata is optional; ignore parse errors
-      }
     } else if (name.startsWith('attach_meta_')) {
       const idx = parseInt(name.slice('attach_meta_'.length), 10);
       if (!isNaN(idx)) {
@@ -470,7 +455,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       }
     }
 
-    // Create test run directory for traces
+    // Create the run's directory for attachments
     const testRunPath = `project-${project.id}/run-${testRun.id}`;
     await storage.mkdir(testRunPath);
 
@@ -535,64 +520,28 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       const insertedRunCases = await persistRunCases(db, project.id, testRun.id, cases);
       const executionByIndex = new Map(insertedRunCases.map((row) => [row.inputIndex, row]));
 
-      // Store trace files linked to their test run case, with content-addressed deduplication.
-      // traceHashes may contain entries for indices where no file was uploaded (reporter
-      // determined the blob already exists); those still need a files record pointing at
-      // the existing blob path.
-      const allTraceIndices = new Set([...traceFiles.keys(), ...traceHashes.keys()]);
+      // Store trace files linked to their test run case, in the project's
+      // content-addressed blob store: a trace stored before is reused.
       // Execution rows that got a trace this upload — evidence is derived from
       // them once all files are stored.
       const tracedCaseIds: number[] = [];
       let tracesSkipped = 0;
-      if (executionByIndex.size > 0 && allTraceIndices.size > 0) {
-        for (const index of allTraceIndices) {
+      if (executionByIndex.size > 0) {
+        for (const [index, traceFile] of traceFiles) {
           const inserted = executionByIndex.get(index);
           if (!inserted?.id) continue;
           const testRunsCaseId = inserted.id;
-          const traceFile = traceFiles.get(index);
-          const hash = traceHashes.get(index);
 
           try {
-            let storagePath: string;
-            let blobId: number | null = null;
-            let size: number | null = null;
-
-            if (hash && traceFile) {
-              // New content with known hash: upsert into the blob store
-              const blob = await upsertTraceBlob(project!.id, hash, await readFile(traceFile.path));
-              storagePath = blob.path;
-              blobId = blob.id;
-              size = blob.size;
-              console.log(`[Upload] Stored trace blob ${hash.slice(0, 8)}… for case #${testRunsCaseId}`);
-            } else if (hash && !traceFile) {
-              // Reporter said this blob already exists on the server — look it up
-              const blob = await findTraceBlob(project!.id, hash);
-              if (!blob) {
-                console.warn(`[Upload] Hash ${hash.slice(0, 8)}… referenced but blob not found, skipping`);
-                tracesSkipped++;
-                continue;
-              }
-              storagePath = blob.path;
-              blobId = blob.id;
-              size = blob.size;
-              console.log(`[Upload] Reused trace blob ${hash.slice(0, 8)}… for case #${testRunsCaseId}`);
-            } else if (traceFile) {
-              // Legacy path: no hash metadata, store at run-specific location
-              storagePath = `${testRunPath}/${testRunsCaseId}-${traceFile.filename}`;
-              await storage.writeFile(storagePath, await readFile(traceFile.path));
-              size = traceFile.size;
-              console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${storagePath}`);
-            } else {
-              continue;
-            }
-
+            const blob = await upsertTraceFile(project!.id, await readFile(traceFile.path));
+            console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${blob.path}`);
             await db.insert(files).values({
               testRunsCaseId,
               testRunId: testRun.id,
               type: 'trace',
-              path: storagePath.replace(/\\/g, '/'),
-              size,
-              blobId,
+              path: blob.path.replace(/\\/g, '/'),
+              size: blob.size,
+              blobId: blob.id,
             });
             tracedCaseIds.push(testRunsCaseId);
           } catch (error) {

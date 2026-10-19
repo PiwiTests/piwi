@@ -28,27 +28,16 @@ const baseRun = {
 
 const baseCase = [{ title: 'test case', status: 'passed', duration: 1000, location: 'tests/t.spec.ts:1:1' }];
 
-// Helper: upload a run and return the runId
-async function upload(
-  request: APIRequestContext,
-  projectName: string,
-  traceZip: Buffer | null,
-  hash: string | null,
-  index = 0,
-  testCases = baseCase,
-) {
-  const multipart: Record<string, unknown> = {
-    projectName,
-    testRun: JSON.stringify(baseRun),
-    testCases: JSON.stringify(testCases),
-  };
-  if (traceZip) {
-    multipart[`trace_${index}`] = { name: 'trace.zip', mimeType: 'application/zip', buffer: traceZip };
-  }
-  if (hash) {
-    multipart.trace_hashes = JSON.stringify({ [index]: hash });
-  }
-  return request.post('/api/test-runs/upload', { multipart });
+// Helper: upload a run and return the response
+async function upload(request: APIRequestContext, projectName: string, traceZip: Buffer, testCases = baseCase) {
+  return request.post('/api/test-runs/upload', {
+    multipart: {
+      projectName,
+      testRun: JSON.stringify(baseRun),
+      testCases: JSON.stringify(testCases),
+      trace_0: { name: 'trace.zip', mimeType: 'application/zip', buffer: traceZip },
+    },
+  });
 }
 
 // Helper: get traces for the first test case of a run
@@ -108,7 +97,7 @@ test.describe('Trace deduplication — preflight check', () => {
     const traceZip = buildTraceZip();
     const hash = sha256(traceZip);
 
-    const uploadRes = await upload(request, PROJECT.TRACE_PREFLIGHT, traceZip, hash);
+    const uploadRes = await upload(request, PROJECT.TRACE_PREFLIGHT, traceZip);
     expect(uploadRes.ok()).toBe(true);
 
     const checkRes = await request.post('/api/traces/check', {
@@ -125,7 +114,7 @@ test.describe('Trace deduplication — preflight check', () => {
     const knownHash = sha256(knownZip);
     const unknownHash = 'b'.repeat(64);
 
-    await upload(request, PROJECT.TRACE_PREFLIGHT, knownZip, knownHash);
+    await upload(request, PROJECT.TRACE_PREFLIGHT, knownZip);
 
     const res = await request.post('/api/traces/check', {
       data: { projectName: PROJECT.TRACE_PREFLIGHT, hashes: [knownHash, unknownHash] },
@@ -137,11 +126,11 @@ test.describe('Trace deduplication — preflight check', () => {
 });
 
 test.describe('Trace deduplication — upload', () => {
-  test('upload with trace_hashes + file stores a blob and creates a trace record', async ({ request }) => {
+  test('an uploaded trace is stored as a blob under its hash, with a trace record', async ({ request }) => {
     const traceZip = buildTraceZip();
     const hash = sha256(traceZip);
 
-    const uploadRes = await upload(request, PROJECT.TRACE_DEDUP, traceZip, hash);
+    const uploadRes = await upload(request, PROJECT.TRACE_DEDUP, traceZip);
     expect(uploadRes.ok()).toBe(true);
     const { runId } = await uploadRes.json();
 
@@ -152,36 +141,11 @@ test.describe('Trace deduplication — upload', () => {
     expect(traces[0].filePath).toContain(hash);
   });
 
-  test('second upload with only the hash reuses the existing blob', async ({ request }) => {
-    const traceZip = buildTraceZip();
-    const hash = sha256(traceZip);
-
-    // First upload: provide the actual file
-    const r1 = await upload(request, PROJECT.TRACE_DEDUP, traceZip, hash);
-    expect(r1.ok()).toBe(true);
-    const { runId: runId1 } = await r1.json();
-
-    // Second upload: send hash only — reporter determined blob already exists
-    const r2 = await upload(request, PROJECT.TRACE_DEDUP, null, hash);
-    expect(r2.ok()).toBe(true);
-    const { runId: runId2 } = await r2.json();
-
-    const { traces: traces1 } = await getFirstCaseTraces(request, runId1);
-    const { traces: traces2 } = await getFirstCaseTraces(request, runId2);
-
-    expect(traces1).toHaveLength(1);
-    expect(traces2).toHaveLength(1);
-    // Both records must point to the same content-addressed blob path
-    expect(traces1[0].filePath).toBe(traces2[0].filePath);
-  });
-
   test('uploading the same trace twice stores only one blob', async ({ request }) => {
     const traceZip = buildTraceZip();
-    const hash = sha256(traceZip);
 
-    // Upload the same file twice with the same hash
-    const r1 = await upload(request, PROJECT.TRACE_DEDUP, traceZip, hash);
-    const r2 = await upload(request, PROJECT.TRACE_DEDUP, traceZip, hash);
+    const r1 = await upload(request, PROJECT.TRACE_DEDUP, traceZip);
+    const r2 = await upload(request, PROJECT.TRACE_DEDUP, traceZip);
     expect(r1.ok()).toBe(true);
     expect(r2.ok()).toBe(true);
 
@@ -190,17 +154,18 @@ test.describe('Trace deduplication — upload', () => {
     expect(t1[0].filePath).toBe(t2[0].filePath);
   });
 
-  test('upload without trace_hashes uses the legacy per-run path', async ({ request }) => {
-    const traceData = Buffer.from('legacy trace data — not a valid ZIP');
+  test('a trace that is not a ZIP is stored as uploaded, in the blob store', async ({ request }) => {
+    const traceData = Buffer.from('trace data — not a valid ZIP');
 
-    const res = await upload(request, PROJECT.TRACE_DEDUP, traceData, null);
+    const res = await upload(request, PROJECT.TRACE_DEDUP, traceData);
     expect(res.ok()).toBe(true);
     const { runId } = await res.json();
 
     const { traces } = await getFirstCaseTraces(request, runId);
     expect(traces).toHaveLength(1);
-    // Legacy path is stored under the run directory, not the blobs directory
-    expect(traces[0].filePath).not.toContain('/blobs/');
+    expect(traces[0].filePath).toContain(`/blobs/${sha256(traceData)}`);
+    const served = await request.get(`/api/files/${traces[0].filePath}`);
+    expect(Buffer.from(await served.body()).equals(traceData)).toBe(true);
   });
 });
 
@@ -209,9 +174,8 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
     const resourceData = Buffer.from('network response body — unique content for this test');
     const resourceName = sha256(resourceData).slice(0, 16) + '.net';
     const traceZip = buildTraceZip([{ name: resourceName, data: resourceData }]);
-    const hash = sha256(traceZip);
 
-    const uploadRes = await upload(request, PROJECT.TRACE_RESOURCES, traceZip, hash);
+    const uploadRes = await upload(request, PROJECT.TRACE_RESOURCES, traceZip);
     expect(uploadRes.ok()).toBe(true);
     const { runId } = await uploadRes.json();
 
@@ -242,10 +206,10 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
       { name: uniqueName, data: uniqueData },
     ]);
 
-    const r1 = await upload(request, PROJECT.TRACE_RESOURCES, zip1, sha256(zip1), 0, [
+    const r1 = await upload(request, PROJECT.TRACE_RESOURCES, zip1, [
       { title: 'run-1', status: 'passed', duration: 100, location: 'tests/a.spec.ts:1:1' },
     ]);
-    const r2 = await upload(request, PROJECT.TRACE_RESOURCES, zip2, sha256(zip2), 0, [
+    const r2 = await upload(request, PROJECT.TRACE_RESOURCES, zip2, [
       { title: 'run-2', status: 'passed', duration: 100, location: 'tests/b.spec.ts:1:1' },
     ]);
     expect(r1.ok()).toBe(true);
@@ -278,9 +242,8 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
     const traceZip = buildTraceZip([
       { name: sha256(Buffer.from('x')).slice(0, 16) + '.net', data: Buffer.from('resource') },
     ]);
-    const hash = sha256(traceZip);
 
-    const uploadRes = await upload(request, PROJECT.TRACE_RESOURCES, traceZip, hash);
+    const uploadRes = await upload(request, PROJECT.TRACE_RESOURCES, traceZip);
     const { runId } = await uploadRes.json();
     const { traces } = await getFirstCaseTraces(request, runId);
 

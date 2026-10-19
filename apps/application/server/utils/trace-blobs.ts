@@ -162,10 +162,27 @@ export async function upsertTraceBlob(
   hash: string,
   data: Buffer,
 ): Promise<{ id: number; path: string; size: number }> {
-  if (createHash('sha256').update(data).digest('hex') !== hash.toLowerCase()) {
+  if (sha256(data) !== hash.toLowerCase()) {
     throw apiError({ statusCode: 400, message: 'The trace does not match its SHA-256 hash' });
   }
+  return upsertHashedTraceBlob(projectId, hash, data);
+}
 
+/** Store a trace under the SHA-256 of its bytes, as {@link upsertTraceBlob} does. */
+export function upsertTraceFile(projectId: number, data: Buffer): Promise<{ id: number; path: string; size: number }> {
+  return upsertHashedTraceBlob(projectId, sha256(data), data);
+}
+
+function sha256(data: Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+/** The work of {@link upsertTraceBlob} once `hash` is known to be the SHA-256 of `data`. */
+async function upsertHashedTraceBlob(
+  projectId: number,
+  hash: string,
+  data: Buffer,
+): Promise<{ id: number; path: string; size: number }> {
   const db = await getDatabase();
 
   // Fast path: blob already registered
