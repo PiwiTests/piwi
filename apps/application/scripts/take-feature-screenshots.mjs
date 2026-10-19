@@ -4808,6 +4808,19 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-reproduce-section',
+    description:
+      "A failure's Reproduce section in the desktop shell, for a linked folder whose Playwright config starts no app (desktop shell)",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/test-run-cases/682',
+    viewport: { width: 1280, height: 1000 },
+    link: { path: READY_INSPECTION.path, exists: true },
+    inspection: { ...READY_INSPECTION, webServer: false },
+    of: '[data-shot="fix-reproduce-body"]',
+    pad: 12,
+  },
+  {
     name: 'desktop-nav',
     description: 'Back/forward pair in the sidebar header (desktop shell)',
     tags: ['desktop'],
