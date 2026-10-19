@@ -162,7 +162,7 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
 
 `replay-panel.js` is registered for the replay's whole origin, so every tab of it loads the script. The worker keeps
 the replay's tab under `piwiReplayTab` (`getReplayTab`, which only the worker writes): the tab the replay started in,
-or the first to ask (`piwi-replay-tab`) when an extension page started it. Only that tab plays the steps, gets a driver,
+or the first to ask (`piwi-replay-tab`) when none is bound. Only that tab plays the steps, gets a driver,
 sends input and finishes the replay; the popup's Replay says so in any other tab (`popup_replayElsewhere`). Closing the
 tab ends the replay (`finished`), and a replay stopped while no page of its tab ran shows its verdict on that tab's next
 page, or ends when another tab asks. The page writes the replay's state only through

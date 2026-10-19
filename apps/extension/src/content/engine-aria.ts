@@ -62,10 +62,6 @@ export function isElementNode(node: Node | null | undefined): node is Element {
   return !!node && node.nodeType === ELEMENT_NODE;
 }
 
-export function isDocumentNode(node: Node | null | undefined): node is Document {
-  return !!node && node.nodeType === DOCUMENT_NODE;
-}
-
 /** The parent element, or the host when the element sits at the top of a shadow root. */
 export function parentElementOrShadowHost(element: Element): Element | undefined {
   if (element.parentElement) return element.parentElement;
