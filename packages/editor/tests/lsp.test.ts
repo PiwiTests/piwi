@@ -664,15 +664,17 @@ beforeAll(async () => {
   });
   expect(init).toMatchObject({ capabilities: { hoverProvider: true } });
   await client.sendNotification('initialized', {});
-  // The indexes are fetched in the background: wait until the status says so.
-  await waitFor(() => (connected ? true : undefined));
+  // The indexes are fetched in the background, the code index after the latest run's failures: wait until the
+  // status shows both.
+  await waitFor(() => (ready ? true : undefined));
 });
 
-let connected = false;
+let ready = false;
 const pollStatus = setInterval(async () => {
-  if (!client || connected) return;
+  if (!client || ready) return;
   const status = (await client.sendRequest('piwi/status').catch(() => null)) as StatusResult | null;
-  connected = !!status?.contexts[0]?.connected;
+  const context = status?.contexts[0];
+  ready = !!context?.connected && context.reachedFiles > 0;
 }, 30);
 
 afterAll(async () => {
