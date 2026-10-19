@@ -36,7 +36,7 @@ public class CoverageTests
 
         var id = await app.RequestIdAsync("/quote?quantity=3");
 
-        Assert.Matches(new Regex("^[0-9a-f]{12}\\.[0-9]+$"), id);
+        Assert.Matches(new Regex("^[0-9a-f]{12}\\.[0-9]+\\.[0-9a-f]{32}$"), id);
         var group = await app.CollectAsync("lines", id!);
         Assert.Equal("test", group.Key);
         Assert.Empty(group.Missing);
