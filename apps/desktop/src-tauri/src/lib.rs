@@ -459,14 +459,20 @@ fn is_sidecar_url(url: &tauri::Url, port: u16) -> bool {
 }
 
 /// Where the dashboard window may navigate: the app's own bundled pages (the
-/// splash), the sidecar's origin once its port is known, and the non-web
-/// schemes a page uses (`about:`, `blob:`, `data:`, an IDE's URL scheme). Any
-/// other web origin, and a local file, is refused.
-fn main_window_may_navigate(url: &tauri::Url, sidecar_port: Option<u16>) -> bool {
+/// splash, served from `dev_url` under `tauri dev`), the sidecar's origin once
+/// its port is known, and the non-web schemes a page uses (`about:`, `blob:`,
+/// `data:`, an IDE's URL scheme). Any other web origin, and a local file, is
+/// refused.
+fn main_window_may_navigate(
+    url: &tauri::Url,
+    sidecar_port: Option<u16>,
+    dev_url: Option<&tauri::Url>,
+) -> bool {
     match url.scheme() {
         "tauri" => true,
         "http" | "https" => {
             url.host_str() == Some("tauri.localhost")
+                || dev_url.is_some_and(|dev| dev.origin() == url.origin())
                 || sidecar_port.is_some_and(|port| is_sidecar_url(url, port))
         }
         "file" => false,
@@ -1404,10 +1410,16 @@ pub fn run() {
         .plugin(
             tauri::plugin::Builder::<tauri::Wry>::new("piwi-navigation")
                 .on_navigation(|webview, url| {
+                    let dev_url = if tauri::is_dev() {
+                        webview.config().build.dev_url.as_ref()
+                    } else {
+                        None
+                    };
                     webview.label() != "main"
                         || main_window_may_navigate(
                             url,
                             webview.try_state::<mcp_clients::ServerInfo>().map(|s| s.port),
+                            dev_url,
                         )
                 })
                 .build(),
@@ -2085,14 +2097,23 @@ mod tests {
     #[test]
     fn the_dashboard_window_stays_on_the_app_and_its_sidecar() {
         let url = |s: &str| tauri::Url::parse(s).unwrap();
-        assert!(main_window_may_navigate(&url("tauri://localhost/index.html"), None));
-        assert!(main_window_may_navigate(&url("http://tauri.localhost/index.html"), None));
-        assert!(main_window_may_navigate(&url("http://127.0.0.1:3000/__piwi/session"), Some(3000)));
-        assert!(main_window_may_navigate(&url("about:blank"), Some(3000)));
-        assert!(!main_window_may_navigate(&url("http://127.0.0.1:3000/"), None));
-        assert!(!main_window_may_navigate(&url("http://127.0.0.1:8080/"), Some(3000)));
-        assert!(!main_window_may_navigate(&url("https://evil.example/"), Some(3000)));
-        assert!(!main_window_may_navigate(&url("file:///etc/passwd"), Some(3000)));
+        assert!(main_window_may_navigate(&url("tauri://localhost/index.html"), None, None));
+        assert!(main_window_may_navigate(&url("http://tauri.localhost/index.html"), None, None));
+        assert!(main_window_may_navigate(
+            &url("http://127.0.0.1:3000/__piwi/session"),
+            Some(3000),
+            None
+        ));
+        assert!(main_window_may_navigate(&url("about:blank"), Some(3000), None));
+        assert!(!main_window_may_navigate(&url("http://127.0.0.1:3000/"), None, None));
+        assert!(!main_window_may_navigate(&url("http://127.0.0.1:8080/"), Some(3000), None));
+        assert!(!main_window_may_navigate(&url("https://evil.example/"), Some(3000), None));
+        assert!(!main_window_may_navigate(&url("file:///etc/passwd"), Some(3000), None));
+        // `tauri dev` serves the bundled pages from `devUrl`: that origin only.
+        let dev = url("http://localhost:1430");
+        assert!(main_window_may_navigate(&url("http://localhost:1430/index.html"), None, Some(&dev)));
+        assert!(!main_window_may_navigate(&url("http://localhost:1431/"), None, Some(&dev)));
+        assert!(!main_window_may_navigate(&url("http://localhost:1430/"), None, None));
     }
 
     #[test]

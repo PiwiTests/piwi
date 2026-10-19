@@ -3,7 +3,7 @@ import { requireProjectAccess, requireRouteId } from '../../../../utils/project-
 import { getDatabase } from '../../../../database';
 import { projects, testRuns } from '../../../../database/schema';
 import { rebuildProjectGraph, resolveRunBranchTag } from '../../../../utils/graph-ingest';
-import { refreshOpenApiSurface } from '../../../../utils/surface-manifest';
+import { refreshOpenApiSurface } from '../../../../utils/openapi-surface';
 import { withProjectGraphLock } from '../../../../utils/project-graph-lock';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
