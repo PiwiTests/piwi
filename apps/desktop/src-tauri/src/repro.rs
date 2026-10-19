@@ -236,7 +236,7 @@ fn fetch_spec(
 }
 
 /// Remove the spec, then its folder when nothing else is left in it.
-fn remove_spec(spec: &Path) {
+pub(crate) fn remove_spec(spec: &Path) {
     let _ = std::fs::remove_file(spec);
     if let Some(dir) = spec.parent() {
         let _ = std::fs::remove_dir(dir); // fails, as it should, when not empty
@@ -317,10 +317,6 @@ pub async fn desktop_run_repro(
         .map_err(|e| e.to_string())??
     };
 
-    std::fs::create_dir_all(spec.parent().expect("the spec has a folder"))
-        .map_err(|e| e.to_string())?;
-    std::fs::write(&spec, code).map_err(|e| e.to_string())?;
-
     let mut cmd_args: Vec<String> = vec![
         node_path(&cli),
         "test".into(),
@@ -328,7 +324,19 @@ pub async fn desktop_run_repro(
     ];
     cmd_args.extend(args);
     let sidecar = app.shell().sidecar("node").map_err(|e| e.to_string())?;
-    let result_dir = private_run_dir("piwi-repro-").map_err(|e| e.to_string())?;
+
+    let state = app.state::<LocalRuns>();
+    let id = state.allocate_id();
+    std::fs::create_dir_all(spec.parent().expect("the spec has a folder"))
+        .map_err(|e| e.to_string())?;
+    state.track_spec(id, spec.clone());
+    let result_dir = match std::fs::write(&spec, code).and_then(|()| private_run_dir("piwi-repro-")) {
+        Ok(dir) => dir,
+        Err(e) => {
+            state.remove_spec(id);
+            return Err(e.to_string());
+        }
+    };
     let result_file = result_dir.join("result.json");
     let command = sidecar
         .args(cmd_args)
@@ -344,14 +352,11 @@ pub async fn desktop_run_repro(
     let (mut rx, child) = match spawned {
         Ok(pair) => pair,
         Err(e) => {
-            remove_spec(&spec);
+            state.remove_spec(id);
             let _ = std::fs::remove_dir_all(&result_dir);
             return Err(e.to_string());
         }
     };
-
-    let state = app.state::<LocalRuns>();
-    let id = state.allocate_id();
     state.track_child(id, child);
 
     let emit_app = app.clone();
@@ -372,8 +377,8 @@ pub async fn desktop_run_repro(
                 CommandEvent::Terminated(status) => {
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
                         runs.forget_child(id);
+                        runs.remove_spec(id);
                     }
-                    remove_spec(&spec);
                     let recorded = std::fs::read(&result_file)
                         .ok()
                         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
