@@ -165,8 +165,9 @@ The early check only says the user holds the permission _somewhere_. The project
   that `/api/auth/me` returns. It is an affordance only (hide or disable a control); the server decides. With
   authentication off everything is allowed (virtual administrator).
 - **Safety rules:** the last administrator cannot be demoted; a Project admin edits role bindings only on projects
-  where they hold `project:members`, never on all projects; changing a user's instance role bumps `sessionEpoch`,
-  while project role and group changes take effect on the next request since access is loaded per request.
+  where they hold `project:members`, never on all projects; changing a user's instance role or signing out bumps
+  `sessionEpoch`, while project role and group changes take effect on the next request since access is loaded per
+  request.
 
 ### OpenAPI annotations
 
