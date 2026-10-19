@@ -16,6 +16,7 @@
 import { stepLabel } from '@piwitests/core/step-analysis';
 import type { FailureTimeline, TimelineItem } from '#shared/failure-timeline';
 import { requestRouteKey } from '#shared/utils/route';
+import { median } from './utils/stats';
 
 /** The shortest duration that can stand out, in ms. */
 export const STANDOUT_MIN_MS = 1000;
@@ -169,17 +170,11 @@ function addSample(samples: Samples, key: string, ms: number, execution: number)
   samples.set(key, entry);
 }
 
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
-
 /** The median of every key seen in at least `minSamples` executions, rounded to the ms. */
 function medians(samples: Samples, minSamples: number): Map<string, number> {
   const out = new Map<string, number>();
   for (const [key, { durations, executions }] of samples) {
-    if (executions.size >= minSamples) out.set(key, Math.round(median(durations)));
+    if (executions.size >= minSamples) out.set(key, Math.round(median(durations)!));
   }
   return out;
 }

@@ -27,6 +27,7 @@ import { eligibleRunSql } from '../run-eligibility';
 import { TERMINAL_STATUSES } from './projects';
 import type { DrizzleDB } from './db';
 import { topFlakeSuspect, type FlakeSuspectResult } from '../flake-lab';
+import { median } from '../utils/stats';
 
 /** How far back the profile reads, in days. */
 export const FLAKE_PROFILE_WINDOW_DAYS = 30;
@@ -198,12 +199,6 @@ function formatThreshold(ms: number): string {
   return `${Math.floor(ms / 100) / 10} s`;
 }
 
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
-
 function requestFailed(r: FlakeProfileRequest): boolean {
   const s = r.status ?? 0;
   return Boolean(r.failure) || s <= 0 || s >= 500;
@@ -355,7 +350,7 @@ export function buildFlakeProfile(input: FlakeProfileInput): FlakeProfile {
     if (threshold != null) {
       const has = (a: FlakeProfileAttempt) => (slowest(a) ?? -1) >= threshold;
       const counts = countWith(split, has);
-      const ms = Math.round(median(split.failed.filter(has).map((a) => slowest(a)!)) / 100) * 100;
+      const ms = Math.round(median(split.failed.filter(has).map((a) => slowest(a)!))! / 100) * 100;
       add(
         {
           id: `slow-route:${route}`,

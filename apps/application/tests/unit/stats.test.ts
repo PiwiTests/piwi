@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { percentile, durationStats } from '#shared/utils/stats';
+import { percentile, durationStats, median, lowerPercentile } from '#shared/utils/stats';
 
 describe('percentile', () => {
   test('returns 0 for an empty array', () => {
@@ -59,5 +59,32 @@ describe('durationStats', () => {
   test('rounds the average to the nearest integer', () => {
     // valid = [10, 15] -> avg round(12.5) = 13, p90 -> 15
     expect(durationStats([10, 15])).toEqual({ avg: 13, p90: 15 });
+  });
+});
+
+describe('median', () => {
+  test('is null for an empty list, and the middle value of an odd count, in any order', () => {
+    expect(median([])).toBeNull();
+    expect(median([30, 10, 20])).toBe(20);
+  });
+
+  test('is the mean of the two middle values of an even count, unrounded', () => {
+    expect(median([40, 10, 20, 30])).toBe(25);
+    expect(median([1, 2])).toBe(1.5);
+  });
+});
+
+describe('lowerPercentile', () => {
+  test('takes the lower rank p% of the way from the first value to the last', () => {
+    expect(lowerPercentile([], 95)).toBe(0);
+    expect(lowerPercentile([10, 20, 30, 40, 50], 50)).toBe(30);
+    expect(lowerPercentile([10, 20, 30, 40, 50], 95)).toBe(40);
+    expect(lowerPercentile([10, 20, 30, 40, 50], 100)).toBe(50);
+  });
+
+  test('keeps a lone outlier of a short list above its 95th percentile, where the nearest rank reaches it', () => {
+    const durations = [...Array.from({ length: 9 }, () => 100), 10_000];
+    expect(lowerPercentile(durations, 95)).toBe(100);
+    expect(percentile(durations, 95)).toBe(10_000);
   });
 });
