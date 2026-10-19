@@ -22,7 +22,7 @@ permissions:
 
 env:
   # Match the runtime the app is built and tested against (apps/application/engines).
-  PIWI_NODE_VERSION: 24.4.1
+  PIWI_NODE_VERSION: 24.22.0
 
 jobs:
   desktop:
@@ -132,7 +132,7 @@ jobs:
         working-directory: apps/desktop
         shell: pwsh
         run: |
-          choco install upx -y --no-progress
+          choco install upx --version=5.2.1 -y --no-progress
           upx --best --lzma "src-tauri/binaries/node-${{ matrix.target }}.exe"
 
       - name: Stage server (native modules for this OS)
