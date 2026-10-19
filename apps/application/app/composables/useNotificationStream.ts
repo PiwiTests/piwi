@@ -6,6 +6,9 @@ let sharedSource: EventSource | null = null;
 let _demoUnsubscribe: (() => void) | null = null;
 let started = false;
 let _windowFocused = true;
+/** The router and the base path the app is served at (`/demo/` in the demo), read when the stream starts. */
+let _router: ReturnType<typeof useRouter> | null = null;
+let _baseURL = '/';
 
 if (import.meta.client) {
   window.addEventListener('focus', () => {
@@ -136,14 +139,14 @@ function handleEvent(data: NotificationEventData) {
   const notification = new Notification('Piwi Dashboard', {
     body,
     tag,
-    icon: '/logo.svg',
+    icon: `${_baseURL.replace(/\/$/, '')}/logo.svg`,
   });
 
   const link = getLink(data);
   if (link) {
     notification.onclick = () => {
       window.focus();
-      window.location.href = link;
+      void _router?.push(link);
       notification.close();
     };
   } else {
@@ -211,6 +214,8 @@ export function useNotificationStream() {
   _diagnosisActive = active;
 
   const config = useRuntimeConfig();
+  _router = useRouter();
+  _baseURL = config.app.baseURL || '/';
 
   if (!config.public.authEnabled) {
     _cookie = useBrowserNotificationCookie();
