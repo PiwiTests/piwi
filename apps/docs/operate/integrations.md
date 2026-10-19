@@ -142,8 +142,8 @@ Polling is the baseline because Atlassian Cloud usually cannot reach a self-host
 register a webhook so a close or reopen reflects immediately instead of within the sync interval:
 
 1. In **Settings → Integrations**, on the Jira connection, choose **Enable webhook**. Piwi generates a per-connection
-   secret and shows the full URL **once**, with a link to the site's webhooks page. Set `PIWI_SITE_URL` when Piwi
-   sits behind another address than the one in your browser.
+   secret, keeps only its digest, and shows the full URL **once**, with a link to the site's webhooks page. Set
+   `PIWI_SITE_URL` when Piwi sits behind another address than the one in your browser.
 2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
    **issue updated** events (optionally scoped by a JQL filter to the bound projects).
 3. Piwi looks the issue up by its id in its links and refreshes just that one, applying the resolve/reopen policies.

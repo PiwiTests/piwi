@@ -24,7 +24,10 @@ const {
   testConnection,
   credentialsForCheck,
   setWebhookToken,
+  clearWebhookToken,
+  connectionByWebhookToken,
 } = await import('../../server/utils/integrations/connections');
+const { hashToken } = await import('../../server/utils/token-hash');
 const { detectProviderWithConnections } = await import('../../server/utils/integrations/link-resolve');
 
 /** A minimal `fetch` Response carrying JSON, or a non-2xx status. */
@@ -432,7 +435,57 @@ describe('connections and link resolution', () => {
 
     await updateConnection(dbc, created.id, { name: 'Renamed', config: { ...summary.config, locale: 'fr' } });
     const row = await getConnectionRow(dbc, created.id);
-    expect(row?.config).toMatchObject({ locale: 'fr', webhookToken: token });
+    expect(row?.config).toEqual({ locale: 'fr', webhookTokenDigest: hashToken(token!) });
+  });
+
+  test('a webhook token is stored as its digest, matched by it, and cleared', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Digest',
+      baseUrl: 'https://digest.atlassian.net',
+      credentials: { email: 'd@team.io', apiToken: 'tok' },
+    });
+    const token = (await setWebhookToken(dbc, created.id))!;
+    expect(JSON.stringify((await getConnectionRow(dbc, created.id))?.config)).not.toContain(token);
+    expect((await connectionByWebhookToken(dbc, token))?.id).toBe(created.id);
+    expect(await connectionByWebhookToken(dbc, `${token}x`)).toBeNull();
+
+    await clearWebhookToken(dbc, created.id);
+    expect(await connectionByWebhookToken(dbc, token)).toBeNull();
+    expect((await getConnectionRow(dbc, created.id))?.config).toEqual({});
+  });
+
+  test('a plain webhook token stored before digests keeps working and is hashed on read', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Legacy',
+      baseUrl: 'https://legacy.atlassian.net',
+      credentials: { email: 'l@team.io', apiToken: 'tok' },
+    });
+    await dbc
+      .update(schema.integrationConnections)
+      .set({ config: { locale: 'en', webhookToken: 'legacy-plain-token' } })
+      .where(eq(schema.integrationConnections.id, created.id));
+
+    expect((await connectionByWebhookToken(dbc, 'legacy-plain-token'))?.id).toBe(created.id);
+    expect((await getConnectionRow(dbc, created.id))?.config).toEqual({
+      locale: 'en',
+      webhookTokenDigest: hashToken('legacy-plain-token'),
+    });
+    expect((await connectionByWebhookToken(dbc, 'legacy-plain-token'))?.id).toBe(created.id);
+  });
+
+  test('a client cannot set a webhook token through a connection config', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Injected',
+      baseUrl: 'https://injected.atlassian.net',
+      config: { webhookToken: 'chosen', webhookTokenDigest: hashToken('chosen') },
+      credentials: { email: 'i@team.io', apiToken: 'tok' },
+    });
+    expect(await connectionByWebhookToken(dbc, 'chosen')).toBeNull();
+    await updateConnection(dbc, created.id, { config: { webhookTokenDigest: hashToken('chosen') } });
+    expect(await connectionByWebhookToken(dbc, 'chosen')).toBeNull();
   });
 
   test('a pre-save check fills a blank token from the edited connection, on the same site only', async () => {
