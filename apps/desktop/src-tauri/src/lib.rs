@@ -1449,6 +1449,7 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             // Holds the encryption key, the access token and the database.
             private_fs::create_private_dir(&app_data_dir)?;
+            worktree::discard_leftover_worktrees(&app_data_dir);
             let data_dir = app_data_dir.join(".data");
             let storage_dir = data_dir.join("storage");
             // Setting PIWI_DATABASE_PATH disables the server's own auto-mkdir, and
