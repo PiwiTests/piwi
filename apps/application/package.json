@@ -65,7 +65,7 @@
     "@piwitests/picker-dom": "*",
     "@tanstack/vue-table": "^8.21.3",
     "@vite-pwa/nuxt": "^1.1.1",
-    "@vueuse/core": "^14.3.0",
+    "@vueuse/core": "^15.0.0",
     "@vueuse/nuxt": "^14.1.0",
     "busboy": "^1.6.0",
     "date-fns": "^4.1.0",
