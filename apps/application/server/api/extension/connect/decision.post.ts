@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { isAuthEnabled, requireAuth } from '../../../utils/auth';
 import { decideDeviceConnect, CONNECT_RATE_LIMITS } from '../../../utils/extension-connect';
-import { isRateLimited, rateLimitClientIp, rateLimitedError, recordRateLimitHit } from '../../../utils/rate-limit';
+import { limitLookupMisses, rateLimitClientIp } from '../../../utils/rate-limit';
 
 defineRouteMeta({
   openAPI: {
@@ -19,20 +19,24 @@ const bodySchema = z.object({ userCode: z.string().min(1).max(20), allow: z.bool
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const missKey = `extension-connect:miss:${user.id}:${rateLimitClientIp(event)}`;
-  if (isRateLimited(missKey, CONNECT_RATE_LIMITS.lookupMiss.limit)) throw rateLimitedError(event, [missKey]);
   const parsed = bodySchema.safeParse(await readBody(event));
   if (!parsed.success) throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
 
-  const result = await decideDeviceConnect(await getDatabase(), {
-    userCode: parsed.data.userCode,
-    // With authentication off there is no account to own a key.
-    userId: isAuthEnabled(event) ? user.id : null,
-    allow: parsed.data.allow,
-  });
-  if (result === 'not-found') {
-    recordRateLimitHit(missKey, CONNECT_RATE_LIMITS.lookupMiss.windowMs);
-    throw apiError({ statusCode: 404, message: 'No connect request has this code' });
-  }
+  const db = await getDatabase();
+  const result = await limitLookupMisses(
+    event,
+    missKey,
+    CONNECT_RATE_LIMITS.lookupMiss,
+    () =>
+      decideDeviceConnect(db, {
+        userCode: parsed.data.userCode,
+        // With authentication off there is no account to own a key.
+        userId: isAuthEnabled(event) ? user.id : null,
+        allow: parsed.data.allow,
+      }),
+    (outcome) => outcome === 'not-found',
+  );
+  if (result === 'not-found') throw apiError({ statusCode: 404, message: 'No connect request has this code' });
   if (result === 'already-decided') throw apiError({ statusCode: 409, message: 'This request was already answered' });
   if (result === 'expired') throw apiError({ statusCode: 410, message: 'This request has expired' });
   return { status: result };
