@@ -514,10 +514,16 @@ function headerValue(text: string, label: 'Expected' | 'Received'): string | nul
   return value.length > 0 ? value : null;
 }
 
+/** The locator a web-first assertion's `Locator:` header line names, trimmed; null without one. */
+export function readLocatorHeader(text: string): string | null {
+  const header = /^[ \t]*Locator:[ \t]*(.+)$/m.exec(text);
+  return header ? header[1]!.trim() : null;
+}
+
 /** The locator named by the error: the `Locator:` header first, else the first call in the text. */
 function readLocator(text: string, strict: RegExpExecArray | null): string | null {
-  const header = /^[ \t]*Locator:[ \t]*(.+)$/m.exec(text);
-  if (header) return header[1]!.trim();
+  const header = readLocatorHeader(text);
+  if (header) return header;
   if (strict) return strict[1]!.trim();
   return extractLocatorChain(text);
 }

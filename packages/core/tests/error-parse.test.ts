@@ -8,6 +8,7 @@ import {
   extractStackFrames,
   extractTopFrame,
   extractTopFrameFile,
+  readLocatorHeader,
   stripAnsi,
   withoutStackFrames,
   type ParsedPlaywrightError,
@@ -473,6 +474,13 @@ describe('locator and frame helpers', () => {
   test('extractMessageHead stops at the call log and the stack and keeps five lines', () => {
     expect(extractMessageHead('a\n\nb\nCall log:\n  - x\n    at f:1:1')).toBe('a\nb');
     expect(extractMessageHead('1\n2\n3\n4\n5\n6\n7')).toBe('1\n2\n3\n4\n5');
+  });
+
+  test('readLocatorHeader reads the Locator: line of a web-first assertion only', () => {
+    const text =
+      "Error: expect(locator).toBeVisible() failed\n\nLocator:  getByRole('button', { name: 'Pay' }) \nExpected: visible";
+    expect(readLocatorHeader(text)).toBe("getByRole('button', { name: 'Pay' })");
+    expect(readLocatorHeader("locator.click: Timeout 5000ms exceeded.\n  - waiting for getByText('x')")).toBeNull();
   });
 
   test('stripAnsi removes SGR codes only', () => {
