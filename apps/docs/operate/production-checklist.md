@@ -29,6 +29,8 @@ The defaults are conservative, so the checklist above is short. Without any extr
 - The container runs as a **non-root** user (`nodejs`, UID 1001).
 - Passwords are hashed with **scrypt** and per-password salts; login, initial-setup and password-reset endpoints are **rate-limited** per client address (and failed logins per account), returning `429` with `Retry-After`.
 - **API keys** are stored only as SHA-256 hashes and shown once, at creation — a leaked database yields no usable key.
+- No other site can frame the dashboard: every response carries `X-Frame-Options: SAMEORIGIN` and
+  `frame-ancestors 'self'`. Status badges and report charts are images, so a README or a wiki still shows them.
 - Secrets supplied by **environment variable** are never written to the database and never returned by the API; the settings UI shows them read-only with a lock badge.
 - Stored credentials are encrypted with **AES-256-GCM** once `PIWI_SECRET_KEY` is set.
 - Database **migrations are forward-only** and run on startup, before any request reaches the database; if one fails, every database call fails and `/api/health` returns `503` rather than serving a half-migrated schema.

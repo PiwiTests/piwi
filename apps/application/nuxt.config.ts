@@ -304,6 +304,16 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2025-02-23',
 
+  // No other site may frame the dashboard (clickjacking). A route that sets its
+  // own Content-Security-Policy (a sandboxed file, a share view, the desktop
+  // shell's page policy) replaces this one and keeps X-Frame-Options. Badges and
+  // charts are images, which neither header restricts.
+  routeRules: {
+    '/**': {
+      headers: { 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "frame-ancestors 'self'" },
+    },
+  },
+
   nitro: {
     hooks: {
       // The app's `$fetch` and `useFetch` carry no typed route map. With one,
