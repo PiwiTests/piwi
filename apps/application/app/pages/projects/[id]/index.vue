@@ -701,8 +701,11 @@ const {
 });
 
 // The slowest tests follow the run scope, not the window, so they are read
-// again only when the scope changes.
+// again only when the scope changes. Each read counts its requests, so an
+// answer to an older window or scope never replaces a newer one.
 let slowTestsScope: string | null = null;
+let performanceRequest = 0;
+let slowTestsRequest = 0;
 watch(
   [activeTab, perfRunsWindow, runScopeQuery],
   async ([tab, runsWindow, scopeQuery]) => {
@@ -713,26 +716,32 @@ watch(
     if (readSlowTests) slowTestsLoading.value = true;
     if (import.meta.server) return;
     if (aiStepsStatus.value === 'idle') void checkAiSteps();
+    const performanceAsked = ++performanceRequest;
+    const slowTestsAsked = readSlowTests ? ++slowTestsRequest : 0;
+    if (readSlowTests) slowTestsScope = scopeKey;
     const perfRes = await $fetch<{ items: PerformanceTrendPoint[] }>(`/api/projects/${projectId}/performance`, {
       query: { runs: runsWindow, ...scopeQuery },
     }).catch((err) => {
       console.warn('[PerformanceTab] Failed to fetch performance trend:', err);
       return null;
     });
-    performanceData.value = perfRes?.items ?? null;
-    performanceLoading.value = false;
+    if (performanceAsked === performanceRequest) {
+      performanceData.value = perfRes?.items ?? null;
+      performanceLoading.value = false;
+    }
     if (readSlowTests) {
-      slowTestsScope = scopeKey;
       slowTestsError.value = false;
       const slowRes = await $fetch<{ items: SlowTest[] }>(`/api/projects/${projectId}/slow-tests`, {
         query: scopeQuery,
       }).catch((err) => {
-        slowTestsError.value = true;
+        if (slowTestsAsked === slowTestsRequest) slowTestsError.value = true;
         console.warn('[PerformanceTab] Failed to fetch slow tests:', err);
         return null;
       });
-      slowTests.value = slowRes?.items ?? null;
-      slowTestsLoading.value = false;
+      if (slowTestsAsked === slowTestsRequest) {
+        slowTests.value = slowRes?.items ?? null;
+        slowTestsLoading.value = false;
+      }
     }
   },
   { immediate: true },
