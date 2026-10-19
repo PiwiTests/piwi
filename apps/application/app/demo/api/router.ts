@@ -347,6 +347,7 @@ import {
   saveDemoProjectIntegration,
   demoAutoCreatePreview,
   generateDemoWebhookToken,
+  disableDemoWebhookToken,
 } from './integrations';
 import type { ConnectionInput } from '#shared/integrations/types';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
@@ -3295,7 +3296,7 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/webhook-token$/,
     permission: 'connections:manage',
-    handler: async () => ({ success: true }),
+    handler: async () => disableDemoWebhookToken(),
   },
   {
     method: 'GET',

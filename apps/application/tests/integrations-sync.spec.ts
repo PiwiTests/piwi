@@ -6,7 +6,8 @@
  * verified by a passing run comments on and transitions the ticket; a ticket
  * moved to Done offers the reconcile (policy off) then auto-resolves the cluster
  * (policy on); a reopened ticket reopens the cluster; the inbound webhook
- * refreshes one link; and the binding endpoint needs Project admin. Nothing calls out.
+ * refreshes one link; Sync now and Disable webhook on the settings page; and
+ * the binding endpoint needs Project admin. Nothing calls out.
  */
 import { test, expect } from './fixtures';
 import * as http from 'http';
@@ -14,6 +15,7 @@ import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
 import { ProjectRole } from '#shared/permissions';
 import { createMember } from './utils/access';
+import { waitForHydration } from './utils';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -277,6 +279,19 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
     expect(link?.statusText).toBe('In Progress');
   });
 
+  test('Sync now on the settings page reads the statuses again and says how many', async ({ page, request }) => {
+    mock.setStatus('In Review', 'indeterminate');
+    await page.goto('/settings/integrations');
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Sync now' }).click();
+    await expect(page.getByText('Statuses synced', { exact: true })).toBeVisible();
+    await expect(
+      page.locator('[data-slot="description"]').filter({ hasText: /^Refreshed \d+ links?\./ }),
+    ).toBeVisible();
+    const link = (await clusterJson(request)).links.find((l) => l.provider === 'jira');
+    expect(link?.statusText).toBe('In Review');
+  });
+
   test('a verified fix comments on and transitions the ticket', async ({ request }) => {
     // A passing run of the affected test records a fix, firing the fix policies.
     await request.post('/api/test-runs/submit', {
@@ -342,6 +357,31 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
     await postWebhook(request);
     await expect.poll(async () => (await clusterJson(request)).status, { timeout: 10_000 }).toBe('resolved');
   });
+
+  test('Disable webhook on the settings page turns the inbound webhook off', async ({ page, request }) => {
+    await page.goto('/settings/integrations');
+    await waitForHydration(page);
+    const card = page
+      .locator('li')
+      .filter({ hasText: 'Mock Jira (sync)' })
+      .filter({ has: page.getByRole('button', { name: 'Test connection' }) });
+    await card.getByRole('button', { name: 'Disable webhook' }).click();
+    await page
+      .getByRole('dialog', { name: 'Disable the webhook' })
+      .getByRole('button', { name: 'Disable webhook' })
+      .click();
+    await expect(page.getByText('Webhook disabled', { exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Enable webhook' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Disable webhook' })).toHaveCount(0);
+
+    const { connection } = await (await request.get(`/api/integrations/connections/${connectionId}`)).json();
+    expect(connection.hasWebhookToken).toBe(false);
+    // The old URL selects no connection any more: the answer carries no refresh.
+    const hook = await request.post(`/api/integrations/jira/webhook/${webhookToken}`, {
+      data: { webhookEvent: 'jira:issue_updated', issue: { id: mock.issueId() } },
+    });
+    expect(await hook.json()).toEqual({ ok: true });
+  });
 });
 
 test.describe.serial('Integrations sync — role checks (auth server, CI only)', () => {
@@ -387,6 +427,12 @@ test.describe.serial('Integrations sync — role checks (auth server, CI only)',
   test('a Maintainer cannot run a sync sweep', async () => {
     skip();
     const res = await authApi('POST', '/api/integrations/sync', undefined, userCookie);
+    expect(res.status).toBe(403);
+  });
+
+  test('a Maintainer cannot disable a webhook', async () => {
+    skip();
+    const res = await authApi('DELETE', '/api/integrations/connections/1/webhook-token', undefined, userCookie);
     expect(res.status).toBe(403);
   });
 });

@@ -50,12 +50,19 @@ const DEMO_CONNECTION: ConnectionSummary = {
   updatedAt: DEMO_TIME,
 };
 
+/** Whether the canned connection's inbound webhook is on, for as long as the service worker runs. */
+let demoWebhookEnabled = false;
+
+function demoConnection(): ConnectionSummary {
+  return { ...DEMO_CONNECTION, hasWebhookToken: demoWebhookEnabled };
+}
+
 export function listDemoConnections(): { connections: ConnectionSummary[]; canStoreSecrets: boolean } {
-  return { connections: [DEMO_CONNECTION], canStoreSecrets: true };
+  return { connections: [demoConnection()], canStoreSecrets: true };
 }
 
 export function getDemoConnection(id: number): { connection: ConnectionSummary } | null {
-  return id === DEMO_CONNECTION.id ? { connection: DEMO_CONNECTION } : null;
+  return id === DEMO_CONNECTION.id ? { connection: demoConnection() } : null;
 }
 
 export function createDemoConnection(body: ConnectionInput): { connection: ConnectionSummary } {
@@ -444,8 +451,14 @@ export function saveDemoProjectIntegration(body: Partial<ResolvedProjectIntegrat
 
 /** A fake webhook token so the Settings UI can render the once-shown value. */
 export function generateDemoWebhookToken(): { token: string; url: string } {
+  demoWebhookEnabled = true;
   const token = 'demo-webhook-token';
   return { token, url: `/api/integrations/jira/webhook/${token}` };
+}
+
+export function disableDemoWebhookToken(): { success: true } {
+  demoWebhookEnabled = false;
+  return { success: true };
 }
 
 /** The demo has no tracker to poll, so a sync sweep refreshes nothing. */
