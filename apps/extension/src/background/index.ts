@@ -777,8 +777,8 @@ async function startReplayNow(
     const conditions = await conditionsFor(tab, tab.url);
     await prepareReplayViews(message);
     await setReplayState(conditions.length ? { ...replay, conditions } : replay);
-    // A replay starts from the page it plays on, and is that tab's.
-    await setReplayTab({ replayId: replay.id, tabId: tab.id });
+    // Started from the page it plays on, the replay is that tab's; from an extension page, the first tab to ask.
+    if (!fromExtensionPage(sender)) await setReplayTab({ replayId: replay.id, tabId: tab.id });
     await releaseReplayDebugger();
     await unregisterScripts(REPLAY_SCRIPT_IDS);
     await chrome.scripting.registerContentScripts([
