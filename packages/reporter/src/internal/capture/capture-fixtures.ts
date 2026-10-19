@@ -85,6 +85,7 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
+import { maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -700,7 +701,8 @@ const TOKEN_MASK_RES = [/\beyJ[\w-]{10,}\.[\w-]{5,}\.[\w-]{5,}\b/g, /\b[0-9a-f]{
  * Assemble the wire page-state from the in-page reads, the context cookies and
  * what the page was doing (`readPageInteraction`). Pure and Node-side so the
  * sanitization (token masking, caps, value-free cookies, well-formed element
- * paths) is unit-testable.
+ * paths) is unit-testable. The URL goes without its fragment, which `hash`
+ * carries with its credentials masked (`#access_token=[masked]`).
  */
 export function buildPageState(
   raw: RawPageState,
@@ -721,8 +723,8 @@ export function buildPageState(
     }));
 
   return {
-    url: raw.url,
-    hash: raw.hash || null,
+    url: raw.url.split('#')[0]!,
+    hash: raw.hash ? maskUrlFragment(raw.hash) : null,
     historyState: historyState || null,
     localStorage: capStorage(raw.localStorage),
     sessionStorage: capStorage(raw.sessionStorage),

@@ -1,6 +1,6 @@
 import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-requests';
 import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
-import { maskTokenLike } from '@piwitests/core/mask';
+import { maskTokenLike, maskUrlFragment } from '@piwitests/core/mask';
 import { capStepValue } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
 import { withoutIncidentMetadata } from '#shared/run-incident';
@@ -147,7 +147,7 @@ export function sanitizePageState(state: unknown): Record<string, unknown> | nul
 
   return {
     url: sanitizeUrl(url),
-    hash: str(s.hash, 500),
+    hash: str(typeof s.hash === 'string' ? maskUrlFragment(s.hash) : null, 500),
     historyState: str(s.historyState, 2100),
     localStorage: storage(s.localStorage),
     sessionStorage: storage(s.sessionStorage),

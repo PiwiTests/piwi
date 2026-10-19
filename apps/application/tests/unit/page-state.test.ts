@@ -92,6 +92,16 @@ describe('sanitizePageState', () => {
     expect((out.cookies as unknown[]).length).toBe(1);
   });
 
+  test('masks the credentials a URL fragment carries', () => {
+    const out = sanitizePageState({
+      url: 'https://a.example.com/callback#id_token=LEAKED',
+      hash: '#id_token=LEAKED&scope=openid',
+    })!;
+    expect(out.url).toBe('https://a.example.com/callback');
+    expect(out.hash).toBe('#id_token=[masked]&scope=openid');
+    expect(sanitizePageState({ url: 'https://a.example.com/', hash: '#/cart/12' })!.hash).toBe('#/cart/12');
+  });
+
   test('keeps focus and hover by well-formed element path only', () => {
     const out = sanitizePageState({
       url: 'https://a.example.com/',
