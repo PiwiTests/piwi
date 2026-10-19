@@ -121,6 +121,8 @@ refusal naming the field.
 
 The modal prefills its fields from the [project binding](#the-project-binding), else offers pickers over the
 connected site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
+The share link needs the **Maintainer** role or above: the preview shows where it goes, and filing the issue creates
+it once, in your name.
 From an AI agent, the [`create_issue` MCP tool](/reference/mcp-tools#create_issue) files the same ticket once the
 binding names a Jira project and issue type.
 
