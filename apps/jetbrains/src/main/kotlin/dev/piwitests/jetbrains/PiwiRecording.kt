@@ -666,7 +666,7 @@ private class StartMark(document: Document) : BasicUndoableAction(document) {
 private class RecordingGutter(private val session: RecordingSession) : GutterIconRenderer(), DumbAware {
     override fun getIcon(): Icon = AllIcons.Ide.Macro.Recording_1
 
-    override fun getTooltipText(): String = session.view.text
+    override fun getTooltipText(): String = Glue.htmlTooltip(session.view.text)
 
     override fun getPopupMenuActions(): ActionGroup = PiwiRecordings.actions()
 

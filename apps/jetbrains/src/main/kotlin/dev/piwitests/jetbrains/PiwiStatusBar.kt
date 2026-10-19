@@ -64,7 +64,8 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
 
     override fun getAlignment(): Float = Component.LEFT_ALIGNMENT
 
-    override fun getTooltipText(): String = recording()?.let { "${it.view.text}\nClick to go to the recorded lines." } ?: view().tooltip
+    override fun getTooltipText(): String =
+        Glue.htmlTooltip(recording()?.let { "${it.view.text}\nClick to go to the recorded lines." } ?: view().tooltip)
 
     override fun getClickConsumer(): Consumer<MouseEvent> = Consumer { event ->
         val recording = recording()

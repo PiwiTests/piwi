@@ -43,6 +43,15 @@ class GlueTest {
     }
 
     @Test
+    fun `the status bar tooltip shows the instance's and the project's text as text, a line per line`() {
+        val status = StatusResult(listOf(ContextStatus(root = "/w", problem = "Project <b>pay</b> & co\nAsk an admin.")))
+        assertEquals(
+            "<html>Project &lt;b&gt;pay&lt;/b&gt; &amp; co<br>Ask an admin.</html>",
+            Glue.htmlTooltip(Glue.statusView(status, null).tooltip),
+        )
+    }
+
+    @Test
     fun `a folder created under a searched root may hold a config, unless it is too deep, hidden or skipped`() {
         val roots = listOf(java.nio.file.Path.of("/w/shop"))
         assertEquals(true, Glue.mayHoldConfigs("/w/shop/apps/web", roots))

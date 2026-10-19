@@ -690,6 +690,9 @@ object Glue {
     /** `text` as HTML text: the IDE renders a tooltip as HTML, and the instance's text is never markup. */
     private fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
+    /** A plain-text tooltip, one line per `\n`, as the HTML the IDE renders a tooltip as. */
+    fun htmlTooltip(text: String): String = "<html>${escapeHtml(text).replace("\n", "<br>")}</html>"
+
     /** A test's gutter tooltip: its latest result, then its history as the service sums it up, as HTML text. */
     fun testResultTooltip(status: String?, title: String?): String {
         val result = when (status) {
