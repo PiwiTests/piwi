@@ -11,6 +11,9 @@ on:
         description: Artifact of the calling run holding apps/application/.output, built with the node-server preset.
         type: string
         required: true
+    secrets:
+      NPM_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -23,8 +26,10 @@ jobs:
     name: '@piwitests/reporter'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: read
+      # npm publish --provenance
       id-token: write
     steps:
       - name: Checkout
@@ -72,8 +77,10 @@ jobs:
     name: '@piwitests/server'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: read
+      # npm publish --provenance
       id-token: write
     steps:
       - name: Checkout
@@ -120,8 +127,10 @@ jobs:
     name: '@piwitests/instrumentation-nitro'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: read
+      # npm publish --provenance
       id-token: write
     steps:
       - name: Checkout

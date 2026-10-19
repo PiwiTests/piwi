@@ -16,6 +16,11 @@ on:
           each OS's native modules.
         type: string
         required: true
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -27,6 +32,7 @@ env:
 jobs:
   desktop:
     name: desktop (${{ matrix.target }}, ${{ matrix.bundles }})
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: write # upload installers to the release
     strategy:
@@ -169,9 +175,9 @@ jobs:
           # below. Each leg's overlay (matrix.updaterConfig) is applied only when
           # the secret is present, so releases without it build exactly as
           # before, installers with no update artifacts and apps that report
-          # updates as unsupported.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # updates as unsupported. The key reaches a release tag's build only.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         with:
           projectPath: apps/desktop
           # Retry a failed asset upload. Uploading the installers to the release
@@ -183,7 +189,7 @@ jobs:
           # it must NOT write the shared latest.json, the step near the end
           # publishes its manifest instead. Every other leg keeps the default.
           uploadUpdaterJson: ${{ matrix.bundles == 'nsis' && 'false' || 'true' }}
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && format('--config {0}', matrix.updaterConfig) || '' }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && format('--config {0}', matrix.updaterConfig) || '' }}
           # Attach to the release release-please already made for this tag. On a
           # manual dispatch (no tag) tagName is empty, so tauri-action just builds.
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}

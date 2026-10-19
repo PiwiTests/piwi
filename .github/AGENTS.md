@@ -59,6 +59,13 @@ and reports a regression in its comment without failing. The release PR runs the
   that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails the run.
 - **Publishing only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or
   `main` for the `edge` image; anywhere else the workflow builds and packs, so a pull request can run it.
+- **Publishing secrets reach a release tag only.** A `reusable-publish-*.yml` declares the secrets it uses
+  (`on.workflow_call.secrets`), and `release.yml` passes each one only when `github.ref` is a `v*` tag, never
+  `secrets: inherit`: a pull request's dry run gets none. A step that runs project code with a signing key (the
+  JetBrains `signPlugin`, the Tauri updater key) runs on a tag only. The publishing jobs of a tag run in the
+  `release` environment (`environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}`), whose
+  protection rules and secrets are set in the repository settings. `id-token: write` only where a step uses it (npm
+  provenance). `.github/` is owned by its maintainer (`CODEOWNERS`).
 - **Bounded.** `timeout-minutes` on every job, about three times its usual duration.
 - **Readable.** A `name` on every step, and a `name:` on every workflow that says what it does.
 - **Superseded runs cancelled.** Every pull-request workflow has

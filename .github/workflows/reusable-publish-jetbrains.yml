@@ -1,14 +1,23 @@
 name: Publish JetBrains plugin
 
-# Builds apps/jetbrains on each release tag, signs it when the signing secrets
-# are configured (JETBRAINS_CERTIFICATE_CHAIN, JETBRAINS_PRIVATE_KEY and
-# JETBRAINS_PRIVATE_KEY_PASSWORD), and keeps the plugin archive as a workflow
+# Builds apps/jetbrains on each release tag, signs it on a release tag when the
+# signing secrets are configured (JETBRAINS_CERTIFICATE_CHAIN, JETBRAINS_PRIVATE_KEY
+# and JETBRAINS_PRIVATE_KEY_PASSWORD), and keeps the plugin archive as a workflow
 # artifact, to publish or install by hand. A tag build then publishes it to the
 # JetBrains Marketplace (JETBRAINS_PUBLISH_TOKEN); skipped without the token.
 # release.yml calls it: from a release tag it publishes; from anywhere else it
 # only builds the artifact.
 on:
   workflow_call:
+    secrets:
+      JETBRAINS_CERTIFICATE_CHAIN:
+        required: false
+      JETBRAINS_PRIVATE_KEY:
+        required: false
+      JETBRAINS_PRIVATE_KEY_PASSWORD:
+        required: false
+      JETBRAINS_PUBLISH_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -18,6 +27,7 @@ jobs:
     name: JetBrains plugin
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: read
     env:
@@ -52,8 +62,10 @@ jobs:
         run: ./gradlew buildPlugin
 
       # Writes piwi-jetbrains-<version>-signed.zip next to the built archive.
+      # Only a release tag's build is signed: signing runs the build script
+      # with the private key in its environment.
       - name: Sign
-        if: ${{ env.SIGNING_CONFIGURED == 'true' }}
+        if: ${{ env.TAG_BUILD == 'true' && env.SIGNING_CONFIGURED == 'true' }}
         working-directory: ./apps/jetbrains
         env:
           CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}

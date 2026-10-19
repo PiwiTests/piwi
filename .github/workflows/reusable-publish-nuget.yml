@@ -6,6 +6,9 @@ name: Publish NuGet packages
 # a run against a tag skips the packages already there. release.yml calls it.
 on:
   workflow_call:
+    secrets:
+      NUGET_API_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -18,9 +21,9 @@ jobs:
     name: NuGet
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7

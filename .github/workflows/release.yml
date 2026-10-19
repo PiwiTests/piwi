@@ -9,6 +9,9 @@ name: Release
 #   default GITHUB_TOKEN would start no workflow.
 # - Run on demand against a tag: publishes the targets ticked, for a release whose publication failed or never ran.
 # - Pull request that changes a release workflow: builds and packs every target, and publishes nothing.
+#
+# Each target receives only the secrets it names, and only for a release tag: a pull request's dry run, and a run
+# against a branch, get none. The publishing jobs of a tag run in the `release` environment.
 on:
   push:
     tags: ['v*']
@@ -96,7 +99,8 @@ jobs:
     uses: ./.github/workflows/reusable-publish-npm.yml
     with:
       server-artifact: app-output
-    secrets: inherit
+    secrets:
+      NPM_TOKEN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.NPM_TOKEN || '' }}
 
   container:
     name: Container image
@@ -105,16 +109,18 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/reusable-publish-container.yml
-    secrets: inherit
+    secrets:
+      DOCKERHUB_USERNAME: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.DOCKERHUB_USERNAME || '' }}
+      DOCKERHUB_TOKEN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.DOCKERHUB_TOKEN || '' }}
 
   nuget:
     name: NuGet
     if: github.event_name != 'workflow_dispatch' || inputs.nuget
     permissions:
       contents: read
-      id-token: write
     uses: ./.github/workflows/reusable-publish-nuget.yml
-    secrets: inherit
+    secrets:
+      NUGET_API_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.NUGET_API_KEY || '' }}
 
   desktop:
     name: Desktop installers
@@ -126,22 +132,39 @@ jobs:
     uses: ./.github/workflows/reusable-publish-desktop.yml
     with:
       server-artifact: app-output
-    secrets: inherit
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
 
   vscode:
     name: VS Code extension
     if: github.event_name != 'workflow_dispatch' || inputs.vscode
     uses: ./.github/workflows/reusable-publish-vscode.yml
-    secrets: inherit
+    secrets:
+      VSCE_PAT: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.VSCE_PAT || '' }}
+      OVSX_PAT: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.OVSX_PAT || '' }}
 
   jetbrains:
     name: JetBrains plugin
     if: github.event_name != 'workflow_dispatch' || inputs.jetbrains
     uses: ./.github/workflows/reusable-publish-jetbrains.yml
-    secrets: inherit
+    secrets:
+      JETBRAINS_CERTIFICATE_CHAIN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.JETBRAINS_CERTIFICATE_CHAIN || '' }}
+      JETBRAINS_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.JETBRAINS_PRIVATE_KEY || '' }}
+      JETBRAINS_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.JETBRAINS_PRIVATE_KEY_PASSWORD || '' }}
+      JETBRAINS_PUBLISH_TOKEN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.JETBRAINS_PUBLISH_TOKEN || '' }}
 
   extension:
     name: Browser extension
     if: github.event_name != 'workflow_dispatch' || inputs.extension
     uses: ./.github/workflows/reusable-publish-extension.yml
-    secrets: inherit
+    secrets:
+      CHROME_PUBLISHER_ID: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.CHROME_PUBLISHER_ID || '' }}
+      CHROME_CLIENT_ID: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.CHROME_CLIENT_ID || '' }}
+      CHROME_CLIENT_SECRET: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.CHROME_CLIENT_SECRET || '' }}
+      CHROME_REFRESH_TOKEN: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.CHROME_REFRESH_TOKEN || '' }}
+      EDGE_PRODUCT_ID: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.EDGE_PRODUCT_ID || '' }}
+      EDGE_CLIENT_ID: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.EDGE_CLIENT_ID || '' }}
+      EDGE_API_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.EDGE_API_KEY || '' }}
+      AMO_JWT_ISSUER: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.AMO_JWT_ISSUER || '' }}
+      AMO_JWT_SECRET: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.AMO_JWT_SECRET || '' }}
