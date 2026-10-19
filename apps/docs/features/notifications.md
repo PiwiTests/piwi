@@ -90,7 +90,7 @@ When the lookup fails (a private repository without a token, a host that exposes
 
 ### Global channels & subscriptions
 
-Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. With authentication disabled, every channel and subscription is global.
+Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. Other users see where a global webhook points, never its full URL. With authentication disabled, every channel and subscription is global.
 
 ## Subscriptions
 

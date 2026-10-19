@@ -14,3 +14,29 @@ export function sanitizeChannelConfig(config: Record<string, unknown>): Record<s
   }
   return safe;
 }
+
+/** A URL cut to its origin, with `/…` standing for the path and query it hides; null when it does not parse. */
+function urlOrigin(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.origin === 'null') return null;
+    const hidden = parsed.pathname !== '/' || parsed.search !== '' || parsed.hash !== '';
+    return hidden ? `${parsed.origin}/…` : parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A channel's config as a reader may see it: never a secret field, and a
+ * webhook's `url`, which can carry a token in its path or query, only to the
+ * channel's owner and administrators. Anyone else reads its origin.
+ */
+export function channelConfigFor(
+  config: Record<string, unknown>,
+  reader: { ownsChannel: boolean; isAdmin: boolean },
+): Record<string, unknown> {
+  const safe = sanitizeChannelConfig(config);
+  if (reader.ownsChannel || reader.isAdmin || typeof safe.url !== 'string') return safe;
+  return { ...safe, url: urlOrigin(safe.url) };
+}
