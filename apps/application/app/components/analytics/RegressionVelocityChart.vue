@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { AnalyticsRegressionVelocity } from '#shared/analytics/types';
-import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -28,36 +27,17 @@ const barColors = [STATUS_PALETTE.failed.color, STATUS_PALETTE.flaky.color] as c
 
 const yMax = computed(() => Math.max(1, ...chartData.value.map((d) => d.regressions + d.newFlaky)));
 
-/** One stacked bar per day: regressions on the baseline, newly flaky above. */
-function layout(plotWidth: number, plotHeight: number, yScale: (value: number) => number) {
-  const geo = barGeometry(chartData.value.length, plotWidth);
-  return chartData.value.map((d, i) => ({
-    d,
-    slotX: i * geo.slotWidth,
-    slotWidth: geo.slotWidth,
-    barX: geo.xOf(i),
-    barWidth: geo.barWidth,
-    segments: stackSegments(
-      [
-        { color: barColors[0], value: d.regressions },
-        { color: barColors[1], value: d.newFlaky },
-      ],
-      plotHeight,
-      yScale,
-    ),
-  }));
-}
-
-function xTicks(plotWidth: number) {
-  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
-  const dates = chartData.value.map((d) => d.date);
-  return dayTickIndices(dates, Math.max(2, Math.floor(plotWidth / 80))).map((i) => ({
-    x: centerOf(i),
-    label: formatTickDate(dates[i] as Date),
-  }));
-}
-
-const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip<DataPoint>(240);
+// One stacked bar per day: regressions on the baseline, newly flaky above.
+const { markers, tooltip, layout, xTicks, markerX, drill, openBucket } = useDailyBarChart({
+  points: chartData,
+  bucketDays: () => velocity.value?.bucketDays,
+  query: () => props.query,
+  segments: (d) => [
+    { color: barColors[0], value: d.regressions },
+    { color: barColors[1], value: d.newFlaky },
+  ],
+});
+const { data: tooltipData, pos: tooltipPos, show, move, hide } = tooltip;
 
 const legendItems = [
   { color: barColors[0], label: 'New regressions' },
@@ -88,25 +68,6 @@ const subtitle = computed(() => {
   if (!velocity.value) return undefined;
   return `${velocity.value.totalRegressions} new regressions, ${velocity.value.totalNewFlaky} newly flaky`;
 });
-// Timeline markers of the period, drawn over the bars (provided by the analytics page).
-const scopeSummary = injectAnalyticsScopeSummary();
-const markers = computed(() => scopeSummary.value?.markers ?? []);
-function markerX(plotWidth: number, occurredAt: string | Date): number | null {
-  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
-  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
-  return bucketTimeToX(
-    chartData.value.map((d) => d.date),
-    chartData.value.map((_, i) => centerOf(i)),
-    new Date(occurredAt).getTime(),
-    end,
-  );
-}
-
-/** With one project in scope, a bucket opens that project's runs of those days. */
-const drill = computed(() => (velocity.value ? bucketDrill(props.query, velocity.value.bucketDays) : null));
-function isoDay(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 </script>
 
 <template>
@@ -167,7 +128,7 @@ function isoDay(date: Date): string {
           :height="plotHeight"
           :fill="tooltipData === bar.d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
           :class="drill ? 'cursor-pointer' : ''"
-          @click="drill && navigateTo(drill(isoDay(bar.d.date)))"
+          @click="openBucket(bar.d.date)"
           @mouseenter="show($event, bar.d)"
           @mousemove="move($event)"
           @mouseleave="hide()"

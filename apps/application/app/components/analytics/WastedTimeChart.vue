@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { AnalyticsWastedTime } from '#shared/analytics/types';
-import { barGeometry, bucketTimeToX, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
 import { TIMELINE_WAIT_COLORS } from '~/utils/timeline';
 import { formatMoney } from '#shared/ci-cost';
 
@@ -30,36 +29,17 @@ const areaColors = [TIMELINE_WAIT_COLORS.swatch, STATUS_PALETTE.failed.color] as
 
 const yMax = computed(() => Math.max(1, ...chartData.value.map((d) => d.waitMinutes + d.failedExecMinutes)));
 
-/** One stacked bar per day: wait minutes on the baseline, failed-run minutes above. */
-function layout(plotWidth: number, plotHeight: number, yScale: (value: number) => number) {
-  const geo = barGeometry(chartData.value.length, plotWidth);
-  return chartData.value.map((d, i) => ({
-    d,
-    slotX: i * geo.slotWidth,
-    slotWidth: geo.slotWidth,
-    barX: geo.xOf(i),
-    barWidth: geo.barWidth,
-    segments: stackSegments(
-      [
-        { color: areaColors[0], value: d.waitMinutes },
-        { color: areaColors[1], value: d.failedExecMinutes },
-      ],
-      plotHeight,
-      yScale,
-    ),
-  }));
-}
-
-function xTicks(plotWidth: number) {
-  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
-  const dates = chartData.value.map((d) => d.date);
-  return dayTickIndices(dates, Math.max(2, Math.floor(plotWidth / 80))).map((i) => ({
-    x: centerOf(i),
-    label: formatTickDate(dates[i] as Date),
-  }));
-}
-
-const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip<DataPoint>(240);
+// One stacked bar per day: wait minutes on the baseline, failed-run minutes above.
+const { markers, tooltip, layout, xTicks, markerX, drill, openBucket } = useDailyBarChart({
+  points: chartData,
+  bucketDays: () => wasted.value?.bucketDays,
+  query: () => props.query,
+  segments: (d) => [
+    { color: areaColors[0], value: d.waitMinutes },
+    { color: areaColors[1], value: d.failedExecMinutes },
+  ],
+});
+const { data: tooltipData, pos: tooltipPos, show, move, hide } = tooltip;
 
 const legendItems = [
   { color: areaColors[0], label: 'Wait steps' },
@@ -90,25 +70,6 @@ const reclaimLabel = computed(() => {
   const m = reclaim.value?.estimatedMinutes ?? 0;
   return m < 60 ? `${Math.round(m)} min` : `${Math.round((m / 60) * 10) / 10} h`;
 });
-// Timeline markers of the period, drawn over the bars (provided by the analytics page).
-const scopeSummary = injectAnalyticsScopeSummary();
-const markers = computed(() => scopeSummary.value?.markers ?? []);
-function markerX(plotWidth: number, occurredAt: string | Date): number | null {
-  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
-  const end = scopeSummary.value ? new Date(scopeSummary.value.period.to).getTime() : Date.now();
-  return bucketTimeToX(
-    chartData.value.map((d) => d.date),
-    chartData.value.map((_, i) => centerOf(i)),
-    new Date(occurredAt).getTime(),
-    end,
-  );
-}
-
-/** With one project in scope, a bucket opens that project's runs of those days. */
-const drill = computed(() => (wasted.value ? bucketDrill(props.query, wasted.value.bucketDays) : null));
-function isoDay(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 </script>
 
 <template>
@@ -168,7 +129,7 @@ function isoDay(date: Date): string {
           :height="plotHeight"
           :fill="tooltipData === bar.d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
           :class="drill ? 'cursor-pointer' : ''"
-          @click="drill && navigateTo(drill(isoDay(bar.d.date)))"
+          @click="openBucket(bar.d.date)"
           @mouseenter="show($event, bar.d)"
           @mousemove="move($event)"
           @mouseleave="hide()"

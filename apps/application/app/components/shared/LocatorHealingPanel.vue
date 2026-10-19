@@ -375,32 +375,12 @@ defineExpose({
       </span>
     </template>
     <template v-if="pickTraceUrl || healing?.failingLocator" #actions>
-      <div class="flex items-center gap-1">
-        <UButton
-          v-if="healing?.failingLocator"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-mouse-pointer"
-          title="Open the failure-time DOM snapshot and click the element to pick a locator"
-          @click="pickerOpen = true"
-        >
-          Pick from snapshot
-        </UButton>
-        <UButton
-          v-if="pickTraceUrl"
-          :to="pickTraceUrl"
-          target="_blank"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-crosshair"
-          title="Open the failure trace in the trace viewer — its Pick locator tool works on the recorded page snapshots"
-          @click="onPickFromTrace"
-        >
-          Pick from trace
-        </UButton>
-      </div>
+      <LocatorPickActions
+        :snapshot="!!healing?.failingLocator"
+        :trace-url="pickTraceUrl"
+        @pick-snapshot="pickerOpen = true"
+        @pick-trace="onPickFromTrace"
+      />
     </template>
 
     <!-- Closed loop: the recommended locator now passes at this call site -->
@@ -741,32 +721,12 @@ defineExpose({
       <span>No alternatives available</span>
     </template>
     <template v-if="pickTraceUrl || healing?.failingLocator" #actions>
-      <div class="flex items-center gap-1">
-        <UButton
-          v-if="healing?.failingLocator"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-mouse-pointer"
-          title="Open the failure-time DOM snapshot and click the element to pick a locator"
-          @click="pickerOpen = true"
-        >
-          Pick from snapshot
-        </UButton>
-        <UButton
-          v-if="pickTraceUrl"
-          :to="pickTraceUrl"
-          target="_blank"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-crosshair"
-          title="Open the failure trace in the trace viewer — its Pick locator tool works on the recorded page snapshots"
-          @click="onPickFromTrace"
-        >
-          Pick from trace
-        </UButton>
-      </div>
+      <LocatorPickActions
+        :snapshot="!!healing?.failingLocator"
+        :trace-url="pickTraceUrl"
+        @pick-snapshot="pickerOpen = true"
+        @pick-trace="onPickFromTrace"
+      />
     </template>
     <UAlert color="neutral" icon="i-lucide-info" variant="subtle">
       <template #description>
