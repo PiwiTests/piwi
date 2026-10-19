@@ -1,7 +1,7 @@
 # Node 24 on Alpine, pinned by digest: the major the desktop app bundles and the root package.json's engines name.
 # Dependabot moves the tag and the digest together.
 # Stage 1: Build stage
-FROM node:24.22.0-alpine3.24@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS builder
+FROM node:26.12.0-alpine3.24@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS builder
 
 WORKDIR /app
 
@@ -66,7 +66,7 @@ RUN set -eux; \
     rm -rf apps/application/.output/public/demo
 
 # Stage 2: Production stage
-FROM node:24.22.0-alpine3.24@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS production
+FROM node:26.12.0-alpine3.24@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS production
 
 WORKDIR /app
 
