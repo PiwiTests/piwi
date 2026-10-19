@@ -224,6 +224,17 @@ function showResult() {
   );
 }
 
+/** Read an execution's in-flight diagnosis again (it is also polled while it runs). */
+const refreshingDiagnosis = ref(false);
+async function refreshRunningDiagnosis() {
+  refreshingDiagnosis.value = true;
+  try {
+    await execStore?.fetchDiagnosis();
+  } finally {
+    refreshingDiagnosis.value = false;
+  }
+}
+
 /** A fresh 'running' row (execution scope, no live stream): a diagnosis is in flight. */
 const showRunning = computed(
   () => !isCluster && diagnosis.value?.status === 'running' && !isStale(diagnosis.value) && !posting.value,
@@ -505,8 +516,8 @@ defineExpose({
           color="neutral"
           variant="outline"
           icon="i-lucide-refresh-cw"
-          :loading="posting"
-          @click="refreshContext"
+          :loading="refreshingDiagnosis"
+          @click="refreshRunningDiagnosis"
         >
           Refresh
         </UButton>
