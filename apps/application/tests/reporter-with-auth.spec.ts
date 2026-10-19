@@ -392,10 +392,12 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(projects.find((p) => p.name === PROJECT.REPORTER_FULL_AUTH)).toBeDefined();
   });
 
-  test('PiwiDashboardReporter fails when auth is required but no credentials given', async () => {
+  test('PiwiDashboardReporter stores nothing and keeps the run green when auth is required but no credentials are given', async ({
+    request,
+  }) => {
     const reporterPath = resolve(process.cwd(), '..', '..', 'packages', 'reporter', 'dist', 'index.js');
 
-    const { exitCode } = await runReporterScript(`
+    const { exitCode, stdout, stderr } = await runReporterScript(`
       const _mod = require(${JSON.stringify(reporterPath)}); const PiwiDashboardReporter = _mod.default ?? _mod;
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
@@ -418,8 +420,21 @@ test.describe.serial('Reporter with authentication enabled', () => {
       });
     `);
 
-    // Without credentials, the reporter must fail
-    expect(exitCode).toBe(1);
+    // A missing credential never fails the Playwright run: the reporter says
+    // what to configure, and the dashboard stores nothing.
+    expect(exitCode).toBe(0);
+    expect(`${stdout}${stderr}`).toContain('no credentials were configured');
+
+    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'ci-reporter', password: 'reporterpassword123' },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+    const projects = (
+      (await (await request.get(`${AUTH_SERVER_URL}/api/projects`)).json()) as {
+        items: Array<{ name: string }>;
+      }
+    ).items;
+    expect(projects.find((p) => p.name === PROJECT.REPORTER_NO_AUTH)).toBeUndefined();
   });
 
   // ---------------------------------------------------------------------------
