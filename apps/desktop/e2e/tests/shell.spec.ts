@@ -57,7 +57,7 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
   // The local-runner commands are granted too: an unknown project resolves to
   // null (not an ACL rejection)…
   const link = (await tauriPage.evaluate(`
-    window.__TAURI__.core.invoke('desktop_get_project_link', { projectId: 'e2e-no-such-project' })
+    window.__TAURI__.core.invoke('desktop_get_project_link', { projectId: '999999999' })
       .then((l) => ({ ok: true, link: l ?? null }))
       .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
   `)) as { ok: boolean; error?: string; link?: unknown };
@@ -67,7 +67,7 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
   // …and a relative path is refused by the command's own validation, proving
   // the call went through the ACL and into the handler.
   const rejected = (await tauriPage.evaluate(`
-    window.__TAURI__.core.invoke('desktop_set_project_link', { projectId: 'e2e-no-such-project', path: 'not/absolute' })
+    window.__TAURI__.core.invoke('desktop_set_project_link', { projectId: '999999999', path: 'not/absolute' })
       .then(() => ({ rejected: false, error: '' }))
       .catch((e) => ({ rejected: true, error: String((e && e.message) || e) }))
   `)) as { rejected: boolean; error: string };
@@ -87,7 +87,7 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
   // The spec pre-flight is granted too, and refuses an unlinked project from
   // inside the handler rather than at the ACL.
   const specs = (await tauriPage.evaluate(`
-    window.__TAURI__.core.invoke('desktop_check_local_specs', { projectId: 'e2e-no-such-project', files: ['tests/a.spec.ts'] })
+    window.__TAURI__.core.invoke('desktop_check_local_specs', { projectId: '999999999', files: ['tests/a.spec.ts'] })
       .then(() => ({ rejected: false, error: '' }))
       .catch((e) => ({ rejected: true, error: String((e && e.message) || e) }))
   `)) as { rejected: boolean; error: string };
