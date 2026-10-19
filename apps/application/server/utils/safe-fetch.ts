@@ -1,11 +1,15 @@
+import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { isIP, type LookupFunction } from 'node:net';
+import { Agent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from 'undici';
 
 /**
  * SSRF guards for outbound requests to user-supplied URLs (webhooks, link
  * unfurling). A hostname is resolved and every address it points at is checked,
  * so a public name that resolves to a private/loopback/link-local address (a
- * common SSRF and cloud-metadata vector) is rejected too.
+ * common SSRF and cloud-metadata vector) is rejected too. The connection itself
+ * goes to an address that check passed, so a name answering differently on a
+ * second lookup (DNS rebinding) cannot reach an internal host either.
  */
 
 function isBlockedIpv4(ip: string): boolean {
@@ -95,9 +99,30 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
 }
 
 /**
+ * The `lookup` of every connection `safeFetch` opens: it resolves the host and
+ * fails when any address it resolves to is blocked, so the socket connects only
+ * to an address that was checked.
+ */
+export const publicOnlyLookup: LookupFunction = (hostname, options, callback) => {
+  dnsLookup(hostname, { ...options, all: true }, (err, addresses: LookupAddress[]) => {
+    if (err) return callback(err, '', 0);
+    if (addresses.length === 0 || addresses.some(({ address }) => isBlockedAddress(address))) {
+      const refused: NodeJS.ErrnoException = new Error(`URL host is not allowed: ${hostname}`);
+      refused.code = 'EADDRNOTAVAIL';
+      return callback(refused, '', 0);
+    }
+    if (options.all) return callback(null, addresses);
+    callback(null, addresses[0]!.address, addresses[0]!.family);
+  });
+};
+
+let publicOnlyAgent: Agent | null = null;
+
+/**
  * `fetch` for user-supplied URLs: validates the target (and every redirect hop)
  * against `assertPublicHttpUrl`, following redirects manually so a redirect to
- * an internal address cannot slip through. Enforces a per-request timeout.
+ * an internal address cannot slip through, and connects only to addresses
+ * `publicOnlyLookup` checked. Enforces a per-request timeout.
  */
 export async function safeFetch(
   rawUrl: string,
@@ -105,10 +130,16 @@ export async function safeFetch(
   maxRedirects = 3,
   timeoutMs = 5000,
 ): Promise<Response> {
+  publicOnlyAgent ??= new Agent({ connect: { lookup: publicOnlyLookup } });
   let current = rawUrl;
   for (let hop = 0; hop <= maxRedirects; hop++) {
     await assertPublicHttpUrl(current);
-    const res = await fetch(current, { ...init, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
+    const res = (await undiciFetch(current, {
+      ...(init as UndiciRequestInit),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(timeoutMs),
+      dispatcher: publicOnlyAgent,
+    })) as unknown as Response;
     if (res.status >= 300 && res.status < 400 && res.headers.has('location')) {
       current = new URL(res.headers.get('location')!, current).toString();
       continue;
