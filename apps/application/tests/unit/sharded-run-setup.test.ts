@@ -225,3 +225,26 @@ describe('every shard of a run goes through global setup', () => {
     expect((await readRun(one.runId)).totalTests).toBe(1);
   });
 });
+
+describe('a run keeps only the digest of its main token', () => {
+  test('setup, begin and events work from the stored digest, which is never a usable token', async () => {
+    const started = await setup({ body: { projectName: PROJECT, instanceId: 'local-1' } });
+    expect((await readRun(started.runId)).streamToken).toBe(shardTokenDigest(started.setupToken));
+
+    const began = await begin({ params: { id: String(started.runId) }, body: { setupToken: started.setupToken } });
+    const stored = (await readRun(started.runId)).streamToken!;
+    expect(stored).toBe(shardTokenDigest(began.streamToken));
+
+    // The server forgets the run, as after a restart: the stored digest still authenticates.
+    runEventBus.clearRunState(started.runId);
+    await streamCase(started.runId, began.streamToken, 'pays', 1);
+    expect((await readRun(started.runId)).passedTests).toBe(1);
+
+    await expect(
+      events({ params: { id: String(started.runId) }, body: { streamToken: stored, testCases: [] } }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    await expect(
+      finish({ params: { id: String(started.runId) }, body: { streamToken: stored, status: 'passed' } }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+});

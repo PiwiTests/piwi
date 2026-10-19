@@ -158,14 +158,14 @@ export function recordServerSpan(span: PiwiServerSpan): void {
 // The consola reporter is process-global — register it only once.
 let reporterAdded = false;
 
-// Capture and probe verification run only outside production (the ASP.NET
-// package's default allow-list is Development and Test): only an unset/empty
-// NODE_ENV or `development`/`test` is treated as non-production. Any other value
-// (`production`, `staging`, `prod`, …) disables capture unless
-// PIWI_TEST_LOGS_DISABLED is explicitly `false`, so a signed probe header is
-// never honored on a production-like deployment that skipped `NODE_ENV=production`.
+// Capture and probe verification run only in development and test (the ASP.NET
+// package's default allow-list is Development and Test): NODE_ENV must be
+// `development` or `test`. Any other value, or none at all (`node
+// .output/server/index.mjs` sets none), disables capture unless
+// PIWI_TEST_LOGS_DISABLED is explicitly `false`, so a deployment that never set
+// NODE_ENV exposes no server logs, handler files or route manifest.
 const NODE_ENV = process.env.NODE_ENV;
-const IS_DEV_OR_TEST = !NODE_ENV || NODE_ENV === 'development' || NODE_ENV === 'test';
+const IS_DEV_OR_TEST = NODE_ENV === 'development' || NODE_ENV === 'test';
 const TEST_LOGS_DISABLED =
   process.env.PIWI_TEST_LOGS_DISABLED === 'true' ||
   (!IS_DEV_OR_TEST && process.env.PIWI_TEST_LOGS_DISABLED !== 'false');

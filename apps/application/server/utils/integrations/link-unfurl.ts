@@ -1,5 +1,6 @@
 import type { EntityLink } from '../../database/schema';
 import type { DbClient } from '../../database';
+import type { ProjectScope } from '../project-access';
 import type { UnfurlResult } from '../unfurl/UnfurlProvider';
 import { unfurlUrl } from '../unfurl';
 import { createTracker } from './connections';
@@ -16,11 +17,13 @@ const EMPTY: LinkUnfurlResult = { title: null, statusText: null, statusColor: nu
 /**
  * Refresh a link's enrichment. A link bound to a connection reads its record
  * through that connection's tracker; a link without one keeps the generic unfurl
- * path (rich SCM/OpenGraph).
+ * path (rich SCM/OpenGraph), which uses the instance SCM token only for a
+ * repository pinned by a project in `readable`, the projects the caller can read.
  */
 export async function unfurlLink(
   db: DbClient,
   link: Pick<EntityLink, 'url' | 'connectionId' | 'externalId' | 'key'>,
+  readable: ProjectScope,
 ): Promise<LinkUnfurlResult> {
   if (link.connectionId) {
     const tracker = await createTracker(db, link.connectionId);
@@ -43,5 +46,5 @@ export async function unfurlLink(
     }
     return EMPTY;
   }
-  return unfurlUrl(link.url, db);
+  return unfurlUrl(link.url, db, readable);
 }

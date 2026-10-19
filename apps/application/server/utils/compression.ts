@@ -1,6 +1,6 @@
 import { dirname, resolve, relative, isAbsolute } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
-import { gunzip } from 'zlib';
+import { createGunzip, gunzip } from 'zlib';
 import { promisify } from 'util';
 
 const gunzipAsync = promisify(gunzip);
@@ -87,4 +87,74 @@ export async function decompressDirectory(compressedBuffer: Buffer, targetDir: s
     console.error('Failed to decompress archive:', error);
     throw error;
   }
+}
+
+/** Upper bound on the one file {@link readArchiveEntry} returns. */
+const MAX_ARCHIVE_ENTRY_BYTES = 256 * 1024 * 1024; // 256 MiB
+
+const EMPTY = Buffer.alloc(0);
+
+/**
+ * The content of the first file of a gzip-compressed archive (the format
+ * {@link decompressDirectory} reads) whose path is `name` or ends with it, or
+ * null when there is none or the archive is malformed. The archive is inflated
+ * as a stream: the files before it are skipped as they arrive, only that file is
+ * held, and reading stops once it is complete. Throws once more than
+ * `maxInflatedBytes` were inflated, or when the file is over `maxEntryBytes`.
+ */
+export async function readArchiveEntry(
+  compressedBuffer: Buffer,
+  name: string,
+  { maxInflatedBytes = MAX_ARCHIVE_BYTES, maxEntryBytes = MAX_ARCHIVE_ENTRY_BYTES } = {},
+): Promise<Buffer | null> {
+  const stream = createGunzip();
+  stream.end(compressedBuffer);
+
+  let inflated = 0;
+  let header: Buffer = EMPTY; // bytes of a record header not yet complete
+  let skip = 0; // bytes of a file that is not the one asked for, still to pass over
+  let found: { remaining: number; chunks: Buffer[] } | null = null;
+
+  for await (const data of stream) {
+    let chunk: Buffer = data;
+    inflated += chunk.length;
+    if (inflated > maxInflatedBytes) throw new Error(`Archive inflates past ${maxInflatedBytes} bytes`);
+
+    while (chunk.length > 0) {
+      if (skip > 0) {
+        const n = Math.min(skip, chunk.length);
+        skip -= n;
+        chunk = chunk.subarray(n);
+        continue;
+      }
+      if (found) {
+        const n = Math.min(found.remaining, chunk.length);
+        found.chunks.push(chunk.subarray(0, n));
+        found.remaining -= n;
+        chunk = chunk.subarray(n);
+        if (found.remaining === 0) return Buffer.concat(found.chunks);
+        continue;
+      }
+
+      header = header.length > 0 ? Buffer.concat([header, chunk]) : chunk;
+      chunk = EMPTY;
+      if (header.length < 4) break;
+      const pathLength = header.readUInt32LE(0);
+      if (pathLength === 0 || pathLength > 10000) return null;
+      if (header.length < 8 + pathLength) break;
+      const filePath = header.toString('utf8', 4, 4 + pathLength);
+      const contentLength = header.readUInt32LE(4 + pathLength);
+      chunk = header.subarray(8 + pathLength);
+      header = EMPTY;
+
+      if (filePath === name || filePath.endsWith(name)) {
+        if (contentLength > maxEntryBytes) throw new Error(`"${filePath}" is over ${maxEntryBytes} bytes`);
+        if (contentLength === 0) return EMPTY;
+        found = { remaining: contentLength, chunks: [] };
+      } else {
+        skip = contentLength;
+      }
+    }
+  }
+  return null;
 }

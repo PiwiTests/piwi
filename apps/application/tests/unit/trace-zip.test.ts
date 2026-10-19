@@ -1,6 +1,14 @@
 import { describe, test, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
-import { buildZip, parseZipSync, parseZipDirectory } from '../../server/utils/trace-zip';
+import { deflateRawSync } from 'node:zlib';
+import {
+  buildZip,
+  decompressEntry,
+  parseZip,
+  parseZipSync,
+  parseZipDirectory,
+  ZipLimitError,
+} from '../../server/utils/trace-zip';
 
 describe('buildZip / parseZipSync round-trip', () => {
   test('stores and recovers every entry unchanged', () => {
@@ -132,5 +140,62 @@ describe('parseZip corrupt / oversized fields', () => {
     const parsed = parseZipSync(zip);
     expect(parsed.map((e) => e.name)).toEqual(['good.dat']);
     expect(parsed[0]!.data.toString()).toBe('BBBB');
+  });
+});
+
+/** A ZIP whose central directory lists `count` entries that all point at one deflated local entry. */
+function sharedBytesZip(count: number, inflated: Buffer): Buffer {
+  const name = Buffer.from('a.trace');
+  const deflated = deflateRawSync(inflated);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(8, 8);
+  local.writeUInt32LE(deflated.length, 18);
+  local.writeUInt32LE(inflated.length, 22);
+  local.writeUInt16LE(name.length, 26);
+  const head = Buffer.concat([local, name, deflated]);
+  const entries: Buffer[] = [];
+  for (let i = 0; i < count; i++) {
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(8, 10);
+    cd.writeUInt32LE(deflated.length, 20);
+    cd.writeUInt32LE(inflated.length, 24);
+    cd.writeUInt16LE(name.length, 28);
+    cd.writeUInt32LE(0, 42); // every entry at the same local header
+    entries.push(cd, name);
+  }
+  const cd = Buffer.concat(entries);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(count, 8);
+  eocd.writeUInt16LE(count, 10);
+  eocd.writeUInt32LE(cd.length, 12);
+  eocd.writeUInt32LE(head.length, 16);
+  return Buffer.concat([head, cd, eocd]);
+}
+
+describe('ZIP limits', () => {
+  test('refuses entries that share their bytes', () => {
+    const zip = sharedBytesZip(3, Buffer.alloc(1024, 0x61));
+    expect(() => parseZipDirectory(zip)).toThrow(ZipLimitError);
+    return expect(parseZip(zip)).rejects.toThrow(ZipLimitError);
+  });
+
+  test('refuses an archive whose entries declare more than its budget', () => {
+    const zip = buildZip([
+      { name: 'a.trace', data: Buffer.alloc(600, 0x61) },
+      { name: 'b.trace', data: Buffer.alloc(600, 0x62) },
+    ]);
+    expect(() => parseZipDirectory(zip, { maxInflatedBytes: 1000 })).toThrow(ZipLimitError);
+    expect(parseZipDirectory(zip, { maxInflatedBytes: 1200 })).toHaveLength(2);
+  });
+
+  test('an entry never inflates past the size it declares', async () => {
+    const zip = buildZip([{ name: 'a.trace', data: Buffer.alloc(64 * 1024, 0x61) }], { compress: true });
+    const [meta] = parseZipDirectory(zip);
+    expect(meta!.method).toBe(8);
+    await expect(decompressEntry(zip, meta!)).resolves.toHaveLength(64 * 1024);
+    await expect(decompressEntry(zip, { ...meta!, uncompressedSize: 1024 })).rejects.toThrow();
   });
 });

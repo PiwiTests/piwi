@@ -34,3 +34,16 @@ export function isOpenDesktopRoute(method: string, path: string): boolean {
   if (method === 'POST' && pathname === '/api/desktop/picker-pairings') return true;
   return method === 'GET' && /^\/api\/desktop\/picker-pairings\/[0-9a-f]{16}$/.test(pathname);
 }
+
+/** The response header that answers the desktop shell's readiness probe with the launch nonce. */
+export const DESKTOP_LAUNCH_NONCE_HEADER = 'X-Piwi-Desktop-Nonce';
+
+/**
+ * The per-launch nonce the desktop shell hands its sidecar in
+ * `PIWI_DESKTOP_LAUNCH_NONCE`, or null outside the desktop app. `/api/health`
+ * echoes it so the shell loads its session bootstrap only from the server it
+ * spawned, never from another process that took the port.
+ */
+export function desktopLaunchNonce(env: Record<string, string | undefined> = process.env): string | null {
+  return env.PIWI_DESKTOP_LAUNCH_NONCE || null;
+}

@@ -18,7 +18,7 @@ except in those response headers, or from the coverage endpoints of a coverage b
 | [Server probes](#server-probes) | A fault injected inside the server for one request (**Experimental**) | ✓ | ✓ |
 | [Server coverage](/features/server-coverage) | The backend files, functions and lines each test ran, from a coverage build | ✓ | |
 
-**Active only in non-production environments by default.** The ASP.NET Core integration emits its headers in the Development and Test environments unless you [choose others](#choosing-the-environments); the Nitro/Nuxt integration whenever `NODE_ENV` is unset, `development` or `test`. Both honor `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
+**Active only in non-production environments by default.** The ASP.NET Core integration emits its headers in the Development and Test environments unless you [choose others](#choosing-the-environments); the Nitro/Nuxt integration only when `NODE_ENV` is `development` or `test`. Both honor `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
 
 ## Install
 

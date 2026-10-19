@@ -156,6 +156,7 @@ import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
+import { readProjectRepositoryUrl } from '../scm/project-repository';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
 import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
@@ -1385,9 +1386,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const limit = Math.min(100, Number(params.limit) || 20);
     const branch = params.branch as string | undefined;
 
-    const repoUrl = await resolveProjectRepoUrl(db, projectId);
+    const repoUrl = await readProjectRepositoryUrl(db, projectId);
     if (!repoUrl)
-      return { commits: [], error: 'No repository URL found for this project (missing from test run metadata)' };
+      return { commits: [], error: 'No repository is set for this project (set it in its source control settings)' };
 
     const provider = await createScmProvider(repoUrl, db, projectId);
     if (!provider) return { commits: [], error: 'SCM provider not configured or unsupported' };
@@ -1411,8 +1412,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const sha = (params.sha as string)?.trim();
     if (!sha) return { error: 'sha is required' };
 
-    const repoUrl = await resolveProjectRepoUrl(db, projectId);
-    if (!repoUrl) return { error: 'No repository URL found for this project (missing from test run metadata)' };
+    const repoUrl = await readProjectRepositoryUrl(db, projectId);
+    if (!repoUrl) return { error: 'No repository is set for this project (set it in its source control settings)' };
 
     const provider = await createScmProvider(repoUrl, db, projectId);
     if (!provider) return { error: 'SCM provider not configured or unsupported' };
@@ -2797,7 +2798,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);
-    const link = await createEnrichedLink(db, validation.data);
+    const link = await createEnrichedLink(db, validation.data, ctx.scope);
     if (!link) throw new Error('Failed to create link');
     return dropNulls({
       id: link.id,
@@ -3292,19 +3293,6 @@ function toolScopeQuery(params: Record<string, unknown>, ctx: McpContext): Recor
 function mcpDashboardActor(ctx: McpContext): DashboardActor {
   if (!isAuthEnabled()) return dashboardActorFor(null, null);
   return dashboardActorFor(ctx.user?.id ?? null, ctx.access);
-}
-
-async function resolveProjectRepoUrl(db: DbClient, projectId: number): Promise<string | null> {
-  const [run] = await db
-    .select({ metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
-    .orderBy(desc(testRuns.startTime))
-    .limit(1);
-  if (!run) return null;
-  const meta = run.metadata as Record<string, unknown> | null;
-  const scm = meta?.scm as Record<string, unknown> | null;
-  return typeof scm?.remoteUrl === 'string' ? scm.remoteUrl : null;
 }
 
 // Merge the shared catalog with the server-only handlers. Coherence between the

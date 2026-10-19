@@ -1,10 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "remote-desktop-controls",
-  "description": "Let the bundled dashboard, served from the local loopback server, call the app's own IPC commands: read/set the service settings (run in background, start on login), open external links in the OS browser, open a source file in a local IDE via its command-line launcher, open a dashboard URL (the trace viewer, an attachment) in a new app window, bring the dashboard window to the front once it shows a dashboard link the user opened in the system browser, check for and install app updates (and turn the startup update notification on or off), show native notifications, forward front-end runtime errors to the server log, save downloads, manage per-project linked folders (including read-only inspection of a chosen folder's Playwright/Piwi setup, and installing the agent skills into one), run Playwright tests in a linked folder with streamed output, and render a run's live progress on the taskbar/Dock progress bar and tray. Scoped to the loopback origins the sidecar binds — no external site is granted access, and only the desktop webview has the native bridge.",
+  "description": "Let the bundled dashboard, served from the local loopback server, call the app's own IPC commands: read/set the service settings (run in background, start on login), open external links in the OS browser, open a source file in a local IDE via its command-line launcher, open a dashboard URL (the trace viewer, an attachment) in a new app window, bring the dashboard window to the front once it shows a dashboard link the user opened in the system browser, check for and install app updates (and turn the startup update notification on or off), show native notifications, forward front-end runtime errors to the server log, save downloads, manage per-project linked folders (including read-only inspection of a chosen folder's Playwright/Piwi setup, and installing the agent skills into one), run Playwright tests in a linked folder with streamed output, and render a run's live progress on the taskbar/Dock progress bar and tray. Added at startup scoped to the exact origin of the sidecar this launch spawned (`http://127.0.0.1:<port>`, set in place of the placeholder below) — no other site or local port is granted access, and only the desktop webview has the native bridge.",
   "windows": ["main"],
   "remote": {
-    "urls": ["http://localhost:*", "http://127.0.0.1:*"]
+    "urls": ["http://127.0.0.1:0"]
   },
   "permissions": [
     "core:default",

@@ -6,6 +6,7 @@ import {
   type ElementAttributes,
   type RankedLocator,
 } from '../src/locator-generation';
+import { parseLocatorChain } from '../src/locator-chain';
 
 const el = (overrides: Partial<ElementAttributes>): ElementAttributes => ({
   tagName: 'div',
@@ -224,5 +225,28 @@ describe('generateAlternatives with the project’s test id attribute', () => {
     expect(generateAlternatives(attrs, { testIdAttribute: '' })).toEqual(byDefault);
     const roleOnly = { ...attrs, attributes: {}, selectorCounts: {} };
     expect(generateAlternatives(roleOnly, { testIdAttribute: 'data-testid' })).toEqual(generateAlternatives(roleOnly));
+  });
+});
+
+describe('generateAlternatives with hostile attribute values', () => {
+  test('quotes a raw role attribute, so every alternative parses with the role as one string', () => {
+    const role = "button'), require('child_process').execSync('id'), ('";
+    const ranked = generateAlternatives(
+      el({
+        tagName: 'div',
+        attributes: { role, 'aria-label': 'Pay\nnow', 'data-testid': 'pay\u2028' },
+        accessibleName: 'Pay\nnow',
+        rolePosition: { role, count: 1, index: 0 },
+      }),
+    );
+    const byRole = ranked.filter((r) => r.method === 'getByRole');
+    expect(byRole.length).toBeGreaterThan(0);
+    for (const alt of ranked) {
+      expect(alt.locator).not.toMatch(/[\n\r\u2028\u2029]/);
+      const calls = parseLocatorChain(alt.locator).calls;
+      for (const call of calls.filter((c) => c.method === 'getByRole')) {
+        expect(call.args[0]).toEqual({ type: 'string', value: role });
+      }
+    }
   });
 });

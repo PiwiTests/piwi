@@ -38,6 +38,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
+import { publicRunColumns } from './public-run';
 import { testSearchConditions } from '#shared/utils/test-search-sql';
 import {
   CATALOG_SEARCH_FIELDS,
@@ -66,6 +67,7 @@ import {
 import { parseProjectDecisions } from '#shared/capabilities';
 import { normalizeProjectTargets } from '#shared/analytics/targets';
 import { parseCoverageAreas, parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
+import { repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -153,9 +155,11 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
     .where(eq(rankedRuns.rn, 1));
   const latestRunIds: number[] = latestIdRows.map((r) => r.id);
 
-  // 2. Fetch full latest run rows
+  // 2. Fetch the latest run rows
   const latestRuns: any[] =
-    latestRunIds.length > 0 ? await db.select().from(testRuns).where(inArray(testRuns.id, latestRunIds)) : [];
+    latestRunIds.length > 0
+      ? await db.select(publicRunColumns()).from(testRuns).where(inArray(testRuns.id, latestRunIds))
+      : [];
   const fixmeByRunId = await fixmeTestsByRunId(db, latestRuns);
   const latestRunByProjectId = new Map<number, any>();
   for (const r of latestRuns) {
@@ -419,6 +423,9 @@ async function validTagIds(db: DrizzleDB, tagIds: number[]): Promise<number[]> {
 
 // ─── updateProject ───────────────────────────────────────────────
 
+/** The error `updateProject` throws for a repository URL `repositoryUrlFromRemote` refuses. */
+export const INVALID_REPOSITORY_URL = 'repositoryUrl must be a repository URL, such as https://host/owner/repo';
+
 /** The error `updateProject` throws for a coverage scope `parseCoverageScope` refuses. */
 export const INVALID_COVERAGE_SCOPE =
   'coverageScope must be { include?: string[], exclude?: string[] }: at most 200 patterns each, 300 characters and 20 "*" a pattern, no "!" negation';
@@ -436,6 +443,8 @@ export async function updateProject(
     diagnosisInstructions?: string | null;
     aiLanguage?: string | null;
     scmToken?: string | null;
+    /** The repository the project's SCM calls read; null or '' clears it, and the next run that names one pins it. */
+    repositoryUrl?: string | null;
     defaultBranch?: string | null;
     openApiUrl?: string | null;
     serverProbes?: unknown;
@@ -464,6 +473,7 @@ export async function updateProject(
     diagnosisInstructions,
     aiLanguage,
     scmToken,
+    repositoryUrl,
     defaultBranch,
     openApiUrl,
     serverProbes,
@@ -476,6 +486,10 @@ export async function updateProject(
     coverageAreas,
     tagIds: dataTagIds,
   } = data;
+  // null or '' clears the repository; any other value must name one.
+  const repository =
+    repositoryUrl === undefined ? undefined : repositoryUrl?.trim() ? repositoryUrlFromRemote(repositoryUrl) : null;
+  if (repository === null && repositoryUrl?.trim()) throw new Error(INVALID_REPOSITORY_URL);
   const areas =
     coverageAreas === undefined || coverageAreas === null ? coverageAreas : parseCoverageAreas(coverageAreas);
   if (areas === null && coverageAreas !== null) throw new Error(INVALID_COVERAGE_AREAS);
@@ -500,6 +514,7 @@ export async function updateProject(
         diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
         aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
         scmToken: scmToken !== undefined ? scmToken : undefined,
+        repositoryUrl: repository,
         defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
         serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,

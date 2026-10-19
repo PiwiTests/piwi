@@ -36,6 +36,7 @@ import { isPassiveCapabilityDeclined } from './capabilities';
 import { hasResourceReport } from './resource-reports';
 import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
+import { publicRunColumns } from './public-run';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -480,7 +481,7 @@ export async function patchTestRun(
     await releaseRun(db, id);
   }
 
-  const [testRun] = await db.select().from(testRuns).where(eq(testRuns.id, id));
+  const [testRun] = await db.select(publicRunColumns()).from(testRuns).where(eq(testRuns.id, id));
   return { success: true, testRun };
 }
 

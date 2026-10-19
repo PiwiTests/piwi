@@ -27,7 +27,13 @@ import {
   type StepViewport,
 } from './recording';
 import { matchFunctionAt, type TestFunctionEntry, type RankedFunctionMatch } from './function-match';
-import { renderLocatorChain, tryParseLocatorChain, type LocatorArg, type LocatorChain } from './locator-chain';
+import {
+  quoteJsString,
+  renderLocatorChain,
+  tryParseLocatorChain,
+  type LocatorArg,
+  type LocatorChain,
+} from './locator-chain';
 import { assessLocatorChain, type LocatorStabilityLevel } from './locator-stability';
 import { pageKey } from './page-key';
 
@@ -135,21 +141,9 @@ export interface CodegenResult {
  * A line terminator inside a single-quoted literal is a syntax error, not a
  * newline — and a recorded value reaches codegen unnormalized (`normalizeSteps`
  * collapses whitespace on a target's *text*, never on the value the user typed),
- * so a multi-line paste into a textarea must be escaped for the exported spec
- * to parse.
+ * so a multi-line paste into a textarea is escaped for the exported spec to parse.
  */
-const QUOTE_ESCAPES: Record<string, string> = {
-  '\\': '\\\\',
-  "'": "\\'",
-  '\n': '\\n',
-  '\r': '\\r',
-  '\u2028': '\\u2028',
-  '\u2029': '\\u2029',
-};
-
-function quote(s: string): string {
-  return `'${s.replace(/[\\'\n\r\u2028\u2029]/g, (c) => QUOTE_ESCAPES[c]!)}'`;
-}
+const quote = quoteJsString;
 
 const LINE_TERMINATORS = /[\n\r\u2028\u2029]/;
 

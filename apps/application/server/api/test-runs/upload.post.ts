@@ -10,7 +10,7 @@ import { getStorage } from '../../storage';
 import { uploadDirectory } from '../../utils/storage-helpers';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
 import { tmpdir } from 'os';
-import { rm, mkdir, readdir } from 'fs/promises';
+import { rm, mkdir, readdir, readFile } from 'fs/promises';
 import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
@@ -24,6 +24,7 @@ import { settleFinalizingRun } from '../../utils/finalizing-runs';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { resolveMaxUploadBytes } from '../../utils/upload-limits';
+import { streamMultipart, type StreamedMultipart } from '../../utils/multipart-stream';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -78,88 +79,102 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 413, message: `Upload too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
-  const formData = await readMultipartFormData(event);
-
-  if (!formData) {
-    throw apiError({
-      statusCode: 400,
-      message: 'No form data provided',
-    });
+  // Stream the request to temp files, within the upload cap counted on the bytes
+  // read: the reporter sends chunked bodies, which declare no length. Each file
+  // is read back from disk only when it is stored.
+  const multipart = await streamMultipart(event, {
+    maxTotalBytes: maxUploadBytes,
+    maxFieldBytes: maxUploadBytes,
+    maxTotalFieldBytes: maxUploadBytes,
+    maxFields: MAX_UPLOAD_PARTS,
+    maxFiles: MAX_UPLOAD_PARTS,
+  });
+  try {
+    return await handleUpload(user, multipart);
+  } finally {
+    await multipart.cleanup();
   }
+});
 
+/** Most value fields, and most file parts, one upload may carry (a few per test case). */
+const MAX_UPLOAD_PARTS = 100_000;
+
+/** A file part of the upload, read from its temp file when it is stored. */
+interface UploadedFile {
+  filename: string;
+  path: string;
+  size: number;
+}
+
+async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multipart: StreamedMultipart) {
   // Parse form fields
   let projectName: string | undefined;
   let existingTestRunId: number | undefined; // Set when attaching uploads to an already-created streaming run
   let testRunData: Record<string, unknown> | undefined;
   let testCasesData: Record<string, unknown>[] = [];
-  // Map of report type -> { filename, data, label }
-  const reportFiles: Map<string, { filename: string; data: Buffer; label?: string }> = new Map();
-  // Trace files attached for specific test case indices: index -> { filename, data }
-  const traceFiles: Map<number, { filename: string; data: Buffer }> = new Map();
+  // Map of report type -> { filename, path, label }
+  const reportFiles: Map<string, UploadedFile & { label?: string }> = new Map();
+  // Trace files attached for specific test case indices: index -> file
+  const traceFiles: Map<number, UploadedFile> = new Map();
   // SHA-256 hashes for traces, keyed by the same index as traceFiles.
   // Sent by the reporter for all traces (including those not uploaded due to deduplication).
   const traceHashes: Map<number, string> = new Map();
-  // Non-trace attachments: test case index -> array of { name, contentType, originalName, data }
+  // Non-trace attachments: test case index -> array of { name, contentType, originalName }
   const attachmentMeta: Map<number, { name: string; contentType: string; originalName: string }[]> = new Map();
-  const attachmentFiles: Map<number, { originalName: string; data: Buffer }[]> = new Map();
+  const attachmentFiles: Map<number, UploadedFile[]> = new Map();
 
-  for (const part of formData) {
-    if (part.name === 'runId') {
-      const parsed = parseInt(part.data.toString('utf-8'), 10);
+  for (const part of multipart.files) {
+    const file = { filename: sanitizeFilename(part.filename), path: part.path, size: part.size };
+    if (part.field === 'htmlReport') {
+      // The 'htmlReport' field is the report of type 'html'
+      reportFiles.set('html', file);
+    } else if (part.field.startsWith('report_')) {
+      // Any report type: the field name is 'report_<type>'
+      const type = part.field.slice('report_'.length);
+      if (type && /^[a-z0-9_-]+$/i.test(type)) reportFiles.set(type, file);
+    } else if (part.field.startsWith('trace_')) {
+      const traceIndex = parseInt(part.field.slice('trace_'.length), 10);
+      if (!isNaN(traceIndex)) traceFiles.set(traceIndex, file);
+    } else if (part.field.startsWith('attach_file_')) {
+      const idx = parseInt(part.field.slice('attach_file_'.length), 10);
+      if (!isNaN(idx)) {
+        if (!attachmentFiles.has(idx)) attachmentFiles.set(idx, []);
+        attachmentFiles.get(idx)!.push(file);
+      }
+    }
+  }
+
+  for (const [name, value] of multipart.fields) {
+    if (name === 'runId') {
+      const parsed = parseInt(value, 10);
       if (!isNaN(parsed) && parsed > 0) existingTestRunId = parsed;
-    } else if (part.name === 'projectName') {
-      projectName = part.data.toString('utf-8');
-    } else if (part.name === 'testRun') {
+    } else if (name === 'projectName') {
+      projectName = value;
+    } else if (name === 'testRun') {
       try {
-        testRunData = JSON.parse(part.data.toString('utf-8'));
+        testRunData = JSON.parse(value);
       } catch {
         throw apiError({
           statusCode: 400,
           message: 'Invalid JSON in testRun field',
         });
       }
-    } else if (part.name === 'testCases') {
+    } else if (name === 'testCases') {
       try {
-        testCasesData = JSON.parse(part.data.toString('utf-8'));
+        testCasesData = JSON.parse(value);
       } catch {
         throw apiError({
           statusCode: 400,
           message: 'Invalid JSON in testCases field',
         });
       }
-    } else if (part.name === 'htmlReport' && part.filename) {
-      // The 'htmlReport' field is the report of type 'html'
-      reportFiles.set('html', {
-        filename: sanitizeFilename(part.filename),
-        data: part.data,
-      });
-    } else if (part.name?.startsWith('report_') && part.filename) {
-      // Any report type: the field name is 'report_<type>'
-      const type = part.name.slice('report_'.length);
-      if (type && /^[a-z0-9_-]+$/i.test(type)) {
-        reportFiles.set(type, {
-          filename: sanitizeFilename(part.filename),
-          data: part.data,
-        });
-      }
-    } else if (part.name?.startsWith('report_label_')) {
+    } else if (name.startsWith('report_label_')) {
       // Optional label override: 'report_label_<type>'
-      const type = part.name.slice('report_label_'.length);
-      if (type && reportFiles.has(type)) {
-        const entry = reportFiles.get(type)!;
-        entry.label = part.data.toString('utf-8');
-      }
-    } else if (part.name?.startsWith('trace_') && part.filename) {
-      const traceIndex = parseInt(part.name.slice('trace_'.length), 10);
-      if (!isNaN(traceIndex)) {
-        traceFiles.set(traceIndex, {
-          filename: sanitizeFilename(part.filename),
-          data: part.data,
-        });
-      }
-    } else if (part.name === 'trace_hashes') {
+      const entry = reportFiles.get(name.slice('report_label_'.length));
+      if (entry) entry.label = value;
+    } else if (name === 'trace_hashes') {
       try {
-        const parsed = JSON.parse(part.data.toString('utf-8'));
+        const parsed = JSON.parse(value);
         for (const [indexStr, hash] of Object.entries(parsed)) {
           const idx = parseInt(indexStr, 10);
           if (!isNaN(idx) && typeof hash === 'string' && /^[0-9a-f]{64}$/i.test(hash)) {
@@ -169,11 +184,11 @@ export default eventHandler(async (event) => {
       } catch {
         // Deduplication metadata is optional; ignore parse errors
       }
-    } else if (part.name?.startsWith('attach_meta_')) {
-      const idx = parseInt(part.name.slice('attach_meta_'.length), 10);
+    } else if (name.startsWith('attach_meta_')) {
+      const idx = parseInt(name.slice('attach_meta_'.length), 10);
       if (!isNaN(idx)) {
         try {
-          const parsed = JSON.parse(part.data.toString('utf-8'));
+          const parsed = JSON.parse(value);
           if (Array.isArray(parsed)) {
             attachmentMeta.set(
               idx,
@@ -187,15 +202,6 @@ export default eventHandler(async (event) => {
         } catch {
           // Metadata is optional; ignore parse errors
         }
-      }
-    } else if (part.name?.startsWith('attach_file_') && part.filename) {
-      const idx = parseInt(part.name.slice('attach_file_'.length), 10);
-      if (!isNaN(idx)) {
-        if (!attachmentFiles.has(idx)) attachmentFiles.set(idx, []);
-        attachmentFiles.get(idx)!.push({
-          originalName: sanitizeFilename(part.filename),
-          data: part.data,
-        });
       }
     }
   }
@@ -248,10 +254,7 @@ export default eventHandler(async (event) => {
   await storage.mkdir(projectPath);
 
   // Helper: store a report file and return { path, size }
-  async function storeReport(
-    type: string,
-    report: { filename: string; data: Buffer },
-  ): Promise<{ path: string; size: number }> {
+  async function storeReport(type: string, report: UploadedFile): Promise<{ path: string; size: number }> {
     if (report.filename.endsWith('.gz')) {
       // Extract gzip compressed archive to temp directory first
       const ts = Date.now();
@@ -261,7 +264,7 @@ export default eventHandler(async (event) => {
       await mkdir(tempDir, { recursive: true });
 
       try {
-        await decompressDirectory(report.data, tempDir);
+        await decompressDirectory(await readFile(report.path), tempDir);
 
         // Determine the correct entry file for this report type.
         // Blob reports contain .zip archives rather than HTML; find the first one.
@@ -283,27 +286,27 @@ export default eventHandler(async (event) => {
         console.error(`Failed to extract ${type} report: ${error}`);
         // Save as gz file if extraction fails
         const reportFilename = `run-${Date.now()}-${report.filename}`;
-        await storage.writeFile(join(`project-${project!.id}`, reportFilename), report.data);
+        await storage.writeFile(join(`project-${project!.id}`, reportFilename), await readFile(report.path));
         return {
           path: join(`project-${project!.id}`, reportFilename),
-          size: report.data.length,
+          size: report.size,
         };
       }
     } else if (report.filename.endsWith('.zip')) {
       // Store zip as-is (e.g. blob reports are downloadable zip archives)
       const reportFilename = `run-${Date.now()}-${report.filename}`;
-      await storage.writeFile(join(`project-${project!.id}`, reportFilename), report.data);
+      await storage.writeFile(join(`project-${project!.id}`, reportFilename), await readFile(report.path));
       return {
         path: join(`project-${project!.id}`, reportFilename),
-        size: report.data.length,
+        size: report.size,
       };
     } else {
       // Save as regular file (backward compatibility for unknown formats)
       const reportFilename = `run-${Date.now()}-${report.filename}`;
-      await storage.writeFile(join(`project-${project!.id}`, reportFilename), report.data);
+      await storage.writeFile(join(`project-${project!.id}`, reportFilename), await readFile(report.path));
       return {
         path: join(`project-${project!.id}`, reportFilename),
-        size: report.data.length,
+        size: report.size,
       };
     }
   }
@@ -311,7 +314,7 @@ export default eventHandler(async (event) => {
   // Store all reports and collect their metadata. Reports are processed one at a
   // time — each `.gz` report is inflated fully into memory before being written
   // to disk, so decompressing them in parallel would stack every report's peak
-  // at once. Each report buffer is dropped from the map as soon as it's stored.
+  // at once.
   const storedReports: { type: string; label: string; path: string; size: number }[] = [];
 
   for (const [type, report] of [...reportFiles.entries()]) {
@@ -323,8 +326,6 @@ export default eventHandler(async (event) => {
       storedReports.push({ type, label, path: storedPath, size });
     } catch (error) {
       console.error(`[Upload] Failed to store ${type} report: ${error}`);
-    } finally {
-      reportFiles.delete(type);
     }
   }
 
@@ -520,7 +521,7 @@ export default eventHandler(async (event) => {
 
           if (hash && traceFile) {
             // New content with known hash: upsert into the blob store
-            const blob = await upsertTraceBlob(project!.id, hash, traceFile.data);
+            const blob = await upsertTraceBlob(project!.id, hash, await readFile(traceFile.path));
             storagePath = blob.path;
             blobId = blob.id;
             size = blob.size;
@@ -540,8 +541,8 @@ export default eventHandler(async (event) => {
           } else if (traceFile) {
             // Legacy path: no hash metadata, store at run-specific location
             storagePath = `${testRunPath}/${testRunsCaseId}-${traceFile.filename}`;
-            await storage.writeFile(storagePath, traceFile.data);
-            size = traceFile.data.length;
+            await storage.writeFile(storagePath, await readFile(traceFile.path));
+            size = traceFile.size;
             console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${storagePath}`);
           } else {
             continue;
@@ -559,10 +560,6 @@ export default eventHandler(async (event) => {
         } catch (error) {
           console.error(`[Upload] Failed to store trace for case #${testRunsCaseId}: ${error}`);
           tracesSkipped++;
-        } finally {
-          // Drop the (large) trace buffer once stored so peak memory holds one
-          // trace at a time rather than every uploaded trace at once.
-          traceFiles.delete(index);
         }
       }
     }
@@ -582,10 +579,10 @@ export default eventHandler(async (event) => {
           const fileEntry = filesList[fi]!;
           const attachmentDir = `${testRunPath}/${testRunsCaseId}`;
           await storage.mkdir(attachmentDir);
-          const storagePath = `${attachmentDir}/${fileEntry.originalName}`;
+          const storagePath = `${attachmentDir}/${fileEntry.filename}`;
 
           try {
-            await storage.writeFile(storagePath, fileEntry.data);
+            await storage.writeFile(storagePath, await readFile(fileEntry.path));
             await db.insert(files).values({
               testRunsCaseId,
               testRunId: testRun.id,
@@ -593,7 +590,7 @@ export default eventHandler(async (event) => {
               subtype: meta.name,
               label: meta.contentType,
               path: storagePath.replace(/\\/g, '/'),
-              size: fileEntry.data.length,
+              size: fileEntry.size,
             });
             console.log(`[Upload] Stored attachment "${meta.name}" for case #${testRunsCaseId}`);
           } catch (error) {
@@ -654,4 +651,4 @@ export default eventHandler(async (event) => {
     projectId: project.id,
     reports: storedReports.map((r) => ({ type: r.type, label: r.label, path: r.path })),
   };
-});
+}

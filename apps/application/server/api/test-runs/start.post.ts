@@ -8,7 +8,8 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
-import { persistShardToken, shardTokenDigest } from '../../utils/shard-tokens';
+import { pinProjectRepository } from '../../utils/scm/project-repository';
+import { persistShardToken, shardTokenDigest, streamTokenDigest } from '../../utils/shard-tokens';
 import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -139,7 +140,7 @@ export default eventHandler(async (event) => {
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
-        streamToken,
+        streamToken: streamTokenDigest(streamToken),
         shardTotal,
         shardIndex: body.shardIndex ?? null,
         shardsFinished: 0,
@@ -158,8 +159,13 @@ export default eventHandler(async (event) => {
     }
 
     await applyReporterKeep(db, testRun.id, body.keep);
+    await pinProjectRepository(db, project.id, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
-    runEventBus.cacheRunState(testRun.id, { streamToken, projectId: project.id, shardTokens: new Set() });
+    runEventBus.cacheRunState(testRun.id, {
+      streamToken: streamTokenDigest(streamToken),
+      projectId: project.id,
+      shardTokens: new Set(),
+    });
 
     return {
       success: true,
@@ -196,7 +202,7 @@ export default eventHandler(async (event) => {
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,
-      streamToken,
+      streamToken: streamTokenDigest(streamToken),
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? null,
     })
@@ -212,8 +218,9 @@ export default eventHandler(async (event) => {
   }
 
   await applyReporterKeep(db, testRun.id, body.keep);
+  await pinProjectRepository(db, project.id, metadata);
   runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
-  runEventBus.cacheRunState(testRun.id, { streamToken, projectId: project.id });
+  runEventBus.cacheRunState(testRun.id, { streamToken: streamTokenDigest(streamToken), projectId: project.id });
 
   return {
     success: true,

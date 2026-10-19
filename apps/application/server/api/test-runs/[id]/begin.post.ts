@@ -8,8 +8,15 @@ import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
-import { knownShardTokens, matchesShardToken, shardTokenDigest, withShardTokens } from '../../../utils/shard-tokens';
-import { timingSafeEqualStr } from '../../../utils/timing-safe';
+import { pinProjectRepository } from '../../../utils/scm/project-repository';
+import {
+  knownShardTokens,
+  matchesShardToken,
+  matchesStreamToken,
+  shardTokenDigest,
+  streamTokenDigest,
+  withShardTokens,
+} from '../../../utils/shard-tokens';
 
 defineRouteMeta({
   openAPI: {
@@ -93,7 +100,7 @@ export default eventHandler(async (event) => {
     isSharded &&
     matchesShardToken(knownShardTokens(runEventBus.getRunState(id)?.shardTokens, testRun.metadata), body.setupToken);
 
-  if (!timingSafeEqualStr(testRun.streamToken ?? '', body.setupToken) && !isValidShardSetupToken) {
+  if (!matchesStreamToken(testRun.streamToken, body.setupToken) && !isValidShardSetupToken) {
     throw apiError({
       statusCode: 403,
       message: 'Invalid setup token',
@@ -112,7 +119,7 @@ export default eventHandler(async (event) => {
     // shard token registered while the write runs joins it.
     const shardTokens = isSharded ? swapShardToken(id, testRun.metadata, body.setupToken, streamToken) : undefined;
     runEventBus.cacheRunState(id, {
-      streamToken,
+      streamToken: streamTokenDigest(streamToken),
       projectId: testRun.projectId,
       ...(shardTokens ? { shardTokens } : {}),
     });
@@ -123,7 +130,7 @@ export default eventHandler(async (event) => {
       .update(testRuns)
       .set({
         status: 'running',
-        streamToken,
+        streamToken: streamTokenDigest(streamToken),
         totalTests: body.totalTests || 0,
         metadata: shardTokens ? withShardTokens(metadata, shardTokens) : metadata,
         origin: runOrigin(metadata),
@@ -137,6 +144,7 @@ export default eventHandler(async (event) => {
       })
       .where(eq(testRuns.id, id));
 
+    await pinProjectRepository(db, testRun.projectId, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
   } else if (isSharded) {
     // Another shard began the run: this shard streams on a token of its own and
@@ -156,17 +164,15 @@ export default eventHandler(async (event) => {
       })
       .where(eq(testRuns.id, id));
   } else {
-    // Run is already running — return the cached stream token so the caller
-    // can continue streaming. This can happen when multiple worker processes
-    // race to /begin on the same run (parallel self-monitoring).
-    const cachedState = runEventBus.getRunState(id);
-    const existingToken = cachedState?.streamToken || streamToken;
-
+    // Run is already running and the caller presented its stream token: hand
+    // the same token back so the caller can continue streaming. This can happen
+    // when multiple worker processes race to /begin on the same run (parallel
+    // self-monitoring).
     return {
       success: true,
       runId: testRun.id,
       projectId: testRun.projectId,
-      streamToken: existingToken,
+      streamToken: body.setupToken,
     };
   }
 

@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises';
 import { requireAuth } from '../../utils/auth';
+import { streamMultipart } from '../../utils/multipart-stream';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
 import { resolveMaxUploadBytes } from '../../utils/upload-limits';
 import { importArchive } from '../../utils/import-archive';
@@ -44,30 +46,24 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
-  const formData = await readMultipartFormData(event);
-  if (!formData) throw apiError({ statusCode: 400, message: 'No form data provided' });
+  // Stream the request to a temp file, within the cap counted on the bytes read
+  // (a chunked body declares no length).
+  const multipart = await streamMultipart(event, { maxTotalBytes: maxUploadBytes, maxFiles: 1 });
+  try {
+    const projectName = multipart.fields.get('projectName')?.trim();
+    const environment = multipart.fields.get('environment')?.trim() || null;
+    const label = multipart.fields.get('label')?.trim() || null;
+    const group = multipart.fields.get('importGroup')?.trim().toLowerCase();
+    const importGroup = group && /^[0-9a-f]{64}$/.test(group) ? group : null;
+    const part = multipart.files.find((f) => f.field === 'archive');
 
-  let projectName: string | undefined;
-  let environment: string | null = null;
-  let label: string | null = null;
-  let importGroup: string | null = null;
-  let archive: { filename: string; data: Buffer } | undefined;
-
-  for (const part of formData) {
-    if (part.name === 'projectName') projectName = part.data.toString('utf-8').trim();
-    else if (part.name === 'environment') environment = part.data.toString('utf-8').trim() || null;
-    else if (part.name === 'label') label = part.data.toString('utf-8').trim() || null;
-    else if (part.name === 'importGroup') {
-      const value = part.data.toString('utf-8').trim().toLowerCase();
-      if (/^[0-9a-f]{64}$/.test(value)) importGroup = value;
-    } else if (part.name === 'archive' && part.filename) {
-      archive = { filename: sanitizeFilename(part.filename), data: part.data };
+    if (!projectName || !part) {
+      throw apiError({ statusCode: 400, message: 'Missing required fields: projectName, archive' });
     }
-  }
 
-  if (!projectName || !archive) {
-    throw apiError({ statusCode: 400, message: 'Missing required fields: projectName, archive' });
+    const archive = { filename: sanitizeFilename(part.filename), data: await readFile(part.path) };
+    return await importArchive({ user, projectName, archive, environment, label, importGroup });
+  } finally {
+    await multipart.cleanup();
   }
-
-  return importArchive({ user, projectName, archive, environment, label, importGroup });
 });

@@ -53,6 +53,7 @@ export const projects = pgTable(
     diagnosisInstructions: text('diagnosis_instructions'),
     aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
+    repositoryUrl: text('repository_url'), // The repository every SCM call of the project reads (normalized https URL); pinned by the first run that names one, changed by a project admin
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
     openApiUrl: text('openapi_url'), // Declared-surface OpenAPI document URL; fetched server-side into graph route nodes with origin 'openapi'
     serverProbes: jsonb('server_probes'), // ServerProbeSettings — the level-two probe gate (enabled, allow-listed faults/routes); off by default

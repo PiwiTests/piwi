@@ -25,10 +25,17 @@ export interface OpenedArchive {
 /** Raised when the bytes are not a ZIP at all. */
 export class ArchiveError extends Error {}
 
+/**
+ * What the entries of an imported archive may declare together. A blob report
+ * holds a whole run's traces and attachments, read one entry at a time, each
+ * within its declared size; every trace in it is checked again when stored.
+ */
+const MAX_IMPORT_INFLATED_BYTES = 8 * 1024 * 1024 * 1024; // 8 GiB
+
 export function openArchive(data: Buffer): OpenedArchive {
   let directory: ZipEntryMeta[];
   try {
-    directory = parseZipDirectory(data);
+    directory = parseZipDirectory(data, { maxInflatedBytes: MAX_IMPORT_INFLATED_BYTES });
   } catch (error) {
     throw new ArchiveError(`Not a readable ZIP archive: ${(error as Error).message}`);
   }

@@ -9,6 +9,7 @@
  * idempotent: running it against already-configured input reports `already`
  * rather than doubling anything up.
  */
+import { quoteJsString } from '@piwitests/core/locator-chain';
 
 export interface WrapOptions {
   /** Written into the config; omitted when empty so the reporter reads the env instead. */
@@ -30,9 +31,7 @@ const MANUAL_HINT =
   'export default wrapConfig(defineConfig({ ... }), { serverUrl, projectName }).';
 
 /** Single-quote a value for embedding in a config literal. */
-function quote(value: string): string {
-  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-}
+const quote = quoteJsString;
 
 /**
  * Index of the `)` that closes the `(` at `openIndex`, or -1 if unbalanced.

@@ -3,6 +3,7 @@ import { testRuns } from '../database/schema';
 import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { timingSafeEqualStr } from './timing-safe';
 
 /**
  * How a shard token is kept, in run metadata (which every project member can
@@ -10,6 +11,26 @@ import { runCommit, runOrigin } from '#shared/run-eligibility';
  */
 export function shardTokenDigest(token: string): string {
   return `sha256:${createHash('sha256').update(token).digest('hex')}`;
+}
+
+/**
+ * How a run's main stream or setup token is kept, in `test_runs.stream_token`
+ * and in the in-memory run state: its digest, like a shard token.
+ */
+export function streamTokenDigest(token: string): string {
+  return shardTokenDigest(token);
+}
+
+/**
+ * Whether `token` is the run's main stream or setup token, given the stored
+ * value. A plain stored token still matches, but a presented digest never
+ * matches a stored digest: reading the stored value back must not yield a
+ * usable token.
+ */
+export function matchesStreamToken(stored: string | null | undefined, token: string | null | undefined): boolean {
+  if (!stored || !token || typeof token !== 'string') return false;
+  if (stored.startsWith('sha256:')) return timingSafeEqualStr(stored, streamTokenDigest(token));
+  return !token.startsWith('sha256:') && timingSafeEqualStr(stored, token);
 }
 
 /**

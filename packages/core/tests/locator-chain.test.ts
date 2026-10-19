@@ -6,6 +6,7 @@ import {
   locatorScopes,
   locatorTarget,
   parseLocatorChain,
+  quoteJsString,
   renderLocatorChain,
   scanLocatorChain,
   tryParseLocatorChain,
@@ -138,5 +139,21 @@ describe('parseLeafLocatorCall and locatorCallValues', () => {
 
   test('null for text that is not a locator', () => {
     expect(parseLeafLocatorCall('not a locator')).toBeNull();
+  });
+});
+
+describe('quoteJsString', () => {
+  test('quotes the way Playwright prints a string, on one line', () => {
+    expect(quoteJsString('Pay')).toBe("'Pay'");
+    expect(quoteJsString(`Don't "stop"`)).toBe(`'Don\\'t "stop"'`);
+    expect(quoteJsString('a\\b')).toBe("'a\\\\b'");
+    expect(quoteJsString('a\nb\rc\u2028d\u2029e\u001b')).toBe("'a\\nb\\rc\\u2028d\\u2029e\\u001b'");
+  });
+
+  test('reads back as the same string', () => {
+    for (const value of ["it's", 'a\\"b', 'line\nbreak', '\u2028\u2029', "x'), evil(('", "\\'"]) {
+      const call = parseLocatorChain(`getByText(${quoteJsString(value)})`).calls[0]!;
+      expect(call.args).toEqual([{ type: 'string', value }]);
+    }
   });
 });

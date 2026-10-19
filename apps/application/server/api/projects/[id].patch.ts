@@ -2,7 +2,12 @@ import { generatedSpecSettingsSchema } from '#shared/handlers/bug-reports';
 import { getDatabase } from '../../database';
 import { z } from 'zod';
 import { requireProjectAccess, requireRouteId } from '../../utils/project-access';
-import { INVALID_COVERAGE_AREAS, INVALID_COVERAGE_SCOPE, updateProject } from '#shared/handlers/projects';
+import {
+  INVALID_COVERAGE_AREAS,
+  INVALID_COVERAGE_SCOPE,
+  INVALID_REPOSITORY_URL,
+  updateProject,
+} from '#shared/handlers/projects';
 import { recountProjectCoverage } from '../../utils/coverage-summary';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { resolveCiRerunSettings, type CiRerunSettings } from '#shared/ci-rerun';
@@ -14,7 +19,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
+      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },
@@ -43,6 +48,7 @@ const updateProjectSchema = z.object({
   diagnosisInstructions: z.string().optional().nullable(),
   aiLanguage: z.string().max(60).optional().nullable(),
   scmToken: z.string().optional().nullable(),
+  repositoryUrl: z.string().max(2000).optional().nullable(),
   defaultBranch: z.string().optional().nullable(),
   openApiUrl: z.string().url().max(2000).optional().nullable().or(z.literal('')),
   serverProbes: z
@@ -95,6 +101,7 @@ export default eventHandler(async (event) => {
     diagnosisInstructions,
     aiLanguage,
     scmToken,
+    repositoryUrl,
     defaultBranch,
     openApiUrl,
     serverProbes,
@@ -127,6 +134,7 @@ export default eventHandler(async (event) => {
       diagnosisInstructions,
       aiLanguage,
       scmToken: encryptedScmToken,
+      repositoryUrl,
       defaultBranch: defaultBranch != null ? defaultBranch.trim() || null : defaultBranch,
       openApiUrl: openApiUrl != null ? openApiUrl.trim() || null : openApiUrl,
       serverProbes:
@@ -159,7 +167,8 @@ export default eventHandler(async (event) => {
     if (
       e?.message === 'One or more tag IDs are invalid' ||
       e?.message === INVALID_COVERAGE_SCOPE ||
-      e?.message === INVALID_COVERAGE_AREAS
+      e?.message === INVALID_COVERAGE_AREAS ||
+      e?.message === INVALID_REPOSITORY_URL
     ) {
       throw apiError({ statusCode: 400, message: e.message });
     }

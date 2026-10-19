@@ -1,5 +1,6 @@
 import { getDatabase } from '../database';
 import { appSettings } from '../database/schema';
+import { DESKTOP_LAUNCH_NONCE_HEADER, desktopLaunchNonce } from '../utils/desktop-access';
 
 defineRouteMeta({
   openAPI: {
@@ -21,5 +22,8 @@ export default eventHandler(async (event) => {
     return { status: 'error', database: 'unreachable' };
   }
 
+  // The desktop shell checks this before it loads its session bootstrap.
+  const nonce = desktopLaunchNonce();
+  if (nonce) setResponseHeader(event, DESKTOP_LAUNCH_NONCE_HEADER, nonce);
   return { status: 'ok', database: 'ok' };
 });

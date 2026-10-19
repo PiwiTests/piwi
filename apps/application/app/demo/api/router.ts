@@ -171,6 +171,7 @@ import {
   getProjectTimeoutOpportunities,
   getProjectFailureClusters,
   INVALID_COVERAGE_AREAS,
+  INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
   updateProject,
   createProject,
@@ -837,7 +838,12 @@ const routes: RouteEntry[] = [
         }
         return project;
       } catch (e) {
-        if (e instanceof Error && (e.message === INVALID_COVERAGE_SCOPE || e.message === INVALID_COVERAGE_AREAS))
+        if (
+          e instanceof Error &&
+          (e.message === INVALID_COVERAGE_SCOPE ||
+            e.message === INVALID_COVERAGE_AREAS ||
+            e.message === INVALID_REPOSITORY_URL)
+        )
           throw demoHttpError(400, e.message);
         throw e;
       }

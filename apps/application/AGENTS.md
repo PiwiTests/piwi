@@ -133,6 +133,8 @@ export default eventHandler(async (event) => {
 - `requireAuth(event, permission)` is an **explicit override** for handlers computing their own authorization (e.g.
   `users/[id].patch.ts` self-or-admin); the meta then documents but does not drive it.
 - Streaming endpoints (`start`, `events`, `finish`, `case-files`) keep **stream-token** auth instead of `requireAuth`.
+  A run stores its main stream or setup token only as a digest (`streamTokenDigest`, checked with `matchesStreamToken`),
+  and no response carries `test_runs.stream_token`: a handler returning run rows selects `publicRunColumns()`.
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
   `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
   `Access-Control-Allow-Origin` except trace archives for the hosted trace viewer. Browser clients are same-origin
@@ -536,6 +538,12 @@ from `createScmProvider` / `scmProviderForUrl` (or the pure link helpers from `#
 `ScmProviderName` union from `#shared/scm-urls`; never re-declare `'github' | 'gitlab' | 'bitbucket'`.
 `tests/unit/scm-single-source.test.ts` scans `server`, `shared`, `app` and `types` for provider host literals and the
 union outside an explicit allow-list, so a new home for either is a visible diff to that list.
+
+**A token reads only the project's pinned repository.** `projects.repository_url` (`server/utils/scm/project-repository.ts`)
+is set by the first run that names a remote and changed by a project admin; `createScmProvider(url, db, projectId)`
+returns no provider when `url` (usually a run's `scm.remoteUrl`) names another. Never pair `scmProviderForUrl` with a
+token for a URL that came from run metadata or a user's link without checking it against the pinned repository
+(`projectRepositoryFor`, or `isRepositoryPinnedInScope` for a link).
 
 On the desktop app with no SCM token, `createScmProvider` returns a `LocalGitProvider` (`server/utils/scm/local-git.ts`)
 for a project linked to a clone of the repository: it reads history with git in that folder and wraps the host's own

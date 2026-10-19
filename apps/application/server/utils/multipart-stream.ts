@@ -36,18 +36,31 @@ export interface StreamedMultipart {
 
 export interface StreamMultipartOptions {
   /**
-   * Cap on each file part and on the bytes written across all file parts. Both
-   * are checked as each part finishes writing; an excess rejects the request
-   * once parsing ends.
+   * Cap on each file part and on the bytes written across all file parts,
+   * counted as the bytes arrive: the request is refused as soon as it passes.
    */
   maxTotalBytes: number;
   /** Cap on a single non-file field value (default 1 MiB). */
   maxFieldBytes?: number;
+  /** Cap on the bytes of every non-file field value together (default 4 MiB). */
+  maxTotalFieldBytes?: number;
+  /** Cap on the number of non-file fields (default 100). */
+  maxFields?: number;
   /** Cap on the number of file parts (default 500). */
   maxFiles?: number;
+  /**
+   * Runs once, with the fields read so far, before the first file part is
+   * written to disk (or once parsing ends when the request has no file part).
+   * Throwing refuses the request before any file byte is stored, so a route
+   * authenticated by a field (a stream token sent ahead of the files) checks
+   * it here.
+   */
+  beforeFiles?: (fields: Map<string, string>) => Promise<void> | void;
 }
 
 const DEFAULT_MAX_FIELD_BYTES = 1024 * 1024; // 1 MiB
+const DEFAULT_MAX_TOTAL_FIELD_BYTES = 4 * 1024 * 1024; // 4 MiB
+const DEFAULT_MAX_FIELDS = 100;
 const DEFAULT_MAX_FILES = 500;
 
 /**
@@ -58,10 +71,11 @@ const DEFAULT_MAX_FILES = 500;
  * parsed part — does. The peak the parser holds is one filesystem chunk, not the
  * upload; the bytes live on disk until the caller reads them one at a time.
  *
- * A field over `maxFieldBytes` or more than `maxFiles` parts rejects the request
- * at once; a file part or a total over `maxTotalBytes` rejects it once parsing
- * ends. Temp files are removed on any failure, and the caller removes them on
- * success via the returned `cleanup`.
+ * Every cap is checked on the bytes actually read, whatever the request's
+ * headers declare: a field over `maxFieldBytes`, fields over `maxTotalFieldBytes`
+ * together, too many fields or file parts, or file bytes over `maxTotalBytes`
+ * reject the request at once. Temp files are removed on any failure, and the
+ * caller removes them on success via the returned `cleanup`.
  */
 export async function streamMultipart(event: H3Event, options: StreamMultipartOptions): Promise<StreamedMultipart> {
   const req = event.node.req;
@@ -71,6 +85,8 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
   }
 
   const maxFieldBytes = options.maxFieldBytes ?? DEFAULT_MAX_FIELD_BYTES;
+  const maxTotalFieldBytes = options.maxTotalFieldBytes ?? DEFAULT_MAX_TOTAL_FIELD_BYTES;
+  const maxFields = options.maxFields ?? DEFAULT_MAX_FIELDS;
   const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
 
   const dir = await mkdtemp(join(tmpdir(), 'piwi-upload-'));
@@ -78,6 +94,10 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
 
   const fields = new Map<string, string>();
   const files: StreamedFile[] = [];
+
+  // The `beforeFiles` check, run at most once, on the fields read when it starts.
+  let gate: Promise<void> | undefined;
+  const passGate = () => (gate ??= (async () => options.beforeFiles?.(new Map(fields)))());
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -99,7 +119,13 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
       try {
         bb = busboy({
           headers: req.headers,
-          limits: { fileSize: options.maxTotalBytes, fieldSize: maxFieldBytes, files: maxFiles },
+          limits: {
+            fileSize: options.maxTotalBytes,
+            fieldSize: maxFieldBytes,
+            fields: maxFields,
+            files: maxFiles,
+            parts: maxFields + maxFiles,
+          },
         });
       } catch {
         fail(apiError({ statusCode: 400, message: 'Malformed multipart request' }));
@@ -108,6 +134,7 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
 
       const fileWrites: Promise<void>[] = [];
       let totalBytes = 0;
+      let fieldBytes = 0;
       // Counted as the bytes arrive, so an oversized upload stops before it fills the disk.
       let streamedBytes = 0;
 
@@ -125,16 +152,19 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
         stream.on('limit', () => {
           truncated = true;
         });
-        stream.on('data', (chunk: Buffer) => {
-          streamedBytes += chunk.length;
-          if (streamedBytes > options.maxTotalBytes) {
-            const error = apiError({ statusCode: 413, message: 'Upload exceeded the size limit' });
-            (stream as unknown as { destroy(error?: Error): void }).destroy(error);
-            fail(error);
-          }
-        });
-        const ws = createWriteStream(tmpPath);
-        const write = pipeline(stream, ws).then(() => {
+        // Nothing reads the part until the check passed: busboy, and the request
+        // behind it, wait meanwhile.
+        const write = passGate().then(async () => {
+          stream.on('data', (chunk: Buffer) => {
+            streamedBytes += chunk.length;
+            if (streamedBytes > options.maxTotalBytes) {
+              const error = apiError({ statusCode: 413, message: 'Upload exceeded the size limit' });
+              (stream as unknown as { destroy(error?: Error): void }).destroy(error);
+              fail(error);
+            }
+          });
+          const ws = createWriteStream(tmpPath);
+          await pipeline(stream, ws);
           if (truncated) throw apiError({ statusCode: 413, message: 'A file part exceeded the upload limit' });
           totalBytes += ws.bytesWritten;
           if (totalBytes > options.maxTotalBytes) {
@@ -148,8 +178,8 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
             mimeType: info.mimeType,
           };
         });
-        // A write cut short after the request already failed is not a second error.
-        write.catch(() => {});
+        // A refused check, or a write cut short after the request already failed, fails the request once.
+        write.catch(fail);
         fileWrites.push(write);
       });
 
@@ -158,14 +188,22 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
           fail(apiError({ statusCode: 413, message: `Field "${name}" exceeded the size limit` }));
           return;
         }
+        fieldBytes += Buffer.byteLength(value);
+        if (fieldBytes > maxTotalFieldBytes) {
+          fail(apiError({ statusCode: 413, message: 'Form fields exceeded the size limit' }));
+          return;
+        }
         fields.set(name, value);
       });
 
       bb.on('filesLimit', () => fail(apiError({ statusCode: 413, message: 'Too many file parts' })));
+      bb.on('fieldsLimit', () => fail(apiError({ statusCode: 413, message: 'Too many form fields' })));
+      bb.on('partsLimit', () => fail(apiError({ statusCode: 413, message: 'Too many form parts' })));
       bb.on('error', fail);
       bb.on('close', () => {
-        // busboy has finished parsing; wait for the in-flight file writes to flush.
-        Promise.all(fileWrites).then(succeed, fail);
+        // busboy has finished parsing; wait for the in-flight file writes to flush,
+        // and run the check when no file part did.
+        Promise.all([...fileWrites, passGate()]).then(succeed, fail);
       });
 
       req.on('aborted', () => fail(apiError({ statusCode: 400, message: 'Request aborted' })));

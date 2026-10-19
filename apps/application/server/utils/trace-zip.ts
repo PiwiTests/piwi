@@ -24,9 +24,17 @@ const MIN_DEFLATE_BYTES = 64;
  * compressed data with gigabytes of output and exhaust server memory. Real
  * trace files — events, network log, screenshots — never approach this ceiling.
  * zlib throws ERR_BUFFER_TOO_LARGE once one entry's output would exceed the
- * cap; the sum across entries is not bounded here.
+ * cap, or the size the entry declares.
  */
 const MAX_ENTRY_BYTES = 512 * 1024 * 1024; // 512 MiB
+
+/**
+ * Default upper bound on what all the entries of one archive declare they
+ * inflate to (see {@link parseZipDirectory}). Every entry inflates to at most
+ * its declared size, so this bounds what any number of reads of one archive
+ * hold at once. It comfortably exceeds any real trace.
+ */
+const MAX_ARCHIVE_INFLATED_BYTES = 1024 * 1024 * 1024; // 1 GiB
 
 /**
  * Upper bound on the total size of a ZIP produced by {@link buildZip}. The
@@ -49,9 +57,18 @@ export interface ZipEntryMeta {
   /** Compression method: 0 = stored, 8 = deflated. */
   method: number;
   compressedSize: number;
+  /** The size the central directory declares; the entry never inflates past it. */
+  uncompressedSize: number;
   /** Byte offset in the source buffer where compressed data begins. */
   dataStart: number;
 }
+
+/**
+ * An archive refused before anything is inflated: its entries share or overlap
+ * bytes, or together declare more than the archive's budget. Unlike a merely
+ * malformed archive, it is never stored.
+ */
+export class ZipLimitError extends Error {}
 
 // CRC-32 lookup table (standard polynomial 0xEDB88320)
 function crc32(buf: Buffer): number {
@@ -99,8 +116,15 @@ function crc32(buf: Buffer): number {
  * Read the ZIP central directory and return entry metadata without decompressing
  * any data.  Use this when you only need file names and byte offsets, e.g. to
  * decide which resources are new before committing to decompression.
+ *
+ * Throws {@link ZipLimitError} when two entries share or overlap their bytes (a
+ * few compressed bytes then stand for any number of entries), or when the
+ * entries together declare more than `maxInflatedBytes`.
  */
-export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
+export function parseZipDirectory(
+  data: Buffer,
+  { maxInflatedBytes = MAX_ARCHIVE_INFLATED_BYTES }: { maxInflatedBytes?: number } = {},
+): ZipEntryMeta[] {
   const scanFrom = Math.max(0, data.length - 22 - 65535);
   let eocdOffset = -1;
   for (let i = data.length - 22; i >= scanFrom; i--) {
@@ -116,6 +140,9 @@ export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
   if (cdOffset > data.length) throw new Error('Invalid central directory offset');
 
   const metas: ZipEntryMeta[] = [];
+  // Where each entry's local header starts and its data ends.
+  const spans: Array<{ start: number; end: number }> = [];
+  let declaredBytes = 0;
   let pos = cdOffset;
 
   for (let i = 0; i < entryCount; i++) {
@@ -124,6 +151,7 @@ export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
 
     const method = data.readUInt16LE(pos + 10);
     const compressedSize = data.readUInt32LE(pos + 20);
+    const uncompressedSize = data.readUInt32LE(pos + 24);
     const nameLen = data.readUInt16LE(pos + 28);
     const extraLen = data.readUInt16LE(pos + 30);
     const commentLen = data.readUInt16LE(pos + 32);
@@ -141,10 +169,28 @@ export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
     const localExtraLen = data.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLen + localExtraLen;
 
-    metas.push({ name, method, compressedSize, dataStart });
+    // An entry whose data runs past the archive is never read (see compressedBytes).
+    if (dataStart + compressedSize <= data.length) {
+      declaredBytes += method === 0 ? compressedSize : uncompressedSize;
+      if (declaredBytes > maxInflatedBytes) {
+        throw new ZipLimitError(`ZIP entries inflate past ${maxInflatedBytes} bytes`);
+      }
+      spans.push({ start: localOffset, end: dataStart + compressedSize });
+    }
+    metas.push({ name, method, compressedSize, uncompressedSize, dataStart });
+  }
+
+  spans.sort((a, b) => a.start - b.start);
+  for (let i = 1; i < spans.length; i++) {
+    if (spans[i]!.start < spans[i - 1]!.end) throw new ZipLimitError('ZIP entries share or overlap their bytes');
   }
 
   return metas;
+}
+
+/** The output cap for inflating one entry: its declared size, within the per-entry ceiling. */
+function inflateCap(meta: ZipEntryMeta, maxBytes = MAX_ENTRY_BYTES): number {
+  return Math.min(meta.uncompressedSize, maxBytes, MAX_ENTRY_BYTES);
 }
 
 /** The compressed bytes of one entry, checked against the archive's length. */
@@ -165,7 +211,8 @@ function compressedBytes(data: Buffer, meta: ZipEntryMeta): Buffer {
 export async function decompressEntry(data: Buffer, meta: ZipEntryMeta): Promise<Buffer> {
   const compressed = compressedBytes(data, meta);
   if (meta.method === 0) return Buffer.from(compressed);
-  return inflateRawAsync(compressed, { maxOutputLength: MAX_ENTRY_BYTES });
+  if (meta.uncompressedSize === 0) return Buffer.alloc(0);
+  return inflateRawAsync(compressed, { maxOutputLength: inflateCap(meta) });
 }
 
 /**
@@ -176,7 +223,8 @@ export async function decompressEntry(data: Buffer, meta: ZipEntryMeta): Promise
 export function decompressEntrySync(data: Buffer, meta: ZipEntryMeta, maxBytes: number): Buffer {
   const compressed = compressedBytes(data, meta);
   if (meta.method === 0) return Buffer.from(compressed);
-  return inflateRawSync(compressed, { maxOutputLength: Math.min(maxBytes, MAX_ENTRY_BYTES) });
+  if (meta.uncompressedSize === 0) return Buffer.alloc(0);
+  return inflateRawSync(compressed, { maxOutputLength: inflateCap(meta, maxBytes) });
 }
 
 /** Decompress text entries, in the order given, skipping one that is corrupt or uses an unknown method. */
@@ -353,7 +401,10 @@ export function parseZipSync(data: Buffer): ZipEntry[] {
       if (meta.method === 0) {
         entryData = Buffer.from(compressed);
       } else if (meta.method === 8) {
-        entryData = inflateRawSync(compressed, { maxOutputLength: MAX_ENTRY_BYTES });
+        entryData =
+          meta.uncompressedSize === 0
+            ? Buffer.alloc(0)
+            : inflateRawSync(compressed, { maxOutputLength: inflateCap(meta) });
       } else {
         continue;
       }

@@ -185,12 +185,19 @@ async function uploadRunWithTrace(request: APIRequestContext, projectName: strin
   return { ...(await response.json()), hash } as { runId: number; projectId: number; hash: string };
 }
 
+/** A trace resource as Playwright names it: the SHA-1 of its bytes, then an extension. */
+function sha1Resource(content: string): { name: string; content: string } {
+  return { name: `${createHash('sha1').update(content).digest('hex')}.txt`, content };
+}
+
 test.describe.serial('Partial delete reclaims only unshared resources', () => {
   // Two traces in one project: one shared resource (same name+bytes → stored once,
   // referenced by both blobs) plus a resource unique to each.
-  const SHARED = { name: 'shared-res', content: 'shared resource body '.repeat(40) };
-  const traceA = buildTrace('A', [SHARED, { name: 'only-a-res', content: 'A-only body '.repeat(40) }]);
-  const traceB = buildTrace('B', [SHARED, { name: 'only-b-res', content: 'B-only body '.repeat(40) }]);
+  const SHARED = sha1Resource('shared resource body '.repeat(40));
+  const ONLY_A = sha1Resource('A-only body '.repeat(40));
+  const ONLY_B = sha1Resource('B-only body '.repeat(40));
+  const traceA = buildTrace('A', [SHARED, ONLY_A]);
+  const traceB = buildTrace('B', [SHARED, ONLY_B]);
 
   let projectId: number;
   let runA: number;
@@ -213,9 +220,9 @@ test.describe.serial('Partial delete reclaims only unshared resources', () => {
     for (const p of [
       blobPath(hashA),
       blobPath(hashB),
-      resPath('shared-res'),
-      resPath('only-a-res'),
-      resPath('only-b-res'),
+      resPath(SHARED.name),
+      resPath(ONLY_A.name),
+      resPath(ONLY_B.name),
     ]) {
       expect((await request.get(`/api/files/${p}`)).ok(), `present before delete: ${p}`).toBeTruthy();
     }
@@ -227,18 +234,18 @@ test.describe.serial('Partial delete reclaims only unshared resources', () => {
     expect((await request.get(`/api/files/${blobPath(hashA)}`)).status(), 'A blob gone').toBe(404);
     expect((await request.get(`/api/files/${blobPath(hashB)}`)).ok(), 'B blob kept').toBeTruthy();
     // The resource only run A used is reclaimed by the partial delete…
-    expect((await request.get(`/api/files/${resPath('only-a-res')}`)).status(), 'A-only reclaimed').toBe(404);
+    expect((await request.get(`/api/files/${resPath(ONLY_A.name)}`)).status(), 'A-only reclaimed').toBe(404);
     // …while the shared one and B's own resource survive.
-    expect((await request.get(`/api/files/${resPath('shared-res')}`)).ok(), 'shared kept').toBeTruthy();
-    expect((await request.get(`/api/files/${resPath('only-b-res')}`)).ok(), 'B-only kept').toBeTruthy();
+    expect((await request.get(`/api/files/${resPath(SHARED.name)}`)).ok(), 'shared kept').toBeTruthy();
+    expect((await request.get(`/api/files/${resPath(ONLY_B.name)}`)).ok(), 'B-only kept').toBeTruthy();
   });
 
   test('deleting run B frees the shared and remaining resources', async ({ request }) => {
     expect((await request.delete(`/api/test-runs/${runB}`)).ok()).toBeTruthy();
 
     expect((await request.get(`/api/files/${blobPath(hashB)}`)).status()).toBe(404);
-    expect((await request.get(`/api/files/${resPath('shared-res')}`)).status()).toBe(404);
-    expect((await request.get(`/api/files/${resPath('only-b-res')}`)).status()).toBe(404);
+    expect((await request.get(`/api/files/${resPath(SHARED.name)}`)).status()).toBe(404);
+    expect((await request.get(`/api/files/${resPath(ONLY_B.name)}`)).status()).toBe(404);
   });
 });
 

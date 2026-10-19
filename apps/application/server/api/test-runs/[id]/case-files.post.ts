@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { getDatabase } from '../../../database';
+import { getDatabase, type DbClient } from '../../../database';
 import { testRuns, testCases, testRunsCases, files } from '../../../database/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
@@ -35,7 +35,7 @@ defineRouteMeta({
  * stream token, like the events endpoint.
  *
  * Multipart fields:
- *  - streamToken   — run stream token
+ *  - streamToken   — run stream token, sent before any file part
  *  - testCase      — JSON { title, location, retries, suitePath } identifying the run case
  *  - trace         — optional trace ZIP file
  *  - trace_hash    — optional SHA-256 of the trace; enables blob deduplication.
@@ -59,24 +59,66 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 413, message: `Upload too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
+  const db = await getDatabase();
+
   // Stream the request to temp files so a large trace never sits in the heap for
   // the whole transfer; the file parts are read back one at a time below and the
-  // temp directory is removed in the `finally`.
-  const multipart = await streamMultipart(event, { maxTotalBytes: maxUploadBytes });
+  // temp directory is removed in the `finally`. The run and the stream token,
+  // which clients send ahead of the files, are checked before any file part
+  // reaches the disk.
+  let testRun: CaseFilesRun | undefined;
+  const multipart = await streamMultipart(event, {
+    maxTotalBytes: maxUploadBytes,
+    maxFields: 16,
+    beforeFiles: async (fields) => {
+      testRun = await authorizeCaseFilesRun(db, id, fields.get('streamToken'));
+    },
+  });
   try {
-    return await handleCaseFiles(id, multipart);
+    return await handleCaseFiles(db, id, testRun!, multipart);
   } finally {
     await multipart.cleanup();
   }
 });
 
+type CaseFilesRun = typeof testRuns.$inferSelect;
+
+/**
+ * The run a case-files upload targets, once its stream token is checked: the
+ * run's own token or, in a sharded run where every shard uploads its own case
+ * files, one of its shard tokens.
+ */
+async function authorizeCaseFilesRun(db: DbClient, id: number, streamToken: string | undefined): Promise<CaseFilesRun> {
+  if (!streamToken) {
+    throw apiError({
+      statusCode: 401,
+      message: 'Missing stream token',
+    });
+  }
+
+  const [testRun] = await db.select().from(testRuns).where(eq(testRuns.id, id));
+  if (!testRun) {
+    throw apiError({
+      statusCode: 404,
+      message: 'Test run not found',
+    });
+  }
+
+  const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
+  const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
+  const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
+  await validateAndReviveRun(db, id, testRun, streamToken, isShardToken);
+  return testRun;
+}
+
 async function handleCaseFiles(
+  db: DbClient,
   id: number,
+  testRun: CaseFilesRun,
   multipart: Awaited<ReturnType<typeof streamMultipart>>,
 ): Promise<{ success: boolean; executionId: number; traces: number; attachments: number }> {
   const { fields } = multipart;
 
-  const streamToken = fields.get('streamToken');
   let caseInfo: { title?: string; location?: string; retries?: number; suitePath?: string[] | null } | undefined;
   const rawCase = fields.get('testCase');
   if (rawCase !== undefined) {
@@ -111,38 +153,12 @@ async function handleCaseFiles(
   const traceStreamed = multipart.files.find((f) => f.field === 'trace');
   const attachmentStreamed = multipart.files.filter((f) => f.field === 'attach_file');
 
-  if (!streamToken) {
-    throw apiError({
-      statusCode: 401,
-      message: 'Missing stream token',
-    });
-  }
-
   if (!caseInfo?.title || !caseInfo?.location) {
     throw apiError({
       statusCode: 400,
       message: 'Missing required testCase fields: title, location',
     });
   }
-
-  const db = await getDatabase();
-
-  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  const testRun = testRunResults[0];
-
-  if (!testRun) {
-    throw apiError({
-      statusCode: 404,
-      message: 'Test run not found',
-    });
-  }
-
-  // Accept shard tokens too — in a sharded run every shard uploads its own
-  // case files, and only one of them holds the run's primary stream token.
-  const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
-  const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
-  const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
-  await validateAndReviveRun(db, id, testRun, streamToken, isShardToken);
 
   // Locate the run case row the reporter streamed earlier
   const { filePath } = parseLocation(caseInfo.location);
