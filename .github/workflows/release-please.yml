@@ -5,16 +5,17 @@ on:
     branches:
       - main
 
+# The release PR, its tag and the GitHub release are written with RELEASE_PLEASE_TOKEN, never with GITHUB_TOKEN.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+      - name: Open or update the release PR, and tag a merged one
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           # A tag/commit/PR made with the default GITHUB_TOKEN does not trigger
           # other workflows (GitHub's anti-recursion protection) — the release
