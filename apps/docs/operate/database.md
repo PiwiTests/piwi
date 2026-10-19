@@ -25,7 +25,7 @@ itself only when `PIWI_DATABASE_PATH` is unset:
 ::: code-group
 
 ```bash [Docker]
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data -e PIWI_DATABASE_PATH=/app/.data/custom.db phenx/piwitests-server:latest
+docker run -p 127.0.0.1:3000:3000 -v $(pwd)/.data:/app/.data -e PIWI_DATABASE_PATH=/app/.data/custom.db phenx/piwitests-server:latest
 ```
 
 ```bash [.env]
