@@ -10,7 +10,7 @@ import type {
 } from '~~/types/api';
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
-import { parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
+import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 
@@ -646,12 +646,14 @@ const { data: markersData, refresh: refreshMarkers } = await useFetch<MarkersRes
 );
 const markers = computed(() => markersData.value?.items ?? []);
 
-// The drill-down period resolves in the viewer's zone, so it applies once mounted.
+// The drill-down period resolves in the viewer's zone, so it applies once mounted,
+// and again only when the drill-down's own query keys change (a new link), not
+// on any other change of the URL (a tab, a page of a list, a filter).
 onMounted(readDrill);
 watch(
-  () => route.query.source === 'analytics' && route.fullPath,
-  (drilled, before) => {
-    if (drilled && before !== undefined) readDrill();
+  () => drillQueryKey(route.query as Record<string, unknown>),
+  (drilled) => {
+    if (drilled) readDrill();
   },
 );
 

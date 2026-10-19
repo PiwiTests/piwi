@@ -3,6 +3,7 @@ import {
   bucketDrill,
   bucketRange,
   drillDownHref,
+  drillQueryKey,
   metricDrillList,
   parseDrillQuery,
   singleProjectOf,
@@ -67,5 +68,13 @@ describe('analytics drill-down', () => {
     expect(
       parseDrillQuery({ source: 'analytics', allBranches: 'true' }, { now, timeZone: 'UTC' })!.defaultBranchOnly,
     ).toBe(false);
+  });
+
+  test('a drill-down stays the same drill-down when the page changes a tab, a list page or a search', () => {
+    const drilled = { source: 'analytics', period: 'last-30d', environments: 'staging', tab: 'runs' };
+    expect(drillQueryKey({ ...drilled, tab: 'tests', page: '2', q: 'checkout' })).toBe(drillQueryKey(drilled));
+    expect(drillQueryKey({ ...drilled, period: 'last-7d' })).not.toBe(drillQueryKey(drilled));
+    expect(drillQueryKey({ ...drilled, branches: 'develop' })).not.toBe(drillQueryKey(drilled));
+    expect(drillQueryKey({ period: 'last-30d', tab: 'runs' })).toBeNull();
   });
 });
