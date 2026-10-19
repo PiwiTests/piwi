@@ -9,6 +9,24 @@ import { PIWI_ORIGIN_ENV } from '../config/env.js';
 
 type Env = Record<string, string | undefined>;
 
+/**
+ * A git remote without the credentials a URL can carry (`https://gitlab-ci-token:<token>@host/repo`): its user name
+ * and password are dropped. A remote with none, an scp-like one (`git@host:owner/repo`) and a local path come back
+ * as they are.
+ */
+export function withoutCredentials(remoteUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(remoteUrl);
+  } catch {
+    return remoteUrl;
+  }
+  if (!url.username && !url.password) return remoteUrl;
+  url.username = '';
+  url.password = '';
+  return url.toString();
+}
+
 /** git's answer for a detached HEAD checkout — a state, not a branch name. */
 const DETACHED_HEAD = 'HEAD';
 
@@ -288,7 +306,7 @@ export class MetadataCollector {
       scm.author = execSync('git log -1 --pretty=format:"%an"', execOpts).trim();
       scm.commitMessage = execSync('git log -1 --pretty=format:"%s"', execOpts).trim();
       try {
-        scm.remoteUrl = execSync('git config --get remote.origin.url', execOpts).trim();
+        scm.remoteUrl = withoutCredentials(execSync('git config --get remote.origin.url', execOpts).trim());
       } catch {
         /* optional */
       }
