@@ -1289,6 +1289,7 @@ const routes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/test-runs\/(\d+)\/incident$/,
+    permission: ['run:submit', 'run:control'],
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
       const input = parseSetRunIncident(body);

@@ -92,7 +92,8 @@ leave it off when that setup is what starts the app.
 
 ## Marking and clearing by hand
 
-The rules can miss an outage or flag a real regression. Anyone who can edit the run can decide instead:
+The rules can miss an outage or flag a real regression. Anyone who can upload or control the project's runs
+(Uploader, Maintainer and above) can decide instead:
 
 - **Mark as an environment incident**, in the run header's **Details**, for a run the rules did not flag (the payment
   sandbox was down, a shared account was locked). The run is left out of the same verdicts and gets its marker.

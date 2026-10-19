@@ -428,11 +428,10 @@ describe('set_run_incident', () => {
     expect(cleared.incident).toBeUndefined();
   });
 
-  test('takes the run page permission: a Viewer may flag a run; a bad argument is refused', async () => {
-    await expect(tool('set_run_incident')(db as never, { runId: 1, incident: true }, viewer)).resolves.toMatchObject({
-      runId: 1,
-      decision: 'marked',
-    });
+  test('takes the run page permission: a Viewer may not flag a run; a bad argument is refused', async () => {
+    await expect(tool('set_run_incident')(db as never, { runId: 1, incident: true }, viewer)).rejects.toThrow(
+      refused('run:submit or run:control'),
+    );
     await expect(tool('set_run_incident')(db as never, { runId: 1, incident: 'yes' }, maintainer)).rejects.toThrow(
       '`incident` must be true or false',
     );

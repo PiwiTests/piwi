@@ -5,10 +5,12 @@ import type { IncidentReview, RunIncident } from '#shared/run-incident';
  * The run header's environment-incident line: why the run is not counted and
  * which rule (or person) decided, with the action to clear the flag. On a run
  * that is not flagged it renders the action to mark it, for the Details
- * popover.
+ * popover. The actions show only to a caller who submits or controls the
+ * project's runs.
  */
 const props = defineProps<{
   runId: number;
+  projectId: number;
   incident: RunIncident | null;
   review: IncidentReview | null;
   /** `line` under the facts on a flagged run; `action` in the Details popover of one that is not. */
@@ -17,7 +19,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{ changed: [] }>();
 const toast = useToast();
+const { can } = useAuth();
 const saving = ref(false);
+const canDecide = computed(() => can('run:submit', props.projectId) || can('run:control', props.projectId));
 
 const RULE_TEXT: Record<string, string> = {
   'host-unreachable': 'most tests failed navigating or connecting to the app’s host',
@@ -73,6 +77,7 @@ async function setIncident(incident: boolean): Promise<void> {
       </p>
     </div>
     <UButton
+      v-if="canDecide"
       size="xs"
       color="neutral"
       variant="outline"
@@ -84,11 +89,12 @@ async function setIncident(incident: boolean): Promise<void> {
       Clear the flag
     </UButton>
   </div>
-  <div v-else-if="variant === 'action' && !incident" class="flex items-start gap-1.5">
+  <div v-else-if="variant === 'action' && !incident && (canDecide || clearedBy)" class="flex items-start gap-1.5">
     <span class="text-muted shrink-0">Incident</span>
     <div class="space-y-1">
       <p v-if="clearedBy" class="text-xs text-muted">{{ clearedBy }}: the run counts.</p>
       <UButton
+        v-if="canDecide"
         size="xs"
         color="neutral"
         variant="outline"

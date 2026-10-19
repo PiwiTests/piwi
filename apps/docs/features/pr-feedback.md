@@ -51,8 +51,9 @@ rewritten locator.
 
 ## The gate verdict
 
-Each [merge gate](/guide/ci#blocking-a-merge) evaluation is stored with its policy, its verdict, its violations and
-the pull request it judged.
+Each [merge gate](/guide/ci#blocking-a-merge) evaluation made with a key that can upload or control the project's runs
+(the CI key `piwi gate` uses) is stored with its policy, its verdict, its violations and the pull request it judged. A
+reader of the project gets the verdict only: nothing is stored or posted.
 
 - **A commit status of its own.** Turn on **Gate status** under the project's **Settings → Source control** and each
   verdict is also posted as your status context plus `/gate` (`piwi/tests/gate`), so a branch rule can require the

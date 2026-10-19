@@ -1167,9 +1167,9 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'set_run_incident',
     module: 'core',
-    permission: 'project:read',
+    permission: ['run:submit', 'run:control'],
     description:
-      'Mark a test run as an environment incident (its failures come from the environment under test being down, not from the tests or the code), or clear the flag, as the run page does. A flagged run is left out of baselines, fix verification, flaky scores and auto-heal, and the gate answers inconclusive for it. Pass `incident: true` with an optional `reason`, or `incident: false` to clear it. Requires `project:read` (any role on the project).',
+      'Mark a test run as an environment incident (its failures come from the environment under test being down, not from the tests or the code), or clear the flag, as the run page does. A flagged run is left out of baselines, fix verification, flaky scores and auto-heal, and the gate answers inconclusive for it. Pass `incident: true` with an optional `reason`, or `incident: false` to clear it. Requires `run:submit` or `run:control` (Uploader, Maintainer and above on the project).',
     inputSchema: {
       type: 'object',
       properties: {

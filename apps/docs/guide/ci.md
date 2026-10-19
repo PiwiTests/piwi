@@ -236,7 +236,9 @@ Four behaviors worth knowing:
 - **A test that failed and then passed on retry satisfies `--require-tag`.** Flakiness is what `--max-new-flaky` is
   for.
 - **A required tag that matches no test in the run is a violation**, so a misspelled tag cannot pass silently.
-- **Every evaluation is stored**: [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict) are counted.
+- **Every evaluation made with the CI key is stored**: [merges overriding a failed
+  gate](/features/pr-feedback#the-gate-verdict) are counted. A key that can only read the project gets the verdict,
+  and stores and posts nothing.
 
 `npx @piwitests/reporter gate --help` lists every option; `--json` prints the raw result for a pipeline to parse.
 

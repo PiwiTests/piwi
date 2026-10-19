@@ -44,6 +44,21 @@ export function recordRouteMeta(
   state.routePermission = routePermissionList(meta.openAPI?.['x-required-permission']);
 }
 
+/**
+ * A route handler held to the permission its own meta declared, for a test
+ * that loads several routes: pass the handler right after importing its module.
+ */
+export function underRoutePermission<H extends (...args: never[]) => unknown>(
+  state: Pick<RouteAccessState, 'routePermission'>,
+  handler: H,
+): H {
+  const permission = state.routePermission;
+  return ((...args: Parameters<H>) => {
+    state.routePermission = permission;
+    return handler(...args);
+  }) as H;
+}
+
 function caller(state: RouteAccessState): RouteCaller {
   if (!state.caller) throw apiError({ statusCode: 401, message: 'Authentication required' });
   return state.caller;

@@ -150,10 +150,16 @@ describe('tools/list leaves out the tools a caller can use nowhere', () => {
 
   test('a Contributor sees the tools to file and link issues, not the triage ones', () => {
     const names = listed(contributor.access);
-    for (const name of ['create_issue', 'link_issue', 'set_bug_report_status', 'set_run_incident']) {
+    for (const name of ['create_issue', 'link_issue', 'set_bug_report_status']) {
       expect(names, name).toContain(name);
     }
-    for (const name of ['set_cluster_status', 'triage_cluster', 'run_cluster_diagnosis', 'get_instance_stats']) {
+    for (const name of [
+      'set_cluster_status',
+      'triage_cluster',
+      'run_cluster_diagnosis',
+      'set_run_incident',
+      'get_instance_stats',
+    ]) {
       expect(names, name).not.toContain(name);
     }
     expect(names).toEqual(expect.arrayContaining(readTools));
@@ -161,7 +167,13 @@ describe('tools/list leaves out the tools a caller can use nowhere', () => {
 
   test('a Maintainer on one project sees the triage tools, not the administrator ones', () => {
     const names = listed(maintainerOfOne.access);
-    for (const name of ['triage_cluster', 'dismiss_quarantine_proposal', 'record_diagnosis', 'rerun_cluster_in_ci']) {
+    for (const name of [
+      'triage_cluster',
+      'dismiss_quarantine_proposal',
+      'record_diagnosis',
+      'rerun_cluster_in_ci',
+      'set_run_incident',
+    ]) {
       expect(names, name).toContain(name);
     }
     expect(names).not.toContain('get_instance_stats');
