@@ -1087,6 +1087,14 @@ for (const proj of DEMO_PROJECTS) {
   };
   const firingByRun = new Map(); // runIndex → story[]
   for (const story of projectStories) {
+    // A story that names its runs fires on exactly those, with no draw.
+    if (story.firing.runs) {
+      for (const i of story.firing.runs) {
+        if (!firingByRun.has(i)) firingByRun.set(i, []);
+        firingByRun.get(i).push(story);
+      }
+      continue;
+    }
     const eligibleRuns = [];
     for (let i = 0; i < cfg.numRuns; i++) if (eligible(story, i)) eligibleRuns.push(i);
     const oldestEligible = eligibleRuns[eligibleRuns.length - 1];

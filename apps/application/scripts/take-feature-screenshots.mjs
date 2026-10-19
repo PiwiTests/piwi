@@ -4640,9 +4640,9 @@ const SCENES = [
     description:
       'Execution situation block whose locator step has no line edit: the failing and recommended locator, Copy locator',
     tags: ['desktop'],
-    // Execution 587's healing reads the failure-time ARIA snapshot, and its
-    // waitForSelector line has no locator call to rewrite.
-    route: '/test-run-cases/587',
+    // Execution 648's healing reads the failure-time ARIA snapshot, and its
+    // locator lives in a helper, so the test's line has no locator call to rewrite.
+    route: '/test-run-cases/648',
     viewport: { width: 1280, height: 900 },
     of: '[data-shot="situation-block"]',
     pad: 12,

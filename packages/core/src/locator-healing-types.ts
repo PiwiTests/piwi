@@ -278,7 +278,9 @@ export interface LocatorHealingResult {
   source: LocatorHealingSource;
   /**
    * The single recommended fix — convention-preserving where possible — chosen
-   * from the active alternative list. Null when no alternatives are available.
+   * from the active alternative list. Null when no alternatives are available,
+   * or when none of them is a fix (each looks stale, or finds the element the
+   * failing locator already names).
    */
   recommendation: LocatorFixRecommendation | null;
   /**

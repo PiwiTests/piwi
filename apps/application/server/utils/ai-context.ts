@@ -64,7 +64,7 @@ import { renderEnvironmentDiffMarkdown } from '#shared/environment-diff';
 import { selectCaseScreenshots } from './case-screenshots';
 import { supportedImageMediaType } from '#shared/file-classify';
 import { getOrComputeVisualDiff } from './visual-diff';
-import { parseAriaCandidates, textSimilarity } from '#shared/locator-fingerprint';
+import { parseAriaCandidates, significantWordSimilarity } from '#shared/locator-fingerprint';
 import { isFailedStatus } from '#shared/utils/test-counts';
 import type {
   BuildContextOptions,
@@ -1557,53 +1557,51 @@ function parseLocatorFromError(
 /**
  * Nearest accessible-name hint for locator failures.
  * When the failing error contains a role/name locator, parse the stored ARIA
- * snapshot and surface the closest candidates. Parsing and similarity reuse
- * the shared healing helpers (`parseAriaCandidates` / `textSimilarity`) so
- * this section agrees with the locator-healing pipeline.
+ * snapshot and surface the related candidates: those whose name shares a
+ * significant word with the requested one, or the lone element of the
+ * requested role. Parsing and similarity reuse the shared healing helpers
+ * (`parseAriaCandidates` / `significantWordSimilarity`) so this section agrees
+ * with the locator-healing pipeline. Null when nothing on the page relates.
  */
-function nearestAriaNamesSection(rep: RepresentativeRow): string | null {
+export function nearestAriaNamesSection(rep: Pick<RepresentativeRow, 'error' | 'ariaSnapshot'>): string | null {
   if (!rep.error && !rep.ariaSnapshot) return null;
   const error = rep.error?.trim() || '';
   const snapshot = rep.ariaSnapshot?.trim() || '';
   if (!error || !snapshot) return null;
 
   const locator = parseLocatorFromError(error);
-  if (!locator) return null;
+  if (!locator?.name) return null;
+  const requestedName = locator.name;
 
   const entries = parseAriaCandidates(snapshot).filter(
     (e): e is { role: string; name: string; level: number | null } => e.name != null,
   );
-  if (entries.length === 0) return null;
-
-  // Filter entries matching the locator's role
   const sameRole = locator.role ? entries.filter((e) => e.role === locator.role) : entries;
+  const loneOfRole = locator.role != null && sameRole.length === 1;
 
-  if (sameRole.length === 0 || !locator.name) return null;
-
-  // Score by token similarity
-  const scored = sameRole.map((e) => ({
-    ...e,
-    score: textSimilarity(locator.name, e.name),
-  }));
-  scored.sort((a, b) => b.score - a.score);
-
-  const top = scored.slice(0, 5).filter((e) => e.score > 0 || e.name);
+  const top = sameRole
+    .map((e) => ({ ...e, score: significantWordSimilarity(requestedName, e.name) }))
+    .filter((e) => e.score > 0 || loneOfRole)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
   if (top.length === 0) return null;
 
   const lines: string[] = ['### Nearest matching elements (from ARIA)'];
   const requested =
     locator.method === 'getByRole'
-      ? `getByRole('${locator.role ?? ''}', { name: '${locator.name}'${locator.exact ? ', exact: true' : ''} })`
-      : `${locator.method}('${locator.name}')`;
+      ? `getByRole('${locator.role ?? ''}', { name: '${requestedName}'${locator.exact ? ', exact: true' : ''} })`
+      : `${locator.method}('${requestedName}')`;
   lines.push(`Requested: ${requested}`);
   for (const e of top) {
     const note =
       e.score >= 1
         ? ''
-        : e.score > 0.3
-          ? ` — close match (score: ${e.score.toFixed(2)})`
-          : ` — partial match (score: ${e.score.toFixed(2)})`;
-    const exactHint = locator.exact && e.name !== locator.name ? ' — exact:false would match' : '';
+        : e.score === 0
+          ? ` — the only ${e.role} on the page`
+          : e.score > 0.3
+            ? ` — close match (score: ${e.score.toFixed(2)})`
+            : ` — partial match (score: ${e.score.toFixed(2)})`;
+    const exactHint = locator.exact && e.name !== requestedName ? ' — exact:false would match' : '';
     lines.push(`Present:   ${e.role} "${e.name}"${exactHint}${note}`);
   }
 

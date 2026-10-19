@@ -113,12 +113,13 @@ const alternatives = computed<RankedLocator[]>(() => {
 const userPick = computed<RankedLocator | null>(() => alternatives.value.find((a) => a.pickedByUser) ?? null);
 
 // The single recommended fix — convention-preserving where possible. Computed
-// server-side; fall back to the shared picker for payloads that lack it —
-// EXCEPT when the server deliberately withheld it because every stored
-// alternative looks stale (recomputing here would resurrect a broken pick).
+// server-side, and null when the server withheld it (every stored alternative
+// looks stale, or every candidate finds the element the failing locator
+// already names): recomputing it here would resurrect a pick that is no fix.
+// The shared picker runs only for a payload that lacks the field.
 const recommendation = computed<LocatorFixRecommendation | null>(() => {
-  if (props.healing?.recommendation) return props.healing.recommendation;
-  if (props.healing?.priorNameMayBeStale) return null;
+  if (!props.healing) return null;
+  if (props.healing.recommendation !== undefined) return props.healing.recommendation;
   if (!alternatives.value.length) return null;
   return recommendLocatorFix(props.healing?.failingLocator?.method, alternatives.value);
 });

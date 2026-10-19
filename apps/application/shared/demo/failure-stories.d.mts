@@ -109,13 +109,24 @@ export interface StoryMedia {
   visualDiffBaseline?: string;
 }
 
-export interface StoryFiring {
+/** When a story fires: on its eligible runs by chance, or on the runs it names. */
+export type StoryFiring = StoryFiringByChance | StoryFiringOnRuns;
+
+export interface StoryFiringByChance {
   /** Run index (newest = 0) at which the story started firing. */
   startAgo: number;
   /** Chance the story fires on an eligible run (deterministic PRNG). */
   chance: number;
   /** Only fire on runs whose browser config has this colorScheme. */
   requiresColorScheme?: string;
+}
+
+export interface StoryFiringOnRuns {
+  /**
+   * The run indexes (newest = 0) the story fires on. It draws nothing from the
+   * seed's random stream, so on runs that already fail it changes no other row.
+   */
+  runs: number[];
 }
 
 export interface StoryDomSnapshot {
