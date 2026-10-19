@@ -98,7 +98,7 @@ class PiwiOpenHandler : RestService() {
                     add(context.serverUrl)
                     add(context.instance?.serverUrl)
                 }
-                for (dir in service.playwrightConfigDirs()) {
+                for (dir in if (service.trusted()) service.playwrightConfigDirs() else emptyList()) {
                     val dotEnv = dir.resolve(".env")
                     if (Files.isRegularFile(dotEnv)) add(OpenOrigins.dashboardUrlFromDotEnv(runCatching { Files.readString(dotEnv) }.getOrNull()))
                 }

