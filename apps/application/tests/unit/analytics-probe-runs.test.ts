@@ -8,7 +8,6 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
 delete process.env.PIWI_DATABASE_URL;
-const { fetchScopedRuns } = await import('../../shared/handlers/analytics/common');
 const { getAnalyticsPortfolio } = await import('../../shared/handlers/analytics/portfolio');
 const { getAnalyticsWastedTime } = await import('../../shared/handlers/analytics/wasted-time');
 const { getAnalyticsRegressionVelocity } = await import('../../shared/handlers/analytics/regression-velocity');
@@ -87,11 +86,6 @@ beforeAll(async () => {
 });
 
 describe('probe runs are left out of analytics and project numbers', () => {
-  test('fetchScopedRuns returns only the real run', async () => {
-    const runs = await fetchScopedRuns(db as any, OPEN_SCOPE, 'all', 30);
-    expect(runs.map((r) => r.id)).toEqual([realRunId]);
-  });
-
   test('the portfolio pass rate ignores the probe run', async () => {
     const [row] = await getAnalyticsPortfolio(db as any, OPEN_SCOPE);
     expect(row!.runCount).toBe(1);

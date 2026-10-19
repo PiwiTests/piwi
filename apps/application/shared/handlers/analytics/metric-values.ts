@@ -81,10 +81,6 @@ export const EVALUATED_METRIC_IDS = METRICS.map((m) => m.id).filter(
     isHandbackMetric(id),
 ) as MetricId[];
 
-export function isEvaluatedMetric(id: MetricId): boolean {
-  return EVALUATED_METRIC_IDS.includes(id);
-}
-
 /** A metric summed from the scalar rows (the rollups, or the matching executions). */
 export function isRollupMetric(id: MetricId): boolean {
   return id in ROLLUP_VALUE;

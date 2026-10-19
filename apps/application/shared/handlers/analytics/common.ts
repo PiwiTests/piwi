@@ -322,17 +322,6 @@ function runConditions(
   return conditions;
 }
 
-/**
- * The run conditions of a scope from a start instant on, with an explicit
- * branch list only (no default-branch resolution). For callers outside a
- * resolved context.
- */
-function scopedRunConditions(scope: AnalyticsScope, allowed: 'all' | number[], sinceMs: number): SQL[] {
-  const policy: BranchPolicy =
-    scope.branches && scope.branches.length > 0 ? { kind: 'list', branches: scope.branches } : { kind: 'any' };
-  return runConditions(scope, allowed, policy, sinceMs, null);
-}
-
 // ── Projects and tags ────────────────────────────────────────────────────────
 
 export interface ScopedProject {
@@ -415,26 +404,6 @@ export async function fetchContextRuns(
     .select(SCOPED_RUN_FIELDS)
     .from(testRuns)
     .where(and(...contextRunConditions(ctx, fromMs, toMs)))
-    .orderBy(testRuns.startTime);
-  return rows;
-}
-
-/**
- * Terminal runs matching the scope, starting `sinceDays` ago (ordered oldest →
- * newest), with the explicit run filters only.
- */
-export async function fetchScopedRuns(
-  db: DrizzleDB,
-  scope: AnalyticsScope,
-  access: ProjectAccess,
-  sinceDays: number,
-): Promise<ScopedRun[]> {
-  const allowed = resolveAllowedProjects(scope, access);
-  if (allowed !== 'all' && allowed.length === 0) return [];
-  const rows: any[] = await db
-    .select(SCOPED_RUN_FIELDS)
-    .from(testRuns)
-    .where(and(...scopedRunConditions(scope, allowed, Date.now() - sinceDays * DAY_MS)))
     .orderBy(testRuns.startTime);
   return rows;
 }

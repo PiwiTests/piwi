@@ -1,8 +1,7 @@
 /**
- * The weekly gaps digest: the top new gaps per project since the last digest,
- * off by default, delivered through the notification outbox and subscriptions.
- * The selection is pure so the demo and the tests run it; the scheduled task
- * loads the gaps and enqueues the message.
+ * The weekly gaps digest: the top new gaps per project since a given instant.
+ * The selection is pure; the Test Map's new-gaps widget
+ * (`getAnalyticsNewGaps`) loads the gaps and runs it.
  */
 
 /** A gap as the digest needs it. */
@@ -55,19 +54,4 @@ export function selectWeeklyDigest(
     p.gaps = p.gaps.slice(0, perProject);
   }
   return projects.filter((p) => p.gaps.length > 0).sort((a, b) => (b.gaps[0]?.score ?? 0) - (a.gaps[0]?.score ?? 0));
-}
-
-/** Render the digest as a Markdown message body for the notification outbox. */
-export function renderDigest(projects: DigestProject[]): string {
-  if (projects.length === 0) return '';
-  const lines = ['**New scenario gaps this week**', ''];
-  for (const p of projects) {
-    lines.push(`**${p.projectName}**`);
-    for (const g of p.gaps) {
-      lines.push(`- ${g.title} · ${g.class} · score ${(g.score ?? 0).toFixed(3)}`);
-    }
-    lines.push('');
-  }
-  lines.push('Proposed tests that do not exist yet — observed reach, never instrumented coverage.');
-  return lines.join('\n');
 }

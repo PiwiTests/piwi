@@ -6,7 +6,6 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import {
-  defaultProjectRunScope,
   parseProjectRunScope,
   projectRunScopeQuery,
   runInProjectScope,
@@ -18,7 +17,13 @@ const { projectRunScopeConditions } = await import('../../shared/handlers/projec
 const { getProjectFailureClusters, getProjectTestCases, getProjectPerformance } =
   await import('../../shared/handlers/projects');
 
-const scope = (change: Partial<ProjectRunScope> = {}): ProjectRunScope => ({ ...defaultProjectRunScope(), ...change });
+const scope = (change: Partial<ProjectRunScope> = {}): ProjectRunScope => ({
+  environments: [],
+  branches: [],
+  allBranches: false,
+  fullRunsOnly: true,
+  ...change,
+});
 
 describe('parseProjectRunScope', () => {
   test('a request without environments, branches or allBranches reads unscoped', () => {
