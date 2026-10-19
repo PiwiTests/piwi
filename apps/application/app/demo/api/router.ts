@@ -3668,7 +3668,11 @@ routes.push(
     },
   },
   // The demo always ships with seeded users, so first-admin setup never applies.
-  { method: 'GET', pattern: /^\/api\/auth\/setup$/, handler: () => Promise.resolve({ needsSetup: false }) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/auth\/setup$/,
+    handler: () => Promise.resolve({ needsSetup: false, setupTokenRequired: false }),
+  },
   {
     method: 'POST',
     pattern: /^\/api\/auth\/login$/,

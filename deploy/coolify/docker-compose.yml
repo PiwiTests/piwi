@@ -11,6 +11,8 @@ services:
       - PIWI_AUTH_ENABLED=true
       - PIWI_AUTH_SECRET=${SERVICE_PASSWORD_64_PIWIAUTHSECRET}
       - PIWI_SECRET_KEY=${SERVICE_PASSWORD_64_PIWISECRETKEY}
+      # The first-admin form asks for this value, so only you can create the administrator.
+      - PIWI_SETUP_TOKEN=${SERVICE_PASSWORD_64_PIWISETUPTOKEN}
       - PIWI_SITE_URL=${SERVICE_FQDN_PIWI_3000}
     volumes:
       - piwi-data:/app/.data

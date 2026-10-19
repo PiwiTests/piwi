@@ -8,8 +8,8 @@ lang: en-US
 
 If you don't have a server to run Docker on, these templates stand up an instance on a hosting provider
 instead. They all provision the same thing: **one container, one persistent volume mounted at
-`/app/.data`, and authentication on**. Railway, Render and Coolify also generate `PIWI_SECRET_KEY` and
-`PIWI_AUTH_SECRET`; on Fly.io and Koyeb you set them yourself. Beyond that, the difference is the provider's
+`/app/.data`, and authentication on**. Railway, Render and Coolify also generate `PIWI_SECRET_KEY`,
+`PIWI_AUTH_SECRET` and `PIWI_SETUP_TOKEN`; on Fly.io and Koyeb you set them yourself. Beyond that, the difference is the provider's
 own volume and pricing model.
 
 The manifests are generated from the same variable registry as the
@@ -67,16 +67,19 @@ it one command plus the secrets:
 
 ```bash [Linux / macOS]
 fly launch --no-deploy   # accepts the committed fly.toml
-fly secrets set PIWI_SECRET_KEY=$(openssl rand -hex 32) PIWI_AUTH_SECRET=$(openssl rand -hex 32)
+fly secrets set PIWI_SECRET_KEY=$(openssl rand -hex 32) PIWI_AUTH_SECRET=$(openssl rand -hex 32) PIWI_SETUP_TOKEN=$(openssl rand -hex 32)
 fly deploy
+fly ssh console -C "printenv PIWI_SETUP_TOKEN"   # the first-admin form asks for it
 ```
 
 ```powershell [Windows (PowerShell)]
 fly launch --no-deploy   # accepts the committed fly.toml
 $key = node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 $auth = node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-fly secrets set PIWI_SECRET_KEY=$key PIWI_AUTH_SECRET=$auth
+$setup = node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+fly secrets set PIWI_SECRET_KEY=$key PIWI_AUTH_SECRET=$auth PIWI_SETUP_TOKEN=$setup
 fly deploy
+$setup   # the first-admin form asks for it
 ```
 
 :::
@@ -101,7 +104,7 @@ Koyeb carries the whole service definition in the URL, so nothing needs to be in
 > koyeb service update piwi/piwi --checks 3000:http:/api/health
 > ```
 
-Set `PIWI_SECRET_KEY`, `PIWI_AUTH_SECRET` and `PIWI_SITE_URL` in the Koyeb console after the first deploy,
+Set `PIWI_SECRET_KEY`, `PIWI_AUTH_SECRET`, `PIWI_SETUP_TOKEN` and `PIWI_SITE_URL` in the Koyeb console after the first deploy,
 because the URL can't generate secrets. With authentication on, the service refuses to start until
 `PIWI_AUTH_SECRET` is set. The full command list is kept in
 [`deploy/koyeb-deploy-url.txt`](https://github.com/PiwiTests/platform/blob/main/deploy/koyeb-deploy-url.txt).
@@ -110,7 +113,7 @@ because the URL can't generate secrets. With authentication on, the service refu
 
 Both consume a Compose file, so one stack covers them. In Coolify: **Add a new resource → Service →**
 paste [`deploy/coolify/docker-compose.yml`](https://github.com/PiwiTests/platform/blob/main/deploy/coolify/docker-compose.yml).
-It uses Coolify's magic variables, so the domain and both secrets are generated for you and Traefik routing
+It uses Coolify's magic variables, so the domain and the secrets are generated for you and Traefik routing
 and TLS are wired up automatically.
 
 ## Before you rely on any of them
@@ -123,10 +126,12 @@ and TLS are wired up automatically.
   hundreds of MB, and live runs use long-lived `text/event-stream` responses; see
   [Reverse proxy (HTTPS)](./deployment#reverse-proxy-https) for what a proxy must allow.
 - **Finish the auth setup.** These templates set `PIWI_AUTH_ENABLED=true`, so the first visit shows a
-  **Create the first admin account** form. Complete it before sharing the URL, or provision the admin from
-  a script as [Authentication → Initial setup](./authentication#initial-setup) shows.
+  **Create the first admin account** form. It asks for `PIWI_SETUP_TOKEN`, which the templates generate (read it in
+  the platform's environment settings; on Fly.io and Koyeb you set it yourself), so nobody else can create the
+  administrator. Complete it before sharing the URL, or provision the admin from a script as
+  [Authentication → Initial setup](./authentication#initial-setup) shows.
 - **Work down the [production checklist](./production-checklist).** The templates already turn
-  authentication on (and, except on Fly.io and Koyeb, generate both secrets); pinning a version and backups
+  authentication on (and, except on Fly.io and Koyeb, generate the secrets); pinning a version and backups
   are still yours to do.
 
 ## Related

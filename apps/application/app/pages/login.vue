@@ -25,11 +25,14 @@ function redirectTarget(): string {
 // succeed, so show a first-admin setup form instead (mirrors the documented
 // `POST /api/auth/setup` curl flow, but reachable from the UI).
 const needsSetup = ref<boolean | null>(null);
+// With PIWI_SETUP_TOKEN set, only someone who can read the server's settings may create the first admin.
+const setupTokenRequired = ref(false);
 const setupState = reactive({
   username: '',
   password: '',
   confirmPassword: '',
   name: '',
+  setupToken: '',
 });
 const setupLoading = ref(false);
 const setupError = ref('');
@@ -40,8 +43,9 @@ onMounted(async () => {
     return;
   }
   try {
-    const status = await $fetch<{ needsSetup: boolean }>('/api/auth/setup');
+    const status = await $fetch<{ needsSetup: boolean; setupTokenRequired?: boolean }>('/api/auth/setup');
     needsSetup.value = status.needsSetup;
+    setupTokenRequired.value = Boolean(status.setupTokenRequired);
   } catch {
     needsSetup.value = false;
   }
@@ -66,6 +70,10 @@ async function handleSetup() {
     setupError.value = 'Passwords do not match';
     return;
   }
+  if (setupTokenRequired.value && !setupState.setupToken.trim()) {
+    setupError.value = 'Enter the setup token (PIWI_SETUP_TOKEN on the server)';
+    return;
+  }
 
   setupLoading.value = true;
   setupError.value = '';
@@ -77,6 +85,7 @@ async function handleSetup() {
         username: setupState.username,
         password: setupState.password,
         name: setupState.name || undefined,
+        setupToken: setupTokenRequired.value ? setupState.setupToken.trim() : undefined,
       },
     });
     await login(setupState.username, setupState.password);
@@ -179,6 +188,23 @@ definePageMeta({
       <UAlert v-if="setupError" color="error" :title="setupError" variant="subtle" class="mb-4" />
 
       <form class="space-y-4" @submit.prevent="handleSetup">
+        <UFormField
+          v-if="setupTokenRequired"
+          label="Setup token"
+          name="setupToken"
+          help="The value of PIWI_SETUP_TOKEN in the server's settings."
+          required
+        >
+          <UInput
+            v-model="setupState.setupToken"
+            type="password"
+            placeholder="Paste the setup token"
+            autocomplete="off"
+            :disabled="setupLoading"
+            class="w-full"
+          />
+        </UFormField>
+
         <UFormField label="Username" name="username" required>
           <UInput
             v-model="setupState.username"

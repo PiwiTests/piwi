@@ -31,11 +31,19 @@ export function emitFlyToml(entries: readonly EnvEntry[], opts: EmitOptions = {}
   ];
   const envLines: string[] = [];
   const secretLines: string[] = [];
+  const secretNotes: string[] = [];
   for (const entry of entries) {
     if (entry.platformValue === 'generate' || entry.secret) {
       secretLines.push(
         `${entry.name}=${entry.platformValue === 'generate' ? '$(openssl rand -hex 32)' : quoteShellValue(entry.value)}`,
       );
+      // A commented secret is one the operator needs later: say why, and how to read it back.
+      if (entry.comment) {
+        secretNotes.push(
+          `# ${entry.name}: ${entry.comment}`,
+          `# Read it back with: fly ssh console -C "printenv ${entry.name}"`,
+        );
+      }
       continue;
     }
     if (entry.comment) envLines.push(`  # ${entry.comment}`);
@@ -81,6 +89,7 @@ export function emitFlyToml(entries: readonly EnvEntry[], opts: EmitOptions = {}
       '#',
       `#   fly secrets set ${secretLines.join(' \\\n#     ')}`,
     );
+    if (secretNotes.length) lines.push('#', ...secretNotes);
   }
   return commentBlock(opts.header) + lines.join('\n') + '\n';
 }

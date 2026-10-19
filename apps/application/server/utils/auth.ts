@@ -227,6 +227,19 @@ export async function createUser(username: string, password: string, role: Insta
   return user;
 }
 
+/** Whether `PIWI_SETUP_TOKEN` is set, so first-admin setup asks for it. */
+export function setupTokenRequired(): boolean {
+  return Boolean(process.env.PIWI_SETUP_TOKEN?.trim());
+}
+
+/** Whether `given` is the setup token (always true when none is set), compared in constant time. */
+export function setupTokenMatches(given: unknown): boolean {
+  const expected = process.env.PIWI_SETUP_TOKEN?.trim();
+  if (!expected) return true;
+  if (typeof given !== 'string') return false;
+  return timingSafeEqual(Buffer.from(hashToken(given.trim()), 'hex'), Buffer.from(hashToken(expected), 'hex'));
+}
+
 /** Sentinel key marking that initial setup has been performed. */
 const INITIAL_SETUP_KEY = 'initial_setup_completed';
 

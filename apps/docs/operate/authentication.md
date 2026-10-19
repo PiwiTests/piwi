@@ -58,6 +58,10 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
 
 Both routes go through the same setup endpoint, which is only available while the users table is empty and is rate-limited per client address.
 
+On an instance reachable from the internet, set `PIWI_SETUP_TOKEN` to a random value before you start it: the form then
+asks for that value, and the API call carries it as `"setupToken"`, so a stranger who opens the URL first cannot
+create the administrator. The [one-click deploy templates](./one-click-deploy) generate it.
+
 ## Logging in
 
 Sign in at `/login`. Sessions are stored in encrypted cookies and last for 7 days. The session cookie is marked `Secure`, so browser sign-in needs HTTPS — over plain `http://` it only works on `localhost`.

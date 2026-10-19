@@ -1,5 +1,12 @@
 import { InstanceRole } from '#shared/permissions';
-import { createUser, isAuthEnabled, needsInitialSetup, claimInitialSetup, releaseInitialSetup } from '../../utils/auth';
+import {
+  createUser,
+  isAuthEnabled,
+  needsInitialSetup,
+  claimInitialSetup,
+  releaseInitialSetup,
+  setupTokenMatches,
+} from '../../utils/auth';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
 import { z } from 'zod';
 
@@ -8,7 +15,7 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Initial setup',
     description:
-      'Creates the first administrator user. Only available when no users exist yet. Accepts username, password, and optional name in the request body.',
+      'Creates the first administrator user. Only available when no users exist yet. Accepts username, password, and optional name in the request body. When `PIWI_SETUP_TOKEN` is set, the body must also carry it as `setupToken` (403 otherwise).',
     security: [],
   },
 });
@@ -17,6 +24,7 @@ const createAdminSchema = z.object({
   username: z.string().min(3),
   password: z.string().min(8),
   name: z.string().optional(),
+  setupToken: z.string().optional(),
 });
 
 export default eventHandler(async (event) => {
@@ -50,7 +58,14 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const { username, password, name } = validation.data;
+  const { username, password, name, setupToken } = validation.data;
+
+  if (!setupTokenMatches(setupToken)) {
+    throw apiError({
+      statusCode: 403,
+      message: 'The setup token is missing or wrong. It is the value of PIWI_SETUP_TOKEN on the server.',
+    });
+  }
 
   // Two concurrent setup requests can both pass the needsInitialSetup() check
   // above. claimInitialSetup() lets exactly one of them create the

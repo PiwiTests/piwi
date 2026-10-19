@@ -41,4 +41,8 @@ primary_region = "cdg"
 # Secrets are never committed to fly.toml. Set them once, after `fly launch --no-deploy`:
 #
 #   fly secrets set PIWI_AUTH_SECRET=$(openssl rand -hex 32) \
-#     PIWI_SECRET_KEY=$(openssl rand -hex 32)
+#     PIWI_SECRET_KEY=$(openssl rand -hex 32) \
+#     PIWI_SETUP_TOKEN=$(openssl rand -hex 32)
+#
+# PIWI_SETUP_TOKEN: The first-admin form asks for this value, so only you can create the administrator.
+# Read it back with: fly ssh console -C "printenv PIWI_SETUP_TOKEN"

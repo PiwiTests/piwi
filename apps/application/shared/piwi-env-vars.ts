@@ -452,6 +452,14 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
     notes: 'The server refuses to start when auth is enabled and this is unset.',
   },
+  PIWI_SETUP_TOKEN: {
+    description:
+      "A token the first-admin form asks for (`setupToken` in `POST /api/auth/setup`), so only whoever can read the server's settings creates the first administrator. The one-click deploy templates generate it. Unset, the first visitor to an instance with no administrator can create one.",
+    category: 'auth',
+    secret: true,
+    relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
+    since: '0.55.1',
+  },
   PIWI_METRICS_ENABLED: {
     description:
       'Set to "true" to serve GET /api/metrics: the metric catalog\'s current values per project in the OpenMetrics text format, for a Prometheus or a Grafana you run to pull (Piwi sends nothing anywhere). Off by default. With authentication on, the scraper sends an API key, and sees the projects of its user.',
