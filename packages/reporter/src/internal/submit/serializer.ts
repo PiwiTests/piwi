@@ -98,8 +98,6 @@ interface RunCounts {
   timedOutTests: number;
   skippedTests: number;
   didNotRunTests: number;
-  /** Passed only after a retry — a subset of `passedTests`. */
-  flakyTests: number;
 }
 
 function browserProjectName(browser: unknown): string {
@@ -127,7 +125,7 @@ function isFailingStatus(status: string): boolean {
  * timedOut + skipped + didNotRun`, ignoring any rare interrupted case). Of two
  * attempts with the same retry index, the failing one decides. Timed-out stays
  * its own bucket — the server folds it into failed on ingest — and a test that
- * passed only after a retry counts as passed and as flaky. Playwright reports
+ * passed only after a retry counts as passed. Playwright reports
  * each attempt through `onTestEnd`, so the raw counters tally attempts; this is
  * what turns them back into a per-test summary before the run body is sent.
  */
@@ -164,13 +162,10 @@ export function computeDistinctRunCounts(
     timedOutTests: 0,
     skippedTests: 0,
     didNotRunTests: 0,
-    flakyTests: 0,
   };
-  for (const { status, retries } of final.values()) {
-    if (status === 'passed') {
-      counts.passedTests++;
-      if (retries > 0) counts.flakyTests++;
-    } else if (status === 'failed') counts.failedTests++;
+  for (const { status } of final.values()) {
+    if (status === 'passed') counts.passedTests++;
+    else if (status === 'failed') counts.failedTests++;
     else if (status === 'timedOut' || status === 'timedout') counts.timedOutTests++;
     else if (status === 'skipped') counts.skippedTests++;
     else if (status === 'didnotrun') counts.didNotRunTests++;

@@ -30,8 +30,21 @@ export function useTraceLinks(trace: MaybeRefOrGetter<TraceInfo | null | undefin
   /** The name to show: the file's own, or "Playwright trace" for a content-addressed one. */
   const name = computed(() => (HASHED_NAME_RE.test(fileName.value) ? 'Playwright trace' : fileName.value));
 
+  /**
+   * Why the viewer cannot open this trace, or null when it can: in the demo, a
+   * trace that is not one of its static samples (a run imported into the demo)
+   * lives only in the demo's in-browser database, which the viewer cannot read.
+   */
+  const viewUnavailable = computed(() =>
+    current.value && config.public.demoMode && !isDemoStaticAsset.value
+      ? 'The demo opens only its sample traces in the viewer: download this one to open it'
+      : null,
+  );
+
   const viewUrl = computed(() =>
-    current.value ? getTraceViewerUrl(current.value.filePath, config.app?.baseURL, isDemoStaticAsset.value) : null,
+    current.value && !viewUnavailable.value
+      ? getTraceViewerUrl(current.value.filePath, config.app?.baseURL, isDemoStaticAsset.value)
+      : null,
   );
   const downloadUrl = computed(() => {
     const path = current.value?.filePath;
@@ -53,5 +66,5 @@ export function useTraceLinks(trace: MaybeRefOrGetter<TraceInfo | null | undefin
     download(downloadUrl.value, HASHED_NAME_RE.test(fileName.value) ? 'trace.zip' : fileName.value, { binary: true });
   }
 
-  return { name, viewUrl, downloadUrl, onView, onDownload };
+  return { name, viewUrl, viewUnavailable, downloadUrl, onView, onDownload };
 }

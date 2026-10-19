@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Text;
 using PiwiTests.Instrumentation.Coverage;
 
 namespace PiwiTests.Instrumentation.AspNetCore;
@@ -16,14 +18,15 @@ internal sealed class PiwiCoverageStore(int maxRequests, long maxBytes)
     private long _endedBytes;
 
     /// <summary>
-    /// Keeps <paramref name="coverage"/> under <paramref name="sequence"/>, as an ended request when
-    /// <paramref name="ended"/>. Returns the requests evicted to stay within the caps.
+    /// Keeps <paramref name="coverage"/> under <paramref name="sequence"/>, collected only with
+    /// <paramref name="secret"/>, as an ended request when <paramref name="ended"/>. Returns the requests evicted to
+    /// stay within the caps.
     /// </summary>
-    internal List<PiwiRequestCoverage>? Add(long sequence, PiwiRequestCoverage coverage, bool ended)
+    internal List<PiwiRequestCoverage>? Add(long sequence, string secret, PiwiRequestCoverage coverage, bool ended)
     {
         lock (_lock)
         {
-            var entry = new Entry(coverage);
+            var entry = new Entry(coverage, Encoding.ASCII.GetBytes(secret));
             _entries[sequence] = entry;
             return ended ? MarkEnded(sequence, entry) : null;
         }
@@ -47,13 +50,19 @@ internal sealed class PiwiCoverageStore(int maxRequests, long maxBytes)
         }
     }
 
-    /// <summary>Removes and returns the request kept under <paramref name="sequence"/>, or null when there is none.</summary>
-    internal PiwiRequestCoverage? Take(long sequence)
+    /// <summary>
+    /// Removes and returns the request kept under <paramref name="sequence"/>, or null when there is none or
+    /// <paramref name="secret"/> is not its own.
+    /// </summary>
+    internal PiwiRequestCoverage? Take(long sequence, string secret)
     {
         lock (_lock)
         {
-            if (!_entries.Remove(sequence, out var entry))
+            if (!_entries.TryGetValue(sequence, out var entry) ||
+                !CryptographicOperations.FixedTimeEquals(entry.Secret, Encoding.ASCII.GetBytes(secret)))
                 return null;
+
+            _entries.Remove(sequence);
 
             if (entry.Node is not null)
             {
@@ -97,9 +106,10 @@ internal sealed class PiwiCoverageStore(int maxRequests, long maxBytes)
         return evicted;
     }
 
-    private sealed class Entry(PiwiRequestCoverage coverage)
+    private sealed class Entry(PiwiRequestCoverage coverage, byte[] secret)
     {
         public PiwiRequestCoverage Coverage { get; } = coverage;
+        public byte[] Secret { get; } = secret;
         public LinkedListNode<long>? Node { get; set; }
         public long Bytes { get; set; }
     }

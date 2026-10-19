@@ -24,6 +24,15 @@ describe('partitionTestsIntoShards', () => {
     expect(idSets(shards)).toEqual([new Set([1, 4]), new Set([2, 3])]);
   });
 
+  test('spreads tests with no recorded duration across shards at the median duration', () => {
+    const fresh = partitionTestsIntoShards([t(1, null), t(2, null), t(3, null), t(4, null)], 2);
+    expect(fresh.map((shard) => shard.length)).toEqual([2, 2]);
+
+    // The unknown tests weigh the median, 20: 30→s0, 20→s1, 20→s1 (40), 10→s0 (40).
+    const mixed = partitionTestsIntoShards([t(1, 30), t(2, 10), t(3, null), t(4, null)], 2);
+    expect(idSets(mixed)).toEqual([new Set([1, 2]), new Set([3, 4])]);
+  });
+
   test('with no locks, every test lands in exactly one shard', () => {
     const rows = [t(1, 5), t(2, 7), t(3, 3), t(4, 9), t(5, 1)];
     const shards = partitionTestsIntoShards(rows, 3);

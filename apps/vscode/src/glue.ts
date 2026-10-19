@@ -11,7 +11,11 @@ import type {
   CoverageResult,
   DesktopJobUpdate,
   DesktopResult,
+  FailuresGrouping,
   FailuresResult,
+  FailureTreeIcon,
+  FailureTreeNode,
+  FileEdit,
   LineSpan,
   LiveRun,
   McpServerDefinition,
@@ -282,8 +286,6 @@ export function ownLiveRun(runs: RunStatusResult | null): string {
 }
 
 /** How the failures view groups the failures under the run. */
-export type FailuresGrouping = 'file' | 'cluster' | 'owner' | 'flat';
-
 export const FAILURES_GROUPINGS: Array<{ grouping: FailuresGrouping; label: string; detail: string }> = [
   { grouping: 'file', label: 'File', detail: 'The spec each failing test is in' },
   { grouping: 'cluster', label: 'Cluster', detail: 'The failure cluster: one root cause, one group' },
@@ -291,11 +293,11 @@ export const FAILURES_GROUPINGS: Array<{ grouping: FailuresGrouping; label: stri
   { grouping: 'flat', label: 'Flat', detail: 'Every failure under the run' },
 ];
 
-/** A node of the failures view. */
+/** A node of the failures view: a node of the service's tree (`FailuresResult.tree`), as the view draws it. */
 export interface FailureNode {
   /** Stable across refreshes: the view keeps a node's expansion and selection by it. */
   key: string;
-  kind: 'run' | 'runs' | 'overlay' | 'group' | 'failure';
+  kind: FailureTreeNode['kind'];
   label: string;
   description: string;
   /** Markdown. */
@@ -311,230 +313,55 @@ export interface FailureNode {
   children: FailureNode[];
 }
 
-/** The order of a failure's state in its group: failing first, then edited, then fixed locally. */
-const STATE_ORDER: Record<string, number> = { failing: 0, edited: 1, 'fixed-locally': 2 };
-
-/** What launched a run, in a few words: `CI`, `your run`, `local`, `desktop app`, `editor`. */
-function originLabel(origin: string | undefined, own: boolean | undefined): string {
-  if (own) return 'your run';
-  if (!origin || origin === 'ci' || origin === 'ci-rerun') return 'CI';
-  return origin === 'desktop' ? 'desktop app' : origin;
-}
-
-/** A test a failure stands for: its id, else its title in its file. */
-function testKey(f: WorkspaceFailure): string {
-  return f.testCaseId !== undefined ? String(f.testCaseId) : `${f.file ?? f.uri}\n${f.title}`;
-}
-
-/** Whether a failure still fails: failing, or edited since its run. */
-function stillFails(f: WorkspaceFailure): boolean {
-  return f.state !== 'fixed-locally';
-}
-
-/** `3 failing · 1 fixed locally`, counting tests: a test failing on several projects counts once. */
-function failureCounts(items: WorkspaceFailure[]): string {
-  const failing = new Set(items.filter(stillFails).map(testKey)).size;
-  const fixed = new Set(items.filter((f) => !stillFails(f)).map(testKey)).size;
-  return [failing || !fixed ? `${failing} failing` : null, fixed ? `${fixed} fixed locally` : null]
-    .filter(Boolean)
-    .join(' · ');
-}
-
-/** How many tests still fail among the failures: the view's badge. */
-export function failingCount(result: FailuresResult | null): number {
-  return new Set((result?.items ?? []).filter(stillFails).map(testKey)).size;
-}
+/** The codicon of each icon of the service's tree. */
+const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
+  run: 'beaker',
+  history: 'history',
+  failed: 'error',
+  passed: 'pass',
+  file: 'file',
+  cluster: 'symbol-namespace',
+  owner: 'person',
+  failing: 'error',
+  edited: 'edit',
+  fixed: 'check',
+};
 
 /**
- * What a failure says about its run: `fixed locally in run #124` for a failure a later run passed (`fixed in run #124`
- * when that run is a CI run, `fixed locally in your run #124` when the editor started it), `edited since run #120` for a
- * failure whose line changed since its run (`edited since your run #124`, `edited since local run #124`), `your run
- * #124` for a failure of a run the editor started, `local run #124` for a failure of another run that did not run in
- * CI, `run #120` otherwise.
+ * The failures view's nodes, from the tree the service grouped: a run's age after its description (`4 min ago`), and,
+ * while the editor's own run is `live`, that run on the run's node (`running 4/9`), whose tooltip says it too.
  */
-export function failureRunNote(f: WorkspaceFailure): string {
-  const run =
-    f.source === 'own' ? `your run #${f.runId}` : f.source === 'local' ? `local run #${f.runId}` : `run #${f.runId}`;
-  if (f.state === 'fixed-locally') {
-    if (f.source === 'ci') return `fixed in run #${f.runId}`;
-    return f.source === 'own' ? `fixed locally in your run #${f.runId}` : `fixed locally in run #${f.runId}`;
-  }
-  return f.state === 'edited' ? `edited since ${run}` : run;
-}
-
-/** The file a failure shows in, at its line: the spec's path when it shows in the spec, else the file's name. */
-function failurePlace(f: WorkspaceFailure): string {
-  const name = decodeURIComponent(f.uri.slice(f.uri.lastIndexOf('/') + 1));
-  const shown = f.file && decodeURIComponent(f.uri).endsWith(`/${f.file}`) ? f.file : name;
-  return `${shown}:${f.line + 1}`;
-}
-
-function failureLeaf(f: WorkspaceFailure): FailureNode {
-  const icon = f.state === 'fixed-locally' ? 'check' : f.state === 'edited' ? 'edit' : 'error';
-  const description = [failurePlace(f), f.browserName, f.isNew && stillFails(f) ? 'new' : null]
-    .filter(Boolean)
-    .join(' · ');
-  const tooltip = lines(
-    `**${md(f.title)}**`,
-    f.headline ? md(f.headline) : null,
-    md(failureRunNote(f)),
-    f.status === 'timedOut' ? 'Timed out' : null,
-    f.clusterTitle ? `Cluster: ${md(f.clusterTitle)}` : null,
-    f.owner ? `Owner: ${md(f.owner)}` : null,
-  );
-  return {
-    key: `failure:${f.executionId}`,
-    kind: 'failure',
-    label: f.title,
-    description,
-    tooltip,
-    icon,
-    state: 'none',
-    url: f.url,
-    failure: f,
-    children: [],
-  };
-}
-
-function sortFailures(items: WorkspaceFailure[]): WorkspaceFailure[] {
-  return [...items].sort(
-    (a, b) =>
-      (STATE_ORDER[a.state ?? 'failing'] ?? 0) - (STATE_ORDER[b.state ?? 'failing'] ?? 0) ||
-      (a.file ?? a.uri).localeCompare(b.file ?? b.uri) ||
-      a.line - b.line ||
-      a.title.localeCompare(b.title),
-  );
-}
-
-/** The group a failure goes in, and the label of a group without a value, which comes last. */
-function groupOf(f: WorkspaceFailure, grouping: Exclude<FailuresGrouping, 'flat'>): { key: string; label: string } {
-  if (grouping === 'file') {
-    const file = f.file ?? decodeURIComponent(f.uri.slice(f.uri.lastIndexOf('/') + 1));
-    return { key: `file:${file}`, label: file };
-  }
-  if (grouping === 'cluster') {
-    if (f.clusterId === null || f.clusterId === undefined) return { key: 'cluster:', label: 'Ungrouped' };
-    return { key: `cluster:${f.clusterId}`, label: f.clusterTitle || `Cluster #${f.clusterId}` };
-  }
-  return f.owner ? { key: `owner:${f.owner}`, label: f.owner } : { key: 'owner:', label: 'Unowned' };
-}
-
-/** The groups of the failures, by label, the group of those without a value last. */
-function grouped(items: WorkspaceFailure[], grouping: FailuresGrouping): FailureNode[] {
-  if (grouping === 'flat') return sortFailures(items).map(failureLeaf);
-  const groups = new Map<string, { label: string; items: WorkspaceFailure[] }>();
-  for (const f of items) {
-    const { key, label } = groupOf(f, grouping);
-    const group = groups.get(key) ?? groups.set(key, { label, items: [] }).get(key)!;
-    group.items.push(f);
-  }
-  const icon = grouping === 'file' ? 'file' : grouping === 'cluster' ? 'symbol-namespace' : 'person';
-  return [...groups]
-    .sort(([a, x], [b, y]) => Number(a.endsWith(':')) - Number(b.endsWith(':')) || x.label.localeCompare(y.label))
-    .map(([key, group]) => ({
-      key: `group:${key}`,
-      kind: 'group' as const,
-      label: group.label,
-      description: failureCounts(group.items),
-      tooltip: md(group.label),
-      icon,
-      state: 'expanded' as const,
-      url: null,
-      children: sortFailures(group.items).map(failureLeaf),
-    }));
-}
-
-/**
- * The failures view's tree: the baseline run, `Run #120 · CI · feature/x · 3 failing · 1 fixed locally` (its age, or the
- * editor's own run in progress, as its description, and the baseline chosen, `Baseline: CI run #120 on feature/x`, in
- * its tooltip), with the runs laid over it under `Your runs since`, and its failures grouped by file, cluster or owner,
- * or flat, failing first, then edited, then fixed locally. With a developer's own runs alone, the root is `Your local
- * runs`. Without a run (an older service), the groups alone; without a failure, nothing.
- */
-export function failureTree(
+export function failureNodes(
   result: FailuresResult | null,
-  grouping: FailuresGrouping,
   options: { now?: number; live?: LiveRun | null } = {},
 ): FailureNode[] {
-  const items = result?.items ?? [];
-  if (!items.length) return [];
-  const groups = grouped(items, grouping);
-  const run = result?.run;
-  const overlays = result?.overlays ?? [];
-  const baseline = baselineLine(result?.baseline?.label);
-  if (!run && !(baseline && overlays.length)) return groups;
   const now = options.now ?? Date.now();
-  const runs: FailureNode[] = overlays.length
-    ? [
-        {
-          key: 'runs',
-          kind: 'runs',
-          label: run ? 'Your runs since' : 'Your runs',
-          description: plural(overlays.length, 'run'),
-          tooltip: run
-            ? `The runs of ${md(run.branch ?? 'the branch')} since run #${run.id}, laid over it test by test`
-            : 'Your runs of the branch, newest first, laid over one another test by test',
-          icon: 'history',
-          state: 'collapsed',
-          url: null,
-          children: overlays.map((o) => ({
-            key: `overlay:${o.id}`,
-            kind: 'overlay' as const,
-            label: [
-              `#${o.id}`,
-              o.own ? 'your run' : null,
-              relativeTime(o.startTime, now),
-              `${o.passedTests} passed, ${o.failedTests} failed`,
-            ]
-              .filter(Boolean)
-              .join(' · '),
-            description: '',
-            tooltip: `Run #${o.id}, ${md(originLabel(o.origin, o.own))}: ${o.passedTests} passed, ${o.failedTests} failed of ${o.totalTests}`,
-            icon: o.failedTests ? 'error' : 'pass',
-            state: 'none' as const,
-            url: o.url,
-            children: [],
-          })),
-        },
-      ]
-    : [];
   const live = options.live?.own ? options.live : null;
-  const running = live ? `Your run #${live.runId} is running: ${live.done}/${live.total}` : null;
-  if (!run) {
-    return [
-      {
-        key: 'run',
-        kind: 'run',
-        label: ['Your local runs', failureCounts(items)].join(' · '),
-        description: live ? `running ${live.done}/${live.total}` : 'no baseline',
-        tooltip: lines(md(baseline!), running),
-        icon: 'beaker',
-        state: 'expanded',
-        url: null,
-        children: [...runs, ...groups],
-      },
-    ];
-  }
-  const label = [`Run #${run.id}`, originLabel(run.origin, run.own), run.branch, failureCounts(items)]
-    .filter(Boolean)
-    .join(' · ');
-  return [
-    {
-      key: 'run',
-      kind: 'run',
-      label,
-      description: live ? `running ${live.done}/${live.total}` : relativeTime(run.startTime, now),
+  const failures = new Map((result?.items ?? []).map((f) => [f.executionId, f]));
+  const draw = (node: FailureTreeNode): FailureNode => {
+    const age = node.startTime ? relativeTime(node.startTime, now) : null;
+    const running = live && node.kind === 'run';
+    const [first, ...rest] = node.tooltip.map(md);
+    return {
+      key: node.key,
+      kind: node.kind,
+      label: node.label,
+      description: running ? `running ${live.done}/${live.total}` : [node.description, age].filter(Boolean).join(' · '),
       tooltip: lines(
-        baseline ? md(baseline) : null,
-        `Run #${run.id}${run.branch ? ` of ${md(run.branch)}` : ''}: ${run.passedTests} passed, ${run.failedTests} failed, ${run.flakyTests} flaky, ${run.skippedTests} skipped`,
-        running,
+        node.kind === 'failure' && first ? `**${first}**` : first,
+        ...rest,
+        running ? `Your run #${live.runId} is running: ${live.done}/${live.total}` : null,
       ),
-      icon: 'beaker',
-      state: 'expanded',
-      url: run.url,
-      children: [...runs, ...groups],
-    },
-  ];
+      icon: FAILURE_ICONS[node.icon] ?? 'circle-outline',
+      state: node.children.length ? (node.expanded ? 'expanded' : 'collapsed') : 'none',
+      url: node.url,
+      ...(node.executionId !== undefined && failures.has(node.executionId)
+        ? { failure: failures.get(node.executionId)! }
+        : {}),
+      children: node.children.map(draw),
+    };
+  };
+  return (result?.tree ?? []).map(draw);
 }
 
 /** An entry of **Compare with…**: a baseline, or `run-by-id`, which asks for the run's id first. */
@@ -593,13 +420,6 @@ export function baselinePicks(run: RunStatus | undefined): BaselinePick[] {
   ];
 }
 
-/** The run id typed for **A run by id…** (`118` or `#118`); null when it is not one. */
-export function runIdOf(text: string): number | null {
-  const m = /^\s*#?(\d{1,15})\s*$/.exec(text);
-  const id = m ? Number(m[1]) : 0;
-  return id > 0 ? id : null;
-}
-
 /** The baselines kept per context root, with `choice` for `root`: the ladder is kept as no entry. */
 export function withBaseline(
   kept: Record<string, BaselineChoice> | undefined,
@@ -610,22 +430,6 @@ export function withBaseline(
   if (choice.kind === 'ladder') delete next[root];
   else next[root] = choice;
   return next;
-}
-
-/**
- * What **Re-run the failing tests** runs: every test still failing or edited since its run, one run per Playwright
- * config (`WorkspaceFailure.root`), in the order of their first failure; none when none fails.
- */
-export function rerunFailingArgs(result: FailuresResult | null): RunTestsArgs[] {
-  const runs = new Map<string, RunTestsArgs>();
-  for (const f of (result?.items ?? []).filter(stillFails)) {
-    if (f.testCaseId === undefined) continue;
-    const key = f.root ?? '';
-    const run =
-      runs.get(key) ?? runs.set(key, { uri: f.uri, ...(f.root ? { root: f.root } : {}), testIds: [] }).get(key)!;
-    if (!run.testIds.includes(f.testCaseId)) run.testIds.push(f.testCaseId);
-  }
-  return [...runs.values()];
 }
 
 /** What **Run this test** runs for a failure: its test, from the Playwright config it belongs to. */
@@ -846,21 +650,6 @@ export function mcpConfiguration(servers: McpServerDefinition[]): string {
 }
 
 /**
- * A block of code re-indented to sit at a line indented with `indent`: its common
- * leading indentation removed, then `indent` added to every line after the first
- * (the first lands at the cursor).
- */
-export function indentBlock(code: string, indent: string): string {
-  const lines = code.replace(/\s+$/, '').split('\n');
-  const common = Math.min(
-    ...lines.filter((l) => l.trim()).map((l) => l.length - l.trimStart().length),
-    Number.MAX_SAFE_INTEGER,
-  );
-  const stripped = lines.map((l) => (l.trim() ? l.slice(common === Number.MAX_SAFE_INTEGER ? 0 : common) : ''));
-  return stripped.map((l, i) => (i === 0 || !l ? l : indent + l)).join('\n');
-}
-
-/**
  * How a desktop job's update shows: a job that ended without a verdict (declined, expired, the app gone, or an
  * error) as a warning, anything else as information, with the share button when the verdict can be shared.
  */
@@ -975,67 +764,33 @@ export function followBlock(
   };
 }
 
-const IMPORT_START = /^import[\s{*'"]/;
-const IMPORT_END = /(?:\bfrom\s*|^import\s*)(['"])[^'"]*\1|\brequire\s*\(/;
+/** An insertion the service placed, moved through the changes the document went through since. */
+export function followEdit(edit: FileEdit, changes: TextChange[]): FileEdit {
+  let at: TextSpan = edit.range;
+  for (const change of changes) at = followBlock(at, change).block;
+  return { range: { start: at.start, end: at.start }, newText: edit.newText };
+}
 
-/** An import line with its spacing, its quotes and its final semicolon left out, to compare it with another. */
-function importKey(line: string): string {
-  return line.replace(/\s+/g, '').replace(/"/g, "'").replace(/;$/, '');
+/** The service's import edit as a change of the document; null without one. */
+export function importChange(edit: FileEdit | null | undefined): TextChange | null {
+  return edit ? { range: edit.range, text: edit.newText } : null;
 }
 
 /**
- * The insertion of the import lines a file lacks among `imports`, which the editor service sends only when their
- * names are not bound in the file: after its last top-level `import` statement, or at the top when it has none; null
- * when it holds them all already, written in any spacing or quote style. An edit that replaces lines `replaced` with
- * `written` is taken into account: the replaced lines no longer count, and the written ones do.
- */
-export function importInsertion(
-  lines: string[],
-  imports: string[],
-  replaced: { start: number; end: number } | null = null,
-  written = '',
-): TextChange | null {
-  const counts = (i: number) => !replaced || i < replaced.start || i > replaced.end;
-  const present = new Set([...lines.filter((_, i) => counts(i)), ...written.split(LINE_BREAK)].map(importKey));
-  /** The import statements of the file, as the first and last line of each. */
-  const statements: Array<{ start: number; end: number }> = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!counts(i) || !IMPORT_START.test(lines[i]!)) continue;
-    let end = i;
-    while (!IMPORT_END.test(lines[end]!) && end + 1 < lines.length && counts(end + 1)) end++;
-    statements.push({ start: i, end });
-    i = end;
-  }
-  const missing: string[] = [];
-  for (const line of imports) {
-    const key = importKey(line);
-    if (!key || present.has(key)) continue;
-    present.add(key);
-    missing.push(line.trim());
-  }
-  if (!missing.length) return null;
-  const last = statements.length > 0 ? statements[statements.length - 1]!.end : -1;
-  const at = last + 1;
-  if (at < lines.length || !lines.length) return { range: point(at, 0), text: `${missing.join('\n')}\n` };
-  const end = lines.length - 1;
-  return { range: point(end, lines[end]!.length), text: `\n${missing.join('\n')}` };
-}
-
-/**
- * The edit that writes the recorded block's new text, with the import lines the file lacks in the same edit, and the
- * block's range once it is made. The first write places the block as `first` says; every later one replaces the
- * block, keeping it on lines of its own.
+ * The edit that writes the recorded block's new text, with the service's import edit (`RecordingUpdate.importEdit`,
+ * placed in the document as it stands) in the same edit, and the block's range once it is made. The first write
+ * places the block as `first` says; every later one replaces the block, keeping it on lines of its own. An import edit
+ * inside the range the block replaces is left out.
  */
 export function writeBlock(
   lines: string[],
   block: RecordedBlock,
   text: string,
-  imports: string[],
+  importEdit: FileEdit | null,
 ): { changes: TextChange[]; block: TextSpan } {
   const lastLine = Math.max(lines.length - 1, 0);
   const line = block.range.start.line;
   let change: TextChange;
-  let replaced: { start: number; end: number } | null = null;
   let startLine: number;
   if (block.first && line >= lines.length) {
     change = { range: point(lastLine, (lines[lastLine] ?? '').length), text: `\n${text}` };
@@ -1045,7 +800,6 @@ export function writeBlock(
     startLine = line;
   } else if (block.first === 'replace') {
     change = { range: { start: { line, character: 0 }, end: { line, character: lines[line]!.length } }, text };
-    replaced = { start: line, end: line };
     startLine = line;
   } else {
     const clamp = (p: TextPosition): TextPosition =>
@@ -1061,10 +815,14 @@ export function writeBlock(
     const before = start.character > 0 ? '\n' : '';
     const after = end.character < endText.length ? '\n' : '';
     change = { range: { start, end }, text: before + text + after };
-    replaced = { start: start.line, end: end.line };
     startLine = start.line + (before ? 1 : 0);
   }
-  const insertion = importInsertion(lines, imports, replaced, text);
+  const imported = importChange(importEdit);
+  const inside =
+    imported &&
+    comparePositions(imported.range.start, change.range.start) > 0 &&
+    comparePositions(imported.range.start, change.range.end) < 0;
+  const insertion = inside ? null : imported;
   const shift =
     insertion && comparePositions(insertion.range.start, change.range.start) <= 0
       ? insertion.text.split(LINE_BREAK).length - 1

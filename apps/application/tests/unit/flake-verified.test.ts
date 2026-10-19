@@ -195,6 +195,12 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
     expect(await getProjectFlakyTests(db as never, 1, 50)).toEqual([]);
   });
 
+  test('a retry-pass in a bisect run after the verification does not', async () => {
+    await experiment('verify', 'verified', 7);
+    await seedRun(9, true, { piwiOrigin: { kind: 'bisect' } });
+    expect((await getVerifiedFixes(db as never, [1])).get(1)?.flakedAgainAt).toBeNull();
+  });
+
   test('still-fails and inconclusive leave it ranked', async () => {
     await experiment('verify', 'still-fails', 7);
     expect((await getProjectFlakyTests(db as never, 1, 50)).map((t) => t.testCaseId)).toEqual([1]);

@@ -271,41 +271,16 @@ object Glue {
     /** Whether a `piwi/failures` item is a failure of the latest run that a later run passed. */
     fun isFixedLocally(failure: WorkspaceFailure) = failure.state == "fixed-locally"
 
-    /** Whether a `piwi/failures` item is a failure whose line changed since its run. */
-    fun isEdited(failure: WorkspaceFailure) = failure.state == "edited"
-
-    /**
-     * What a `piwi/failures` item says about its run, beside its title: `fixed locally in run #124` for a failure a
-     * later run passed (`fixed in run #124` when that run is a CI run, `fixed locally in your run #124` when the editor
-     * started it), `edited since run #120` for a failure whose line changed since its run (`edited since your run
-     * #124`, `edited since local run #124`), `your run #124` for a failure of a run the editor started, `local run
-     * #124` for a failure of another run that did not run in CI; null otherwise, and from an older service.
-     */
-    fun failureRunNote(failure: WorkspaceFailure): String? {
-        val run = when (failure.source) {
-            "own" -> "your run #${failure.runId}"
-            "local" -> "local run #${failure.runId}"
-            else -> null
-        }
-        return when {
-            isFixedLocally(failure) -> when (failure.source) {
-                "ci" -> "fixed in run #${failure.runId}"
-                "own" -> "fixed locally in your run #${failure.runId}"
-                else -> "fixed locally in run #${failure.runId}"
-            }
-            isEdited(failure) -> "edited since ${run ?: "run #${failure.runId}"}"
-            else -> run
-        }
-    }
-
     /** How the failures tool window groups the failures under the run: `file`, `cluster`, `owner` or `flat`. */
     val FAILURE_GROUPINGS = listOf("file", "cluster", "owner", "flat")
 
     /**
-     * A node of the failures tree. `kind` is `run`, `runs` (the runs laid over it), `overlay`, `group` or `failure`;
-     * `key` stays the same across refreshes, so the tree keeps a node's expansion and selection by it; `icon` is
-     * `error`, `edited` or `fixed` for a failure, `folder` for a group, `run` and `history` for the runs; `expanded`
-     * is whether a node with children opens expanded; `url` is the page a run opens, a failure's execution page.
+     * A node of the failures tree as the tool window draws it: a node of the service's tree (`FailuresResult.tree`),
+     * with the age of its run after its description, and the failure a leaf stands for. `kind` is `run`, `runs`,
+     * `overlay`, `group` or `failure`; `key` stays the same across answers, so the tree keeps a node's expansion and
+     * selection by it; `icon` is the service's (`run`, `history`, `failed`, `passed`, `file`, `cluster`, `owner`,
+     * `failing`, `edited`, `fixed`); `note` what a failure says about its run; `url` the page a run opens, a failure's
+     * execution page.
      */
     data class FailureNode(
         val key: String,
@@ -316,165 +291,34 @@ object Glue {
         val expanded: Boolean,
         val url: String?,
         val failure: WorkspaceFailure? = null,
+        val note: String? = null,
         val children: List<FailureNode> = emptyList(),
     )
 
-    private val STATE_ORDER = mapOf("failing" to 0, "edited" to 1, "fixed-locally" to 2)
-
-    /** What launched a run, in a few words: `CI`, `your run`, `local`, `desktop app`, `editor`. */
-    private fun originLabel(origin: String?, own: Boolean?): String = when {
-        own == true -> "your run"
-        origin == null || origin == "ci" || origin == "ci-rerun" -> "CI"
-        origin == "desktop" -> "desktop app"
-        else -> origin
-    }
-
-    /** The test a failure stands for: its id, else its title in its file. */
-    private fun testKey(f: WorkspaceFailure): String = f.testCaseId?.toString() ?: "${f.file ?: f.uri}\n${f.title}"
-
-    /** `3 failing · 1 fixed locally`, counting tests: a test failing on several projects counts once. */
-    private fun failureCounts(items: List<WorkspaceFailure>): String {
-        val failing = items.filterNot { isFixedLocally(it) }.map { testKey(it) }.toSet().size
-        val fixed = items.filter { isFixedLocally(it) }.map { testKey(it) }.toSet().size
-        return listOfNotNull(
-            if (failing > 0 || fixed == 0) "$failing failing" else null,
-            if (fixed > 0) "$fixed fixed locally" else null,
-        ).joinToString(" · ")
-    }
-
-    /** How many tests still fail, edited since their run or not: the tool window's title counts them. */
-    fun failingCount(result: FailuresResult?): Int =
-        result?.items.orEmpty().filterNot { isFixedLocally(it) }.map { testKey(it) }.toSet().size
-
-    private fun fileName(uri: String?): String =
-        java.net.URLDecoder.decode((uri ?: "").substringAfterLast('/').replace("+", "%2B"), Charsets.UTF_8)
-
-    /** Where a failure shows, at its line: the spec's path when it shows in the spec, else the file's name. */
-    fun failurePlace(f: WorkspaceFailure): String {
-        val decoded = java.net.URLDecoder.decode((f.uri ?: "").replace("+", "%2B"), Charsets.UTF_8)
-        val shown = f.file?.takeIf { decoded.endsWith("/$it") } ?: fileName(f.uri)
-        return "$shown:${f.line + 1}"
-    }
-
-    private fun failureLeaf(f: WorkspaceFailure): FailureNode = FailureNode(
-        key = "failure:${f.executionId}",
-        kind = "failure",
-        label = f.title ?: "Failed",
-        description = listOfNotNull(
-            failurePlace(f),
-            f.browserName,
-            if (f.isNew == true && !isFixedLocally(f)) "new" else null,
-        ).joinToString(" · "),
-        icon = when {
-            isFixedLocally(f) -> "fixed"
-            isEdited(f) -> "edited"
-            else -> "error"
-        },
-        expanded = false,
-        url = f.url,
-        failure = f,
-    )
-
-    private fun sortFailures(items: List<WorkspaceFailure>): List<WorkspaceFailure> = items.sortedWith(
-        compareBy<WorkspaceFailure>({ STATE_ORDER[it.state ?: "failing"] ?: 0 }, { it.file ?: it.uri ?: "" }, { it.line }, { it.title ?: "" }),
-    )
-
-    /** The group a failure goes in: its key, which ends with `:` for the failures without a value, and its label. */
-    private fun groupOf(f: WorkspaceFailure, grouping: String): Pair<String, String> = when (grouping) {
-        "cluster" -> f.clusterId?.let { "cluster:$it" to (f.clusterTitle?.ifBlank { null } ?: "Cluster #$it") }
-            ?: ("cluster:" to "Ungrouped")
-        "owner" -> f.owner?.ifBlank { null }?.let { "owner:$it" to it } ?: ("owner:" to "Unowned")
-        else -> (f.file ?: fileName(f.uri)).let { "file:$it" to it }
-    }
-
-    private fun grouped(items: List<WorkspaceFailure>, grouping: String): List<FailureNode> {
-        if (grouping == "flat") return sortFailures(items).map { failureLeaf(it) }
-        return items.groupBy { groupOf(it, grouping) }.entries
-            .sortedWith(compareBy({ it.key.first.endsWith(":") }, { it.key.second }))
-            .map { (group, members) ->
-                FailureNode(
-                    key = "group:${group.first}",
-                    kind = "group",
-                    label = group.second,
-                    description = failureCounts(members),
-                    icon = "folder",
-                    expanded = true,
-                    url = null,
-                    children = sortFailures(members).map { failureLeaf(it) },
-                )
-            }
-    }
-
     /**
-     * The failures tree, as VS Code's view draws it: the latest complete run (`Run #120 · CI · feature/x · 3 failing ·
-     * 1 fixed locally`, its age, or the editor's own run in progress, as its description), the runs laid over it under
-     * `Your runs since`, and its failures grouped by `file`, `cluster` or `owner`, or `flat`, failing first, then
-     * edited, then fixed locally. With a developer's own runs alone, the root is `Your local runs`. Without a run (an
-     * older service), the groups alone; without a failure, nothing.
+     * The failures tree as the tool window draws it, from the tree the service grouped: a run's age after its
+     * description (`4 min ago`), and, while the editor's own run is `live`, that run on the run's node (`running 4/9`).
      */
-    fun failureTree(result: FailuresResult?, grouping: String, now: Long = System.currentTimeMillis(), live: LiveRun? = null): List<FailureNode> {
-        val items = result?.items.orEmpty()
-        if (items.isEmpty()) return emptyList()
-        val groups = grouped(items, grouping)
-        val run = result?.run
-        val overlays = result?.overlays.orEmpty()
-        val baseline = baselineLine(result?.baseline?.label)
-        if (run == null && (baseline == null || overlays.isEmpty())) return groups
-        val runs = if (overlays.isEmpty()) emptyList() else listOf(
-            FailureNode(
-                key = "runs",
-                kind = "runs",
-                label = if (run != null) "Your runs since" else "Your runs",
-                description = plural(overlays.size, "run"),
-                icon = "history",
-                expanded = false,
-                url = null,
-                children = overlays.map { o ->
-                    FailureNode(
-                        key = "overlay:${o.id}",
-                        kind = "overlay",
-                        label = listOfNotNull(
-                            "#${o.id}",
-                            if (o.own == true) "your run" else null,
-                            o.startTime?.let { relativeTime(it, now) },
-                            "${o.passedTests} passed, ${o.failedTests} failed",
-                        ).joinToString(" · "),
-                        description = "",
-                        icon = if (o.failedTests > 0) "error" else "fixed",
-                        expanded = false,
-                        url = o.url,
-                    )
-                },
-            ),
-        )
+    fun failureNodes(result: FailuresResult?, now: Long = System.currentTimeMillis(), live: LiveRun? = null): List<FailureNode> {
         val running = live?.takeIf { it.own }
-        if (run == null) {
-            return listOf(
-                FailureNode(
-                    key = "run",
-                    kind = "run",
-                    label = "Your local runs · ${failureCounts(items)}",
-                    description = running?.let { "running ${it.done}/${it.total}" } ?: "no baseline",
-                    icon = "run",
-                    expanded = true,
-                    url = null,
-                    children = runs + groups,
-                ),
-            )
-        }
-        return listOf(
-            FailureNode(
-                key = "run",
-                kind = "run",
-                label = listOfNotNull("Run #${run.id}", originLabel(run.origin, run.own), run.branch, failureCounts(items))
-                    .joinToString(" · "),
-                description = running?.let { "running ${it.done}/${it.total}" } ?: run.startTime?.let { relativeTime(it, now) } ?: "",
-                icon = "run",
-                expanded = true,
-                url = run.url,
-                children = runs + groups,
-            ),
+        val failures = result?.items.orEmpty().associateBy { it.executionId }
+        fun draw(node: FailureTreeNode): FailureNode = FailureNode(
+            key = node.key,
+            kind = node.kind,
+            label = node.label,
+            description = if (running != null && node.kind == "run") {
+                "running ${running.done}/${running.total}"
+            } else {
+                listOfNotNull(node.description.ifBlank { null }, node.startTime?.let { relativeTime(it, now) }).joinToString(" · ")
+            },
+            icon = node.icon,
+            expanded = node.expanded,
+            url = node.url,
+            failure = node.executionId?.let { failures[it] },
+            note = node.note,
+            children = node.children.orEmpty().map { draw(it) },
         )
+        return result?.tree.orEmpty().map { draw(it) }
     }
 
     /**
@@ -489,23 +333,12 @@ object Glue {
      * ago · Baseline: CI run #120 on feature/x`; `Your local runs · 1 failing · Baseline: your local runs only` with a
      * developer's own runs alone; the baseline alone when it found no run.
      */
-    fun runHeader(result: FailuresResult?, now: Long = System.currentTimeMillis()): String? {
-        val baseline = baselineLine(result?.baseline?.label)
-        val run = result?.run
-        val items = result?.items.orEmpty()
-        val parts = when {
-            run != null -> listOfNotNull(
-                "Run #${run.id}",
-                originLabel(run.origin, run.own),
-                run.branch,
-                failureCounts(items),
-                run.startTime?.let { relativeTime(it, now) },
-            )
-            !result?.overlays.isNullOrEmpty() -> listOf("Your local runs", failureCounts(items))
-            else -> emptyList()
-        }
-        return (parts + listOfNotNull(baseline)).ifEmpty { null }?.joinToString(" · ")
-    }
+    fun runHeader(result: FailuresResult?, now: Long = System.currentTimeMillis()): String? =
+        listOfNotNull(
+            result?.runLabel?.ifBlank { null },
+            result?.runLabel?.let { result.run?.startTime?.let { relativeTime(it, now) } },
+            baselineLine(result?.baseline?.label),
+        ).ifEmpty { null }?.joinToString(" · ")
 
     /** The baseline a context compares with, as the tooltip and the tool window name it: `Baseline: CI run #120 on main`. */
     fun baselineLine(label: String?): String? = label?.ifBlank { null }?.let { "Baseline: $it" }
@@ -547,10 +380,6 @@ object Glue {
         )
     }
 
-    /** The run id typed for **A run by id…** (`118` or `#118`); null when it is not one. */
-    fun runIdOf(text: String?): Int? =
-        Regex("^\\s*#?(\\d{1,9})\\s*$").find(text.orEmpty())?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it > 0 }
-
     /** A baseline as `PiwiLocalSettings` keeps it per root: `local`, `branch:<name>`, `run:<id>`; the ladder is none. */
     fun encodeBaseline(choice: BaselineChoice): String? = when (choice.kind) {
         "local" -> "local"
@@ -566,18 +395,6 @@ object Glue {
         text?.startsWith("run:") == true -> text.removePrefix("run:").toIntOrNull()?.takeIf { it > 0 }?.let { BaselineChoice("run", runId = it) }
         else -> null
     }
-
-    /**
-     * What **Re-run the Failing Tests** runs: every test still failing or edited since its run, one run per Playwright
-     * config (`WorkspaceFailure.root`), in the order of their first failure; none when none fails.
-     */
-    fun rerunFailingArgs(result: FailuresResult?): List<RunTestsArgs> =
-        result?.items.orEmpty()
-            .filter { !isFixedLocally(it) && it.testCaseId != null && it.uri != null }
-            .groupBy { it.root.orEmpty() }
-            .map { (_, failures) ->
-                RunTestsArgs(failures.first().uri!!, failures.mapNotNull { it.testCaseId }.distinct(), root = failures.first().root)
-            }
 
     /** What **Run This Test** runs for a failure: its test, from the Playwright config it belongs to. */
     fun failureRunArgs(failure: WorkspaceFailure): RunTestsArgs? {
@@ -687,7 +504,13 @@ object Glue {
             marks(result.changed, CoverageKind.CHANGED) { "Piwi: changed since the coverage run" }
     }
 
-    /** A test's gutter tooltip: its latest result, then its history as the service sums it up. */
+    /** `text` as HTML text: the IDE renders a tooltip as HTML, and the instance's text is never markup. */
+    private fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    /** A plain-text tooltip, one line per `\n`, as the HTML the IDE renders a tooltip as. */
+    fun htmlTooltip(text: String): String = "<html>${escapeHtml(text).replace("\n", "<br>")}</html>"
+
+    /** A test's gutter tooltip: its latest result, then its history as the service sums it up, as HTML text. */
     fun testResultTooltip(status: String?, title: String?): String {
         val result = when (status) {
             "failed" -> "failing"
@@ -697,7 +520,7 @@ object Glue {
             "running" -> "running"
             else -> "no recent result"
         }
-        return listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · ")
+        return "<html>${escapeHtml(listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · "))}</html>"
     }
 
     /**
@@ -705,11 +528,10 @@ object Glue {
      * line changed since the run.
      */
     fun failureTooltip(headline: String?, message: String?, edited: Boolean = false): String {
-        val escape = { text: String -> text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
         val why = headline?.ifBlank { null } ?: "Failed"
-        val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escape(it)}</pre>" } ?: ""
+        val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escapeHtml(it)}</pre>" } ?: ""
         val title = if (edited) "Piwi: failed here, edited since the run" else "Piwi: failed here"
-        return "<html><b>$title</b><br>${escape(why)}$details</html>"
+        return "<html><b>$title</b><br>${escapeHtml(why)}$details</html>"
     }
 
     /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
@@ -1147,19 +969,6 @@ object Glue {
         return roots.map { it.replace('\\', '/').trimEnd('/') }.filter { it.isNotEmpty() }.distinct().map { "$it/$relative" }
     }
 
-    /**
-     * A block of code re-indented to sit at a line indented with `indent`: its common
-     * leading indentation removed, then `indent` added to every line after the first.
-     */
-    fun indentBlock(code: String, indent: String): String {
-        val lines = code.trimEnd().split("\n")
-        val common = lines.filter { it.isNotBlank() }.minOfOrNull { it.length - it.trimStart().length } ?: 0
-        return lines.mapIndexed { i, line ->
-            val stripped = if (line.isBlank()) "" else line.substring(common)
-            if (i == 0 || stripped.isEmpty()) stripped else indent + stripped
-        }.joinToString("\n")
-    }
-
     /** How a desktop job's update shows (`desktopJobNotice` in the VS Code extension). */
     data class DesktopJobNotice(val text: String, val warning: Boolean, val actions: List<String>)
 
@@ -1239,63 +1048,39 @@ object Glue {
         return offset
     }
 
-    /** Import lines to insert into a document's text at `offset`. */
-    data class ImportInsertion(val offset: Int, val text: String)
+    /**
+     * The offset in a document's text of a position the service names (0-based line and character), kept within the
+     * text and the line; null without a position.
+     */
+    fun offsetOf(text: CharSequence, position: EditPosition?): Int? {
+        position ?: return null
+        var start = 0
+        repeat(position.line.coerceAtLeast(0)) {
+            val next = text.indexOf('\n', start)
+            if (next < 0) return text.length
+            start = next + 1
+        }
+        val end = text.indexOf('\n', start).let { if (it < 0) text.length else it }
+        return (start + position.character.coerceAtLeast(0)).coerceAtMost(end)
+    }
+
+    /** Import lines written with a block, at `offset`: before the block's write (`first`) or after it, above the block. */
+    data class ImportWrite(val offset: Int, val text: String, val first: Boolean)
 
     /**
-     * The import lines of `imports` a document's text lacks, and where they go: after its last top-level `import`
-     * statement, else at its top, followed by an empty line. A line is left out when the file holds the same statement,
-     * whatever its spacing, its quotes and its final semicolon.
+     * How the import lines the service placed at `offset` of a document's text, before a block's `write`, are written
+     * with it in one command: first when they come after the range the write replaces, so their offset holds; last
+     * when they come at or before it, so they go above the block, which moves down by their length; not at all inside
+     * that range. Null without an offset or a text.
      */
-    fun importInsertion(text: CharSequence, imports: List<String>): ImportInsertion? {
-        val statements = importStatements(text)
-        val held = statements.map { importKey(it.text) }.toSet()
-        val missing = imports.map { it.replace("\r\n", "\n").replace('\r', '\n').trim() }
-            .filter { it.isNotEmpty() && importKey(it) !in held }
-            .distinctBy { importKey(it) }
-        if (missing.isEmpty()) return null
-        val last = statements.lastOrNull()
-        if (last != null) return ImportInsertion(last.end, "\n" + missing.joinToString("\n"))
-        val firstLine = text.subSequence(0, text.indexOf('\n').let { if (it < 0) text.length else it })
-        return ImportInsertion(0, missing.joinToString("\n") + "\n" + if (firstLine.isBlank()) "" else "\n")
-    }
-
-    /** A top-level `import` statement: its text, over one line or more, and the offset its last line ends at. */
-    private data class ImportStatement(val text: String, val end: Int)
-
-    private val IMPORT_START = Regex("^import(?=[\\s{*'\"])")
-    private val IMPORT_COMPLETE = Regex("\\bfrom\\s*['\"]|^import\\s*['\"]|=\\s*require\\s*\\(|;\\s*$")
-
-    /** The top-level `import` statements of a text, in order: those starting a line, followed to their module. */
-    private fun importStatements(text: CharSequence): List<ImportStatement> {
-        val lines = text.split('\n')
-        val found = mutableListOf<ImportStatement>()
-        var start = 0
-        var i = 0
-        while (i < lines.size) {
-            if (!IMPORT_START.containsMatchIn(lines[i])) {
-                start += lines[i].length + 1
-                i++
-                continue
-            }
-            var statement = lines[i]
-            var end = start + lines[i].length
-            var j = i
-            while (!IMPORT_COMPLETE.containsMatchIn(statement) && j + 1 < lines.size && j - i < 50) {
-                j++
-                statement += "\n" + lines[j]
-                end += 1 + lines[j].length
-            }
-            found += ImportStatement(statement, end)
-            start = end + 1
-            i = j + 1
+    fun importWrite(offset: Int?, text: String?, write: BlockWrite): ImportWrite? {
+        if (offset == null || text.isNullOrEmpty()) return null
+        return when {
+            offset > write.end || (offset == write.end && write.end > write.start) -> ImportWrite(offset, text, first = true)
+            offset <= write.start -> ImportWrite(offset, text, first = false)
+            else -> null
         }
-        return found
     }
-
-    /** An `import` statement compared regardless of its spacing, its quotes and its final semicolon. */
-    private fun importKey(statement: String): String =
-        statement.replace(Regex("\\s+"), "").replace('"', '\'').removeSuffix(";")
 
     /** "1 step", "3 steps". */
     fun stepCount(steps: Int): String = if (steps == 1) "1 step" else "$steps steps"

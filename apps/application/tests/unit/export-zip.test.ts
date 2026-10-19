@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildExportZip } from '../../shared/export/zip';
-import { parseZipSync } from '../../server/utils/trace-zip';
+import { parseZipSync } from '../utils/zip';
 
 /**
  * The export writer (fflate, deflating, isomorphic) and the trace reader

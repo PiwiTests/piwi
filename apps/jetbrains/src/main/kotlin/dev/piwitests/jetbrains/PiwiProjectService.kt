@@ -541,6 +541,18 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
+     * Read the failures grouped as the tool window groups them now, which the service keeps for what it pushes after,
+     * then tell the listeners. The answer is taken as a push is, where it comes among them.
+     */
+    fun regroup() {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            server()?.failures(FailuresParams(local().failuresGrouping))?.thenAccept { read ->
+                if (read != null && !gone.value(null)) failuresChanged(read)
+            }
+        }
+    }
+
+    /**
      * Read the status, the latest run and its failures again, on a pooled thread, then tell the listeners. A read asked
      * for while one runs follows it, once.
      */
@@ -563,7 +575,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val pushes = synchronized(lock) { Triple(statusPushes, runsPushes, failuresPushes) }
         val readStatus = server?.status()?.orNull()
         val readRuns = server?.runStatus()?.orNull()
-        val readFailures = server?.failures()?.orNull()
+        val readFailures = server?.failures(FailuresParams(local().failuresGrouping))?.orNull()
         synchronized(lock) {
             if (statusPushes == pushes.first) status = readStatus
             if (runsPushes == pushes.second) runs = readRuns

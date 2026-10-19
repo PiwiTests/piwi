@@ -3,6 +3,7 @@ import {
   buildRouteManifest,
   recordObservedRoute,
   collapsePathPattern,
+  matchedRoutePattern,
   type ManifestRouteEntry,
 } from '../src/manifest';
 
@@ -11,6 +12,15 @@ describe('collapsePathPattern', () => {
     expect(collapsePathPattern('/api/orders/42')).toBe('/api/orders/:id');
     expect(collapsePathPattern('/api/users/1b4e28ba-2fa1-11d2-883f-0016d3cca427')).toBe('/api/users/:uuid');
     expect(collapsePathPattern('/api/cart?x=1')).toBe('/api/cart');
+  });
+});
+
+describe('matchedRoutePattern', () => {
+  it('reads the pattern of the route the router matched, in either h3 shape, and nothing without one', () => {
+    expect(matchedRoutePattern({ path: '/api/orders/:id' })).toBe('/api/orders/:id');
+    expect(matchedRoutePattern({ route: '/api/orders/:id' })).toBe('/api/orders/:id');
+    expect(matchedRoutePattern(undefined)).toBeNull();
+    expect(matchedRoutePattern({ path: '' })).toBeNull();
   });
 });
 

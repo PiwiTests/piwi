@@ -7,9 +7,9 @@ import {
   MAX_SCM_FILES_TOTAL,
   MAX_FILE_BYTES,
   FETCH_TIMEOUT_MS,
-  isGitObjectId,
   readBlobText,
 } from './ScmProvider';
+import { isGitObjectId } from '#shared/utils/hash';
 import type {
   ScmCommitDetail,
   ScmCommitAuthor,

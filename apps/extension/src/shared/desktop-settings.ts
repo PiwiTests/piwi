@@ -25,8 +25,11 @@ const DESKTOP_KEY = 'piwiDesktop';
 export const DESKTOP_DEFAULT_URL = 'http://127.0.0.1:3000';
 
 /**
- * The origin of a desktop app address, or null for anything that is not
- * plain http on this machine's loopback: the app binds nowhere else.
+ * The origin of a desktop app address, on 127.0.0.1, or null for anything that
+ * is not plain http on this machine's loopback. The app binds 127.0.0.1 alone,
+ * so `localhost` and `[::1]` are read as 127.0.0.1: the token never goes to
+ * whatever listens on the IPv6 loopback on the app's port, which could relay
+ * the app's proof for that port.
  */
 export function desktopOrigin(input: string): string | null {
   let url: URL;
@@ -37,6 +40,7 @@ export function desktopOrigin(input: string): string | null {
   }
   if (url.protocol !== 'http:') return null;
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return null;
+  url.hostname = '127.0.0.1';
   return url.origin;
 }
 

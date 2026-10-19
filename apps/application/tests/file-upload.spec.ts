@@ -421,6 +421,7 @@ test.describe('File Upload API Tests', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
     const reportResponse = await page.goto(`/api/files/${reportPath}`);
     expect(reportResponse?.headers()['content-security-policy']).toBe('sandbox allow-scripts');
+    expect(reportResponse?.headers()['x-frame-options']).toBe('SAMEORIGIN');
 
     await expect(page.locator('h1')).toHaveText('Sandboxed report');
     await expect(page.locator('body')).toHaveAttribute('data-report-ready', 'ready');

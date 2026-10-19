@@ -7,8 +7,8 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { PIWI_PROBE_ENV } from '../config/env.js';
+import { relativeTestPath } from '../support/test-paths.js';
 import { matchProbeItem, type ProbePlan, type ProbePlanItem } from './plan.js';
 
 let planCache: ProbePlan | null | undefined;
@@ -35,16 +35,18 @@ function loadPlan(): ProbePlan | null {
 /**
  * The plan item for a running test, matched on the spec file and leaf title so a
  * title shared across specs never matches the wrong file. The file is normalized
- * to a project-root-relative POSIX path, the same shape the dashboard stores.
+ * to a POSIX path relative to the Playwright config's folder, the shape the dashboard stores.
  */
 export function probeItemForTest(test: {
   title: string;
   file?: string | null;
   titlePath?: string[];
+  /** The folder test files are named relative to (the Playwright config's); the working directory by default. */
+  base?: string;
 }): ProbePlanItem | null {
   const plan = loadPlan();
   if (!plan) return null;
-  const filePath = test.file ? path.relative(process.cwd(), test.file).split(path.sep).join('/') : null;
+  const filePath = test.file ? relativeTestPath(test.file, test.base ?? process.cwd()) : null;
   // `titlePath` runs [file, ...describe titles, test title]; the describe titles
   // are the suite path.
   const suitePath = test.titlePath ? test.titlePath.slice(1, -1) : undefined;

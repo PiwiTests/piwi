@@ -184,7 +184,7 @@ describe('parseTraceArchive', () => {
     // A trace whose network sidecar is unreadable still yields its execution.
     const good = buildTraceArchive({ title: 'a.spec.ts:1 › works' });
     const withJunk = buildZip([
-      ...(await import('../../server/utils/trace-zip')).parseZipSync(good),
+      ...(await import('../utils/zip')).parseZipSync(good),
       { name: 'junk.trace', data: Buffer.from('{not json\n') },
     ]);
 

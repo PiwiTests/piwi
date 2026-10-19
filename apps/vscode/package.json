@@ -555,6 +555,7 @@
     "test": "npm run vscode:test"
   },
   "devDependencies": {
+    "@piwitests/core": "*",
     "@piwitests/editor": "*",
     "@types/vscode": "~1.91.0",
     "@vscode/test-electron": "^3.1.0",

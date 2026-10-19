@@ -1,3 +1,4 @@
+import { quoteJsString } from '@piwitests/core/locator-chain';
 import { deriveTopLocator } from './verified-locators.js';
 import { isSensitiveField } from './sensitive-fields.js';
 
@@ -35,17 +36,6 @@ export interface AssertionSuggestion {
  * via the real built bundle instead (see `assertion-panel.ts`).
  */
 export function suggestAssertions(el: Element): AssertionSuggestion {
-  /** The text inside a single-quoted JavaScript string: a line break or a line separator would end it. */
-  function esc(s: string): string {
-    return s
-      .replace(/\\/g, '\\\\')
-      .replace(/'/g, "\\'")
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\u2028/g, '\\u2028')
-      .replace(/\u2029/g, '\\u2029');
-  }
-
   function normalizeText(s: string): string {
     return s.replace(/\s+/g, ' ').trim();
   }
@@ -71,13 +61,13 @@ export function suggestAssertions(el: Element): AssertionSuggestion {
     candidates.push({
       method: 'toHaveValues',
       detail: selected.join(', '),
-      expectLine: `await expect(page.${locator}).toHaveValues([${selected.map((v) => `'${esc(v)}'`).join(', ')}]);`,
+      expectLine: `await expect(page.${locator}).toHaveValues([${selected.map((v) => quoteJsString(v)).join(', ')}]);`,
     });
   } else if (value != null && value.trim() !== '') {
     candidates.push({
       method: 'toHaveValue',
       detail: value,
-      expectLine: `await expect(page.${locator}).toHaveValue('${esc(value)}');`,
+      expectLine: `await expect(page.${locator}).toHaveValue(${quoteJsString(value)});`,
     });
   }
 
@@ -86,7 +76,7 @@ export function suggestAssertions(el: Element): AssertionSuggestion {
     candidates.push({
       method: 'toHaveText',
       detail: text,
-      expectLine: `await expect(page.${locator}).toHaveText('${esc(text)}');`,
+      expectLine: `await expect(page.${locator}).toHaveText(${quoteJsString(text)});`,
     });
   }
 
@@ -94,7 +84,7 @@ export function suggestAssertions(el: Element): AssertionSuggestion {
     candidates.push({
       method: 'toHaveAccessibleName',
       detail: accessibleName,
-      expectLine: `await expect(page.${locator}).toHaveAccessibleName('${esc(accessibleName)}');`,
+      expectLine: `await expect(page.${locator}).toHaveAccessibleName(${quoteJsString(accessibleName)});`,
     });
   }
 

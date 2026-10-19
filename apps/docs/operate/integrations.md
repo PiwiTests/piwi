@@ -131,7 +131,7 @@ closed ticket stops showing as open in the dashboard. It runs **every 15 minutes
 rounded to whole hours. Each sweep refreshes up to 100 links. Links on an open cluster refresh every sweep; links on
 a resolved or ignored cluster refresh at most once a day. A connection that fails to
 answer records the error on the connection card and does not stop the sweep. An administrator can run one sweep on
-demand through the REST API (see the [API docs](https://piwitests.dev/demo/docs)); the response counts the links it refreshed, failed and skipped.
+demand with **Sync now** on the Jira card, which says how many links it refreshed and how many it could not read.
 
 The two-way **policies** (comment on fix / regression, transition, resolve on close, reopen) are configured per project
 on the binding — see [Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).
@@ -142,15 +142,15 @@ Polling is the baseline because Atlassian Cloud usually cannot reach a self-host
 register a webhook so a close or reopen reflects immediately instead of within the sync interval:
 
 1. In **Settings → Integrations**, on the Jira connection, choose **Enable webhook**. Piwi generates a per-connection
-   secret and shows the full URL **once**, with a link to the site's webhooks page. Set `PIWI_SITE_URL` when Piwi
-   sits behind another address than the one in your browser.
+   secret, keeps only its digest, and shows the full URL **once**, with a link to the site's webhooks page. Set
+   `PIWI_SITE_URL` when Piwi sits behind another address than the one in your browser.
 2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
    **issue updated** events (optionally scoped by a JQL filter to the bound projects).
 3. Piwi looks the issue up by its id in its links and refreshes just that one, applying the resolve/reopen policies.
 
 The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
-create or transition anything. **Regenerate webhook** invalidates the old URL; turning the webhook off is an
-administrator call in the REST API (see the [API docs](https://piwitests.dev/demo/docs)).
+create or transition anything. **Regenerate webhook** invalidates the old URL, and **Disable webhook** turns the
+webhook off.
 
 ## Related
 

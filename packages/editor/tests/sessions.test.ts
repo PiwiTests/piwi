@@ -10,6 +10,7 @@ import type { ProjectOptions, ProjectUse } from '../src/recorder/project-options
 import {
   RecordingSessions,
   blockImports,
+  indentBlock,
   UPDATE_INTERVAL_MS,
   recorderLanguage,
   startUrl,
@@ -31,6 +32,12 @@ const SPEC = [
   '});',
   '',
 ].join('\n');
+
+/** An insertion of `newText` at the start of `line`. */
+const insertAt = (line: number, newText: string) => ({
+  range: { start: { line, character: 0 }, end: { line, character: 0 } },
+  newText,
+});
 
 let dist = '';
 
@@ -376,7 +383,7 @@ describe('a recording session', () => {
         into: 'steps',
         state: 'recording',
         code: '',
-        imports: [],
+        importEdit: null,
         steps: [],
         warnings: [],
         message: null,
@@ -488,7 +495,7 @@ describe('a recording session', () => {
         "await signInPage.signIn('dev@example.com');",
       ].join('\n'),
     );
-    expect(last().imports).toEqual(["import { SignInPage } from './pages/sign-in.page';"]);
+    expect(last().importEdit).toEqual(insertAt(1, "import { SignInPage } from './pages/sign-in.page';\n"));
     expect(last().steps.map((s) => [s.line, s.functionName])).toEqual([
       [1, undefined],
       [2, 'signIn'],
@@ -515,7 +522,7 @@ describe('a recording session', () => {
     launcher.emit({ type: 'event', event: fill(EMAIL, 'dev@example.com') });
     launcher.emit({ type: 'event', event: click(SIGN_IN) });
     expect(last().code).toBe(["await page.goto('/login');", "await signInPage.signIn('dev@example.com');"].join('\n'));
-    expect(last().imports).toEqual([]);
+    expect(last().importEdit).toBeNull();
   });
 
   test('a new test takes the page objects the file’s tests take as fixtures', async () => {
@@ -543,7 +550,7 @@ describe('a recording session', () => {
         '});',
       ].join('\n'),
     );
-    expect(last().imports).toEqual([]);
+    expect(last().importEdit).toBeNull();
   });
 
   test('the imports leave out what the file imports now, as the editor holds it', async () => {
@@ -556,10 +563,10 @@ describe('a recording session', () => {
     launcher.emit({ type: 'event', event: fill(EMAIL, 'dev@example.com') });
     launcher.emit({ type: 'event', event: click(SIGN_IN) });
     // Without a current text, the text the recording started from.
-    expect(last().imports).toEqual(["import { SignInPage } from './pages/sign-in.page';"]);
+    expect(last().importEdit).toEqual(insertAt(1, "import { SignInPage } from './pages/sign-in.page';\n"));
     current = ['import { SignInPage } from "./pages/sign-in.page"', SPEC].join('\n');
     launcher.emit({ type: 'event', event: click(SIGN_IN) });
-    expect(last().imports).toEqual([]);
+    expect(last().importEdit).toBeNull();
     expect(last().code).toContain('const signInPage = new SignInPage(page);');
   });
 
@@ -600,7 +607,7 @@ describe('a recording session', () => {
       [2, expect.stringContaining('/account')],
       [3, expect.stringContaining('Total: 42')],
     ]);
-    expect(last().imports).toEqual(["import { expect } from './fixtures';"]);
+    expect(last().importEdit).toEqual(insertAt(1, "import { expect } from './fixtures';\n"));
   });
 
   test('the config’s Piwi section sets the waits, the values, their prefix, the test steps and a new test’s tags', async () => {
@@ -1007,5 +1014,16 @@ describe('blockImports', () => {
       call,
     ]);
     expect(blockImports('', { code: 'await page.expectation(1); await my.expect(2);', imports: [] })).toEqual([]);
+  });
+});
+
+describe('indentBlock', () => {
+  test('the first line goes at the caret, the others take the caret line’s indentation', () => {
+    expect(indentBlock("  await page.goto('/cart');\n\n  await page.getByRole('button').click();\n", '    ')).toBe(
+      "await page.goto('/cart');\n\n    await page.getByRole('button').click();",
+    );
+    expect(indentBlock('a();\n  b();', '\t')).toBe('a();\n\t  b();');
+    expect(indentBlock("await page.goto('/');", '  ')).toBe("await page.goto('/');");
+    expect(indentBlock('', '  ')).toBe('');
   });
 });

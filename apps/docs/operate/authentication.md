@@ -62,7 +62,7 @@ administrator first. The [one-click deploy templates](./one-click-deploy) genera
 
 ## Logging in
 
-Sign in at `/login`. Sessions are stored in encrypted cookies and last for 7 days. The session cookie is marked `Secure`, so browser sign-in needs HTTPS — over plain `http://` it only works on `localhost`.
+Sign in at `/login`. A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends every session of the account, in every browser.
 
 ## OAuth (Google, GitHub)
 

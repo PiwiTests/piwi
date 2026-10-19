@@ -1,6 +1,5 @@
 import { requireAuth, revokeUserSessions, setUserSession } from '../../../../utils/auth';
 import { unlinkProvider } from '../../../../utils/oauth';
-import type { InstanceRole } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
@@ -27,8 +26,6 @@ export default eventHandler(async (event) => {
   const epoch = await revokeUserSessions(user.id);
   await setUserSession(event, {
     userId: user.id,
-    username: user.username,
-    role: user.role as InstanceRole,
     sessionEpoch: epoch,
   });
 

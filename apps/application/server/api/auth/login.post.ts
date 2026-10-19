@@ -77,8 +77,6 @@ export default eventHandler(async (event) => {
   // Set session
   await setUserSession(event, {
     userId: user.id,
-    username: user.username,
-    role: view.role,
     sessionEpoch: user.sessionEpoch,
   });
 

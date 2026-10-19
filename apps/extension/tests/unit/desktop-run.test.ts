@@ -4,10 +4,13 @@ import { asReplayVerdict, reproStatus } from '../../src/content/desktop-run-pane
 import { verdictText } from '../../src/content/replay-core';
 
 describe('the desktop app pairing', () => {
-  test('takes only plain http on this machine’s loopback, as an origin', () => {
+  test('takes only plain http on this machine’s loopback, as an origin on 127.0.0.1', () => {
     expect(desktopOrigin('http://127.0.0.1:4318/setup')).toBe('http://127.0.0.1:4318');
-    expect(desktopOrigin(' http://localhost:4318 ')).toBe('http://localhost:4318');
-    expect(desktopOrigin('http://[::1]:4318')).toBe('http://[::1]:4318');
+    // The app binds 127.0.0.1 alone: another program on the IPv6 loopback never gets the token.
+    expect(desktopOrigin(' http://localhost:4318 ')).toBe('http://127.0.0.1:4318');
+    expect(desktopOrigin('http://LOCALHOST:4318/')).toBe('http://127.0.0.1:4318');
+    expect(desktopOrigin('http://[::1]:4318')).toBe('http://127.0.0.1:4318');
+    expect(desktopOrigin('http://localhost')).toBe('http://127.0.0.1');
     expect(desktopOrigin('https://127.0.0.1:4318')).toBeNull();
     expect(desktopOrigin('http://192.168.1.4:4318')).toBeNull();
     expect(desktopOrigin('http://127.0.0.1.example.com')).toBeNull();
@@ -16,6 +19,10 @@ describe('the desktop app pairing', () => {
 
   test('reads stored settings only when both the address and the token are usable', () => {
     expect(coerceDesktopSettings({ url: 'http://127.0.0.1:4318', token: ' pd_abc ' })).toEqual({
+      url: 'http://127.0.0.1:4318',
+      token: 'pd_abc',
+    });
+    expect(coerceDesktopSettings({ url: 'http://localhost:4318', token: 'pd_abc' })).toEqual({
       url: 'http://127.0.0.1:4318',
       token: 'pd_abc',
     });

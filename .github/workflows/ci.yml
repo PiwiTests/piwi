@@ -68,7 +68,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `app` is what the dashboard's build, E2E, package smoke and demo jobs depend on: the server bundles the docs
-      # pages and the changelog for its MCP tools. `js` is every workspace the checks job lints and tests.
+      # pages and the changelog for its MCP tools. `js` is every workspace the checks job formats, lints and tests,
+      # and what knip reads besides them (its config, the configs of the tools it knows, the git hooks).
       - name: Read the areas the change touches
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -105,6 +106,9 @@ jobs:
               - 'package-lock.json'
               - 'tsconfig.json'
               - 'knip.ts'
+              - 'commitlint.config.js'
+              - '.husky/**'
+              - '.editorconfig'
             extension:
               - 'apps/extension/**'
               - 'packages/core/**'
@@ -128,8 +132,14 @@ jobs:
               - 'apps/extension/scripts/build.mjs'
             desktop:
               - 'apps/desktop/**'
+            # The site, and what apps/docs/scripts generate pages from.
             docs:
               - 'apps/docs/**'
+              - 'apps/application/shared/**'
+              - 'apps/application/package.json'
+              - 'packages/reporter/src/public/options.ts'
+              - 'packages/reporter/src/internal/config/env.ts'
+              - 'CHANGELOG.md'
             # With `app`: what the server image is built from.
             container:
               - 'Dockerfile'
@@ -239,6 +249,21 @@ jobs:
           # The tarballs are already gzipped.
           compression-level: 0
 
+      # The performance job of a pull request measures against its base commit's build, restored by this key and path
+      # (reusable-perf.yml). A cache saved on main serves every pull request; one a pull request saves serves it alone.
+      - name: Stage the build as a performance base
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p base/apps/application
+          cp -a apps/application/.output base/apps/application/.output
+
+      - name: Save the build as a performance base
+        if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: base/apps/application/.output
+          key: perf-base-output-v1-${{ github.sha }}
+
   # Backend-agnostic checks. Independent of the E2E matrix, so they run alongside it.
   checks:
     name: Lint, typecheck and unit tests
@@ -260,6 +285,17 @@ jobs:
         uses: ./.github/actions/setup-workspace
         with:
           playwright: shell
+
+      # Every workspace's files as the pre-commit hook formats them.
+      - name: Check formatting
+        run: |
+          npm run app:format:check -w apps/application
+          npm run extension:format:check -w apps/extension
+          npm run vscode:format:check -w apps/vscode
+          npm run core:format:check -w packages/core
+          npm run picker-dom:format:check -w packages/picker-dom
+          npm run editor:format:check -w packages/editor
+          npm run reporter:format:check -w packages/reporter
 
       - name: Lint
         working-directory: apps/application
@@ -318,10 +354,15 @@ jobs:
         working-directory: packages/picker-dom
         run: npm run picker-dom:test:integration
 
-      # The reporter's flake-run and build-output specs load the built package.
+      # The reporter's flake-run and build-output specs load the built package, and so does knip, through the
+      # dashboard's Playwright config.
       - name: Build reporter
         working-directory: packages/reporter
         run: npm run reporter:build
+
+      # Unused files, exports and dependencies, and imports of packages a workspace does not declare.
+      - name: Knip
+        run: npm run knip
 
       - name: Test reporter
         working-directory: packages/reporter
@@ -444,6 +485,15 @@ jobs:
           # Separate database for the main app server so it never races the
           # dedicated postgresql.spec.ts server (which owns playwright_test).
           docker exec -e PGPASSWORD=postgres postgres psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE playwright_main;'
+
+      # The unit tests that need a PostgreSQL server (`*-pg.test.ts`), once per run: in the first shard of the s3 +
+      # postgres cell, the one a pull request and main both run. Each test creates and drops a database of its own.
+      - name: Run the PostgreSQL unit tests
+        if: matrix.database == 'postgres' && matrix.storage == 's3' && matrix.shard == 1
+        working-directory: apps/application
+        env:
+          PIWI_POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/playwright_test
+        run: npm run app:test:unit -- tests/unit/*-pg.test.ts
 
       - name: Run Playwright Tests
         working-directory: apps/application

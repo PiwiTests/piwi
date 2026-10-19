@@ -1,3 +1,5 @@
+import { timingSafeEqualStr } from '../../utils/timing-safe';
+
 // Desktop (Tauri) bootstrap endpoint.
 //
 // The shell navigates the webview here exactly once at startup, exchanging the
@@ -13,7 +15,7 @@ export default defineEventHandler((event) => {
   }
 
   const provided = getQuery(event).token;
-  if (provided !== token) {
+  if (typeof provided !== 'string' || !timingSafeEqualStr(provided, token)) {
     throw apiError({ statusCode: 403, statusMessage: 'Invalid desktop token' });
   }
 

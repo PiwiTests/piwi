@@ -44,6 +44,25 @@ async function apiPost(path: string, body: unknown, cookie?: string) {
   });
 }
 
+/**
+ * Create an email channel through a pre-save test, so it is saved verified and
+ * receives notifications. The test message is deleted from the inbox.
+ */
+async function createVerifiedEmailChannel(
+  mailpit: MailpitClient,
+  channel: { name: string; config: { address: string }; global?: boolean },
+  cookie: string,
+): Promise<number> {
+  const tested = await apiPost('/api/channels/test', { type: 'email', config: channel.config }, cookie);
+  expect(((await tested.json()) as { success: boolean }).success).toBe(true);
+  const created = await apiPost('/api/channels', { ...channel, type: 'email' }, cookie);
+  expect(created.ok).toBe(true);
+  const { channel: saved } = (await created.json()) as { channel: { id: number; verified: boolean } };
+  expect(saved.verified).toBe(true);
+  await mailpit.deleteAll();
+  return saved.id;
+}
+
 async function adminLogin(): Promise<string> {
   const res = await apiPost('/api/auth/login', ADMIN_CREDS);
   const header = res.headers.get('set-cookie') ?? '';
@@ -352,18 +371,12 @@ test.describe.serial('Notification dispatch', () => {
     const runData = (await runRes.json()) as { projectId?: number };
     projectId = runData.projectId ?? 0;
 
-    // Create an email channel
-    const chRes = await apiPost(
-      '/api/channels',
-      {
-        name: 'Test Email',
-        type: 'email',
-        config: { address: NOTIFY_EMAIL },
-      },
+    // Create an email channel, verified by a pre-save test
+    channelId = await createVerifiedEmailChannel(
+      mailpit,
+      { name: 'Test Email', config: { address: NOTIFY_EMAIL } },
       cookie,
     );
-    const chData = (await chRes.json()) as { channel?: { id: number } };
-    channelId = chData.channel?.id ?? 0;
 
     // Subscribe to run.finished for that project
     const subRes = await apiPost(
@@ -519,13 +532,11 @@ test.describe.serial('Scheduled quality report email', () => {
 
   test('Run now sends the quality report by email, with the trend as an inline image', async () => {
     const cookie = await adminLogin();
-    const channel = await apiPost(
-      '/api/channels',
-      { name: 'Quality report mail', type: 'email', config: { address: REPORT_EMAIL }, global: true },
+    channelId = await createVerifiedEmailChannel(
+      mailpit,
+      { name: 'Quality report mail', config: { address: REPORT_EMAIL }, global: true },
       cookie,
     );
-    expect(channel.ok).toBe(true);
-    channelId = ((await channel.json()) as { channel: { id: number } }).channel.id;
 
     const schedule = await apiPost(
       '/api/reports/schedules',

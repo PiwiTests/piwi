@@ -7,6 +7,7 @@ import {
   resolveScmBaseBranch,
   resolveScmBranch,
   resolveScmPrNumber,
+  withoutCredentials,
 } from '../src/internal/collect/metadata-collector.js';
 
 const CI_ENV_KEYS = [
@@ -266,6 +267,14 @@ describe('MetadataCollector.collect — CI provider detection', () => {
   });
 });
 
+describe('the working directory a run names', () => {
+  it("is the folder its spec paths are relative to: the Playwright config's", () => {
+    const config = { ...fakeConfig(), configFile: '/repo/e2e/playwright.config.ts' } as unknown as FullConfig;
+    expect(new MetadataCollector().collect(config, undefined as any, {}).workingDir).toBe('/repo/e2e');
+    expect(new MetadataCollector().collect(fakeConfig(), undefined as any, {}).workingDir).toBe(process.cwd());
+  });
+});
+
 describe('the run origin', () => {
   it('is local outside CI, with nothing set', () => {
     expect(resolveRunOrigin({})).toEqual({ kind: 'local' });
@@ -304,6 +313,27 @@ describe('the run origin', () => {
       if (saved.origin === undefined) delete process.env.PIWI_ORIGIN;
       else process.env.PIWI_ORIGIN = saved.origin;
       if (saved.ref !== undefined) process.env.PIWI_ORIGIN_REF = saved.ref;
+    }
+  });
+});
+
+describe('withoutCredentials', () => {
+  it('drops the user name and the password a remote URL carries', () => {
+    expect(withoutCredentials('https://gitlab-ci-token:glcbt-secret@gitlab.example.com/group/app.git')).toBe(
+      'https://gitlab.example.com/group/app.git',
+    );
+    expect(withoutCredentials('https://ghp_secret@github.com/acme/app')).toBe('https://github.com/acme/app');
+    expect(withoutCredentials('ssh://git:secret@host.example.com/acme/app.git')).toBe('ssh://host.example.com/acme/app.git');
+  });
+
+  it('keeps a remote without credentials, an scp-like remote and a local path as they are', () => {
+    for (const remote of [
+      'https://github.com/acme/app.git',
+      'git@github.com:acme/app.git',
+      '/srv/git/app.git',
+      'C:\\repos\\app',
+    ]) {
+      expect(withoutCredentials(remote)).toBe(remote);
     }
   });
 });

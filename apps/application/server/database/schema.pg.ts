@@ -127,7 +127,6 @@ export const testRuns = pgTable(
     updatedAt: timestamp('updated_at', { mode: 'date' }).$defaultFn(() => new Date()),
   },
   (table) => ({
-    projectIdIdx: index('idx_test_runs_project_id').on(table.projectId),
     projectStartTimeIdx: index('idx_test_runs_project_start').on(table.projectId, table.startTime),
     projectBranchStartIdx: index('idx_test_runs_project_branch_start').on(
       table.projectId,
@@ -198,7 +197,6 @@ export const testCases = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    projectIdIdx: index('idx_test_cases_project_id').on(table.projectId),
     filePathTitleIdx: index('idx_test_cases_file_path_title').on(
       table.projectId,
       table.filePath,
@@ -571,6 +569,8 @@ export const testRunsCases = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
+    // A run's executions are looked up on this index: PostgreSQL costs the same
+    // lookup on the wider unique index below so high that a join reads the whole table.
     testRunIdIdx: index('idx_test_runs_cases_test_run_id').on(table.testRunId),
     // Composite: covers plain test_case_id lookups (prefix) and the
     // per-case recency sorts used by history/flakiness queries.
@@ -1255,7 +1255,6 @@ export const markers = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    projectIdIdx: index('idx_markers_project_id').on(table.projectId),
     projectOccurredIdx: index('idx_markers_project_occurred').on(table.projectId, table.occurredAt),
     runIdIdx: index('idx_markers_run_id').on(table.runId),
   }),
@@ -1449,8 +1448,6 @@ export const projectIntegrations = pgTable(
     issueType: text('issue_type'),
     labels: jsonb('labels'), // string[]
     defaultAssignee: text('default_assignee'), // account id / name
-    spaceId: text('space_id'), // Confluence space (wiki binding)
-    parentPageId: text('parent_page_id'), // Confluence parent page
     locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
     include: jsonb('include'), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
     policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
@@ -1995,7 +1992,6 @@ export const scenarioGaps = pgTable(
     evidence: jsonb('evidence'), // string[] — human-readable evidence lines
     factors: jsonb('factors'), // exposure factors: { churn, age, escapeHistory, priority }
     score: doublePrecision('score'), // exposure × (1 − protection); ranked descending
-    featureNodeId: integer('feature_node_id').references(() => graphNodes.id, { onDelete: 'set null' }),
     ticket: text('ticket'), // ticket id joined at change time
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'set null' }),
@@ -2006,7 +2002,6 @@ export const scenarioGaps = pgTable(
     assignedTo: text('assigned_to'),
     triagedBy: integer('triaged_by').references(() => users.id, { onDelete: 'set null' }), // the user who last gave a triage verdict; null when auth is off
     snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // a snoozed gap wakes at this time; null with status snoozed = until the node changes
-    snoozedAtRunId: integer('snoozed_at_run_id'), // legacy; superseded by snoozed_at_signature for "until the node changes"
     snoozedAtSignature: text('snoozed_at_signature'), // the subject node's edge fingerprint when snoozed "until the node changes"; wakes once the node's shape differs
     acceptedAt: timestamp('accepted_at', { mode: 'date' }), // when a gap was accepted; feeds the accepted-but-unwritten inbox queue
     coveredAt: timestamp('covered_at', { mode: 'date' }), // when a gap was marked covered-by; a durable per-gap "for" verdict for detector precision
@@ -2024,7 +2019,6 @@ export const scenarioGaps = pgTable(
     projectStatusIdx: index('idx_scenario_gaps_project_status').on(table.projectId, table.status),
     projectScoreIdx: index('idx_scenario_gaps_project_score').on(table.projectId, table.score),
     prIdx: index('idx_scenario_gaps_pr').on(table.projectId, table.prNumber),
-    featureNodeIdx: index('idx_scenario_gaps_feature_node').on(table.featureNodeId),
     testCaseIdx: index('idx_scenario_gaps_test_case').on(table.testCaseId),
     clusterIdx: index('idx_scenario_gaps_cluster').on(table.failureClusterId),
     triagedByIdx: index('idx_scenario_gaps_triaged_by').on(table.triagedBy),

@@ -14,11 +14,11 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { formatStep, type StepResult } from './report.js';
 import { detectProject, installCommand, REPORTER_PACKAGE, type PackageManager, type ProjectShape } from './detect.js';
 import { ensureGitignoreEntry, fixturesContents, upsertEnvKeys, wrapPlaywrightConfig } from './configure.js';
 import { ALL_SKILLS, findTemplatesDir, installSkills, WORKFLOW_SKILLS, DEFAULT_SKILLS_DIR } from './skills.js';
+import { runPackageManager } from '../internal/support/playwright-spawn.js';
 
 const DEFAULT_SERVER_URL = 'http://localhost:3000';
 
@@ -149,12 +149,12 @@ function stepInstallReporter(project: ProjectShape, opts: InitOptions): StepResu
     return { step, status: 'manual', detail: `Run \`${installCommand(project.packageManager)}\`` };
 
   const [command, args] = installArgv(project.packageManager);
-  const result = spawnSync(command, args, { cwd: opts.root, stdio: 'inherit' });
-  if (result.status === 0) return { step, status: 'updated', detail: `Installed ${REPORTER_PACKAGE}` };
+  const status = runPackageManager(command, args, opts.root);
+  if (status === 0) return { step, status: 'updated', detail: `Installed ${REPORTER_PACKAGE}` };
   return {
     step,
     status: 'error',
-    detail: `\`${installCommand(project.packageManager)}\` failed (exit ${result.status ?? 'unknown'}) — install it by hand`,
+    detail: `\`${installCommand(project.packageManager)}\` failed (exit ${status ?? 'unknown'}) — install it by hand`,
   };
 }
 

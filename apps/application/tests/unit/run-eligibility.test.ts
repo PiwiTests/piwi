@@ -13,6 +13,7 @@ delete process.env.PIWI_DATABASE_URL;
 const {
   RUN_ORIGIN_KINDS,
   RUN_USES,
+  eligibleExecutionInProject,
   eligibleRunSql,
   isEligibleRun,
   isLabRun,
@@ -265,6 +266,14 @@ describe('the SQL form of the rule', () => {
         const expected = runs.filter((r) => isEligibleRun(r, use)).map((r) => r.id);
         expect(
           rows.map((r) => r.id).sort((a, b) => a - b),
+          use,
+        ).toEqual(expected);
+        const listed = await db
+          .select({ id: schema.testRuns.id })
+          .from(schema.testRuns)
+          .where(eligibleExecutionInProject(use, 1, schema.testRuns.id, sql`${schema.testRuns.id} > 0`));
+        expect(
+          listed.map((r) => r.id).sort((a, b) => a - b),
           use,
         ).toEqual(expected);
       }

@@ -306,6 +306,8 @@ async function prepareDiagnosisInputs(
 ): Promise<{ ctx: BuiltDiagnosisContext; userContent: string; images: AiAttachedImage[] | undefined }> {
   // Honour the cluster's manually-pinned baseline when the caller didn't supply one.
   const effectiveBaseCommit = opts.baseCommit || subject.cluster?.manualBaseCommit || undefined;
+  // The local Claude CLI takes the prompt as text: it gets no image, and the context names none.
+  const textOnly = config.provider === 'claude-cli';
 
   const buildCtx = (skipScm: boolean) =>
     subject.scope === 'execution'
@@ -316,6 +318,7 @@ async function prepareDiagnosisInputs(
           baseCommit: effectiveBaseCommit,
           selectedCommitShas: opts.selectedCommitShas,
           skipScm,
+          textOnly,
         })
       : buildDiagnosisContext(db, {
           kind: 'cluster',
@@ -323,6 +326,7 @@ async function prepareDiagnosisInputs(
           baseCommit: effectiveBaseCommit,
           selectedCommitShas: opts.selectedCommitShas,
           skipScm,
+          textOnly,
         });
 
   // Research runs only when a distinct research role (own provider/key/baseUrl/model) is configured.
@@ -380,7 +384,7 @@ async function prepareDiagnosisInputs(
 
   // Downscale screenshots (auto-resolved + user-provided) — full-resolution images
   // cost ~3× more tokens on current models without helping diagnosis.
-  const allImages = [...(ctx.images ?? []), ...(opts.images ?? [])];
+  const allImages = textOnly ? [] : [...(ctx.images ?? []), ...(opts.images ?? [])];
   const images =
     allImages.length > 0 ? await downscaleImages(allImages, (await resolveContextLimits(db)).imageMaxEdge) : undefined;
 

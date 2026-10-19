@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 import {
   knownFunctionLines,
   reachedFunctionLines,
-  reachedSources,
   scriptRan,
   scriptText,
   type JsCoverageEntry,
@@ -77,7 +76,6 @@ describe('reachedFunctionLines', () => {
     expect([...reachedFunctionLines(withoutSource, map, cached)]).toEqual([[0, [[9, 12]]]]);
     expect([...reachedFunctionLines(withoutSource, null, cached)]).toEqual([[-1, [[1, 3]]]]);
     expect(scriptRan(withoutSource, cached)).toBe(true);
-    expect([...reachedSources(withoutSource, map, cached)]).toEqual([0]);
   });
 
   /** `mappings` for one generated line, from its segments: generated column and original 0-based line, source 0. */

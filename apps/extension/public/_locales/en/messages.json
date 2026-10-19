@@ -133,6 +133,10 @@
     "message": "This address is not a Piwi desktop app that can run bug reports.",
     "description": "The address answers but is not a Piwi desktop app that takes run requests."
   },
+  "common_desktopNotProven": {
+    "message": "The program at this address did not prove it is the paired desktop app, so the token was not sent. Check that the app is running and up to date, then pair again.",
+    "description": "The program at the paired address could not prove it holds the paired token: an app that moved to another port, an older app, or another program."
+  },
   "common_desktopStatus": {
     "message": "The desktop app answered $status$.",
     "description": "The desktop app answered with an unexpected HTTP status. $status$ is the number.",

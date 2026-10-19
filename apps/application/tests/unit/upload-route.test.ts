@@ -112,6 +112,28 @@ describe('POST /api/test-runs/upload', () => {
     ]);
   });
 
+  test('refuses a run without a status or a valid start time before storing its report', async () => {
+    const report = { name: 'report_custom', filename: 'report.txt', data: Buffer.from('report') };
+    for (const testRun of [{ startTime: '2026-09-30T10:00:00Z' }, { status: 'passed', startTime: 'yesterday' }]) {
+      await expect(
+        upload({ parts: [field('projectName', 'upload-invalid'), field('testRun', testRun), report] }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+    expect(state.written.size).toBe(0);
+    expect(await db.select().from(schema.testRuns)).toHaveLength(0);
+
+    const { runId } = await upload({
+      parts: [
+        field('projectName', 'upload-invalid'),
+        field('testRun', { status: 'passed', startTime: '2026-09-30T10:00:00Z' }),
+        report,
+      ],
+    });
+    const [stored] = await db.select().from(schema.files);
+    expect(stored).toMatchObject({ testRunId: runId, type: 'report', subtype: 'custom' });
+    expect(state.written.has(stored!.path)).toBe(true);
+  });
+
   test('refuses a chunked upload past the size cap, counted on the bytes read', async () => {
     process.env.PIWI_IMPORT_MAX_BYTES = String(1024 * 1024);
     try {

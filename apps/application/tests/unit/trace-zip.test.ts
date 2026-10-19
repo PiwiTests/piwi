@@ -1,14 +1,8 @@
 import { describe, test, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
-import {
-  buildZip,
-  decompressEntry,
-  parseZip,
-  parseZipSync,
-  parseZipDirectory,
-  ZipLimitError,
-} from '../../server/utils/trace-zip';
+import { buildZip, decompressEntry, parseZip, parseZipDirectory, ZipLimitError } from '../../server/utils/trace-zip';
+import { parseZipSync } from '../utils/zip';
 
 describe('buildZip / parseZipSync round-trip', () => {
   test('stores and recovers every entry unchanged', () => {

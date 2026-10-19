@@ -71,33 +71,9 @@ function executedFunctionRanges(
   return out;
 }
 
-/** The start offsets of the functions that ran in a script, without its top-level function. */
-export function executedFunctionOffsets(entry: JsCoverageEntry): number[] {
-  return executedFunctionRanges(entry).map((range) => range.start);
-}
-
 /** Whether any function of the script other than its top level ran; `text` stands for its source when given. */
 export function scriptRan(entry: JsCoverageEntry, text?: ScriptText): boolean {
   return executedFunctionRanges(entry, text?.length).length > 0;
-}
-
-/**
- * The sources (indexes into `map.sources`) of the functions that ran, through the script's source map; `text`
- * stands for its source when given.
- */
-export function reachedSources(entry: JsCoverageEntry, map: SourceMapLookup, text?: ScriptText): Set<number> {
-  const read = textOf(entry, text);
-  const ranges = executedFunctionRanges(entry, read?.length);
-  const reached = new Set<number>();
-  if (!ranges.length || !read) return reached;
-  const starts = read.starts;
-  for (const range of ranges) {
-    const start = offsetToPosition(starts, range.start);
-    const source = map.sourceAt(start.line, start.column);
-    if (source === null || reached.has(source)) continue;
-    if (map.mapsBetween(source, start, offsetToPosition(starts, range.end))) reached.add(source);
-  }
-  return reached;
 }
 
 /**

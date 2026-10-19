@@ -42,7 +42,7 @@ export default defineNitroConfig({ modules: ['@piwitests/instrumentation-nitro/m
 export default defineNuxtConfig({ nitro: { modules: ['@piwitests/instrumentation-nitro/module'] } })
 ```
 
-The manifest then lists every route Nitro scanned (`routes/`, `api/`) and every handler the config declares, middleware and a fallback catch-all (`/**`) left out, each with its method (`GET` for a route that answers any method), its pattern (`/api/orders/:id`) and its file relative to the git repository. Without the module, it lists only the routes the server has answered since it started, which the reporter, reading it before any test runs, rarely sees. Nuxt pages are rendered by one catch-all route, so they are not listed: name them in a `piwi.manifest.json`.
+The manifest then lists every route Nitro scanned (`routes/`, `api/`) and every handler the config declares, middleware and a fallback catch-all (`/**`) left out, each with its method (`GET` for a route that answers any method), its pattern (`/api/orders/:id`) and its file relative to the git repository. Without the module, it lists only the routes the server has answered since it started (a route handler matched, so neither a 404 nor a public asset), which the reporter, reading it before any test runs, rarely sees. Nuxt pages are rendered by one catch-all route, so they are not listed: name them in a `piwi.manifest.json`.
 
 ## What gets captured
 

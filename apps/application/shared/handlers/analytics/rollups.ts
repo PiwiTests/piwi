@@ -90,13 +90,6 @@ export function emptyRollupTotals(): RollupTotals {
   };
 }
 
-/** Add `from` into `into`: sums for every field, MAX for the suite size. */
-export function addRollupTotals(into: RollupTotals, from: RollupTotals): RollupTotals {
-  for (const field of SUMMED_FIELDS) into[field] += Number(from[field]) || 0;
-  into.maxTotalTests = Math.max(into.maxTotalTests, Number(from.maxTotalTests) || 0);
-  return into;
-}
-
 /** The dimensions that identify a cell. */
 export interface RollupCellKey {
   projectId: number;

@@ -2,6 +2,11 @@ import type { FailureDiagnosis } from '~~/server/database/schema';
 import type { ContextSection, DiagnosisContextCoverage } from '~~/types/api';
 import { errorMessage } from '~/utils';
 
+/** How often a diagnosis running elsewhere (another tab, a policy) is read again. */
+const RUNNING_POLL_MS = 4_000;
+/** A diagnosis still running after this long is stuck: the panel offers to restart it, and it is not polled. */
+const RUNNING_STALE_MS = 5 * 60 * 1000;
+
 /**
  * Execution-scoped diagnosis state, shaped like the cluster-diagnosis store so
  * `DiagnosisPanel` can drive either scope through one interface. Execution scope
@@ -57,6 +62,25 @@ export function useExecutionDiagnosis(executionId: number) {
     }
   }
 
+  // While a diagnosis this page did not start is running, read it again until it lands.
+  let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  function stopPolling() {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+  function schedulePoll() {
+    stopPolling();
+    const d = diagnosis.value;
+    if (posting.value || d?.status !== 'running') return;
+    if (Date.now() - new Date(d.updatedAt).getTime() > RUNNING_STALE_MS) return;
+    pollTimer = setTimeout(async () => {
+      await fetchDiagnosis();
+      schedulePoll();
+    }, RUNNING_POLL_MS);
+  }
+  watch([() => diagnosis.value?.status, posting], schedulePoll);
+  onBeforeUnmount(stopPolling);
+
   async function runDiagnosis(opts: { force?: boolean; additionalContext?: string } = {}) {
     posting.value = true;
     try {
@@ -94,6 +118,7 @@ export function useExecutionDiagnosis(executionId: number) {
     coverage,
     contextLoading,
     refreshContext,
+    fetchDiagnosis,
     runDiagnosis,
   };
 }

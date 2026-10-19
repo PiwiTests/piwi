@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { extractStackFrames } from '@piwitests/core/error-parse';
 import type { TestSourceFrame } from '@piwitests/core/wire';
 
 /**
@@ -42,16 +43,12 @@ export function readSourceSnippet(
 const MAX_SCANNED_ERROR_CHARS = 64 * 1024;
 
 /**
- * The stack frames of an error text (`    at fn (file:line:col)` or
- * `    at file:line:col`): the file and the line of each, from the first
- * {@link MAX_SCANNED_ERROR_CHARS} characters.
+ * The stack frames of an error text outside `node_modules` and Node's own
+ * modules, innermost first, from its first {@link MAX_SCANNED_ERROR_CHARS}
+ * characters.
  */
-function* stackFrames(errorText: string): Generator<{ file: string; line: number }> {
-  const frameRe = /^[ \t]+at (?:[^(\n]*\()?(.+?):(\d+):\d+\)?[ \t]*$/gm;
-  const text = errorText.slice(0, MAX_SCANNED_ERROR_CHARS);
-  for (let m = frameRe.exec(text); m; m = frameRe.exec(text)) {
-    yield { file: m[1]!, line: parseInt(m[2]!, 10) };
-  }
+function stackFrames(errorText: string): Array<{ file: string; line: number }> {
+  return extractStackFrames(errorText.slice(0, MAX_SCANNED_ERROR_CHARS));
 }
 
 /**
@@ -95,7 +92,6 @@ export function collectSourceFrames(
       } catch {
         continue;
       }
-      if (abs.includes(`${path.sep}node_modules${path.sep}`)) continue;
       const rel = path.relative(projectRoot, abs);
       if (rel.startsWith('..') || path.isAbsolute(rel)) continue; // outside the project
       if (!isNaN(frame.line)) add(abs, frame.line);

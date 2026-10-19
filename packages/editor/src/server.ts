@@ -102,8 +102,10 @@ import {
   parseBaselineChoice,
   pruneEvidence,
   readDesktopDiscovery,
+  runIdOf,
   withServerUrl,
 } from './context.js';
+import { failuresDrawn, parseFailuresGrouping } from './failure-tree.js';
 import {
   PiwiClient,
   type ResponseCache,
@@ -122,10 +124,12 @@ import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
   blockImports,
+  indentBlock,
   originOf,
   repositoryCodegen,
   type LauncherFactory,
 } from './recorder/sessions.js';
+import { importInsertion } from './recorder/imports.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -160,6 +164,7 @@ import {
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
+  RUN_ID_REQUEST,
   SCREENSHOT_REQUEST,
   SELECTIONS_REQUEST,
   TRACE_REQUEST,
@@ -182,6 +187,8 @@ import {
   type EditorBreakpoint,
   type EditorCredentials,
   type EditorTest,
+  type FailuresGrouping,
+  type FailuresParams,
   type FailuresResult,
   type FileSummary,
   type FileSummaryParams,
@@ -194,6 +201,8 @@ import {
   type RenderStepsParams,
   type RenderStepsResult,
   type RunCommand,
+  type RunIdParams,
+  type RunIdResult,
   type RunStatus,
   type RunStatusResult,
   type SetBaselineParams,
@@ -591,6 +600,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** Diagnostics of the analysis of open documents, and of the latest run's failures, by URI. */
   const analysisDiagnostics = new Map<string, Diagnostic[]>();
   let failureDiagnostics = new Map<string, Diagnostic[]>();
+  /** How the failures tree groups the failures: as the client last asked `piwi/failures`. */
+  let failuresGrouping: FailuresGrouping = 'file';
   let lastRunStatus = '';
   /** Whether the client previews an edit whose change annotation asks for confirmation. */
   let previewsEdits = false;
@@ -969,10 +980,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const shown =
       contexts.find((c) => c.client && c.failures?.run) ??
       contexts.find((c) => c.client && c.failures?.overlays?.length);
-    if (!shown) return { items };
+    if (!shown) return { items, ...failuresDrawn({ items }, failuresGrouping) };
     const run = shown.failures?.run;
     const client = shown.client!;
-    return {
+    const view = {
       items,
       run: run
         ? {
@@ -1003,10 +1014,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       })),
       baseline: { choice: shown.baseline, label: shown.baselineLabel },
       ...(shown.runReadAt !== null ? { updatedAt: new Date(shown.runReadAt).toISOString() } : {}),
-    };
+    } satisfies Omit<FailuresResult, keyof ReturnType<typeof failuresDrawn>>;
+    return { ...view, ...failuresDrawn(view, failuresGrouping) };
   };
   /** The failures last sent in `piwi/failuresChanged`. */
-  let failuresSent = JSON.stringify({ items: [] } satisfies FailuresResult);
+  let failuresSent = JSON.stringify({ items: [], ...failuresDrawn({ items: [] }, 'file') } satisfies FailuresResult);
 
   /**
    * Place every context's failures on the files as they stand, publish the files whose failure diagnostics changed,
@@ -2622,7 +2634,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   });
 
-  connection.onRequest(FAILURES_REQUEST, (): FailuresResult => {
+  connection.onRequest(FAILURES_REQUEST, (params: FailuresParams | null): FailuresResult => {
+    failuresGrouping = parseFailuresGrouping(params?.grouping) ?? failuresGrouping;
     const failures = failuresResult(placer());
     failuresSent = JSON.stringify({ ...failures, updatedAt: undefined });
     return failures;
@@ -2688,6 +2701,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { servers };
   });
 
+  connection.onRequest(
+    RUN_ID_REQUEST,
+    (params: RunIdParams): RunIdResult => ({
+      runId: typeof params?.text === 'string' ? runIdOf(params.text) : null,
+    }),
+  );
+
   connection.onRequest(RENDER_STEPS_REQUEST, async (params: RenderStepsParams): Promise<RenderStepsResult> => {
     const parsed = parseSteps(params.steps);
     if (!parsed.ok) return { code: '', warnings: parsed.errors };
@@ -2718,10 +2738,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ...(file && atCaret !== null ? { declaredNames: declaredNamesAt(text, atCaret) } : {}),
       ...(separate ? { bodyImports: 'none' as const } : {}),
     });
+    const caretLine = atCaret !== null ? (text.split(/\r\n|\r|\n/)[atCaret] ?? '') : null;
     return {
-      code: result.code,
+      code:
+        caretLine === null
+          ? result.code
+          : indentBlock(result.code, caretLine.slice(0, caretLine.length - caretLine.trimStart().length)),
       warnings: result.warnings.map((w) => w.message),
-      ...(separate ? { imports: blockImports(text, result) } : {}),
+      ...(separate ? { importEdit: importInsertion(text, blockImports(text, result)) } : {}),
     };
   });
 

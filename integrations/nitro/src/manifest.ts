@@ -23,7 +23,6 @@ export interface RouteManifest {
 /**
  * Collapse a concrete request path to a pattern: numeric and uuid segments become
  * `:id` / `:uuid`, so `/api/orders/42` and `/api/orders/43` fold to one route.
- * Used only when the matched route carries no pattern of its own.
  */
 export function collapsePathPattern(path: string): string {
   const clean = path.split('?')[0] ?? path;
@@ -39,6 +38,18 @@ export function collapsePathPattern(path: string): string {
       })
       .join('/')
   );
+}
+
+/**
+ * The pattern a request is recorded under: the one of the route the router
+ * matched it to (`path` in h3 1.x, `route` in later versions). Null when no
+ * route handler matched it: a 404, or a public asset served before the router,
+ * neither of which is a route of the app.
+ */
+export function matchedRoutePattern(matchedRoute: unknown): string | null {
+  const matched = matchedRoute as { route?: unknown; path?: unknown } | null | undefined;
+  const pattern = matched?.route ?? matched?.path;
+  return typeof pattern === 'string' && pattern ? pattern : null;
 }
 
 /** The unique key for a route in the accumulator: method plus pattern. */

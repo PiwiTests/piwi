@@ -204,7 +204,7 @@ In a coverage build, the middleware also records which code each request execute
 1. Add `PiwiTests.Instrumentation.Coverage` to every class library whose code you want covered. A project that references this package already has it.
 2. Build the test environment with `-p:PiwiCoverage=true`, for example `dotnet build -c Release -p:PiwiCoverage=true`.
 3. Keep `app.UsePiwiTestLogs()`. Wherever the middleware is active, once instrumented code runs, it:
-   - names each request that ran instrumented code before its response started: `X-Piwi-Coverage: <process>.<sequence>`;
+   - names each request that ran instrumented code before its response started: `X-Piwi-Coverage: <process>.<sequence>.<secret>`, the secret random per request;
    - serves `POST /__piwi/coverage/collect`, the coverage of the request ids a test received, merged per group, at `files`, `functions` or `lines` granularity, and `GET /__piwi/coverage/run`, the run-level coverage with each file's executable lines;
    - keeps each named request until it is collected, up to 5,000 ended requests and about 64 MB, the oldest evicted first.
 

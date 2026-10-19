@@ -165,8 +165,9 @@ The early check only says the user holds the permission _somewhere_. The project
   that `/api/auth/me` returns. It is an affordance only (hide or disable a control); the server decides. With
   authentication off everything is allowed (virtual administrator).
 - **Safety rules:** the last administrator cannot be demoted; a Project admin edits role bindings only on projects
-  where they hold `project:members`, never on all projects; changing a user's instance role bumps `sessionEpoch`,
-  while project role and group changes take effect on the next request since access is loaded per request.
+  where they hold `project:members`, never on all projects; changing a user's instance role or signing out bumps
+  `sessionEpoch`, while project role and group changes take effect on the next request since access is loaded per
+  request.
 
 ### OpenAPI annotations
 
@@ -500,8 +501,9 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
   forbidden id renders the error page and answers 404 or 403, never an empty page with a 200.
 - **Component** — a Vue file in the matching `app/components/` subfolder. Auto-import has no folder prefix, so the name
   must be unique repo-wide; follow the reuse and responsive rules below.
-- **Unit test** — `tests/unit/*.test.ts` (Vitest). **E2E test** — `tests/*.spec.ts` (Playwright), with any project name
-  registered in `shared/test-project-names.ts`.
+- **Unit test** — `tests/unit/*.test.ts` (Vitest). One that needs a PostgreSQL server is named `*-pg.test.ts`, reads it
+  from `PIWI_POSTGRES_TEST_URL` and skips without it; CI runs those in the E2E job's PostgreSQL cell. **E2E test** —
+  `tests/*.spec.ts` (Playwright), with any project name registered in `shared/test-project-names.ts`.
 - **AI test** — an E2E that needs a model goes against the mock OpenAI-compatible server in `tests/ai-diagnosis.spec.ts`,
   so the main suite stays at zero tokens. `tests/live/` is the only place that talks to a real provider: it is excluded
   from `playwright.config.ts`, has its own config, and runs from `npm run app:test:ai:live`. Assume the live model is
@@ -566,8 +568,8 @@ Re-run `npm run app:seed:demo` afterwards.
 
 ### Timed-out tests fold into `failedTests`
 
-There is no `timedOutTests` column on `test_runs`. Timed-out cases (`'timedOut'` per-case from Playwright; `'timedout'`
-in the declared `TestCaseStatus` union) fold into `failedTests` so `total = passed + failed + skipped + didNotRun`
+There is no `timedOutTests` column on `test_runs`. Timed-out cases (`'timedOut'` per-case from Playwright, stored as
+`'timedout'`) fold into `failedTests` so `total = passed + failed + skipped + didNotRun`
 reconciles and matches the UI. **Every ingest site MUST use the helpers in `shared/utils/test-counts.ts`** —
 `sumFailedAndTimedOut(body.failedTests, body.timedOutTests)` for body-field sites (`finish`, `submit`, `upload` + the
 demo `app/demo/api/reporter.ts` mirror) or `countFailedFromTally(insertedStatusCounts)` for per-status-tally sites

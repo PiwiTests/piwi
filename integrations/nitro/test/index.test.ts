@@ -309,6 +309,33 @@ describe('the route manifest', () => {
     });
   });
 
+  it('records only the routes a router handler matched: no 404, no asset served before the router', async () => {
+    const mod = await loadWithEnv({ PIWI_TEST_LOGS_DISABLED: 'false', NODE_ENV: 'test' });
+    const app = createApp();
+    // Nitro serves public assets in a handler that runs before the router.
+    app.use(
+      '/_nuxt',
+      eventHandler(() => 'asset'),
+    );
+    app.use(
+      createRouter().get(
+        '/api/cart',
+        eventHandler(() => ({ items: 1 })),
+      ),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+    await withServer(app, async (base) => {
+      expect((await fetch(`${base}/_nuxt/entry.js`)).status).toBe(200);
+      expect((await fetch(`${base}/api/missing/42`)).status).toBe(404);
+      expect((await fetch(`${base}/api/cart`)).status).toBe(200);
+      const manifest = (await (await fetch(`${base}/__piwi/manifest`)).json()) as {
+        routes: Array<{ method: string; pattern: string }>;
+      };
+      expect(manifest.routes.map((r) => `${r.method} ${r.pattern}`)).toEqual(['GET /api/cart']);
+    });
+  });
+
   it('lists the routes the module declared, reached or not, before the observed ones', async () => {
     const mod = await loadWithEnv({ PIWI_TEST_LOGS_DISABLED: 'false', NODE_ENV: 'test' });
     (globalThis as Record<string, unknown>).__piwiDeclaredRoutes = [

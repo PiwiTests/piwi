@@ -60,7 +60,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         id: String,
         code: String,
         state: String = "recording",
-        imports: List<String> = emptyList(),
+        importEdit: FileEdit? = null,
         warnings: List<RecordingWarning> = emptyList(),
         into: String = "steps",
         message: String? = null,
@@ -71,12 +71,16 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         into = into,
         state = state,
         code = code,
-        imports = imports,
+        importEdit = importEdit,
         steps = code.lines().filter { it.isNotBlank() }.mapIndexed { i, line -> RecordingStep(words = line, line = i) },
         warnings = warnings,
         message = message,
         command = command,
     )
+
+    /** The service's edit inserting `text` at the start of `line`, placed in the file as it stands. */
+    private fun insertAt(line: Int, text: String) =
+        FileEdit(EditRange(EditPosition(line, 0), EditPosition(line, 0)), text)
 
     /** An update as the notification delivers it: applied on the event thread. */
     private fun send(update: RecordingUpdate) {
@@ -148,7 +152,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals("Piwi is recording what you do in the browser · 1 step", session.view.text)
 
         val cartPage = "import { CartPage } from './pages/cart.page';"
-        send(update("s1", "const cartPage = new CartPage(page);\nawait cartPage.pay();", imports = listOf(cartPage)))
+        send(update("s1", "const cartPage = new CartPage(page);\nawait cartPage.pay();", importEdit = insertAt(1, "$cartPage\n")))
         assertEquals(
             """
             import { test, expect } from '@playwright/test';
@@ -186,14 +190,14 @@ class PiwiRecordingTest : BasePlatformTestCase() {
 
         """.trimIndent()
         val code = "const cartPage = new CartPage(page);\nawait cartPage.pay();\nawait expect(page).toHaveURL(/\\/done/);"
-        send(update("s1", code, imports = listOf(cartPage)))
+        send(update("s1", code))
         assertEquals(final, text())
 
         myFixture.editor.caretModel.moveToOffset(text().length)
         recordings.stop(session)
         assertEquals(listOf("stop s1"), sent)
         assertEquals("Piwi: stopping the recording…", session.view.text)
-        send(update("s1", code, state = "stopped", imports = listOf(cartPage)))
+        send(update("s1", code, state = "stopped"))
         assertNull(recordings.sessionFor(myFixture.file.virtualFile))
         assertNull(PiwiRecordingNotificationProvider().collectNotificationData(project, myFixture.file.virtualFile))
         assertEquals(final, text())
@@ -210,13 +214,13 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         val original = "test('adds', async ({ page }) => {\n  \n});\n"
         myFixture.configureByText("cart.spec.ts", original)
         val session = register("s2", line = 1, newLine = false, indent = "  ")
-        send(update("s2", "await page.goto('/');", imports = listOf("import { test } from '@playwright/test';")))
+        send(update("s2", "await page.goto('/');", importEdit = insertAt(0, "import { test } from '@playwright/test';\n\n")))
         assertEquals(
             "import { test } from '@playwright/test';\n\ntest('adds', async ({ page }) => {\n  await page.goto('/');\n});\n",
             text(),
         )
         recordings.stop(session)
-        send(update("s2", "await page.goto('/');", state = "stopped", imports = listOf("import { test } from '@playwright/test';")))
+        send(update("s2", "await page.goto('/');", state = "stopped"))
         undo()
         assertEquals(original, text())
     }
@@ -364,7 +368,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         register("s5", line = 0, newLine = false, indent = "", into = "file")
         val code = "import { test } from '@playwright/test';\nimport { CartPage } from './pages/cart.page';\n\n" +
             "test('recorded', async ({ page }) => {\n  await new CartPage(page).open();\n});"
-        send(update("s5", code, into = "file", imports = listOf("import { CartPage } from './pages/cart.page';")))
+        send(update("s5", code, into = "file"))
         assertEquals("$code\n", text())
         send(update("s5", code, state = "stopped", into = "file"))
         undo()

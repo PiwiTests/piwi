@@ -34,6 +34,7 @@ import {
 import { deliveredShareUrl } from '../reports/context';
 import { teamsDigestMessage, teamsEventMessage, teamsReportMessage } from './teams';
 import { slackEscape, slackLink } from './slack';
+import { emailDestinationVerified } from './email-verified';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 /** Slack digest messages list at most this many items; the rest are counted. */
@@ -49,6 +50,7 @@ interface ChannelRow {
   type: string;
   userId: number | null;
   config: unknown;
+  verified?: boolean | null;
 }
 
 interface DeliveryRow {
@@ -59,8 +61,15 @@ interface DeliveryRow {
   scheduledFor: Date | null;
 }
 
-/** Resolve the destination address for an email or personal_email channel. */
+/** Resolve the destination address for an email or personal_email channel, refusing an unverified one. */
 async function resolveEmailAddress(db: Db, channel: ChannelRow): Promise<string> {
+  if (!(await emailDestinationVerified(db, channel))) {
+    throw new Error(
+      channel.type === 'personal_email'
+        ? 'Account email not verified'
+        : 'Email channel not verified: send it a test from Settings → Notifications',
+    );
+  }
   if (channel.type === 'personal_email') {
     if (!channel.userId) throw new Error('Personal email channel has no owner');
     const [owner] = await db.select({ email: users.email }).from(users).where(eq(users.id, channel.userId));

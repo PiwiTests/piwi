@@ -12,7 +12,7 @@ import { openTempDb } from './temp-db';
 // PIWI_DATABASE_URL is set, so clear it before importing the helpers.
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
-const { repositoryUrlFromRemote, sameRepository } = await import('../../server/utils/scm/git-url');
+const { normalizeGitUrl, repositoryUrlFromRemote, sameRepository } = await import('../../server/utils/scm/git-url');
 const { isRepositoryPinnedInScope, pinProjectRepository, projectRepositoryFor, readProjectRepositoryUrl } =
   await import('../../server/utils/scm/project-repository');
 const { createScmProvider } = await import('../../server/utils/scm');
@@ -44,6 +44,17 @@ describe('a repository URL as a project pins it', () => {
     expect(repositoryUrlFromRemote('https://github.com/acme/shop?tab=readme#top')).toBe('https://github.com/acme/shop');
     for (const bad of [null, '', '/srv/git/shop', 'file:///srv/git/shop', 'https://github.com/acme', 'not a url']) {
       expect(repositoryUrlFromRemote(bad)).toBeNull();
+    }
+  });
+
+  test('normalizes a remote to an http or https URL, and nothing else', () => {
+    expect(normalizeGitUrl('git@github.com:acme/shop.git')).toBe('https://github.com/acme/shop');
+    expect(normalizeGitUrl('ssh://git@github.com:22/acme/shop.git')).toBe('https://github.com/acme/shop');
+    expect(normalizeGitUrl('https://token:x@gitlab.example.com/acme/shop.git')).toBe(
+      'https://gitlab.example.com/acme/shop',
+    );
+    for (const bad of ['javascript://github.com/%0aalert(1)', 'file:///srv/git/shop', 'not a url', null]) {
+      expect(normalizeGitUrl(bad)).toBeNull();
     }
   });
 

@@ -220,6 +220,32 @@ public class CoverageRecorderTests
     }
 
     [Fact]
+    public void Records_the_work_a_request_left_running_at_run_level_once_its_coverage_went_there()
+    {
+        var row = Row(typeof(Checks).GetMethod(nameof(Checks.Handle))!);
+        var length = SpanTable.Read(Fixture)!.Spans(row).Length;
+        var request = new PiwiRequestCoverage();
+        bool[] slot = null!;
+
+        PiwiCoverageRecorder.Begin(request);
+        bool[] before, after;
+        try
+        {
+            before = PiwiCoverageRecorder.Payload(FixtureMvid, row, ref slot, length, PiwiCoverageMode.Test);
+            PiwiCoverageRecorder.AddToRunLevel(request);
+            after = PiwiCoverageRecorder.Payload(FixtureMvid, row, ref slot, length, PiwiCoverageMode.Test);
+        }
+        finally
+        {
+            PiwiCoverageRecorder.End();
+        }
+
+        Assert.NotSame(before, after);
+        Assert.Same(after, FixtureModule().SharedPayloadOrNull(row));
+        Assert.DoesNotContain(request.Payloads(), p => ReferenceEquals(p.Payload, after));
+    }
+
+    [Fact]
     public void Reads_the_mode_from_its_variable()
     {
         Assert.Equal(PiwiCoverageMode.Run, PiwiCoverageModes.Parse(" Run "));

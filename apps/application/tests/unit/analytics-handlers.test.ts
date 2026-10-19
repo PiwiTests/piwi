@@ -20,7 +20,8 @@ const { getAnalyticsRegressionVelocity } = await import('../../shared/handlers/a
 const { getAnalyticsBrowserMatrix } = await import('../../shared/handlers/analytics/browser-matrix');
 const { getAnalyticsSlowEndpoints } = await import('../../shared/handlers/analytics/slow-endpoints');
 const { evaluateInsightRules } = await import('../../shared/analytics/insight-rules');
-const { parseAnalyticsScope, MAX_ANALYTICS_DAYS } = await import('../../shared/analytics/scope');
+const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
+const { ALL_TIME_DAYS } = await import('../../shared/analytics/period');
 const { ANALYTICS_WIDGETS, ANALYTICS_BANDS } = await import('../../shared/analytics/registry');
 const { backfillDailyRollups } = await import('../../shared/handlers/analytics/rollups');
 const { getAnalyticsStats } = await import('../../shared/handlers/analytics/stats');
@@ -29,7 +30,7 @@ const { getAnalyticsVerdict } = await import('../../shared/handlers/analytics/ve
 const { getAnalyticsRisks } = await import('../../shared/handlers/analytics/risks');
 const { getAnalyticsProgress } = await import('../../shared/handlers/analytics/progress');
 const { WidgetOptionsError, WIDGET_METRIC_IDS } = await import('../../shared/analytics/registry');
-const { isEvaluatedMetric } = await import('../../shared/handlers/analytics/metric-values');
+const { EVALUATED_METRIC_IDS } = await import('../../shared/handlers/analytics/metric-values');
 const { sentencesFor } = await import('../../shared/reports/sentences');
 const { makeFormatter } = await import('../../shared/reports/format');
 
@@ -254,7 +255,7 @@ describe('analytics scope parsing', () => {
       environments: ['staging'],
       branches: ['main'],
     });
-    expect(MAX_ANALYTICS_DAYS).toBe(3650);
+    expect(ALL_TIME_DAYS).toBe(3650);
   });
 });
 
@@ -330,11 +331,7 @@ describe('getAnalyticsPassRateHeatmap', () => {
   });
 
   test('trims leading empty buckets only for the unbounded All time window', async () => {
-    const heatmap = await getAnalyticsPassRateHeatmap(
-      db,
-      parseAnalyticsScope({ days: String(MAX_ANALYTICS_DAYS) }),
-      'all',
-    );
+    const heatmap = await getAnalyticsPassRateHeatmap(db, parseAnalyticsScope({ days: String(ALL_TIME_DAYS) }), 'all');
     // All seeded runs are recent, so the years of leading blank buckets are
     // dropped and the first rendered column already carries data.
     expect(heatmap.rows.some((r) => r.cells[0] !== null)).toBe(true);
@@ -653,7 +650,7 @@ describe('branch policy and test filters', () => {
 
 describe('metric widgets', () => {
   test('every metric a widget can show has an evaluator', () => {
-    for (const id of WIDGET_METRIC_IDS) expect(isEvaluatedMetric(id), id).toBe(true);
+    for (const id of WIDGET_METRIC_IDS) expect(EVALUATED_METRIC_IDS, id).toContain(id);
   });
 
   test('stats: values over the period with their change against the previous one', async () => {

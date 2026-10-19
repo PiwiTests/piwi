@@ -1,3 +1,9 @@
+import {
+  DESKTOP_CHALLENGE_HEADER,
+  DESKTOP_PROOF_HEADER,
+  desktopTokenProof,
+  newDesktopChallenge,
+} from '@piwitests/core/desktop-proof';
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -632,8 +638,41 @@ function desktopRefusal(res: Response): string {
   return t('common_desktopStatus', { status: res.status });
 }
 
-/** Checks the pairing: `GET /api/desktop/reporter-config` answers only with the app's token. */
+/**
+ * Throws a message to show unless the program at the paired address proves it
+ * holds the paired token (`@piwitests/core/desktop-proof`): `/api/health`
+ * answers a new random challenge with a proof bound to the address's port.
+ * Called before every request that carries the token, so an app that moved to
+ * another port, or another program that took this one, never receives it.
+ */
+async function proveDesktop(desktop: DesktopSettings): Promise<void> {
+  const challenge = newDesktopChallenge();
+  let res: Response;
+  try {
+    res = await request(`${desktop.url}/api/health`, {
+      headers: { [DESKTOP_CHALLENGE_HEADER]: challenge },
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_desktopUnreachable'));
+  }
+  const proof = res.headers.get(DESKTOP_PROOF_HEADER);
+  const port = Number(new URL(desktop.url).port || 80);
+  if (!proof || proof !== (await desktopTokenProof(desktop.token, port, challenge))) {
+    throw new Error(t('common_desktopNotProven'));
+  }
+}
+
+/**
+ * Checks the pairing: the app proves it holds the token, then
+ * `GET /api/desktop/reporter-config` answers only with the app's token.
+ */
 export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionCheckResult> {
+  try {
+    await proveDesktop(desktop);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
   try {
     const res = await request(`${desktop.url}/api/desktop/reporter-config`, {
       headers: desktopHeaders(desktop),
@@ -731,6 +770,7 @@ export async function sendReproRequest(
   desktop: DesktopSettings,
   send: ReproRequestSend,
 ): Promise<{ id: string; windowOpen: boolean }> {
+  await proveDesktop(desktop);
   let res: Response;
   try {
     res = await request(`${desktop.url}/api/desktop/repro-requests`, {
@@ -761,6 +801,7 @@ export interface ReproRequestState {
 }
 
 export async function fetchReproRequest(desktop: DesktopSettings, id: string): Promise<ReproRequestState> {
+  await proveDesktop(desktop);
   let res: Response;
   try {
     res = await request(`${desktop.url}/api/desktop/repro-requests/${encodeURIComponent(id)}`, {

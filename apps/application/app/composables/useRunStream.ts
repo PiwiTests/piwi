@@ -24,6 +24,8 @@ import { subscribeDemoEvents } from '~/demo/run-events';
  */
 let sharedEventSource: EventSource | null = null;
 let demoUnsubscribe: (() => void) | null = null;
+/** The demo has no server: its events come over a BroadcastChannel, never an EventSource. */
+let demoMode = false;
 const subscribers = new Set<() => void>();
 
 /** A global run lifecycle event, as `/api/stream` sends it. */
@@ -85,7 +87,7 @@ function notifySubscribers(eventType: string) {
 }
 
 function openEventSource() {
-  if (sharedEventSource) return;
+  if (sharedEventSource || demoMode) return;
 
   sharedEventSource = new EventSource('/api/stream');
 
@@ -134,7 +136,8 @@ function ensureConnection() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
   }
 
-  if (useRuntimeConfig().public.demoMode) {
+  demoMode = Boolean(useRuntimeConfig().public.demoMode);
+  if (demoMode) {
     if (demoUnsubscribe) return;
     demoUnsubscribe = subscribeDemoEvents((message) => {
       if (message.scope === 'global') {

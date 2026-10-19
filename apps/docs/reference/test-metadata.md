@@ -20,7 +20,8 @@ When `collectScmInfo` is enabled (default), the reporter collects:
 - Commit hash and message
 - Branch name
 - Author name
-- Remote URL, which [Source control](/guide/source-control#which-repository) uses to find the repository
+- Remote URL, without the user name or token a URL can carry (`https://gitlab-ci-token:…@host/…`), which
+  [Source control](/guide/source-control#which-repository) uses to find the repository
 - The pull-request number and the pull request's target branch, on a pull-request build
 
 The branch is resolved through a fallback chain so a CI pull-request build never records the literal

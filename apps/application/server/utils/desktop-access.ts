@@ -1,5 +1,12 @@
-import { getCookie, getRequestHeader, type H3Event } from 'h3';
+import { getCookie, getRequestHeader, setResponseHeader, type H3Event } from 'h3';
+import {
+  DESKTOP_CHALLENGE_HEADER,
+  DESKTOP_PROOF_HEADER,
+  desktopTokenProof,
+  isDesktopChallenge,
+} from '@piwitests/core/desktop-proof';
 import { timingSafeEqualStr } from './timing-safe';
+import { bearerToken } from './bearer';
 
 /**
  * Whether the request presents the desktop access token `token`, as any of:
@@ -12,12 +19,10 @@ import { timingSafeEqualStr } from './timing-safe';
  *   - an `x-piwi-token` header.
  */
 export function presentsDesktopToken(event: H3Event, token: string): boolean {
-  const authz = getRequestHeader(event, 'authorization');
-  const bearer = authz && authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : undefined;
   const presented =
     getCookie(event, 'piwi_token') ||
     getRequestHeader(event, 'x-piwi-token') ||
-    bearer ||
+    bearerToken(event) ||
     getRequestHeader(event, 'x-api-key');
   return !!presented && timingSafeEqualStr(presented, token);
 }
@@ -46,4 +51,21 @@ export const DESKTOP_LAUNCH_NONCE_HEADER = 'X-Piwi-Desktop-Nonce';
  */
 export function desktopLaunchNonce(env: Record<string, string | undefined> = process.env): string | null {
   return env.PIWI_DESKTOP_LAUNCH_NONCE || null;
+}
+
+/**
+ * Answers Piwi Picker's challenge on `/api/health` with the proof that this
+ * server holds the desktop token, for the loopback port the request reached
+ * (`@piwitests/core/desktop-proof`): the extension sends the token only to the
+ * app that proves it. Does nothing outside the desktop app or without a challenge.
+ */
+export async function answerDesktopChallenge(
+  event: H3Event,
+  token: string | undefined = process.env.PIWI_DESKTOP_TOKEN,
+): Promise<void> {
+  if (!token) return;
+  const challenge = getRequestHeader(event, DESKTOP_CHALLENGE_HEADER);
+  const port = event.node.req.socket?.localPort;
+  if (!port || !isDesktopChallenge(challenge)) return;
+  setResponseHeader(event, DESKTOP_PROOF_HEADER, await desktopTokenProof(token, port, challenge));
 }

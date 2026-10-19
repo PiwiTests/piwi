@@ -1,12 +1,25 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import {
+  evidenceRoot,
   linkedDesktopProject,
   namedInstance,
   PiwiContext,
+  privateFolder,
   pruneEvidence,
   readDesktopDiscovery,
   resolveContextConnection,
@@ -73,6 +86,64 @@ describe('the downloaded files', () => {
     expect(existsSync(path.join(root, 'old'))).toBe(false);
     expect(existsSync(path.join(root, 'recent', 'trace.zip'))).toBe(true);
     await pruneEvidence(path.join(root, 'missing'), now);
+  });
+});
+
+describe('the folder files are downloaded to', () => {
+  test("is piwi-editor in this user's cache folder, on each system", () => {
+    expect(evidenceRoot({ LOCALAPPDATA: 'C:\\Users\\ada\\AppData\\Local' }, 'win32', 'C:\\Users\\ada')).toBe(
+      path.join('C:\\Users\\ada\\AppData\\Local', 'piwi-editor'),
+    );
+    expect(evidenceRoot({}, 'darwin', '/Users/ada')).toBe(path.join('/Users/ada', 'Library', 'Caches', 'piwi-editor'));
+    expect(evidenceRoot({ XDG_CACHE_HOME: '/home/ada/.xdg' }, 'linux', '/home/ada')).toBe(
+      path.join('/home/ada/.xdg', 'piwi-editor'),
+    );
+    expect(evidenceRoot({ XDG_CACHE_HOME: 'relative' }, 'linux', '/home/ada')).toBe(
+      path.join('/home/ada', '.cache', 'piwi-editor'),
+    );
+  });
+
+  test('is created for this user only, and refused when it is a link', async () => {
+    const root = path.join(workspace(), 'cache', 'piwi-editor');
+    expect(await privateFolder(root)).toBe(true);
+    if (process.platform !== 'win32') {
+      expect(statSync(root).mode & 0o777).toBe(0o700);
+      chmodSync(root, 0o755);
+      expect(await privateFolder(root)).toBe(true);
+      expect(statSync(root).mode & 0o777).toBe(0o700);
+    }
+    const link = path.join(workspace(), 'piwi-editor');
+    try {
+      symlinkSync(root, link);
+    } catch {
+      return; // creating a link needs a privilege some systems do not grant
+    }
+    expect(await privateFolder(link)).toBe(false);
+  });
+
+  test('downloads a file once, and again once another window pruned it', async () => {
+    const context = new PiwiContext(workspace());
+    context.evidenceFolder = path.join(workspace(), 'piwi-editor');
+    const downloads: string[] = [];
+    context.client = {
+      connection: { serverUrl: 'https://piwi.corp' },
+      download: async (stored: string, target: string) => {
+        downloads.push(stored);
+        writeFileSync(target, 'PK');
+      },
+    } as unknown as PiwiContext['client'];
+
+    const first = await context.evidence('traces/run 1/trace.zip');
+    expect(first && readFileSync(first, 'utf-8')).toBe('PK');
+    expect(path.basename(first!)).toBe('trace.zip');
+    expect(await context.evidence('traces/run 1/trace.zip')).toBe(first);
+    expect(downloads).toHaveLength(1);
+
+    await pruneEvidence(context.evidenceFolder, Date.now() + 8 * 24 * 60 * 60_000);
+    expect(existsSync(first!)).toBe(false);
+    expect(await context.evidence('traces/run 1/trace.zip')).toBe(first);
+    expect(existsSync(first!)).toBe(true);
+    expect(downloads).toHaveLength(2);
   });
 });
 

@@ -6,7 +6,7 @@ import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '#shared/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta } from '../../../utils/shard-tokens';
-import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs';
+import { upsertTraceBlob, upsertTraceFile, findTraceBlob } from '../../../utils/trace-blobs';
 import { deriveTraceEvidence } from '../../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../../utils/ingest-health';
 import { attachmentStoragePaths } from '../../../utils/attachment-paths';
@@ -39,8 +39,9 @@ defineRouteMeta({
  *  - streamToken   — run stream token, sent before any file part
  *  - testCase      — JSON { title, location, retries, suitePath } identifying the run case
  *  - trace         — optional trace ZIP file
- *  - trace_hash    — optional SHA-256 of the trace; enables blob deduplication.
- *                    May be sent without a file when the blob already exists.
+ *  - trace_hash    — optional SHA-256 of the trace, checked against it; without a file,
+ *                    names a trace the project already stores. The server hashes a
+ *                    trace sent without one.
  *  - attach_meta   — optional JSON array of { name, contentType, originalName }
  *  - attach_file   — attachment files, in the same order as attach_meta
  */
@@ -222,46 +223,34 @@ async function handleCaseFiles(
   // --- Trace ---
   if ((traceStreamed || traceHash) && !hasTrace) {
     try {
-      let storagePath: string;
-      let blobId: number | null = null;
-      let size: number | null = null;
-
-      if (traceHash && traceStreamed) {
+      let blob: { id: number; path: string; size: number } | null;
+      if (traceStreamed) {
         // Read the streamed trace into memory only now, for the one call that
         // parses it; the buffer is released as soon as the blob is stored.
-        const blob = await upsertTraceBlob(testRun.projectId, traceHash, await readFile(traceStreamed.path));
-        storagePath = blob.path;
-        blobId = blob.id;
-        size = blob.size;
-      } else if (traceHash && !traceStreamed) {
+        const data = await readFile(traceStreamed.path);
+        blob = traceHash
+          ? await upsertTraceBlob(testRun.projectId, traceHash, data)
+          : await upsertTraceFile(testRun.projectId, data);
+      } else {
         // Reporter said this blob already exists on the server — look it up
-        const blob = await findTraceBlob(testRun.projectId, traceHash);
+        blob = await findTraceBlob(testRun.projectId, traceHash!);
         if (!blob) {
           throw apiError({
             statusCode: 422,
             message: 'Trace blob not found for the provided hash',
           });
         }
-        storagePath = blob.path;
-        blobId = blob.id;
-        size = blob.size;
-      } else {
-        // No hash metadata — store at the run-specific location
-        await storage.mkdir(testRunPath);
-        storagePath = `${testRunPath}/${runCase.id}-${sanitizeFilename(traceStreamed!.filename)}`;
-        await storage.writeFile(storagePath, await readFile(traceStreamed!.path));
-        size = traceStreamed!.size;
       }
 
-      const normalizedPath = storagePath.replace(/\\/g, '/');
+      const normalizedPath = blob.path.replace(/\\/g, '/');
       if (!existingPaths.has(normalizedPath)) {
         await db.insert(files).values({
           testRunsCaseId: runCase.id,
           testRunId: id,
           type: 'trace',
           path: normalizedPath,
-          size,
-          blobId,
+          size: blob.size,
+          blobId: blob.id,
         });
         storedTraces++;
         console.log(`[CaseFiles] Stored trace for case #${runCase.id} (run #${id})`);

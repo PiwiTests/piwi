@@ -122,6 +122,7 @@ export const useAuth = () => {
     await $fetch('/api/auth/logout', {
       method: 'POST',
     });
+    clearApiConsoleToken();
 
     authState.value = {
       authenticated: false,

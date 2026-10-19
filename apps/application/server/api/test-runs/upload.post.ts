@@ -2,7 +2,7 @@ import { getDatabase } from '../../database';
 import { projects, testRuns, files } from '../../database/schema';
 import type { Project } from '../../database/schema';
 import { eq } from 'drizzle-orm';
-import { upsertTraceBlob, findTraceBlob } from '../../utils/trace-blobs';
+import { upsertTraceFile } from '../../utils/trace-blobs';
 import { join, posix } from 'path';
 import { randomBytes } from 'node:crypto';
 import { decompressDirectory } from '../../utils/compression';
@@ -13,8 +13,8 @@ import { sanitizeFilename } from '../../utils/sanitize-filename';
 import { attachmentStoragePaths } from '../../utils/attachment-paths';
 import { tmpdir } from 'os';
 import { rm, mkdtemp, readdir, readFile } from 'fs/promises';
-import { parseLocation } from '#shared/parse-location';
-import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
+import { persistRunCases } from '../../utils/persist-run-cases';
+import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
@@ -40,6 +40,7 @@ import { formatBytes } from '#shared/utils/format-bytes';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
@@ -129,15 +130,12 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
   // Parse form fields
   let projectName: string | undefined;
   let existingTestRunId: number | undefined; // Set when attaching uploads to an already-created streaming run
-  let testRunData: Record<string, unknown> | undefined;
-  let testCasesData: Record<string, unknown>[] = [];
+  let testRunData: Omit<TestRunSubmitPayload, 'projectName' | 'testCases'> | undefined;
+  let testCasesData: TestCasePayload[] = [];
   // Map of report type -> { filename, path, label }
   const reportFiles: Map<string, UploadedFile & { label?: string }> = new Map();
   // Trace files attached for specific test case indices: index -> file
   const traceFiles: Map<number, UploadedFile> = new Map();
-  // SHA-256 hashes for traces, keyed by the same index as traceFiles.
-  // Sent by the reporter for all traces (including those not uploaded due to deduplication).
-  const traceHashes: Map<number, string> = new Map();
   // Non-trace attachments: test case index -> array of { name, contentType, originalName }
   const attachmentMeta: Map<number, { name: string; contentType: string; originalName: string }[]> = new Map();
   const attachmentFiles: Map<number, UploadedFile[]> = new Map();
@@ -191,18 +189,6 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       // Optional label override: 'report_label_<type>'
       const entry = reportFiles.get(name.slice('report_label_'.length));
       if (entry) entry.label = value;
-    } else if (name === 'trace_hashes') {
-      try {
-        const parsed = JSON.parse(value);
-        for (const [indexStr, hash] of Object.entries(parsed)) {
-          const idx = parseInt(indexStr, 10);
-          if (!isNaN(idx) && typeof hash === 'string' && /^[0-9a-f]{64}$/i.test(hash)) {
-            traceHashes.set(idx, hash);
-          }
-        }
-      } catch {
-        // Deduplication metadata is optional; ignore parse errors
-      }
     } else if (name.startsWith('attach_meta_')) {
       const idx = parseInt(name.slice('attach_meta_'.length), 10);
       if (!isNaN(idx)) {
@@ -232,6 +218,16 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       message: 'Missing required fields: projectName, testRun',
     });
   }
+  // A run this upload creates needs a status and a start time, checked before anything is stored.
+  if (!existingTestRunId) {
+    const startTime: unknown = testRunData.startTime;
+    if (!testRunData.status || typeof testRunData.status !== 'string' || startTime == null || startTime === '') {
+      throw apiError({ statusCode: 400, message: 'Missing required testRun fields: status, startTime' });
+    }
+    if (Number.isNaN(new Date(startTime as string | number).getTime())) {
+      throw apiError({ statusCode: 400, message: 'Invalid testRun startTime' });
+    }
+  }
 
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any, 'run:submit');
@@ -260,12 +256,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
   }
 
   if (!project) {
-    project = await resolveIngestProject(
-      db,
-      scope,
-      projectName,
-      testRunData.projectDescription as string | null | undefined,
-    );
+    project = await resolveIngestProject(db, scope, projectName, testRunData.projectDescription);
   }
 
   // A repeated delivery (the reporter gave up waiting and sent the run again)
@@ -321,32 +312,14 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       return { path, size: report.size };
     }
 
-    // Store all reports and collect their metadata. Reports are processed one at a
-    // time — each `.gz` report is inflated fully into memory before being written
-    // to disk, so decompressing them in parallel would stack every report's peak
-    // at once.
-    const storedReports: { type: string; label: string; path: string; size: number }[] = [];
-
-    for (const [type, report] of [...reportFiles.entries()]) {
-      try {
-        console.log(`[Upload] Storing ${type} report: ${report.filename}`);
-        const { path: storedPath, size } = await storeReport(type, report);
-        const label = getReportLabel(type, report.label);
-        console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
-        storedReports.push({ type, label, path: storedPath, size });
-      } catch (error) {
-        console.error(`[Upload] Failed to store ${type} report: ${error}`);
-      }
-    }
-
     // Create or retrieve the test run; a created one carries its isFullRun and status for the finalize side effects.
     let testRun: { id: number; projectId: number; isFullRun?: number; status?: string };
     const incomingResources = sanitizeResourceReport(testRunData.resourceReport);
 
     // A shard of a batch run: its executions join the run its instance's shards
     // share, and the last shard to arrive settles it.
-    const instanceId = (testRunData.instanceId as string | null | undefined) || null;
-    const shardTotal = testRunData.shardTotal as number | undefined;
+    const instanceId = testRunData.instanceId || null;
+    const shardTotal = testRunData.shardTotal;
     const isBatchShard = !attachingToExistingRun && !!instanceId && !!(shardTotal && shardTotal > 1);
 
     if (attachingToExistingRun && existingTestRunId) {
@@ -360,33 +333,30 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       await applyReporterKeep(db, run.id, testRunData.keep);
     } else {
       // Create a new test run (standard batch upload)
-      const metadata = sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null);
+      const metadata = sanitizeMetadata(testRunData.metadata || null);
       const testRunResult = await db
         .insert(testRuns)
         .values({
           projectId: project.id,
-          status: testRunData.status as string,
-          startTime: new Date(testRunData.startTime as string | number | Date),
-          duration: (testRunData.duration as number | null | undefined) || null,
-          totalTests: (testRunData.totalTests as number | undefined) || 0,
-          passedTests: (testRunData.passedTests as number | undefined) || 0,
-          failedTests: sumFailedAndTimedOut(
-            testRunData.failedTests as number | undefined,
-            testRunData.timedOutTests as number | undefined,
-          ),
-          skippedTests: (testRunData.skippedTests as number | undefined) || 0,
-          didNotRunTests: (testRunData.didNotRunTests as number | undefined) || 0,
-          environment: (testRunData.environment as string | null | undefined) || null,
+          status: testRunData.status,
+          startTime: new Date(testRunData.startTime),
+          duration: testRunData.duration || null,
+          totalTests: testRunData.totalTests || 0,
+          passedTests: testRunData.passedTests || 0,
+          failedTests: sumFailedAndTimedOut(testRunData.failedTests, testRunData.timedOutTests),
+          skippedTests: testRunData.skippedTests || 0,
+          didNotRunTests: testRunData.didNotRunTests || 0,
+          environment: testRunData.environment || null,
           branch: resolveRunBranch(testRunData.metadata),
-          label: (testRunData.label as string | null | undefined) || null,
+          label: testRunData.label || null,
           metadata,
           origin: runOrigin(metadata),
           commit: runCommit(metadata),
-          instanceId: (testRunData.instanceId as string | null | undefined) || null,
-          playwrightVersion: (testRunData.playwrightVersion as string | null | undefined) || null,
-          reporterVersion: (testRunData.reporterVersion as string | null | undefined) || null,
+          instanceId,
+          playwrightVersion: testRunData.playwrightVersion || null,
+          reporterVersion: testRunData.reporterVersion || null,
           isFullRun: testRunData.isFullRun !== false ? 1 : 0,
-          filterDetails: (testRunData.filterDetails as Record<string, unknown> | null | undefined) || null,
+          filterDetails: testRunData.filterDetails || null,
         })
         .returning();
 
@@ -414,6 +384,24 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
         projectId: resultTestRun.projectId,
         status: resultTestRun.status,
       });
+    }
+
+    // Store all reports once the run exists, and collect their metadata. Reports
+    // are processed one at a time — each `.gz` report is inflated fully into
+    // memory before being written to disk, so decompressing them in parallel
+    // would stack every report's peak at once.
+    const storedReports: { type: string; label: string; path: string; size: number }[] = [];
+
+    for (const [type, report] of [...reportFiles.entries()]) {
+      try {
+        console.log(`[Upload] Storing ${type} report: ${report.filename}`);
+        const { path: storedPath, size } = await storeReport(type, report);
+        const label = getReportLabel(type, report.label);
+        console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
+        storedReports.push({ type, label, path: storedPath, size });
+      } catch (error) {
+        console.error(`[Upload] Failed to store ${type} report: ${error}`);
+      }
     }
 
     // Batch insert report records into the files table
@@ -460,129 +448,44 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       }
     }
 
-    // Create test run directory for traces
+    // Create the run's directory for attachments
     const testRunPath = `project-${project.id}/run-${testRun.id}`;
     await storage.mkdir(testRunPath);
 
     // Insert test cases using the new schema (skipped when attaching to an existing streaming run)
     if (!attachingToExistingRun && testCasesData && testCasesData.length > 0) {
-      const cases: RunCaseInput[] = testCasesData.map((testCase: Record<string, unknown>) => {
-        const locationStr = testCase.location as string | undefined;
-        const { filePath, line, column } = locationStr
-          ? parseLocation(locationStr)
-          : { filePath: 'unknown', line: null, column: null };
-
-        return {
-          filePath,
-          suitePath: (testCase.suitePath as string[] | null | undefined) ?? null,
-          suiteConfig: (testCase.suiteConfig as RunCaseInput['suiteConfig']) ?? null,
-          testAnnotations: (testCase.testAnnotations as RunCaseInput['testAnnotations']) ?? null,
-          title: testCase.title as string,
-          status: testCase.status as string,
-          duration: testCase.duration as number | null | undefined,
-          timeout: testCase.timeout as number | null | undefined,
-          error: testCase.error as string | null | undefined,
-          retries: testCase.retries as number | undefined,
-          attempts: testCase.attempts,
-          line,
-          column,
-          steps: testCase.steps,
-          stepEvents: testCase.stepEvents,
-          slowestStep: testCase.slowestStep as string | null | undefined,
-          slowestStepDuration: testCase.slowestStepDuration as number | null | undefined,
-          wastedTimeMs: testCase.wastedTimeMs as number | null | undefined,
-          networkRequests: testCase.networkRequests,
-          webVitals: testCase.webVitals,
-          pageState: testCase.pageState,
-          pageInventory: testCase.pageInventory,
-          locatorPages: testCase.locatorPages,
-          codeReach: testCase.codeReach,
-          coverage: testCase.coverage,
-          resources: testCase.resources ?? null,
-          aiUsage: testCase.aiUsage,
-          consoleLogs: testCase.consoleLogs,
-          dialogs: testCase.dialogs,
-          ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
-          ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
-          testSource: testCase.testSource as string | null | undefined,
-          testSourceFrames: testCase.testSourceFrames as unknown,
-          browser: testCase.browser as unknown | null | undefined,
-          workerIndex: testCase.workerIndex as number | null | undefined,
-          shardIndex: testCase.shardIndex as number | null | undefined,
-          startedAt: testCase.startedAt as number | null | undefined,
-          tags: testCase.tags ?? null,
-          locks: testCase.locks ?? null,
-          testMeta: testCase.testMeta ?? null,
-          locatorSnapshots: (testCase as any).locatorSnapshots ?? null,
-          didNotRunReason: (testCase.didNotRunReason as string | null | undefined) ?? null,
-          expectedStatus: (testCase.expectedStatus as string | null | undefined) ?? null,
-          blockedBy: (testCase.blockedBy as string | null | undefined) ?? null,
-        };
-      });
-
       // Traces and attachments are keyed by the index of their case in the
       // upload; a duplicate case the insert skipped has no execution to link to.
-      const insertedRunCases = await persistRunCases(db, project.id, testRun.id, cases);
+      const insertedRunCases = await persistRunCases(
+        db,
+        project.id,
+        testRun.id,
+        testCasesData.map(mapWireCaseToRunCase),
+      );
       const executionByIndex = new Map(insertedRunCases.map((row) => [row.inputIndex, row]));
 
-      // Store trace files linked to their test run case, with content-addressed deduplication.
-      // traceHashes may contain entries for indices where no file was uploaded (reporter
-      // determined the blob already exists); those still need a files record pointing at
-      // the existing blob path.
-      const allTraceIndices = new Set([...traceFiles.keys(), ...traceHashes.keys()]);
+      // Store trace files linked to their test run case, in the project's
+      // content-addressed blob store: a trace stored before is reused.
       // Execution rows that got a trace this upload — evidence is derived from
       // them once all files are stored.
       const tracedCaseIds: number[] = [];
       let tracesSkipped = 0;
-      if (executionByIndex.size > 0 && allTraceIndices.size > 0) {
-        for (const index of allTraceIndices) {
+      if (executionByIndex.size > 0) {
+        for (const [index, traceFile] of traceFiles) {
           const inserted = executionByIndex.get(index);
           if (!inserted?.id) continue;
           const testRunsCaseId = inserted.id;
-          const traceFile = traceFiles.get(index);
-          const hash = traceHashes.get(index);
 
           try {
-            let storagePath: string;
-            let blobId: number | null = null;
-            let size: number | null = null;
-
-            if (hash && traceFile) {
-              // New content with known hash: upsert into the blob store
-              const blob = await upsertTraceBlob(project!.id, hash, await readFile(traceFile.path));
-              storagePath = blob.path;
-              blobId = blob.id;
-              size = blob.size;
-              console.log(`[Upload] Stored trace blob ${hash.slice(0, 8)}… for case #${testRunsCaseId}`);
-            } else if (hash && !traceFile) {
-              // Reporter said this blob already exists on the server — look it up
-              const blob = await findTraceBlob(project!.id, hash);
-              if (!blob) {
-                console.warn(`[Upload] Hash ${hash.slice(0, 8)}… referenced but blob not found, skipping`);
-                tracesSkipped++;
-                continue;
-              }
-              storagePath = blob.path;
-              blobId = blob.id;
-              size = blob.size;
-              console.log(`[Upload] Reused trace blob ${hash.slice(0, 8)}… for case #${testRunsCaseId}`);
-            } else if (traceFile) {
-              // Legacy path: no hash metadata, store at run-specific location
-              storagePath = `${testRunPath}/${testRunsCaseId}-${traceFile.filename}`;
-              await storage.writeFile(storagePath, await readFile(traceFile.path));
-              size = traceFile.size;
-              console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${storagePath}`);
-            } else {
-              continue;
-            }
-
+            const blob = await upsertTraceFile(project!.id, await readFile(traceFile.path));
+            console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${blob.path}`);
             await db.insert(files).values({
               testRunsCaseId,
               testRunId: testRun.id,
               type: 'trace',
-              path: storagePath.replace(/\\/g, '/'),
-              size,
-              blobId,
+              path: blob.path.replace(/\\/g, '/'),
+              size: blob.size,
+              blobId: blob.id,
             });
             tracedCaseIds.push(testRunsCaseId);
           } catch (error) {
@@ -649,12 +552,10 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
     // Compute and store performance summary (avgTestDuration, p90TestDuration) + flaky count
     // Only applicable for new (non-streaming) runs that include test case data
     if (!attachingToExistingRun && !isBatchShard && testCasesData && testCasesData.length > 0) {
-      const durations = testCasesData.map((tc: Record<string, unknown>) => tc.duration as number | null | undefined);
+      const durations = testCasesData.map((tc) => tc.duration);
 
       // Flaky count is independent of whether duration data is present
-      const flakyTestCount = testCasesData.filter(
-        (tc: Record<string, unknown>) => tc.status === 'passed' && ((tc.retries as number) || 0) > 0,
-      ).length;
+      const flakyTestCount = testCasesData.filter((tc) => tc.status === 'passed' && (tc.retries || 0) > 0).length;
 
       const stats = durationStats(durations);
       if (stats) {

@@ -50,6 +50,7 @@
     "./line-diff": "./src/line-diff.ts",
     "./editor-send": "./src/editor-send.ts",
     "./picker-marker": "./src/picker-marker.ts",
+    "./desktop-proof": "./src/desktop-proof.ts",
     "./bisect": "./src/bisect.ts",
     "./desktop-job": "./src/desktop-job.ts",
     "./file-routes": "./src/file-routes.ts",

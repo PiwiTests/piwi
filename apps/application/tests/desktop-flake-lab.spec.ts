@@ -51,9 +51,7 @@ async function installFakeBridge(page: Page, options: { linked?: boolean } = {})
             state.invocations.push({ cmd, args });
             switch (cmd) {
               case 'desktop_get_project_link':
-                return opts.linked === false
-                  ? null
-                  : { path: '/home/dev/acme', exists: true, startCommand: null, readinessUrl: null };
+                return opts.linked === false ? null : { path: '/home/dev/acme', exists: true };
               case 'desktop_inspect_folder':
                 return {
                   path: '/home/dev/acme',

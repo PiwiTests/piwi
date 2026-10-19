@@ -342,17 +342,10 @@ export function passesProjectCheck(
 // ── The roles of earlier versions ─────────────────────────────────────────────
 
 /**
- * The project role an account of an earlier version maps to: a `reporter` did
- * exactly what a Maintainer does, a `user` exactly what a Viewer does. Used by
- * the data migration and by `POST /api/users` callers still sending a legacy
- * role during the transition release.
+ * An instance role of an earlier version, which `POST /api/users` still
+ * accepts: the account is created as a member.
  */
-export const LEGACY_ROLE_TO_PROJECT_ROLE = {
-  reporter: ProjectRole.MAINTAINER,
-  user: ProjectRole.VIEWER,
-} as const satisfies Record<string, ProjectRole>;
-
-export type LegacyRole = keyof typeof LEGACY_ROLE_TO_PROJECT_ROLE;
+export type LegacyRole = 'reporter' | 'user';
 
 export function isLegacyRole(value: unknown): value is LegacyRole {
   return value === 'reporter' || value === 'user';

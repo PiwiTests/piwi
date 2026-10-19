@@ -25,8 +25,9 @@ dashboard.
 **Settings → Notifications** manages channels and subscriptions, and the **bell** on a project page subscribes to that
 project. The new-channel form shows where to get each destination, flags a URL that belongs to another type (a Slack
 URL pasted under Teams offers to switch), and can **send a test** before saving: a channel whose test went through is
-saved as verified. Notifications need no authentication: with it off, the instance is single-tenant and every channel and
-subscription is **global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
+saved as verified. Email goes only to a verified address: an email channel once a test reached it, the account email
+once its owner verified it. Notifications need no authentication: with it off, the instance is single-tenant and every
+channel and subscription is **global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
 their own, and administrators can add global ones shared by everyone.
 
 ## Events
@@ -89,7 +90,7 @@ When the lookup fails (a private repository without a token, a host that exposes
 
 ### Global channels & subscriptions
 
-Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. With authentication disabled, every channel and subscription is global.
+Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. Other users see where a global webhook points, never its full URL. With authentication disabled, every channel and subscription is global.
 
 ## Subscriptions
 

@@ -2,7 +2,7 @@ import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { MCP_OAUTH_RATE_LIMITS } from '../../../utils/mcp-oauth-helpers';
 import { describeAuthorization, requireMcpOAuthEnabled } from '../../../utils/mcp-oauth';
-import { isRateLimited, rateLimitClientIp, rateLimitedError, recordRateLimitHit } from '../../../utils/rate-limit';
+import { limitLookupMisses, rateLimitClientIp } from '../../../utils/rate-limit';
 
 defineRouteMeta({
   openAPI: {
@@ -19,11 +19,14 @@ export default eventHandler(async (event) => {
   requireMcpOAuthEnabled(event);
   const user = await requireAuth(event);
   const missKey = `mcp-oauth:miss:${user.id}:${rateLimitClientIp(event)}`;
-  if (isRateLimited(missKey, MCP_OAUTH_RATE_LIMITS.lookupMiss.limit)) throw rateLimitedError(event, [missKey]);
-  const view = await describeAuthorization(await getDatabase(), getRouterParam(event, 'id'));
-  if (!view) {
-    recordRateLimitHit(missKey, MCP_OAUTH_RATE_LIMITS.lookupMiss.windowMs);
-    throw apiError({ statusCode: 404, message: 'No authorization request has this id' });
-  }
+  const db = await getDatabase();
+  const view = await limitLookupMisses(
+    event,
+    missKey,
+    MCP_OAUTH_RATE_LIMITS.lookupMiss,
+    () => describeAuthorization(db, getRouterParam(event, 'id')),
+    (found) => !found,
+  );
+  if (!view) throw apiError({ statusCode: 404, message: 'No authorization request has this id' });
   return view;
 });

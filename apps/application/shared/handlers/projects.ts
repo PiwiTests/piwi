@@ -1132,7 +1132,7 @@ export async function getProjectTestCaseFacets(
 /**
  * Group a project's recent test executions by spec-file prefix and compute
  * pass rate, flaky rate, failure count, execution count, and average duration over
- * the last `days` days. Shared by the REST spec-health endpoint and the MCP
+ * the last `days` days. Shared by the spec-health widget and the MCP
  * `get_spec_health` tool.
  */
 export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, days: number) {
@@ -1426,10 +1426,20 @@ export async function getProjectTimeoutOpportunities(
   const effectiveLimit = Math.min(runsCount, 100);
   const scopeConditions = scope ? await projectRunScopeConditions(db, projectId, scope) : [];
 
+  // Finished runs the `flakiness` use reads: a lab run injects conditions, a
+  // bisect or reproduction run replays an older commit, and an unfinished run's
+  // durations are partial.
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), ...scopeConditions))
+    .where(
+      and(
+        eq(testRuns.projectId, projectId),
+        inArray(testRuns.status, TERMINAL_STATUSES),
+        eligibleRunSql('flakiness'),
+        ...scopeConditions,
+      ),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 

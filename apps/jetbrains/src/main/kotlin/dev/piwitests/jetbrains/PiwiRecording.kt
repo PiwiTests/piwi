@@ -337,7 +337,7 @@ class RecordingSession internal constructor(
         command = update.command
         val ending = state == "stopped" || state == "failed"
         if (!edited && (written || !ending || (state == "stopped" && steps > 0))) {
-            write(update.code.orEmpty(), update.imports.orEmpty(), update.warnings.orEmpty())
+            write(update.code.orEmpty(), update.importEdit, update.warnings.orEmpty())
         }
         if (ending) end(update.message, failed = state == "failed") else refreshView()
     }
@@ -425,14 +425,14 @@ class RecordingSession internal constructor(
     }
 
     /**
-     * Writes `code` as the block, in one write command with the imports it lacks: over the block when there is one,
+     * Writes `code` as the block, in one write command with the service's import edit: over the block when there is one,
      * else at the anchor, where the placement put it. Each write joins the recording's undo step.
      */
-    private fun write(code: String, imports: List<String>, warnings: List<RecordingWarning>) {
+    private fun write(code: String, importEdit: FileEdit?, warnings: List<RecordingWarning>) {
         val text = Glue.recordedBlock(code, placement.indent)
         val current = block?.takeIf { it.isValid }
         val same = current != null && document.immutableCharSequence.subSequence(current.startOffset, current.endOffset).toString() == text
-        if (same && (into == "file" || Glue.importInsertion(document.immutableCharSequence, imports) == null)) {
+        if (same && importEdit == null) {
             mark(warnings)
             return
         }
@@ -445,20 +445,20 @@ class RecordingSession internal constructor(
             .run<RuntimeException> {
                 applying = true
                 try {
-                    var start: Int
-                    if (current != null) {
-                        start = current.startOffset
-                        if (!same) document.replaceString(start, current.endOffset, text)
+                    val chars = document.immutableCharSequence
+                    val write = if (current != null) {
+                        Glue.BlockWrite(current.startOffset, current.endOffset, if (same) chars.subSequence(current.startOffset, current.endOffset).toString() else text, current.startOffset)
                     } else {
                         val at = anchor?.takeIf { it.isValid }?.startOffset ?: document.textLength
-                        val first = Glue.firstBlockWrite(document.immutableCharSequence, at, placement.newLine || written, text)
-                        document.replaceString(first.start, first.end, first.text)
-                        start = first.blockStart
+                        Glue.firstBlockWrite(chars, at, placement.newLine || written, text)
                     }
-                    val insertion = if (into == "file") null else Glue.importInsertion(document.immutableCharSequence, imports)
-                    if (insertion != null && (insertion.offset <= start || insertion.offset >= start + text.length)) {
-                        document.insertString(insertion.offset, insertion.text)
-                        if (insertion.offset <= start) start += insertion.text.length
+                    val imports = Glue.importWrite(Glue.offsetOf(chars, importEdit?.range?.start), importEdit?.newText, write)
+                    if (imports?.first == true) document.insertString(imports.offset, imports.text)
+                    if (!same) document.replaceString(write.start, write.end, write.text)
+                    var start = write.blockStart
+                    if (imports?.first == false) {
+                        document.insertString(imports.offset, imports.text)
+                        start += imports.text.length
                     }
                     block?.dispose()
                     anchor?.dispose()
@@ -666,7 +666,7 @@ private class StartMark(document: Document) : BasicUndoableAction(document) {
 private class RecordingGutter(private val session: RecordingSession) : GutterIconRenderer(), DumbAware {
     override fun getIcon(): Icon = AllIcons.Ide.Macro.Recording_1
 
-    override fun getTooltipText(): String = session.view.text
+    override fun getTooltipText(): String = Glue.htmlTooltip(session.view.text)
 
     override fun getPopupMenuActions(): ActionGroup = PiwiRecordings.actions()
 

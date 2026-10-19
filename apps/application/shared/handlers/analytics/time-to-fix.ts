@@ -3,6 +3,7 @@ import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsTimeToFix } from '../../analytics/types';
 import { DAY_MS, firstNonEmptyIndex, getAnalyticsContext, roundRate, type ProjectAccess } from './common';
 import { clusterValue, loadClusters, type ClusterRow } from './metric-values';
+import { percentile } from '../../utils/stats';
 
 /**
  * The age buckets of open failure causes, youngest first; `maxDays` is
@@ -20,13 +21,6 @@ function ms(value: Date | number | string | null | undefined): number | null {
   if (value == null) return null;
   const t = value instanceof Date ? value.getTime() : new Date(value).getTime();
   return Number.isNaN(t) ? null : t;
-}
-
-/** The q-th quantile (0–1) of a list, nearest rank; null for an empty list. */
-function quantile(values: number[], q: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))]!;
 }
 
 const toDays = (value: number | null) => (value === null ? null : Math.round((value / DAY_MS) * 10) / 10);
@@ -87,7 +81,14 @@ export async function getAnalyticsTimeToFix(
     }).length,
     fixed: fixedInPeriod.length,
     medianDays: clusterValue('median-time-to-fix', clusters, from, to, now) as number | null,
-    p90Days: toDays(quantile(durations, 0.9)),
+    p90Days: toDays(
+      durations.length === 0
+        ? null
+        : percentile(
+            [...durations].sort((a, b) => a - b),
+            90,
+          ),
+    ),
     previousMedianDays: comparison
       ? (clusterValue('median-time-to-fix', clusters, comparison.from.getTime(), comparison.to.getTime(), now) as
           | number

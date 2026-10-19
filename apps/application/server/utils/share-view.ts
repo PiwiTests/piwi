@@ -7,7 +7,8 @@
  * access, with the dashboard, or with its own expiry or revocation.
  */
 import { eq } from 'drizzle-orm';
-import type { H3Event } from 'h3';
+import { readBody, type H3Event } from 'h3';
+import { z } from 'zod';
 import { users, type ShareLink } from '../database/schema';
 import { getDatabase, type DbClient } from '../database';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from './rate-limit';
@@ -201,6 +202,17 @@ export function mintedShareLinkResponse(event: H3Event, minted: MintedShareLink)
       createdAt: minted.link.createdAt,
     },
   };
+}
+
+const mintBodySchema = z.object({ ttlDays: z.number().int().min(1).max(3650).nullish() });
+
+/** The lifetime in days a mint request asks for, unset for the default; any other body is refused (400). */
+export async function readMintTtlDays(event: H3Event): Promise<number | null | undefined> {
+  const validation = mintBodySchema.safeParse((await readBody(event).catch(() => null)) ?? {});
+  if (!validation.success) {
+    throw apiError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
+  }
+  return validation.data.ttlDays;
 }
 
 /** Refuse a mint while share links are off. */

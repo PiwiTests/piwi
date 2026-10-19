@@ -13,6 +13,7 @@ import { sanitizeMetadata } from './sanitize';
 import { resolveRunBranch } from './run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import type { TestRunSubmitPayload } from '#shared/types';
 
 /**
  * The initializing or running sharded run of a project instance, which another
@@ -62,7 +63,7 @@ export interface BatchShardTally {
 }
 
 /** The run-level fields of a batch submission, as `/submit` and the `testRun` field of `/upload` carry them. */
-type BatchRunBody = Record<string, any>;
+type BatchRunBody = Omit<TestRunSubmitPayload, 'projectName' | 'testCases'>;
 
 /** A batch shard's tally, from its run-level counters and its test cases. */
 export function batchShardTally(

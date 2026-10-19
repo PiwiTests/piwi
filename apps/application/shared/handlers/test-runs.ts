@@ -14,11 +14,9 @@ import {
   users,
 } from '../../server/database/schema';
 import { fetchAndFormatSuites, splitSuitePath } from '../utils/suites';
-import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { normalizeRoute } from '../utils/route';
 import { percentile } from '../utils/stats';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
-import { buildCommitRange, computeMetadataDiff } from '../utils/run-metadata';
 import type { TestStepEvent } from '../types';
 import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
@@ -27,14 +25,9 @@ import { parseRunOriginRef, type RunOriginKind } from '@piwitests/core/wire';
 import { runOrigin, runOriginIs, runOriginRef } from '#shared/run-eligibility';
 import { clusterKnownIssues } from './known-issues';
 import { keepRun, releaseRun } from './run-keep';
-import { normalizeGitUrl } from '../../server/utils/scm/git-url';
-import { selectBaselineRun } from '../../server/utils/branch-baseline';
-import { resolveRunBranch } from '../../server/utils/run-branch';
-import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { notLabRun } from './probes';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { hasResourceReport } from './resource-reports';
-import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 import { publicRunColumns } from './public-run';
 
@@ -392,38 +385,6 @@ export async function getActiveTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
     .where(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))))
     .orderBy(desc(testRuns.startTime));
   return scope === 'all' ? runs : runs.filter((run) => scope.has(run.projectId));
-}
-
-// ─── getTestRunSummary — lightweight summary ─────────────────────────────────
-
-export async function getTestRunSummary(db: DrizzleDB, id: number) {
-  const [testRun] = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  if (!testRun) return null;
-
-  const runsCases = await db
-    .select({
-      title: testCases.title,
-      location: testCases.filePath,
-      line: testRunsCases.line,
-      column: testRunsCases.column,
-      status: testRunsCases.status,
-      duration: testRunsCases.duration,
-    })
-    .from(testRunsCases)
-    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(eq(testRunsCases.testRunId, id));
-
-  const { streamToken: _streamToken, ...testRunPublic } = testRun;
-
-  return {
-    ...testRunPublic,
-    testCases: runsCases.map((tc) => ({
-      title: tc.title,
-      status: tc.status,
-      duration: tc.duration,
-      location: tc.line && tc.column ? `${tc.location}:${tc.line}:${tc.column}` : tc.location,
-    })),
-  };
 }
 
 // ─── patchTestRun — update label, keep or release ────────────────────────────
@@ -786,103 +747,4 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
     locatorHealing: healingByCluster.get(g.clusterId) ?? null,
     knownIssue: knownIssues.get(g.clusterId) ?? null,
   }));
-}
-
-// ─── computeRegressionContextForRun — regression vs last green run ────────────
-
-const FAIL_STATUSES = new Set<string>(FAILED_STATUS_KEYS);
-
-export async function computeRegressionContextForRun(db: DrizzleDB, runId: number) {
-  const runResults = await db
-    .select({
-      id: testRuns.id,
-      projectId: testRuns.projectId,
-      status: testRuns.status,
-      startTime: testRuns.startTime,
-      environment: testRuns.environment,
-      branch: testRuns.branch,
-      metadata: testRuns.metadata,
-    })
-    .from(testRuns)
-    .where(eq(testRuns.id, runId));
-
-  const run = runResults[0];
-  if (!run) return null;
-
-  // The same ladder the Changes tab walks: the run's environment first, and
-  // within it its own branch, the branch it forked from, then any branch.
-  const branch = run.branch ?? resolveRunBranch(run.metadata);
-  const fallback = resolveFallbackBranch(run.metadata, await readProjectDefaultBranch(db, run.projectId, run.metadata));
-  const selection = await selectBaselineRun(db, {
-    projectId: run.projectId,
-    before: run.startTime,
-    branch,
-    environment: run.environment ?? null,
-    fallbackBranch: fallback.branch,
-  });
-  if (!selection) return { hasGreen: false };
-  const lastGreen = selection.run;
-  const baselineNote = describeRunBaseline({
-    run: { branch, environment: run.environment ?? null },
-    baseline: { branch: lastGreen.branch ?? null, environment: lastGreen.environment ?? null },
-    match: selection.match,
-    fallback,
-  });
-
-  const currMeta = run.metadata as any;
-  const greenMeta = lastGreen.metadata as any;
-  const currentCommit: string | null = currMeta?.scm?.commit ?? null;
-  const lastGreenCommit: string | null = greenMeta?.scm?.commit ?? null;
-  const remoteUrl: string | null = currMeta?.scm?.remoteUrl ?? greenMeta?.scm?.remoteUrl ?? null;
-
-  const repositoryUrl = normalizeGitUrl(remoteUrl);
-
-  const commitRange = buildCommitRange(repositoryUrl, lastGreenCommit, currentCommit);
-
-  const metadataDiff = computeMetadataDiff(greenMeta, currMeta, lastGreen.environment, run.environment);
-
-  const [greenCases, currentCases] = await Promise.all([
-    db
-      .select({ testCaseId: testRunsCases.testCaseId, status: testRunsCases.status })
-      .from(testRunsCases)
-      .where(eq(testRunsCases.testRunId, lastGreen.id)),
-    db
-      .select({ testCaseId: testRunsCases.testCaseId, status: testRunsCases.status })
-      .from(testRunsCases)
-      .where(eq(testRunsCases.testRunId, run.id)),
-  ]);
-
-  const greenBestStatus = new Map<number, string>();
-  for (const c of greenCases) {
-    if (!greenBestStatus.has(c.testCaseId) || c.status === 'passed') {
-      greenBestStatus.set(c.testCaseId, c.status);
-    }
-  }
-
-  const currentWorstStatus = new Map<number, string>();
-  for (const c of currentCases) {
-    const existing = currentWorstStatus.get(c.testCaseId);
-    if (!existing || (FAIL_STATUSES.has(c.status) && !FAIL_STATUSES.has(existing))) {
-      currentWorstStatus.set(c.testCaseId, c.status);
-    }
-  }
-
-  let newFailures = 0;
-  for (const [tcId, status] of currentWorstStatus) {
-    if (FAIL_STATUSES.has(status) && greenBestStatus.get(tcId) === 'passed') newFailures++;
-  }
-
-  return {
-    hasGreen: true,
-    lastGreenRunId: lastGreen.id,
-    lastGreenRunAt: lastGreen.startTime,
-    lastGreenCommit,
-    lastGreenBranch: greenMeta?.scm?.branch ?? null,
-    baselineNote,
-    currentCommit,
-    currentBranch: currMeta?.scm?.branch ?? null,
-    commitRange,
-    metadataDiff,
-    newFailures,
-  };
 }

@@ -13,7 +13,6 @@
 import type { SelectionPredicateGroup, SelectionPriority } from '../selection/types';
 import { SELECTION_KEY_PATTERN } from '../selection/validate';
 import {
-  ALL_TIME_DAYS,
   DEFAULT_COMPARISON,
   DEFAULT_PERIOD,
   encodeComparison,
@@ -58,9 +57,6 @@ export interface AnalyticsScope {
   /** Request context, not a filter: the viewer's locale, for the first day of the week. */
   locale?: string;
 }
-
-/** "All time" is expressed as a 10-year window so the bucket math needs no special case. */
-export const MAX_ANALYTICS_DAYS = ALL_TIME_DAYS;
 
 export const DEFAULT_ANALYTICS_SCOPE: AnalyticsScope = {
   period: DEFAULT_PERIOD,

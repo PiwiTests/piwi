@@ -37,7 +37,6 @@ declare global {
 
 interface FakeBridgeOptions {
   webServer?: boolean;
-  startCommand?: string | null;
 }
 
 async function installFakeBridge(page: Page, options: FakeBridgeOptions = {}) {
@@ -58,7 +57,6 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions = {}) {
       bisectResult: (firstBad) => emit({ id: state.lastRunId, kind: 'bisect', bisect: { event: 'result', firstBad } }),
       finish: (code: number | null) => emit({ id: state.lastRunId, kind: 'exit', line: null, code }),
     };
-    let startCommand = opts.startCommand ?? null;
     Object.assign(window, { __piwiRepro: state });
     Object.assign(window, {
       __TAURI__: {
@@ -67,7 +65,7 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions = {}) {
             state.invocations.push({ cmd, args });
             switch (cmd) {
               case 'desktop_get_project_link':
-                return { path: '/home/dev/acme', exists: true, startCommand, readinessUrl: null };
+                return { path: '/home/dev/acme', exists: true };
               case 'desktop_inspect_folder':
                 return {
                   path: '/home/dev/acme',
@@ -81,9 +79,6 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions = {}) {
                   configuredProjectName: null,
                   webServer: opts.webServer ?? false,
                 };
-              case 'desktop_set_project_start_command':
-                startCommand = (args?.startCommand as string | null) ?? null;
-                return null;
               case 'desktop_reproduce_here':
               case 'desktop_bisect_here':
                 return ++state.lastRunId;
@@ -293,23 +288,13 @@ test.describe('Desktop reproduce & bisect', () => {
     );
   });
 
-  test('when the config has no webServer the section offers a start command', async ({ page }) => {
+  test('when the config has no webServer the section says only test-side changes are exercised', async ({ page }) => {
     await installFakeBridge(page, { webServer: false });
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
     await openReproduce(page);
 
     await expect(section(page).getByText(/only exercises test-side changes/)).toBeVisible();
-    await section(page).getByRole('button', { name: 'Set a start command…' }).click();
-    await section(page).getByPlaceholder('npm run dev').fill('npm run dev');
-    await section(page).getByPlaceholder('http://localhost:3000').fill('http://localhost:3000');
-    await section(page).getByRole('button', { name: 'Save' }).click();
-
-    const saved = await page.evaluate(() =>
-      window.__piwiRepro.invocations.find((i) => i.cmd === 'desktop_set_project_start_command'),
-    );
-    expect(saved!.args!.startCommand).toBe('npm run dev');
-    expect(saved!.args!.readinessUrl).toBe('http://localhost:3000');
   });
 
   test('with a webServer the section says Playwright starts the app', async ({ page }) => {

@@ -87,7 +87,7 @@ PIWI_AI_API_KEY=ollama   # optional: sent only when set, for servers that check 
 
 A local model keeps every diagnosis on your own infrastructure; see [Privacy & data flow](./privacy).
 
-**Claude Code CLI (local, no API key)**: in the [desktop app](/features/desktop), pick **Claude Code (local)**. It runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it; `PIWI_CLAUDE_CLI_PATH` overrides the path. Each call runs with every tool and MCP server off, for one turn, and with none of the server's own environment variables, so an error message in a prompt cannot make the CLI run a command; a Claude Code version too old to turn its tools off is refused until you update it.
+**Claude Code CLI (local, no API key)**: in the [desktop app](/features/desktop), pick **Claude Code (local)**. It runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it; `PIWI_CLAUDE_CLI_PATH` overrides the path. Each call runs with every tool and MCP server off, for one turn, and with none of the server's own environment variables, so an error message in a prompt cannot make the CLI run a command; a Claude Code version too old to turn its tools off is refused until you update it. The CLI reads the prompt as text, so a diagnosis it writes gets no screenshot.
 
 Each role's form in **Settings → AI** has a **Test connection** button that checks its provider. The dashboard shows its AI actions only once a provider is configured.
 

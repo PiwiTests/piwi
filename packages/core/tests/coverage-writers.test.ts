@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCoverageReport } from '../src/coverage-formats';
+import { parseCoverageReport } from './coverage-report';
 import { writeCobertura, writeLcov, type WrittenFile } from '../src/coverage-writers';
 
 const files: WrittenFile[] = [

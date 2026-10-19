@@ -26,6 +26,12 @@ export interface PiwiCommand {
   arguments: unknown[];
 }
 
+/** An edit of a file, as the language server protocol's `TextEdit`: `newText` in place of `range` (0-based). */
+export interface FileEdit {
+  range: { start: { line: number; character: number }; end: { line: number; character: number } };
+  newText: string;
+}
+
 /** One line of text shown above a line of a file. */
 export interface SummaryLine {
   /** 0-based line the text sits above. */
@@ -332,7 +338,7 @@ export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
 /**
  * The run the workspace is compared with: `ladder`, the latest complete run of the checked-out branch, a CI run first,
  * else the default branch's, else the newest of any branch; `branch`, that branch's latest complete run; `run`, that
- * run; `local`, a developer's own runs only (a machine, the desktop app, an editor), the newest complete one on the
+ * run (its id, 1 to 2147483647: `piwi/runId` reads one typed); `local`, a developer's own runs only (a machine, the desktop app, an editor), the newest complete one on the
  * checked-out branch, else those runs alone with no baseline. Each reads the runs laid over it.
  */
 export type BaselineChoice =
@@ -678,6 +684,67 @@ export interface FailuresOverlay {
   own: boolean;
 }
 
+/** How the failures tree groups the failures under the run: by spec, failure cluster or owner, or not at all. */
+export type FailuresGrouping = 'file' | 'cluster' | 'owner' | 'flat';
+
+/**
+ * What a node of the failures tree shows as its icon: `run` the run, `history` the runs laid over it, `failed` and
+ * `passed` one of those runs, `file`, `cluster` and `owner` a group, `failing`, `edited` and `fixed` a failure's state.
+ */
+export type FailureTreeIcon =
+  | 'run'
+  | 'history'
+  | 'failed'
+  | 'passed'
+  | 'file'
+  | 'cluster'
+  | 'owner'
+  | 'failing'
+  | 'edited'
+  | 'fixed';
+
+/**
+ * A node of the failures tree both clients draw: the run (`Run #120 · CI · feature/x · 3 failing · 1 fixed locally`,
+ * or `Your local runs · 1 failing` with a developer's own runs alone), the runs laid over it under `Your runs since`,
+ * then the failures grouped as `FailuresResult.grouping` says, failing first, then edited, then fixed locally.
+ */
+export interface FailureTreeNode {
+  /** Stable across answers: a client keeps a node's expansion and selection by it. */
+  key: string;
+  kind: 'run' | 'runs' | 'overlay' | 'group' | 'failure';
+  label: string;
+  /**
+   * Beside the label: a group's counts, a failure's place (`tests/login.spec.ts:42 · chromium · new`). A client adds
+   * the age of `startTime`, and on the `run` node shows the editor's own run in progress instead.
+   */
+  description: string;
+  /** When the run a `run` or `overlay` node stands for started (ISO 8601). */
+  startTime?: string | null;
+  /** What the node's hover says, one line each, as plain text: a failure's title first. */
+  tooltip: string[];
+  /**
+   * On a failure, what it says about its run when that is not the tree's run failing as it stands: `your run #124`,
+   * `local run #124`, `edited since run #120`, `fixed locally in run #124`, `run #125`.
+   */
+  note?: string | null;
+  icon: FailureTreeIcon;
+  /** Whether a node with children opens expanded. */
+  expanded: boolean;
+  /** The page a run opens, a failure's execution page. */
+  url: string | null;
+  /** On a failure: the `executionId` of its item in `FailuresResult.items`. */
+  executionId?: number;
+  children: FailureTreeNode[];
+}
+
+/**
+ * `piwi/failures`: `grouping` is how the tree groups the failures (`file` when absent); the service keeps it for the
+ * `piwi/failuresChanged` it sends after.
+ */
+export interface FailuresParams {
+  grouping?: FailuresGrouping | null;
+}
+
 /**
  * `piwi/failures`: the failures of each context's latest run, for a client that lists them natively (the JetBrains
  * IDEs publish diagnostics of open files only). The same failures are published as `ci-failure` diagnostics, an
@@ -697,9 +764,37 @@ export interface FailuresResult {
   baseline?: Baseline;
   /** When it was last read (ISO 8601). */
   updatedAt?: string;
+  /** How `tree` groups the failures. */
+  grouping: FailuresGrouping;
+  /** The failures as a tree: empty without a failure; the groups alone without a run. */
+  tree: FailureTreeNode[];
+  /**
+   * The run in a few words, as the tree's `run` node names it, with or without a failure: `Run #120 · CI · feature/x ·
+   * 0 failing`, `Your local runs · 1 failing`; null without a run.
+   */
+  runLabel: string | null;
+  /** How many tests still fail, edited since their run or not; a test failing on several projects counts once. */
+  failing: number;
+  /**
+   * What **Re-run the failing tests** runs: every test still failing or edited since its run, one run per Playwright
+   * config (`WorkspaceFailure.root`), in the order of their first failure; none when none fails.
+   */
+  rerun: RunTestsArgs[];
 }
 
 export const FAILURES_REQUEST = 'piwi/failures';
+
+/** `piwi/runId`: the run id typed for **A run by id…** (`118`, `#118`). */
+export interface RunIdParams {
+  text: string;
+}
+
+/** The run id, from 1 to 2147483647 (a run id of the instance); null when the text is not one. */
+export interface RunIdResult {
+  runId: number | null;
+}
+
+export const RUN_ID_REQUEST = 'piwi/runId';
 
 /**
  * `piwi/failuresChanged` (notification, server to client): what `piwi/failures` answers changed, such as a failure's
@@ -742,13 +837,19 @@ export interface RenderStepsParams {
 }
 
 export interface RenderStepsResult {
+  /**
+   * The body, to go at the caret: with a `line`, its first line without indentation and the others indented as that
+   * line is.
+   */
   code: string;
   warnings: string[];
   /**
-   * With `imports: 'separate'`: the import lines the code needs whose names the file's import statements do not bind
-   * yet, as of the file's text the service holds. The client adds those it does not hold already.
+   * With `imports: 'separate'`: the edit that adds the import lines the code needs whose names the file's import
+   * statements do not bind yet, as of the file's text the service holds: after its last top-level import statement,
+   * else at its top followed by an empty line; null when it needs none. It is placed in the text before the code goes
+   * in, and the client makes it with the code's insertion.
    */
-  imports?: string[];
+  importEdit?: FileEdit | null;
 }
 
 export const RENDER_STEPS_REQUEST = 'piwi/renderSteps';
@@ -867,11 +968,13 @@ export interface RecordingUpdate {
   state: 'starting' | 'recording' | 'paused' | 'stopped' | 'failed';
   code: string;
   /**
-   * Import lines the code needs (a catalog call's page object or helper) whose names the file's import statements do
-   * not bind yet, as of the file's text when the block was rendered; the client adds those it does not hold already.
-   * Empty for `into: 'file'`, whose `code` holds its imports.
+   * The edit that adds the import lines the code needs (a catalog call's page object or helper, `expect`) whose names
+   * the file's import statements do not bind yet, as of the file's text the service holds when the block is rendered:
+   * after its last top-level import statement, else at its top followed by an empty line. It is placed in that text,
+   * the block of the previous update included, and the client makes it with the block's write. Null when the file
+   * binds them all, and for `into: 'file'`, whose `code` holds its imports.
    */
-  imports: string[];
+  importEdit: FileEdit | null;
   steps: RecordingStep[];
   warnings: RecordingWarning[];
   /** One sentence on what happened: why the session failed, or what the client should know. */
@@ -988,10 +1091,7 @@ export interface ApplyPickParams {
  */
 export interface ApplyPickResult {
   uri: string | null;
-  edit: {
-    range: { start: { line: number; character: number }; end: { line: number; character: number } };
-    newText: string;
-  } | null;
+  edit: FileEdit | null;
 }
 
 export const APPLY_PICK_REQUEST = 'piwi/applyPick';

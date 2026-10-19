@@ -2,7 +2,7 @@ import zlib from 'node:zlib';
 import { describe, it, expect } from 'vitest';
 import { buildExport } from '../../shared/export/build';
 import { renderExportHtml } from '../../shared/export/render-html';
-import { parseZipSync } from '../../server/utils/trace-zip';
+import { parseZipSync } from '../utils/zip';
 import type { ExportAsset, ExportBundle, ExportCase } from '../../shared/export/types';
 
 const decoder = new TextDecoder();

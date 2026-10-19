@@ -26,7 +26,7 @@
  * rule: each step reads the run under its own use.
  */
 
-import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { FLAKE_LAB_RUN_METADATA_KEY } from '@piwitests/core/flake-plan';
 import {
   parseRunOrigin,
@@ -418,6 +418,20 @@ export function eligibleRunSql(use: RunUse, columns: EligibleRunColumns = TEST_R
  */
 export function eligibleExecutionSql(use: RunUse, testRunId: SQLWrapper): SQL {
   return sql`EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.id} = ${testRunId} AND ${eligibleRunSql(use)})`;
+}
+
+/**
+ * `eligibleExecutionSql` for a query over executions of one project's runs,
+ * those `within` selects when given (a range of run ids): the runs among them
+ * that may not feed `use` are listed once for the query, and an execution is
+ * kept unless its run is on that list, so each run's metadata is read once and
+ * not once per execution. Every execution the query reads must be of one of
+ * those runs; every execution of a project's test case is of one of the
+ * project's runs.
+ */
+export function eligibleExecutionInProject(use: RunUse, projectId: number, testRunId: SQLWrapper, within?: SQL): SQL {
+  const listed = and(eq(testRuns.projectId, projectId), within, sql`${eligibleRunSql(use)} IS NOT TRUE`);
+  return sql`${testRunId} NOT IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${listed})`;
 }
 
 /** SQL predicate keeping only runs that are not lab runs: the SQL form of `!isLabRun(metadata)`. `origin` is the run's stored origin. */

@@ -98,15 +98,7 @@ import {
   type SelectionDefinition,
   type SelectionFormat,
 } from '#shared/selection';
-import {
-  projects,
-  testRuns,
-  testRunsCases,
-  testCases,
-  failureClusters,
-  failureDiagnoses,
-  graphEdges,
-} from '../../database/schema';
+import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';

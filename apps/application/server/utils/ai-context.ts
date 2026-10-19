@@ -1110,6 +1110,16 @@ async function resolveErrorContextAria(db: DbClient, rep: RepresentativeRow): Pr
   }
 }
 
+/** The line of the visual-diff section that tells the model its overlay is attached. */
+const VISUAL_DIFF_OVERLAY_NOTE = '\n- The diff overlay (red = changed pixels) is attached as image "visual-diff".';
+
+/** The sections as a text-only provider reads them: no screenshot reference, no attached-overlay note. */
+function textOnlySections(sections: ContextSection[]): ContextSection[] {
+  return sections
+    .filter((s) => s.id !== 'screenshots')
+    .map((s) => (s.id === 'visualDiff' ? { ...s, markdown: s.markdown.replace(VISUAL_DIFF_OVERLAY_NOTE, '') } : s));
+}
+
 /** Auto-resolve screenshots for the representative execution. */
 async function resolveScreenshots(
   db: DbClient,
@@ -2937,13 +2947,13 @@ export async function buildDiagnosisContext(
           ? '\n- ⚠️ The screenshots have different dimensions (viewport change?) — compared on a padded union canvas, so the ratio is inflated and unreliable.'
           : '';
         const baselineNote = d.baselineNote ? ` — ${d.baselineNote}` : '';
-        const md = `## Visual Diff vs Last Pass\nPixel comparison of the failing screenshot against the same test's last passing screenshot (run #${d.baselineRunId}${baselineNote}):\n- Changed pixels: ${d.changedPixels} of ${d.width * d.height} (${pct}%)${mismatchNote}\n- The diff overlay (red = changed pixels) is attached as image "visual-diff".`;
+        const md = `## Visual Diff vs Last Pass\nPixel comparison of the failing screenshot against the same test's last passing screenshot (run #${d.baselineRunId}${baselineNote}):\n- Changed pixels: ${d.changedPixels} of ${d.width * d.height} (${pct}%)${mismatchNote}${VISUAL_DIFF_OVERLAY_NOTE}`;
         push(section('visualDiff', 'Visual Diff vs Last Pass', md));
         coverage = {
           ...coverage,
           visualDiff: { changedPixelRatio: d.changedPixelRatio, dimensionMismatch: d.dimensionMismatch },
         };
-        if (images.length < limits.maxImages) {
+        if (!opts.textOnly && images.length < limits.maxImages) {
           try {
             const overlay = await getStorage().readFile(d.path);
             images.push({ name: 'visual-diff', mediaType: 'image/png', data: overlay.toString('base64') });
@@ -3116,19 +3126,26 @@ export async function buildDiagnosisContext(
     })!;
   }
 
-  const coverageBlock = buildCoverageBlock(contextSections, {
-    hasCluster: Boolean(cluster),
-    notApplicable: coverage.notApplicable,
-    absentReasons,
-  });
-
   // Sort sections into a fixed narrative order — stable across re-runs
   // (makes prompt caching effective) and optimised for one-pass reading.
   const orderMap = new Map(SECTION_ORDER.map((id, i) => [id, i]));
   contextSections.sort((a, b) => (orderMap.get(a.id) ?? 999) - (orderMap.get(b.id) ?? 999));
 
-  const text = [coverageBlock, ...contextSections.map((s) => s.markdown).filter(Boolean)].join('\n\n');
-  const textChars = contextSections.reduce((sum, s) => sum + s.chars, 0) + coverageBlock.length;
+  // A text-only provider is sent no image: the prompt leaves out the screenshot
+  // references and the overlay note, while `sections` stay the same whatever the
+  // provider, so the staleness hash computed from them does not depend on it.
+  const sentSections = opts.textOnly ? textOnlySections(contextSections) : contextSections;
+  if (opts.textOnly) images = [];
+  const coverageBlock = buildCoverageBlock(sentSections, {
+    hasCluster: Boolean(cluster),
+    notApplicable: opts.textOnly
+      ? { ...coverage.notApplicable, screenshots: 'the AI provider reads text only' }
+      : coverage.notApplicable,
+    absentReasons,
+  });
+
+  const text = [coverageBlock, ...sentSections.map((s) => s.markdown).filter(Boolean)].join('\n\n');
+  const textChars = sentSections.reduce((sum, s) => sum + s.chars, 0) + coverageBlock.length;
 
   // Images are billed as vision tokens (fixed per-image estimate), not as the
   // base64 text length — counting the base64 as text over-estimates by ~100×.
