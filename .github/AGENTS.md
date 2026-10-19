@@ -38,8 +38,9 @@ and the package smoke test on Linux (on Windows and macOS too when it changes th
 `main` runs the four backends and the three systems. The JetBrains Plugin Verifier runs on two IDEs for a pull request
 and on four on `main`, where the plugin job also writes the Gradle cache. The extension, VS Code and desktop suites run
 on pull requests only, and so do the container image check (the publish workflow runs it on `main` and on a tag) and
-the performance comparison, which builds the base commit once (cached by its sha)
-and reports a regression in its comment without failing. The release PR runs the `Versions` job alone.
+the performance comparison, which measures against the base commit's build that the
+`build` job cached by its sha when it ran on `main` (it builds the base itself when that commit has none, cached for the
+pull request's later runs only) and reports a regression in its comment without failing. The release PR runs the `Versions` job alone.
 
 ## Conventions
 

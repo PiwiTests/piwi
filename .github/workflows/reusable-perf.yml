@@ -55,7 +55,8 @@ jobs:
           echo "short=$(git rev-parse --short HEAD^1)" >> "$GITHUB_OUTPUT"
           echo "head_short=$(git rev-parse --short HEAD^2)" >> "$GITHUB_OUTPUT"
 
-      # A base commit is built once; every pull request on it reuses the build.
+      # The base commit's build: the one ci.yml's build job saved when it ran on main, else one this pull request built
+      # on an earlier run.
       - name: Restore the base build
         id: base-build
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -81,6 +82,7 @@ jobs:
         working-directory: base/apps/application
         run: npm run app:build
 
+      # Readable by this pull request's later runs only: a pull request's cache serves no other.
       - name: Save the base build
         if: steps.base-build.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

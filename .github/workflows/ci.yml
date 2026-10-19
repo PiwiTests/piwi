@@ -245,6 +245,21 @@ jobs:
           # The tarballs are already gzipped.
           compression-level: 0
 
+      # The performance job of a pull request measures against its base commit's build, restored by this key and path
+      # (reusable-perf.yml). A cache saved on main serves every pull request; one a pull request saves serves it alone.
+      - name: Stage the build as a performance base
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p base/apps/application
+          cp -a apps/application/.output base/apps/application/.output
+
+      - name: Save the build as a performance base
+        if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: base/apps/application/.output
+          key: perf-base-output-v1-${{ github.sha }}
+
   # Backend-agnostic checks. Independent of the E2E matrix, so they run alongside it.
   checks:
     name: Lint, typecheck and unit tests
