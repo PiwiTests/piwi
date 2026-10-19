@@ -163,18 +163,30 @@ async function requireBindableSubject(db: DrizzleDB, subject: AccessSubject): Pr
 }
 
 /**
- * Give an administrator the role `role` in one conditional statement, only
- * while another administrator remains, so two demotions or deletions at once
- * cannot both pass. False when `userId` is the last administrator.
+ * Give an administrator the role `role` only while another administrator
+ * remains, so two demotions or deletions at once cannot both pass. False when
+ * `userId` is the last administrator.
+ *
+ * One transaction first writes every administrator row, which locks them:
+ * a concurrent demotion waits there until this one commits, and its
+ * conditional UPDATE then reads the administrators this one left. PostgreSQL's
+ * read-committed statements each see what was committed when they start;
+ * SQLite runs one writing transaction at a time.
  */
 async function dropAdministratorRole(db: DrizzleDB, userId: number, role: string): Promise<boolean> {
-  const anotherAdministrator = sql`exists (select 1 from ${users} where ${users.role} = ${InstanceRole.ADMINISTRATOR} and ${users.id} <> ${userId})`;
-  const changed = await db
-    .update(users)
-    .set({ role, updatedAt: new Date() })
-    .where(and(eq(users.id, userId), anotherAdministrator))
-    .returning({ id: users.id });
-  return changed.length > 0;
+  return db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ role: sql`${users.role}` })
+      .where(eq(users.role, InstanceRole.ADMINISTRATOR));
+    const anotherAdministrator = sql`exists (select 1 from ${users} where ${users.role} = ${InstanceRole.ADMINISTRATOR} and ${users.id} <> ${userId})`;
+    const changed = await tx
+      .update(users)
+      .set({ role, updatedAt: new Date() })
+      .where(and(eq(users.id, userId), anotherAdministrator))
+      .returning({ id: users.id });
+    return changed.length > 0;
+  });
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
