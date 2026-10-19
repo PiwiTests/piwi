@@ -1761,10 +1761,11 @@ export async function getProjectFlakyTestsWithVerified(
   const effectiveLimit = Math.min(200, Math.max(1, runsLimit));
 
   // Step 1: Last N terminal runs. An explicit branch filter scopes to exactly
-  // that branch. Otherwise, when the project's default branch is known, the
-  // leaderboard reads default-branch runs (plus runs with no branch, e.g. local
-  // or pre-migration) so a work-in-progress branch stops contaminating the
-  // project's health signal. Environment scopes independently. A project run
+  // that branch. Otherwise the leaderboard reads the runs of the project's
+  // default branch (`resolveStoredDefaultBranch`, as the project tabs do) plus
+  // runs with no branch (local or pre-migration), so a work-in-progress branch
+  // stops contaminating the project's health signal. Environment scopes
+  // independently. A project run
   // scope replaces all three with the project page's filters. Only runs the
   // `flakiness` use reads count: lab runs inject faults and conditions,
   // bisect and reproduction runs replay an older commit, and an environment
@@ -1780,8 +1781,9 @@ export async function getProjectFlakyTestsWithVerified(
     if (environment) runsConditions.push(eq(testRuns.environment, environment));
     if (branch) {
       runsConditions.push(eq(testRuns.branch, branch));
-    } else if (project.defaultBranch) {
-      runsConditions.push(or(eq(testRuns.branch, project.defaultBranch), isNull(testRuns.branch))!);
+    } else {
+      const defaultBranch = await resolveStoredDefaultBranch(db, project);
+      runsConditions.push(or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''))!);
     }
   }
   const filteredRuns: any[] = await db
