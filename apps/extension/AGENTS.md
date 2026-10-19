@@ -260,7 +260,8 @@ explains once what connected mode now sends (`piwiBugSendExplained`).
 
 **Run with Playwright** (`desktop-run-panel.ts`, worker side `background/desktop-repro.ts`) sends a report's title and
 steps, nothing else, to the desktop app paired in the options (its loopback address and token, together in the
-secret area; `desktop-settings.ts` accepts only plain http on 127.0.0.1, localhost or [::1]). **Pair** asks the app at the address
+secret area; `desktop-settings.ts` accepts only plain http on 127.0.0.1, localhost or [::1], and keeps it as
+127.0.0.1, the one address the app binds). **Pair** asks the app at the address
 typed (`DESKTOP_DEFAULT_URL`, the app's preferred port, unless changed) for a pairing
 (`POST /api/desktop/picker-pairings`, open without the token; see `apps/application/shared/desktop-pairing.ts`): the
 app's window shows who asks with a code the card shows too, and the poll after the developer's **Allow** carries the
