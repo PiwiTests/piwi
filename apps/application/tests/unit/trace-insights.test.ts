@@ -16,7 +16,7 @@ import {
   type TraceResourceSnapshot,
 } from '../../server/utils/trace-insights';
 import { parseTraceTexts, type ParsedTraceData, type TraceAction } from '../../server/utils/trace-events';
-import { parseZipSync } from '../../server/utils/trace-zip';
+import { parseZipSync } from '../utils/zip';
 
 function makeAction(overrides: Partial<TraceAction> = {}): TraceAction {
   return { callId: 'call@1', apiName: 'locator.click', startTime: 1000, ...overrides };

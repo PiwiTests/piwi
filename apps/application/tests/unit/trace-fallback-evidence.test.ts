@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test, expect } from 'vitest';
-import { parseZipSync } from '../../server/utils/trace-zip';
+import { parseZipSync } from '../utils/zip';
 import { parseTraceTexts, traceFileRank } from '../../server/utils/trace-events';
 import { parseNetworkTexts } from '../../server/utils/trace-insights';
 import { consoleLogsFromTrace } from '../../server/utils/import-evidence';

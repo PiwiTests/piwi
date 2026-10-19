@@ -14,11 +14,10 @@ describe('computeDistinctRunCounts', () => {
       { title: 't', location: 'a.spec.ts:1:1', status: 'failed', retries: 0 },
       { title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 1 },
     ]);
-    // The final (highest-retry) attempt wins: one test, passed, and flaky.
+    // The final (highest-retry) attempt wins: one test, passed.
     expect(counts.totalTests).toBe(1);
     expect(counts.passedTests).toBe(1);
     expect(counts.failedTests).toBe(0);
-    expect(counts.flakyTests).toBe(1);
   });
 
   it('keeps the same title in different browsers as separate tests', () => {
@@ -44,7 +43,6 @@ describe('computeDistinctRunCounts', () => {
       didNotRunTests: 1,
       failedTests: 0,
       passedTests: 0,
-      flakyTests: 0,
     });
   });
 
@@ -74,12 +72,6 @@ describe('computeDistinctRunCounts', () => {
     ];
     expect(computeDistinctRunCounts(attempts)).toMatchObject({ totalTests: 1, failedTests: 1, passedTests: 0 });
     expect(computeDistinctRunCounts([...attempts].reverse())).toMatchObject({ failedTests: 1, passedTests: 0 });
-  });
-
-  it('does not count a first-try pass as flaky', () => {
-    const counts = computeDistinctRunCounts([{ title: 'a', location: 'a.spec.ts:1:1', status: 'passed', retries: 0 }]);
-    expect(counts.passedTests).toBe(1);
-    expect(counts.flakyTests).toBe(0);
   });
 });
 

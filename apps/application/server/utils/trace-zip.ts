@@ -385,33 +385,3 @@ export function buildZip(entries: ZipEntry[], options: { compress?: boolean } = 
 
   return out;
 }
-
-/**
- * Synchronous version of parseZip kept for contexts where async is not available
- * (e.g. tests). Prefer the async `parseZip` in server request handlers.
- */
-export function parseZipSync(data: Buffer): ZipEntry[] {
-  const metas = parseZipDirectory(data);
-  const entries: ZipEntry[] = [];
-  for (const meta of metas) {
-    try {
-      if (meta.dataStart + meta.compressedSize > data.length) continue;
-      const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize);
-      let entryData: Buffer;
-      if (meta.method === 0) {
-        entryData = Buffer.from(compressed);
-      } else if (meta.method === 8) {
-        entryData =
-          meta.uncompressedSize === 0
-            ? Buffer.alloc(0)
-            : inflateRawSync(compressed, { maxOutputLength: inflateCap(meta) });
-      } else {
-        continue;
-      }
-      entries.push({ name: meta.name, data: entryData });
-    } catch {
-      // Skip corrupt or unsupported entries
-    }
-  }
-  return entries;
-}

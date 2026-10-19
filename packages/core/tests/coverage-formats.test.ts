@@ -6,10 +6,10 @@ import {
   CoverageReportReader,
   detectCoverageFormat,
   mergeReportedFiles,
-  parseCoverageReport,
   reportPathCandidates,
   type CoverageReport,
 } from '../src/coverage-formats';
+import { parseCoverageReport } from './coverage-report';
 
 const fixtures = join(fileURLToPath(new URL('.', import.meta.url)), 'fixtures', 'coverage-reports');
 const fixture = (name: string) => readFileSync(join(fixtures, name), 'utf8');
