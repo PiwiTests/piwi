@@ -748,17 +748,13 @@ async function* streamOpenAiCompat(config: ResolvedAiRole, opts: AiCallOptions):
             choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
             model?: string;
             usage?: OAIUsage;
-            x_groq?: { usage?: { completion_tokens?: number; prompt_tokens?: number } };
+            x_groq?: { usage?: OAIUsage };
           };
 
           if (parsed.model) modelName = parsed.model;
 
-          // Some providers (Groq, etc.) put usage in a custom field
-          const usage =
-            parsed.usage ||
-            ((parsed as Record<string, unknown>).x_groq as
-              | { prompt_tokens?: number; completion_tokens?: number }
-              | undefined);
+          // Groq reports a stream's usage under `x_groq.usage`, not `usage`.
+          const usage = parsed.usage ?? parsed.x_groq?.usage;
           if (usage) {
             if (usage.prompt_tokens != null) inputTokens = usage.prompt_tokens;
             if (usage.completion_tokens != null) outputTokens = usage.completion_tokens;
