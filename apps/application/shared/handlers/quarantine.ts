@@ -19,7 +19,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
-import { notLabRun } from './probes';
+import { eligibleRunSql } from '../run-eligibility';
 import { getHoldingVerifiedFixes, type VerifiedFix } from './flake-verified';
 import { listOutcomes, recordOutcome } from '../../server/utils/outcomes';
 import { proposeQuarantineCandidates } from '../../server/utils/quarantine-candidates';
@@ -102,8 +102,10 @@ export async function countQuarantinedClusterTests(
  * Trailing passing streak for each test, counted over executions recorded after
  * the run the test was quarantined at. Ordered newest first and stopped at the
  * first failure, so a single recent flake resets the count — which is the point.
- * Lab runs (probes, flake experiments) replay the test under injected faults or
- * conditions, so they neither count toward nor break a streak.
+ * Only runs the `flakiness` use reads count: lab runs (probes, flake
+ * experiments) replay the test under injected faults or conditions, bisect and
+ * reproduction runs replay an older commit, and an environment incident fails
+ * every test at once, so none of them counts toward or breaks a streak.
  *
  * One query for the whole list: each test's executions since its own quarantine
  * run are ranked newest-first with a window function, and only the first
@@ -137,7 +139,7 @@ async function computeStreaks(
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(sinceQuarantine, notLabRun(testRuns.origin)))
+    .where(and(sinceQuarantine, eligibleRunSql('flakiness')))
     .as('ranked');
 
   const rows = await db
