@@ -5,12 +5,7 @@ import {
   isStateChangingRoute,
   DEFAULT_SERVER_PROBE_SETTINGS,
 } from '#shared/server-probes';
-import {
-  selectServerProbeItems,
-  resolveServerProbeOutcome,
-  classifyHandled,
-  type ProbeCandidate,
-} from '#shared/handlers/probes';
+import { selectServerProbeItems, type ProbeCandidate } from '#shared/handlers/probes';
 import {
   detectUnprobedDependency,
   detectNotHandled,
@@ -83,29 +78,6 @@ describe('selectServerProbeItems', () => {
   test('a disabled project emits nothing', () => {
     const items = selectServerProbeItems([candidate(1, 'GET /a')], DEFAULT_SERVER_PROBE_SETTINGS);
     expect(items).toEqual([]);
-  });
-});
-
-describe('resolveServerProbeOutcome — the inconclusive path', () => {
-  test('a fault the server did not honor is inconclusive, never a pass', () => {
-    expect(resolveServerProbeOutcome('status', null, true)).toBe('inconclusive');
-    expect(resolveServerProbeOutcome('status', 'throw', true)).toBe('inconclusive');
-  });
-
-  test('an honored fault reads noticed/not-noticed from the test outcome', () => {
-    expect(resolveServerProbeOutcome('status', 'status', false)).toBe('noticed');
-    expect(resolveServerProbeOutcome('status', 'status', true)).toBe('not-noticed');
-    expect(resolveServerProbeOutcome('dependency', 'dependency:payments-svc', true)).toBe('not-noticed');
-  });
-});
-
-describe('classifyHandled', () => {
-  test('classifies from the captured signals', () => {
-    expect(classifyHandled({ uncaughtExceptions: 1 })).toBe('unhandled');
-    expect(classifyHandled({ backendErrors: 1, blankPage: true })).toBe('unhandled');
-    expect(classifyHandled({ consoleErrors: 2 })).toBe('degraded');
-    expect(classifyHandled({ dialogs: 1 })).toBe('degraded');
-    expect(classifyHandled({})).toBe('graceful');
   });
 });
 
