@@ -41,8 +41,6 @@ export interface ChangedFile {
   blob?: string;
 }
 
-export { isGitObjectId } from '#shared/utils/hash';
-
 export interface ScmCommit {
   sha: string;
   /** The subject: the message's first line. */
