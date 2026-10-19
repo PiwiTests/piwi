@@ -536,11 +536,13 @@ export const testRunsCases = sqliteTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
+    // A run's executions are looked up on this index: PostgreSQL costs the same
+    // lookup on the wider unique index below so high that a join reads the whole table.
+    testRunIdIdx: index('idx_test_runs_cases_test_run_id').on(table.testRunId),
     // Composite: covers plain test_case_id lookups (prefix) and the
     // per-case recency sorts used by history/flakiness queries.
     testCaseCreatedIdx: index('idx_test_runs_cases_case_created').on(table.testCaseId, table.createdAt),
     failureClusterIdIdx: index('idx_test_runs_cases_failure_cluster_id').on(table.failureClusterId),
-    // Also serves plain test_run_id lookups (prefix).
     runCaseBrowserUnique: uniqueIndex('idx_test_runs_cases_run_browser').on(
       table.testRunId,
       table.testCaseId,
