@@ -1132,7 +1132,7 @@ export async function getProjectTestCaseFacets(
 /**
  * Group a project's recent test executions by spec-file prefix and compute
  * pass rate, flaky rate, failure count, execution count, and average duration over
- * the last `days` days. Shared by the REST spec-health endpoint and the MCP
+ * the last `days` days. Shared by the spec-health widget and the MCP
  * `get_spec_health` tool.
  */
 export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, days: number) {

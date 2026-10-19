@@ -179,7 +179,6 @@ import {
   deleteProjectData,
   getProjectFlakyTestsWithVerified,
   getProjectsOverview,
-  getProjectSpecHealth,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
@@ -326,15 +325,7 @@ import {
   rejectMergeSuggestion,
   getSuggestionProjectId,
 } from '#shared/handlers/cluster-merge-suggestions';
-import {
-  listLinks,
-  createLink,
-  patchLink,
-  deleteLink,
-  refreshLinkMeta,
-  LINK_ENTITY_TYPES,
-  type LinkEntityType,
-} from '#shared/handlers/links';
+import { listLinks, createLink, deleteLink, LINK_ENTITY_TYPES, type LinkEntityType } from '#shared/handlers/links';
 import {
   listDemoConnections,
   getDemoConnection,
@@ -363,12 +354,10 @@ import { toIssueLocale } from '#shared/integrations/messages';
 import {
   getTestRun,
   getRecentTestRuns,
-  getTestRunSummary,
   patchTestRun,
   parseTestRunPatch,
   getNetworkRequests,
   getFailureGroups,
-  computeRegressionContextForRun,
   getProjectLatestRun,
 } from '#shared/handlers/test-runs';
 import { computeRunInsights } from '#shared/handlers/run-insights';
@@ -449,7 +438,6 @@ import {
   apiGetPrFeedback,
   apiGetAutoHeal,
   apiPutAutoHeal,
-  apiGetHealActions,
   apiPutPrFeedback,
   apiGetLocale,
   apiPutLocale,
@@ -1052,15 +1040,6 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/projects\/(\d+)\/spec-health$/,
-    handler: async (m, _, q, ctx) => {
-      await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const days = Math.min(90, Math.max(1, parseInt(q?.get('days') || '30')));
-      return getProjectSpecHealth(await getDemoDb(), +m[1]!, days);
-    },
-  },
-  {
-    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/ai-steps$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -1325,14 +1304,6 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/test-runs\/(\d+)\/summary$/,
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'run', +m[1]!);
-      return getTestRunSummary(await getDemoDb(), +m[1]!);
-    },
-  },
-  {
-    method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/perfetto$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
@@ -1347,16 +1318,6 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
       return { items: await getFailureGroups(await getDemoDb(), +m[1]!) };
-    },
-  },
-
-  // Regression context (Pillar 2)
-  {
-    method: 'GET',
-    pattern: /^\/api\/test-runs\/(\d+)\/regression-context$/,
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'run', +m[1]!);
-      return computeRegressionContextForRun(await getDemoDb(), +m[1]!);
     },
   },
 
@@ -3189,30 +3150,12 @@ const routes: RouteEntry[] = [
     },
   },
   {
-    method: 'PATCH',
-    pattern: /^\/api\/links\/(\d+)$/,
-    permission: 'link:write',
-    handler: async (m, body, _q, ctx) => {
-      await assertDemoLinkScope(ctx, +m[1]!);
-      return patchLink(await getDemoDb(), +m[1]!, body as Parameters<typeof patchLink>[2]);
-    },
-  },
-  {
     method: 'DELETE',
     pattern: /^\/api\/links\/(\d+)$/,
     permission: 'link:write',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoLinkScope(ctx, +m[1]!);
       return deleteLink(await getDemoDb(), +m[1]!);
-    },
-  },
-  {
-    method: 'POST',
-    pattern: /^\/api\/links\/(\d+)\/refresh$/,
-    permission: 'link:write',
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoLinkScope(ctx, +m[1]!);
-      return refreshLinkMeta(await getDemoDb(), +m[1]!);
     },
   },
 
@@ -3795,7 +3738,6 @@ routes.push(
     permission: 'settings:manage',
     handler: (_, body) => apiPutAutoHeal(body as Parameters<typeof apiPutAutoHeal>[0]),
   },
-  { method: 'GET', pattern: /^\/api\/heal-actions(?:\?.*)?$/, handler: () => apiGetHealActions() },
 );
 
 // ── Demo notification channels & subscriptions (stateful in-memory) ───────────
