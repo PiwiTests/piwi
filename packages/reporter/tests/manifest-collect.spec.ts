@@ -3,12 +3,12 @@ import {
   backendManifestFetch,
   parseManifestJson,
   hasInstrumentationHeader,
-  configDirFromConfig,
   fetchInstrumentationManifest,
   fetchOriginManifest,
   instrumentationManifestUrls,
   type FetchLike,
 } from '../src/internal/manifest/collect';
+import { configDirFromConfig } from '../src/internal/support/test-paths';
 import { jsonRes, startServer, textRes, type FakeServer } from './_helpers';
 
 describe('parseManifestJson', () => {

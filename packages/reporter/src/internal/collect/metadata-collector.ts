@@ -6,6 +6,7 @@ import { Logger } from '../support/logger.js';
 import type { SuiteConfigEntry } from '../../types.js';
 import { isRunOriginKind, parseRunOriginRef, RUN_ORIGIN_METADATA_KEY, type RunOrigin } from '@piwitests/core/wire';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { configDirFromConfig } from '../support/test-paths.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -170,10 +171,10 @@ export class MetadataCollector {
 
   /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
-    // The directory spec paths are made relative to (see `testFile` in the reporter); the
-    // dashboard strips it from the absolute locations Playwright gives steps.
+    // The directory spec paths are made relative to, the config's (see `testFile` in the
+    // reporter); the dashboard strips it from the absolute locations Playwright gives steps.
     const metadata: Record<string, unknown> = {
-      workingDir: process.cwd(),
+      workingDir: configDirFromConfig(config),
       [RUN_ORIGIN_METADATA_KEY]: resolveRunOrigin(process.env, (message) => this.logger.warn(message)),
     };
 

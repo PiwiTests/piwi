@@ -115,6 +115,7 @@ import {
 } from '../collect/coverage-settings.js';
 import type { LineRange } from '@piwitests/core/coverage';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
+import { configDirFromConfig } from '../support/test-paths.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
 import {
   codeReachRoots,
@@ -473,9 +474,7 @@ async function stopSinkCodeReach(
   }
   if (stopping.length > 0) {
     const info = sink.testInfo;
-    const configFile = info?.config.configFile;
-    const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
-    const roots = codeReachRoots(configDir, configuredCodeReachRoots());
+    const roots = codeReachRoots(configDirFromConfig(info?.config), configuredCodeReachRoots());
     for (const [page, session] of stopping) {
       session.stopping = stopPageCodeReach(sink, page, session, roots);
       underway.push(session.stopping);
@@ -2395,6 +2394,7 @@ export const piwiFixtures: Fixtures<
         const plan = loadFlakePlan();
         const role = flakeRoleForTest(plan, {
           file: testInfo.file,
+          base: configDirFromConfig(testInfo.config),
           title: testInfo.title,
           titlePath: testInfo.titlePath,
           project: testInfo.project.name,
@@ -2409,6 +2409,7 @@ export const piwiFixtures: Fixtures<
           title: testInfo.title,
           file: testInfo.file,
           titlePath: testInfo.titlePath,
+          base: configDirFromConfig(testInfo.config),
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
@@ -2470,6 +2471,7 @@ async function recordFlakeAttempt(flake: NonNullable<CaptureSink['flake']>, test
     flakeResultLine(flake.plan, {
       role: flake.role,
       file: testInfo.file,
+      base: configDirFromConfig(testInfo.config),
       title: testInfo.title,
       project: testInfo.project.name || null,
       browserName: flake.browserName,

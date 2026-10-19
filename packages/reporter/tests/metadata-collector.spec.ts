@@ -267,6 +267,14 @@ describe('MetadataCollector.collect — CI provider detection', () => {
   });
 });
 
+describe('the working directory a run names', () => {
+  it("is the folder its spec paths are relative to: the Playwright config's", () => {
+    const config = { ...fakeConfig(), configFile: '/repo/e2e/playwright.config.ts' } as unknown as FullConfig;
+    expect(new MetadataCollector().collect(config, undefined as any, {}).workingDir).toBe('/repo/e2e');
+    expect(new MetadataCollector().collect(fakeConfig(), undefined as any, {}).workingDir).toBe(process.cwd());
+  });
+});
+
 describe('the run origin', () => {
   it('is local outside CI, with nothing set', () => {
     expect(resolveRunOrigin({})).toEqual({ kind: 'local' });

@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as fs from 'node:fs';
 import type { TestInfo } from '@playwright/test';
 import { hashForProject } from './instance-id.js';
+import { configDirFromConfig, relativeTestPath } from './test-paths.js';
 
 /**
  * Green ARIA sampling — deciding, per passing test, whether to capture its page
@@ -70,11 +71,6 @@ export function resetAriaSampleCache(): void {
   cachedSets.clear();
 }
 
-/** Relative POSIX spec path for a test, matching the `filePath` the reporter sends. */
-function relativeTestFile(file: string): string {
-  return path.relative(process.cwd(), file).split(path.sep).join('/');
-}
-
 /**
  * Whether a passing test's page should be sampled. True only when its identity
  * is in the server-provided due set — so a null set (no file, old server, failed
@@ -85,5 +81,7 @@ export function isDueForAriaSample(testInfo: TestInfo): boolean {
   if (!projectName) return false;
   const set = loadAriaSampleSet(projectName);
   if (!set || set.size === 0) return false;
-  return set.has(ariaSampleIdentity(relativeTestFile(testInfo.file), testInfo.title));
+  return set.has(
+    ariaSampleIdentity(relativeTestPath(testInfo.file, configDirFromConfig(testInfo.config)), testInfo.title),
+  );
 }
