@@ -4,9 +4,16 @@ on:
   push:
     branches:
       - main
+    # What the site and the demo are built from: apps/docs/scripts read the reporter's options and env vars, the
+    # dashboard's shared registries and the changelog; the demo bundles the dashboard and the packages it inlines.
     paths:
       - 'apps/docs/**'
       - 'apps/application/**'
+      - 'packages/core/**'
+      - 'packages/picker-dom/**'
+      - 'packages/reporter/src/public/options.ts'
+      - 'packages/reporter/src/internal/config/env.ts'
+      - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
       - '.github/actions/**'
   workflow_dispatch:

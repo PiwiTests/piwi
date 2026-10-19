@@ -128,8 +128,14 @@ jobs:
               - 'apps/extension/scripts/build.mjs'
             desktop:
               - 'apps/desktop/**'
+            # The site, and what apps/docs/scripts generate pages from.
             docs:
               - 'apps/docs/**'
+              - 'apps/application/shared/**'
+              - 'apps/application/package.json'
+              - 'packages/reporter/src/public/options.ts'
+              - 'packages/reporter/src/internal/config/env.ts'
+              - 'CHANGELOG.md'
             # With `app`: what the server image is built from.
             container:
               - 'Dockerfile'
