@@ -117,8 +117,6 @@ export function passwordNeedsRehash(hash: string): boolean {
 // Session management using encrypted cookies
 export interface SessionData {
   userId: number;
-  username: string;
-  role: InstanceRole;
   // The user's session epoch at sign-in. A later bump (password/role change,
   // unlink) makes this stale, which invalidates the session server-side.
   sessionEpoch?: number;
