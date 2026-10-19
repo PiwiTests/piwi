@@ -925,6 +925,13 @@
       "when": 1792393297908,
       "tag": "0131_drop_unused_columns_and_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1792398101327,
+      "tag": "0132_drop_gap_snoozed_at_run_id",
+      "breakpoints": true
     }
   ]
 }

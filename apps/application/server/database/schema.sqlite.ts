@@ -2014,7 +2014,6 @@ export const scenarioGaps = sqliteTable(
     assignedTo: text('assigned_to'),
     triagedBy: integer('triaged_by').references(() => users.id, { onDelete: 'set null' }), // the user who last gave a triage verdict; null when auth is off
     snoozedUntil: integer('snoozed_until', { mode: 'timestamp_ms' }), // a snoozed gap wakes at this time; null with status snoozed = until the node changes
-    snoozedAtRunId: integer('snoozed_at_run_id'), // legacy; superseded by snoozed_at_signature for "until the node changes"
     snoozedAtSignature: text('snoozed_at_signature'), // the subject node's edge fingerprint when snoozed "until the node changes"; wakes once the node's shape differs
     acceptedAt: integer('accepted_at', { mode: 'timestamp_ms' }), // when a gap was accepted; feeds the accepted-but-unwritten inbox queue
     coveredAt: integer('covered_at', { mode: 'timestamp_ms' }), // when a gap was marked covered-by; a durable per-gap "for" verdict for detector precision
