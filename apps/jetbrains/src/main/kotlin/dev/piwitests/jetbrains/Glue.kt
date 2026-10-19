@@ -687,7 +687,10 @@ object Glue {
             marks(result.changed, CoverageKind.CHANGED) { "Piwi: changed since the coverage run" }
     }
 
-    /** A test's gutter tooltip: its latest result, then its history as the service sums it up. */
+    /** `text` as HTML text: the IDE renders a tooltip as HTML, and the instance's text is never markup. */
+    private fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    /** A test's gutter tooltip: its latest result, then its history as the service sums it up, as HTML text. */
     fun testResultTooltip(status: String?, title: String?): String {
         val result = when (status) {
             "failed" -> "failing"
@@ -697,7 +700,7 @@ object Glue {
             "running" -> "running"
             else -> "no recent result"
         }
-        return listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · ")
+        return "<html>${escapeHtml(listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · "))}</html>"
     }
 
     /**
@@ -705,11 +708,10 @@ object Glue {
      * line changed since the run.
      */
     fun failureTooltip(headline: String?, message: String?, edited: Boolean = false): String {
-        val escape = { text: String -> text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
         val why = headline?.ifBlank { null } ?: "Failed"
-        val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escape(it)}</pre>" } ?: ""
+        val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escapeHtml(it)}</pre>" } ?: ""
         val title = if (edited) "Piwi: failed here, edited since the run" else "Piwi: failed here"
-        return "<html><b>$title</b><br>${escape(why)}$details</html>"
+        return "<html><b>$title</b><br>${escapeHtml(why)}$details</html>"
     }
 
     /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
