@@ -11,7 +11,7 @@ import {
   retentionMinRuns,
   sweepOrphans,
 } from '../../utils/retention';
-import { reclaimOrphanTraceResources } from '../../utils/delete-run-files';
+import { reclaimOrphanTraceBlobs, reclaimOrphanTraceResources } from '../../utils/delete-run-files';
 import { reconcileRecentRollups } from '#shared/handlers/analytics/rollups';
 import { pruneOutcomesOlderThan } from '../../utils/outcomes';
 import { pruneMcpToolCalls } from '../../utils/mcp/write-log';
@@ -31,7 +31,7 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, excess diagnosis versions, and expired MCP OAuth connections',
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, excess diagnosis versions, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
   },
   async run() {
     const db = await getDatabase();
@@ -68,7 +68,10 @@ export default defineTask({
     const orphanTotal = Object.values(orphans).reduce((a, b) => a + b, 0);
     if (orphanTotal > 0) result.orphansRemoved = orphanTotal;
 
-    // Free shared trace resources nothing references any more (in fully-indexed projects).
+    // Delete trace blobs no execution links (past a day's grace), then shared
+    // trace resources nothing references any more (in fully-indexed projects).
+    const orphanBlobs = await reclaimOrphanTraceBlobs(db);
+    if (orphanBlobs > 0) result.orphanTraceBlobsRemoved = orphanBlobs;
     const orphanResources = await reclaimOrphanTraceResources(db);
     if (orphanResources > 0) result.orphanResourcesRemoved = orphanResources;
 

@@ -19,6 +19,7 @@ import {
   type TraceBlobManifest,
 } from './trace-manifest';
 import { withTracePoolIngest } from './trace-pool-guard';
+import { forEachLimited } from './storage-helpers';
 import { apiError } from './api-error';
 
 const ID_BATCH_SIZE = 500;
@@ -40,15 +41,6 @@ const SHA1_RESOURCE_NAME = /^([0-9a-f]{40})(?:\.[a-z0-9]{1,16})?$/i;
 function isContentAddressedResource(name: string, data: Buffer): boolean {
   const sha1 = SHA1_RESOURCE_NAME.exec(name)?.[1];
   return !!sha1 && createHash('sha1').update(data).digest('hex') === sha1.toLowerCase();
-}
-
-/** Run `task` over `items`, at most `limit` at a time. */
-async function forEachLimited<T>(items: T[], limit: number, task: (item: T) => Promise<void>): Promise<void> {
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) await task(items[next++]!);
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 /**

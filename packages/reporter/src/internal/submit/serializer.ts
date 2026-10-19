@@ -113,32 +113,49 @@ function browserProjectName(browser: unknown): string {
   return '';
 }
 
+/** Whether an attempt's status counts against the test. */
+function isFailingStatus(status: string): boolean {
+  return status === 'failed' || status === 'timedOut' || status === 'timedout' || status === 'interrupted';
+}
+
 /**
  * Run counts computed from the collected cases as **distinct tests**: the final
- * attempt per (title, location, browser) decides each test's outcome, so retries
- * never inflate the totals (`total = passed + failed + timedOut + skipped +
- * didNotRun`, ignoring any rare interrupted case). Timed-out stays its own
- * bucket — the server folds it into failed on ingest — and a test that passed
- * only after a retry counts as passed and as flaky. Playwright reports each
- * attempt through `onTestEnd`, so the raw counters tally attempts; this is what
- * turns them back into a per-test summary before the run body is sent.
+ * attempt of each test (Playwright's `test.id`, or its title, location, describe
+ * path and browser for a case collected without one) decides its outcome, so
+ * retries never inflate the totals while a parameterized test or a
+ * `--repeat-each` repetition counts once each (`total = passed + failed +
+ * timedOut + skipped + didNotRun`, ignoring any rare interrupted case). Of two
+ * attempts with the same retry index, the failing one decides. Timed-out stays
+ * its own bucket — the server folds it into failed on ingest — and a test that
+ * passed only after a retry counts as passed and as flaky. Playwright reports
+ * each attempt through `onTestEnd`, so the raw counters tally attempts; this is
+ * what turns them back into a per-test summary before the run body is sent.
  */
 export function computeDistinctRunCounts(
   testCases: ReadonlyArray<{
+    testId?: string;
     title: string;
     location: string;
     status?: string;
     retries?: number | null;
     browser?: unknown;
+    suitePath?: string[] | null;
   }>,
 ): RunCounts {
   const final = new Map<string, { status: string; retries: number }>();
   for (const tc of testCases) {
-    const key = `${tc.title}\x00${tc.location}\x00${browserProjectName(tc.browser)}`;
+    const key =
+      tc.testId ??
+      [tc.title, tc.location, (tc.suitePath ?? []).join('\x1f'), browserProjectName(tc.browser)].join('\x00');
+    const status = tc.status ?? '';
     const retries = tc.retries ?? 0;
     const prev = final.get(key);
     // The highest-retry attempt is the final one, so it decides the outcome.
-    if (!prev || retries >= prev.retries) final.set(key, { status: tc.status ?? '', retries });
+    const decides =
+      !prev ||
+      retries > prev.retries ||
+      (retries === prev.retries && (isFailingStatus(status) || !isFailingStatus(prev.status)));
+    if (decides) final.set(key, { status, retries });
   }
   const counts: RunCounts = {
     totalTests: final.size,
@@ -204,6 +221,7 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     filterDetails: payload.filterDetails ?? null,
   };
   if (payload.resourceReport) body.resourceReport = payload.resourceReport;
+  if (payload.deliveryKey) body.deliveryKey = payload.deliveryKey;
   if (opts.includeTestCases) {
     body.testCases = payload.testCases.map((tc) => toWireTestCase(tc));
   }

@@ -9,6 +9,7 @@ import { matchesShardToken, readShardTokensFromMeta } from '../../../utils/shard
 import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs';
 import { deriveTraceEvidence } from '../../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../../utils/ingest-health';
+import { attachmentStoragePaths } from '../../../utils/attachment-paths';
 import { getStorage } from '../../../storage';
 import { joinSuitePath } from '#shared/utils/suites';
 import { sanitizeFilename } from '../../../utils/sanitize-filename';
@@ -278,11 +279,16 @@ async function handleCaseFiles(
     const attachmentDir = `${testRunPath}/${runCase.id}`;
     await storage.mkdir(attachmentDir);
 
-    for (let fi = 0; fi < Math.min(attachmentMeta.length, attachmentStreamed.length); fi++) {
+    const count = Math.min(attachmentMeta.length, attachmentStreamed.length);
+    const storagePaths = attachmentStoragePaths(
+      attachmentDir,
+      attachmentStreamed.slice(0, count).map((f) => sanitizeFilename(f.filename)),
+    );
+
+    for (let fi = 0; fi < count; fi++) {
       const meta = attachmentMeta[fi]!;
       const fileEntry = attachmentStreamed[fi]!;
-      const originalName = sanitizeFilename(fileEntry.filename);
-      const storagePath = `${attachmentDir}/${originalName}`.replace(/\\/g, '/');
+      const storagePath = storagePaths[fi]!;
 
       if (existingPaths.has(storagePath)) continue;
 

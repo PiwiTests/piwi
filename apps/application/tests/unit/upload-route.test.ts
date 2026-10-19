@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
+import { readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { gzipSync } from 'node:zlib';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -22,7 +25,13 @@ vi.mock('../../server/utils/auth', () => ({
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
     mkdir: async () => {},
-    writeFile: async (path: string, data: Buffer) => void state.written.set(path, data),
+    writeFile: async (path: string, data: Buffer) => {
+      if (path.endsWith('unwritable.js')) throw new Error(`503 Slow Down: ${path}`);
+      state.written.set(path, data);
+    },
+    deleteDirectory: async (path: string) => {
+      for (const key of [...state.written.keys()]) if (key.startsWith(`${path}/`)) state.written.delete(key);
+    },
   }),
 }));
 vi.mock('../../server/utils/trace-blobs', () => ({ upsertTraceBlob: vi.fn(), findTraceBlob: vi.fn() }));
@@ -119,5 +128,119 @@ describe('POST /api/test-runs/upload', () => {
     } finally {
       delete process.env.PIWI_IMPORT_MAX_BYTES;
     }
+  });
+
+  test('shards of a batch run join one run, which the last shard settles', async () => {
+    const shard = (shardIndex: number, title: string) => [
+      field('projectName', 'upload-shards'),
+      field('testRun', {
+        status: 'passed',
+        startTime: '2026-09-30T10:00:00Z',
+        totalTests: 1,
+        passedTests: 1,
+        instanceId: 'ci-42',
+        shardIndex,
+        shardTotal: 2,
+      }),
+      field('testCases', [{ title, status: 'passed', location: `tests/${title}.spec.ts:1:1`, duration: 5 }]),
+    ];
+
+    const one = await upload({ parts: shard(1, 'pays') });
+    expect((await db.select().from(schema.testRuns))[0]).toMatchObject({ status: 'running', shardsFinished: 1 });
+
+    const two = await upload({ parts: shard(2, 'adds') });
+    expect(two.runId).toBe(one.runId);
+    const runs = await db.select().from(schema.testRuns);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ status: 'passed', shardsFinished: 2, passedTests: 2 });
+  });
+
+  test('an upload repeated under its delivery key answers with the first run and stores nothing again', async () => {
+    const parts = () => [
+      field('projectName', 'upload-repeat'),
+      field('testRun', { status: 'passed', startTime: '2026-09-30T10:00:00Z', deliveryKey: 'upload-delivery-key-1' }),
+      field('testCases', [{ title: 'pays', status: 'passed', location: 'tests/pays.spec.ts:1:1' }]),
+      ...screenshot(0, 'pays.png'),
+    ];
+
+    const [first, second] = await Promise.all([upload({ parts: parts() }), upload({ parts: parts() })]);
+    expect(second.runId).toBe(first.runId);
+    // Either upload may reach the server first; the other answers as the repeat.
+    expect([first, second].filter((r) => (r as { duplicate?: boolean }).duplicate)).toHaveLength(1);
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
+    expect(await db.select().from(schema.files)).toHaveLength(1);
+  });
+
+  test('keeps two attachments of one case that share a file name, each under that name', async () => {
+    const { runId } = await upload({
+      parts: [
+        field('projectName', 'upload-same-name'),
+        field('testRun', { status: 'failed', startTime: '2026-09-30T10:00:00Z' }),
+        field('testCases', [{ title: 'pays', status: 'failed', location: 'tests/pays.spec.ts:1:1' }]),
+        field('attach_meta_0', [
+          { name: 'screenshot', contentType: 'image/png', originalName: 'screenshot.png' },
+          { name: 'screenshot', contentType: 'image/png', originalName: 'screenshot.png' },
+        ]),
+        { name: 'attach_file_0', filename: 'screenshot.png', data: Buffer.from('first') },
+        { name: 'attach_file_0', filename: 'screenshot.png', data: Buffer.from('second') },
+      ],
+    });
+
+    const attachments = await db.select().from(schema.files).where(eq(schema.files.testRunId, runId));
+    const paths = attachments.map((f) => f.path);
+    expect(new Set(paths).size).toBe(2);
+    expect(paths.map((p) => p.split('/').pop())).toEqual(['screenshot.png', 'screenshot.png']);
+    expect(paths.map((p) => state.written.get(p)?.toString())).toEqual(['first', 'second']);
+  });
+
+  /** A report directory packed as the reporter packs it: path and content lengths, then the bytes, gzipped. */
+  function reportArchive(files: Record<string, string>): Buffer {
+    const parts: Buffer[] = [];
+    for (const [path, content] of Object.entries(files)) {
+      const name = Buffer.from(path);
+      const data = Buffer.from(content);
+      const lengths = (n: number) => {
+        const b = Buffer.alloc(4);
+        b.writeUInt32LE(n);
+        return b;
+      };
+      parts.push(lengths(name.length), name, lengths(data.length), data);
+    }
+    return gzipSync(Buffer.concat(parts));
+  }
+
+  const reportTempDirs = () => readdirSync(tmpdir()).filter((name) => name.startsWith('piwi-report-html-'));
+
+  const reportUpload = (archive: Buffer) => [
+    field('projectName', 'upload-report'),
+    field('testRun', { status: 'passed', startTime: '2026-09-30T10:00:00Z' }),
+    { name: 'htmlReport', filename: 'report.gz', data: archive },
+  ];
+
+  test('extracts a report into a folder of its own and removes its temp copy', async () => {
+    const tempBefore = reportTempDirs();
+    await upload({ parts: reportUpload(reportArchive({ 'index.html': '<html>', 'data/app.js': 'app()' })) });
+    await upload({ parts: reportUpload(reportArchive({ 'index.html': '<html>', 'data/app.js': 'app()' })) });
+
+    const reports = await db.select().from(schema.files).where(eq(schema.files.type, 'report'));
+    expect(reports).toHaveLength(2);
+    expect(reports[0]!.path).not.toBe(reports[1]!.path);
+    for (const report of reports) {
+      expect(report.path).toMatch(/^project-\d+\/run-\d+-[0-9a-f]{8}-html-report\/index\.html$/);
+      expect(state.written.get(report.path.replace('index.html', 'data/app.js'))?.toString()).toBe('app()');
+    }
+    expect(reportTempDirs()).toEqual(tempBefore);
+  });
+
+  test('a report whose copy fails halfway keeps no partial folder and is stored as its archive', async () => {
+    const tempBefore = reportTempDirs();
+    const archive = reportArchive({ 'index.html': '<html>', 'data/unwritable.js': 'app()' });
+    await upload({ parts: reportUpload(archive) });
+
+    const [report] = await db.select().from(schema.files).where(eq(schema.files.type, 'report'));
+    expect(report!.path).toMatch(/^project-\d+\/run-\d+-[0-9a-f]{8}-report\.gz$/);
+    expect([...state.written.keys()].filter((key) => key.includes('html-report'))).toEqual([]);
+    expect(state.written.get(report!.path)).toEqual(archive);
+    expect(reportTempDirs()).toEqual(tempBefore);
   });
 });

@@ -141,13 +141,29 @@ export function extractMessageHead(text: string): string {
   let head = text;
   const callLogIdx = head.indexOf('\nCall log:');
   if (callLogIdx !== -1) head = head.slice(0, callLogIdx);
-  const stackIdx = head.search(/\n\s+at /);
+  const stackIdx = stackStart(head);
   if (stackIdx !== -1) head = head.slice(0, stackIdx);
   const lines = head
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
   return lines.slice(0, 5).join('\n');
+}
+
+/**
+ * Where the JS stack starts: the first line break that whitespace leads from to
+ * an `at ` frame (`\n    at …`), the match of `/\n\s+at /`. Read in one pass
+ * over the text's whitespace runs, so its time stays linear however long a run
+ * of blank lines it holds.
+ */
+function stackStart(text: string): number {
+  const runs = /\s+/g;
+  for (let run = runs.exec(text); run; run = runs.exec(text)) {
+    if (!text.startsWith('at ', runs.lastIndex)) continue;
+    const lineBreak = run[0].indexOf('\n');
+    if (lineBreak !== -1 && lineBreak < run[0].length - 1) return run.index + lineBreak;
+  }
+  return -1;
 }
 
 /**
@@ -327,7 +343,7 @@ function readChain(region: string): ReturnType<typeof scanLocatorChain> {
 
 /** The stack frames outside node_modules and Node internals, innermost first. */
 export function extractStackFrames(text: string): Array<{ file: string; line: number; column: number }> {
-  const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):(\d+):(\d+)\)?\s*$/gm;
+  const frameRe = /^[ \t]+at (?:.*? \()?([^()\s][^()\n]*?):(\d+):(\d+)\)?[ \t]*$/gm;
   const frames: Array<{ file: string; line: number; column: number }> = [];
   let m: RegExpExecArray | null;
   while ((m = frameRe.exec(text)) !== null) {
@@ -491,7 +507,7 @@ function readCallLog(text: string): CallLogRead {
 
 /** The value of a `Label:` header line (`Expected:`, `Received string:`, …), single-line only. */
 function headerValue(text: string, label: 'Expected' | 'Received'): string | null {
-  const re = new RegExp(`^\\s*${label}(?: string| pattern| substring| value)?:[ \\t]*(.*)$`, 'm');
+  const re = new RegExp(`^[ \\t]*${label}(?: string| pattern| substring| value)?:[ \\t]*(.*)$`, 'm');
   const m = re.exec(text);
   if (!m) return null;
   const value = m[1]!.trim();
@@ -500,7 +516,7 @@ function headerValue(text: string, label: 'Expected' | 'Received'): string | nul
 
 /** The locator named by the error: the `Locator:` header first, else the first call in the text. */
 function readLocator(text: string, strict: RegExpExecArray | null): string | null {
-  const header = /^\s*Locator:[ \t]*(.+)$/m.exec(text);
+  const header = /^[ \t]*Locator:[ \t]*(.+)$/m.exec(text);
   if (header) return header[1]!.trim();
   if (strict) return strict[1]!.trim();
   return extractLocatorChain(text);
@@ -508,7 +524,7 @@ function readLocator(text: string, strict: RegExpExecArray | null): string | nul
 
 function readTimeout(text: string, callLog: CallLogRead): number | null {
   const patterns = [
-    /^\s*Timeout:[ \t]*(\d+)ms/m,
+    /^[ \t]*Timeout:[ \t]*(\d+)ms/m,
     /\bTimeout (\d+)ms exceeded/,
     TEST_TIMEOUT_RE,
     TIMED_OUT_EXPECT_RE,
@@ -526,7 +542,7 @@ function readUrl(text: string, callLog: CallLogRead, received: string | null): s
   const at = /\b(?:net::ERR_[A-Z0-9_]+|NS_ERROR_[A-Z0-9_]+) at (\S+)/.exec(text);
   if (at) return at[1]!;
   const head = extractMessageHead(text);
-  const inHead = URL_RE.exec(head.replace(/^\s*Received.*$/gm, ''));
+  const inHead = URL_RE.exec(head.replace(/^[ \t]*Received.*$/gm, ''));
   if (inHead) return inHead[0];
   if (received) {
     const inReceived = URL_RE.exec(received);
@@ -566,7 +582,14 @@ function readCustomMessage(messageHead: string): string | null {
 }
 
 /**
- * Parse a raw Playwright error (ANSI codes allowed) into its structured facts.
+ * How much of an error text the parse reads. A Playwright error's facts (its
+ * message, locator, call log and first frames) sit at its start.
+ */
+const MAX_PARSED_ERROR_CHARS = 64 * 1024;
+
+/**
+ * Parse a raw Playwright error (ANSI codes allowed) into its structured facts,
+ * from its first {@link MAX_PARSED_ERROR_CHARS} characters.
  * Never throws; empty input yields an `unknown` record.
  *
  * The optional `context` supplies the failing step's params: its `locator` and
@@ -577,7 +600,7 @@ export function parsePlaywrightError(
   raw: string | null | undefined,
   context?: ParseErrorContext,
 ): ParsedPlaywrightError {
-  const clean = stripAnsi(raw ?? '').replace(/\r\n?/g, '\n');
+  const clean = stripAnsi((raw ?? '').slice(0, MAX_PARSED_ERROR_CHARS)).replace(/\r\n?/g, '\n');
   const text = withoutStackFrames(clean);
   const messageHead = extractMessageHead(clean);
   const firstLine = messageHead.split('\n')[0] ?? '';
@@ -621,7 +644,7 @@ export function parsePlaywrightError(
   else if (CRASH_RE.test(text)) kind = 'crash';
   else if (isAssertion) {
     const retrying =
-      /^\s*Timeout:[ \t]*\d+ms/m.test(text) || TIMED_OUT_EXPECT_RE.test(text) || callLog.matcher !== null;
+      /^[ \t]*Timeout:[ \t]*\d+ms/m.test(text) || TIMED_OUT_EXPECT_RE.test(text) || callLog.matcher !== null;
     kind = retrying ? 'assertion-timeout' : 'assertion';
   } else if (isNavigationFailure) kind = 'navigation';
   else if (/\bTimeout \d+ms exceeded/.test(text) || errorName === 'TimeoutError') kind = 'action-timeout';

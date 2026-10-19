@@ -17,7 +17,7 @@ one fires and what a webhook channel receives; channels, subscriptions and deliv
 | `run.finished` | A run completes (any status) |
 | `run.failed` | A run completes with failures |
 | `run.failed.default_branch` | A run fails on the repository's default branch |
-| `run.interrupted` | A run stops reporting before its end and the stale-run sweep marks it interrupted (two minutes without activity). The payload is a run event's, with `status: "interrupted"` and the results stored so far; Flake Lab and probe runs send none |
+| `run.interrupted` | A run stops reporting before its end and the stale-run sweep marks it interrupted (two minutes without activity, an hour for a sharded run whose shards send their results in one batch). The payload is a run event's, with `status: "interrupted"` and the results stored so far; Flake Lab and probe runs send none |
 | `cluster.new` | A new failure cluster appears |
 | `cluster.fixed` | A run passes every test a cluster covers: the fix landed (a filtered re-run of just those tests counts). The payload's `verification` says whether the diagnosis was corroborated (`diagnosis-verified`) or the tests merely stopped failing, and `resolved` whether the triage status was closed automatically |
 | `cluster.regressed` | A cluster with a recorded fix fails again; `reopened` says whether a *resolved* cluster was set back to open |

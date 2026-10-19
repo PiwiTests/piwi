@@ -287,7 +287,11 @@ export default defineNuxtConfig({
     // Disable buildCache in demo mode: restoring an SSR cache when generating
     // a SPA (ssr: false) causes Rollup to look for client.precomputed.mjs
     // inside the cache directory, which doesn't exist, breaking the build.
-    buildCache: !isDemo,
+    // Disable it on CI too: its key hashes `app/**`, this config and the app's
+    // package.json, not `shared/**`, `packages/core`, `packages/picker-dom` or
+    // the root lockfile, so a change there could build the client from a stale
+    // cache and test and ship it.
+    buildCache: !isDemo && !process.env.CI,
     // Enable payloadExtraction in demo mode so that the statically generated
     // HTML pages can be hydrated with fixture data embedded during prerender,
     // avoiding extra network round-trips in the SPA.

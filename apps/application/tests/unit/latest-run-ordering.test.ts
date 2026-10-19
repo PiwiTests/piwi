@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
+import { sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 
 // The schema barrel picks the PostgreSQL schema at import time when
@@ -44,5 +45,29 @@ describe('latest-run selection is chronological, not MAX(id)', () => {
     const run: any = await getTestRun(db, 12);
     expect(run?.project?.latestRunId).toBe(5);
     expect(run?.project?.latestRunStatus).toBe('failed');
+  });
+});
+
+describe('a run with more executions than SQLite binds parameters', () => {
+  test('opens, with its suites and the links of its executions', async () => {
+    const executions = 33_000;
+    await db.insert(schema.testRuns).values({ id: 20, projectId: 1, status: 'passed', startTime: at(2) });
+    await db.run(sql`
+      with recursive n(i) as (select 1 union all select i + 1 from n where i < ${executions})
+      insert into test_cases (project_id, file_path, title, created_at, updated_at)
+      select 1, 'specs/' || (i % 500) || '.spec.ts', 'test ' || i, 0, 0 from n`);
+    await db.run(sql`
+      insert into test_runs_cases (test_run_id, test_case_id, status, retries, created_at)
+      select 20, id, 'passed', 0, 0 from test_cases where project_id = 1`);
+    await db
+      .insert(schema.testSuites)
+      .values({ projectId: 1, filePath: 'specs/7.spec.ts', suitePath: 'Cart', mode: 'serial' });
+    const [execution] = await db.select({ id: schema.testRunsCases.id }).from(schema.testRunsCases).limit(1);
+    await db.insert(schema.entityLinks).values({ testRunsCaseId: execution!.id, url: 'https://tracker.example/T-1' });
+
+    const run: any = await getTestRun(db, 20);
+    expect(run.testCases).toHaveLength(executions);
+    expect(run.suites).toEqual([expect.objectContaining({ filePath: 'specs/7.spec.ts', mode: 'serial' })]);
+    expect(run.testCases.find((tc: any) => tc.executionId === execution!.id).links).toHaveLength(1);
   });
 });

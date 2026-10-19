@@ -102,6 +102,11 @@ The ladder, including the stream drain and the remaining file uploads, runs with
 the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request
 in flight and every later one, so the ladder falls through to crash recovery.
 
+A 401 with no credential configured, or a failed login, stops the ladder at once: no other rung can succeed, so
+the run goes to crash recovery. Nothing in the ladder throws out of `onEnd`, since Playwright counts a reporter's
+error as a failure of the run. Every rung carries one `deliveryKey` per run, so a dashboard that stored a slow
+upload stores the `/submit` that follows it, or the recovery copy, once.
+
 A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
 (`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,
 so the dashboard can say how the run arrived.

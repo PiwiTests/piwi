@@ -1,7 +1,7 @@
 import { posix } from 'path';
 import { getDatabase } from '../database';
 import { files, traceBlobs, traceResources, traceBlobResources } from '../database/schema';
-import { eq, and, count, isNull } from 'drizzle-orm';
+import { eq, and, count, isNull, lt, notExists } from 'drizzle-orm';
 import { getStorage } from '../storage';
 import type { File } from '../database/schema';
 import { traceManifestPath } from './trace-manifest';
@@ -101,23 +101,47 @@ async function reclaimWholeProjectPool(db: Db, projectId: number): Promise<void>
 export async function gcTraceBlobs(db: Db, blobIds: Array<number | null | undefined>): Promise<void> {
   const ids = [...new Set(blobIds.filter((id): id is number => typeof id === 'number'))];
   if (ids.length === 0) return;
+  const { candidatesByProject } = await deleteUnreferencedBlobs(db, ids);
+
+  for (const [projectId, candidates] of candidatesByProject) {
+    // Skipped while a trace of the project is being ingested; the nightly
+    // reclaimOrphanTraceResources frees what is still unreferenced then.
+    await reclaimTracePoolUnlessIngesting(projectId, () => reclaimPoolResources(db, projectId, candidates));
+  }
+}
+
+/**
+ * Delete those of `ids` that no `files` row references: the row (its resource
+ * links go with it), then its storage. The row is deleted only while no `files`
+ * row references it, in the same statement, so a blob an upload links meanwhile
+ * stays. Returns how many went, and the resources each linked, by project: the
+ * candidates for {@link reclaimPoolResources}.
+ */
+async function deleteUnreferencedBlobs(
+  db: Db,
+  ids: number[],
+): Promise<{ deleted: number; candidatesByProject: Map<number, Set<number>> }> {
   const storage = getStorage();
-  // Resources each removed blob referenced, grouped by project — the candidates
-  // for per-resource reclaim once the blobs (and their links) are gone.
   const candidatesByProject = new Map<number, Set<number>>();
+  let deleted = 0;
 
   for (const blobId of ids) {
-    const refs = await db.select({ n: count() }).from(files).where(eq(files.blobId, blobId));
-    if ((refs[0]?.n ?? 0) > 0) continue; // a surviving row still needs it
-
-    const rows = await db.select().from(traceBlobs).where(eq(traceBlobs.id, blobId));
-    const blob = rows[0];
-    if (!blob) continue;
-
     const links = await db
       .select({ resourceId: traceBlobResources.resourceId })
       .from(traceBlobResources)
       .where(eq(traceBlobResources.blobId, blobId));
+    const [blob] = await db
+      .delete(traceBlobs)
+      .where(
+        and(
+          eq(traceBlobs.id, blobId),
+          notExists(db.select({ id: files.id }).from(files).where(eq(files.blobId, traceBlobs.id))),
+        ),
+      )
+      .returning({ projectId: traceBlobs.projectId, path: traceBlobs.path });
+    if (!blob) continue; // a surviving row still needs it
+    deleted++;
+
     const candidates = candidatesByProject.get(blob.projectId) ?? new Set<number>();
     for (const l of links) candidates.add(l.resourceId);
     candidatesByProject.set(blob.projectId, candidates);
@@ -128,49 +152,91 @@ export async function gcTraceBlobs(db: Db, blobIds: Array<number | null | undefi
     } catch (error) {
       console.warn(`[delete-run] Failed to remove trace blob storage (${blob.path}):`, error);
     }
-    await db.delete(traceBlobResources).where(eq(traceBlobResources.blobId, blobId));
-    await db.delete(traceBlobs).where(eq(traceBlobs.id, blobId));
+  }
+  return { deleted, candidatesByProject };
+}
+
+/**
+ * Free those of `candidates`, pool resources of `projectId`, that no surviving
+ * blob references, or the whole pool once the project has no blob left. Runs
+ * inside the project's pool guard.
+ */
+async function reclaimPoolResources(db: Db, projectId: number, candidates: Set<number>): Promise<void> {
+  const storage = getStorage();
+  const remaining = await db.select({ n: count() }).from(traceBlobs).where(eq(traceBlobs.projectId, projectId));
+  if ((remaining[0]?.n ?? 0) === 0) {
+    await reclaimWholeProjectPool(db, projectId);
+    return;
   }
 
-  for (const [projectId, candidates] of candidatesByProject) {
-    // Skipped while a trace of the project is being ingested; the nightly
-    // reclaimOrphanTraceResources frees what is still unreferenced then.
+  // Only trust the join table once every blob in the project is indexed.
+  const unindexed = await db
+    .select({ n: count() })
+    .from(traceBlobs)
+    .where(and(eq(traceBlobs.projectId, projectId), eq(traceBlobs.resourcesIndexed, false)));
+  if ((unindexed[0]?.n ?? 0) > 0) return; // partially indexed → keep resources (safe)
+
+  for (const resourceId of candidates) {
+    const stillUsed = await db
+      .select({ n: count() })
+      .from(traceBlobResources)
+      .where(eq(traceBlobResources.resourceId, resourceId));
+    if ((stillUsed[0]?.n ?? 0) > 0) continue; // another surviving blob needs it
+
+    const res = await db
+      .select({ path: traceResources.path })
+      .from(traceResources)
+      .where(eq(traceResources.id, resourceId));
+    const path = res[0]?.path;
+    if (!path) continue;
+    try {
+      await storage.deleteFile(path);
+    } catch (error) {
+      console.warn(`[delete-run] Failed to remove trace resource (${path}):`, error);
+    }
+    await db.delete(traceResources).where(eq(traceResources.id, resourceId));
+  }
+}
+
+/**
+ * How long a trace blob may stay unreferenced before the nightly sweep deletes
+ * it. An upload links each blob it stores within its own request.
+ */
+export const ORPHAN_TRACE_BLOB_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Nightly mop-up: delete the trace blobs no `files` row references, stored more
+ * than {@link ORPHAN_TRACE_BLOB_GRACE_MS} ago (the traces of executions an
+ * import left out, or of an upload that failed before linking them), with the
+ * pool resources only they used. A project with a trace being ingested is left
+ * for the next sweep. Returns how many blobs it deleted.
+ */
+export async function reclaimOrphanTraceBlobs(db: Db, now = Date.now()): Promise<number> {
+  const storedBefore = new Date(now - ORPHAN_TRACE_BLOB_GRACE_MS);
+  const orphansOf = (projectId?: number) =>
+    db
+      .select({ id: traceBlobs.id, projectId: traceBlobs.projectId })
+      .from(traceBlobs)
+      .leftJoin(files, eq(files.blobId, traceBlobs.id))
+      .where(
+        and(
+          isNull(files.id),
+          lt(traceBlobs.createdAt, storedBefore),
+          projectId === undefined ? undefined : eq(traceBlobs.projectId, projectId),
+        ),
+      );
+  const projectIds = new Set((await orphansOf()).map((r) => r.projectId));
+
+  let removed = 0;
+  for (const projectId of projectIds) {
     await reclaimTracePoolUnlessIngesting(projectId, async () => {
-      const remaining = await db.select({ n: count() }).from(traceBlobs).where(eq(traceBlobs.projectId, projectId));
-      if ((remaining[0]?.n ?? 0) === 0) {
-        await reclaimWholeProjectPool(db, projectId);
-        return;
-      }
-
-      // Only trust the join table once every blob in the project is indexed.
-      const unindexed = await db
-        .select({ n: count() })
-        .from(traceBlobs)
-        .where(and(eq(traceBlobs.projectId, projectId), eq(traceBlobs.resourcesIndexed, false)));
-      if ((unindexed[0]?.n ?? 0) > 0) return; // partially indexed → keep resources (safe)
-
-      for (const resourceId of candidates) {
-        const stillUsed = await db
-          .select({ n: count() })
-          .from(traceBlobResources)
-          .where(eq(traceBlobResources.resourceId, resourceId));
-        if ((stillUsed[0]?.n ?? 0) > 0) continue; // another surviving blob needs it
-
-        const res = await db
-          .select({ path: traceResources.path })
-          .from(traceResources)
-          .where(eq(traceResources.id, resourceId));
-        const path = res[0]?.path;
-        if (!path) continue;
-        try {
-          await storage.deleteFile(path);
-        } catch (error) {
-          console.warn(`[delete-run] Failed to remove trace resource (${path}):`, error);
-        }
-        await db.delete(traceResources).where(eq(traceResources.id, resourceId));
-      }
+      const ids = (await orphansOf(projectId)).map((r) => r.id);
+      const { deleted, candidatesByProject } = await deleteUnreferencedBlobs(db, ids);
+      removed += deleted;
+      if (deleted > 0) await reclaimPoolResources(db, projectId, candidatesByProject.get(projectId) ?? new Set());
     });
   }
+  return removed;
 }
 
 /**

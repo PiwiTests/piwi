@@ -51,7 +51,8 @@ const { upsertTraceBlob, backfillTraceBlobStoredSizes, backfillTraceBlobResource
   await import('../../server/utils/trace-blobs');
 const { reconstructTraceZip } = await import('../../server/utils/trace-reconstruct');
 const { getTraceSnapshotResourceFromBlob } = await import('../../server/utils/trace-evidence');
-const { gcTraceBlobs, reclaimOrphanTraceResources } = await import('../../server/utils/delete-run-files');
+const { gcTraceBlobs, reclaimOrphanTraceBlobs, reclaimOrphanTraceResources, ORPHAN_TRACE_BLOB_GRACE_MS } =
+  await import('../../server/utils/delete-run-files');
 const { withTracePoolIngest, reclaimTracePoolUnlessIngesting } = await import('../../server/utils/trace-pool-guard');
 const { getStorageAnalysis } = await import('../../shared/handlers/admin-storage');
 const { parseTraceManifest, pooledEntryPoolName, pooledTraceEntryName } =
@@ -367,6 +368,50 @@ describe('the pool guard', () => {
 
     expect(await reclaimOrphanTraceResources(db as never)).toBe(1);
     expect(storageFiles.has(onlyInFirst)).toBe(false);
+  });
+});
+
+describe('the nightly sweep deletes traces no execution links', () => {
+  async function linkedRun() {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId: 1, status: 'passed', startTime: new Date() })
+      .returning();
+    return run!.id;
+  }
+
+  test('a blob unlinked past the grace period goes, with the pool files only it used', async () => {
+    const orphan = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    const linked = await ingestTrace(buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
+    const runId = await linkedRun();
+    await db.insert(schema.files).values({ testRunId: runId, type: 'trace', path: linked.path, blobId: linked.id });
+    const manifest = parseTraceManifest(storageFiles.get(orphan.path.replace(/\.zip$/, '.manifest.json'))!);
+    const onlyInOrphan = `project-1/trace-resources/${manifest.pooledEntries['screenshots/c1-before.png']}`;
+    const shared = `project-1/trace-resources/${manifest.pooledEntries['screenshots/c1-after.png']}`;
+
+    // Within the grace period an upload may still be about to link it.
+    expect(await reclaimOrphanTraceBlobs(db as never)).toBe(0);
+    expect(storageFiles.has(orphan.path)).toBe(true);
+
+    const later = Date.now() + ORPHAN_TRACE_BLOB_GRACE_MS + 60_000;
+    expect(await reclaimOrphanTraceBlobs(db as never, later)).toBe(1);
+    expect((await db.select().from(schema.traceBlobs)).map((b) => b.id)).toEqual([linked.id]);
+    expect(storageFiles.has(orphan.path)).toBe(false);
+    expect(storageFiles.has(onlyInOrphan)).toBe(false);
+    expect(storageFiles.has(shared)).toBe(true);
+    expect(storageFiles.has(linked.path)).toBe(true);
+  });
+
+  test('a project with a trace being ingested is left for the next sweep', async () => {
+    await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    const later = Date.now() + ORPHAN_TRACE_BLOB_GRACE_MS + 60_000;
+
+    let release!: () => void;
+    const ingest = withTracePoolIngest(1, () => new Promise<void>((resolve) => (release = resolve)));
+    expect(await reclaimOrphanTraceBlobs(db as never, later)).toBe(0);
+    release();
+    await ingest;
+    expect(await reclaimOrphanTraceBlobs(db as never, later)).toBe(1);
   });
 });
 

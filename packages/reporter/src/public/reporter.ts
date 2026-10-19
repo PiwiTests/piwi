@@ -220,6 +220,16 @@ export class PiwiDashboardReporter {
     );
   }
 
+  /**
+   * Playwright reporter hook: whether this reporter writes the run's progress to
+   * the terminal. It does not (it prints only its own `[Piwi Dashboard]` lines),
+   * so Playwright keeps its own terminal reporter when Piwi is the only one
+   * configured.
+   */
+  printsToStdio(): boolean {
+    return false;
+  }
+
   /** Playwright reporter hook: called once at the start of the test run */
   onBegin(config: FullConfig, suite: Suite): void {
     if (this.listMode) {
@@ -498,6 +508,7 @@ export class PiwiDashboardReporter {
 
     const testCase: CollectedTestCase = {
       type: 'complete',
+      testId: test.id,
       title: test.title,
       location: testLocation(test),
       status,
@@ -754,6 +765,7 @@ export class PiwiDashboardReporter {
       const locks = collectTestLocks(test);
       const testCase: CollectedTestCase = {
         type: 'complete',
+        testId: test.id,
         title: test.title,
         location: testLocation(test),
         status: 'didnotrun',
@@ -844,6 +856,10 @@ export class PiwiDashboardReporter {
         const branch = resolveScmBranch(process.env) ?? null;
         await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
       }
+    } catch (error) {
+      // Playwright counts an error thrown by a reporter as a failure of the
+      // run: reaching the dashboard never decides whether the tests passed.
+      this.logger.error(`Could not report the run to the dashboard: ${errorMessage(error)}`);
     } finally {
       this.coverage?.close();
       // Body-only attachments were staged as temp files for the uploads above.

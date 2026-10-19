@@ -218,6 +218,23 @@ describe('HttpClient (against fake http.Server)', () => {
   });
 
   describe('postFormData', () => {
+    it('waits for a slow answer past the JSON timeout, up to the upload timeout', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        setTimeout(() => jsonRes(res, 200, { runId: 7 }), 300);
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false), 100, 2000);
+        const form = new FormData();
+        form.append('field', 'value');
+        await expect(client.postFormData('/api/upload', form, null)).resolves.toEqual({ runId: 7 });
+        await expect(client.postJSON('/api/submit', {}, null)).rejects.toThrow(/timed out after 100ms/);
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+
     it('rejects when a file in the form cannot be read, without an uncaught exception', async () => {
       const { server, url } = await startServer((_req, res) => jsonRes(res, 200, {}));
       const uncaught: unknown[] = [];

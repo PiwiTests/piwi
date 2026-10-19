@@ -14,7 +14,7 @@ vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSide
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the helper.
 delete process.env.PIWI_DATABASE_URL;
-const { interruptStaleRuns, settleStaleFinalizingRuns, STALE_TIMEOUT_MS, FINALIZING_TIMEOUT_MS } =
+const { interruptStaleRuns, settleStaleFinalizingRuns, STALE_TIMEOUT_MS, FINALIZING_TIMEOUT_MS, BATCH_SHARD_WAIT_MS } =
   await import('../../server/utils/stale-runs');
 const { runEventBus } = await import('../../server/utils/run-events');
 
@@ -23,12 +23,15 @@ const now = Date.now();
 const stale = new Date(now - STALE_TIMEOUT_MS - 60_000);
 const fresh = new Date(now - 10_000);
 const abandoned = new Date(now - FINALIZING_TIMEOUT_MS - 60_000);
+const shardsGone = new Date(now - BATCH_SHARD_WAIT_MS - 60_000);
 
 // Runs 1–2 are in flight and quiet past the timeout; run 3 is finalizing and
 // quiet past it too, but still within the wait for its report upload; run 4 is
 // in flight but active; run 5 is quiet but already finished. Runs 6–7 are
 // finalizing and their report upload never came: run 6 kept the status its
-// reporter sent to /finish, run 7 has none stored.
+// reporter sent to /finish, run 7 has none stored. Runs 8–9 are sharded runs
+// delivered by batch submissions, which wait for their other shards: run 8 is
+// quiet past the timeout but within that wait, run 9 past it.
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
   const migrationsFolder = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
@@ -60,6 +63,8 @@ beforeAll(async () => {
       metadata: { ci: { provider: 'github' }, pendingStatus: 'passed' },
     },
     { ...run(7, 2, 'finalizing', abandoned), streamToken: null },
+    { ...run(8, 2, 'running', stale), streamToken: null, shardTotal: 2, shardsFinished: 1 },
+    { ...run(9, 2, 'running', shardsGone), streamToken: null, shardTotal: 2, shardsFinished: 1 },
   ]);
   await db.insert(schema.testCases).values([{ id: 1, projectId: 1, title: 'test 1', filePath: 'a.spec.ts' }]);
   await db
@@ -78,11 +83,12 @@ describe('interruptStaleRuns', () => {
     unsubscribe();
     unsubscribeRun();
 
-    expect([...reaped].sort()).toEqual([1, 2]);
+    expect([...reaped].sort()).toEqual([1, 2, 9]);
     const runEvents = global.filter((e) => e.type === 'run-finished');
     expect([...runEvents].sort((a, b) => a.runId - b.runId)).toEqual([
       { type: 'run-finished', runId: 1, projectId: 1, status: 'interrupted' },
       { type: 'run-finished', runId: 2, projectId: 2, status: 'interrupted' },
+      { type: 'run-finished', runId: 9, projectId: 2, status: 'interrupted' },
     ]);
     // Their day's rollup counts them as failed runs at once, not at the nightly reconcile, and says so once per project.
     const rollupEvents = global.filter((e) => e.type === 'rollup-updated');
@@ -92,7 +98,7 @@ describe('interruptStaleRuns', () => {
     const failedOf = (projectId: number) =>
       rollups.filter((r) => r.projectId === projectId && r.part === 'retained').reduce((n, r) => n + r.failedRuns, 0);
     expect(failedOf(1)).toBe(1);
-    expect(failedOf(2)).toBe(1);
+    expect(failedOf(2)).toBe(2);
     // The run's own stream gets the reconciled counts.
     expect(finished).toEqual([expect.objectContaining({ status: 'interrupted', totalTests: 10, passedTests: 1 })]);
 
@@ -106,6 +112,8 @@ describe('interruptStaleRuns', () => {
     for (const id of [3, 6, 7]) expect(byId.get(id)?.status).toBe('finalizing');
     expect(byId.get(4)?.status).toBe('running');
     expect(byId.get(5)?.status).toBe('passed');
+    expect(byId.get(8)?.status).toBe('running');
+    expect(byId.get(9)?.status).toBe('interrupted');
   });
 
   test('leaves nothing to announce once every stale run is reaped', async () => {

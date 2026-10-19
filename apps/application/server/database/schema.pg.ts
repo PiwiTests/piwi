@@ -279,7 +279,7 @@ export const failureClusters = pgTable(
     fixLandedRunId: integer('fix_landed_run_id'), // the run in which every affected test passed again
     fixLandedAt: timestamp('fix_landed_at', { mode: 'date' }),
     fixCommit: text('fix_commit'), // commit of that run, when the reporter recorded one
-    timeToResolutionMs: integer('time_to_resolution_ms'), // first seen → fix landed
+    timeToResolutionMs: bigint('time_to_resolution_ms', { mode: 'number' }), // first seen → fix landed, in ms (exceeds 32-bit int range past 24.8 days)
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
     flakeEvidenceRunId: integer('flake_evidence_run_id'), // latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix
     lastRerunDispatch: jsonb('last_rerun_dispatch'), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
@@ -2678,5 +2678,31 @@ export const testRunResourceReports = pgTable(
   },
   (t) => ({
     runShardIdx: uniqueIndex('idx_test_run_resource_reports_run_shard').on(t.runId, t.shard),
+  }),
+);
+
+// One batch delivery of a run's results (`/submit`, `/upload`, a shard's for a
+// sharded run), under the key the reporter generated for it, and the run it
+// went to. A delivery repeated with the same key, such as a slow upload the
+// reporter gave up on and sent again, answers with that run instead of storing
+// the results twice.
+export const runDeliveries = pgTable(
+  'run_deliveries',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    deliveryKey: text('delivery_key').notNull(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectKeyIdx: uniqueIndex('idx_run_deliveries_project_key').on(t.projectId, t.deliveryKey),
+    runIdx: index('idx_run_deliveries_run_id').on(t.runId),
   }),
 );

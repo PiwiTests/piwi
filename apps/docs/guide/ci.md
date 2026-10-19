@@ -97,10 +97,10 @@ How the merge works:
 1. Each shard derives a **run label**, a stable identifier for the CI pipeline, from the provider's build id
    (`GITHUB_RUN_ID` with `GITHUB_RUN_ATTEMPT`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID` and their equivalents on the
    systems listed above). A re-run of a GitHub Actions workflow is a new attempt, so it starts a new run.
-2. Shards sharing a run label **and** a `projectName` resolve to the same run when streaming.
-3. Each shard streams independently; the run stays `running` until the **last** shard calls finish.
+2. Shards sharing a run label **and** a `projectName` resolve to the same run, streamed or batched.
+3. The run stays `running` until the **last** shard reports; batched shards may arrive an hour apart.
 4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
-   shard progress badge (`2/3`) while shards are still arriving.
+   shard progress badge (`2/3`) while shards are arriving.
 
 **All shards must use the same `projectName`.** That's the one requirement.
 
