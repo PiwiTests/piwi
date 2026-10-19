@@ -1720,6 +1720,12 @@ export interface FlakyTestsFilter {
   tags?: string[];
   owner?: string;
   priority?: string;
+  /** Only these test cases (an analytics test filter). */
+  testCaseIds?: ReadonlySet<number>;
+  /** Only the executions of these Playwright projects (browsers). */
+  browsers?: string[];
+  /** Conditions on `test_runs` (an analytics scope's period and run filters), replacing the environment, branch and run scope. */
+  runConditions?: SQL[];
 }
 
 export async function getProjectFlakyTests(
@@ -1775,7 +1781,9 @@ export async function getProjectFlakyTestsWithVerified(
     inArray(testRuns.status, TERMINAL_STATUSES),
     eligibleRunSql('flakiness'),
   ];
-  if (scope) {
+  if (filter?.runConditions) {
+    runsConditions.push(...filter.runConditions);
+  } else if (scope) {
     runsConditions.push(...(await projectRunScopeConditions(db, projectId, scope)));
   } else {
     if (environment) runsConditions.push(eq(testRuns.environment, environment));
@@ -1809,7 +1817,12 @@ export async function getProjectFlakyTestsWithVerified(
       browser: testRunsCases.browser,
     })
     .from(testRunsCases)
-    .where(inArray(testRunsCases.testRunId, filteredRunIds));
+    .where(
+      and(
+        inArray(testRunsCases.testRunId, filteredRunIds),
+        filter?.browsers?.length ? inArray(testRunsCases.browserName, filter.browsers) : undefined,
+      ),
+    );
 
   // Step 3: Per (testCaseId, runId, browserKey): group rows
   type BrowserGroup = { rows: any[]; finalStatus: string; retryPass: boolean };
@@ -1952,6 +1965,7 @@ export async function getProjectFlakyTestsWithVerified(
 
   for (const [testCaseId, agg] of caseAggMap) {
     if (allowedCaseIds && !allowedCaseIds.has(testCaseId)) continue;
+    if (filter?.testCaseIds && !filter.testCaseIds.has(testCaseId)) continue;
     if (agg.totalRuns < 3) continue;
     if (agg.retryPassRuns < 1 && agg.alternations < 2) continue;
 
