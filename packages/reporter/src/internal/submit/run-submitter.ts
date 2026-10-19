@@ -388,9 +388,11 @@ export class RunSubmitter {
     }
   }
 
-  /** The run reached the server: drop the recovery copy and the run's buffered live events. */
+  /**
+   * The run reached the server: drop its buffered live events. A recovery file
+   * on disk is an earlier run's, deleted only once its own replay succeeds.
+   */
   private dropLocalCopies(): void {
-    this.recovery.clear();
     this.streamManager?.discardBuffered();
   }
 

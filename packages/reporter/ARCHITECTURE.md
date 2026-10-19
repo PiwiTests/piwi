@@ -96,7 +96,9 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
 1. **streaming `/finish`** — when a streaming session is open (`internal/streaming/`),
 2. **multipart `/upload`** — when there are reports or traces to attach,
 3. **plain JSON `/submit`** — last resort,
-4. **crash recovery** — on total failure, persist the payload to disk for the next run.
+4. **crash recovery** — on total failure, persist the payload to disk for the next run: one owner-only file per
+   dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
+   invalid).
 
 The ladder, including the stream drain and the remaining file uploads, runs within
 the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request

@@ -191,7 +191,7 @@ export class PiwiDashboardReporter {
     this.httpClient = new HttpClient(this.options.serverUrl ?? 'http://localhost:3000', logger);
     this.fileHandler = new FileHandler(logger);
     this.uploader = new Uploader(this.httpClient, this.fileHandler, logger);
-    this.recovery = new CrashRecovery(this.options.projectName!, logger);
+    this.recovery = new CrashRecovery(this.httpClient.baseUrl, this.options.projectName!, logger);
     this.metadataCollector = new MetadataCollector(logger);
     this.failureLinks = new FailureLinks(this.httpClient.baseUrl, logger);
 
