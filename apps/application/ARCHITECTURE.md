@@ -90,7 +90,7 @@ Non-obvious ones:
 - **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
   at query time.
 - **`notification_deliveries`** — an outbox: `dedupeKey` unique for idempotency, `status`, `attempts` + `scheduledFor`
-  for progressive retry (1/5/15/60/240 min).
+  for progressive retry: five retries, after 1/5/15/60/240 min (`server/utils/outbox.ts`).
 - **`resource_findings`** — one row per project and finding identity (`shared/resource-fingerprint.mjs`: verdict,
   kind, scope and where it was opened, line included), with the runs it was first and last seen in, ordered by start
   time; `resource_occurrences` holds each run's showing with the run's branch. Written on finalize by
