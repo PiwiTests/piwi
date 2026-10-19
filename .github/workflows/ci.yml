@@ -451,6 +451,15 @@ jobs:
           # dedicated postgresql.spec.ts server (which owns playwright_test).
           docker exec -e PGPASSWORD=postgres postgres psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE playwright_main;'
 
+      # The unit tests that need a PostgreSQL server (`*-pg.test.ts`), once per run: in the first shard of the s3 +
+      # postgres cell, the one a pull request and main both run. Each test creates and drops a database of its own.
+      - name: Run the PostgreSQL unit tests
+        if: matrix.database == 'postgres' && matrix.storage == 's3' && matrix.shard == 1
+        working-directory: apps/application
+        env:
+          PIWI_POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/playwright_test
+        run: npm run app:test:unit -- tests/unit/*-pg.test.ts
+
       - name: Run Playwright Tests
         working-directory: apps/application
         env:
