@@ -104,7 +104,7 @@ In `test` mode, a response whose request ran instrumented code before the respon
 X-Piwi-Coverage: 3f9a1c0b7e21.42
 ```
 
-The id is `<process key>.<sequence>`; the process key is random per process, so an id from an earlier process reads as missing. The Piwi reporter records the ids each test's pages receive and collects them once the test ends. Static files and requests that ran no instrumented code get no id.
+The id is `<process key>.<sequence>.<secret>`; the process key is random per process, so an id from an earlier process reads as missing, and the secret is random per request, so only a client that received an id can collect its coverage. The Piwi reporter records the ids each test's pages receive and collects them once the test ends. Static files and requests that ran no instrumented code get no id.
 
 **`POST /__piwi/coverage/collect`** returns, per group, the coverage of its requests merged, and forgets them:
 

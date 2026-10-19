@@ -163,16 +163,22 @@ public class CoverageTests
     {
         await using var app = await CoverageTestApp.StartAsync();
         var id = (await app.RequestIdAsync("/check?value=5"))!;
+        var parts = id.Split('.');
         var otherProcess = (id[0] == 'a' ? 'b' : 'a') + id[1..];
-        var unknownSequence = id[..id.IndexOf('.')] + ".999999999";
+        var unknownSequence = $"{parts[0]}.999999999.{parts[2]}";
+        var guessedSecret = $"{parts[0]}.{parts[1]}.{new string('0', parts[2].Length)}";
+        var noSecret = $"{parts[0]}.{parts[1]}";
 
-        var first = await app.CollectAsync("files", id, otherProcess, unknownSequence, "not-an-id");
+        var first = await app.CollectAsync("files", guessedSecret, noSecret, otherProcess, unknownSequence, "not-an-id");
         var second = await app.CollectAsync("files", id);
+        var third = await app.CollectAsync("files", id);
 
-        Assert.Equal([Path("Checks.cs")], first.Paths);
-        Assert.Equal([otherProcess, unknownSequence, "not-an-id"], first.Missing);
-        Assert.Empty(second.Files);
-        Assert.Equal([id], second.Missing);
+        Assert.Equal(32, parts[2].Length);
+        Assert.Empty(first.Files);
+        Assert.Equal([guessedSecret, noSecret, otherProcess, unknownSequence, "not-an-id"], first.Missing);
+        Assert.Equal([Path("Checks.cs")], second.Paths);
+        Assert.Empty(third.Files);
+        Assert.Equal([id], third.Missing);
     }
 
     [Fact]
