@@ -216,8 +216,10 @@ needs the extension's sources, and a change to the recorder there changes what t
   or a hover for 1.5 s at most (`within`, `LOOKUP_WAIT_MS`), the fetch going on for the next ask; one that failed
   without the instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again next time (`once` in
   `src/context.ts`). A canceled quick fix or hover is not answered further. A stored file (a trace, a screenshot) is
-  written to `EVIDENCE_ROOT` as it arrives, never held in memory (`PiwiClient.download`), and the files not used for a
-  week are deleted when the service starts (`pruneEvidence`). A
+  written to `EVIDENCE_ROOT` as it arrives, never held in memory (`PiwiClient.download`): `piwi-editor` in this user's
+  cache folder, created owner-only and never written to when another user owns it or it is a link (`privateFolder`).
+  The files not used for a week are deleted when the service starts (`pruneEvidence`), and a file another window
+  deleted meanwhile is downloaded again. A
   failure's files at its run's commit are read once too, as many as the failures go through, and its diagnostics wait
   for nothing: the files as saved stand in until they are read. The translation values of `HEAD` are read once per
   `HEAD`, those of the working tree once per refresh, each once for every document that asks meanwhile. An edit costs

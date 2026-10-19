@@ -316,13 +316,59 @@ function once<K, V>(cache: Map<K, Promise<V>>, key: K, ask: () => Promise<V>, fa
   return found;
 }
 
-/** Where stored files (traces, screenshots) are downloaded, one folder per instance and path. */
-export const EVIDENCE_ROOT = path.join(os.tmpdir(), 'piwi-editor');
+/**
+ * The folder stored files (traces, screenshots) are downloaded to, one folder per instance and path: `piwi-editor` in
+ * this user's cache folder (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache`
+ * elsewhere), never a folder other users of the machine share.
+ */
+export function evidenceRoot(
+  env: Record<string, string | undefined> = process.env,
+  platform: NodeJS.Platform = process.platform,
+  home: string = os.homedir(),
+): string {
+  const xdg = env.XDG_CACHE_HOME;
+  const cache =
+    platform === 'win32'
+      ? env.LOCALAPPDATA || path.join(home, 'AppData', 'Local')
+      : platform === 'darwin'
+        ? path.join(home, 'Library', 'Caches')
+        : xdg && path.isAbsolute(xdg)
+          ? xdg
+          : path.join(home, '.cache');
+  return path.join(cache, 'piwi-editor');
+}
+
+/** Where stored files are downloaded: see {@link evidenceRoot}. */
+export const EVIDENCE_ROOT = evidenceRoot();
 /** A downloaded file not used for this long is deleted. */
 const EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 
-/** Delete the downloaded files not used for a week. Never throws. */
+/** Whether `dir` is a folder this user owns (not a link), on a system that has owners. */
+async function ownFolder(dir: string): Promise<boolean> {
+  const stat = await fs.promises.lstat(dir).catch(() => null);
+  if (!stat?.isDirectory()) return false;
+  return typeof process.getuid !== 'function' || stat.uid === process.getuid();
+}
+
+/**
+ * Creates `dir` for this user only (0700), and answers whether it is a folder this user owns: false for one another
+ * user created, or a link, which nothing is then written to.
+ */
+export async function privateFolder(dir: string): Promise<boolean> {
+  await fs.promises.mkdir(path.dirname(dir), { recursive: true });
+  await fs.promises.mkdir(dir, { mode: 0o700 }).catch((e: NodeJS.ErrnoException) => {
+    if (e.code !== 'EEXIST') throw e;
+  });
+  if (!(await ownFolder(dir))) return false;
+  if (typeof process.getuid === 'function' && ((await fs.promises.stat(dir)).mode & 0o077) !== 0) {
+    await fs.promises.chmod(dir, 0o700);
+  }
+  return true;
+}
+
+/** Delete the downloaded files not used for a week, in a folder this user owns. Never throws. */
 export async function pruneEvidence(root = EVIDENCE_ROOT, now = Date.now()): Promise<void> {
+  if (!(await ownFolder(root))) return;
   const entries = await fs.promises.readdir(root, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
     const dir = path.join(root, entry.name);
@@ -406,6 +452,8 @@ export class PiwiContext {
   private readonly fixPlanTexts = new Map<number, Promise<string | null>>();
   private readonly healings = new Map<number, Promise<LocatorHealingResult | null>>();
   private readonly downloads = new Map<string, Promise<string | null>>();
+  /** Where stored files are downloaded: {@link EVIDENCE_ROOT}. */
+  evidenceFolder = EVIDENCE_ROOT;
   private readonly catalog = new Map<string, { at: number; items: CatalogCase[] }>();
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
@@ -825,36 +873,50 @@ export class PiwiContext {
       : Promise.resolve(null);
   }
 
-  /** A stored file downloaded to the temporary directory, once; null when it cannot be fetched. */
-  evidence(storedPath: string): Promise<string | null> {
+  /**
+   * A stored file downloaded to {@link evidenceFolder}, once; null when it cannot be fetched. A file deleted since it
+   * was downloaded, by another window's prune, is downloaded again.
+   */
+  async evidence(storedPath: string): Promise<string | null> {
     const client = this.client;
-    if (!client) return Promise.resolve(null);
+    if (!client) return null;
     const key = `${client.connection.serverUrl}\n${storedPath}`;
+    const cached = this.downloads.get(key);
+    if (cached) {
+      const kept = await cached;
+      if (kept === null || fs.existsSync(kept)) return kept;
+      if (this.downloads.get(key) === cached) this.downloads.delete(key);
+    }
     let found = this.downloads.get(key);
     if (!found) {
-      const dir = path.join(EVIDENCE_ROOT, createHash('sha256').update(key).digest('hex').slice(0, 16));
-      // The name comes from the server and ends up in a `show-trace "<path>"` command: keep it to plain characters.
-      const name = path.basename(storedPath).replace(/[^\w.-]/g, '_');
-      const target = path.join(dir, name && name !== '.' && name !== '..' ? name : 'file');
-      found = (async () => {
-        try {
-          if (fs.existsSync(target)) {
-            // Used again: kept by `pruneEvidence` as long as a fresh download.
-            const now = new Date();
-            await fs.promises.utimes(dir, now, now);
-            return target;
-          }
-          await fs.promises.mkdir(dir, { recursive: true });
-          await client.download(storedPath, target);
-          return target;
-        } catch {
-          this.downloads.delete(key);
-          return null;
-        }
-      })();
+      found = this.download(client, key, storedPath);
       this.downloads.set(key, found);
     }
     return found;
+  }
+
+  private async download(client: PiwiClient, key: string, storedPath: string): Promise<string | null> {
+    const dir = path.join(this.evidenceFolder, createHash('sha256').update(key).digest('hex').slice(0, 16));
+    // The name comes from the server and ends up in a `show-trace "<path>"` command: keep it to plain characters.
+    const name = path.basename(storedPath).replace(/[^\w.-]/g, '_');
+    const target = path.join(dir, name && name !== '.' && name !== '..' ? name : 'file');
+    try {
+      if (await privateFolder(this.evidenceFolder)) {
+        if (fs.existsSync(target)) {
+          // Used again: kept by `pruneEvidence` as long as a fresh download.
+          const now = new Date();
+          await fs.promises.utimes(dir, now, now);
+          return target;
+        }
+        await fs.promises.mkdir(dir, { recursive: true });
+        await client.download(storedPath, target);
+        return target;
+      }
+    } catch {
+      // Not fetched: asked again next time.
+    }
+    this.downloads.delete(key);
+    return null;
   }
 
   /** The catalog's cases defined in a spec file (its path relative to the config). */
