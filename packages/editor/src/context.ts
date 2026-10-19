@@ -149,6 +149,21 @@ function linkedProject(desktop: DesktopDiscovery | null, root: string): string {
 
 type ContextConnection = PiwiConnection & { source: ConnectionSource };
 
+/** The largest run id: an instance's run ids are 32-bit integers on PostgreSQL. */
+export const MAX_RUN_ID = 2_147_483_647;
+
+/** Whether a value is a run id: an integer from 1 to {@link MAX_RUN_ID}. */
+function isRunId(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) > 0 && (value as number) <= MAX_RUN_ID;
+}
+
+/** The run id typed for **A run by id…** (`118`, ` #118 `); null when the text is not one. */
+export function runIdOf(text: string): number | null {
+  const digits = /^\s*#?(\d+)\s*$/.exec(text)?.[1];
+  const id = digits === undefined ? null : Number(digits);
+  return isRunId(id) ? id : null;
+}
+
 /** A baseline choice as a client sent it; null when it is not one. */
 export function parseBaselineChoice(value: unknown): BaselineChoice | null {
   const choice = value as { kind?: unknown; branch?: unknown; runId?: unknown } | null;
@@ -157,9 +172,7 @@ export function parseBaselineChoice(value: unknown): BaselineChoice | null {
   if (choice.kind === 'branch' && typeof choice.branch === 'string' && choice.branch.trim()) {
     return { kind: 'branch', branch: choice.branch.trim() };
   }
-  if (choice.kind === 'run' && Number.isInteger(choice.runId) && (choice.runId as number) > 0) {
-    return { kind: 'run', runId: choice.runId as number };
-  }
+  if (choice.kind === 'run' && isRunId(choice.runId)) return { kind: 'run', runId: choice.runId };
   return null;
 }
 

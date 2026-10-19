@@ -112,8 +112,8 @@ object PiwiCommands {
     /** Run every test still failing or edited since its run, as `piwi/failures` lists them. */
     fun rerunFailing(project: Project) {
         background(project, "Piwi: resolving the failing tests") {
-            val failures = project.service<PiwiProjectService>().server()?.failures()?.orNull()
-            val runs = Glue.rerunFailingArgs(failures)
+            val service = project.service<PiwiProjectService>()
+            val runs = service.server()?.failures(FailuresParams(service.local().failuresGrouping))?.orNull()?.rerun.orEmpty()
             if (runs.isEmpty()) notify(project, "No failing test to re-run.") else runs.forEach { runTests(project, it) }
         }
     }

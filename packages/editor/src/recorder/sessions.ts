@@ -26,6 +26,7 @@ import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import { codegenConfigOf, type CodegenConfigOptions } from '@piwitests/core/piwi-config';
 import { sessionFromEvents, type RawCaptureEvent, type RecordedStep } from '@piwitests/core/recording';
 import type {
+  FileEdit,
   PageCandidatesResult,
   PiwiCommand,
   RecordInto,
@@ -37,7 +38,7 @@ import type {
 } from '../protocol.js';
 import { recorderBrowser, type RecorderBrowser } from './context-options.js';
 import type { LaunchRequest, LauncherToService, ServiceToLauncher } from './ipc.js';
-import { missingImports } from './imports.js';
+import { importInsertion, missingImports } from './imports.js';
 import { declaredNamesAt, fileFixtures, pageCandidates, recordingPlacement, testImportOf } from './page-candidates.js';
 import { canonicalPath } from './playwright.js';
 import type { ProjectOptions } from './project-options.js';
@@ -170,6 +171,8 @@ interface Session {
   notes: string[];
   /** The latest update rendered, kept when a later rendering fails. */
   latest: RecordingUpdate | null;
+  /** The code and the import lines of the latest rendering, whose imports the file may lack. */
+  rendered: Pick<CodegenResult, 'code' | 'imports'> | null;
   /** When the latest update was sent, in ms. */
   sentAt: number;
   /** How long after `sentAt` the next rendering may run, in ms. */
@@ -296,6 +299,21 @@ function placementRefusal(into: RecordInto, context: PageCandidatesResult['conte
   if (context === 'function')
     return 'A new test cannot go inside another function: record steps there instead, or put the cursor outside the function for a new test.';
   return null;
+}
+
+/**
+ * A block of code re-indented to go at a caret on a line indented with `indent`: its common leading indentation
+ * removed, then `indent` added to every line after the first, which lands at the caret. Blank lines stay empty, and
+ * the block ends with no blank line.
+ */
+export function indentBlock(code: string, indent: string): string {
+  const lines = code.replace(/\s+$/, '').split('\n');
+  const widths = lines.filter((line) => line.trim()).map((line) => line.length - line.trimStart().length);
+  const common = widths.length ? Math.min(...widths) : 0;
+  return lines
+    .map((line) => (line.trim() ? line.slice(common) : ''))
+    .map((line, i) => (i === 0 || !line ? line : indent + line))
+    .join('\n');
 }
 
 /** The recorded block as a client writes it: no trailing newline, and steps without the test body's indentation. */
@@ -463,6 +481,7 @@ export class RecordingSessions {
         ...fromConfig.problems.map((problem) => `${config}: ${problem}`),
       ],
       latest: null,
+      rendered: null,
       sentAt: -Infinity,
       wait: 0,
       timer: null,
@@ -668,6 +687,13 @@ export class RecordingSessions {
     return this.options.readText?.(session.uri) ?? session.text;
   }
 
+  /** The edit that adds the imports a rendering needs and the file lacks now; none for a whole file. */
+  private importEdit(session: Session, rendered: Pick<CodegenResult, 'code' | 'imports'> | null): FileEdit | null {
+    if (session.into === 'file' || !rendered) return null;
+    const text = this.currentText(session);
+    return importInsertion(text, blockImports(text, rendered));
+  }
+
   private send(update: RecordingUpdate): void {
     try {
       this.options.notify(update);
@@ -697,10 +723,11 @@ export class RecordingSessions {
         urls: origin && origin === session.baseOrigin ? 'relative' : 'absolute',
       });
       const preferLocators = session.codegen.preferLocators;
+      session.rendered = result;
       session.latest = {
         ...base,
         code: blockCode(result.code, session.into),
-        imports: session.into === 'file' ? [] : blockImports(this.currentText(session), result),
+        importEdit: this.importEdit(session, result),
         steps: recorded.steps.map((step, i) => stepOf(step, i, result, preferLocators)),
         warnings: result.warnings.map((w) => ({
           step: w.step,
@@ -710,11 +737,11 @@ export class RecordingSessions {
       };
       return session.latest;
     } catch (error) {
-      const latest = session.latest ?? { code: '', imports: [], steps: [], warnings: [] };
+      const latest = session.latest ?? { code: '', steps: [], warnings: [] };
       return {
         ...base,
         code: latest.code,
-        imports: latest.imports,
+        importEdit: this.importEdit(session, session.rendered),
         steps: latest.steps,
         warnings: latest.warnings,
         message: `The last step could not be written: ${error instanceof Error ? error.message : String(error)}`,

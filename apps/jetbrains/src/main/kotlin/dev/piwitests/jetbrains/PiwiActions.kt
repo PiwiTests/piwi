@@ -173,19 +173,28 @@ class CompareWithAction : AnAction(), DumbAware {
             .setRenderer(textRenderer<Glue.BaselineEntry> { if (it.current) "${it.label} · current" else it.label })
             .setTitle("Compare With… (now: ${run.baseline?.label?.ifBlank { null } ?: "the latest run"})")
             .setItemChosenCallback { entry ->
-                val choice = entry.choice ?: Messages.showInputDialog(
+                val chosen = entry.choice
+                // A run by id: the service reads the id typed, and a text that is not one is said so.
+                val typed = if (chosen != null) "" else Messages.showInputDialog(
                     project,
                     "The id of the run to compare with (its page in the dashboard shows it):",
                     "Compare With a Run",
                     null,
                     null,
                     object : InputValidator {
-                        override fun checkInput(inputString: String?) = Glue.runIdOf(inputString) != null
+                        override fun checkInput(inputString: String?) = !inputString.isNullOrBlank()
                         override fun canClose(inputString: String?) = checkInput(inputString)
                     },
-                )?.let { typed -> Glue.runIdOf(typed)?.let { BaselineChoice("run", runId = it) } }
-                    ?: return@setItemChosenCallback
-                ApplicationManager.getApplication().executeOnPooledThread { service.setBaseline(target, choice) }
+                ) ?: return@setItemChosenCallback
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    val choice = chosen ?: service.server()?.runId(RunIdParams(typed))?.orNull()?.runId
+                        ?.let { BaselineChoice("run", runId = it) }
+                    if (choice == null) {
+                        PiwiCommands.notify(project, "Not a run id: give a positive number, such as 118.", NotificationType.WARNING)
+                    } else {
+                        service.setBaseline(target, choice)
+                    }
+                }
             }
             .createPopup()
             .showCenteredInCurrentWindow(project)

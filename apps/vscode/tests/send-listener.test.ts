@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import type { EditorSendPayload } from '@piwitests/core/editor-send';
 import { startSendListener, type SendListener } from '../src/send-listener';
-import { indentBlock } from '../src/glue';
 
 const TOKEN = 'abcdefghijklmnop_1234';
 const received: EditorSendPayload[] = [];
@@ -74,14 +73,5 @@ describe('the send listener', () => {
         onPayload: async () => ({ inserted: false, file: null }),
       }),
     ).rejects.toThrow(/EADDRINUSE/);
-  });
-});
-
-describe('indentBlock', () => {
-  test('re-indents a rendered body at the cursor’s indentation', () => {
-    expect(indentBlock("  await page.goto('/cart');\n  await page.getByRole('button').click();\n", '    ')).toBe(
-      "await page.goto('/cart');\n    await page.getByRole('button').click();",
-    );
-    expect(indentBlock('a\n\n  b', '')).toBe('a\n\n  b');
   });
 });
