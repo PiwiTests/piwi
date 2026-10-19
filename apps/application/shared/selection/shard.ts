@@ -10,7 +10,8 @@
  * groups), then each group is placed whole with longest-processing-time
  * balancing: the heaviest group goes to the lightest shard. A group heavier than
  * a shard's fair share still lands on one shard; balance is best effort, the
- * lock guarantee is not.
+ * lock guarantee is not. A test with no recorded duration weighs the median
+ * recorded one (1 ms when none has one), so new tests spread across shards.
  */
 
 /** The fields the balancer reads from a resolved test. */
@@ -80,6 +81,17 @@ function groupByLock<T extends ShardableTest>(rows: T[]): T[][] {
   return [...groups.values()];
 }
 
+/** The weight of a test with no recorded duration: the median recorded one, or 1 ms when none has one. */
+function unknownDurationWeight(rows: ShardableTest[]): number {
+  const known = rows
+    .map((t) => t.avgDurationMs)
+    .filter((d): d is number => d != null && d > 0)
+    .sort((a, b) => a - b);
+  if (known.length === 0) return 1;
+  const mid = known.length >> 1;
+  return known.length % 2 ? known[mid]! : (known[mid - 1]! + known[mid]!) / 2;
+}
+
 /**
  * Split rows into `total` shards balanced by summed average duration, keeping
  * every test that shares a lock in the same shard. Deterministic for the same
@@ -91,9 +103,10 @@ export function partitionTestsIntoShards<T extends ShardableTest>(rows: T[], tot
   const buckets: T[][] = Array.from({ length: total }, () => []);
   if (total < 1) return buckets;
 
+  const unknownWeight = unknownDurationWeight(rows);
   const groups = groupByLock(rows).map((tests) => ({
     tests,
-    weight: tests.reduce((sum, t) => sum + (t.avgDurationMs ?? 0), 0),
+    weight: tests.reduce((sum, t) => sum + (t.avgDurationMs ?? unknownWeight), 0),
     rep: representative(tests),
   }));
   groups.sort((a, b) => b.weight - a.weight || stableTestCompare(a.rep, b.rep));
