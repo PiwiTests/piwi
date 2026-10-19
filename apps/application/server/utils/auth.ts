@@ -27,23 +27,91 @@ declare module 'h3' {
   }
 }
 
-const scryptAsync = promisify(scrypt);
+const scryptAsync = promisify(scrypt) as (
+  password: string,
+  salt: string,
+  keylen: number,
+  options: { N: number; r: number; p: number; maxmem: number },
+) => Promise<Buffer>;
 
-// Password hashing using scrypt
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString('hex');
-  const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${salt}:${derivedKey.toString('hex')}`;
+/** The scrypt cost of a password hash: N = 2^log2N, block size r, parallelization p. */
+interface ScryptCost {
+  log2N: number;
+  r: number;
+  p: number;
 }
 
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const [salt, storedHash] = hash.split(':');
-  if (!salt || !storedHash) {
-    return false;
+/** The cost new password hashes use. */
+const SCRYPT_COST: ScryptCost = { log2N: 17, r: 8, p: 1 };
+/** The cost of a hash in the `salt:key` form, which carries no parameters: Node's scrypt defaults. */
+const UNENCODED_SCRYPT_COST: ScryptCost = { log2N: 14, r: 8, p: 1 };
+const SCRYPT_KEY_LENGTH = 64;
+
+interface PasswordHash extends ScryptCost {
+  salt: string;
+  key: Buffer;
+}
+
+const HEX = /^[0-9a-f]+$/;
+
+/**
+ * Read a stored password hash: `scrypt$<log2N>$<r>$<p>$<salt>$<key>`, or the
+ * `<salt>:<key>` form hashed at {@link UNENCODED_SCRYPT_COST}. Null for anything
+ * else, including a cost outside the bounds a sign-in may spend.
+ */
+function parsePasswordHash(hash: string): PasswordHash | null {
+  const parts = hash.split('$');
+  let cost: ScryptCost;
+  let salt: string | undefined;
+  let key: string | undefined;
+  if (parts.length === 6 && parts[0] === 'scrypt') {
+    cost = { log2N: Number(parts[1]), r: Number(parts[2]), p: Number(parts[3]) };
+    [salt, key] = [parts[4], parts[5]];
+  } else {
+    const pair = hash.split(':');
+    if (pair.length !== 2) return null;
+    cost = UNENCODED_SCRYPT_COST;
+    [salt, key] = pair;
   }
-  const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
-  const storedHashBuffer = Buffer.from(storedHash, 'hex');
-  return timingSafeEqual(derivedKey, storedHashBuffer);
+  const { log2N, r, p } = cost;
+  const inBounds = (n: number, min: number, max: number) => Number.isInteger(n) && n >= min && n <= max;
+  if (!inBounds(log2N, 10, 20) || !inBounds(r, 1, 32) || !inBounds(p, 1, 16)) return null;
+  if (!salt || !key || key.length % 2 !== 0 || !HEX.test(key) || !inBounds(key.length / 2, 16, 128)) return null;
+  return { ...cost, salt, key: Buffer.from(key, 'hex') };
+}
+
+/** scrypt's derived key of `password` at `cost`, with the memory bound the cost needs. */
+function deriveKey(password: string, salt: string, cost: ScryptCost, keyLength: number): Promise<Buffer> {
+  const N = 2 ** cost.log2N;
+  return scryptAsync(password, salt, keyLength, { N, r: cost.r, p: cost.p, maxmem: 256 * N * cost.r });
+}
+
+/** Hash a password with scrypt at {@link SCRYPT_COST}, the cost encoded in the result. */
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString('hex');
+  const key = await deriveKey(password, salt, SCRYPT_COST, SCRYPT_KEY_LENGTH);
+  const { log2N, r, p } = SCRYPT_COST;
+  return `scrypt$${log2N}$${r}$${p}$${salt}$${key.toString('hex')}`;
+}
+
+/** Whether `password` matches `hash`, in either stored form. */
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const parsed = parsePasswordHash(hash);
+  if (!parsed) return false;
+  const key = await deriveKey(password, parsed.salt, parsed, parsed.key.length);
+  return timingSafeEqual(key, parsed.key);
+}
+
+/** Whether a stored hash is in another form or at another cost than {@link hashPassword} writes. */
+export function passwordNeedsRehash(hash: string): boolean {
+  const parsed = parsePasswordHash(hash);
+  return (
+    !hash.startsWith('scrypt$') ||
+    !parsed ||
+    parsed.log2N !== SCRYPT_COST.log2N ||
+    parsed.r !== SCRYPT_COST.r ||
+    parsed.p !== SCRYPT_COST.p
+  );
 }
 
 // Session management using encrypted cookies
@@ -168,11 +236,11 @@ export async function revokeUserSessions(userId: number): Promise<number> {
   return rows[0]?.sessionEpoch ?? 0;
 }
 
-// A syntactically-valid scrypt hash (salt:hex) used only to spend the same
-// verification work for a nonexistent or password-less account as for a real
-// one. Its value is irrelevant — the comparison always fails; it exists solely
-// so login response timing can't be used to tell whether a username exists.
-const DUMMY_PASSWORD_HASH = `${'0'.repeat(32)}:${'0'.repeat(128)}`;
+// A syntactically-valid scrypt hash at the current cost, used only to spend the
+// same verification work for a nonexistent or password-less account as for a
+// real one. Its value is irrelevant — the comparison always fails; it exists
+// solely so login response timing can't be used to tell whether a username exists.
+const DUMMY_PASSWORD_HASH = `scrypt$${SCRYPT_COST.log2N}$${SCRYPT_COST.r}$${SCRYPT_COST.p}$${'0'.repeat(32)}$${'0'.repeat(128)}`;
 
 // Verify user credentials and return user
 export async function verifyUser(username: string, password: string): Promise<User | null> {
@@ -192,6 +260,15 @@ export async function verifyUser(username: string, password: string): Promise<Us
   const valid = await verifyPassword(password, user.password);
   if (!valid) {
     return null;
+  }
+
+  if (passwordNeedsRehash(user.password)) {
+    // Rewrite the hash at the current cost, unless the password changed meanwhile.
+    const rehashed = await hashPassword(password);
+    await db
+      .update(users)
+      .set({ password: rehashed })
+      .where(and(eq(users.id, user.id), eq(users.password, user.password)));
   }
 
   return user;
