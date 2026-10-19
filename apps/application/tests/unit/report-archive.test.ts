@@ -1,6 +1,9 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -9,7 +12,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the helpers.
 delete process.env.PIWI_DATABASE_URL;
-const { readArchiveEntry } = await import('../../server/utils/compression');
+const { readArchiveEntry, decompressDirectory } = await import('../../server/utils/compression');
 const { readReportArchiveIndex, clearReportArchiveCache } = await import('../../server/utils/report-archive');
 
 /** A report archive in the format the reporter uploads: length-prefixed path and content pairs, gzipped. */
@@ -50,6 +53,40 @@ describe('readArchiveEntry', () => {
   test('reads a malformed archive as holding nothing', async () => {
     expect(await readArchiveEntry(gzipSync(Buffer.from([0, 0, 0, 0, 1, 2, 3])), 'index.html')).toBeNull();
     expect(await readArchiveEntry(gzipSync(Buffer.from([5, 0, 0])), 'index.html')).toBeNull();
+  });
+});
+
+describe('decompressDirectory', () => {
+  async function extract(archive: Buffer) {
+    const dir = await mkdtemp(join(tmpdir(), 'piwi-archive-'));
+    try {
+      await decompressDirectory(archive, join(dir, 'out'));
+      const names = (await readdir(join(dir, 'out'), { recursive: true })).sort();
+      return { names, index: await readFile(join(dir, 'out', 'index.html'), 'utf8').catch(() => null) };
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  test('writes every file of the archive under the directory', async () => {
+    const archive = reportArchive([
+      ['index.html', '<html>report</html>'],
+      ['data/trace.zip', Buffer.alloc(300 * 1024, 7)],
+      ['data/empty.txt', ''],
+    ]);
+    expect(await extract(archive)).toEqual({
+      names: ['data', 'data/empty.txt', 'data/trace.zip', 'index.html'],
+      index: '<html>report</html>',
+    });
+  });
+
+  test('refuses a path that leaves the directory, and a malformed or truncated archive', async () => {
+    await expect(extract(reportArchive([['../evil.html', 'x']]))).rejects.toThrow(/path traversal/);
+    await expect(extract(gzipSync(Buffer.from([0, 0, 0, 0, 1, 2, 3])))).rejects.toThrow();
+    const archive = gzipSync(
+      Buffer.concat([Buffer.from([10, 0, 0, 0]), Buffer.from('index.html'), Buffer.from([9, 0, 0, 0, 1])]),
+    );
+    await expect(extract(archive)).rejects.toThrow(/ends inside a record/);
   });
 });
 
