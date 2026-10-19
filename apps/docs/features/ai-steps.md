@@ -100,7 +100,7 @@ piwi AI: no committed entry for "sign in as {email}" in test "checkout".
 
 That means an environment with no model access (a locked-down CI runner, an air-gapped box) can never accidentally author — it either replays a committed artifact or fails. If you would rather a missing entry mark the test **fixme** (yellow) instead of failing red, set `ai.onMiss: 'fixme'` (`PIWI_AI_ON_MISS=fixme`).
 
-Because replay is plain Playwright, there is nothing extra to install or start in CI. Commit the artifacts and your existing test job replays them.
+Replay is plain Playwright: commit the artifacts and your existing CI job replays them.
 
 ## What's inside an artifact — and why it's safe
 
@@ -119,7 +119,7 @@ Each test's replayed AI steps are reported to the dashboard as a small usage man
 - **Locator healing**: when the failing locator was compiled from a prompt, the healing panel shows it — *"Compiled from prompt: 'the email address field'"* — so you fix the intent, not just the selector.
 - **AI diagnosis**: the diagnosis context includes an *AI Steps* section listing the prompts behind the test's locators, so a root cause can be phrased in intent terms ("the element the test calls *the email address field* was renamed"). Capped by `PIWI_AI_MAX_STEP_INTENTS` (default 20, `0` disables).
 
-Intent mappings are as private as everything else here: templates keep their `{param}` placeholders and locators their `{{param}}` markers — parameter values never appear.
+Intent mappings keep `{param}` placeholders and `{{param}}` markers: parameter values never appear.
 
 ## Privacy
 
@@ -149,8 +149,7 @@ On the **server** side, two limits bound each authoring iteration (see the
 - `PIWI_AI_STEP_MAX_OUTPUT_TOKENS`: output tokens the model may return. **Reasoning models** spend tokens on hidden
   chain-of-thought, so raise this (up to `8192`) when authoring with one, or the JSON decision can be truncated.
 
-Each key may make 300 authoring calls in five minutes; a 20-step flow takes about 40. Past that the server answers
-429 and the authoring run stops, so split a large first authoring run or run it again a few minutes later.
+A key makes at most 300 authoring calls in five minutes (a 20-step flow takes about 40), then gets a 429.
 
 ## Related
 

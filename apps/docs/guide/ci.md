@@ -233,12 +233,10 @@ Four behaviors worth knowing:
 - **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
   `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded.
 
-- **A test that failed and then passed on retry satisfies `--require-tag`.** Flakiness is what `--max-new-flaky` is
-  for.
-- **A required tag that matches no test in the run is a violation**, so a misspelled tag cannot pass silently.
-- **Every evaluation made with the CI key is stored**: [merges overriding a failed
-  gate](/features/pr-feedback#the-gate-verdict) are counted. A key that can only read the project gets the verdict,
-  and stores and posts nothing.
+- **A test that passed on retry satisfies `--require-tag`.** `--max-new-flaky` covers flakiness.
+- **A required tag that matches no test is a violation**, so a typo cannot pass.
+- **The CI key's evaluations are stored**, so [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict)
+  are counted; a read-only key gets the verdict only.
 
 `npx @piwitests/reporter gate --help` lists every option; `--json` prints the raw result for a pipeline to parse.
 
