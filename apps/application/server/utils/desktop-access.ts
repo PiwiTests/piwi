@@ -6,6 +6,7 @@ import {
   isDesktopChallenge,
 } from '@piwitests/core/desktop-proof';
 import { timingSafeEqualStr } from './timing-safe';
+import { bearerToken } from './bearer';
 
 /**
  * Whether the request presents the desktop access token `token`, as any of:
@@ -18,12 +19,10 @@ import { timingSafeEqualStr } from './timing-safe';
  *   - an `x-piwi-token` header.
  */
 export function presentsDesktopToken(event: H3Event, token: string): boolean {
-  const authz = getRequestHeader(event, 'authorization');
-  const bearer = authz && authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : undefined;
   const presented =
     getCookie(event, 'piwi_token') ||
     getRequestHeader(event, 'x-piwi-token') ||
-    bearer ||
+    bearerToken(event) ||
     getRequestHeader(event, 'x-api-key');
   return !!presented && timingSafeEqualStr(presented, token);
 }

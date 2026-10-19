@@ -5,6 +5,7 @@ import { apiKeys, oauthAuthorizationRequests, oauthClients, oauthGrants, users }
 import type { OAuthClient, OAuthGrant, User } from '../database/schema';
 import type { DbClient } from '../database';
 import { generateApiKey, getUserAccessCached, isAuthEnabled, requireAuth } from './auth';
+import { bearerToken } from './bearer';
 import { getDatabase } from '../database';
 import { publicBaseUrl } from './public-base-url';
 import { timingSafeEqualStr } from './timing-safe';
@@ -625,14 +626,6 @@ export async function resolveOAuthAccessToken(
     await db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, row.grant.apiKeyId));
   }
   return { user: row.user, keyId: row.grant.apiKeyId };
-}
-
-function bearerToken(event: H3Event): string | null {
-  return (
-    getRequestHeader(event, 'authorization')
-      ?.match(/^Bearer\s+(.+)$/i)?.[1]
-      ?.trim() ?? null
-  );
 }
 
 /**

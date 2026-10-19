@@ -19,6 +19,7 @@ import type { DrizzleDB } from '#shared/handlers/db';
 import { getUserAccess } from '#shared/handlers/role-bindings';
 import { getRouteRequiredPermissions } from './route-required-permission';
 import { hashToken } from './token-hash';
+import { bearerToken } from './bearer';
 
 declare module 'h3' {
   interface H3EventContext {
@@ -459,11 +460,6 @@ export async function resolveApiKey(plaintext: string): Promise<{ user: User; ke
 
   const userResults = await db.select().from(users).where(eq(users.id, key.userId));
   return userResults[0] ? { user: userResults[0], keyId: key.id } : null;
-}
-
-/** The value of an `Authorization: Bearer` header, whatever kind of token it is; null without one. */
-export function bearerToken(event: H3Event): string | null {
-  return getRequestHeader(event, 'authorization')?.match(/^Bearer\s+(.+)$/i)?.[1] ?? null;
 }
 
 /**

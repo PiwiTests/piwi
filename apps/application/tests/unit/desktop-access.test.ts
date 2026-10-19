@@ -24,6 +24,7 @@ describe('the desktop access token', () => {
   it('is accepted from the cookie, a bearer, the x-piwi-token header and the X-API-Key header', () => {
     expect(presentsDesktopToken(withHeaders({ cookie: `piwi_token=${TOKEN}` }), TOKEN)).toBe(true);
     expect(presentsDesktopToken(withHeaders({ authorization: `Bearer ${TOKEN}` }), TOKEN)).toBe(true);
+    expect(presentsDesktopToken(withHeaders({ authorization: `bearer ${TOKEN}` }), TOKEN)).toBe(true);
     expect(presentsDesktopToken(withHeaders({ 'x-piwi-token': TOKEN }), TOKEN)).toBe(true);
     expect(presentsDesktopToken(withHeaders({ 'x-api-key': TOKEN }), TOKEN)).toBe(true);
   });
