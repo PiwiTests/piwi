@@ -2,8 +2,8 @@ import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { testRuns } from '../../database/schema';
 import { requireAuth } from '../../utils/auth';
-import { parseLocation } from '#shared/parse-location';
-import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
+import { persistRunCases } from '../../utils/persist-run-cases';
+import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
@@ -24,6 +24,7 @@ import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import type { TestRunSubmitPayload } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
@@ -61,7 +62,7 @@ export default eventHandler(async (event) => {
   // `run:submit` on at least one project, from the route meta; the project itself is checked below.
   const user = await requireAuth(event);
 
-  const body = await readBody(event);
+  const body = await readBody<TestRunSubmitPayload>(event);
 
   // Validate required fields
   if (!body.projectName || !body.status || !body.startTime) {
@@ -81,11 +82,11 @@ export default eventHandler(async (event) => {
   // A repeated delivery (the reporter gave up waiting and sent the run again)
   // answers with the run its first delivery stored.
   return deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
-    const shardTotal = body.shardTotal as number | undefined;
+    const shardTotal = body.shardTotal;
     const instanceId = body.instanceId || null;
     const isSharded = !!(shardTotal && shardTotal > 1);
 
-    const testCases: any[] = Array.isArray(body.testCases) ? body.testCases : [];
+    const testCases = Array.isArray(body.testCases) ? body.testCases : [];
 
     if (isSharded && instanceId) {
       // A shard of a batch run: its executions join the run its instance's shards
@@ -93,7 +94,7 @@ export default eventHandler(async (event) => {
       const run = await batchShardRun(db, project.id, instanceId, body);
       if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
       await applyReporterKeep(db, run.id, body.keep);
-      if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(toRunCase));
+      if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(mapWireCaseToRunCase));
       await addBatchShard(db, run.id, batchShardTally(body, testCases));
       if (!(await finalizeShardedRun(db, run.id, 'run-submitted'))) await publishShardProgress(db, run.id);
       return { success: true, runId: run.id, projectId: project.id };
@@ -125,7 +126,7 @@ export default eventHandler(async (event) => {
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
         shardTotal: isSharded ? shardTotal : null,
-        shardIndex: isSharded ? ((body.shardIndex as number | undefined) ?? null) : null,
+        shardIndex: isSharded ? (body.shardIndex ?? null) : null,
         shardsFinished: isSharded ? 0 : undefined,
         isFullRun: body.isFullRun !== false ? 1 : 0,
         filterDetails: body.filterDetails ?? null,
@@ -145,14 +146,12 @@ export default eventHandler(async (event) => {
 
     // Insert test cases if provided and calculate flaky tests
     let flakyTestCount = 0;
-    if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
-      flakyTestCount = body.testCases.filter(
-        (testCase: { status: string; retries?: number }) => testCase.status === 'passed' && (testCase.retries || 0) > 0,
+    if (testCases.length > 0) {
+      flakyTestCount = testCases.filter(
+        (testCase) => testCase.status === 'passed' && (testCase.retries || 0) > 0,
       ).length;
 
-      const cases: RunCaseInput[] = body.testCases.map(toRunCase);
-
-      await persistRunCases(db, project.id, testRun.id, cases);
+      await persistRunCases(db, project.id, testRun.id, testCases.map(mapWireCaseToRunCase));
     }
 
     // Update test run with flaky test count if any were found
@@ -161,8 +160,8 @@ export default eventHandler(async (event) => {
     }
 
     // Compute and store performance summary (avgTestDuration, p90TestDuration)
-    if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
-      const stats = durationStats(body.testCases.map((tc: { duration?: number | null }) => tc.duration));
+    if (testCases.length > 0) {
+      const stats = durationStats(testCases.map((tc) => tc.duration));
       if (stats) {
         await db
           .update(testRuns)
@@ -187,56 +186,3 @@ export default eventHandler(async (event) => {
     };
   });
 });
-
-/** A submitted test case, as `persistRunCases` stores it. */
-function toRunCase(testCase: any): RunCaseInput {
-  const { filePath, line, column } = testCase.location
-    ? parseLocation(testCase.location)
-    : { filePath: 'unknown', line: null, column: null };
-  return {
-    filePath,
-    suitePath: testCase.suitePath ?? null,
-    suiteConfig: testCase.suiteConfig ?? null,
-    testAnnotations: testCase.testAnnotations ?? null,
-    tags: testCase.tags ?? null,
-    locks: testCase.locks ?? null,
-    testMeta: testCase.testMeta ?? null,
-    title: testCase.title,
-    status: testCase.status,
-    duration: testCase.duration,
-    timeout: testCase.timeout,
-    error: testCase.error,
-    retries: testCase.retries,
-    attempts: testCase.attempts ?? null,
-    line,
-    column,
-    steps: testCase.steps,
-    stepEvents: testCase.stepEvents,
-    slowestStep: testCase.slowestStep,
-    slowestStepDuration: testCase.slowestStepDuration,
-    wastedTimeMs: testCase.wastedTimeMs,
-    networkRequests: testCase.networkRequests,
-    webVitals: testCase.webVitals,
-    pageState: testCase.pageState,
-    pageInventory: testCase.pageInventory,
-    locatorPages: testCase.locatorPages,
-    codeReach: testCase.codeReach,
-    coverage: testCase.coverage,
-    resources: testCase.resources ?? null,
-    aiUsage: testCase.aiUsage,
-    consoleLogs: testCase.consoleLogs,
-    dialogs: testCase.dialogs,
-    ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
-    ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
-    testSource: testCase.testSource ?? null,
-    testSourceFrames: testCase.testSourceFrames ?? null,
-    workerIndex: testCase.workerIndex,
-    shardIndex: testCase.shardIndex ?? null,
-    startedAt: testCase.startedAt ?? null,
-    browser: testCase.browser ?? null,
-    locatorSnapshots: testCase.locatorSnapshots ?? null,
-    didNotRunReason: testCase.didNotRunReason ?? null,
-    expectedStatus: testCase.expectedStatus ?? null,
-    blockedBy: testCase.blockedBy ?? null,
-  };
-}

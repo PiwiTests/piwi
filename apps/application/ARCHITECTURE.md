@@ -20,9 +20,9 @@ types/        Front-end API response types (`api.ts`)
 
 ## Shared types & core
 
-- `shared/types.ts` — the **wire contract**: `TestCasePayload`, `StreamEventPayload`, `TestRunSubmitPayload`,
-  `TestRunFinishPayload` and the `TestRunStatus` / `TestCaseStatus` unions. Server endpoints import it directly via
-  `#shared/types`.
+- `shared/types.ts` — the **wire contract**: `TestCasePayload`, `StreamEventPayload`, `TestRunSubmitPayload` and
+  `TestRunFinishPayload`. Server endpoints import it directly via `#shared/types`; every ingest route and the demo map a
+  wire test case to what `persistRunCases` stores with `mapWireCaseToRunCase` (`server/utils/map-wire-case.ts`).
 - `shared/permissions.ts` holds the **authorization model**: `InstanceRole`, `ProjectRole`, `Permission`, the matrix
   `ROLE_PERMISSIONS`, a user's `AccessSummary` and the checks on it (`can`, `passesEarlyCheck`, `projectScopeFor`).
   Pure, imported by the server, the MCP tools, the demo and `useAuth`.

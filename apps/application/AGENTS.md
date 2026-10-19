@@ -568,8 +568,8 @@ Re-run `npm run app:seed:demo` afterwards.
 
 ### Timed-out tests fold into `failedTests`
 
-There is no `timedOutTests` column on `test_runs`. Timed-out cases (`'timedOut'` per-case from Playwright; `'timedout'`
-in the declared `TestCaseStatus` union) fold into `failedTests` so `total = passed + failed + skipped + didNotRun`
+There is no `timedOutTests` column on `test_runs`. Timed-out cases (`'timedOut'` per-case from Playwright, stored as
+`'timedout'`) fold into `failedTests` so `total = passed + failed + skipped + didNotRun`
 reconciles and matches the UI. **Every ingest site MUST use the helpers in `shared/utils/test-counts.ts`** —
 `sumFailedAndTimedOut(body.failedTests, body.timedOutTests)` for body-field sites (`finish`, `submit`, `upload` + the
 demo `app/demo/api/reporter.ts` mirror) or `countFailedFromTally(insertedStatusCounts)` for per-status-tally sites

@@ -31,7 +31,6 @@ export const INGEST_HEALTH_COUNTS = [
   'tracesSkipped',
   'evidenceFromTrace',
 ] as const;
-export type IngestHealthCount = (typeof INGEST_HEALTH_COUNTS)[number];
 
 export interface IngestHealth {
   /** Steps the step cap left out, across the run's executions (the failing steps are always kept). */
