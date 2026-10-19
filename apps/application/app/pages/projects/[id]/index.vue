@@ -591,6 +591,18 @@ function openRun(runId: number) {
   navigateTo(`/test-runs/${runId}`);
 }
 
+/** A run's page as an href, under the base path the app is served at (`/demo/` in the demo). */
+function runHref(runId: number): string {
+  return router.resolve(`/test-runs/${runId}`).href;
+}
+
+/** A plain click on a run link routes in the app; a modified click opens it as the browser does. */
+function onRunLinkClick(event: MouseEvent, runId: number) {
+  if (isModifiedClick(event)) return;
+  event.preventDefault();
+  openRun(runId);
+}
+
 // The report links and the delete action share one row overflow menu, so the
 // table fits without a horizontal scroll at 1280 px.
 function runMenuItems(run: TestRunSummary) {
@@ -1063,9 +1075,9 @@ const moreMenuItems = computed(() => {
                 <template #id-cell="{ row }">
                   <div class="flex items-center gap-2">
                     <a
-                      :href="`/test-runs/${row.original.id}`"
+                      :href="runHref(row.original.id)"
                       class="text-primary hover:underline font-medium"
-                      @click.prevent="openRun(row.original.id)"
+                      @click="onRunLinkClick($event, row.original.id)"
                     >
                       Run #{{ row.original.id }}
                     </a>
