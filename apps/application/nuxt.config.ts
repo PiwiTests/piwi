@@ -1,7 +1,7 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, relative, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages';
 
@@ -491,6 +491,18 @@ export default defineNuxtConfig({
   },
 
   hooks: {
+    // Each page's route records its source file, relative to `app/pages`, for
+    // the command palette's *View page source*.
+    'pages:extend': (pages) => {
+      const pagesDir = resolve(__dirname, 'app/pages');
+      const stamp = (list: typeof pages) => {
+        for (const page of list) {
+          if (page.file) page.meta = { ...page.meta, sourceFile: relative(pagesDir, page.file).split(sep).join('/') };
+          if (page.children) stamp(page.children);
+        }
+      };
+      stamp(pages);
+    },
     'nitro:build:public-assets': (nitro) => {
       // Copy migrations folders to output during build
       const sourceMigrations = resolve(__dirname, 'server/database/migrations');

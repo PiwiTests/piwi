@@ -298,15 +298,14 @@ const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => (
   onSelect: item.onSelect,
 });
 
-// The source file for a dynamic route (e.g. /projects/:id) can't be derived
-// from the URL — it may be `[id].vue` or `[id]/index.vue` — so for dynamic
-// routes we link to the pages directory instead of a guessed (404-ing) file.
+// The matched page's component file, which the build records on its route
+// (`sourceFile`, from the `pages:extend` hook); the pages directory otherwise.
 const pageSourceUrl = computed(() => {
-  const blobBase = 'https://github.com/piwitests/platform/blob/main/application/app/pages';
-  const treeBase = 'https://github.com/piwitests/platform/tree/main/application/app/pages';
-  const pattern = route.matched[route.matched.length - 1]?.path ?? route.path;
-  if (pattern.includes(':')) return treeBase;
-  return `${blobBase}${pattern === '/' ? '/index' : pattern}.vue`;
+  const repository = 'https://github.com/piwitests/platform';
+  const file = route.matched.at(-1)?.meta.sourceFile;
+  return typeof file === 'string'
+    ? `${repository}/blob/main/apps/application/app/pages/${file}`
+    : `${repository}/tree/main/apps/application/app/pages`;
 });
 
 function runStatusIcon(status: string) {
