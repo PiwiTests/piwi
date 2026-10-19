@@ -233,9 +233,11 @@ describe('emitFlyToml', () => {
     expect(out.split('[mounts]')[0]).not.toContain('PIWI_AUTH_SECRET =');
   });
 
-  test('derives the public URL from the app name', () => {
+  test('leaves the public URL to the app name the server reads at start', () => {
     const named = emitFlyToml([{ name: 'PIWI_SITE_URL', value: '', platformValue: 'url' }], { name: 'piwi-tests' });
-    expect(named).toContain('PIWI_SITE_URL = "https://piwi-tests.fly.dev"');
+    expect(named).not.toContain('PIWI_SITE_URL =');
+    expect(named).not.toContain('piwi-tests.fly.dev');
+    expect(named).toContain('# PIWI_SITE_URL defaults to https://<app>.fly.dev');
     expect(named).toContain('source = "piwi_tests_data"');
   });
 });

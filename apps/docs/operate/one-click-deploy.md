@@ -84,8 +84,8 @@ $setup   # the first-admin form asks for it
 
 :::
 
-If `fly launch` picks a different app name because yours is taken, update `PIWI_SITE_URL` in `fly.toml` to
-match. Autoscaling is deliberately off (`auto_stop_machines = false`, `min_machines_running = 1`): the
+`PIWI_SITE_URL` follows the app name `fly launch` picks (`https://<app>.fly.dev`); set it for a custom
+domain. Autoscaling is deliberately off (`auto_stop_machines = false`, `min_machines_running = 1`): the
 notification and retention sweeps run in-process, so a suspended machine silently stops doing scheduled work.
 
 ## Koyeb

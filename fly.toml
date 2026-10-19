@@ -11,8 +11,7 @@ primary_region = "cdg"
 [env]
   # A one-click deploy is reachable from the internet — authentication stays on.
   PIWI_AUTH_ENABLED = "true"
-  # Update this if `fly launch` picked a different app name.
-  PIWI_SITE_URL = "https://piwi.fly.dev"
+  # PIWI_SITE_URL defaults to https://<app>.fly.dev, from the app's name; set it for a custom domain.
 
 [mounts]
   source = "piwi_data"

@@ -257,7 +257,7 @@ export const PIWI_ENV_VARS = {
     type: 'url',
     example: 'https://piwi.example.com',
     notes:
-      'When unset, links in emails point to http://localhost:3000 and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy.',
+      'When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy.',
   },
   PIWI_SECRET_KEY: {
     description:

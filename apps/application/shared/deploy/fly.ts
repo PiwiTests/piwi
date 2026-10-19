@@ -48,9 +48,10 @@ export function emitFlyToml(entries: readonly EnvEntry[], opts: EmitOptions = {}
     }
     if (entry.comment) envLines.push(`  # ${entry.comment}`);
     if (entry.platformValue === 'url') {
-      // `fly launch` rewrites `app` when the name is taken, but not this value.
-      envLines.push(`  # Update this if \`fly launch\` picked a different app name.`);
-      envLines.push(`  ${entry.name} = ${quoteTomlValue(`https://${name}.fly.dev`)}`);
+      // The server defaults it from FLY_APP_NAME, which follows the name `fly launch` picked.
+      envLines.push(
+        `  # ${entry.name} defaults to https://<app>.fly.dev, from the app's name; set it for a custom domain.`,
+      );
       continue;
     }
     envLines.push(`  ${entry.name} = ${quoteTomlValue(entry.value)}`);
