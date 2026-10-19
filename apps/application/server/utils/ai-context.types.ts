@@ -12,6 +12,12 @@ export interface BuildContextOptions {
   /** When true, resolve screenshot data URLs into `images`. Default true. */
   includeImages?: boolean;
   /**
+   * Build for a provider that reads text only (the local Claude CLI): no
+   * screenshot or visual-diff overlay is attached, and the prompt `text` names
+   * none. `sections` are the same as without it.
+   */
+  textOnly?: boolean;
+  /**
    * Skip the SCM investigation network fetch (diff since last green + selected
    * commit diffs). Used by the two-stage pipeline to keep the research pass
    * cheap and to only pay for the SCM fetch when it's actually needed.

@@ -29,6 +29,9 @@ const provider = vi.hoisted(() => ({
   /** Which provider calls ran, in order. */
   calls: [] as string[],
   researchFails: false,
+  /** The options each context build received, and the images each diagnosis call sent. */
+  contextOptions: [] as Array<{ textOnly?: boolean }>,
+  sentImages: [] as unknown[],
 }));
 
 vi.mock('#shared/handlers/test-cases', async (importOriginal) => ({
@@ -40,18 +43,21 @@ vi.mock('#shared/handlers/test-cases', async (importOriginal) => ({
 }));
 
 vi.mock('../../server/utils/ai-context', () => ({
-  buildDiagnosisContext: async () => ({
-    scope: 'cluster',
-    text: 'context',
-    sections: [],
-    coverage: {},
-    scmChanges: null,
-    images: [],
-    sourceFiles: [],
-    tokenEstimate: 1,
-    textTokenEstimate: 1,
-    imageTokenEstimate: 0,
-  }),
+  buildDiagnosisContext: async (_db: unknown, opts: { textOnly?: boolean }) => {
+    provider.contextOptions.push(opts);
+    return {
+      scope: 'cluster',
+      text: 'context',
+      sections: [],
+      coverage: {},
+      scmChanges: null,
+      images: [],
+      sourceFiles: [],
+      tokenEstimate: 1,
+      textTokenEstimate: 1,
+      imageTokenEstimate: 0,
+    };
+  },
 }));
 
 vi.mock('../../server/utils/notifications/emit', () => ({ emitNotification: () => {} }));
@@ -65,8 +71,9 @@ vi.mock('../../server/utils/ai-provider', async (importOriginal) => {
       if (provider.researchFails) throw new Error('research model unavailable');
       return { text: '{"hypotheses":[],"dataGaps":[],"notes":""}', model: 'research-model', ...usage };
     },
-    streamAiProvider: async function* () {
+    streamAiProvider: async function* (_config: unknown, opts: { images?: unknown }) {
       provider.calls.push('diagnosis');
+      provider.sentImages.push(opts.images);
       yield { type: 'text', data: '{"summary":"Checkout button is disabled",' };
       yield { type: 'text', data: '"category":"app-bug"}' };
       yield { type: 'done', data: { model: 'main-model', ...usage } };
@@ -159,6 +166,8 @@ beforeEach(async () => {
   clues.strengthByExecution.clear();
   provider.calls.length = 0;
   provider.researchFails = false;
+  provider.contextOptions.length = 0;
+  provider.sentImages.length = 0;
   delete process.env.PIWI_AI_AUTO_DIAGNOSE_MAX;
   vi.spyOn(console, 'debug').mockImplementation(() => {});
 
@@ -363,6 +372,36 @@ describe('streamClusterDiagnosis stages', () => {
       'text',
       'done',
     ]);
+  });
+});
+
+describe('a text-only provider', () => {
+  test('the local Claude CLI gets a text-only context and no image, even one the user attached', async () => {
+    const cluster = await seedCluster(1);
+    const cli: ResolvedAiRole = {
+      provider: 'claude-cli',
+      apiKey: '',
+      model: 'sonnet',
+      baseUrl: null,
+      temperature: null,
+    };
+    const config: AiConfig = {
+      ...cli,
+      autoDiagnose: false,
+      source: 'settings',
+      roles: { diagnosis: cli, research: null, embedding: null },
+    };
+    await streamClusterDiagnosis(dbc, cluster, config, {
+      images: [{ name: 'user', mediaType: 'image/png', data: 'aGVsbG8=' }],
+    });
+    expect(provider.contextOptions.map((o) => o.textOnly)).toEqual([true]);
+    expect(provider.sentImages).toEqual([undefined]);
+  });
+
+  test('an API provider gets the full context', async () => {
+    const cluster = await seedCluster(1);
+    await streamClusterDiagnosis(dbc, cluster, aiConfig(null), {});
+    expect(provider.contextOptions.map((o) => o.textOnly)).toEqual([false]);
   });
 });
 
