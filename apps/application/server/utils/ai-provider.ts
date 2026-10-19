@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
 import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
-import { overlayStoredRoles, parseEnvTemperature } from './ai-settings';
+import { overlayStoredRoles, rolesFromLegacy, storedRoles, type RawStoredAi, type RawStoredRole } from './ai-settings';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -10,33 +10,6 @@ export type { AiConfig };
 
 /** Default Anthropic model when none is configured. */
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-8';
-
-/** Stored shape of a single role in the `ai` app-setting (apiKey is encrypted). */
-interface StoredRole {
-  provider?: string;
-  model?: string;
-  baseUrl?: string;
-  apiKey?: string; // encrypted at rest
-  /** When set, inherit provider/apiKey/baseUrl from the named role (model may still differ). */
-  reuse?: AiModelRole | null;
-  /** OpenAI-compat only: sampling temperature override. Not inherited via `reuse` — it's a call-time tuning knob, not a credential. */
-  temperature?: number;
-}
-
-/** Stored shape of the `ai` app-setting. New installs use `roles`; older installs use the flat fields. */
-interface StoredAi {
-  autoDiagnose?: boolean;
-  roles?: Partial<Record<AiModelRole, StoredRole>>;
-  // ── Legacy flat fields (pre-roles installs) ──
-  provider?: string;
-  apiKey?: string;
-  model?: string;
-  baseUrl?: string;
-  researchModel?: string;
-  researchProvider?: string;
-  researchBaseUrl?: string;
-  researchApiKey?: string;
-}
 
 /** What a role is used for: embeddings need an OpenAI-compatible endpoint (Anthropic has no embeddings API). */
 type RoleKind = 'chat' | 'embedding';
@@ -79,7 +52,7 @@ const ROLE_ORDER: AiModelRole[] = ['diagnosis', 'research', 'embedding'];
  * `apiKey` into the key to send: stored keys are decrypted, env keys are plain.
  */
 function resolveRoles(
-  roles: Partial<Record<AiModelRole, StoredRole>>,
+  roles: Partial<Record<AiModelRole, RawStoredRole>>,
   readKey: (key?: string) => string = (enc) => (enc ? decryptSecret(enc, getEncryptionKey()) : ''),
 ): AiConfig['roles'] {
   const out: Record<AiModelRole, ResolvedAiRole | null> = { diagnosis: null, research: null, embedding: null };
@@ -123,62 +96,21 @@ function assembleConfig(
   };
 }
 
+/**
+ * The AI configuration every call uses: the roles the `PIWI_AI_*` variables
+ * define, with the per-role settings saved in Settings → AI laid over them, when
+ * the environment manages AI; otherwise the roles saved in Settings. Both read
+ * their role map through `rolesFromLegacy` / `storedRoles`, as Settings shows it.
+ */
 export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
-  const runtimeConfig = useRuntimeConfig();
-  const envAi = runtimeConfig.ai as
-    | {
-        provider?: string;
-        apiKey?: string;
-        model?: string;
-        baseUrl?: string;
-        autoDiagnose?: boolean | string;
-        temperature?: string | number;
-        researchModel?: string;
-        researchProvider?: string;
-        researchBaseUrl?: string;
-        researchApiKey?: string;
-        researchTemperature?: string | number;
-        embeddingProvider?: string;
-        embeddingModel?: string;
-        embeddingBaseUrl?: string;
-        embeddingApiKey?: string;
-      }
+  const envAi = useRuntimeConfig().ai as
+    | (Parameters<typeof rolesFromLegacy>[0] & { autoDiagnose?: boolean | string })
     | undefined;
+  const stored = await getAppSetting<RawStoredAi>(db, 'ai');
 
   if (envAi?.provider) {
-    const envRoles: Partial<Record<AiModelRole, StoredRole>> = {
-      diagnosis: {
-        provider: envAi.provider,
-        apiKey: envAi.apiKey,
-        model: envAi.model,
-        baseUrl: envAi.baseUrl,
-        temperature: parseEnvTemperature(envAi.temperature),
-      },
-    };
-    // Research defaults its provider/baseUrl/key to the diagnosis role when not overridden.
-    if (envAi.researchModel) {
-      envRoles.research = {
-        provider: envAi.researchProvider || envAi.provider,
-        apiKey: envAi.researchApiKey || envAi.apiKey,
-        model: envAi.researchModel,
-        baseUrl: envAi.researchBaseUrl || envAi.baseUrl,
-        temperature: parseEnvTemperature(envAi.researchTemperature),
-      };
-    }
-    // Embedding defaults its provider/key/baseUrl to the main role when not
-    // overridden (same convention as research). Only useful when the main
-    // provider is OpenAI-compatible — embeddings require one.
-    if (envAi.embeddingModel) {
-      envRoles.embedding = {
-        provider: envAi.embeddingProvider || envAi.provider,
-        apiKey: envAi.embeddingApiKey || envAi.apiKey,
-        model: envAi.embeddingModel,
-        baseUrl: envAi.embeddingBaseUrl || envAi.baseUrl,
-      };
-    }
-    // The per-role settings saved in Settings → AI apply over the env config.
-    const stored = await getAppSetting<StoredAi>(db, 'ai');
-    const roles = resolveRoles(overlayStoredRoles(envRoles, stored), (key) => key ?? '');
+    // Environment keys are plain text; stored ones are decrypted.
+    const roles = resolveRoles(overlayStoredRoles(rolesFromLegacy(envAi), stored), (key) => key ?? '');
     return assembleConfig(
       roles.diagnosis,
       roles.research,
@@ -188,30 +120,9 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
     );
   }
 
-  const stored = await getAppSetting<StoredAi>(db, 'ai');
   if (!stored) return null;
-
-  const autoDiagnose = Boolean(stored.autoDiagnose);
-
-  // New role-based storage
-  if (stored.roles) {
-    const roles = resolveRoles(stored.roles);
-    return assembleConfig(roles.diagnosis, roles.research, roles.embedding, autoDiagnose, 'settings');
-  }
-
-  // Legacy flat storage → map onto roles
-  if (!stored.provider) return null;
-  const decrypt = (enc?: string) => (enc ? decryptSecret(enc, getEncryptionKey()) : '');
-  const diagnosis = makeRole(stored.provider, decrypt(stored.apiKey), stored.model, stored.baseUrl);
-  const research = stored.researchModel
-    ? makeRole(
-        stored.researchProvider || stored.provider,
-        stored.researchApiKey ? decrypt(stored.researchApiKey) : decrypt(stored.apiKey),
-        stored.researchModel,
-        stored.researchBaseUrl || stored.baseUrl,
-      )
-    : null;
-  return assembleConfig(diagnosis, research, null, autoDiagnose, 'settings');
+  const roles = resolveRoles(storedRoles(stored));
+  return assembleConfig(roles.diagnosis, roles.research, roles.embedding, Boolean(stored.autoDiagnose), 'settings');
 }
 
 const endpointOf = (baseUrl: string | null | undefined) => (baseUrl ?? '').trim().replace(/\/+$/, '').toLowerCase();
