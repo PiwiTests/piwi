@@ -19,7 +19,7 @@ these follow, with its measurements and the phases still open, is
 | `workflows/release-please.yml`             | pushes to `main`                | the release PR, and the tag once it merges                                               |
 | `workflows/release.yml`                    | release tags, on demand, PRs    | every publication, through the `reusable-publish-*.yml` below; a PR run publishes none   |
 | `workflows/reusable-publish-npm.yml`       | called by `release.yml`         | `@piwitests/reporter`, `@piwitests/server` (from the shared build), `instrumentation-nitro` |
-| `workflows/reusable-publish-container.yml` | called by `release.yml`, `edge.yml` | the multi-arch image: version tags on a tag, `edge` on main, a build only elsewhere  |
+| `workflows/reusable-publish-container.yml` | called by `release.yml`, `edge.yml` | the multi-arch image: version tags on a tag (minor, major and `latest` for the newest release of each line only), `edge` on main, a build only elsewhere; the amd64 image answers `/api/health` before a tag moves |
 | `workflows/reusable-publish-nuget.yml`     | called by `release.yml`         | the instrumentation NuGet packages                                                       |
 | `workflows/reusable-publish-desktop.yml`   | called by `release.yml`         | the desktop installers, from the shared build, attached to the GitHub release            |
 | `workflows/reusable-publish-vscode.yml`    | called by `release.yml`         | the VS Code extension (Marketplace, Open VSX)                                            |
@@ -29,6 +29,7 @@ these follow, with its measurements and the phases still open, is
 | `workflows/release-notes.yml`              | releases, on demand             | tidies the release notes                                                                 |
 | `workflows/live-jira.yml`                  | on demand                       | the live Jira E2E                                                                        |
 | `actions/setup-workspace/action.yml`       | used by the workflows above     | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                      |
+| `actions/container-health/action.yml`      | `ci.yml`, the container publish | starts a server image on an empty data folder and waits for `/api/health`                |
 
 `ci.yml`'s `changes` job reads which areas a change touches (`dorny/paths-filter`) and each job runs for the areas it
 covers; a change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all. It also picks the
@@ -36,7 +37,8 @@ matrices: a pull request runs the dashboard E2E suite on two backends (`local + 
 and the package smoke test on Linux (on Windows and macOS too when it changes the packages or their dependencies);
 `main` runs the four backends and the three systems. The JetBrains Plugin Verifier runs on two IDEs for a pull request
 and on four on `main`, where the plugin job also writes the Gradle cache. The extension, VS Code and desktop suites run
-on pull requests only, and so does the performance comparison, which builds the base commit once (cached by its sha)
+on pull requests only, and so do the container image check (the publish workflow runs it on `main` and on a tag) and
+the performance comparison, which builds the base commit once (cached by its sha)
 and reports a regression in its comment without failing. The release PR runs the `Versions` job alone.
 
 ## Conventions
