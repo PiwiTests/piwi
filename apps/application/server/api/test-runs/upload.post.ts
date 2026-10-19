@@ -232,6 +232,16 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       message: 'Missing required fields: projectName, testRun',
     });
   }
+  // A run this upload creates needs a status and a start time, checked before anything is stored.
+  if (!existingTestRunId) {
+    const startTime = testRunData.startTime as string | number | undefined;
+    if (!testRunData.status || typeof testRunData.status !== 'string' || startTime == null || startTime === '') {
+      throw apiError({ statusCode: 400, message: 'Missing required testRun fields: status, startTime' });
+    }
+    if (Number.isNaN(new Date(startTime).getTime())) {
+      throw apiError({ statusCode: 400, message: 'Invalid testRun startTime' });
+    }
+  }
 
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any, 'run:submit');
@@ -321,24 +331,6 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       return { path, size: report.size };
     }
 
-    // Store all reports and collect their metadata. Reports are processed one at a
-    // time — each `.gz` report is inflated fully into memory before being written
-    // to disk, so decompressing them in parallel would stack every report's peak
-    // at once.
-    const storedReports: { type: string; label: string; path: string; size: number }[] = [];
-
-    for (const [type, report] of [...reportFiles.entries()]) {
-      try {
-        console.log(`[Upload] Storing ${type} report: ${report.filename}`);
-        const { path: storedPath, size } = await storeReport(type, report);
-        const label = getReportLabel(type, report.label);
-        console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
-        storedReports.push({ type, label, path: storedPath, size });
-      } catch (error) {
-        console.error(`[Upload] Failed to store ${type} report: ${error}`);
-      }
-    }
-
     // Create or retrieve the test run; a created one carries its isFullRun and status for the finalize side effects.
     let testRun: { id: number; projectId: number; isFullRun?: number; status?: string };
     const incomingResources = sanitizeResourceReport(testRunData.resourceReport);
@@ -414,6 +406,24 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
         projectId: resultTestRun.projectId,
         status: resultTestRun.status,
       });
+    }
+
+    // Store all reports once the run exists, and collect their metadata. Reports
+    // are processed one at a time — each `.gz` report is inflated fully into
+    // memory before being written to disk, so decompressing them in parallel
+    // would stack every report's peak at once.
+    const storedReports: { type: string; label: string; path: string; size: number }[] = [];
+
+    for (const [type, report] of [...reportFiles.entries()]) {
+      try {
+        console.log(`[Upload] Storing ${type} report: ${report.filename}`);
+        const { path: storedPath, size } = await storeReport(type, report);
+        const label = getReportLabel(type, report.label);
+        console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
+        storedReports.push({ type, label, path: storedPath, size });
+      } catch (error) {
+        console.error(`[Upload] Failed to store ${type} report: ${error}`);
+      }
     }
 
     // Batch insert report records into the files table
