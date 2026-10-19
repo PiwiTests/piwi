@@ -1,23 +1,29 @@
 import type { KnipConfig } from 'knip';
 
-// The live AI suite's Playwright config (`app:test:ai:live`) throws without a
-// provider key; knip only reads it for its entry files.
+// The live suites' Playwright configs (`app:test:ai:live`, `app:test:jira:live`)
+// throw without their credentials; knip only reads them for their entry files.
 process.env.OPENCODE_API_KEY ||= 'knip';
+process.env.PIWI_JIRA_BASE_URL ||= 'https://knip.atlassian.net';
+process.env.PIWI_JIRA_EMAIL ||= 'knip@example.com';
+process.env.PIWI_JIRA_API_TOKEN ||= 'knip';
+process.env.PIWI_LIVE_JIRA_PROJECT_KEY ||= 'KNIP';
 
 const config: KnipConfig = {
   // Report exports nothing imports; an export used only inside its own module is not flagged.
   ignoreExportsUsedInFile: true,
   ignoreBinaries: ['tauri', 'playwright'],
-  // Built on their own toolchains (Tauri, VitePress) or resolved from the npm registry.
-  ignoreWorkspaces: ['apps/desktop', 'apps/docs', 'examples/sample-app'],
   workspaces: {
     '.': {
-      entry: ['scripts/*.mjs', 'commitlint.config.js'],
+      entry: ['scripts/*.mjs'],
+      // Not workspaces: built on their own toolchains (Tauri, VitePress) or resolved from the npm registry.
+      ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**'],
     },
     'apps/application': {
       entry: [
         'app/service-worker/demo-sw.ts',
         'scripts/*.mjs',
+        // The performance suite's report step, run by `reusable-perf.yml`.
+        'scripts/perf/*.mjs',
         'tests/globalSetup.ts',
         'tests/globalTeardown.ts',
         'drizzle.config.pg.ts',
@@ -26,10 +32,19 @@ const config: KnipConfig = {
         // drizzle-kit reads every table the schema exports.
         'server/database/schema.*.ts',
       ],
-      ignore: ['public/**'],
       // `vue`, `h3` and `nitropack` come with Nuxt; Nuxt Icon loads the installed `@iconify-json/*`
-      // collections; `nuxt typecheck` runs `vue-tsc`.
-      ignoreDependencies: ['vue', 'h3', 'nitropack', '@iconify-json/lucide', '@iconify-json/simple-icons', 'vue-tsc'],
+      // collections; `nuxt typecheck` runs `vue-tsc`. `@emnapi/*` keeps the runtime of the WASM fallback
+      // bindings (oxc, Tailwind's oxide) in the lockfile, which `npm ci` needs on every platform.
+      ignoreDependencies: [
+        'vue',
+        'h3',
+        'nitropack',
+        '@iconify-json/lucide',
+        '@iconify-json/simple-icons',
+        'vue-tsc',
+        '@emnapi/core',
+        '@emnapi/runtime',
+      ],
     },
     'apps/extension': {
       // The standalone bundles `scripts/build.mjs` builds, plus the HTML pages' scripts.

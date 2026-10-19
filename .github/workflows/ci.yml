@@ -68,7 +68,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `app` is what the dashboard's build, E2E, package smoke and demo jobs depend on: the server bundles the docs
-      # pages and the changelog for its MCP tools. `js` is every workspace the checks job lints and tests.
+      # pages and the changelog for its MCP tools. `js` is every workspace the checks job formats, lints and tests,
+      # and what knip reads besides them (its config, the configs of the tools it knows, the git hooks).
       - name: Read the areas the change touches
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -105,6 +106,9 @@ jobs:
               - 'package-lock.json'
               - 'tsconfig.json'
               - 'knip.ts'
+              - 'commitlint.config.js'
+              - '.husky/**'
+              - '.editorconfig'
             extension:
               - 'apps/extension/**'
               - 'packages/core/**'
@@ -282,6 +286,17 @@ jobs:
         with:
           playwright: shell
 
+      # Every workspace's files as the pre-commit hook formats them.
+      - name: Check formatting
+        run: |
+          npm run app:format:check -w apps/application
+          npm run extension:format:check -w apps/extension
+          npm run vscode:format:check -w apps/vscode
+          npm run core:format:check -w packages/core
+          npm run picker-dom:format:check -w packages/picker-dom
+          npm run editor:format:check -w packages/editor
+          npm run reporter:format:check -w packages/reporter
+
       - name: Lint
         working-directory: apps/application
         run: npm run app:lint
@@ -339,10 +354,15 @@ jobs:
         working-directory: packages/picker-dom
         run: npm run picker-dom:test:integration
 
-      # The reporter's flake-run and build-output specs load the built package.
+      # The reporter's flake-run and build-output specs load the built package, and so does knip, through the
+      # dashboard's Playwright config.
       - name: Build reporter
         working-directory: packages/reporter
         run: npm run reporter:build
+
+      # Unused files, exports and dependencies, and imports of packages a workspace does not declare.
+      - name: Knip
+        run: npm run knip
 
       - name: Test reporter
         working-directory: packages/reporter
