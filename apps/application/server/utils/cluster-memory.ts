@@ -16,7 +16,7 @@
  * This is a read-only comparison path against resolved clusters; it does not
  * touch the open-cluster reconciliation in `cluster-reconcile.ts`.
  */
-import { and, desc, eq, inArray, isNotNull, ne, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { failureClusters, failureDiagnoses, testCases, testRuns, testRunsCases } from '../database/schema';
 import { extractErrorSignature, maskSelector } from '#shared/error-fingerprint';
 import { cosineSimilarity, parseEmbedding } from './cluster-similarity';
@@ -129,7 +129,8 @@ async function resolveRepositoryUrl(db: DrizzleDB, runId: number | null): Promis
  */
 export async function findFixedBefore(db: DrizzleDB, cluster: ClusterRow): Promise<FixedBeforeMatch[]> {
   // Resolved-like candidates in the same project, excluding the cluster itself,
-  // most-recently-fixed first (that order breaks scoring ties).
+  // most-recently-fixed first and those with no landed fix last, on both
+  // dialects (that order breaks scoring ties).
   const candidateRows = await db
     .select()
     .from(failureClusters)
@@ -143,7 +144,7 @@ export async function findFixedBefore(db: DrizzleDB, cluster: ClusterRow): Promi
         ),
       ),
     )
-    .orderBy(desc(failureClusters.fixLandedAt), desc(failureClusters.updatedAt))
+    .orderBy(sql`${failureClusters.fixLandedAt} DESC NULLS LAST`, desc(failureClusters.updatedAt))
     .limit(MAX_CANDIDATES);
 
   const candidates = candidateRows.filter(isResolvedLike);
