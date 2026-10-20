@@ -138,6 +138,11 @@ export const testCases = sqliteTable(
     suitePath: text('suite_path').notNull().default(''), // \x1f-delimited describe block path, e.g. 'Auth\x1fLogin'
     suiteId: integer('suite_id').references(() => testSuites.id), // FK to immediate parent describe block (null for root-level tests)
     title: text('title').notNull(),
+    // The ID the team gives this test in its own test management tool (`piwi:id`, or read from the title with the
+    // reporter's `externalId.pattern`). Matched before file + describe path + title, so a test keeps its history
+    // when it is renamed or moved.
+    externalId: text('external_id'),
+    displayTitle: text('display_title'), // the title without its external ID, when the reporter is asked to remove it
     flakyRootCause: text('flaky_root_cause'), // 'timing' | 'network' | 'assertion' | 'environment' | 'order' | 'other'
     // Latest-known test-level tags and `piwi:` metadata, refreshed on every run
     // that reports this test. Per-execution truth lives on test_runs_cases;
@@ -165,6 +170,9 @@ export const testCases = sqliteTable(
     ),
     suiteIdIdx: index('idx_test_cases_suite').on(table.suiteId),
     ownerIdx: index('idx_test_cases_owner').on(table.projectId, table.owner),
+    externalIdUnique: uniqueIndex('idx_test_cases_external_id')
+      .on(table.projectId, table.externalId)
+      .where(sql`external_id IS NOT NULL`),
   }),
 );
 

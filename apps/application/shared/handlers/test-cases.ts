@@ -169,6 +169,8 @@ export async function getTestCase(db: DrizzleDB, id: number) {
     filePath: testCase.filePath,
     suitePath: testCase.suitePath,
     title: testCase.title,
+    externalId: testCase.externalId ?? null,
+    displayTitle: testCase.displayTitle ?? null,
     tags: (testCase.tags as string[] | null) ?? null,
     locks: (testCase.locks as string[] | null) ?? null,
     project: project ? { id: project.id, name: project.name, label: project.label } : null,

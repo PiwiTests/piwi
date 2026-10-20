@@ -1,4 +1,4 @@
-import { projects, testCases, testRuns, testRunsCases, testSuites, networkRequests } from '../database/schema';
+import { projects, testRuns, testRunsCases, testSuites, networkRequests } from '../database/schema';
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
   buildNetworkRequestItems,
@@ -31,10 +31,11 @@ import {
   normalizeTestTags,
   parseTestMetadata,
   sanitizeTestMetadata,
-  type TestMetadata,
 } from '@piwitests/core/test-meta';
 import { matchInsertedRunCases } from './inserted-run-cases';
 import { testCaseCache } from './test-case-cache';
+import { syncTestCaseMetadata, type CaseMetaSnapshot } from './test-case-metadata-sync';
+import { displayTitleOf, externalIdOf, recordExternalIdDuplicates, type TestCaseClaim } from './test-case-match';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
 import { assignFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
@@ -98,6 +99,13 @@ export interface RunCaseInput {
   locks?: unknown;
   /** `piwi:` metadata; re-derived from `testAnnotations` when absent. */
   testMeta?: unknown;
+  /**
+   * The external ID the reporter settled on, `null` for none. When the field is absent (an older reporter, a payload
+   * built by hand) it is read from the `piwi:id` annotation instead.
+   */
+  externalId?: unknown;
+  /** The title without its external ID, when the reporter removed it; `title` stays whole. */
+  displayTitle?: unknown;
   title: string;
   status: string;
   duration?: number | null;
@@ -246,88 +254,6 @@ async function resolveSuites(db: DB, projectId: number, cases: RunCaseInput[]): 
   return suiteIdMap;
 }
 
-/** Latest-known tags, locks + `piwi:` metadata for one test case, as stored. */
-interface CaseMetaSnapshot {
-  tags: string[];
-  locks: string[];
-  meta: TestMetadata | null;
-}
-
-function sameStringList(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((value, i) => value === b[i]);
-}
-
-function sameSnapshot(stored: CaseMetaSnapshot, incoming: CaseMetaSnapshot): boolean {
-  if (!sameStringList(stored.tags, incoming.tags)) return false;
-  if (!sameStringList(stored.locks, incoming.locks)) return false;
-  const a = stored.meta ?? {};
-  const b = incoming.meta ?? {};
-  return a.owner === b.owner && a.priority === b.priority && a.feature === b.feature && a.link === b.link;
-}
-
-/**
- * Mirror each reported test's tags and `piwi:` metadata onto its `test_cases`
- * row, so project-wide views can filter by tag or owner without joining every
- * run. The per-execution values on `test_runs_cases` stay the record of what a
- * given run saw; these columns only track the most recent declaration.
- *
- * Reads the current values first and writes only the rows that actually
- * changed — in steady state a run costs one SELECT and no UPDATEs, and a tag
- * removed from a spec still propagates (the incoming empty value differs from
- * the stored one).
- */
-async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapshot>): Promise<void> {
-  if (incoming.size === 0) return;
-
-  const ids = [...incoming.keys()];
-  const stored = await db
-    .select({
-      id: testCases.id,
-      tags: testCases.tags,
-      locks: testCases.locks,
-      owner: testCases.owner,
-      priority: testCases.priority,
-      feature: testCases.feature,
-      link: testCases.link,
-    })
-    .from(testCases)
-    .where(inArray(testCases.id, ids));
-
-  const storedById = new Map<number, CaseMetaSnapshot>(
-    stored.map((row) => [
-      row.id,
-      {
-        tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
-        locks: Array.isArray(row.locks) ? (row.locks as string[]) : [],
-        meta: sanitizeTestMetadata({
-          owner: row.owner,
-          priority: row.priority,
-          feature: row.feature,
-          link: row.link,
-        }),
-      },
-    ]),
-  );
-
-  for (const [caseId, next] of incoming) {
-    const current = storedById.get(caseId);
-    if (current && sameSnapshot(current, next)) continue;
-
-    await db
-      .update(testCases)
-      .set({
-        tags: next.tags.length ? next.tags : null,
-        locks: next.locks.length ? next.locks : null,
-        owner: next.meta?.owner ?? null,
-        priority: next.meta?.priority ?? null,
-        feature: next.meta?.feature ?? null,
-        link: next.meta?.link ?? null,
-        updatedAt: new Date(),
-      })
-      .where(eq(testCases.id, caseId));
-  }
-}
-
 /**
  * Drop redundant green ARIA samples before they reach storage. A passing
  * execution's snapshot is kept only when the test has no other green snapshot
@@ -421,7 +347,20 @@ export async function persistRunCases(
 
   // --- Step 2: Resolve test case IDs and build junction rows ---
 
-  const projectCache = await testCaseCache.getProjectCache(db, projectId);
+  const claims: TestCaseClaim[] = cases.map((c) => {
+    const suitePath = joinSuitePath(c.suitePath);
+    const externalId = externalIdOf(c);
+    return {
+      filePath: c.filePath,
+      suitePath,
+      suiteId: suitePath ? (suiteIdMap.get(`${c.filePath}\x00${suitePath}`) ?? null) : null,
+      title: c.title,
+      externalId,
+      displayTitle: displayTitleOf(c, externalId),
+      line: c.line,
+    };
+  });
+  const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims);
 
   const fingerprintResults = await Promise.all(
     cases.map((c) =>
@@ -480,29 +419,7 @@ export async function persistRunCases(
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
     const fingerprint = fingerprintResults[i] ?? null;
-    const suitePath = joinSuitePath(c.suitePath);
-    const cacheKey = `${c.filePath}\x00${suitePath}\x00${c.title}`;
-
-    let caseId = projectCache.get(cacheKey);
-
-    if (caseId === undefined) {
-      const suiteId = suitePath ? (suiteIdMap.get(`${c.filePath}\x00${suitePath}`) ?? null) : null;
-
-      const result = await db
-        .insert(testCases)
-        .values({
-          projectId,
-          filePath: c.filePath,
-          suitePath,
-          suiteId,
-          title: c.title,
-        })
-        .returning();
-      caseId = result[0]?.id;
-      if (caseId !== undefined) {
-        testCaseCache.add(projectId, c.filePath, suitePath, c.title, caseId);
-      }
-    }
+    const caseId = resolved.caseIds[i];
 
     if (caseId === undefined) continue;
 
@@ -513,7 +430,7 @@ export async function persistRunCases(
     const tags = normalizeTestTags(c.tags);
     const locks = normalizeTestLocks(c.locks).slice(0, limits.locks);
     const testMeta = parseTestMetadata(c.testAnnotations) ?? sanitizeTestMetadata(c.testMeta);
-    caseMetaSnapshots.set(caseId, { tags, locks, meta: testMeta });
+    caseMetaSnapshots.set(caseId, { tags, locks, meta: testMeta, displayTitle: resolved.displayTitles[i] ?? null });
 
     // Collect locator snapshots; upserted in one batch after the case insert.
     // Only a passed case may purge stale locations — a failed run can stop
@@ -745,6 +662,7 @@ export async function persistRunCases(
     );
   }
   if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
+  await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
   await recordIngestHealth(
     db,
     testRunId,

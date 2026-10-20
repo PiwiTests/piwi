@@ -954,6 +954,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         owner: testCases.owner,
         priority: testCases.priority,
         feature: testCases.feature,
+        id: testCases.externalId,
       }),
     );
   }
@@ -1028,6 +1029,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       filePath: testCases.filePath,
       suitePath: testCases.suitePath,
       title: testCases.title,
+      externalId: testCases.externalId,
+      displayTitle: testCases.displayTitle,
       tags: testCases.tags,
       locks: testCases.locks,
       owner: testCases.owner,
@@ -2027,6 +2030,8 @@ export async function getProjectFlakyTestsWithVerified(
     .select({
       id: testCases.id,
       title: testCases.title,
+      externalId: testCases.externalId,
+      displayTitle: testCases.displayTitle,
       filePath: testCases.filePath,
       flakyRootCause: testCases.flakyRootCause,
       tags: testCases.tags,
@@ -2043,6 +2048,8 @@ export async function getProjectFlakyTestsWithVerified(
       testCaseId: c.testCaseId,
       latestRunsCaseId: c.latestRunsCaseId,
       title: tc?.title ?? '',
+      externalId: (tc?.externalId as string | null) ?? null,
+      displayTitle: (tc?.displayTitle as string | null) ?? null,
       filePath: tc?.filePath ?? '',
       totalRuns: c.totalRuns,
       failedRuns: c.failedRuns,

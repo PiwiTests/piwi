@@ -1,70 +1,60 @@
-import { testCases } from '../database/schema';
-import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
-
-// Cache key: filePath + NUL + suitePath (raw stored text, \x1f-delimited) + NUL + title
-// NUL separates the three segments; \x1f separates describe levels within suitePath.
-// Neither NUL nor \x1f can appear in Playwright test titles or file paths in practice.
-function makeCacheKey(filePath: string, suitePath: string, title: string): string {
-  return `${filePath}\x00${suitePath}\x00${title}`;
-}
+import { createKeyedLock } from './keyed-lock';
+import {
+  loadTestCaseIndex,
+  resolveTestCases,
+  type ResolvedTestCases,
+  type TestCaseClaim,
+  type TestCaseIndex,
+} from './test-case-match';
 
 /**
- * Process-level cache of test case IDs keyed by project.
+ * Process-level cache of each project's test cases, by natural key (file path, describe path, title) and by external
+ * ID (see `test-case-match.ts`).
  *
- * On first access for a project, the full set of test cases is loaded from the
- * DB in a single query and stored in memory. Subsequent lookups for that project
- * (across all streaming batches and concurrent runs) hit the in-memory Map and
- * skip the DB entirely. New test case inserts are added to the cache immediately
- * so later batches in the same process see them too.
+ * On first access for a project, the full set of test cases is loaded from the DB in a single query and stored in
+ * memory. Subsequent lookups for that project (across all streaming batches and concurrent runs) hit the in-memory
+ * index and skip the DB entirely. Matching writes go through {@link TestCaseCache.resolve}, which keeps the index in
+ * step with the rows it creates, renames and moves.
  *
- * Single-instance only — like the SSE event bus, this cache is local to one
- * Node.js process. It is invalidated when a project is deleted.
+ * Single-instance only — like the SSE event bus, this cache is local to one Node.js process. It is invalidated when
+ * a project is deleted.
  */
 class TestCaseCache {
-  // projectId → (filePath\x00suitePath\x00title → testCaseId)
-  private readonly cache = new Map<number, Map<string, number>>();
+  private readonly cache = new Map<number, TestCaseIndex>();
   // Deduplicates concurrent loads for the same project
-  private readonly loading = new Map<number, Promise<Map<string, number>>>();
+  private readonly loading = new Map<number, Promise<TestCaseIndex>>();
+  // Matching reads the index, then writes after an await: two batches matching at once for one project would both
+  // miss a new test and both create it.
+  private readonly matching = createKeyedLock<number>();
 
   /**
-   * Return the id→cache map for the project, loading it from DB on first call.
-   * Concurrent callers for the same project share a single in-flight SELECT; a
-   * failed SELECT is not kept, so the next call loads again.
+   * Return the project's index, loading it from DB on first call. Concurrent callers for the same project share a
+   * single in-flight SELECT; a failed SELECT is not kept, so the next call loads again.
    */
-  async getProjectCache(db: DB, projectId: number): Promise<Map<string, number>> {
+  async getProjectCache(db: DB, projectId: number): Promise<TestCaseIndex> {
     const cached = this.cache.get(projectId);
     if (cached) return cached;
 
     const inflight = this.loading.get(projectId);
     if (inflight) return inflight;
 
-    const load = (async () => {
-      const rows = await db
-        .select({
-          id: testCases.id,
-          filePath: testCases.filePath,
-          suitePath: testCases.suitePath,
-          title: testCases.title,
-        })
-        .from(testCases)
-        .where(eq(testCases.projectId, projectId));
-
-      const map = new Map<string, number>();
-      for (const row of rows) {
-        map.set(makeCacheKey(row.filePath, row.suitePath ?? '', row.title), row.id);
-      }
-      this.cache.set(projectId, map);
-      return map;
-    })().finally(() => this.loading.delete(projectId));
+    const load = loadTestCaseIndex(db, projectId)
+      .then((index) => {
+        this.cache.set(projectId, index);
+        return index;
+      })
+      .finally(() => this.loading.delete(projectId));
 
     this.loading.set(projectId, load);
     return load;
   }
 
-  /** Add a newly-inserted test case to the cache. */
-  add(projectId: number, filePath: string, suitePath: string, title: string, id: number): void {
-    this.cache.get(projectId)?.set(makeCacheKey(filePath, suitePath, title), id);
+  /** Match a batch's tests to their test cases, one batch of a project at a time. */
+  resolve(db: DB, projectId: number, runId: number, claims: TestCaseClaim[]): Promise<ResolvedTestCases> {
+    return this.matching(projectId, async () =>
+      resolveTestCases(db, projectId, runId, await this.getProjectCache(db, projectId), claims),
+    );
   }
 
   /** Drop the cache for a project (call when the project is deleted). */

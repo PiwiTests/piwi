@@ -938,6 +938,10 @@ export interface TestCaseResult {
   /** The stable test-case identity, shared across every run of this test. */
   testCaseId: number;
   title: string;
+  /** The ID the test has in the team's test management tool (`piwi:id`, or read from its title). */
+  externalId?: string | null;
+  /** The title without its external ID, when the reporter removed it; `title` stays whole. */
+  displayTitle?: string | null;
   filePath?: string;
   suitePath?: string[];
   testAnnotations?: Array<{ type: string; description?: string }> | null;
@@ -1918,6 +1922,10 @@ export interface FlakyTest {
   testCaseId: number;
   latestRunsCaseId: number;
   title: string;
+  /** The ID the test has in the team's test management tool. */
+  externalId?: string | null;
+  /** The title without its external ID, when the reporter removed it. */
+  displayTitle?: string | null;
   filePath: string;
   totalRuns: number;
   failedRuns: number;

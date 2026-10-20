@@ -864,6 +864,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     return dropNulls({
       id: tc.id,
       title: tc.title,
+      externalId: tc.externalId,
       filePath: tc.filePath,
       tags: tc.tags?.length ? tc.tags : null,
       locks: tc.locks?.length ? tc.locks : null,

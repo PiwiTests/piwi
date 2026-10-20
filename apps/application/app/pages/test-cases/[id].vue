@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { testLabel } from '#shared/utils/test-label';
 import { describeCluster } from '#shared/describe-cluster';
 import type { ApiResponse, TestCaseHistoryPoint, MarkerInfo, MarkersResponse } from '~~/types/api';
 import { CASE_STATUS_SERIES, legendOf } from '~/utils/chart';
@@ -115,7 +116,7 @@ const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.valu
                     },
                   ]
                 : [{ label: 'Project' }]),
-              { label: testCase?.title || `Test #${testCaseId}` },
+              { label: (testCase ? testLabel(testCase) : '') || `Test #${testCaseId}` },
             ]"
           />
         </template>
@@ -131,7 +132,11 @@ const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.valu
              wraps and the actions drop below it on phones. -->
         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
           <div class="flex-1 min-w-0 space-y-2">
-            <h1 class="text-xl font-bold break-words">{{ testCase?.title }}</h1>
+            <h1 class="text-xl font-bold break-words" :title="testCase?.displayTitle ? testCase.title : undefined">
+              <TestIdChip v-if="testCase?.externalId" :external-id="testCase.externalId" class="mr-2 align-middle" />{{
+                testCase ? testLabel(testCase) : ''
+              }}
+            </h1>
             <OpenInIdeLink
               v-if="testCase?.filePath"
               :file-path="testCase.filePath"

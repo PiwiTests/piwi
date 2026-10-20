@@ -49,7 +49,7 @@ import {
   storyEvidenceTimes,
   storyCoverageFiles,
 } from '../shared/demo/failure-stories.mjs';
-import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
+import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
@@ -541,6 +541,8 @@ for (const proj of DEMO_PROJECTS) {
       suite_path: proj.suites[c.file]?.suitePath.join('\x1f') ?? '',
       suite_id: suiteLookup[proj.id][c.file] ?? null,
       title: c.title,
+      external_id: demoExternalId(c.file, proj.cases.indexOf(c)),
+      display_title: null,
       flaky_root_cause: flaky?.rootCause ?? null,
       tags: JSON.stringify(demoTags(c.file, proj.cases.indexOf(c))),
       locks: JSON.stringify(demoLocks(c.file, proj.cases.indexOf(c))),

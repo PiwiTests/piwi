@@ -4,7 +4,7 @@ A proposal to let a test keep its history when it is renamed or moved, by matchi
 gives it in its test management tool. It records the design agreed on
 [PiwiTests/platform#847](https://github.com/PiwiTests/platform/issues/847), the stages, and the questions left open.
 
-**Status.** Proposed, not started.
+**Status.** Stages 1 to 3 built (see [As built](#as-built)); stage 4 not started.
 
 **Summary.** Piwi matches a test to its stored test case on the file path, the describe path and the title. Any rename
 or move creates a new test case, and flakiness, failure clusters, quarantine and trends restart from zero. This
@@ -313,6 +313,29 @@ Each stage ships on its own.
 3. **Display and search**: `TestIdChip`, display title on the first screens, `id:` search, API and MCP fields, demo
    data, documentation.
 4. **Later**: link template, text outputs and remaining screens, manual merge of two test cases.
+
+## As built
+
+What differs from the design above, or what it left open:
+
+- **One matching module for the server and the demo**: `apps/application/server/utils/test-case-match.ts`
+  (`resolveTestCases`, `loadTestCaseIndex`), called by `persistRunCases` through `testCaseCache.resolve`, which holds
+  the per-project lock, and by the demo's ingest. The metadata sync moved to `test-case-metadata-sync.ts`, shared
+  the same way.
+- **Explicit `null`**: the reporter always sends `externalId` once it settled the IDs, `null` included. The server
+  trusts that field, `null` meaning "no ID" (none, or set aside as a duplicate), and reads `piwi:id` from the
+  annotations only when the field is absent (older reporter, payload built by hand). This is how a duplicate the
+  reporter found stays without an ID on the server, although its annotation still says `piwi:id`.
+- **Server duplicate check across batches**: the index remembers the last run that matched each ID; after a restart,
+  the check asks the database whether the test case already has an execution in the run.
+- **Run page**: the facts line says "N duplicate test IDs" (warning colour), and the Details popover lists each ID
+  with its tests, next to the ingest note. Help topic `run.externalIdDuplicates`.
+- **The chip** leads the row (before the describe path), so the IDs line up. Shown in the run tests list, the
+  project catalog, flaky tests and the test case page header. MCP `get_test_case` returns `externalId`.
+- **Search**: `id:` only; a free word does not look in the external ID (the in-memory matcher and the SQL one would
+  disagree on whole-value against contains).
+- **Demo**: the checkout specs' tests have IDs `CHK-<spec><case>` (`demoExternalId` in
+  `shared/demo/demo-test-meta.mjs`), seeded and sent by the run simulator.
 
 ## Tests
 
