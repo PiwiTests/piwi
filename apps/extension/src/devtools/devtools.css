@@ -83,9 +83,18 @@ p {
   margin: 0;
 }
 
-/* Buttons: DevTools' flat ones, a filled one for the main action, text ones in rows. */
+/*
+ * Buttons: DevTools' flat ones, each with its icon before its label, the icon in the accent color. The tone
+ * (`data-tone`, src/shared/buttons.ts) says what a button does: primary, the view's main action, filled with the
+ * accent; success, green, completes a flow; danger, filled red, stops what runs; remove, red text, discards or takes
+ * away; ghost, no frame, a small action in a row.
+ */
 
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   font: inherit;
   color: inherit;
   height: 22px;
@@ -95,6 +104,18 @@ button {
   background: Canvas;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* A click lands on the button itself, never on its icon or its label. */
+button > * {
+  pointer-events: none;
+}
+
+/* Icons of an even size in boxes of an even inner size (22px less the border; 20px for a small one): on whole pixels. */
+button > .piwi-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
 }
 
 button:hover {
@@ -114,22 +135,46 @@ button:disabled {
   cursor: default;
 }
 
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+button[data-tone='primary'],
+button[data-tone='success'],
+button[data-tone='danger'] {
+  border-color: var(--tone);
+  background: var(--tone);
   color: Canvas;
 }
 
-button.primary:hover {
+button[data-tone='primary'] {
+  --tone: var(--accent);
+}
+
+button[data-tone='success'] {
+  --tone: var(--good);
+}
+
+button[data-tone='danger'] {
+  --tone: var(--bad);
+}
+
+button[data-tone='primary']:hover,
+button[data-tone='success']:hover,
+button[data-tone='danger']:hover {
   filter: brightness(1.08);
 }
 
-button.danger {
+button[data-tone] > .piwi-icon {
+  color: currentColor;
+}
+
+button[data-tone='remove'] {
   color: var(--bad);
   border-color: color-mix(in srgb, var(--bad) 45%, transparent);
 }
 
-button.link {
+button[data-tone='remove']:hover {
+  background: var(--bad-soft);
+}
+
+button[data-tone='ghost'] {
   height: 20px;
   padding: 0 5px;
   border-color: transparent;
@@ -137,8 +182,55 @@ button.link {
   color: var(--accent);
 }
 
-button.link:hover {
+button[data-tone='ghost']:hover {
   background: var(--accent-soft);
+}
+
+/* A small action in a row (Remove): no frame until hovered. */
+button[data-size='sm'] {
+  height: 20px;
+  padding: 0 5px;
+  border-color: transparent;
+  background: none;
+}
+
+button[data-size='sm'] > .piwi-icon {
+  width: 12px;
+  height: 12px;
+}
+
+button[data-tone='remove'][data-size='sm']:hover {
+  border-color: transparent;
+}
+
+button[data-icon-only] {
+  width: 22px;
+  padding: 0;
+}
+
+button[data-tone='ghost'][data-icon-only] {
+  width: 20px;
+  color: var(--muted);
+}
+
+button[data-tone='ghost'][data-icon-only]:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+
+/* What a copy did, for a moment: a check, or a cross. */
+button[data-flash='ok'] > .piwi-icon {
+  color: var(--good);
+}
+
+button[data-flash='fail'] > .piwi-icon {
+  color: var(--bad);
+}
+
+button[data-tone='primary'][data-flash] > .piwi-icon,
+button[data-tone='success'][data-flash] > .piwi-icon,
+button[data-tone='danger'][data-flash] > .piwi-icon {
+  color: currentColor;
 }
 
 input[type='text'],
@@ -152,6 +244,11 @@ select {
   border-radius: 4px;
   background: Canvas;
   min-width: 0;
+}
+
+input[type='text'].mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
 }
 
 label.check {
@@ -206,14 +303,34 @@ label.check {
   max-width: 46ch;
 }
 
-.empty svg {
-  width: 28px;
-  height: 28px;
-  fill: none;
-  stroke: var(--faint);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.empty > svg {
+  box-sizing: content-box;
+  width: 22px;
+  height: 22px;
+  padding: 9px;
+  border-radius: 50%;
+  color: var(--faint);
+  background: var(--hover);
+  stroke-width: 1.75;
+}
+
+.empty > button {
+  margin-top: 2px;
+}
+
+/* A line after its icon: a note, or what a view waits for. */
+.icon-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 18px;
+}
+
+.icon-line > svg {
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  flex-shrink: 0;
 }
 
 /* Badges beside a locator or a request. */
@@ -265,13 +382,32 @@ label.check {
   white-space: nowrap;
 }
 
-.selection .role {
+/* An element's role or tag on a chip, and its name after it. */
+.role {
   font-family: var(--mono);
   font-weight: 500;
   color: var(--selected-fg);
   background: var(--selected);
   border-radius: 3px;
   padding: 0 4px;
+}
+
+.match-name {
+  font-weight: 600;
+}
+
+/* A name given in the session. */
+.pick-name {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+/* Code in a sentence: a path, a file name. */
+.icon-line code {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--code-bg);
+  border: 1px solid var(--divider);
 }
 
 .selection .sep {
@@ -352,6 +488,10 @@ li.locator .locator-verdict {
   font-size: 11px;
 }
 
+.confirm code {
+  color: var(--fg);
+}
+
 .pane-empty {
   min-height: 180px;
 }
@@ -383,12 +523,19 @@ body.panel {
 
 [role='tab'] {
   position: relative;
+  gap: 5px;
   height: auto;
   padding: 0 10px;
   border: none;
   border-radius: 0;
   background: none;
   color: var(--muted);
+}
+
+[role='tab'] > .piwi-icon {
+  width: 12px;
+  height: 12px;
+  color: currentColor;
 }
 
 [role='tab']:hover {
@@ -401,15 +548,18 @@ body.panel {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+[role='tab'][aria-selected='true'] > .piwi-icon {
+  color: var(--accent);
+}
+
 [role='tab'][data-live='true']::after {
   content: '';
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-left: 6px;
+  margin-left: 1px;
   border-radius: 50%;
   background: var(--bad);
-  vertical-align: 1px;
 }
 
 .tools {
@@ -425,6 +575,28 @@ body.panel {
 
 .tools button:hover {
   background: var(--hover);
+}
+
+/* A narrow panel: the tools show their icons alone, their labels kept for assistive technology and as tooltips. */
+@media (max-width: 860px) {
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .tools button {
+    position: relative;
+    width: 26px;
+    padding: 0;
+  }
+
+  .tools button > .piwi-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* The viewport bar, under the toolbar while Viewport is on. */
@@ -558,12 +730,29 @@ main.flush {
   color: var(--warn);
 }
 
+.chip .piwi-url {
+  padding: 0;
+  border: none;
+  background: none;
+}
+
 .verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
   margin: 8px 12px;
   padding: 7px 10px;
   border: 1px solid var(--divider);
   border-left-width: 3px;
   border-radius: 4px;
+  line-height: 18px;
+}
+
+.verdict > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  flex-shrink: 0;
 }
 
 .verdict strong {
@@ -575,14 +764,26 @@ main.flush {
   background: var(--bad-soft);
 }
 
+.verdict.bad > svg {
+  color: var(--bad);
+}
+
 .verdict.good {
   border-left-color: var(--good);
   background: var(--good-soft);
 }
 
+.verdict.good > svg {
+  color: var(--good);
+}
+
 .verdict.warn {
   border-left-color: var(--warn);
   background: var(--warn-soft);
+}
+
+.verdict.warn > svg {
+  color: var(--warn);
 }
 
 ol.steps {
@@ -592,13 +793,19 @@ ol.steps {
   counter-reset: step;
 }
 
+/*
+ * A list of steps, matches or named elements: the number, the replay's mark when there is one, then the step's
+ * badge and words, the locator under them, and the row's action at its end.
+ */
 ol.steps li {
   display: grid;
-  grid-template-columns: 2.6em 1.4em minmax(0, 1fr) auto;
-  align-items: baseline;
-  padding: 4px 12px 4px 0;
+  grid-template-columns: 2.6em auto minmax(0, 1fr) auto;
+  align-items: start;
+  row-gap: 2px;
+  padding: 5px 12px 5px 0;
   border-bottom: 1px solid var(--divider);
   counter-increment: step;
+  line-height: 18px;
 }
 
 ol.steps li:hover {
@@ -628,7 +835,12 @@ ol.steps li > .reveal {
 ol.steps li > .glyph {
   grid-column: 2;
   grid-row: 1;
+  width: 1.4em;
   color: var(--faint);
+}
+
+ol.steps li > .glyph:empty {
+  display: none;
 }
 
 ol.steps li[data-status='done'] > .glyph,
@@ -641,6 +853,11 @@ ol.steps li[data-status='diverged'] > .glyph,
 ol.steps li[data-status='failed'] .step-words,
 ol.steps li[data-status='diverged'] .step-words {
   color: var(--bad);
+}
+
+ol.steps li[data-status='failed'],
+ol.steps li[data-status='diverged'] {
+  background: var(--bad-soft);
 }
 
 ol.steps li.current {
@@ -656,7 +873,28 @@ ol.steps .step-words {
   overflow-wrap: anywhere;
 }
 
-ol.steps code {
+ol.steps .step-words.piwi-step {
+  gap: 7px;
+}
+
+ol.steps .piwi-step-badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+ol.steps .piwi-step-badge .piwi-icon {
+  width: 12px;
+  height: 12px;
+}
+
+ol.steps .piwi-step-words {
+  padding-top: 0;
+  line-height: 18px;
+}
+
+/* The locator a step was recorded with, and a step's detail, under its words: after the badge when it has one. */
+ol.steps li > code {
   display: block;
   color: var(--muted);
   overflow-wrap: anywhere;
@@ -665,6 +903,11 @@ ol.steps code {
 ol.steps .detail {
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+ol.steps .piwi-step ~ code,
+ol.steps .piwi-step ~ .detail {
+  padding-left: 25px;
 }
 
 /* Locators: the expression across the top, what it finds below. */
@@ -737,8 +980,21 @@ ol.steps .detail {
 }
 
 .conditions-strip .strip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 18px;
   font-weight: 600;
   color: var(--warn);
+}
+
+.conditions-strip .strip-title > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.conditions-strip li > span {
+  line-height: 20px;
 }
 
 .conditions-strip .strip-note {
@@ -835,16 +1091,44 @@ ul.requests li:nth-child(even) button.request[aria-pressed='true'] {
   color: var(--selected-fg);
 }
 
-.request .method {
+/* A request's method: muted for a read, the accent for one that changes something. */
+.method {
   font-family: var(--mono);
   font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.method[data-method='GET'],
+.method[data-method='HEAD'],
+.method[data-method='OPTIONS'] {
   color: var(--muted);
 }
 
+/* The address in a list row: the path in front, the origin and the query dimmed, in the list's own type. */
 .request .path {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.request .path .piwi-url {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.request .path .piwi-url-path {
+  color: inherit;
+  font-weight: 500;
+}
+
+button.request[aria-pressed='true'] .piwi-url-origin,
+button.request[aria-pressed='true'] .piwi-url-rest {
+  color: inherit;
+  opacity: 0.75;
 }
 
 .request .status-code {
@@ -853,6 +1137,10 @@ ul.requests li:nth-child(even) button.request[aria-pressed='true'] {
 
 .request .status-code.bad {
   color: var(--bad);
+}
+
+.request .status-code.muted {
+  color: var(--muted);
 }
 
 .request .time {
@@ -890,11 +1178,18 @@ ul.requests li:nth-child(even) button.request[aria-pressed='true'] {
 }
 
 .request-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
   margin: 0;
-  font-family: var(--mono);
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 400;
   overflow-wrap: anywhere;
+}
+
+.request-title .method {
+  font-size: 11.5px;
 }
 
 .fields {

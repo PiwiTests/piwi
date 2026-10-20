@@ -1,14 +1,25 @@
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
-import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
+import { COPY_MODES, copyModeLabel, renderCopyMode, type CopyMode } from '../shared/copy-modes.js';
 import { stabilityRulesText } from '../shared/core-words.js';
 import { describeSelection, type SelectionLocator, type SelectionRanking } from '../shared/devtools-selection.js';
-import { initI18n, localizeDocument, t, tn, uiLanguage } from '../shared/i18n.js';
+import { initI18n, localizeDocument, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
+import { decorateIcons } from '../shared/icons.js';
+import { PATTERN_CSS } from '../shared/pattern-view.js';
 import { isReservedPickName, isValidPickName } from '../shared/session-export.js';
+import { STEP_CSS } from '../shared/step-view.js';
 import { patternOrigin } from '../shared/web-origin.js';
 import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
-import { copyText, requestSiteAccess } from './inspected.js';
-import { button, el, emptyState, flash, type IconName } from './ui.js';
+import { requestSiteAccess } from './inspected.js';
+import { button, el, emptyState, iconLine, noAccessText, type IconName } from './ui.js';
 import { rankDevtoolsSelection, type RankOutcome } from './selection.js';
+
+/** Each copy mode's icon: the locator as code, the action it drives, the assertion it checks. */
+const COPY_MODE_ICONS: Record<CopyMode, IconName> = {
+  bare: 'code',
+  action: 'pointer',
+  expect: 'check-circle',
+};
 
 /**
  * The Piwi pane of the Elements panel: the ranked, verified locators of the
@@ -49,7 +60,7 @@ function show(heading: SelectionRanking | null, ...nodes: HTMLElement[]): void {
   content.replaceChildren(...nodes);
 }
 
-function empty(name: IconName, text: string, ...actions: HTMLElement[]): HTMLElement {
+function empty(name: IconName, text: string | Array<Node | string>, ...actions: HTMLElement[]): HTMLElement {
   const box = emptyState(name, text, ...actions);
   box.classList.add('pane-empty');
   return box;
@@ -77,9 +88,9 @@ function render(outcome: RankOutcome): void {
             if (granted) void refresh();
           });
         },
-        'primary',
+        { icon: 'check', tone: 'primary' },
       );
-      show(null, empty('lock', t('devtools_noAccess', { site: patternOrigin(outcome.pattern) }), allow));
+      show(null, empty('lock', noAccessText(patternOrigin(outcome.pattern)), allow));
       return;
     }
     case 'ranked':
@@ -135,24 +146,19 @@ function locatorRow(
   const actions = el('div', 'row-actions');
   actions.appendChild(el('span', 'copy-label', t('devtools_copyAs')));
   for (const mode of COPY_MODES) {
-    const copy = button(
-      copyModeLabel(mode),
-      () => {
-        void copyText(renderCopyMode(locator, mode)).then((copied) => {
-          if (copied) flash(copy, t('common_copied'));
-        });
-      },
-      'link',
-    );
-    copy.title = renderCopyMode(locator, mode);
+    const copy = button(copyModeLabel(mode), () => void copyWithFeedback(renderCopyMode(locator, mode), copy), {
+      icon: COPY_MODE_ICONS[mode],
+      tone: 'ghost',
+      title: renderCopyMode(locator, mode),
+    });
     actions.appendChild(copy);
   }
   actions.appendChild(
-    button(
-      t('devtools_addToSession'),
-      () => openSessionForm(row, locator.locator, ranking.pageUrl),
-      'link add-to-session',
-    ),
+    button(t('devtools_addToSession'), () => openSessionForm(row, locator.locator, ranking.pageUrl), {
+      icon: 'plus',
+      tone: 'ghost',
+      className: 'add-to-session',
+    }),
   );
 
   row.append(code, badge, actions);
@@ -167,9 +173,10 @@ function openSessionForm(row: HTMLElement, locator: string, pageUrl: string): vo
   input.type = 'text';
   input.placeholder = t('session_namePlaceholder');
   input.setAttribute('aria-label', t('session_nameLabel'));
-  const save = el('button', 'primary', t('common_save'));
+  // Save submits the form, which checks the name.
+  const save = button(t('common_save'), () => undefined, { icon: 'save', tone: 'primary' });
   save.type = 'submit';
-  const cancel = button(t('common_cancel'), () => form.remove());
+  const cancel = button(t('common_cancel'), () => form.remove(), { icon: 'close' });
   const message = el('div', 'form-message');
   message.setAttribute('role', 'status');
   form.append(input, save, cancel, message);
@@ -188,7 +195,8 @@ function openSessionForm(row: HTMLElement, locator: string, pageUrl: string): vo
         return void (message.textContent = t('session_nameTaken', { name }));
       await addSessionPick({ name, locator, pageUrl });
       form.remove();
-      row.appendChild(el('p', 'confirm', t('devtools_addedToSession', { name })));
+      const added = el('code', 'pick-name', name);
+      row.appendChild(iconLine('check-circle', 'confirm', ...tNodes('devtools_addedToSession', { name: added })));
     })();
   });
   row.appendChild(form);
@@ -199,9 +207,10 @@ async function start(): Promise<void> {
   await initI18n();
   document.documentElement.lang = uiLanguage();
   const style = document.createElement('style');
-  style.textContent = LOCATOR_SYNTAX_CSS;
+  style.textContent = `${LOCATOR_SYNTAX_CSS}${STEP_CSS}${PATTERN_CSS}`;
   document.head.appendChild(style);
   localizeDocument();
+  decorateIcons();
   refreshBtn.addEventListener('click', () => void refresh());
   chrome.devtools.panels.elements.onSelectionChanged.addListener(() => void refresh());
   chrome.devtools.network.onNavigated.addListener(() => void refresh());

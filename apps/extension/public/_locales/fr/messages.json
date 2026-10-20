@@ -562,7 +562,7 @@
     "message": "Les sites renvoient aux projets de votre instance : connectez-vous d’abord."
   },
   "options_addMapping": {
-    "message": "+ Ajouter une ligne"
+    "message": "Ajouter une ligne"
   },
   "options_noMappings": {
     "message": "Aucune ligne pour l’instant : ajoutez-en une ci-dessous."

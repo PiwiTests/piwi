@@ -1,4 +1,3 @@
-import { describeStepInWords } from '@piwitests/core/bug-report';
 import { renderSpec } from '@piwitests/core/codegen';
 import { buildSession, normalizeSteps, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
@@ -7,8 +6,9 @@ import { getActiveProjectOverride, resolveActiveProject } from '../shared/active
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
-import { interfacePhrases } from '../shared/core-words.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 import { downloadBlob } from '../shared/download.js';
+import { stepView } from '../shared/step-view.js';
 import { t, tn } from '../shared/i18n.js';
 import {
   discardRecording,
@@ -18,19 +18,21 @@ import {
   type RecordingState,
 } from '../shared/recording-storage.js';
 import { patternOrigin } from '../shared/web-origin.js';
-import { copyText, evalInPage } from './inspected.js';
-import { button, el, emptyState, flash } from './ui.js';
+import { evalInPage } from './inspected.js';
+import { button, el, emptyState, iconLine } from './ui.js';
 
 /**
- * A step in words, as the replay's panel says it, and the locator it was
- * recorded with. `glyph` is the replay's mark for it; the list numbers the
- * steps itself.
+ * A step as the replay's panel says it, its kind on a badge and its names,
+ * values and addresses set apart, and the locator it was recorded with.
+ * `glyph` is the replay's mark for it; the list numbers the steps itself.
  */
 export function stepRow(step: RecordedStep, glyph = ''): HTMLLIElement {
   const item = el('li');
   const mark = el('span', 'glyph', glyph);
   mark.setAttribute('aria-hidden', 'true');
-  item.append(mark, el('div', 'step-words', describeStepInWords(step, interfacePhrases()).replace(/`+/g, '')));
+  const words = stepView(step);
+  words.classList.add('step-words');
+  item.append(mark, words);
   const locator = step.target?.alternatives[0]?.locator;
   if (locator) {
     const code = el('code', 'piwi-loc');
@@ -41,13 +43,15 @@ export function stepRow(step: RecordedStep, glyph = ''): HTMLLIElement {
 }
 
 /** The head of the Record and Replay views: a dot and the state, then the actions. */
-export function viewHead(dot: string, text: string, ...actions: HTMLElement[]): HTMLElement {
+export function viewHead(dot: string, text: string | Array<Node | string>, ...actions: HTMLElement[]): HTMLElement {
   const head = el('div', 'view-head');
   const status = el('p', 'status');
   status.setAttribute('role', 'status');
   const mark = el('span', `dot ${dot}`);
   mark.setAttribute('aria-hidden', 'true');
-  status.append(mark, text);
+  const words = el('span');
+  words.append(...(typeof text === 'string' ? [text] : text));
+  status.append(mark, words);
   const controls = el('div', 'controls');
   controls.append(...actions);
   head.append(status, controls);
@@ -94,7 +98,7 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
 
   const actions: HTMLElement[] = [];
   if (state.active && bug) {
-    actions.push(el('span', 'muted', t('devtools_finishBugOnPage')));
+    actions.push(iconLine('info', 'muted', t('devtools_finishBugOnPage')));
   } else if (state.active) {
     actions.push(
       button(
@@ -104,34 +108,30 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
             chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }).catch(() => undefined),
           );
         },
-        'danger',
+        { icon: 'stop', tone: 'danger' },
       ),
     );
   } else if (!bug) {
-    const copy = button(
-      t('record_copyCode'),
+    const copy = button(t('record_copyCode'), () => void specFor(state).then((spec) => copyWithFeedback(spec, copy)), {
+      icon: 'copy',
+      tone: 'primary',
+    });
+    const save = button(
+      t('record_downloadSteps'),
       () => {
-        void specFor(state).then((spec) =>
-          copyText(spec).then((copied) => {
-            if (copied) flash(copy, t('common_copied'));
-          }),
+        const session = buildSession(steps, state.events[0]?.timestamp ?? Date.now());
+        const doc = toStepsDocument(session);
+        downloadBlob(
+          new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
+          `piwi-steps-${fileStamp(doc.recordedAt)}.json`,
         );
       },
-      'primary',
+      { icon: 'download', title: t('record_downloadStepsTitle') },
     );
-    const save = button(t('record_downloadSteps'), () => {
-      const session = buildSession(steps, state.events[0]?.timestamp ?? Date.now());
-      const doc = toStepsDocument(session);
-      downloadBlob(
-        new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
-        `piwi-steps-${fileStamp(doc.recordedAt)}.json`,
-      );
-    });
-    save.title = t('record_downloadStepsTitle');
     actions.push(
       copy,
       save,
-      button(t('common_discard'), () => void discardRecording()),
+      button(t('common_discard'), () => void discardRecording(), { icon: 'trash', tone: 'remove' }),
     );
   }
 

@@ -1,8 +1,11 @@
-import { initI18n, localizeDocument, t, tn, uiLanguage } from '../shared/i18n.js';
+import { initI18n, localizeDocument, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 import { cookieOriginPatterns, setupSnippet, toStorageState, type BrowserCookie } from '../shared/storage-state.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { downloadBlob } from '../shared/download.js';
 import { webOrigin } from '../shared/web-origin.js';
+import { decorateIcons, icon } from '../shared/icons.js';
+import { STEP_CSS } from '../shared/step-view.js';
+import { PATTERN_CSS, patternView } from '../shared/pattern-view.js';
 
 /**
  * Save login for tests: the tab's cookies, `httpOnly` ones included, and its
@@ -47,10 +50,22 @@ function copyButton(button: HTMLButtonElement, text: () => string): void {
   button.addEventListener('click', () => void copyWithFeedback(text(), button));
 }
 
+/** The status line: what happened, after a check when the file was saved or a warning when it was not. */
+function showStatus(status: HTMLElement, kind: 'ok' | 'error', ...text: Array<Node | string>): void {
+  const words = document.createElement('span');
+  words.append(...text);
+  status.className = kind;
+  status.replaceChildren(icon(kind === 'ok' ? 'check-circle' : 'alert'), words);
+}
+
 async function start(): Promise<void> {
   await initI18n();
   document.documentElement.lang = uiLanguage();
   localizeDocument();
+  const style = document.createElement('style');
+  style.textContent = `${STEP_CSS}${PATTERN_CSS}`;
+  document.head.appendChild(style);
+  decorateIcons();
   const origin = webOrigin(pageUrl);
   const site = document.getElementById('site')!;
   const save = document.getElementById('save') as HTMLButtonElement;
@@ -65,10 +80,11 @@ async function start(): Promise<void> {
     save.disabled = true;
     return;
   }
-  site.textContent = t('login_site', { site: origin });
+  site.replaceChildren(...tNodes('login_site', { site: patternView(origin) }));
 
   save.addEventListener('click', () => {
-    status.textContent = '';
+    status.className = '';
+    status.replaceChildren();
     // Asked for inside the click, which the browser requires; the rest waits for the answer.
     const permission = chrome.permissions.request({
       permissions: ['cookies'],
@@ -79,24 +95,28 @@ async function start(): Promise<void> {
     void permission
       .then(async (granted) => {
         if (!granted) {
-          status.textContent = t('login_denied');
+          showStatus(status, 'error', t('login_denied'));
           return;
         }
         const [cookies, storage] = await Promise.all([readCookies(origin), readLocalStorage()]);
         // The tab shows another site by now: what it holds is not this site's login.
         if (storage.origin !== origin) {
-          status.textContent = t('login_siteChanged', { site: origin });
+          showStatus(status, 'error', ...tNodes('login_siteChanged', { site: patternView(origin) }));
           return;
         }
         const state = toStorageState(cookies, origin, storage.entries);
         downloadBlob(new Blob([`${JSON.stringify(state, null, 2)}\n`], { type: 'application/json' }), 'user.json');
-        status.textContent = `${tn('login_savedCookies', state.cookies.length)} ${tn(
-          'login_savedStorage',
-          state.origins[0]?.localStorage.length ?? 0,
-        )}`;
+        showStatus(
+          status,
+          'ok',
+          `${tn('login_savedCookies', state.cookies.length)} ${tn(
+            'login_savedStorage',
+            state.origins[0]?.localStorage.length ?? 0,
+          )}`,
+        );
       })
       .catch((err: unknown) => {
-        status.textContent = t('login_failed', { error: err instanceof Error ? err.message : String(err) });
+        showStatus(status, 'error', t('login_failed', { error: err instanceof Error ? err.message : String(err) }));
       })
       .finally(() => {
         save.disabled = false;

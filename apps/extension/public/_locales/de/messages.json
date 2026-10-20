@@ -562,7 +562,7 @@
     "message": "Websites gehören zu den Projekten Ihrer Instanz: Verbinden Sie sich zuerst."
   },
   "options_addMapping": {
-    "message": "+ Zeile hinzufügen"
+    "message": "Zeile hinzufügen"
   },
   "options_noMappings": {
     "message": "Noch keine Zeilen: Fügen Sie unten eine hinzu."

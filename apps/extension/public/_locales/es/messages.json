@@ -562,7 +562,7 @@
     "message": "Los sitios se asignan a los proyectos de tu instancia: conéctate primero."
   },
   "options_addMapping": {
-    "message": "+ Añadir una línea"
+    "message": "Añadir una línea"
   },
   "options_noMappings": {
     "message": "Todavía no hay líneas: añade una abajo."

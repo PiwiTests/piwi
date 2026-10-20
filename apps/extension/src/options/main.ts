@@ -56,9 +56,17 @@ import {
   type MessageKey,
 } from '../shared/i18n.js';
 import { isDraftLanguage, TRANSLATION_ISSUE_URL } from '../shared/languages.js';
+import { decorateIcons, icon } from '../shared/icons.js';
+import { STEP_CSS } from '../shared/step-view.js';
+import { PATTERN_CSS, patternView } from '../shared/pattern-view.js';
 
 await initI18n();
 localizeDocument();
+// The icons and the addresses' look, before the first icon or address is drawn.
+const sharedStyle = document.createElement('style');
+sharedStyle.textContent = `${STEP_CSS}${PATTERN_CSS}`;
+document.head.appendChild(sharedStyle);
+decorateIcons();
 await moveLegacySecrets();
 
 const instanceUrlEl = document.getElementById('instance-url') as HTMLInputElement;
@@ -131,19 +139,44 @@ let addingToServer = false;
 
 type StatusKind = 'ok' | 'error' | '';
 
-function writeStatus(el: HTMLElement, text: string, kind: StatusKind): void {
-  el.textContent = text;
+/** What a status line says: plain text, or text with an address or a pattern set apart. */
+type StatusText = string | Array<Node | string>;
+
+/** A status line: its text, after a check or a warning icon once it says how something went. */
+function writeStatus(el: HTMLElement, text: StatusText, kind: StatusKind): void {
+  const parts = typeof text === 'string' ? (text ? [text] : []) : text;
   el.className = kind;
+  if (parts.length === 0) {
+    el.replaceChildren();
+    return;
+  }
+  const words = document.createElement('span');
+  words.append(...parts);
+  el.replaceChildren(...(kind ? [icon(kind === 'ok' ? 'check-circle' : 'alert')] : []), words);
 }
 
 /** The Connect to Piwi card's status line. */
-function setStatus(text: string, kind: StatusKind = ''): void {
+function setStatus(text: StatusText, kind: StatusKind = ''): void {
   writeStatus(statusEl, text, kind);
 }
 
 /** The Project mappings card's status line. */
-function setMappingsStatus(text: string, kind: StatusKind = ''): void {
+function setMappingsStatus(text: StatusText, kind: StatusKind = ''): void {
   writeStatus(mappingsStatusEl, text, kind);
+}
+
+/** `text` in bold, as a name stands out in a sentence. */
+function strong(text: string): HTMLElement {
+  const el = document.createElement('strong');
+  el.textContent = text;
+  return el;
+}
+
+/** `text` on a chip in the monospace type: a branch, a path prefix. */
+function codeChip(text: string): HTMLElement {
+  const el = document.createElement('code');
+  el.textContent = text;
+  return el;
 }
 
 /** Runs `work` with `button` disabled until it ends, so a second click starts no second one. */
@@ -306,7 +339,8 @@ function renderMappings(): void {
     removeBtn.type = 'button';
     removeBtn.className = 'remove-mapping';
     removeBtn.setAttribute('aria-label', t('options_removeMapping'));
-    removeBtn.textContent = '×';
+    removeBtn.title = t('options_removeMapping');
+    removeBtn.append(icon('trash'));
     removeBtn.addEventListener('click', () => {
       mappings.splice(index, 1);
       renderMappings();
@@ -384,11 +418,16 @@ function renderInstanceState(): void {
   connectBtn.classList.toggle('primary', !kept);
   disconnectBtn.hidden = !kept;
   connectedAsEl.hidden = !synced;
-  connectedAsEl.textContent = !synced
-    ? ''
-    : stored.connectedAs
-      ? t('options_connectedAs', { name: stored.connectedAs })
-      : t('options_connectedNoAuth');
+  connectedAsEl.replaceChildren();
+  if (synced) {
+    const words = document.createElement('span');
+    words.append(
+      ...(stored.connectedAs
+        ? tNodes('options_connectedAs', { name: strong(stored.connectedAs) })
+        : [t('options_connectedNoAuth')]),
+    );
+    connectedAsEl.append(icon('check-circle'), words);
+  }
   sitesConnectFirst.hidden = kept;
   sitesBody.hidden = !kept;
 }
@@ -413,18 +452,19 @@ function renderServerMappings(): void {
     row.className = 'server-row';
     const pattern = document.createElement('span');
     pattern.className = 'pattern';
-    pattern.textContent = mapping.urlPattern;
+    pattern.appendChild(patternView(mapping.urlPattern));
     const meta = document.createElement('span');
     meta.className = 'meta';
-    meta.textContent = [
-      mapping.projectLabel,
-      mapping.environment,
-      mapping.branch,
-      mapping.pathPrefix ? t('options_serverPathPrefix', { prefix: mapping.pathPrefix }) : '',
-      mapping.testPathPrefix ? t('options_serverTestPathPrefix', { prefix: mapping.testPathPrefix }) : '',
-    ]
-      .filter(Boolean)
-      .join(' · ');
+    const facts: Array<Array<Node | string>> = [
+      mapping.projectLabel ? [strong(mapping.projectLabel)] : [],
+      mapping.environment ? [mapping.environment] : [],
+      mapping.branch ? [codeChip(mapping.branch)] : [],
+      mapping.pathPrefix ? tNodes('options_serverPathPrefix', { prefix: codeChip(mapping.pathPrefix) }) : [],
+      mapping.testPathPrefix
+        ? tNodes('options_serverTestPathPrefix', { prefix: codeChip(mapping.testPathPrefix) })
+        : [],
+    ].filter((fact) => fact.length > 0);
+    facts.forEach((fact, i) => meta.append(...(i > 0 ? [' · '] : []), ...fact));
     const source = document.createElement('span');
     source.className = 'source';
     source.textContent = t('options_sourceServer');
@@ -772,7 +812,7 @@ addToServerBtn.addEventListener('click', () => {
       await syncServerPatterns(settings, epoch);
       await refreshCatalogs(stored, epoch);
       if (epoch !== connectionEpoch) return;
-      setMappingsStatus(t('options_added', { pattern, project: label }), 'ok');
+      setMappingsStatus(tNodes('options_added', { pattern: patternView(pattern), project: strong(label) }), 'ok');
     } finally {
       addingToServer = false;
       renderAddSite();
@@ -1006,6 +1046,7 @@ languageSelect.addEventListener('change', () => {
     }
     await initI18n();
     localizeDocument();
+    decorateIcons();
     renderLanguageSelect();
     renderMappings();
     renderServerMappings();
@@ -1035,7 +1076,11 @@ function renderEditorPill(): void {
 async function renderEditorPairing(): Promise<void> {
   const pairing = await getEditorPairing();
   editorPaired = !!pairing;
-  writeStatus(editorStatusEl, pairing ? t('options_editorPaired', { url: pairing.url }) : '', pairing ? 'ok' : '');
+  writeStatus(
+    editorStatusEl,
+    pairing ? tNodes('options_editorPaired', { url: patternView(pairing.url) }) : '',
+    pairing ? 'ok' : '',
+  );
   editorUnpairBtn.hidden = !pairing;
   editorPairBtn.classList.toggle('primary', !pairing);
   renderEditorPill();
@@ -1084,7 +1129,7 @@ const desktopManual = document.getElementById('desktop-manual') as HTMLDetailsEl
 /** Set while a pairing waits for the Allow in the app's window; aborting it stops the wait. */
 let pendingDesktopPairing: AbortController | null = null;
 
-function setDesktopStatus(text: string, kind: StatusKind = ''): void {
+function setDesktopStatus(text: StatusText, kind: StatusKind = ''): void {
   writeStatus(desktopStatusEl, text, kind);
 }
 
@@ -1109,7 +1154,7 @@ async function keepDesktopPairing(url: string, token: string): Promise<void> {
   desktopUrlEl.value = url;
   desktopTokenEl.value = '';
   desktopManual.open = false;
-  setDesktopStatus(t('options_desktopPairedAt', { url }), 'ok');
+  setDesktopStatus(tNodes('options_desktopPairedAt', { url: patternView(url) }), 'ok');
   await renderDesktopState();
 }
 
@@ -1219,7 +1264,7 @@ desktopForgetBtn.addEventListener('click', () => {
 });
 
 void getDesktopSettings().then((desktop) => {
-  if (desktop) setDesktopStatus(t('options_desktopPairedAt', { url: desktop.url }), 'ok');
+  if (desktop) setDesktopStatus(tNodes('options_desktopPairedAt', { url: patternView(desktop.url) }), 'ok');
   return renderDesktopState();
 });
 

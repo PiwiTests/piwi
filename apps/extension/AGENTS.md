@@ -620,6 +620,11 @@ pane to the Elements panel (`devtools-sidebar.html`, `src/devtools/sidebar.ts`).
 they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well as `chrome.devtools`. Both pages
 share `src/devtools/devtools.css` (DevTools' own look: 12px type, flat toolbars, the theme through the frame's color
 scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (buttons, empty states and their icons).
+`button()` there is the shared `makeButton` (`src/shared/buttons.ts`: an icon from `src/shared/icons.ts` and a tone),
+which `devtools.css` draws compact through its `data-tone` rules; a button of the HTML pages names its icon in
+`data-icon` and its tone in `data-tone`. A step is drawn by `stepView`, an address by `urlView`, and a URL pattern or
+a site's address by `patternView` (`src/shared/pattern-view.ts`), with `STEP_CSS` and `PATTERN_CSS` in the page's
+style.
 
 - **The selection reaches the ranking through `inspectedWindow.eval`.** The pane injects `devtools-rank.js` into the
   inspected tab (`src/devtools/selection.ts`) and calls `__piwiRankSelected($0)` with `useContentScriptContext`, so

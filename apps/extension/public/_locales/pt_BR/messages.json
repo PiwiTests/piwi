@@ -562,7 +562,7 @@
     "message": "Os sites correspondem aos projetos da sua instância: conecte-se primeiro."
   },
   "options_addMapping": {
-    "message": "+ Adicionar uma linha"
+    "message": "Adicionar uma linha"
   },
   "options_noMappings": {
     "message": "Nenhuma linha ainda: adicione uma abaixo."

@@ -13,8 +13,11 @@
         --muted: #6b7280;
         --border: #e5e7eb;
         --accent: #7c3aed;
+        --accent-hover: #6d28d9;
+        --accent-fg: #6d28d9;
         --success: #16a34a;
         --error: #dc2626;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -24,6 +27,7 @@
           --fg: #f9fafb;
           --muted: #9ca3af;
           --border: #374151;
+          --accent-fg: #c4b5fd;
           --success: #4ade80;
           --error: #f87171;
         }
@@ -69,27 +73,61 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-bottom: 4px;
+        margin-bottom: 6px;
       }
-      .card-head h2 {
+      /* A card's title, after its icon; the Language card's title is its field's label. */
+      .card-head h2,
+      #language-card > label:first-child {
+        display: flex;
+        align-items: center;
+        gap: 9px;
         flex: 1;
         margin: 0;
         font-size: 15px;
         font-weight: 600;
       }
+      #language-card > label:first-child {
+        margin-bottom: 10px;
+      }
+      .card-head h2 > .piwi-icon,
+      #language-card > label:first-child > .piwi-icon {
+        box-sizing: content-box;
+        width: 16px;
+        height: 16px;
+        padding: 5px;
+        border-radius: 8px;
+        color: var(--accent-fg);
+        background: color-mix(in srgb, var(--accent) 13%, transparent);
+      }
+      /* Connected or paired: a badge with a dot, green once on. */
       .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         flex-shrink: 0;
         font-size: 11.5px;
         font-weight: 500;
+        line-height: 16px;
         padding: 2px 9px;
         border-radius: 999px;
         border: 1px solid var(--border);
         color: var(--muted);
       }
+      .pill::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.55;
+      }
       .pill.on {
         color: var(--success);
         border-color: color-mix(in srgb, var(--success) 45%, transparent);
         background: color-mix(in srgb, var(--success) 10%, transparent);
+      }
+      .pill.on::before {
+        opacity: 1;
       }
       .pill[hidden] {
         display: none;
@@ -117,10 +155,19 @@
         margin: 18px 0 6px;
       }
       .subhead h3 {
+        display: flex;
+        align-items: center;
+        gap: 7px;
         flex: 1;
         margin: 0;
         font-size: 13px;
         font-weight: 600;
+        line-height: 20px;
+      }
+      .subhead h3 > .piwi-icon {
+        width: 14px;
+        height: 14px;
+        color: var(--muted);
       }
       label {
         display: block;
@@ -140,9 +187,22 @@
       p.hint {
         margin: 0 0 8px;
       }
+      /* Code in a sentence (a wildcard, a branch, a path, an address): a chip in the monospace type. */
+      .hint code,
+      .meta code,
+      [role='status'] code {
+        font-family: var(--mono);
+        font-size: 0.92em;
+        padding: 0 4px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--fg);
+      }
       input,
       select {
         font: inherit;
+        line-height: 20px;
         padding: 7px 10px;
         border-radius: 8px;
         border: 1px solid var(--border);
@@ -162,7 +222,7 @@
         border-color: var(--error);
       }
       .mono {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-family: var(--mono);
         font-size: 12.5px;
       }
       .row {
@@ -175,15 +235,36 @@
       .row .spacer {
         flex: 1;
       }
+      /* Buttons: the icon before the label, in the accent color, and the extension's tones: primary (violet) for the
+         card's next step, danger (red text) for what disconnects, unpairs or removes, neutral for the rest. A line
+         height of the icon's parity keeps the icon on whole pixels. */
       button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
         font: inherit;
-        padding: 8px 14px;
+        font-weight: 500;
+        line-height: 20px;
+        padding: 7px 14px;
         border-radius: 8px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: inherit;
         cursor: pointer;
         white-space: nowrap;
+        transition:
+          background-color 0.12s ease,
+          border-color 0.12s ease;
+      }
+      /* A click lands on the button itself, never on its icon or its label. */
+      button > * {
+        pointer-events: none;
+      }
+      button > .piwi-icon {
+        width: 16px;
+        height: 16px;
+        color: var(--accent-fg);
       }
       button:hover {
         border-color: var(--accent);
@@ -192,23 +273,45 @@
         opacity: 0.55;
         cursor: default;
       }
+      button:disabled:hover {
+        border-color: var(--border);
+      }
       button.primary {
         background: var(--accent);
         border-color: var(--accent);
         color: #fff;
       }
+      button.primary:hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+      }
+      button.primary > .piwi-icon,
+      button.danger > .piwi-icon {
+        color: currentColor;
+      }
       button.danger {
         color: var(--error);
       }
+      button.danger:hover {
+        border-color: var(--error);
+        background: color-mix(in srgb, var(--error) 8%, transparent);
+      }
       button.small {
+        gap: 6px;
         padding: 5px 10px;
         font-size: 12.5px;
+        line-height: 18px;
+      }
+      button.small > .piwi-icon {
+        width: 14px;
+        height: 14px;
       }
       button[hidden] {
         display: none;
       }
       .inline {
         display: flex;
+        align-items: center;
         gap: 8px;
       }
       .inline input {
@@ -244,7 +347,7 @@
       }
       .mapping-row .mapping-pattern,
       .mapping-row .mapping-branch {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-family: var(--mono);
         font-size: 12px;
       }
       /* The column header names each field; the placeholder only says what empty means, in the narrower type. */
@@ -252,14 +355,23 @@
       .add-fields input::placeholder {
         font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
       }
+      /* A line's remove button: its icon alone, red once hovered. */
       .mapping-row button.remove-mapping {
-        padding: 4px 9px;
-        opacity: 0.7;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border-color: transparent;
+        background: none;
+        color: var(--muted);
       }
-      .mapping-row button.remove-mapping:hover {
-        opacity: 1;
+      .mapping-row button.remove-mapping > .piwi-icon {
+        color: currentColor;
+      }
+      .mapping-row button.remove-mapping:hover,
+      .mapping-row button.remove-mapping:focus-visible {
         color: var(--error);
         border-color: var(--error);
+        background: color-mix(in srgb, var(--error) 8%, transparent);
       }
       .empty-mappings {
         color: var(--muted);
@@ -270,12 +382,13 @@
       #sites-body[hidden] {
         display: none;
       }
+      /* The instance's patterns: the pattern on its chip, then the project it maps to and the rest. */
       .server-row {
         display: flex;
         gap: 8px;
-        align-items: baseline;
+        align-items: center;
         flex-wrap: wrap;
-        padding: 6px 0;
+        padding: 7px 0;
         border-bottom: 1px solid var(--border);
         font-size: 12.5px;
       }
@@ -286,10 +399,16 @@
         flex: 1 1 220px;
         min-width: 0;
         overflow-wrap: anywhere;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .server-row .pattern .piwi-url {
+        padding: 1px 6px;
       }
       .server-row .meta {
         color: var(--muted);
+      }
+      .server-row .meta strong {
+        color: var(--fg);
+        font-weight: 600;
       }
       .source {
         flex-shrink: 0;
@@ -299,9 +418,19 @@
         border: 1px solid var(--border);
         color: var(--muted);
       }
+      /* A status line: its icon says how it went. */
       [role='status'] {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
         font-size: 12.5px;
+        line-height: 18px;
         min-height: 0;
+      }
+      [role='status'] > .piwi-icon {
+        width: 14px;
+        height: 14px;
+        margin-top: 2px;
       }
       [role='status'].ok {
         color: var(--success);
@@ -319,24 +448,45 @@
       .panel[hidden] {
         display: none;
       }
+      /* The code to compare with the other window's: large, spaced, on a chip. */
       .code-panel {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 10px;
+        border-left: 3px solid var(--accent);
       }
       .code-panel[hidden] {
         display: none;
       }
       .code-panel code {
-        font-size: 15px;
-        font-weight: 600;
-        letter-spacing: 0.12em;
+        display: inline-block;
+        margin: 0 2px;
+        padding: 2px 9px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--accent-fg);
+        font-family: var(--mono);
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
       }
       .connected {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         margin-top: 10px;
         color: var(--success);
         font-size: 12.5px;
+        line-height: 18px;
+      }
+      .connected > .piwi-icon {
+        width: 14px;
+        height: 14px;
+      }
+      .connected strong {
+        font-weight: 600;
       }
       .connected[hidden] {
         display: none;
@@ -348,6 +498,13 @@
         cursor: pointer;
         color: var(--muted);
         font-size: 12.5px;
+        line-height: 18px;
+      }
+      details > summary > .piwi-icon {
+        width: 14px;
+        height: 14px;
+        margin: 2px 5px 0 2px;
+        vertical-align: top;
       }
       details[open] > summary {
         margin-bottom: 8px;
@@ -355,6 +512,9 @@
       details.panel > summary {
         color: inherit;
         font-weight: 600;
+      }
+      details.panel > summary > .piwi-icon {
+        color: var(--accent-fg);
       }
       .add-fields {
         display: grid;
@@ -369,9 +529,17 @@
         margin-top: 6px;
       }
       .privacy {
+        display: flex;
+        gap: 8px;
         margin-top: 22px;
         color: var(--muted);
         font-size: 12px;
+        line-height: 18px;
+      }
+      .privacy > .piwi-icon {
+        width: 14px;
+        height: 14px;
+        margin-top: 2px;
       }
       @media (max-width: 640px) {
         .mapping-grid,
@@ -393,7 +561,7 @@
       </header>
 
       <section class="card" id="language-card">
-        <label for="language" data-i18n="options_language">Language</label>
+        <label for="language" data-i18n="options_language" data-icon="globe">Language</label>
         <select id="language"></select>
         <div class="hint" data-i18n="options_languageHint">
           The language of Piwi Picker’s own texts. Page texts, locators and the tests it writes stay as they are.
@@ -404,7 +572,7 @@
 
       <section class="card" id="instance-card" aria-labelledby="instance-heading">
         <div class="card-head">
-          <h2 id="instance-heading" data-i18n="options_connectHeading">Connect to Piwi</h2>
+          <h2 id="instance-heading" data-i18n="options_connectHeading" data-icon="plug">Connect to Piwi</h2>
           <span id="instance-pill" class="pill" data-i18n="options_stateNotConnected">Not connected</span>
         </div>
         <p class="lead" data-i18n="options_lead">
@@ -417,12 +585,15 @@
         <div class="inline">
           <input
             id="instance-url"
+            class="mono"
             type="url"
             placeholder="https://piwi.example.com"
             data-i18n-placeholder="options_instanceUrlPlaceholder"
             autocomplete="off"
           />
-          <button id="connect" class="primary" type="button" data-i18n="options_connect">Connect</button>
+          <button id="connect" class="primary" type="button" data-i18n="options_connect" data-icon="plug">
+            Connect
+          </button>
         </div>
         <div class="hint" data-i18n="options_connectHint">
           Opens your instance in a new tab, where you allow Piwi Picker; it then receives its own API key.
@@ -430,16 +601,20 @@
 
         <div id="connect-panel" class="panel code-panel" hidden>
           <div id="connect-code-line"></div>
-          <button id="connect-cancel" type="button" class="small" data-i18n="options_connectCancel">Cancel</button>
+          <button id="connect-cancel" type="button" class="small" data-i18n="options_connectCancel" data-icon="close">
+            Cancel
+          </button>
         </div>
         <div id="connected-as" class="connected" hidden></div>
 
         <details id="api-key-fallback">
-          <summary data-i18n="options_useApiKey">Use an API key instead</summary>
+          <summary data-i18n="options_useApiKey" data-icon="lock">Use an API key instead</summary>
           <label for="api-key" data-i18n="options_apiKey">API key</label>
           <div class="inline">
-            <input id="api-key" type="password" placeholder="pd_…" autocomplete="off" />
-            <button id="api-key-save" type="button" data-i18n="options_apiKeySave">Save and test</button>
+            <input id="api-key" class="mono" type="password" placeholder="pd_…" autocomplete="off" />
+            <button id="api-key-save" type="button" data-i18n="options_apiKeySave" data-icon="check-circle">
+              Save and test
+            </button>
           </div>
           <div class="hint" data-i18n="options_apiKeyHint">
             Create one in the Piwi dashboard, in your account’s API key settings.
@@ -448,7 +623,14 @@
 
         <div class="card-foot">
           <div id="status" role="status"></div>
-          <button id="disconnect" class="danger small" type="button" data-i18n="options_disconnect" hidden>
+          <button
+            id="disconnect"
+            class="danger small"
+            type="button"
+            data-i18n="options_disconnect"
+            data-icon="unlink"
+            hidden
+          >
             Disconnect
           </button>
         </div>
@@ -456,7 +638,7 @@
 
       <section class="card" id="sites-card" aria-labelledby="sites-heading">
         <div class="card-head">
-          <h2 id="sites-heading" data-i18n="options_mappingsHeading">Project mappings</h2>
+          <h2 id="sites-heading" data-i18n="options_mappingsHeading" data-icon="list">Project mappings</h2>
         </div>
         <p class="hint" data-i18n="options_mappingsHint">
           Which project applies on which site. Patterns kept in this browser are read first, then your instance’s, and
@@ -471,8 +653,10 @@
 
         <div id="sites-body">
           <div class="subhead">
-            <h3 data-i18n="options_serverHeading">From your Piwi instance</h3>
-            <button id="refresh-server" type="button" class="small" data-i18n="options_serverRefresh">Refresh</button>
+            <h3 data-i18n="options_serverHeading" data-icon="plug">From your Piwi instance</h3>
+            <button id="refresh-server" type="button" class="small" data-i18n="options_serverRefresh" data-icon="refresh">
+              Refresh
+            </button>
           </div>
           <p class="hint" data-i18n="options_serverHint">
             Set in each project’s settings, under Browser extension URLs, and read each time this page opens.
@@ -480,7 +664,7 @@
           <div id="server-mappings"></div>
 
           <div class="subhead">
-            <h3 data-i18n="options_localHeading">This browser only</h3>
+            <h3 data-i18n="options_localHeading" data-icon="browser">This browser only</h3>
           </div>
           <div id="mapping-head" class="mapping-grid mapping-head" aria-hidden="true">
             <span data-i18n="options_pattern">Address pattern</span>
@@ -492,13 +676,15 @@
           </div>
           <div id="mappings"></div>
           <div class="row">
-            <button id="add-mapping" type="button" class="small" data-i18n="options_addMapping">+ Add a line</button>
+            <button id="add-mapping" type="button" class="small" data-i18n="options_addMapping" data-icon="plus">
+              Add a line
+            </button>
             <span class="spacer"></span>
-            <button id="save" class="primary small" type="button" data-i18n="options_save">Save</button>
+            <button id="save" class="primary small" type="button" data-i18n="options_save" data-icon="save">Save</button>
           </div>
 
           <details id="add-site" class="panel">
-            <summary data-i18n="options_addHeading">Add a site</summary>
+            <summary data-i18n="options_addHeading" data-icon="plus">Add a site</summary>
             <p class="hint" data-i18n="options_addHint">
               Adds the pattern to a project on your instance, for everyone who connects to it. It takes a role that can
               edit the project.
@@ -549,10 +735,10 @@
             </div>
             <div class="hint" id="add-note" hidden></div>
             <div class="row">
-              <button id="add-to-server" type="button" class="small primary" data-i18n="options_addToServer">
+              <button id="add-to-server" type="button" class="small primary" data-i18n="options_addToServer" data-icon="upload">
                 Add to Piwi
               </button>
-              <button id="add-locally" type="button" class="small" data-i18n="options_addLocally">
+              <button id="add-locally" type="button" class="small" data-i18n="options_addLocally" data-icon="browser">
                 Keep in this browser only
               </button>
             </div>
@@ -564,7 +750,7 @@
 
       <section class="card" id="desktop-card" aria-labelledby="desktop-heading">
         <div class="card-head">
-          <h2 id="desktop-heading" data-i18n="options_desktopHeading">Desktop app</h2>
+          <h2 id="desktop-heading" data-i18n="options_desktopHeading" data-icon="monitor">Desktop app</h2>
           <span id="desktop-pill" class="pill" data-i18n="options_stateNotPaired">Not paired</span>
         </div>
         <p class="lead" data-i18n="options_desktopHint">
@@ -574,7 +760,9 @@
         <label for="desktop-url" data-i18n="options_desktopUrl">Address of the desktop app</label>
         <div class="inline">
           <input id="desktop-url" type="url" class="mono" placeholder="http://127.0.0.1:3000" autocomplete="off" />
-          <button id="desktop-pair" class="primary" type="button" data-i18n="options_desktopPair">Pair</button>
+          <button id="desktop-pair" class="primary" type="button" data-i18n="options_desktopPair" data-icon="link">
+            Pair
+          </button>
         </div>
         <div class="hint" data-i18n="options_desktopUrlHint">
           Shown on the app’s Setup page, under Connect Piwi Picker. Pair asks the app’s window to allow Piwi Picker.
@@ -582,15 +770,25 @@
 
         <div id="desktop-pair-panel" class="panel code-panel" hidden>
           <div id="desktop-code-line"></div>
-          <button id="desktop-pair-cancel" type="button" class="small" data-i18n="options_connectCancel">Cancel</button>
+          <button
+            id="desktop-pair-cancel"
+            type="button"
+            class="small"
+            data-i18n="options_connectCancel"
+            data-icon="close"
+          >
+            Cancel
+          </button>
         </div>
 
         <details id="desktop-manual">
-          <summary data-i18n="options_desktopManual">Pair by hand</summary>
+          <summary data-i18n="options_desktopManual" data-icon="edit">Pair by hand</summary>
           <label for="desktop-token" data-i18n="options_desktopToken">Token</label>
           <div class="inline">
-            <input id="desktop-token" type="password" placeholder="pd_…" autocomplete="off" />
-            <button id="desktop-save" type="button" data-i18n="options_desktopSave">Save and test</button>
+            <input id="desktop-token" class="mono" type="password" placeholder="pd_…" autocomplete="off" />
+            <button id="desktop-save" type="button" data-i18n="options_desktopSave" data-icon="check-circle">
+              Save and test
+            </button>
           </div>
           <div class="hint" data-i18n="options_desktopManualHint">
             The token is on the app’s Setup page, under Connect Piwi Picker, beside its address.
@@ -599,7 +797,14 @@
 
         <div class="card-foot">
           <div id="desktop-status" role="status"></div>
-          <button id="desktop-forget" class="danger small" type="button" data-i18n="options_desktopForget" hidden>
+          <button
+            id="desktop-forget"
+            class="danger small"
+            type="button"
+            data-i18n="options_desktopForget"
+            data-icon="unlink"
+            hidden
+          >
             Unpair
           </button>
         </div>
@@ -607,7 +812,7 @@
 
       <section class="card" id="editor-card" aria-labelledby="editor-heading">
         <div class="card-head">
-          <h2 id="editor-heading" data-i18n="options_editorHeading">Send to editor</h2>
+          <h2 id="editor-heading" data-i18n="options_editorHeading" data-icon="code">Send to editor</h2>
           <span id="editor-pill" class="pill" data-i18n="options_stateNotPaired">Not paired</span>
         </div>
         <p class="lead" data-i18n="options_editorHint">
@@ -617,18 +822,27 @@
         </p>
         <label for="editor-address" data-i18n="options_editorAddress">Pairing address</label>
         <div class="inline">
-          <input id="editor-address" type="password" autocomplete="off" spellcheck="false" />
-          <button id="editor-pair" type="button" class="primary" data-i18n="options_editorPair">Pair</button>
+          <input id="editor-address" class="mono" type="password" autocomplete="off" spellcheck="false" />
+          <button id="editor-pair" type="button" class="primary" data-i18n="options_editorPair" data-icon="link">
+            Pair
+          </button>
         </div>
         <div class="card-foot">
           <div id="editor-status" role="status"></div>
-          <button id="editor-unpair" type="button" class="danger small" data-i18n="options_editorUnpair" hidden>
+          <button
+            id="editor-unpair"
+            type="button"
+            class="danger small"
+            data-i18n="options_editorUnpair"
+            data-icon="unlink"
+            hidden
+          >
             Unpair
           </button>
         </div>
       </section>
 
-      <div class="privacy" data-i18n="options_privacy">
+      <div class="privacy" data-i18n="options_privacy" data-icon="lock">
         Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you
         copy them, download them or send them to your paired editor or desktop app. Connecting downloads your projects’
         URL patterns, each mapped project’s function catalog and the elements its tests reach; adding a site sends only

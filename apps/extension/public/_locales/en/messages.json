@@ -698,7 +698,7 @@
     "description": "Settings page, Project mappings card: shown instead of the pattern lists before Piwi Picker is connected to an instance."
   },
   "options_addMapping": {
-    "message": "+ Add a line",
+    "message": "Add a line",
     "description": "Settings page: button adding a line to the project mappings."
   },
   "options_noMappings": {
