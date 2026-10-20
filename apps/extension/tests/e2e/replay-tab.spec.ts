@@ -1,5 +1,20 @@
 import type { Page, Worker } from '@playwright/test';
-import { expect, replayState, startReplay, step, stepsDoc, tabIdOf, target, test } from './trusted-site.js';
+import {
+  clickInShadow,
+  debuggerAttached,
+  type DomNode,
+  expect,
+  expectText,
+  finished,
+  panelNode,
+  replayState,
+  startReplay,
+  step,
+  stepsDoc,
+  tabIdOf,
+  target,
+  test,
+} from './trusted-site.js';
 
 /**
  * A replay belongs to one tab: the replay script is registered for the whole
@@ -16,7 +31,17 @@ const BUTTONS = `<!doctype html><html><body>
     b.addEventListener('click', () => (document.querySelector('[data-testid="log"]').textContent += b.textContent + ';'));
 </script></body></html>`;
 
-test.use({ pages: { '/buttons': BUTTONS } });
+/** A page that opens the next one in a new tab: a link, or a script. */
+const OPENER = `<!doctype html><html><body>
+  <a data-testid="link" href="/opened" target="_blank">Open the order</a>
+  <button data-testid="script" onclick="window.open('/opened')">Open the order</button>
+</body></html>`;
+
+const OPENED = `<!doctype html><html><body>
+  <button data-testid="pay" onclick="this.textContent = 'Paid'">Pay</button>
+</body></html>`;
+
+test.use({ pages: { '/buttons': BUTTONS, '/opener': OPENER, '/opened': OPENED } });
 
 function twoClicks(site: string) {
   return stepsDoc('Two clicks', site, [
@@ -89,4 +114,61 @@ test('closing the replay’s tab ends the replay, and the origin’s next page d
   await next.waitForTimeout(1000);
   expect(await hostIn(next, 'piwi-replay-hud-host')).toBe(false);
   await expect(next.getByTestId('log')).toHaveText('');
+});
+
+for (const opener of ['link', 'script'] as const) {
+  test(`a step that opens its page in a new tab (${opener}) takes the replay there`, async ({
+    context,
+    control,
+    site,
+    worker,
+  }) => {
+    const doc = stepsDoc('New tab', site, [
+      step('goto', '/opener', { value: '/opener' }),
+      step('click', '/opener', { target: target(opener, null, 'Open the order') }),
+      step('click', '/opened', { target: target('pay', 'button', 'Pay') }),
+      expectText('/opened', 'pay', 'Paid'),
+    ]);
+    const opened = context.waitForEvent('page', (p) => p.url().endsWith('/opened'));
+    const page = await startReplay(control, context, site, doc, '/opener');
+    const first = await tabIdOf(worker, `${site}/opener`);
+    const next = await opened;
+
+    const state = await finished(worker);
+    expect(state.results.map((r) => r.status)).toEqual(['done', 'done', 'done', 'passed']);
+    await expect(next.getByTestId('pay')).toHaveText('Paid');
+    // The tab it left plays nothing more, and is let go.
+    await expect.poll(() => hostIn(page, 'piwi-replay-hud-host')).toBe(false);
+    expect(await hostIn(page, 'piwi-replay-cursor-host')).toBe(false);
+    expect(await debuggerAttached(worker, first)).toBe(false);
+  });
+}
+
+test('a handed-over step the person does by opening a new tab takes the replay there', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const doc = stepsDoc('New tab by hand', site, [
+    step('goto', '/opener', { value: '/opener' }),
+    step('click', '/opener', { target: target('gone', 'link', 'Open the order') }),
+    step('click', '/opened', { target: target('pay', 'button', 'Pay') }),
+  ]);
+  const page = await startReplay(control, context, site, doc, '/opener');
+  await expect.poll(async () => (await replayState(worker)).handOver?.step, { timeout: 30_000 }).toBe(1);
+
+  const opened = context.waitForEvent('page');
+  await page.getByTestId('link').click();
+  const next = await opened;
+  // The new tab draws the hand-over once its page is ready.
+  const doneButton = (node: DomNode) =>
+    node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === 'I did it, continue');
+  await expect.poll(() => panelNode(next, doneButton), { timeout: 20_000 }).not.toBeNull();
+  await clickInShadow(next, 'I did it, continue');
+
+  const state = await finished(worker);
+  expect(state.results.map((r) => r.status)).toEqual(['done', 'manual', 'done']);
+  await expect(next.getByTestId('pay')).toHaveText('Paid');
+  await expect.poll(() => hostIn(page, 'piwi-replay-hud-host')).toBe(false);
 });

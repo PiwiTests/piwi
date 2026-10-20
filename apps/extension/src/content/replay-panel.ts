@@ -195,10 +195,15 @@ function onPageOf(url: string, startPage: ReplayState['startPage']): boolean {
   return here === null || there === null || here === there;
 }
 
-async function waitForPage(url: string, timeout: number, startPage: ReplayState['startPage']): Promise<boolean> {
+async function waitForPage(
+  url: string,
+  timeout: number,
+  startPage: ReplayState['startPage'],
+  replayId: string,
+): Promise<boolean> {
   const deadline = Date.now() + timeout;
   while (!onPageOf(url, startPage)) {
-    if (Date.now() >= deadline) return false;
+    if (Date.now() >= deadline || movedAway === replayId) return false;
     await wait(100);
   }
   return true;
@@ -298,6 +303,8 @@ async function replayHere(state: ReplayState): Promise<boolean> {
 
 let cursor: FakeCursor | null = null;
 let loopActive = false;
+/** The replay a step took on to a tab this one opened (`piwi-replay-moved`): this page lets go of it. */
+let movedAway: string | null = null;
 /** Resolves the wait for Next in step mode, or for Continue after a pause. */
 const waker = createWaker();
 
@@ -1117,7 +1124,7 @@ async function handOverStep(
     for (;;) {
       const answer = await waker.until(chosen);
       const latest = await getReplayState();
-      if (!latest || latest.id !== state.id || latest.status === 'stopped') return null;
+      if (!latest || latest.id !== state.id || latest.status === 'stopped' || movedAway === state.id) return null;
       if (!answer.woken) return { answer: answer.value, state: latest };
       renderHud(latest);
     }
@@ -1190,7 +1197,13 @@ async function applyViewport(state: ReplayState, viewport: StepViewport): Promis
 /** The stored replay while it still runs at step `index`; null once it was paused, stopped or replaced. */
 async function runningAt(replayId: string, index: number): Promise<ReplayState | null> {
   const latest = await getReplayState();
-  return latest && latest.id === replayId && latest.status === 'running' && latest.position === index ? latest : null;
+  return latest &&
+    latest.id === replayId &&
+    latest.status === 'running' &&
+    latest.position === index &&
+    movedAway !== replayId
+    ? latest
+    : null;
 }
 
 /**
@@ -1224,7 +1237,7 @@ async function waitForUnload(replayId: string): Promise<'stayed' | 'ended'> {
   for (let left = UNLOAD_TIMEOUT_MS; left > 0; left = deadline - Date.now()) {
     if (!(await waker.until(wait(left))).woken) break;
     const latest = await getReplayState();
-    if (!latest || latest.id !== replayId || latest.status === 'stopped') {
+    if (!latest || latest.id !== replayId || latest.status === 'stopped' || movedAway === replayId) {
       outcome = 'ended';
       break;
     }
@@ -1307,6 +1320,8 @@ async function runReplay(): Promise<void> {
     renderHud(state);
     await waitForPageReady();
     for (;;) {
+      // A step opened its page in a new tab, which plays the rest.
+      if (movedAway === replayId) return leaveReplay();
       const latest = await getReplayState();
       if (!latest || latest.id !== replayId || latest.origin !== location.origin) {
         replaced = !!latest;
@@ -1375,7 +1390,8 @@ async function runReplay(): Promise<void> {
         continue;
       }
 
-      if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage))) {
+      if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage, replayId))) {
+        if (movedAway === replayId) continue;
         const reason = t('replay_reasonOtherPage', { expected: pathOf(step.pageUrl), actual: pathOf(location.href) });
         if (!(await playByHand(state, index, reason))) return;
         continue;
@@ -1751,6 +1767,12 @@ if (globals.__piwiReplayEntry) {
     leaving = true;
   });
   chrome.runtime.onMessage.addListener((message) => {
+    // A step opened its page in a new tab, and the replay goes on there: this page stops where it waits.
+    if (message?.type === 'piwi-replay-moved') {
+      if (typeof message.replayId === 'string') movedAway = message.replayId;
+      waker.wakeWaiting();
+      return undefined;
+    }
     // The worker lost the replay's debugging session: the replay goes on with the page's own events.
     if (message?.type === 'piwi-replay-driver-lost') {
       void getReplayState().then((state) => {

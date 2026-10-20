@@ -116,13 +116,19 @@ const REPLAY_TAB_KEY = 'piwiReplayTab';
 export interface ReplayTab {
   replayId: string;
   tabId: number;
+  /**
+   * The tabs the replay's tab opened while the replay ran (a link to a new
+   * tab, `window.open`): the first of them whose page plays the replay takes
+   * it on, as the recording went on there.
+   */
+  opened?: number[];
 }
 
 export async function getReplayTab(): Promise<ReplayTab | null> {
   const value = (await sessionArea().get(REPLAY_TAB_KEY))[REPLAY_TAB_KEY] as Partial<ReplayTab> | undefined;
-  return typeof value?.replayId === 'string' && typeof value.tabId === 'number'
-    ? { replayId: value.replayId, tabId: value.tabId }
-    : null;
+  if (typeof value?.replayId !== 'string' || typeof value.tabId !== 'number') return null;
+  const opened = Array.isArray(value.opened) ? value.opened.filter((id) => typeof id === 'number') : [];
+  return { replayId: value.replayId, tabId: value.tabId, ...(opened.length ? { opened } : {}) };
 }
 
 export async function setReplayTab(tab: ReplayTab): Promise<void> {

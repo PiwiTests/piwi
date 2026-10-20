@@ -20,7 +20,8 @@ hand.
   [`.piwibug` file](/reference/bug-report-file) (or the same file named `.zip`) or its `steps.json`, the report just
   recorded in this browser, or, connected, one of the project's reports on Piwi.
 
-The steps run on the tab's site, whichever site they were recorded on.
+The steps run on the tab's site, whichever site they were recorded on. A step that opens its page in a new tab, such as
+a link that opens an order beside the list, takes the replay to that tab, as the recording went on there.
 
 ## The answer
 
@@ -47,7 +48,8 @@ element outlined. It lists the locators the element was recorded with and outlin
 still find, such as two buttons where the recording saw one, as the page changes. Do it yourself on the page, then
 choose:
 
-- **I did it, continue**: the replay goes on with the next step, even when your action loaded another page.
+- **I did it, continue**: the replay goes on with the next step, even when your action loaded another page or opened
+  one in a new tab.
 - **Skip this step**: it goes on without it.
 - **Stop here**: it ends there, and says it could not reach the bug.
 
