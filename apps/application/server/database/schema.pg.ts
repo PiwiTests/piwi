@@ -121,6 +121,7 @@ export const testRuns = pgTable(
     keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
     keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
     keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
+    serverCoverageGaps: jsonb('server_coverage_gaps'), // Array<{ origin, reason: 'restarted' | 'unreachable', at? }>: why part of the run's server coverage is missing; null when whole
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),

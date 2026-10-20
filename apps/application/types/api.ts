@@ -530,6 +530,8 @@ export interface TestRunDetails {
   /** Who asked for the keep: a person, the reporter at ingest, or a release marker. */
   keepSource?: KeepSource | null;
   keepReason?: string | null;
+  /** Why part of the run's server coverage is missing, per backend origin (`readRunCoverageGaps` reads it); null when whole. */
+  serverCoverageGaps?: unknown;
   /** Display name of the person who kept the run, when one did and still exists. */
   keptByName?: string | null;
   createdAt: Date;

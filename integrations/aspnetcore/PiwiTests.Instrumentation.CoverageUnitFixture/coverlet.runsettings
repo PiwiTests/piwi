@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The coverlet collector's settings: dotnet test reads them through RunSettingsFilePath, and so does the coverage
+     build, for its exclusions. The collector runs only with dotnet test -collect "XPlat Code Coverage". -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage" enabled="false">
+        <Configuration>
+          <Format>cobertura</Format>
+          <IncludeTestAssembly>true</IncludeTestAssembly>
+          <ExcludeByAttribute>GeneratedCode</ExcludeByAttribute>
+          <ExcludeByFile>**/Generated/*.cs</ExcludeByFile>
+          <Exclude>[PiwiTests.Instrumentation.Coverage]*,[PiwiTests.Instrumentation.CoverageUnitFixture]PiwiTests.Instrumentation.CoverageUnitFixture.Legacy*</Exclude>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

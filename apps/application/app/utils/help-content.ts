@@ -557,6 +557,11 @@ export const HELP_TOPICS = {
     doc: 'features/ui-overview#test-run-detail',
     envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
   },
+  'run.coverageIncomplete': {
+    title: 'Incomplete server coverage',
+    text: 'Part of this run’s server coverage is missing. A backend that **restarted** during the run starts its coverage empty: the lines each test ran are kept, but what the earlier process ran outside a request (startup, background work) is lost. One **unreachable** at the end of the run sent no run-level coverage: only the lines the tests ran are kept. The commit’s combined coverage says so in its notes.',
+    doc: 'features/server-coverage#limits',
+  },
   'run.shuffle': {
     title: 'Shuffled run',
     text: 'Playwright ran this run’s tests in a random order (`--shuffle`). Click the seed to copy `--shuffle <seed>`: a run with the same tests, workers and seed runs them in the same order again, to reproduce a failure that depends on which test ran before.',
@@ -772,6 +777,7 @@ export const HELP_TOPICS = {
       '- **Totals only** — on a branch, each suite keeps only the report of the commit whose coverage arrived last. An earlier commit keeps its totals, as computed, and no files.',
       '- **Carried** — a suite this commit lacks counts from an earlier commit, for the files whose version is unchanged.',
       '- **Incomplete** — the report was cut at a size limit, or its files disagreed with the checkout.',
+      '- **A backend restarted** — a run’s backend restarted or was unreachable: the run still counts, with the lines its tests ran, and e2e is incomplete when no complete run is beside it.',
       '- **No coverage** — a suite the project uploads that neither this commit nor an earlier one has.',
       '- **No inventory** — files no suite names are not counted; upload with the checkout.',
       '- **Earlier scope** — totals kept from before the coverage scope or areas changed are not counted again.',

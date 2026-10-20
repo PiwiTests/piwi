@@ -78,6 +78,7 @@ import {
   parseRunCoverageQuery,
   parseSourceQuery,
   storeRunCoverage,
+  storeRunCoverageGaps,
 } from '~~/server/utils/coverage';
 import {
   PROJECT_NOT_FOUND,
@@ -416,6 +417,7 @@ import {
 import { apiDeleteTestRun } from './test-runs';
 import { setRunIncident } from '#shared/handlers/run-health';
 import { parseSetRunIncident } from '#shared/run-incident';
+import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import {
   addBugReproduction,
   isReproductionRunAllowed,
@@ -1174,6 +1176,7 @@ const routes: RouteEntry[] = [
       const files = parseRunCoverage(body);
       if (typeof files === 'string') throw demoHttpError(400, files);
       const stored = await storeRunCoverage(db, +m[1]!, run.projectId, files);
+      await storeRunCoverageGaps(db, +m[1]!, readRunCoverageGaps((body as { incomplete?: unknown }).incomplete));
       if (run.commit) {
         invalidateCommitCoverage(run.projectId, run.commit);
         await settleCommitCoverage(getDemoDb, run.projectId, run.commit);

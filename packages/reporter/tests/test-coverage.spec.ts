@@ -613,6 +613,58 @@ describe('CoverageCollection', () => {
     expect(tc.coverage).toEqual({ v: 1, files: [{ path: 'src/a.1.cs', runtime: 'server' }] });
   });
 
+  it("names an origin whose run-level coverage could not be read, with the lines its tests' coverage named", async () => {
+    const server = await backend();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const collection = new CoverageCollection({
+      settings: { browser: 'off', server: 'files' },
+      baseUrls: [server.url],
+      configDir: os.tmpdir(),
+      limits: { batchDelayMs: 10 },
+    });
+    await collection.apply(testCase(), [requestsAttachment(server.url, ['a.1'])]);
+    collection.lastTestEnded();
+    const sent: unknown[] = [];
+    const client = { putJSON: async (url: string, body: unknown) => void sent.push([url, body]) };
+    await collection.sendRunCoverage(client as never, 7, null);
+    expect(sent).toEqual([
+      [
+        '/api/test-runs/7/coverage',
+        {
+          v: 1,
+          files: [{ path: 'src/a.1.cs', runtime: 'server' }],
+          incomplete: [{ origin: server.url, reason: 'unreachable' }],
+        },
+      ],
+    ]);
+  });
+
+  it('sends the gap alone when no file of the run is known', async () => {
+    const server = await startServerOnTestPort((req, res) => {
+      if (req.url === '/__piwi/coverage/collect') {
+        const body = JSON.parse(req.body) as { groups: Array<{ key: string }> };
+        jsonRes(res, 200, { v: 1, groups: body.groups.map((g) => ({ key: g.key, files: [], missing: [] })) });
+      } else {
+        textRes(res, 503, 'restarting');
+      }
+    });
+    servers.push(server);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const collection = new CoverageCollection({
+      settings: { browser: 'off', server: 'lines' },
+      baseUrls: [server.url],
+      configDir: os.tmpdir(),
+      limits: { batchDelayMs: 10 },
+    });
+    await collection.apply(testCase(), [requestsAttachment(server.url, ['a.1'])]);
+    const sent: unknown[] = [];
+    const client = { putJSON: async (url: string, body: unknown) => void sent.push([url, body]) };
+    await collection.sendRunCoverage(client as never, 7, null);
+    expect(sent).toEqual([
+      ['/api/test-runs/7/coverage', { v: 1, files: [], incomplete: [{ origin: server.url, reason: 'unreachable' }] }],
+    ]);
+  });
+
   it('stops waiting at its bound and marks the coverage incomplete', async () => {
     const server = await backend(2000);
     const collection = new CoverageCollection({

@@ -21,6 +21,8 @@ import {
   ServerCoverageCollector,
   parseServerCoverageRequests,
   type RunCoverageFile,
+  type RunCoverageGap,
+  type RunServerCoverage,
   type ServerCoverage,
   type ServerCoverageCollectorOptions,
 } from './server-coverage.js';
@@ -173,7 +175,7 @@ export class CoverageCollection {
   private readonly collector: ServerCoverageCollector | null;
   private readonly waitMs: number;
   private readonly pending = new Set<PendingTest>();
-  private readonly runFiles = new Map<string, Promise<RunCoverageFile[] | null>>();
+  private readonly runFiles = new Map<string, Promise<RunServerCoverage | null>>();
   /** The blob ids of the browser files, which name line numbers at `functions` granularity. */
   private readonly browserBlobs: BlobIds | null;
   /** The tests whose browser files are getting their blob ids, so the end of the run waits for them. */
@@ -376,17 +378,26 @@ export class CoverageCollection {
 
   /**
    * Send the run-level coverage of every origin, and the browser's, to the
-   * dashboard run, in requests within its limits. A failure is logged once,
-   * never thrown.
+   * dashboard run, in requests within its limits; the first names the origins
+   * whose server coverage is incomplete (`incomplete`), and is sent for them
+   * alone when no file is. A failure is logged once, never thrown.
    */
   async sendRunCoverage(httpClient: HttpClient, runId: number | string, auth: string | null): Promise<void> {
     if (!this.collector && !this.browserBlobs) return;
     this.fetchRunCoverage();
-    const server: RunCoverageFile[] = (await Promise.all(this.runFiles.values())).flatMap((result) => result ?? []);
+    const runs = await Promise.all(this.runFiles.values());
+    const server: RunCoverageFile[] = runs.flatMap((result) => result?.files ?? []);
+    const gaps: RunCoverageGap[] = runs.flatMap((result) => (result?.gap ? [result.gap] : []));
     const files = [...server, ...(await this.browserRunFiles())];
-    for (const chunk of chunkRunCoverage(files)) {
+    const chunks = chunkRunCoverage(files);
+    if (chunks.length === 0 && gaps.length > 0) chunks.push([]);
+    for (const [i, chunk] of chunks.entries()) {
       try {
-        await httpClient.putJSON(`/api/test-runs/${runId}/coverage`, { v: 1, files: chunk }, auth);
+        await httpClient.putJSON(
+          `/api/test-runs/${runId}/coverage`,
+          { v: 1, files: chunk, ...(i === 0 && gaps.length > 0 ? { incomplete: gaps } : {}) },
+          auth,
+        );
       } catch (error) {
         this.logger.warn(`Could not send the run's coverage to the dashboard: ${errorMessage(error)}`);
         return;

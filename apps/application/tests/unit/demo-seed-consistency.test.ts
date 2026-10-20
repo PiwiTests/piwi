@@ -934,6 +934,7 @@ const EXPECT_KEYS = new Set([
   'lab',
   'resources',
   'incident',
+  'coverageGap',
   'gaps',
   'suspects',
   'coverage',
@@ -1009,6 +1010,15 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
     );
     expect(row?.rule, `${label}: the run is flagged as an incident`).toBeTruthy();
+  }
+  if (want.coverageGap) {
+    expect(want.run, `${label}: coverageGap needs a run`).toBeTruthy();
+    const [row] = q(`select server_coverage_gaps as gaps from test_runs where id = ${want.run!.id}`);
+    const gaps = row?.gaps ? (JSON.parse(String(row.gaps)) as Array<{ reason: string }>) : [];
+    expect(
+      gaps.map((g) => g.reason),
+      `${label}: the run's server coverage is incomplete`,
+    ).toContain(want.coverageGap);
   }
   if (want.gaps) {
     expect(want.project, `${label}: gaps needs a project`).toBeTruthy();
