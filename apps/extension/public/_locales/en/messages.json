@@ -1510,7 +1510,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Found by its position (nth): it breaks if the order of the list changes",
+    "message": "Found by its position (nth): it breaks if the order of the list changes",
     "description": "Multi-pick: warning under a locator that finds its item only by its place in the list. “nth” is Playwright code, kept as it is."
   },
   "lint_dialog": {

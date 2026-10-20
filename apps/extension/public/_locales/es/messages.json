@@ -1229,7 +1229,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Encontrado por su posición (nth): falla si cambia el orden de la lista"
+    "message": "Encontrado por su posición (nth): falla si cambia el orden de la lista"
   },
   "lint_dialog": {
     "message": "Revisión: elementos difíciles de localizar"

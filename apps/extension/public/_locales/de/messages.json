@@ -1229,7 +1229,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Über die Position gefunden (nth): bricht, wenn sich die Reihenfolge der Liste ändert"
+    "message": "Über die Position gefunden (nth): bricht, wenn sich die Reihenfolge der Liste ändert"
   },
   "lint_dialog": {
     "message": "Prüfung: schwer ansteuerbare Elemente"

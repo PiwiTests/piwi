@@ -108,6 +108,8 @@ export const ICONS = {
     'M7.8 8.75l-2.5-2',
     'M16.2 8.75l2.5-2',
   ],
+  minus: ['M5 12h14'],
+  clock: [CIRCLE(12, 12, 8.5), 'M12 7.5V12l3 2'],
   // Code, editors and other programs.
   code: ['M8.5 7l-5 5 5 5', 'M15.5 7l5 5-5 5'],
   terminal: ['M3.5 5h17v14h-17z', 'M7.5 10l2.5 2-2.5 2', 'M12 14.5h4.5'],

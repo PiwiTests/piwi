@@ -1,4 +1,6 @@
 import { LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
+import { BUTTON_CSS } from '../shared/buttons.js';
+import { STEP_CSS } from '../shared/step-view.js';
 
 /**
  * Styles of the coverage overlay, scoped to its shadow root. Boxes, badges and
@@ -8,6 +10,8 @@ import { LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
  */
 export const COVERAGE_CSS = `
   ${LOCATOR_SYNTAX_CSS}
+  ${BUTTON_CSS}
+  ${STEP_CSS}
   :host { all: initial; }
   * { box-sizing: border-box; }
   .layer, .panel, .pill, .card {
@@ -108,16 +112,12 @@ export const COVERAGE_CSS = `
   .card li a { color: #e2e8f0; text-decoration: underline dotted; text-underline-offset: 2px; word-break: break-word; }
   .card li a:hover { text-decoration-style: solid; }
   .card li .meta { grid-column: 2; color: #94a3b8; font-size: 11.5px; overflow-wrap: anywhere; }
+  .card li .meta .act { color: #cbd5e1; font-weight: 500; }
+  .card li .meta .site { color: #cbd5e1; font-size: 11px; }
   .card .more { color: #94a3b8; font-size: 11.5px; margin-top: 4px; }
   .card .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .card .hint { color: #94a3b8; font-size: 11.5px; margin-top: 6px; }
-  .card button, .card a.button {
-    background: rgb(148 163 184 / 0.14); color: inherit; border: 1px solid rgb(148 163 184 / 0.35);
-    border-radius: 6px; padding: 3px 9px; font: inherit; font-size: 11.5px; cursor: pointer; text-decoration: none;
-  }
-  .card button:hover, .card a.button:hover { background: rgb(148 163 184 / 0.26); }
-  .card .close { border: 0; background: none; font-size: 16px; line-height: 1; padding: 2px 6px; opacity: 0.7; }
-  .card .close:hover { opacity: 1; background: rgb(148 163 184 / 0.18); }
+  .card .close { margin: -2px -4px 0 0; }
 
   /* ── Side panel ─────────────────────────────────────────────────────── */
   .panel {
@@ -132,20 +132,11 @@ export const COVERAGE_CSS = `
   .panel .title { font-weight: 650; font-size: 14px; }
   .panel .sub { color: #9ca3af; font-size: 12px; }
   .panel .sub a { color: inherit; }
-  .panel .icons { display: flex; gap: 2px; flex-shrink: 0; }
-  .panel .icon {
-    background: none; border: 0; color: inherit; opacity: 0.7; cursor: pointer; font-size: 15px; line-height: 1;
-    padding: 4px 7px; border-radius: 6px;
-  }
-  .panel .icon:hover, .panel .icon:focus-visible { opacity: 1; background: rgb(128 128 128 / 0.18); outline: none; }
+  .panel .sub .project { font-weight: 600; color: #d1d5db; }
+  .panel .icons { display: flex; gap: 2px; flex-shrink: 0; margin: -2px -4px 0 0; }
   .panel .body { overflow: auto; padding: 0 14px 12px; flex: 1; min-height: 0; }
   .panel .message { color: #d1d5db; font-size: 12.5px; margin: 6px 0 10px; }
   .panel .message.error { color: #fda4af; }
-  .panel .primary {
-    background: #7c3aed; color: #fff; border: 0; border-radius: 7px; padding: 6px 12px; font: inherit;
-    font-size: 12.5px; cursor: pointer;
-  }
-  .panel .primary:hover { background: #6d28d9; }
   .panel .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 2px 0 8px; }
   .panel .tile { border: 1px solid rgb(128 128 128 / 0.28); border-radius: 8px; padding: 6px 8px; }
   .panel .tile .n { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -161,11 +152,8 @@ export const COVERAGE_CSS = `
     background: rgb(128 128 128 / 0.14); border: 1px solid rgb(128 128 128 / 0.35);
   }
   .panel .branch-select option { color: #111827; }
-  .panel .link-button {
-    background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer;
-    text-decoration: underline dotted; text-underline-offset: 2px;
-  }
-  .panel .link-button:hover { text-decoration-style: solid; }
+  .panel .status-line .refresh { margin-inline-start: auto; }
+  .panel .status-line .index-size { flex-basis: 100%; }
   .panel .progress { height: 3px; background: rgb(124 58 237 / 0.25); border-radius: 2px; overflow: hidden; margin: 2px 0 8px; }
   /* A transform moves the fill without laying out or painting the overlay again. */
   .panel .progress > span {
@@ -176,23 +164,34 @@ export const COVERAGE_CSS = `
     display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 8px; padding: 6px 8px;
     border-radius: 8px; background: rgb(124 58 237 / 0.16); font-size: 12px;
   }
-  .panel .scope-bar .what { flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .panel .scope-bar button {
-    background: rgb(128 128 128 / 0.14); color: inherit; border: 1px solid rgb(128 128 128 / 0.3); border-radius: 6px;
-    padding: 1px 8px; font: inherit; font-size: 11.5px; cursor: pointer;
+  .panel .scope-bar .what {
+    flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600;
   }
-  .panel .scope-bar button:disabled { opacity: 0.45; cursor: default; }
+  .panel .scope-bar .scope-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
   .panel .scope-bar .keys { flex-basis: 100%; color: #c4b5fd; font-size: 11.5px; }
   .panel .scope-bar kbd { font: inherit; font-size: 11px; padding: 0 4px; border-radius: 4px; border: 1px solid rgb(128 128 128 / 0.4); }
   .panel .around { margin: -2px 0 10px; }
   .panel .around .hint { color: #9ca3af; font-size: 11.5px; margin-bottom: 2px; }
   .panel .tabs { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 8px; background: rgb(128 128 128 / 0.14); margin-bottom: 8px; }
   .panel .tab {
-    flex: 1 1 auto; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; padding: 4px 6px;
+    flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; padding: 4px 6px;
     white-space: nowrap;
     border-radius: 6px; cursor: pointer; opacity: 0.75;
   }
+  .panel .tab:hover { opacity: 1; background: rgb(128 128 128 / 0.12); }
+  .panel .tab:focus-visible { outline: 2px solid #a78bfa; outline-offset: 1px; }
+  .panel .tab .piwi-icon { width: 14px; height: 14px; }
   .panel .tab[aria-pressed='true'] { background: #374151; opacity: 1; font-weight: 600; }
+  .count-badge {
+    display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; text-align: center;
+    font-size: 10.5px; font-weight: 700; line-height: 16px; font-variant-numeric: tabular-nums;
+    background: rgb(148 163 184 / 0.22); color: inherit;
+  }
+  .count-badge.operated { background: rgb(16 185 129 / 0.22); color: #6ee7b7; }
+  .count-badge.uncovered { background: rgb(245 158 11 / 0.22); color: #fcd34d; }
+  .count-badge.risk { background: rgb(234 88 12 / 0.24); color: #fdba74; }
+  .count-badge.missing { background: rgb(225 29 72 / 0.22); color: #fda4af; }
   .panel .search {
     width: 100%; margin-bottom: 8px; padding: 5px 8px; border-radius: 7px; font: inherit; font-size: 12.5px;
     color: inherit; background: rgb(128 128 128 / 0.12); border: 1px solid rgb(128 128 128 / 0.3);
@@ -214,7 +213,10 @@ export const COVERAGE_CSS = `
   .panel .page-switch { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 8px; background: rgb(128 128 128 / 0.14); margin: 0 0 8px; }
   .panel li.row.static { cursor: default; }
   .panel .risk-section + .risk-section { margin-top: 12px; }
-  .panel .section-head { margin: 0 0 2px; font-size: 12.5px; font-weight: 650; }
+  .panel .section-head {
+    display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-size: 12.5px; font-weight: 650; line-height: 18px;
+  }
+  .panel .section-head .piwi-icon { width: 14px; height: 14px; color: #fb923c; }
   .panel .section-hint { margin: 0 0 6px; color: #9ca3af; font-size: 11.5px; }
   .panel li.row code.piwi-loc.suggestion { margin-top: 2px; }
   .panel li.row .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -222,11 +224,9 @@ export const COVERAGE_CSS = `
   .panel li.row .detail { grid-column: 2 / 4; color: #9ca3af; font-size: 11.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel li.row code.piwi-loc { grid-column: 2 / 4; font-size: 11.5px; white-space: normal; word-break: break-all; }
   .panel li.row .detail.wrap { white-space: normal; overflow: visible; }
-  .panel li.row .row-actions { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
-  .panel li.row .row-actions button, .panel li.row .row-actions a {
-    background: rgb(128 128 128 / 0.12); color: inherit; border: 1px solid rgb(128 128 128 / 0.3); border-radius: 6px;
-    padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer; text-decoration: none;
-  }
+  .panel li.row .row-actions { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .panel li.row .row-copy { justify-self: end; }
+  .panel li.row .site, .panel .detail .site { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
   .panel .empty { color: #9ca3af; font-size: 12.5px; padding: 6px 2px; }
   .panel .foot { border-top: 1px solid rgb(128 128 128 / 0.25); padding: 8px 14px 10px; display: grid; gap: 6px; }
   .panel .toggles { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
@@ -258,6 +258,14 @@ export const COVERAGE_CSS = `
     .panel .tile.operated .n { color: #059669; }
     .panel .tile.uncovered .n { color: #b45309; }
     .panel .tab[aria-pressed='true'] { background: #ffffff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+    .panel .tab:focus-visible { outline-color: #7c3aed; }
+    .panel .sub .project { color: #374151; }
+    .panel .section-head .piwi-icon { color: #c2410c; }
+    .count-badge { background: rgb(100 116 139 / 0.16); }
+    .count-badge.operated { background: rgb(16 185 129 / 0.16); color: #047857; }
+    .count-badge.uncovered { background: rgb(245 158 11 / 0.18); color: #92400e; }
+    .count-badge.risk { background: rgb(234 88 12 / 0.14); color: #c2410c; }
+    .count-badge.missing { background: rgb(225 29 72 / 0.12); color: #be123c; }
     .panel details.notes code { color: #374151; }
     .panel li.row.focused { background: rgb(124 58 237 / 0.12); }
     .panel .scope-bar { background: rgb(124 58 237 / 0.1); }

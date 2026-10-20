@@ -1229,7 +1229,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Repéré par sa position (nth) : il casse si l’ordre de la liste change"
+    "message": "Repéré par sa position (nth) : il casse si l’ordre de la liste change"
   },
   "lint_dialog": {
     "message": "Contrôle : éléments difficiles à cibler"

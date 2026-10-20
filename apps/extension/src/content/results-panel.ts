@@ -1,7 +1,7 @@
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
-import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
+import { renderCopyMode } from '../shared/copy-modes.js';
 import { formatNumber, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
-import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
+import { getLastCopyMode } from '../shared/storage.js';
 import type { CheckedLocator } from './verified-locators.js';
 import { getConnectionSettings, isConnected } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
@@ -23,6 +23,9 @@ import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 import { bindToTool, toolIsCurrent } from '../shared/tool-session.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
+import { BUTTON_CSS, makeButton, styleButton } from '../shared/buttons.js';
+import { icon, type IconName } from '../shared/icons.js';
+import { COPY_MODE_CSS, copyModeButtons } from './copy-mode-row.js';
 
 const HOST_ID = 'piwi-picker-results-host';
 
@@ -67,6 +70,8 @@ export async function renderResultsPanel(
   const style = document.createElement('style');
   style.textContent = `
     ${LOCATOR_SYNTAX_CSS}
+    ${BUTTON_CSS}
+    ${COPY_MODE_CSS}
     :host { all: initial; }
     * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
     .backdrop {
@@ -85,45 +90,38 @@ export async function renderResultsPanel(
       .panel { animation: piwi-in 120ms ease-out; }
     }
     @keyframes piwi-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
     .header > div:first-child { min-width: 0; }
     .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; }
-    .close {
-      background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
-      line-height: 1; padding: 4px 8px; border-radius: 6px;
-    }
-    .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
+    .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .row {
-      border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+      display: flex; flex-direction: column; gap: 7px;
+      border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px;
     }
-    .row-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; min-width: 0; }
+    .row.best { border-color: rgba(167,139,250,.55); background: rgba(124,58,237,.07); }
+    .row-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
     .score {
-      color: #c4b5fd; font-variant-numeric: tabular-nums; font-size: 11px; flex-shrink: 0;
-      border: 1px solid #c4b5fd66; border-radius: 999px; padding: 1px 7px;
+      color: #c4b5fd; font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 600; flex-shrink: 0;
+      border: 1px solid #c4b5fd66; border-radius: 999px; padding: 0 7px; margin-top: 1px;
     }
     .row code { font-size: 13px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; }
-    .copy-row { display: flex; gap: 6px; flex-wrap: wrap; }
-    button.copy {
-      background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
-      border-radius: 6px; padding: 4px 9px; font-size: 11.5px; cursor: pointer;
-    }
-    button.copy:hover, button.copy:focus-visible { background: rgba(128,128,128,.25); }
-    button.copy[data-active="true"] { border-color: #7c3aed; color: #a78bfa; }
-    button.copy .done { color: #4ade80; }
-    .footer { color: #9ca3af; font-size: 11px; margin-top: 4px; }
-    .unique { color: #4ade80; font-size: 11px; }
-    .ambiguous { color: #fbbf24; font-size: 11px; }
-    .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-    .header-actions button.copy { white-space: nowrap; }
+    .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .row-actions .send { margin-inline-start: auto; }
+    .unique, .ambiguous, .footer { display: flex; align-items: flex-start; gap: 5px; font-size: 11.5px; line-height: 16px; }
+    .unique .piwi-icon, .ambiguous .piwi-icon, .footer .piwi-icon { width: 14px; height: 14px; margin-top: 1px; }
+    .unique { color: #4ade80; }
+    .ambiguous { color: #fbbf24; }
+    .footer { color: #c4b5fd; font-weight: 500; }
     .unique, .ambiguous, .footer, .piwi .lead, .piwi .muted { overflow-wrap: anywhere; hyphens: auto; }
     .piwi li a { overflow-wrap: anywhere; }
     .piwi {
-      border: 1px solid #7c3aed66; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
+      border: 1px solid #7c3aed66; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
       background: rgba(124,58,237,.08); font-size: 12.5px;
     }
-    .piwi .lead { font-weight: 600; }
-    .piwi .group { margin-top: 6px; font-weight: 600; }
+    .piwi .lead { font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 18px; }
+    .piwi .lead .piwi-icon { color: #c4b5fd; margin-top: 1px; }
+    .piwi .group { margin-top: 8px; font-weight: 600; }
     .piwi .muted { color: #9ca3af; font-size: 12px; }
     .piwi ul { list-style: none; margin: 6px 0 0; padding: 0; }
     .piwi li { display: flex; align-items: baseline; gap: 7px; padding: 2px 0; }
@@ -132,21 +130,21 @@ export async function renderResultsPanel(
     .piwi .dot.failed { background: #e11d48; }
     .piwi .dot.flaky { background: #9333ea; }
     .piwi .dot.skipped { background: #a1a1aa; }
-    .piwi a { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
-    .piwi a:hover { text-decoration-style: solid; }
-    .piwi .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .piwi .actions a, .piwi .actions button {
-      background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3); border-radius: 6px;
-      padding: 3px 9px; font: inherit; font-size: 11.5px; cursor: pointer; text-decoration: none;
-    }
+    .piwi li a { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+    .piwi li a:hover { text-decoration-style: solid; }
+    .piwi .brittle { display: flex; align-items: flex-start; gap: 5px; margin-top: 6px; color: #fdba74; line-height: 18px; }
+    .piwi .brittle .piwi-icon { width: 14px; height: 14px; margin-top: 2px; flex-shrink: 0; }
+    .piwi .brittle code { font-size: 12px; }
+    .piwi .actions { margin-top: 10px; }
     @media (prefers-color-scheme: light) {
       .piwi .muted { color: #6b7280; }
-      .sub, .footer { color: #6b7280; }
+      .sub { color: #6b7280; }
       .score { color: #6d28d9; border-color: #6d28d966; }
       .unique { color: #15803d; }
       .ambiguous { color: #b45309; }
-      button.copy[data-active="true"] { border-color: #6d28d9; color: #6d28d9; }
-      button.copy .done { color: #15803d; }
+      .footer, .piwi .lead .piwi-icon { color: #6d28d9; }
+      .row.best { border-color: rgba(124,58,237,.4); background: rgba(124,58,237,.04); }
+      .piwi .brittle { color: #c2410c; }
     }
   `;
   root.appendChild(style);
@@ -170,19 +168,14 @@ export async function renderResultsPanel(
   sub.className = 'sub';
   sub.textContent = `${t('common_escToClose')} · ${t('pick_tabHint')}`;
   titleWrap.append(title, sub);
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', t('common_close'));
-  closeBtn.textContent = '×';
   const headerActions = document.createElement('div');
   headerActions.className = 'header-actions';
-  const copyAll = document.createElement('button');
-  copyAll.className = 'copy';
-  copyAll.type = 'button';
-  copyAll.textContent = tn('pick_copyAll', ranked.length);
-  copyAll.title = t('pick_copyAllHint');
-  copyAll.addEventListener('click', () => void copyWithFeedback(ranked.map((alt) => alt.locator).join('\n'), copyAll));
-  headerActions.append(copyAll, closeBtn);
+  const copyAll = makeButton(
+    tn('pick_copyAll', ranked.length),
+    () => void copyWithFeedback(ranked.map((alt) => alt.locator).join('\n'), copyAll),
+    { icon: 'copy', small: true, title: t('pick_copyAllHint'), className: 'copy' },
+  );
+  headerActions.append(copyAll);
   header.append(titleWrap, headerActions);
   panel.appendChild(header);
 
@@ -209,14 +202,17 @@ export async function renderResultsPanel(
       releaseFocus();
       resolve();
     });
-    closeBtn.addEventListener('click', finish);
+    headerActions.append(
+      makeButton(t('common_close'), finish, { icon: 'close', iconOnly: true, tone: 'ghost', className: 'close' }),
+    );
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
     });
 
     for (const [i, alt] of ranked.entries()) {
+      const best = i === 0 && (alt.verdict === 'unique' || alt.verdict === 'narrowed');
       const row = document.createElement('div');
-      row.className = 'row';
+      row.className = best ? 'row best' : 'row';
       const top = document.createElement('div');
       top.className = 'row-top';
       const score = document.createElement('span');
@@ -229,51 +225,34 @@ export async function renderResultsPanel(
       top.append(score, code);
       row.appendChild(top);
 
-      const copyRow = document.createElement('div');
-      copyRow.className = 'copy-row';
-      for (const mode of COPY_MODES) {
-        const btn = document.createElement('button');
-        btn.className = 'copy';
-        btn.type = 'button';
-        btn.dataset.mode = mode;
-        btn.dataset.active = String(mode === activeMode);
-        btn.textContent = copyModeLabel(mode);
-        btn.addEventListener('click', () => {
-          void copyWithFeedback(renderCopyMode(alt, mode), btn);
-          activeMode = mode;
-          void setLastCopyMode(mode);
-          // The mode is the panel's: every row marks it, and each row's Send to editor sends it.
-          for (const other of panel.querySelectorAll<HTMLElement>('button.copy[data-mode]')) {
-            other.dataset.active = String(other.dataset.mode === mode);
-          }
-        });
-        copyRow.appendChild(btn);
-      }
-      if (paired) {
-        const send = document.createElement('button');
-        send.className = 'copy';
-        send.type = 'button';
-        send.textContent = t('pick_sendToEditor');
-        send.addEventListener('click', () => {
-          void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode) }).then((result) =>
-            showSendResult(send, result),
-          );
-        });
-        copyRow.appendChild(send);
-      }
-      row.appendChild(copyRow);
-
       const badge = verdictBadge(alt);
       if (badge) row.appendChild(badge);
+      if (best)
+        row.appendChild(withLeadingIcon(document.createElement('div'), 'sparkles', 'footer', t('pick_topPick')));
+
+      const actions = document.createElement('div');
+      actions.className = 'row-actions';
+      actions.appendChild(
+        copyModeButtons(alt.locator, panel, activeMode, (mode) => {
+          activeMode = mode;
+        }),
+      );
+      if (paired) {
+        // The mode is the panel's: each row's Send to editor sends the one chosen last.
+        const send = makeButton(
+          t('pick_sendToEditor'),
+          () => {
+            void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode) }).then((result) =>
+              showSendResult(send, result),
+            );
+          },
+          { icon: 'send', small: true, className: 'send' },
+        );
+        actions.appendChild(send);
+      }
+      row.appendChild(actions);
 
       panel.appendChild(row);
-
-      if (i === 0 && (alt.verdict === 'unique' || alt.verdict === 'narrowed')) {
-        const footer = document.createElement('div');
-        footer.className = 'footer';
-        footer.textContent = t('pick_topPick');
-        row.appendChild(footer);
-      }
     }
 
     backdrop.appendChild(panel);
@@ -349,14 +328,9 @@ async function fillPiwiSection(
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     link.textContent = t('pick_findInPiwi');
-    return link;
+    return styleButton(link, { icon: 'search', small: true });
   };
-  const lead = (text: string) => {
-    const el = document.createElement('div');
-    el.className = 'lead';
-    el.textContent = text;
-    return el;
-  };
+  const lead = (text: string) => withLeadingIcon(document.createElement('div'), 'tested', 'lead', text);
 
   const where =
     branch === ALL_BRANCHES
@@ -377,7 +351,7 @@ async function fillPiwiSection(
       muted.className = 'muted';
       muted.textContent = answer.ok ? t('pick_indexNotReady') : t('pick_indexFailed', { error: answer.error });
       const actions = document.createElement('div');
-      actions.className = 'actions';
+      actions.className = 'actions piwi-actions';
       actions.appendChild(findInPiwi());
       section.replaceChildren(lead(t('pick_testsOf', { where })), muted, actions);
       reportPickCoverage({ status: 'unavailable', message: muted.textContent });
@@ -406,20 +380,20 @@ async function fillPiwiSection(
     void chrome.runtime.sendMessage({ type: 'piwi-open-coverage' }).catch(() => undefined);
     close();
   };
-  const actionButton = (text: string, title: string, onClick: () => void) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = text;
-    button.title = title;
-    button.addEventListener('click', onClick);
-    return button;
-  };
   const actions = document.createElement('div');
-  actions.className = 'actions';
+  actions.className = 'actions piwi-actions';
   actions.append(
     findInPiwi(),
-    actionButton(t('pick_showInside'), t('pick_showInsideHint'), () => openCoverage(true)),
-    actionButton(t('pick_showAll'), t('pick_showAllHint'), () => openCoverage(false)),
+    makeButton(t('pick_showInside'), () => openCoverage(true), {
+      icon: 'viewport',
+      small: true,
+      title: t('pick_showInsideHint'),
+    }),
+    makeButton(t('pick_showAll'), () => openCoverage(false), {
+      icon: 'tested',
+      small: true,
+      title: t('pick_showAllHint'),
+    }),
   );
 
   const muted = (text: string) => {
@@ -491,12 +465,14 @@ async function fillPiwiSection(
   const stabilities = chainStabilities(index);
   const brittle = reach.self.entries.filter((entry) => stabilities[entry]?.level === 'brittle');
   for (const entry of brittle.slice(0, 3)) {
-    const line = muted('');
-    line.classList.add('brittle');
+    const line = document.createElement('div');
+    line.className = 'brittle';
     const code = document.createElement('code');
     code.className = 'piwi-loc';
     code.innerHTML = highlightLocator(index.locators[entry]!.locator);
-    line.append(...tNodes('pick_brittle', { locator: code, reasons: stabilityText(stabilities[entry]!) }));
+    const words = document.createElement('span');
+    words.append(...tNodes('pick_brittle', { locator: code, reasons: stabilityText(stabilities[entry]!) }));
+    line.append(icon('alert'), words);
     children.push(line);
   }
   if (brittle.length) children.push(muted(t('pick_useRankedInstead')));
@@ -514,26 +490,32 @@ async function fillPiwiSection(
   });
 }
 
+/** `el` with `className`, saying `text` after the icon `name`. */
+function withLeadingIcon<T extends HTMLElement>(el: T, name: IconName, className: string, text: string): T {
+  el.className = className;
+  const words = document.createElement('span');
+  words.textContent = text;
+  el.append(icon(name), words);
+  return el;
+}
+
 /** What the engine found for a locator, under it; nothing for one it could not evaluate. */
 function verdictBadge(alt: CheckedLocator): HTMLElement | null {
   const badge = document.createElement('div');
   switch (alt.verdict) {
     case 'unique':
-      badge.className = 'unique';
-      badge.textContent = `✓ ${t('pick_unique')}`;
-      return badge;
+      return withLeadingIcon(badge, 'check-circle', 'unique', t('pick_unique'));
     case 'narrowed':
-      badge.className = 'unique';
-      badge.textContent = `✓ ${tn('pick_narrowed', alt.from!.count)}`;
-      return badge;
+      return withLeadingIcon(badge, 'check-circle', 'unique', tn('pick_narrowed', alt.from!.count));
     case 'position':
-      badge.className = 'ambiguous';
-      badge.textContent = `⚠ ${tn('pick_byPosition', alt.from!.count)}`;
-      return badge;
+      return withLeadingIcon(badge, 'alert', 'ambiguous', tn('pick_byPosition', alt.from!.count));
     case 'ambiguous':
-      badge.className = 'ambiguous';
-      badge.textContent = `⚠ ${tn('pick_ambiguous', alt.count!, { first: '.first()', filter: '.filter({ hasText: … })' })}`;
-      return badge;
+      return withLeadingIcon(
+        badge,
+        'alert',
+        'ambiguous',
+        tn('pick_ambiguous', alt.count!, { first: '.first()', filter: '.filter({ hasText: … })' }),
+      );
     case 'unchecked':
       return null;
   }
