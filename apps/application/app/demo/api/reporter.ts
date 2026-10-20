@@ -32,6 +32,7 @@ import { matchInsertedRunCases } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
+import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
 import {
   displayTitleOf,
@@ -411,8 +412,11 @@ export async function apiBeginTestRun(
 
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
-    const metadata = carryIngestHealth(
-      sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+    const metadata = carryExternalIdDuplicates(
+      carryIngestHealth(
+        sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+        testRun.metadata,
+      ),
       testRun.metadata,
     );
     await db
@@ -598,7 +602,9 @@ export async function persistRunCases(
       line: c.line,
     };
   });
-  const resolved = await resolveTestCases(db, projectId, testRunId, await loadTestCaseIndex(db, projectId), claims);
+  const resolved = await resolveTestCases(db, projectId, testRunId, await loadTestCaseIndex(db, projectId), claims, {
+    readOnly: options.keepTestState,
+  });
 
   let existingRunCaseSet: Set<string> | null = null;
   if (deduplicate) {
@@ -932,6 +938,8 @@ export async function apiPostRunEvents(
       type: 'test-completed',
       data: {
         title: tc.title,
+        externalId: externalIdOf(cases[index]!) ?? null,
+        displayTitle: displayTitleOf(cases[index]!, externalIdOf(cases[index]!)),
         filePath: cases[index]!.filePath,
         suitePath: tc.suitePath ?? null,
         status: tc.status,
@@ -1167,7 +1175,9 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     ? sumFailedAndTimedOut(body.failedTests, body.timedOutTests)
     : testRun.failedTests;
 
-  const reportedMetadata = body.metadata ? carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata) : null;
+  const reportedMetadata = body.metadata
+    ? carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata), testRun.metadata)
+    : null;
 
   await db
     .update(testRuns)

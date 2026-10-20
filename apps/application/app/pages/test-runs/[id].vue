@@ -177,6 +177,8 @@ function flushPendingEvents() {
     } else if (parsed.type === 'test-completed') {
       const d = data as {
         title: string;
+        externalId?: string | null;
+        displayTitle?: string | null;
         filePath?: string;
         suitePath?: string[] | null;
         location: string;
@@ -207,6 +209,8 @@ function flushPendingEvents() {
           const copy = [...liveTestCases.value];
           copy[idx] = {
             ...existing,
+            externalId: d.externalId ?? existing.externalId,
+            displayTitle: d.displayTitle ?? existing.displayTitle,
             filePath: d.filePath ?? existing.filePath,
             suitePath: d.suitePath ?? existing.suitePath,
             status: d.status,
@@ -236,6 +240,8 @@ function flushPendingEvents() {
             executionId: d.executionId ?? -(liveTestCases.value.length + 1),
             testCaseId: d.testCaseId ?? 0,
             title: d.title,
+            externalId: d.externalId ?? null,
+            displayTitle: d.displayTitle ?? null,
             filePath: d.filePath,
             suitePath: d.suitePath ?? undefined,
             status: d.status,

@@ -1189,6 +1189,10 @@ export interface TestCaseWithStats {
   filePath: string;
   suitePath: string;
   title: string;
+  /** The ID the test has in the team's test management tool. */
+  externalId?: string | null;
+  /** The title without its external ID, when the reporter removed it. */
+  displayTitle?: string | null;
   /** Latest-known tags and `piwi:` metadata declared on the test. */
   tags: string[] | null;
   /** Latest-known lock names declared on the test (best effort). */

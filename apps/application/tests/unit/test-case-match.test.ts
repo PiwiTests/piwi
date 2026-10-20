@@ -127,13 +127,60 @@ describe('matching on external IDs', () => {
     ]);
   });
 
-  test('a test whose ID changed keeps its test case', async () => {
+  test('a test case holding an ID is another test for a different ID, whatever its title', async () => {
     const db = await freshDb();
     const first = await persistRunCases(db, 1, await newRun(db), [execution('Log in', { externalId: 'OLD-1' })]);
     const second = await persistRunCases(db, 1, await newRun(db), [execution('Log in', { externalId: 'NEW-1' })]);
 
-    expect(second[0]!.testCaseId).toBe(first[0]!.testCaseId);
-    expect(await testCaseRows(db)).toMatchObject([{ externalId: 'NEW-1' }]);
+    expect(second[0]!.testCaseId).not.toBe(first[0]!.testCaseId);
+    expect((await testCaseRows(db)).map((r) => r.externalId)).toEqual(['OLD-1', 'NEW-1']);
+  });
+
+  test('a renamed test keeps its history when a new test takes its old title, whatever the order', async () => {
+    const db = await freshDb();
+    const [login] = await persistRunCases(db, 1, await newRun(db), [execution('login', { externalId: 'X' })]);
+    const stored = await persistRunCases(db, 1, await newRun(db), [
+      execution('login', { externalId: 'Y' }),
+      execution('login with email', { externalId: 'X' }),
+    ]);
+
+    expect(stored.find((r) => r.inputIndex === 1)!.testCaseId).toBe(login!.testCaseId);
+    expect(stored.find((r) => r.inputIndex === 0)!.testCaseId).not.toBe(login!.testCaseId);
+  });
+
+  test('a new test without an ID at the old title of a renamed test gets its own test case', async () => {
+    const db = await freshDb();
+    const runId = await newRun(db);
+    const [login] = await persistRunCases(db, 1, runId, [execution('login', { externalId: 'X' })]);
+    const stored = await persistRunCases(db, 1, await newRun(db), [
+      execution('login'),
+      execution('login v2', { externalId: 'X' }),
+    ]);
+
+    expect(stored.find((r) => r.inputIndex === 1)!.testCaseId).toBe(login!.testCaseId);
+    expect(stored.find((r) => r.inputIndex === 0)!.testCaseId).not.toBe(login!.testCaseId);
+    expect(await testCaseRows(db)).toMatchObject([{ title: 'login v2', externalId: 'X' }, { title: 'login' }]);
+  });
+
+  test('an import of an older run matches by ID without renaming or giving out IDs', async () => {
+    const db = await freshDb();
+    const [current] = await persistRunCases(db, 1, await newRun(db), [
+      execution('login with email', { externalId: 'X' }),
+    ]);
+    await persistRunCases(db, 1, await newRun(db), [execution('sign up')]);
+    const imported = await persistRunCases(
+      db,
+      1,
+      await newRun(db),
+      [execution('login', { externalId: 'X' }), execution('sign up', { externalId: 'Z' })],
+      { keepTestState: true },
+    );
+
+    expect(imported[0]!.testCaseId).toBe(current!.testCaseId);
+    expect((await testCaseRows(db)).map((r) => [r.title, r.externalId])).toEqual([
+      ['login with email', 'X'],
+      ['sign up', null],
+    ]);
   });
 
   test('reads piwi:id when the payload carries no externalId field, and trusts an explicit null', async () => {

@@ -1,6 +1,11 @@
 import { describe, it, afterEach, expect } from 'vitest';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
-import { formatExternalIdDuplicates, planExternalIds, type PlannedTest } from '../src/internal/collect/external-ids.js';
+import {
+  formatExternalIdDuplicates,
+  planExternalIds,
+  resolveOnDuplicate,
+  type PlannedTest,
+} from '../src/internal/collect/external-ids.js';
 import {
   startServer,
   jsonRes,
@@ -96,6 +101,15 @@ describe('planExternalIds', () => {
   });
 });
 
+describe('resolveOnDuplicate', () => {
+  it('reads report and fail in any case, and anything else as report with a warning', () => {
+    expect(resolveOnDuplicate(undefined)).toEqual({ onDuplicate: 'report' });
+    expect(resolveOnDuplicate(' FAIL ')).toEqual({ onDuplicate: 'fail' });
+    expect(resolveOnDuplicate('Report')).toEqual({ onDuplicate: 'report' });
+    expect(resolveOnDuplicate('error')).toEqual({ onDuplicate: 'report', invalid: 'error' });
+  });
+});
+
 describe('external IDs on the wire', () => {
   let server: FakeServer | undefined;
 
@@ -151,10 +165,13 @@ describe('external IDs on the wire', () => {
     expect(reported.body.testCases.map((c: any) => c.externalId)).toEqual([null, null]);
     expect(reported.body.metadata.externalIdDuplicates).toHaveLength(1);
     expect(reported.outcome).toBeUndefined();
+    expect(reported.body.status).toBe('passed');
 
     await server!.close();
     server = undefined;
-    const failed = await run(['5, A', '5, B'], { pattern: /^(\d+), /, onDuplicate: 'fail' });
+    const failed = await run(['5, A', '5, B'], { pattern: /^(\d+), /, onDuplicate: 'FAIL' });
     expect(failed.outcome).toEqual({ status: 'failed' });
+    // The dashboard records the status the run exits with.
+    expect(failed.body.status).toBe('failed');
   });
 });

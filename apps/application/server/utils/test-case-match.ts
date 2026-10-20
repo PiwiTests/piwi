@@ -3,6 +3,7 @@ import { testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { splitSuitePath } from '#shared/utils/suites';
 import { updateRunMetadata } from './run-metadata';
+import { isUniqueViolation } from './db-errors';
 import {
   mergeExternalIdDuplicates,
   normalizeExternalId,
@@ -151,6 +152,15 @@ async function hasExecutionInRun(db: DrizzleDB, runId: number, testCaseId: numbe
   return rows.length > 0;
 }
 
+/** How {@link resolveTestCases} may change the stored test cases. */
+export interface ResolveOptions {
+  /**
+   * Match without renaming, moving or giving an ID to a stored test case: the batch comes from a run that must not
+   * change the tests' stored state (an import of an older run, a lab run). New test cases are still created.
+   */
+  readOnly?: boolean;
+}
+
 /**
  * Match each claim to its test case, creating, renaming or moving test cases as needed, and keep `index` in step
  * with what was written. The caller serializes calls for one project: two calls at once could both create the same
@@ -159,13 +169,15 @@ async function hasExecutionInRun(db: DrizzleDB, runId: number, testCaseId: numbe
  * For a claim with an external ID:
  * 1. the ID is known: its test case, renamed or moved to the claim's natural key when that differs, unless the test
  *    case already ran under another natural key in this run, which makes the claim a duplicate matched as in 4;
- * 2. the ID is unknown and the natural key known: that test case, which takes the ID (its first run with an ID, or
- *    an ID changed in the test management tool);
- * 3. neither is known: a new test case holding the ID.
+ * 2. the ID is unknown and the natural key belongs to a test case holding no ID: that test case, which takes the ID
+ *    (its first run with an ID);
+ * 3. otherwise: a new test case holding the ID. A test case holding another ID is another test, whatever its title:
+ *    an ID changed in the test management tool starts a new history, which a merge of the two test cases joins.
  * 4. Without an external ID: the test case of the natural key, or a new one.
  *
- * An ID is never taken off a test case: one that stops declaring it keeps it, and a test declaring it later takes the
- * test case over.
+ * Claims whose ID is known are matched first, so a renamed test leaves its old natural key before another test of
+ * the batch is matched on it. An ID is never taken off a test case: one that stops declaring it keeps it, and a test
+ * declaring it later takes the test case over.
  */
 export async function resolveTestCases(
   db: DrizzleDB,
@@ -173,28 +185,39 @@ export async function resolveTestCases(
   runId: number,
   index: TestCaseIndex,
   claims: TestCaseClaim[],
+  options: ResolveOptions = {},
 ): Promise<ResolvedTestCases> {
-  const caseIds: Array<number | undefined> = [];
-  const displayTitles: Array<string | null> = [];
+  const caseIds: Array<number | undefined> = Array.from({ length: claims.length });
+  const displayTitles: Array<string | null> = Array.from({ length: claims.length }, () => null);
   const duplicates: ExternalIdDuplicate[] = [];
 
-  for (const claim of claims) {
+  const knownFirst = claims
+    .map((claim, i) => ({ claim, i, known: !!claim.externalId && index.byExternalId.has(claim.externalId) }))
+    .sort((a, b) => Number(b.known) - Number(a.known) || a.i - b.i);
+
+  for (const { claim, i } of knownFirst) {
     const key = naturalKey(claim.filePath, claim.suitePath, claim.title);
     let externalId = claim.externalId;
     let displayTitle = externalId ? (claim.displayTitle ?? null) : null;
+    const settle = (id: number | undefined) => {
+      caseIds[i] = id;
+      displayTitles[i] = displayTitle;
+    };
 
     const entry = externalId ? index.byExternalId.get(externalId) : undefined;
     if (externalId && entry) {
       if (entry.key === key) {
         entry.runId = runId;
-        caseIds.push(entry.id);
-        displayTitles.push(displayTitle);
+        settle(entry.id);
         continue;
       }
       if (entry.runId === runId || (await hasExecutionInRun(db, runId, entry.id))) {
         duplicates.push({ externalId, tests: [splitNaturalKey(entry.key), claimTest(claim)] });
         externalId = undefined;
         displayTitle = null;
+      } else if (options.readOnly) {
+        settle(entry.id);
+        continue;
       } else {
         await db
           .update(testCases)
@@ -211,21 +234,24 @@ export async function resolveTestCases(
         index.byKey.set(key, entry.id);
         entry.key = key;
         entry.runId = runId;
-        caseIds.push(entry.id);
-        displayTitles.push(displayTitle);
+        settle(entry.id);
         continue;
       }
     }
 
     const known = index.byKey.get(key);
-    if (known !== undefined) {
+    const knownId = known === undefined ? undefined : index.externalIdOf.get(known);
+    if (known !== undefined && (!externalId || knownId === undefined)) {
       if (externalId) {
-        if (await takeExternalId(db, index, known, key, externalId, displayTitle))
+        if (!options.readOnly && (await takeExternalId(db, index, known, key, externalId, displayTitle)))
           index.byExternalId.get(externalId)!.runId = runId;
         else displayTitle = null;
+      } else if (knownId !== undefined) {
+        // A test without its ID on the test case holding one: whoever declares the ID later in this run is a
+        // duplicate of this test, not its new name.
+        index.byExternalId.get(knownId)!.runId = runId;
       }
-      caseIds.push(known);
-      displayTitles.push(displayTitle);
+      settle(known);
       continue;
     }
 
@@ -234,14 +260,13 @@ export async function resolveTestCases(
       const inserted = index.byExternalId.get(externalId);
       if (inserted) inserted.runId = runId;
     }
-    caseIds.push(id);
-    displayTitles.push(displayTitle);
+    settle(id);
   }
 
   return { caseIds, displayTitles, duplicates: mergeExternalIdDuplicates(duplicates) };
 }
 
-/** Give an existing test case an external ID, dropping the one it held. False when the write was refused. */
+/** Give a test case holding no ID an external ID. False when another server process gave the ID out first. */
 async function takeExternalId(
   db: DrizzleDB,
   index: TestCaseIndex,
@@ -252,12 +277,10 @@ async function takeExternalId(
 ): Promise<boolean> {
   try {
     await db.update(testCases).set({ externalId, displayTitle, updatedAt: new Date() }).where(eq(testCases.id, id));
-  } catch {
-    // Another server process gave the ID to another test case first: this one stays matched by natural key.
-    return false;
+  } catch (error) {
+    if (isUniqueViolation(error)) return false;
+    throw error;
   }
-  const previous = index.externalIdOf.get(id);
-  if (previous !== undefined) index.byExternalId.delete(previous);
   index.byExternalId.set(externalId, { id, key });
   index.externalIdOf.set(id, externalId);
   return true;
@@ -287,7 +310,8 @@ async function insertTestCase(
     .returning({ id: testCases.id });
 
   if (row) {
-    index.byKey.set(key, row.id);
+    if (index.byKey.get(key) === undefined || externalId || !index.externalIdOf.has(index.byKey.get(key)!))
+      index.byKey.set(key, row.id);
     if (externalId) {
       index.byExternalId.set(externalId, { id: row.id, key });
       index.externalIdOf.set(row.id, externalId);
@@ -295,13 +319,24 @@ async function insertTestCase(
     return row.id;
   }
 
-  // Only the external ID index can refuse the row: another server process stored the ID first. Use its test case.
+  // Only the external ID index can refuse the row: another server process stored the ID first. Use its test case,
+  // and learn it, so the next batch finds it without trying the insert again.
   if (!externalId) return undefined;
   const [existing] = await db
-    .select({ id: testCases.id })
+    .select({
+      id: testCases.id,
+      filePath: testCases.filePath,
+      suitePath: testCases.suitePath,
+      title: testCases.title,
+    })
     .from(testCases)
     .where(and(eq(testCases.projectId, projectId), eq(testCases.externalId, externalId)));
-  return existing?.id;
+  if (!existing) return undefined;
+  const existingKey = naturalKey(existing.filePath, existing.suitePath ?? '', existing.title);
+  index.byExternalId.set(externalId, { id: existing.id, key: existingKey });
+  index.externalIdOf.set(existing.id, externalId);
+  if (!index.byKey.has(existingKey)) index.byKey.set(existingKey, existing.id);
+  return existing.id;
 }
 
 /**

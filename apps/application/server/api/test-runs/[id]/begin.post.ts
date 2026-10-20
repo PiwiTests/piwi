@@ -5,6 +5,7 @@ import { eq, sql } from 'drizzle-orm';
 import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
+import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
@@ -152,7 +153,8 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? testRun.filterDetails,
     };
-    const reported = (stored: unknown) => carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored);
+    const reported = (stored: unknown) =>
+      carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored);
 
     let metadata: Record<string, unknown> | null;
     if (isSharded) {

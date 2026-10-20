@@ -3,6 +3,7 @@ import { createKeyedLock } from './keyed-lock';
 import {
   loadTestCaseIndex,
   resolveTestCases,
+  type ResolveOptions,
   type ResolvedTestCases,
   type TestCaseClaim,
   type TestCaseIndex,
@@ -51,9 +52,15 @@ class TestCaseCache {
   }
 
   /** Match a batch's tests to their test cases, one batch of a project at a time. */
-  resolve(db: DB, projectId: number, runId: number, claims: TestCaseClaim[]): Promise<ResolvedTestCases> {
+  resolve(
+    db: DB,
+    projectId: number,
+    runId: number,
+    claims: TestCaseClaim[],
+    options: ResolveOptions = {},
+  ): Promise<ResolvedTestCases> {
     return this.matching(projectId, async () =>
-      resolveTestCases(db, projectId, runId, await this.getProjectCache(db, projectId), claims),
+      resolveTestCases(db, projectId, runId, await this.getProjectCache(db, projectId), claims, options),
     );
   }
 

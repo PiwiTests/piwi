@@ -360,7 +360,17 @@ export async function persistRunCases(
       line: c.line,
     };
   });
-  const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims);
+  // The run decides what this batch may change on the stored tests: a lab run or an import of an older run matches
+  // its tests without renaming, moving or giving an ID to any of them.
+  const [run] = await db
+    .select({ metadata: testRuns.metadata, branch: testRuns.branch, startTime: testRuns.startTime })
+    .from(testRuns)
+    .where(eq(testRuns.id, testRunId));
+  const writesTestState = isEligibleRun(
+    { metadata: run?.metadata, historicalImport: options.keepTestState },
+    'shared-state',
+  );
+  const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims, { readOnly: !writesTestState });
 
   const fingerprintResults = await Promise.all(
     cases.map((c) =>
@@ -550,16 +560,8 @@ export async function persistRunCases(
   // A lab run's (probe or flake experiment) failures are injected, not real: it never counts as a real
   // run, so it forms no clusters (exactly as imports are silent). The tests' stored state (locator
   // snapshots, the locator index, code reach, tags and locks) is written only by runs eligible for it.
-  const [run] = await db
-    .select({ metadata: testRuns.metadata, branch: testRuns.branch, startTime: testRuns.startTime })
-    .from(testRuns)
-    .where(eq(testRuns.id, testRunId));
   const probeRun = isLabRun(run?.metadata);
   const sharedState = isEligibleRun({ metadata: run?.metadata }, 'shared-state');
-  const writesTestState = isEligibleRun(
-    { metadata: run?.metadata, historicalImport: options.keepTestState },
-    'shared-state',
-  );
   // The run above, and the project here, are read once for every helper below,
   // and the project's stored default branch is resolved at most once, on first
   // use. A lab run reaches none of the helpers that read the project.

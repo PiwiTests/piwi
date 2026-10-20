@@ -78,6 +78,8 @@ export default eventHandler(async (event) => {
             id: testRunsCases.id,
             testCaseId: testRunsCases.testCaseId,
             title: testCases.title,
+            externalId: testCases.externalId,
+            displayTitle: testCases.displayTitle,
             status: testRunsCases.status,
             duration: testRunsCases.duration,
             filePath: testCases.filePath,
@@ -103,6 +105,8 @@ export default eventHandler(async (event) => {
             type: 'test-completed',
             data: {
               title: tc.title,
+              externalId: tc.externalId ?? null,
+              displayTitle: tc.displayTitle ?? null,
               filePath: tc.filePath,
               suitePath,
               status: tc.status,

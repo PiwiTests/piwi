@@ -134,3 +134,14 @@ export function formatExternalIdDuplicates(
   );
   return lines;
 }
+
+/**
+ * Read `externalId.onDuplicate`, which can come from `PIWI_EXTERNAL_ID_ON_DUPLICATE` as any text: `report` and
+ * `fail` in any case. Anything else is `report`, with the value to warn about.
+ */
+export function resolveOnDuplicate(raw: unknown): { onDuplicate: 'report' | 'fail'; invalid?: string } {
+  if (raw === undefined || raw === null || raw === '') return { onDuplicate: 'report' };
+  const value = String(raw).trim().toLowerCase();
+  if (value === 'report' || value === 'fail') return { onDuplicate: value };
+  return { onDuplicate: 'report', invalid: String(raw) };
+}
