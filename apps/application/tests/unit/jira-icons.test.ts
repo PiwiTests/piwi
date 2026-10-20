@@ -35,6 +35,23 @@ describe('Jira icon paths', () => {
     expect(isJiraIconPath('//evil.example/images/icons/x.svg')).toBe(false);
     expect(isJiraIconPath('https://evil.example/images/icons/x.svg')).toBe(false);
   });
+
+  test('an encoded or hidden dot segment cannot step out of an icon folder', () => {
+    for (const path of [
+      '/images/icons/%2e%2e/%2e%2e/rest/api/3/attachment/content/10001',
+      '/images/icons/%2E%2E/%2E%2E/rest/api/3/myself',
+      '/images/icons/..%2f..%2frest/api/3/myself',
+      '/images/icons/./../../rest/api/3/myself',
+      '/images/icons%5c..%5c..%5crest/api/3/myself',
+      '/images/icons/x.svg#/../../rest/api/3/myself',
+      '/images/icons/ x.svg',
+      'images/icons/x.svg',
+    ]) {
+      expect(isJiraIconPath(path), path).toBe(false);
+    }
+    // The query may carry escapes: it cannot change the path fetched.
+    expect(isJiraIconPath('/secure/viewavatar?size=small&avatarId=10303&x=%2e%2e')).toBe(true);
+  });
 });
 
 const GRAVATAR =
@@ -83,5 +100,23 @@ describe("a person's avatar", () => {
     );
     expect(await fetchExternalAvatar(ATL_PAAS)).toBeNull();
     expect(await fetchExternalAvatar('https://evil.example/x.png')).toBeNull();
+  });
+
+  test('a host that cannot answer for now throws, so the miss is not remembered', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 503 })),
+    );
+    await expect(fetchExternalAvatar(ATL_PAAS)).rejects.toThrow('503');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 429 })),
+    );
+    await expect(fetchExternalAvatar(ATL_PAAS)).rejects.toThrow('429');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 404 })),
+    );
+    expect(await fetchExternalAvatar(ATL_PAAS)).toBeNull();
   });
 });
