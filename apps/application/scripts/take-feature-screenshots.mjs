@@ -1866,6 +1866,33 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'execution-replay-export', width: 1280 },
+    { name: 'execution-replay-export-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `A failed execution's Export menu: the .piwibug bug report for Piwi Picker's Replay, with how many steps are done by hand and not replayed, and Copy steps, at ${width} px`,
+    route: '/test-run-cases/37',
+    viewport: { width, height: 900 },
+    async run({ page, shoot, settle }) {
+      const summary = page.getByTestId('export-piwibug-summary');
+      await settle();
+      // Hydration can lag the first paint on a dev server; retry the click until the menu opens.
+      for (let attempt = 0; attempt < 20 && !(await summary.isVisible()); attempt++) {
+        await page.getByRole('button', { name: 'Export' }).first().click();
+        await summary.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await page.waitForFunction(
+        () =>
+          !/Reading the steps/.test(
+            document.querySelector('[data-testid="export-piwibug-summary"]')?.textContent ?? 'Reading the steps',
+          ),
+        undefined,
+        { timeout: 60000 },
+      );
+      await shoot();
+    },
+  })),
+  ...[
     { name: 'dashboard-editor', width: 1280, height: 1200, docs: true },
     { name: 'dashboard-editor-mobile', width: 375, height: 1400, docs: false },
   ].map(({ name, width, height, docs }) => ({

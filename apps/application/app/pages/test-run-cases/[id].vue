@@ -794,6 +794,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               v-if="testCase"
               :endpoint="`/api/test-run-cases/${testCase.id}/export`"
               :perfetto-endpoint="`/api/test-run-cases/${testCase.id}/perfetto`"
+              :replay-endpoint="isFailedExecution ? `/api/test-run-cases/${testCase.id}` : undefined"
               :base-name="`piwi-execution-${testCase.id}`"
               class="mr-1"
             />

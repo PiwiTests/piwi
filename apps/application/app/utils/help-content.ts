@@ -798,6 +798,11 @@ export const HELP_TOPICS = {
     doc: 'features/offline-export',
     envVars: ['PIWI_EXPORT_MAX_INLINE_BYTES', 'PIWI_EXPORT_MAX_BYTES', 'PIWI_EXPORT_MAX_CASES'],
   },
+  'export.replay': {
+    title: 'Replaying this failure',
+    text: 'A `.piwibug` is the bug report Piwi Picker writes, made from this run: the test’s steps up to the failure, the failing check with what it expected and received, and the failure screenshot. Open it in Piwi Picker’s **Replay** to play the steps in your own browser. What Replay cannot play becomes a step you do by hand; requests, scripts and mocks are listed as not replayed. **Steps (steps.json)** copies the steps alone, to paste into Replay.',
+    doc: 'features/offline-export#replay-the-failure-in-a-browser',
+  },
   'case.timeline': {
     title: 'Failure timeline',
     text: [

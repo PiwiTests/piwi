@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ApiResponse } from '~~/types/api';
+
 const props = defineProps<{
   /**
    * API path of the offline-report endpoint, e.g. `/api/failure-clusters/12/export`.
@@ -7,6 +9,11 @@ const props = defineProps<{
   endpoint?: string;
   /** API path of the Perfetto trace endpoint, e.g. `/api/test-runs/12/perfetto`. */
   perfettoEndpoint?: string;
+  /**
+   * API path of a failed execution's bug report, `/api/test-run-cases/12`: offers its `.piwibug` (`/piwibug`) for
+   * Piwi Picker's Replay and its steps (`/replay-steps`) to copy, with how many steps Replay leaves to a person.
+   */
+  replayEndpoint?: string;
   /** Used only for the desktop shell's fallback filename; the server names the file. */
   baseName: string;
 }>();
@@ -65,6 +72,54 @@ async function copyFrom(path: string, label: string, pick?: (text: string) => st
 
 function copyReport() {
   return copyFrom(`${props.endpoint}?format=md`, 'Report');
+}
+
+type ReplaySteps = ApiResponse<typeof import('~~/server/api/test-run-cases/[id]/replay-steps.get').default>;
+
+/** The replay summary, read the first time the menu opens. */
+const replay = ref<ReplaySteps | null>(null);
+const replayFailed = ref(false);
+watch(open, async (isOpen) => {
+  if (!isOpen || !props.replayEndpoint || replay.value) return;
+  replayFailed.value = false;
+  try {
+    replay.value = await $fetch<ReplaySteps>(`${props.replayEndpoint}/replay-steps`);
+  } catch {
+    replayFailed.value = true;
+  }
+});
+
+/** `12 steps · 2 by hand · 3 not replayed`, under the download. */
+const replayLine = computed(() => {
+  const r = replay.value;
+  if (!r) return replayFailed.value ? 'Could not read the steps' : 'Reading the steps…';
+  const parts = [`${r.stepCount} ${r.stepCount === 1 ? 'step' : 'steps'}`];
+  if (r.manualSteps > 0) parts.push(`${r.manualSteps} by hand`);
+  if (r.notReplayed > 0) parts.push(`${r.notReplayed} not replayed`);
+  return parts.join(' · ');
+});
+
+/** What the steps leave out, listed in the download's tooltip. */
+const replayTitle = computed(() => {
+  const lines = ['A .piwibug for Piwi Picker’s Replay: plays the steps to the failure in your own browser.'];
+  const notes = replay.value?.notes ?? [];
+  if (notes.length > 0) lines.push('', 'Not replayed:', ...notes.slice(0, 8).map((n) => `• ${n.title}: ${n.reason}`));
+  if (notes.length > 8) lines.push(`• and ${notes.length - 8} more, listed in bug-report.md`);
+  return lines.join('\n');
+});
+
+async function runReplay() {
+  open.value = false;
+  if (!props.replayEndpoint) return;
+  await download(withBase(`${props.replayEndpoint}/piwibug`), `${props.baseName}.piwibug`, { binary: true });
+}
+
+async function copySteps() {
+  if (!props.replayEndpoint) return;
+  await copyFrom(`${props.replayEndpoint}/replay-steps`, 'Steps', (text) => {
+    const steps = (JSON.parse(text) as ReplaySteps).steps;
+    return `${JSON.stringify(steps, null, 2)}\n`;
+  });
 }
 </script>
 
@@ -155,8 +210,33 @@ function copyReport() {
           </UButton>
         </template>
 
+        <template v-if="replayEndpoint">
+          <USeparator class="my-1" />
+          <div class="flex items-center justify-between px-2 pt-1 pb-1">
+            <p class="text-xs font-medium text-gray-500">Replay in a browser</p>
+            <HelpHint topic="export.replay" />
+          </div>
+
+          <UButton
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-bug-play"
+            :title="replayTitle"
+            data-testid="export-piwibug"
+            @click="runReplay"
+          >
+            <span class="flex flex-col items-start text-left leading-tight">
+              Bug report (.piwibug)
+              <span class="text-xs text-gray-500" data-testid="export-piwibug-summary">{{ replayLine }}</span>
+            </span>
+          </UButton>
+        </template>
+
         <template v-if="perfettoEndpoint">
-          <USeparator v-if="endpoint" class="my-1" />
+          <USeparator v-if="endpoint || replayEndpoint" class="my-1" />
           <p class="text-xs font-medium text-gray-500 px-2 pt-1 pb-1">Timeline</p>
 
           <UButton
@@ -192,6 +272,21 @@ function copyReport() {
             @click="copyReport"
           >
             Report (Markdown)
+          </UButton>
+
+          <UButton
+            v-if="replayEndpoint"
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-list-checks"
+            :loading="busy === 'Steps'"
+            title="The steps.json of the bug report, to paste into Piwi Picker’s Replay"
+            @click="copySteps"
+          >
+            Steps (steps.json)
           </UButton>
         </template>
       </div>

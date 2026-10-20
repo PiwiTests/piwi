@@ -6,8 +6,9 @@ lang: en-US
 
 # Bug report file format
 
-[Report a bug](/features/report-a-bug) saves a report as one `.piwibug` file with **Download .piwibug**. Piwi Picker's
-[Replay](/features/replay-a-bug-report) plays it, and the [desktop app](/features/desktop#importing-local-files)
+[Report a bug](/features/report-a-bug) saves a report as one `.piwibug` file with **Download .piwibug**, and a failed
+execution's [Export](/features/offline-export#replay-the-failure-in-a-browser) writes one from the test run. Piwi
+Picker's [Replay](/features/replay-a-bug-report) plays it, and the [desktop app](/features/desktop#importing-local-files)
 imports it into a project as a [bug report](/features/bug-reports).
 
 ## The archive
@@ -21,7 +22,7 @@ A `.piwibug` file is a zip archive, its entries stored without compression:
 | `<title>.spec.ts` | The failing test, named after the report's title, such as `coupon-not-applied.spec.ts` |
 | `bug-report.md` | The report as Markdown, in the language Piwi Picker shows |
 | `evidence.json` | The evidence and the context; see below |
-| `screenshots/<n>-<moment>.png` | Up to three screenshots: `marked` (a step marked as wrong), `finish` or `manual` |
+| `screenshots/<n>-<moment>.png` | Up to three screenshots: `marked` (a step marked as wrong), `finish` (a report made from a test run holds its failure screenshot as `screenshots/1-finish.png`) or `manual` |
 | `steps/<nnn>.jpg` | The page as step `<nnn>` began (`steps/001.jpg` for the first), as wide as the viewport in CSS pixels, 1,280 at most; up to 100 |
 
 The `mimetype` entry is stored first and uncompressed, as EPUB and OpenDocument files do, so its text sits at a fixed
@@ -66,8 +67,37 @@ holding `steps.json` and `evidence.json` without the `mimetype` entry is read to
 | `screenshotNote` | Why there is no screenshot, when there is none |
 | `outline` | An outline of the page in the YAML form of an ARIA snapshot, built by Piwi Picker, at most 400 lines |
 
+## A report made from a test run
+
+A report exported from a failed execution adds an `export` block beside `context` and `evidence`:
+
+```json
+"export": {
+  "source": "execution",
+  "executionId": 4512,
+  "testTitle": "coupon applies to the total",
+  "failedStep": 6,
+  "notes": [
+    { "title": "POST /api/seed", "location": "tests/cart.spec.ts:8", "reason": "An API request the test sends itself; Replay sends none." }
+  ],
+  "notesDropped": 0
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `executionId` | The execution on the instance the report was made from |
+| `testTitle` | The test's title |
+| `failedStep` | The step the test failed at, 0-based, or null when it failed outside the steps (a teardown hook) |
+| `notes` | The calls of the test the steps leave out, with where they are and why; at most 100, `notesDropped` counts the rest |
+
+The steps hold what Replay can play: the test's actions and its checks of a state, its failing assertion with the
+`expected` and `actual` values of its error, and [manual steps](/reference/steps-format#manual-steps) for the rest.
+A step's `pageUrl` is empty once an action may have left the page, since the run does not record where it went.
+
 Everything in `evidence.json` is checked when a file is read: a list past its limit is cut, an entry that does not fit
-its shape is dropped, and a screenshot is kept only when its name is one the table above allows; a step screenshot,
+its shape is dropped (an `export` block whose `source` is not `execution` is dropped whole, and a `failedStep` that
+names no step is read as null), and a screenshot is kept only when its name is one the table above allows; a step screenshot,
 only when it is named after its step. The steps are checked
 as a [steps file](/reference/steps-format#checks) is, and a file whose steps fail that check is refused.
 
