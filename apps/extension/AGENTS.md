@@ -728,6 +728,8 @@ found by its icon and its color before its words are read, and a step reads at a
   (green), what completes or goes on with a flow (Finish, I did it, continue); `danger` (solid red), what stops what
   runs (Stop); `remove` (red text), what discards or takes away (Discard, Remove, Unpair, Disconnect), set apart at the
   end of its row; `neutral`, any other, its icon in the accent color; `ghost`, a close button or a small inline action.
+- **A verdict, a warning or a status line leads with its icon** (`check-circle`, `alert`, `x-circle`…) in its color,
+  and a count is a badge.
 - **A label changes through `setLabel`**, never `textContent`, which drops the icon. A copy goes through
   `copyWithFeedback` (and a passing text through `flashLabel`), which keeps the icon and flashes a check or a cross.
 - **A step is shown by `stepView(step)`** (`src/shared/step-view.ts`, its look in `STEP_CSS`): a badge by kind of
