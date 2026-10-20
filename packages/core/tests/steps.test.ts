@@ -229,10 +229,34 @@ describe('parseSteps', () => {
     });
   });
 
+  test('writes version 2 only for a document that uses a manual step or a matcher version 2 added', () => {
+    const doc = valid();
+    expect(parseSteps(doc)).toMatchObject({ ok: true, steps: { v: 1 } });
+    const manual = {
+      action: 'manual',
+      target: null,
+      value: null,
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 3,
+      manual: { description: 'Accept the cookie banner', location: null, call: null },
+    };
+    expect(parseSteps({ ...doc, v: 2, steps: [...doc.steps, manual] })).toMatchObject({ ok: true, steps: { v: 2 } });
+    const counted = {
+      ...manual,
+      action: 'assert',
+      manual: undefined,
+      target: doc.steps[2]!.target,
+      assertion: { matcher: 'toHaveCount', expected: '3', actual: null, negated: false, note: null },
+    };
+    expect(parseSteps({ ...doc, steps: [...doc.steps, counted] })).toMatchObject({ ok: true, steps: { v: 2 } });
+    expect(parseSteps({ ...doc, v: 2 })).toMatchObject({ ok: true, steps: { v: 1 } });
+  });
+
   test('refuses what is not a steps document', () => {
     expect(parseSteps('{')).toEqual({ ok: false, errors: ['not valid JSON'] });
     expect(parseSteps([])).toEqual({ ok: false, errors: ['a steps document must be a JSON object'] });
-    expect(parseSteps({ v: 2, steps: [] })).toEqual({ ok: false, errors: ['v: this reads version 1, not 2'] });
+    expect(parseSteps({ v: 3, steps: [] })).toEqual({ ok: false, errors: ['v: this reads versions 1 to 2, not 3'] });
     expect(parseSteps({ v: 1, steps: 'x' })).toEqual({ ok: false, errors: ['steps: must be a list'] });
   });
 

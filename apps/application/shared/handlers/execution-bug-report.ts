@@ -10,7 +10,11 @@
 import { and, eq, gte, isNotNull, or } from 'drizzle-orm';
 import {
   BUG_REPORT_EXTENSION,
-  bugReportTextFiles,
+  BUG_REPORT_FILES,
+  BUG_REPORT_MEDIA_TYPE,
+  bugTitle,
+  renderBugMarkdown,
+  renderBugSpec,
   type BugReport,
   type BugReportNote,
 } from '@piwitests/core/bug-report';
@@ -25,6 +29,7 @@ import { failurePageScreenshot, isScreenshotFileRow } from '#shared/file-classif
 import { buildExportZip } from '#shared/export/zip';
 import type { ExportAssetReader } from '#shared/export/types';
 import type { BrowserConfig } from '#shared/types';
+import { bugSpecFileName } from './bug-reports';
 import type { DrizzleDB } from './db';
 
 /** What the execution page says about the report before it is downloaded. */
@@ -73,16 +78,30 @@ function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
-/** A file name made from the test's title: `checkout-applies-coupon-123.piwibug`. */
+/** A file name made from the test's title, as its spec's is: `checkout-applies-coupon.piwibug`, `bug-123.piwibug`. */
 function archiveName(title: string, id: number): string {
-  const slug = title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-    .replace(/-+$/, '');
-  return `${slug || 'execution'}-${id}.${BUG_REPORT_EXTENSION}`;
+  return bugSpecFileName(title, id).replace(/\.spec\.ts$/, `.${BUG_REPORT_EXTENSION}`);
+}
+
+/**
+ * The text files of a report's archive, as Piwi Picker writes them: the media
+ * type first (stored without compression), the steps document, the failing
+ * test, the Markdown and the evidence with the context and the `export` block.
+ */
+function bugReportTextFiles(report: BugReport): Array<{ name: string; data: string }> {
+  const evidence = {
+    v: report.v,
+    context: report.context,
+    evidence: report.evidence,
+    ...(report.export ? { export: report.export } : {}),
+  };
+  return [
+    { name: BUG_REPORT_FILES.mediaType, data: BUG_REPORT_MEDIA_TYPE },
+    { name: BUG_REPORT_FILES.steps, data: `${JSON.stringify(report.steps, null, 2)}\n` },
+    { name: bugSpecFileName(bugTitle(report), report.export?.executionId ?? 0), data: renderBugSpec(report).code },
+    { name: BUG_REPORT_FILES.markdown, data: renderBugMarkdown(report) },
+    { name: BUG_REPORT_FILES.evidence, data: `${JSON.stringify(evidence, null, 2)}\n` },
+  ];
 }
 
 /**
@@ -98,6 +117,7 @@ export async function getExecutionBugReport(db: DrizzleDB, id: number): Promise<
       browser: testRunsCases.browser,
       pageState: testRunsCases.pageState,
       startedAt: testRunsCases.startedAt,
+      testRunId: testRunsCases.testRunId,
       testCaseId: testRunsCases.testCaseId,
       title: testCases.title,
       filePath: testCases.filePath,
@@ -150,6 +170,8 @@ export async function getExecutionBugReport(db: DrizzleDB, id: number): Promise<
       alternatives: parseJson<ExecutionElementSnapshot['alternatives']>(s.alternatives, []).filter(
         (a) => typeof a?.locator === 'string',
       ),
+      // The store keeps the latest snapshot per call site: one from a later run may show a changed element.
+      otherRun: s.lastSeenRunId !== row.testRunId,
     };
   });
   const title = row.title ?? `Execution ${id}`;

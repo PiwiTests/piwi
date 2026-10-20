@@ -30,7 +30,7 @@ import { LOCATING_METHODS, locatorCallValues, type LocatorCall, type LocatorChai
 import type { RecordedLocatorAlternative, RecordedStep, RecordedTarget, StepAssertion } from './recording';
 import { capStepValue, MAX_STEP_PARAM_VALUE_CHARS, stepLabel } from './step-analysis';
 import { extractStepLocatorUse, findLocationRoot, stepLocations, stripLocationRoot } from './step-locators';
-import { parseSteps, STEPS_LIMITS, type PiwiSteps } from './steps';
+import { parseSteps, STEPS_LIMITS, stepsVersionFor, type PiwiSteps } from './steps';
 import {
   failingStepIndex,
   isCaptureStep,
@@ -54,6 +54,12 @@ export interface ExecutionElementSnapshot {
   accessibleName: string | null;
   /** Other locators for the element, best first. */
   alternatives: Array<{ locator: string; method: string; score: number }>;
+  /**
+   * Taken in another run of the test, since the store keeps the latest per
+   * call site: the element may have changed, so it only ever adds that a field
+   * takes a secret, never what the element is.
+   */
+  otherRun?: boolean;
 }
 
 export interface ExecutionReportInput {
@@ -66,7 +72,7 @@ export interface ExecutionReportInput {
   error: string | null;
   /** The test's file, relative to the project, to write step locations relative to it. */
   testFilePath?: string | null;
-  /** The site the test ran on (`https://staging.acme.test`), when known; else the first navigation's. */
+  /** A page of the site the test ran on (the page it ended on), for a test whose navigations name no origin. */
   origin?: string | null;
   snapshots?: readonly ExecutionElementSnapshot[];
   console?: ReadonlyArray<{ level: 'error' | 'warn'; message: string; time?: number | null }>;
@@ -219,6 +225,11 @@ function snapshotFor(
   );
 }
 
+/** A snapshot that describes the element as this run saw it; null for one taken in another run. */
+function seenInRun(snapshot: ExecutionElementSnapshot | null): ExecutionElementSnapshot | null {
+  return snapshot && !snapshot.otherRun ? snapshot : null;
+}
+
 function attribute(snapshot: ExecutionElementSnapshot | null, name: string): string | null {
   const value = snapshot?.attributes[name];
   return typeof value === 'string' && value ? value : null;
@@ -238,7 +249,9 @@ function targetFor(locator: string, chain: LocatorChain, snapshot: ExecutionElem
   const alternatives: RecordedLocatorAlternative[] = [];
   const add = (locator: string, score: number) => {
     const safe = safeLocator(locator);
-    if (!safe || alternatives.some((a) => a.locator === safe.text)) return;
+    // A locator too long for a steps document is left out rather than cut: a cut chain finds another element.
+    if (!safe || safe.text.length > STEPS_LIMITS.textLength || alternatives.some((a) => a.locator === safe.text))
+      return;
     if (alternatives.length >= STEPS_LIMITS.alternatives) return;
     alternatives.push({ locator: safe.text, method: safe.chain.calls[safe.chain.calls.length - 1]!.method, score });
   };
@@ -248,7 +261,7 @@ function targetFor(locator: string, chain: LocatorChain, snapshot: ExecutionElem
   const cap = (value: string | null) => (value == null ? null : value.slice(0, STEPS_LIMITS.textLength));
   return {
     tagName: (snapshot?.tagName ?? '').toLowerCase().slice(0, 64),
-    role: cap(attribute(snapshot, 'role') ?? (leaf?.method === 'getByRole' ? text : null)),
+    role: (attribute(snapshot, 'role') ?? (leaf?.method === 'getByRole' ? text : null))?.slice(0, 64) ?? null,
     accessibleName: cap(
       snapshot?.accessibleName ||
         name ||
@@ -433,7 +446,7 @@ function convertLocatorAction(
   ctx: ConvertContext,
 ): Converted {
   const snapshot = snapshotFor(step, leafCall(chain), ctx.snapshots);
-  const target = targetWith(locator, snapshot);
+  const target = targetWith(locator, seenInRun(snapshot));
   const loc = `\`${locator}\``;
   if (!target)
     return { kind: 'manual', description: `Do what the test did on ${loc}: ${capStepValue(str(step.title), 100)}` };
@@ -536,7 +549,7 @@ function convertAssertion(
     const what = parsed?.customMessage ?? (matcher ? `${matcher}` : title);
     return { kind: 'manual', description: `Check what the test checked: ${capStepValue(what, 200)}${facts}` };
   }
-  const snapshot = snapshotFor(step, chain ? leafCall(chain) : null, ctx.snapshots);
+  const snapshot = seenInRun(snapshotFor(step, chain ? leafCall(chain) : null, ctx.snapshots));
   const target = targetWith(locator, snapshot);
   const loc = `\`${locator}\``;
   if (!target)
@@ -606,11 +619,12 @@ function inRun(expected: string | null, received: string | null): string {
   return parts.length > 0 ? `; in the run it ${parts.join(' and ')}` : '';
 }
 
-/** The target of a step found by `locator`, with what the snapshot saw of the element; null for a locator a steps document cannot hold. */
+/** The target of a step found by `locator`, with what the snapshot saw of the element; null when no locator for it fits a steps document. */
 function targetWith(locator: string, snapshot: ExecutionElementSnapshot | null): RecordedTarget | null {
   const safe = safeLocator(locator);
   if (!safe) return null;
-  return targetFor(safe.text, safe.chain, snapshot);
+  const target = targetFor(safe.text, safe.chain, snapshot);
+  return target.alternatives.length > 0 ? target : null;
 }
 
 /** A location as a report shows it: relative to the project, `file:line`. */
@@ -636,13 +650,16 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
   const roles = stepFailureRoles(stored, input.error, parents, failing);
   const root = findLocationRoot(stepLocations(stored), input.testFilePath ?? null);
   const firstNavigation = stored.find((s) => str(s.category) === 'navigation' && originOf(navigationUrl(s)));
-  const origin = originOf(input.origin) ?? (firstNavigation ? originOf(navigationUrl(firstNavigation)) : null);
+  // The first page the test opened names the site it ran on; the page it ended on may be another site's (a payment page).
+  const origin = (firstNavigation ? originOf(navigationUrl(firstNavigation)) : null) ?? originOf(input.origin);
   const ctx: ConvertContext = { origin, snapshots: input.snapshots ?? [], executionError: input.error };
   const time = input.time ?? 0;
 
   const steps: RecordedStep[] = [];
   const notes: BugReportNote[] = [];
   let failedStep: number | null = null;
+  /** The step each stored step became, by its index in the stored list. */
+  const madeFrom = new Map<number, number>();
   let page = '';
   /** Steps whose own steps are taken with them. */
   const consumed = new Set<number>();
@@ -689,9 +706,19 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
     const startedAt = typeof step.startTime === 'number' ? step.startTime : null;
     recorded.timestamp = startedAt ?? time;
     if (i === failing) failedStep = steps.length;
+    madeFrom.set(i, steps.length);
     steps.push(recorded);
     if (recorded.action === 'goto') page = recorded.value ?? '';
     else if (!KEEPS_PAGE.has(recorded.action)) page = '';
+  }
+
+  // A failure inside a block taken whole (a `toPass` block, a poll) failed at the step the block became.
+  for (
+    let p = failing === null ? -1 : (parents[failing] ?? -1);
+    failedStep === null && p !== -1;
+    p = parents[p] ?? -1
+  ) {
+    failedStep = madeFrom.get(p) ?? null;
   }
 
   // A steps document holds 200 steps: the ones that lead to the failure stay.
@@ -718,7 +745,7 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
   }
 
   const doc: PiwiSteps = {
-    v: 1,
+    v: stepsVersionFor(kept),
     title: input.title.slice(0, STEPS_LIMITS.textLength) || null,
     origin,
     recordedAt: time,

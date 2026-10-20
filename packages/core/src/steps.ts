@@ -25,7 +25,26 @@ import {
   type StepViewport,
 } from './recording';
 
-const STEPS_VERSION = 1;
+/**
+ * The newest version this reads. Version 2 added the `manual` step and the
+ * `toContainText`, `toHaveCount` and `toBeChecked` matchers; a document is
+ * written with the oldest version that holds its steps, so a reader that only
+ * knows version 1 refuses a file it cannot play with a message naming the
+ * version, and opens every other one.
+ */
+const STEPS_VERSION = 2;
+
+export type StepsVersion = 1 | typeof STEPS_VERSION;
+
+/** Matchers a version 1 reader does not know. */
+const VERSION_2_MATCHERS: ReadonlySet<string> = new Set(['toContainText', 'toHaveCount', 'toBeChecked']);
+
+/** The oldest version that holds `steps`: 2 when one is a manual step or uses a matcher version 2 added, else 1. */
+export function stepsVersionFor(steps: readonly RecordedStep[]): StepsVersion {
+  return steps.some((s) => s.action === 'manual' || (!!s.assertion && VERSION_2_MATCHERS.has(s.assertion.matcher)))
+    ? 2
+    : 1;
+}
 
 /** What a steps document may hold. */
 export const STEPS_LIMITS = {
@@ -43,7 +62,7 @@ export const STEPS_LIMITS = {
 } as const;
 
 export interface PiwiSteps {
-  v: typeof STEPS_VERSION;
+  v: StepsVersion;
   title: string | null;
   /** The origin the steps were recorded on, such as `https://staging.acme.test`; null when there was none. */
   origin: string | null;
@@ -102,7 +121,7 @@ export function toStepsDocument(
 ): PiwiSteps {
   const origin = originOf(session.startUrl) ?? originOf(session.steps[0]?.pageUrl ?? '');
   return {
-    v: STEPS_VERSION,
+    v: stepsVersionFor(session.steps),
     title: meta.title ?? null,
     origin,
     recordedAt: session.startedAt,
@@ -349,8 +368,8 @@ export function parseSteps(input: unknown): ParseStepsResult {
 
   const c = new Checker();
   const legacy = value.v == null && typeof value.startUrl === 'string';
-  if (!legacy && value.v !== STEPS_VERSION) {
-    return { ok: false, errors: [`v: this reads version ${STEPS_VERSION}, not ${JSON.stringify(value.v)}`] };
+  if (!legacy && value.v !== 1 && value.v !== STEPS_VERSION) {
+    return { ok: false, errors: [`v: this reads versions 1 to ${STEPS_VERSION}, not ${JSON.stringify(value.v)}`] };
   }
   if (!Array.isArray(value.steps)) return { ok: false, errors: ['steps: must be a list'] };
   if (value.steps.length > STEPS_LIMITS.steps) {
@@ -374,7 +393,7 @@ export function parseSteps(input: unknown): ParseStepsResult {
     if (originText && !origin) c.fail('origin', 'must be an http(s) origin');
     const viewports = checkViewports(c, value.viewports, steps.length);
     doc = {
-      v: STEPS_VERSION,
+      v: stepsVersionFor(steps),
       title: c.text(value.title, 'title', STEPS_LIMITS.textLength, true),
       origin,
       recordedAt: value.recordedAt == null ? 0 : c.number(value.recordedAt, 'recordedAt'),

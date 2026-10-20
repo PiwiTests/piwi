@@ -776,40 +776,6 @@ export function isBugReportArchive(bytes: Uint8Array): boolean {
   return true;
 }
 
-/** A file name made from the report's title, for its spec: `coupon-not-applied.spec.ts`. */
-export function bugSpecFileName(report: BugReport): string {
-  const slug = bugTitle(report)
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-    .replace(/-+$/, '');
-  return `${slug || 'bug'}.spec.ts`;
-}
-
-/**
- * The text files of a report's archive, in their order: the media type first
- * (to be stored without compression), the steps document, the failing test,
- * the Markdown (`markdown`, or the report in English) and the evidence with
- * the context and the `export` block. The screenshots follow them.
- */
-export function bugReportTextFiles(report: BugReport, markdown?: string): Array<{ name: string; data: string }> {
-  const evidence = {
-    v: report.v,
-    context: report.context,
-    evidence: report.evidence,
-    ...(report.export ? { export: report.export } : {}),
-  };
-  return [
-    { name: BUG_REPORT_FILES.mediaType, data: BUG_REPORT_MEDIA_TYPE },
-    { name: BUG_REPORT_FILES.steps, data: `${JSON.stringify(report.steps, null, 2)}\n` },
-    { name: bugSpecFileName(report), data: renderBugSpec(report).code },
-    { name: BUG_REPORT_FILES.markdown, data: markdown ?? renderBugMarkdown(report) },
-    { name: BUG_REPORT_FILES.evidence, data: `${JSON.stringify(evidence, null, 2)}\n` },
-  ];
-}
-
 /**
  * Reads a bug report from the files of its archive: `steps.json`, and
  * `evidence.json` (`{ v, context, evidence, export? }`), null when the archive has

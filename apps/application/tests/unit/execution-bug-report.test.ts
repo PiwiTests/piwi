@@ -79,6 +79,7 @@ beforeAll(async () => {
       elementAttrs: JSON.stringify({ type: 'password', accessibleName: 'Password' }),
       elementText: null,
       alternatives: JSON.stringify([{ locator: "getByLabel('Password')", method: 'getByLabel', args: {}, score: 90 }]),
+      lastSeenRunId: 1,
       lastSeenAt: new Date(),
     },
   ]);
@@ -98,7 +99,7 @@ describe('getExecutionBugReport', () => {
   test('makes the report from the stored steps, snapshots, console, requests and browser', async () => {
     const built = (await getExecutionBugReport(db as never, 7))!;
     const { report } = built;
-    expect(built.fileName).toBe('coupon-applies-to-the-total-7.piwibug');
+    expect(built.fileName).toBe('coupon-applies-to-the-total.piwibug');
     expect(built.screenshotPath).toBe('p/1.png');
     expect(report.steps.origin).toBe('https://staging.shop.test');
     expect(report.steps.steps.map((s) => s.action)).toEqual(['goto', 'fill', 'fill', 'assert']);

@@ -43,7 +43,7 @@ holds steps and not code, the same file can be rendered for different projects (
 
 | Field | Type | Meaning |
 |---|---|---|
-| `v` | `1` | The format version. |
+| `v` | `1` or `2` | The format version: `2` when the file uses a `manual` step or the `toContainText`, `toHaveCount` or `toBeChecked` matcher, `1` otherwise. |
 | `title` | string or null | The test's title when rendered. |
 | `origin` | string or null | The origin the steps were recorded on, such as `https://staging.acme.test`. |
 | `recordedAt` | number | When the recording started, in milliseconds since 1970. |
@@ -160,6 +160,7 @@ A file is checked in full before anything uses it, and every problem found is re
   titles, names, texts and locators, and 5 MB for the file.
 
 A recording saved before the format existed (`{ "steps", "startedAt", "startUrl" }`) is read too, and the old
-`assertVisible` action is read as an `assert` step with `toBeVisible`. Version 1 also covers the `manual`
-action and the `toContainText`, `toHaveCount` and `toBeChecked` matchers: a reader without them refuses a file that
-uses them, naming the step, and reads every other version 1 file as it did.
+`assertVisible` action is read as an `assert` step with `toBeVisible`. A file is written with the oldest version that
+holds its steps, so a reader that only knows version 1 refuses a file using the `manual` action or the
+`toContainText`, `toHaveCount` and `toBeChecked` matchers with a message naming the version, and reads every other
+file as it did.

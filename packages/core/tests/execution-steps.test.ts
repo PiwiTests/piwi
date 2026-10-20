@@ -1,11 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import {
-  bugReportFromFiles,
-  bugReportTextFiles,
-  renderBugMarkdown,
-  renderBugSpec,
-  type BugReport,
-} from '../src/bug-report';
+import { bugReportFromFiles, renderBugMarkdown, renderBugSpec, type BugReport } from '../src/bug-report';
 import { bugReportFromExecution, type ExecutionElementSnapshot } from '../src/execution-steps';
 import { parseSteps } from '../src/steps';
 import {
@@ -90,9 +84,7 @@ describe('bugReportFromExecution', () => {
 
   test('never writes a password, even into a manual step or a note', () => {
     const { report } = convert(bodyFailure.steps, bodyFailure.error);
-    const files = bugReportTextFiles(report)
-      .map((f) => f.data)
-      .join('\n');
+    const files = [JSON.stringify(report), renderBugMarkdown(report), renderBugSpec(report).code].join('\n');
     expect(files).not.toContain('s3cret');
     expect(report.steps.steps[2]).toMatchObject({ action: 'fill', value: null, redacted: true });
   });
@@ -111,6 +103,57 @@ describe('bugReportFromExecution', () => {
     expect(report.steps.origin).toBe(ORIGIN);
     expect(report.steps.steps.map((s) => s.value)).toEqual(['/cart?from=mail', 'https://other.test/x']);
     expect(report.export!.failedStep).toBeNull();
+  });
+
+  test('takes the origin from where the test started, not from the page it ended on', () => {
+    const steps = [body({ title: 'Navigate', params: { url: `${ORIGIN}/cart` }, category: 'navigation' })];
+    const { report } = convert(steps, null, { origin: 'https://pay.example/checkout' });
+    expect(report.steps.origin).toBe(ORIGIN);
+    expect(report.steps.steps[0]!.value).toBe('/cart');
+    expect(convert([], null, { origin: 'https://pay.example/checkout' }).report.steps.origin).toBe(
+      'https://pay.example',
+    );
+  });
+
+  test('a locator too long for a steps file is left out, and a step left with none is done by hand', () => {
+    const long = `getByText('${'Lorem ipsum '.repeat(50)}')`;
+    const steps = [body({ title: 'Click', params: { locator: long }, category: 'action' })];
+    const { report } = convert(steps, null);
+    expect(parseSteps(report.steps).ok).toBe(true);
+    expect(report.steps.steps[0]!.action).toBe('manual');
+    const snapshots: ExecutionElementSnapshot[] = [
+      {
+        location: 'tests/checkout.spec.ts:10:5',
+        used: null,
+        tagName: 'P',
+        attributes: { role: 'x'.repeat(100) },
+        text: 'Lorem ipsum',
+        accessibleName: null,
+        alternatives: [{ locator: "getByTestId('intro')", method: 'getByTestId', score: 90 }],
+      },
+    ];
+    const step = convert(steps, null, { snapshots }).report.steps.steps[0]!;
+    expect(step.action).toBe('click');
+    expect(step.target!.alternatives.map((a) => a.locator)).toEqual(["getByTestId('intro')"]);
+    expect(step.target!.role).toHaveLength(64);
+  });
+
+  test('a snapshot from another run only says a field takes a secret, never what the element is', () => {
+    const steps = [body({ title: 'Fill "hunter2"', subtitle: "locator('#pw')", category: 'input' })];
+    const snapshot: ExecutionElementSnapshot = {
+      location: 'tests/checkout.spec.ts:10:5',
+      used: { method: 'locator', args: ['#pw'] },
+      tagName: 'INPUT',
+      attributes: { type: 'password' },
+      text: null,
+      accessibleName: 'Your secret',
+      alternatives: [{ locator: "getByLabel('Your secret')", method: 'getByLabel', score: 90 }],
+      otherRun: true,
+    };
+    const step = convert(steps, null, { snapshots: [snapshot] }).report.steps.steps[0]!;
+    expect(step).toMatchObject({ action: 'fill', value: null, redacted: true });
+    expect(step.target).toMatchObject({ tagName: '', accessibleName: null });
+    expect(step.target!.alternatives.map((a) => a.locator)).toEqual(["locator('#pw')"]);
   });
 
   test('a failure in a beforeEach hook keeps the hook’s steps', () => {
@@ -162,6 +205,15 @@ describe('bugReportFromExecution', () => {
       'manual: Check what the test checked again and again (toPass); in the run it expected 100 and received 5',
     ]);
     expect(report.export!.notes).toEqual([]);
+    expect(report.export!.failedStep).toBe(1);
+  });
+
+  test('names the block a failure happened in as the failed step when the block is taken whole', () => {
+    const block = body({ title: 'Expect "toPass"', category: 'assertion', failed: true, error: { message: 'boom' } });
+    const inner = { ...failingAssertion('Expect "toBe"', '', 'expect(received).toBe(expected)'), depth: 1 };
+    const { report } = convert([block, inner], 'expect(received).toBe(expected)');
+    expect(report.steps.steps).toHaveLength(1);
+    expect(report.export!.failedStep).toBe(0);
   });
 
   test('a failing value assertion keeps the expected and received values of its error', () => {
@@ -402,9 +454,8 @@ describe('bugReportFromExecution', () => {
     expect(report.steps.viewports).toEqual([{ step: 0, width: 1280, height: 720 }]);
     expect(parseSteps(report.steps).ok).toBe(true);
 
-    const files = new Map(bugReportTextFiles(report).map((f) => [f.name, f.data]));
-    expect([...files.keys()]).toEqual(['mimetype', 'steps.json', 'checkout.spec.ts', 'bug-report.md', 'evidence.json']);
-    const back = bugReportFromFiles({ steps: files.get('steps.json')!, evidence: files.get('evidence.json')! });
+    const evidence = { v: report.v, context: report.context, evidence: report.evidence, export: report.export };
+    const back = bugReportFromFiles({ steps: JSON.stringify(report.steps), evidence: JSON.stringify(evidence) });
     expect(back.ok && back.report).toEqual(report);
   });
 

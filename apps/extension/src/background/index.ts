@@ -908,7 +908,10 @@ function handleReplayTab(message: { replayId?: unknown }, tab: chrome.tabs.Tab |
 async function stepOpenedTab(state: ReplayState, replayTabId: number, tab: chrome.tabs.Tab): Promise<boolean> {
   const steps = sessionFromSteps(state.steps, state.origin).steps;
   const handed = state.handOver?.step === state.position;
-  const pages = steps.slice(state.position, state.position + (handed ? 2 : 1)).map((s) => pageKey(s.pageUrl));
+  // A step whose page is not known (made from a test run, after a click that may navigate) names no page to follow.
+  const pages = steps
+    .slice(state.position, state.position + (handed ? 2 : 1))
+    .flatMap((s) => (s.pageUrl ? [pageKey(s.pageUrl)] : []));
   const there = tab.url ? pageKey(tab.url) : null;
   if (there === null || !pages.includes(there)) return false;
   const left = await chrome.tabs.get(replayTabId).catch(() => null);

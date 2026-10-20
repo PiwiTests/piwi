@@ -73,6 +73,10 @@ When the test failed on an action rather than on an assertion, the report says w
 there answers **Failed at step N, as in the test run**, and playing it answers **Not reproduced**. A typed password is
 never in the report: the step asks for it.
 
+A test run does not keep the page each step happened on once a click may have opened another, so Replay does not
+follow such a step into a new tab: it stays in the tab it started in, and a step the test played in a popup is handed
+to you.
+
 ## Trusted input
 
 In Chrome and Edge, Replay sends trusted input as Playwright does: a real hover, clicks, keys and drags that the page
