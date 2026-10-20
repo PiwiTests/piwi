@@ -154,6 +154,7 @@ const PANEL_CSS = `
     overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
   @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
   .panel { color-scheme: dark; }
+  .panel:focus { outline: none; }
   option { background: #1f2937; color: #f9fafb; }
   @media (prefers-color-scheme: light) { .panel { color-scheme: light; } option { background: #ffffff; color: #111827; } }
   .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }

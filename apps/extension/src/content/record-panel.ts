@@ -670,6 +670,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
     .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
     .header > div { min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
+    .panel:focus { outline: none; }
     .title { font-weight: 600; font-size: 14px; }
     .sub { color: #9ca3af; font-size: 12px; }
     .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 280px; overflow: auto; margin-bottom: 12px; }
