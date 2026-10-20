@@ -84,7 +84,7 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
   }
   if (state.driver) parts.push(el('div', 'view-note', driverText(state.driver)));
   if (done) {
-    const verdict = replayVerdict(steps, state.results, state.status === 'stopped');
+    const verdict = replayVerdict(steps, state.results, state.status === 'stopped', state.runFailedStep ?? null);
     const { title, detail } = verdictText(verdict, steps);
     const box = el('div', `verdict ${VERDICT_TONES[verdict.kind]}`);
     box.append(el('strong', '', title), el('div', '', detail));

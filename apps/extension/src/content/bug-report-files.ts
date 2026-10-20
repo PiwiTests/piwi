@@ -3,12 +3,9 @@ import { toStepsDocument } from '@piwitests/core/steps';
 import { bugPhrases, type BugPhrases } from '@piwitests/core/bug-phrases';
 import {
   BUG_EVIDENCE_LIMITS,
-  BUG_REPORT_FILES,
-  BUG_REPORT_MEDIA_TYPE,
   BUG_REPORT_VERSION,
-  bugTitle,
+  bugReportTextFiles,
   renderBugMarkdown,
-  renderBugSpec,
   stepShotFile,
   type BugContext,
   type BugReport,
@@ -91,18 +88,6 @@ export function assembleBugReport(input: {
   };
 }
 
-/** A file name made from the report's title: `coupon-not-applied.spec.ts`. */
-export function specFileName(report: BugReport): string {
-  const slug = bugTitle(report)
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-    .replace(/-+$/, '');
-  return `${slug || 'bug'}.spec.ts`;
-}
-
 /**
  * The language a report's Markdown is written in: core's phrasebook, and the
  * screenshot note (stored in English) in that language.
@@ -140,14 +125,7 @@ export function bugReportEntries(
   stepImages: ReadonlyMap<string, string> = new Map(),
 ): ZipEntry[] {
   return [
-    { name: BUG_REPORT_FILES.mediaType, data: BUG_REPORT_MEDIA_TYPE },
-    { name: BUG_REPORT_FILES.steps, data: `${JSON.stringify(report.steps, null, 2)}\n` },
-    { name: specFileName(report), data: renderBugSpec(report).code },
-    { name: BUG_REPORT_FILES.markdown, data: bugReportMarkdown(report, language) },
-    {
-      name: BUG_REPORT_FILES.evidence,
-      data: `${JSON.stringify({ v: report.v, context: report.context, evidence: report.evidence }, null, 2)}\n`,
-    },
+    ...bugReportTextFiles(report, bugReportMarkdown(report, language)),
     ...screenshots.map((shot, i) => ({ name: screenshotFile(shot, i), data: dataUrlBytes(shot.dataUrl) })),
     ...(report.evidence.stepShots ?? []).flatMap((shot) => {
       const dataUrl = stepImages.get(shot.file);

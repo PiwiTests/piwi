@@ -53,6 +53,8 @@ export interface ReplayState {
   conditions?: RequestCondition[];
   /** The connected instance's bug report the steps came from, when they did. */
   bugReportId?: number | null;
+  /** In a report made from a test run, the step the test failed at in that run (its `export` block's `failedStep`). */
+  runFailedStep?: number | null;
   /** Announced to the main-world evidence script, whose entries carry it back (see `shared/bug-relay.ts`). */
   evidenceToken?: string;
   /**
@@ -143,6 +145,7 @@ export function newReplayState(
   now = Date.now(),
   startPage: ReplayState['startPage'] = null,
   bugReportId: number | null = null,
+  runFailedStep: number | null = null,
 ): ReplayState {
   return {
     id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -156,6 +159,7 @@ export function newReplayState(
     startedAt: now,
     startPage,
     bugReportId,
+    ...(runFailedStep != null ? { runFailedStep } : {}),
     evidenceToken: `${now.toString(36)}${Math.random().toString(36).slice(2, 12)}`,
   };
 }

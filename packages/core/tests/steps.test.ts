@@ -159,6 +159,58 @@ describe('parseSteps', () => {
     expect(parseSteps(bare)).toEqual({ ok: false, errors: ['steps[4].dropTarget: is required on a dragTo step'] });
   });
 
+  test('reads a manual step, which needs a description and keeps no value', () => {
+    const doc = valid();
+    doc.steps.push({
+      ...doc.steps[0]!,
+      action: 'manual',
+      target: null,
+      value: 'x',
+      manual: { description: 'Accept the cookie banner', location: 'tests/cart.spec.ts:12', call: 'Click' },
+    });
+    const result = parseSteps(JSON.stringify(doc));
+    expect(result.ok && result.steps.steps[4]).toMatchObject({
+      action: 'manual',
+      value: null,
+      manual: { description: 'Accept the cookie banner', location: 'tests/cart.spec.ts:12', call: 'Click' },
+    });
+    const bare = valid();
+    bare.steps.push({ ...bare.steps[0]!, action: 'manual' });
+    expect(parseSteps(bare)).toEqual({ ok: false, errors: ['steps[4].manual: is required on a manual step'] });
+    const blank = valid();
+    blank.steps.push({
+      ...blank.steps[0]!,
+      action: 'manual',
+      manual: { description: ' ', location: null, call: null },
+    });
+    expect(parseSteps(blank)).toEqual({ ok: false, errors: ['steps[4].manual.description: must not be empty'] });
+  });
+
+  test('reads the newer matchers, a count being a whole number', () => {
+    const doc = valid();
+    const check = (matcher: string, expected: string | null) => ({
+      ...doc.steps[3]!,
+      assertion: { matcher, expected, actual: null, negated: false, note: null },
+    });
+    doc.steps.push(
+      check('toContainText', 'Saved') as never,
+      check('toHaveCount', '3') as never,
+      check('toBeChecked', 'ignored') as never,
+    );
+    const result = parseSteps(JSON.stringify(doc));
+    expect(result.ok && result.steps.steps.slice(4).map((s) => [s.assertion!.matcher, s.assertion!.expected])).toEqual([
+      ['toContainText', 'Saved'],
+      ['toHaveCount', '3'],
+      ['toBeChecked', null],
+    ]);
+    const notCount = valid();
+    notCount.steps.push(check('toHaveCount', 'three') as never);
+    expect(parseSteps(notCount)).toEqual({
+      ok: false,
+      errors: ['steps[4].assertion.expected: must be a whole number of elements on a toHaveCount assertion'],
+    });
+  });
+
   test('never keeps a redacted value', () => {
     const doc = valid();
     doc.steps[1] = { ...doc.steps[1]!, redacted: true, value: 'hunter2' };

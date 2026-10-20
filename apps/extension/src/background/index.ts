@@ -745,6 +745,7 @@ interface StartReplayMessage {
   inject?: unknown;
   startOn?: unknown;
   bugReportId?: unknown;
+  runFailedStep?: unknown;
   views?: unknown;
   recordingViews?: unknown;
   keepViews?: unknown;
@@ -773,7 +774,20 @@ async function startReplayNow(
         : null;
     const bugReportId =
       typeof message.bugReportId === 'number' && Number.isInteger(message.bugReportId) ? message.bugReportId : null;
-    const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage, bugReportId);
+    const failed = message.runFailedStep;
+    const runFailedStep =
+      typeof failed === 'number' && Number.isInteger(failed) && failed >= 0 && failed < parsed.steps.steps.length
+        ? failed
+        : null;
+    const replay = newReplayState(
+      parsed.steps,
+      origin,
+      message.stepMode === true,
+      Date.now(),
+      startPage,
+      bugReportId,
+      runFailedStep,
+    );
     // A replay under a request condition says so, while it runs and in its verdict.
     const conditions = await conditionsFor(tab, tab.url);
     await prepareReplayViews(message);

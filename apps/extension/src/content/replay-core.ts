@@ -17,6 +17,8 @@ export interface Observation {
   name: string | null;
   visible: boolean;
   enabled: boolean;
+  /** Whether the first element is checked: a checkbox, a radio, or an element whose role takes `aria-checked`. */
+  checked: boolean;
   /** The page's address. */
   url: string;
 }
@@ -56,9 +58,10 @@ export function quoted(text: string): string {
 function foundText(assertion: StepAssertion, o: Observation): string {
   if (assertion.matcher === 'toHaveURL') return o.url;
   if (o.count === 0) return t('replay_foundMissing');
-  if (o.count > 1) return tn('replay_foundCount', o.count);
+  if (o.count > 1 || assertion.matcher === 'toHaveCount') return countText(o.count);
   switch (assertion.matcher) {
     case 'toHaveText':
+    case 'toContainText':
       return quoted(normalizeText(o.text ?? ''));
     case 'toHaveValue':
       return quoted(o.value ?? '');
@@ -70,13 +73,22 @@ function foundText(assertion: StepAssertion, o: Observation): string {
     case 'toBeEnabled':
     case 'toBeDisabled':
       return o.enabled ? t('replay_foundEnabled') : t('replay_foundDisabled');
+    case 'toBeChecked':
+      return o.checked ? t('replay_foundChecked') : t('replay_foundUnchecked');
   }
+}
+
+/** How many elements a locator found, in words: `nothing on the page`, `3 elements`. */
+function countText(count: number): string {
+  return count === 0 ? t('replay_foundMissing') : tn('replay_foundCount', count);
 }
 
 /**
  * Whether an assertion holds on an observation, with Playwright's rules: text
- * and names compare whole after collapsing whitespace, values compare exactly,
- * a URL compares in full, and an element that is not there is hidden.
+ * and names compare whole after collapsing whitespace (`toContainText` finds
+ * its text inside), values compare exactly, a count counts every element the
+ * locator finds, a URL compares in full, and an element that is not there is
+ * hidden.
  */
 export function evaluateAssertion(
   assertion: StepAssertion,
@@ -89,6 +101,15 @@ export function evaluateAssertion(
   switch (assertion.matcher) {
     case 'toHaveText':
       positive = one && normalizeText(o.text ?? '') === normalizeText(expected);
+      break;
+    case 'toContainText':
+      positive = one && normalizeText(o.text ?? '').includes(normalizeText(expected));
+      break;
+    case 'toHaveCount':
+      positive = o.count === Number.parseInt(expected, 10);
+      break;
+    case 'toBeChecked':
+      positive = one && o.checked;
       break;
     case 'toHaveValue':
       positive = one && (o.value ?? '') === expected;
@@ -117,8 +138,10 @@ export function evaluateAssertion(
 
 export type ReplayVerdict =
   | { kind: 'reproduced'; step: number; found: string; sameAsReported: boolean }
-  | { kind: 'not-reproduced' }
-  | { kind: 'diverged'; step: number; reason: string }
+  /** `runStep` is the step the test failed at in its run, set when that step played here. */
+  | { kind: 'not-reproduced'; runStep?: number }
+  /** `asInRun` is set when the test failed at this same step in its run. */
+  | { kind: 'diverged'; step: number; reason: string; asInRun?: boolean }
   | { kind: 'completed' }
   /** `step` is the step it stopped before; null when the run gave none (the desktop app's). */
   | { kind: 'stopped'; step: number | null };
@@ -132,18 +155,31 @@ function foundAsReported(assertion: StepAssertion | undefined, found: string): b
   const actual = assertion?.actual;
   if (actual == null) return false;
   if (assertion!.matcher === 'toHaveURL') return found === absoluteUrl(actual, originOf(found));
+  if (assertion!.matcher === 'toHaveCount') return /^\d+$/.test(actual) && found === countText(Number(actual));
   return found === quoted(normalizeText(actual)) || found === actual;
 }
 
 /**
  * What a finished replay says. A step that could not be done means the page
- * differs here (diverged). Otherwise a bug report's expected result that does
- * not hold is the bug showing (reproduced), and every one holding means it did
- * not show. A recording with nothing expected just completed.
+ * differs here (diverged), or, at the step a report made from a test run
+ * failed at (`runFailedStep`), that it fails as it did in the run. Otherwise a
+ * bug report's expected result that does not hold is the bug showing
+ * (reproduced), and every one holding means it did not show, as does the
+ * run's failed step playing. A recording with nothing expected just completed.
  */
-export function replayVerdict(steps: RecordedStep[], results: ReplayStepResult[], stopped: boolean): ReplayVerdict {
+export function replayVerdict(
+  steps: RecordedStep[],
+  results: ReplayStepResult[],
+  stopped: boolean,
+  runFailedStep: number | null = null,
+): ReplayVerdict {
   const diverged = results.findIndex((r) => r?.status === 'diverged');
-  if (diverged >= 0) return { kind: 'diverged', step: diverged, reason: results[diverged]!.detail ?? '' };
+  if (diverged >= 0) {
+    const reason = results[diverged]!.detail ?? '';
+    return diverged === runFailedStep
+      ? { kind: 'diverged', step: diverged, reason, asInRun: true }
+      : { kind: 'diverged', step: diverged, reason };
+  }
   const failed = results.findIndex((r) => r?.status === 'failed');
   if (failed >= 0) {
     const found = results[failed]!.found ?? '';
@@ -151,6 +187,8 @@ export function replayVerdict(steps: RecordedStep[], results: ReplayStepResult[]
     return { kind: 'reproduced', step: failed, found, sameAsReported };
   }
   if (stopped) return { kind: 'stopped', step: results.length };
+  const runStep = runFailedStep == null ? undefined : results[runFailedStep]?.status;
+  if (runStep === 'done' || runStep === 'passed') return { kind: 'not-reproduced', runStep: runFailedStep! };
   return steps.some((s) => s.action === 'assert' || s.action === 'assertVisible')
     ? { kind: 'not-reproduced' }
     : { kind: 'completed' };
@@ -176,8 +214,20 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
       return { title: t('replay_verdictReproduced'), detail };
     }
     case 'not-reproduced':
-      return { title: t('replay_verdictNotReproduced'), detail: t('replay_verdictNotReproducedDetail') };
+      return {
+        title: t('replay_verdictNotReproduced'),
+        detail:
+          verdict.runStep == null
+            ? t('replay_verdictNotReproducedDetail')
+            : t('replay_verdictNotReproducedRun', { step: verdict.runStep + 1 }),
+      };
     case 'diverged':
+      if (verdict.asInRun) {
+        return {
+          title: t('replay_verdictFailedAsInRun', { step: verdict.step + 1 }),
+          detail: t('replay_verdictFailedAsInRunDetail', { reason: verdict.reason }),
+        };
+      }
       return {
         title: t('replay_verdictDiverged', { step: verdict.step + 1 }),
         detail: t('replay_verdictDivergedDetail', { reason: verdict.reason }),

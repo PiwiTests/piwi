@@ -21,6 +21,7 @@ import {
   type RecordedTarget,
   type StepAction,
   type StepAssertion,
+  type StepManual,
   type StepViewport,
 } from './recording';
 
@@ -68,6 +69,7 @@ const ACTIONS: ReadonlySet<StepAction> = new Set([
   'dragTo',
   'assertVisible',
   'assert',
+  'manual',
 ]);
 
 function originOf(url: string): string | null {
@@ -221,12 +223,29 @@ function checkAssertion(c: Checker, v: unknown, path: string): StepAssertion | u
     return undefined;
   }
   const expected = c.text(v.expected, `${path}.expected`, STEPS_LIMITS.valueLength, !VALUE_MATCHERS.has(matcher));
+  if (matcher === 'toHaveCount' && expected != null && !/^\d{1,6}$/.test(expected)) {
+    c.fail(`${path}.expected`, 'must be a whole number of elements on a toHaveCount assertion');
+  }
   return {
     matcher,
     expected: VALUE_MATCHERS.has(matcher) ? expected : null,
     actual: c.text(v.actual, `${path}.actual`, STEPS_LIMITS.valueLength, true),
     negated: v.negated === true,
     note: c.text(v.note, `${path}.note`, STEPS_LIMITS.valueLength, true),
+  };
+}
+
+function checkManual(c: Checker, v: unknown, path: string): StepManual | undefined {
+  if (!isObject(v)) {
+    c.fail(path, 'is required on a manual step');
+    return undefined;
+  }
+  const description = c.text(v.description, `${path}.description`, STEPS_LIMITS.valueLength, false);
+  if (description != null && !description.trim()) c.fail(`${path}.description`, 'must not be empty');
+  return {
+    description: description ?? '',
+    location: c.text(v.location, `${path}.location`, STEPS_LIMITS.textLength, true),
+    call: c.text(v.call, `${path}.call`, STEPS_LIMITS.textLength, true),
   };
 }
 
@@ -305,6 +324,9 @@ function checkStep(c: Checker, v: unknown, path: string): RecordedStep | null {
     step.assertion = { matcher: 'toBeVisible', expected: null, actual: null, negated: false, note: null };
   } else if (action === 'assert') {
     step.assertion = checkAssertion(c, v.assertion, `${path}.assertion`);
+  } else if (action === 'manual') {
+    step.value = null;
+    step.manual = checkManual(c, v.manual, `${path}.manual`);
   }
   return step;
 }

@@ -25,6 +25,7 @@ function seen(overrides: Partial<Observation> = {}): Observation {
     name: 'Total',
     visible: true,
     enabled: true,
+    checked: false,
     url: `${ORIGIN}/cart`,
     ...overrides,
   };
@@ -78,6 +79,44 @@ describe('evaluateAssertion', () => {
     expect(evaluateAssertion(expecting('toHaveURL', '/thanks'), seen(), ORIGIN)).toEqual({
       holds: false,
       found: `${ORIGIN}/cart`,
+    });
+  });
+
+  it('finds a text inside, counts every element, and checks a checked state', () => {
+    expect(evaluateAssertion(expecting('toContainText', 'Total'), seen(), ORIGIN)).toEqual({
+      holds: true,
+      found: '"Total: 40"',
+    });
+    expect(evaluateAssertion(expecting('toContainText', 'Total: 4 2'), seen(), ORIGIN).holds).toBe(false);
+    expect(evaluateAssertion(expecting('toHaveCount', '3'), seen({ count: 3 }), ORIGIN)).toEqual({
+      holds: true,
+      found: '3 elements',
+    });
+    expect(evaluateAssertion(expecting('toHaveCount', '3'), seen({ count: 1 }), ORIGIN)).toEqual({
+      holds: false,
+      found: '1 element',
+    });
+    expect(evaluateAssertion(expecting('toHaveCount', '0'), seen({ count: 0 }), ORIGIN)).toEqual({
+      holds: true,
+      found: 'nothing on the page',
+    });
+    expect(evaluateAssertion(expecting('toBeChecked'), seen(), ORIGIN)).toEqual({ holds: false, found: 'not checked' });
+    expect(evaluateAssertion(expecting('toBeChecked'), seen({ checked: true }), ORIGIN).holds).toBe(true);
+    expect(evaluateAssertion(expecting('toBeChecked', null, true), seen(), ORIGIN).holds).toBe(true);
+  });
+
+  it('says a count it found as reported when it is the count the report gives', () => {
+    const counted: RecordedStep = {
+      action: 'assert',
+      target: null,
+      value: null,
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 0,
+      assertion: { matcher: 'toHaveCount', expected: '3', actual: '1', negated: false, note: null },
+    };
+    expect(replayVerdict([counted], [{ status: 'failed', detail: null, found: '1 element' }], false)).toMatchObject({
+      sameAsReported: true,
     });
   });
 
@@ -194,6 +233,44 @@ describe('replayVerdict', () => {
     expect(replayVerdict([click, page], found(`${ORIGIN}/cart`), false)).toMatchObject({ sameAsReported: false });
   });
 
+  it('says a failure at the step the test failed at in its run is that failure, and a pass there is not', () => {
+    const diverged = replayVerdict(
+      [click, click],
+      [
+        { status: 'done', detail: null },
+        { status: 'diverged', detail: 'Nothing matches.' },
+      ],
+      false,
+      1,
+    );
+    expect(diverged).toEqual({ kind: 'diverged', step: 1, reason: 'Nothing matches.', asInRun: true });
+    expect(verdictText(diverged, [click, click])).toEqual({
+      title: 'Failed at step 2, as in the test run',
+      detail: 'Nothing matches. The test failed at this same step when it ran.',
+    });
+    expect(replayVerdict([click, click], [{ status: 'diverged', detail: 'x' }], false, 1)).toEqual({
+      kind: 'diverged',
+      step: 0,
+      reason: 'x',
+    });
+    const played = replayVerdict(
+      [click, click],
+      [
+        { status: 'done', detail: null },
+        { status: 'done', detail: null },
+      ],
+      false,
+      1,
+    );
+    expect(played).toEqual({ kind: 'not-reproduced', runStep: 1 });
+    expect(verdictText(played, [click, click]).detail).toBe('Step 2, where the test failed when it ran, played here.');
+    const byHand = [
+      { status: 'done' as const, detail: null },
+      { status: 'manual' as const, detail: null },
+    ];
+    expect(replayVerdict([click, click], byHand, false, 1)).toEqual({ kind: 'completed' });
+  });
+
   it('is stopped when the replay was stopped before the end', () => {
     expect(replayVerdict([click, check], [{ status: 'done', detail: null }], true)).toEqual({
       kind: 'stopped',
@@ -246,9 +323,29 @@ describe('readReportFile', () => {
     expect(await readReportFile('bug.piwibug', archive)).toEqual({
       steps: doc,
       views: [{ step: 1, dataUrl: 'data:image/jpeg;base64,/9j/', box: shot.box, viewport: shot.viewport }],
+      runFailedStep: null,
     });
     const json = new TextEncoder().encode(JSON.stringify(doc));
-    expect(await readReportFile('steps.json', json)).toEqual({ steps: doc, views: [] });
+    expect(await readReportFile('steps.json', json)).toEqual({ steps: doc, views: [], runFailedStep: null });
+  });
+
+  it('reads the step a report made from a test run failed at there, when the report has it', async () => {
+    const archive = (failedStep: unknown) =>
+      createZip([
+        { name: 'mimetype', data: BUG_REPORT_MEDIA_TYPE },
+        { name: 'steps.json', data: JSON.stringify(doc) },
+        {
+          name: 'evidence.json',
+          data: JSON.stringify({
+            v: 1,
+            context: {},
+            evidence: emptyBugEvidence(),
+            export: { source: 'execution', executionId: 7, testTitle: 'cart', failedStep, notes: [], notesDropped: 0 },
+          }),
+        },
+      ]);
+    expect((await readReportFile('bug.piwibug', archive(1))).runFailedStep).toBe(1);
+    expect((await readReportFile('bug.piwibug', archive(5))).runFailedStep).toBeNull();
   });
 
   /** The archive with its first entry marked as deflated, its bytes left as stored: data no inflater reads. */
@@ -273,7 +370,7 @@ describe('readReportFile', () => {
         { name: 'steps.json', data: JSON.stringify(doc) },
       ]),
     );
-    expect(await readReportFile('bug.zip', archive)).toEqual({ steps: doc, views: [] });
+    expect(await readReportFile('bug.zip', archive)).toEqual({ steps: doc, views: [], runFailedStep: null });
   });
 
   it('reads the steps alone when the evidence cannot be read or an image is missing', async () => {
@@ -286,7 +383,7 @@ describe('readReportFile', () => {
       { name: 'steps.json', data: JSON.stringify(doc) },
       { name: 'evidence.json', data: '{' },
     ]);
-    expect(await readReportFile('bug.zip', badEvidence)).toEqual({ steps: doc, views: [] });
+    expect(await readReportFile('bug.zip', badEvidence)).toEqual({ steps: doc, views: [], runFailedStep: null });
   });
 });
 

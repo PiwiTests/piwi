@@ -38,6 +38,8 @@ export const BUG_EVIDENCE_LIMITS = {
   outlineLines: 400,
   /** Characters kept of one console message. */
   messageLength: 500,
+  /** Calls of a test run a report made from it leaves out, listed in its `export` block. */
+  notes: 100,
 } as const;
 
 export interface BugConsoleEntry {
@@ -121,11 +123,38 @@ export interface BugContext {
   extensionVersion: string | null;
 }
 
+/** A call of a test run that a report made from the run leaves out, and why. */
+export interface BugReportNote {
+  /** The call as Playwright titles it, such as `POST /api/seed`. */
+  title: string;
+  /** Where it is in the test's source, `file:line`, when known. */
+  location: string | null;
+  reason: string;
+}
+
+/**
+ * Where a report made from a test run came from: the execution, the test, the
+ * step the test failed at in that run (an index into the steps, null when it
+ * failed elsewhere), and the calls of the test its steps leave out. Absent
+ * from a report recorded in a browser.
+ */
+export interface BugReportExport {
+  source: 'execution';
+  executionId: number | null;
+  testTitle: string | null;
+  failedStep: number | null;
+  notes: BugReportNote[];
+  /** Notes past the limit, counted but not kept. */
+  notesDropped: number;
+}
+
 export interface BugReport {
   v: typeof BUG_REPORT_VERSION;
   steps: PiwiSteps;
   evidence: BugEvidence;
   context: BugContext;
+  /** Set on a report made from a test run; see {@link BugReportExport}. */
+  export?: BugReportExport;
 }
 
 export function emptyBugEvidence(): BugEvidence {
@@ -308,6 +337,12 @@ function expectationOf(a: StepAssertion): BugExpectation {
       return { matcher: 'name', expected: line(expected) };
     case 'toHaveURL':
       return { matcher: 'url', expected };
+    case 'toContainText':
+      return { matcher: 'contains', expected: line(expected) };
+    case 'toHaveCount':
+      return { matcher: 'count', count: Number.parseInt(expected, 10) || 0 };
+    case 'toBeChecked':
+      return { matcher: 'state', state: 'checked' };
     case 'toBeHidden':
       return { matcher: 'state', state: 'hidden' };
     case 'toBeEnabled':
@@ -323,7 +358,7 @@ function expectationOf(a: StepAssertion): BugExpectation {
 export function describeExpectation(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
   const a = step.assertion;
   if (!a) return phrases.expectation(subjectOf(step.target), { matcher: 'state', state: 'visible' }, false);
-  const byText = a.matcher !== 'toHaveText' && a.matcher !== 'toHaveAccessibleName';
+  const byText = a.matcher !== 'toHaveText' && a.matcher !== 'toHaveAccessibleName' && a.matcher !== 'toContainText';
   return phrases.expectation(subjectOf(step.target, byText), expectationOf(a), !!a.negated);
 }
 
@@ -357,6 +392,8 @@ export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = EN
     case 'assertVisible':
     case 'assert':
       return phrases.capitalize(describeExpectation(step, phrases));
+    case 'manual':
+      return phrases.steps.manual(line(step.manual?.description ?? ''));
   }
 }
 
@@ -411,6 +448,7 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
   out.push(`## ${words.stepsHeading}`, '');
   if (doc.steps.length === 0) out.push(words.noSteps);
   const viewportAt = new Map((doc.viewports ?? []).map((v) => [v.step, v]));
+  const failedStep = report.export?.failedStep ?? null;
   doc.steps.forEach((step, i) => {
     out.push(`${i + 1}. ${describeStepInWords(step, phrases)}`);
     const viewport = viewportAt.get(i);
@@ -418,6 +456,13 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
     const a = step.action === 'assert' ? step.assertion : undefined;
     if (a?.actual != null && a.actual !== a.expected) out.push(`   - ${words.actual(phrases.quote(line(a.actual)))}`);
     if (a?.note?.trim()) out.push(`   - ${words.note(line(a.note))}`);
+    const manual = step.action === 'manual' ? step.manual : undefined;
+    if (manual?.call || manual?.location) {
+      out.push(
+        `   - ${[manual.call ? code(line(manual.call)) : null, manual.location ? code(manual.location) : null].filter(Boolean).join(' · ')}`,
+      );
+    }
+    if (i === failedStep) out.push(`   - ${words.failedInRun}`);
   });
   out.push('');
 
@@ -433,6 +478,16 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
     }
   }
   out.push('');
+
+  const notes = report.export?.notes ?? [];
+  if (notes.length > 0) {
+    out.push(`## ${words.notReplayedHeading}`, '', words.notReplayedNote, '');
+    for (const note of notes) {
+      const location = note.location ? code(note.location) : null;
+      out.push(`- ${words.notReplayedLine({ call: code(line(note.title)), location, reason: line(note.reason) })}`);
+    }
+    out.push('');
+  }
 
   out.push(`## ${words.evidenceHeading}`, '', summarizeEvidence(evidence, phrases), '');
   if (evidence.screenshots.length > 0) {
@@ -517,6 +572,35 @@ export function bugContextFrom(input: {
 }
 
 export type ParseBugReportResult = { ok: true; report: BugReport } | { ok: false; errors: string[] };
+
+function checkNote(v: unknown): BugReportNote | null {
+  if (!isRecord(v) || typeof v.title !== 'string' || typeof v.reason !== 'string') return null;
+  return {
+    title: v.title.slice(0, BUG_EVIDENCE_LIMITS.messageLength),
+    location: textOf(v.location, BUG_EVIDENCE_LIMITS.messageLength),
+    reason: v.reason.slice(0, BUG_EVIDENCE_LIMITS.messageLength),
+  };
+}
+
+/** A report's `export` block, field by field, its step a step the report has; none when it is not one. */
+function exportOf(v: unknown, stepCount: number): { export?: BugReportExport } {
+  if (!isRecord(v) || v.source !== 'execution') return {};
+  const id = v.executionId;
+  const step = v.failedStep;
+  const notes = Array.isArray(v.notes) ? v.notes : [];
+  const kept = listOf(notes, BUG_EVIDENCE_LIMITS.notes, checkNote);
+  return {
+    export: {
+      source: 'execution',
+      executionId: typeof id === 'number' && Number.isInteger(id) && id > 0 ? id : null,
+      testTitle: textOf(v.testTitle, BUG_EVIDENCE_LIMITS.messageLength),
+      failedStep: typeof step === 'number' && Number.isInteger(step) && step >= 0 && step < stepCount ? step : null,
+      notes: kept,
+      notesDropped:
+        Math.max(0, Math.floor(numberOf(v.notesDropped))) + Math.max(0, notes.length - BUG_EVIDENCE_LIMITS.notes),
+    },
+  };
+}
 
 const SCREENSHOT_FILE = /^screenshots\/[1-9]-(marked|finish|manual)\.png$/;
 
@@ -692,9 +776,43 @@ export function isBugReportArchive(bytes: Uint8Array): boolean {
   return true;
 }
 
+/** A file name made from the report's title, for its spec: `coupon-not-applied.spec.ts`. */
+export function bugSpecFileName(report: BugReport): string {
+  const slug = bugTitle(report)
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '');
+  return `${slug || 'bug'}.spec.ts`;
+}
+
+/**
+ * The text files of a report's archive, in their order: the media type first
+ * (to be stored without compression), the steps document, the failing test,
+ * the Markdown (`markdown`, or the report in English) and the evidence with
+ * the context and the `export` block. The screenshots follow them.
+ */
+export function bugReportTextFiles(report: BugReport, markdown?: string): Array<{ name: string; data: string }> {
+  const evidence = {
+    v: report.v,
+    context: report.context,
+    evidence: report.evidence,
+    ...(report.export ? { export: report.export } : {}),
+  };
+  return [
+    { name: BUG_REPORT_FILES.mediaType, data: BUG_REPORT_MEDIA_TYPE },
+    { name: BUG_REPORT_FILES.steps, data: `${JSON.stringify(report.steps, null, 2)}\n` },
+    { name: bugSpecFileName(report), data: renderBugSpec(report).code },
+    { name: BUG_REPORT_FILES.markdown, data: markdown ?? renderBugMarkdown(report) },
+    { name: BUG_REPORT_FILES.evidence, data: `${JSON.stringify(evidence, null, 2)}\n` },
+  ];
+}
+
 /**
  * Reads a bug report from the files of its archive: `steps.json`, and
- * `evidence.json` (`{ v, context, evidence }`), null when the archive has
+ * `evidence.json` (`{ v, context, evidence, export? }`), null when the archive has
  * none. Checked as {@link parseBugReport} checks a report.
  */
 export function bugReportFromFiles(files: { steps: string; evidence: string | null }): ParseBugReportResult {
@@ -718,6 +836,7 @@ export function bugReportFromFiles(files: { steps: string; evidence: string | nu
     steps,
     evidence: evidence.evidence,
     context: evidence.context,
+    export: evidence.export,
   });
 }
 
@@ -749,6 +868,7 @@ export function parseBugReport(input: unknown): ParseBugReportResult {
       steps: steps.steps,
       evidence: checkEvidence(value.evidence),
       context: checkContext(value.context),
+      ...exportOf(value.export, steps.steps.steps.length),
     },
   };
 }

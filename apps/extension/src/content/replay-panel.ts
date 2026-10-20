@@ -11,7 +11,7 @@ import {
   type StepView,
   type StepViewport,
 } from '@piwitests/core/recording';
-import { sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
+import { parseSteps, sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { getRecordingState, recordingMode } from '../shared/recording-storage.js';
 import {
@@ -186,9 +186,11 @@ function followedUrl(value: string): URL | null {
 /**
  * Whether the page is the one a step happened on, by page key (ids and tokens
  * aside). A replay started on the tab's own page takes that page for the first
- * recorded one, whatever their addresses.
+ * recorded one, whatever their addresses; a step whose page is not known
+ * (empty) happens on any.
  */
 function onPageOf(url: string, startPage: ReplayState['startPage']): boolean {
+  if (!url) return true;
   const here = pageKey(location.href);
   const there = pageKey(url);
   if (startPage && there === pageKey(startPage.recorded) && here === pageKey(startPage.actual)) return true;
@@ -229,6 +231,7 @@ async function startReplay(
   startOn: string | null,
   bugReportId: number | null = null,
   views: ReplayViews | null = null,
+  runFailedStep: number | null = null,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = (await chrome.runtime.sendMessage({
@@ -239,6 +242,7 @@ async function startReplay(
       inject: false,
       startOn,
       bugReportId,
+      runFailedStep,
       ...views,
     })) as { ok: boolean; error?: string } | undefined;
     return response ?? { ok: false, error: t('common_workerNoAnswer') };
@@ -675,7 +679,7 @@ async function finish(state: ReplayState, stopped: boolean): Promise<void> {
   );
   if (!final) return leaveReplay();
   const steps = sessionFromSteps(final.steps, final.origin).steps;
-  const verdict = replayVerdict(steps, final.results, stopped);
+  const verdict = replayVerdict(steps, final.results, stopped, final.runFailedStep ?? null);
   notifyFinished();
   renderHud(final, verdict, evidence);
   (globalThis as ReplayGlobals).__piwiReplayVerdict = verdict;
@@ -1406,6 +1410,14 @@ async function runReplay(): Promise<void> {
         continue;
       }
 
+      // A manual step of a report made from a test run: nothing plays it, the person does.
+      if (step.action === 'manual') {
+        const location = step.manual?.location;
+        const reason = location ? t('replay_reasonManualAt', { location }) : t('replay_reasonManual');
+        if (!(await playByHand(state, index, reason))) return;
+        continue;
+      }
+
       if (step.action === 'assert' || step.action === 'assertVisible') {
         if (state.stepMode) {
           const latest = await waitForNext(replayId, index);
@@ -1553,6 +1565,8 @@ function openChooser(lastReport: ChosenReport | null): void {
   let chosenReportId: number | null = null;
   /** Where the chosen report's step screenshots come from. */
   let chosenViews: ReplayViews | null = null;
+  /** In a report made from a test run, the step the test failed at there. */
+  let chosenRunFailedStep: number | null = null;
   /** Counts the reports asked for: an answer that comes after a later choice is left out. */
   let asked = 0;
   const summary = document.createElement('div');
@@ -1569,10 +1583,16 @@ function openChooser(lastReport: ChosenReport | null): void {
   startBox.type = 'checkbox';
   const startText = document.createElement('span');
   startLabel.append(startBox, startText);
-  const describe = (steps: PiwiSteps, reportId: number | null = null, views: ReplayViews | null = null) => {
+  const describe = (
+    steps: PiwiSteps,
+    reportId: number | null = null,
+    views: ReplayViews | null = null,
+    runFailedStep: number | null = null,
+  ) => {
     chosen = steps;
     chosenReportId = reportId;
     chosenViews = views;
+    chosenRunFailedStep = runFailedStep;
     const first = steps.steps[0];
     startLabel.hidden = first?.action !== 'goto';
     startBox.checked = false;
@@ -1606,8 +1626,8 @@ function openChooser(lastReport: ChosenReport | null): void {
       .arrayBuffer()
       .then((buffer) => readReportFile(picked.name, new Uint8Array(buffer)))
       .then(
-        ({ steps, views }) => {
-          if (ask === asked) describe(steps, null, { views });
+        ({ steps, views, runFailedStep }) => {
+          if (ask === asked) describe(steps, null, { views }, runFailedStep);
         },
         (e: unknown) => {
           if (ask !== asked) return;
@@ -1622,6 +1642,31 @@ function openChooser(lastReport: ChosenReport | null): void {
   fileLabel.style.marginTop = '10px';
   fileLabel.textContent = t('replay_chooseFile');
   panel.append(fileLabel, file);
+
+  // Steps copied as text, such as the steps of an execution copied from the dashboard.
+  const paste = document.createElement('details');
+  const pasteSummary = document.createElement('summary');
+  pasteSummary.className = 'sub';
+  pasteSummary.textContent = t('replay_pasteSteps');
+  const pasted = document.createElement('textarea');
+  pasted.rows = 4;
+  pasted.spellcheck = false;
+  pasted.setAttribute('aria-label', t('replay_pasteLabel'));
+  pasted.style.cssText =
+    'display:block;width:100%;box-sizing:border-box;margin:6px 0;font:11px ui-monospace,monospace;';
+  const usePasted = button(t('replay_pasteUse'), () => {
+    asked++;
+    reports.value = '';
+    file.value = '';
+    const parsed = parseSteps(pasted.value);
+    if (parsed.ok) return describe(parsed.steps);
+    chosen = null;
+    summary.textContent = '';
+    message.textContent = t('replay_pasteNotSteps', { error: parsed.errors[0] ?? '' });
+  });
+  paste.append(pasteSummary, pasted, usePasted);
+  paste.style.marginTop = '10px';
+  panel.appendChild(paste);
 
   // Connected, the bug reports of the project this tab maps to, read by the worker.
   const fromPiwi = document.createElement('div');
@@ -1697,15 +1742,17 @@ function openChooser(lastReport: ChosenReport | null): void {
       const steps = chosen;
       const startOn = !startLabel.hidden && startBox.checked ? location.href : null;
       start.disabled = true;
-      void startReplay(steps, stepBox.checked, startOn, chosenReportId, chosenViews).then((response) => {
-        if (!response.ok) {
-          start.disabled = false;
-          message.textContent = response.error ?? t('common_replayStartFailed');
-          return;
-        }
-        close();
-        void runReplay();
-      });
+      void startReplay(steps, stepBox.checked, startOn, chosenReportId, chosenViews, chosenRunFailedStep).then(
+        (response) => {
+          if (!response.ok) {
+            start.disabled = false;
+            message.textContent = response.error ?? t('common_replayStartFailed');
+            return;
+          }
+          close();
+          void runReplay();
+        },
+      );
     },
     'primary',
   );

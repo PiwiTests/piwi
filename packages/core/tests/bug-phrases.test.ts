@@ -77,6 +77,7 @@ function everyTemplate(): RecordedStep[] {
     step('setInputFiles', { target: coupon, value: 'a.png\nb.png' }),
     step('setInputFiles', { target: coupon, value: '' }),
     step('dragTo', { target: row, dropTarget: button }),
+    step('manual', { manual: { description: 'Accept the cookie banner', location: null, call: null } }),
   ];
 }
 

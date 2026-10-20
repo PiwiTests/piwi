@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
-import { bugContextFrom, bugReportFromFiles, isBugReportArchive } from '@piwitests/core/bug-report';
+import { bugContextFrom, bugReportFromFiles, bugSpecFileName, isBugReportArchive } from '@piwitests/core/bug-report';
 import { bugPhrases } from '@piwitests/core/bug-phrases';
 import {
   assembleBugReport,
@@ -8,7 +8,6 @@ import {
   bugReportEntries,
   bugReportMarkdown,
   NO_SCREENSHOT_TAKEN,
-  specFileName,
   stepViewIds,
   withoutStepShots,
 } from '../../src/content/bug-report-files.js';
@@ -105,7 +104,7 @@ describe('assembleBugReport', () => {
       'screenshots/2-finish.png',
     ]);
     expect(report.evidence.screenshotNote).toBeNull();
-    expect(specFileName(report)).toBe('coupon-not-applied.spec.ts');
+    expect(bugSpecFileName(report)).toBe('coupon-not-applied.spec.ts');
   });
 
   it('says why there is no screenshot', () => {
@@ -119,7 +118,7 @@ describe('assembleBugReport', () => {
       context,
     });
     expect(withNote.evidence.screenshotNote).toBe('no grant');
-    expect(specFileName(withNote)).toBe('bug-on-cart.spec.ts');
+    expect(bugSpecFileName(withNote)).toBe('bug-on-cart.spec.ts');
   });
 
   it('keeps the screenshot of each step the worker kept, named after the step, and leaves them out on request', () => {

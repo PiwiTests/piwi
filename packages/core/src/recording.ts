@@ -25,7 +25,8 @@ export type StepAction =
   | 'setInputFiles'
   | 'dragTo'
   | 'assertVisible'
-  | 'assert';
+  | 'assert'
+  | 'manual';
 
 /** The web-first assertions an `assert` step can state. */
 export type AssertionMatcher =
@@ -36,7 +37,10 @@ export type AssertionMatcher =
   | 'toBeHidden'
   | 'toBeEnabled'
   | 'toBeDisabled'
-  | 'toHaveURL';
+  | 'toHaveURL'
+  | 'toContainText'
+  | 'toHaveCount'
+  | 'toBeChecked';
 
 export const ASSERTION_MATCHERS: readonly AssertionMatcher[] = [
   'toHaveText',
@@ -47,6 +51,9 @@ export const ASSERTION_MATCHERS: readonly AssertionMatcher[] = [
   'toBeEnabled',
   'toBeDisabled',
   'toHaveURL',
+  'toContainText',
+  'toHaveCount',
+  'toBeChecked',
 ];
 
 /** Matchers that compare with an expected value; the others check a state. */
@@ -55,9 +62,15 @@ export const VALUE_MATCHERS: ReadonlySet<AssertionMatcher> = new Set([
   'toHaveValue',
   'toHaveAccessibleName',
   'toHaveURL',
+  'toContainText',
+  'toHaveCount',
 ]);
 
-/** What an `assert` step expects. `toHaveURL` checks the page and needs no target. */
+/**
+ * What an `assert` step expects. `toHaveURL` checks the page and needs no
+ * target; `toHaveCount` counts the elements its target's locator finds, and
+ * its expected value is a whole number written as text (`"3"`).
+ */
 export interface StepAssertion {
   matcher: AssertionMatcher;
   /** The value the page should show: set for `VALUE_MATCHERS`, null for a state matcher. */
@@ -101,6 +114,21 @@ export interface RecordedTarget {
   elementKey?: string | null;
 }
 
+/**
+ * A step nothing can play: a person does it by hand from its description. A
+ * steps document made from a test run holds one for each call Replay and the
+ * spec cannot perform (a raw mouse move, a regex expectation, a value the run
+ * kept only in part).
+ */
+export interface StepManual {
+  /** What to do, in words. */
+  description: string;
+  /** Where the step is in the test's source, `file:line`, when known. */
+  location: string | null;
+  /** The Playwright call or step title it stands for, when known. */
+  call: string | null;
+}
+
 /** A box on the page, in CSS pixels from the viewport's top left corner. */
 export interface ViewportBox {
   x: number;
@@ -131,12 +159,15 @@ export interface RecordedStep {
   value: string | null;
   /** True when `value` was stripped because the source field was `type="password"` — codegen emits a placeholder instead. */
   redacted: boolean;
+  /** The page the step happened on; empty when it is not known (a step made from a test run, after an action that may have left the page). */
   pageUrl: string;
   timestamp: number;
   /** Set on `assert` steps only. */
   assertion?: StepAssertion;
   /** Where a `dragTo` step drops what it drags; set on `dragTo` steps only. */
   dropTarget?: RecordedTarget | null;
+  /** What a `manual` step asks a person to do; set on `manual` steps only. */
+  manual?: StepManual;
   /** The page as the step began, in a bug recording; see {@link StepView}. */
   view?: StepView;
 }
