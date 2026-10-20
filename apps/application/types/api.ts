@@ -402,6 +402,8 @@ export interface ProjectWithTestRuns {
   /** The project's setting, else its most common run branch, else `main`: what a run scope reads with no branch picked. */
   effectiveDefaultBranch?: string;
   openApiUrl?: string | null;
+  /** Link to a test in the team's test management tool, `{id}` replaced by the test's external ID. */
+  externalIdUrl?: string | null;
   serverProbes?: import('#shared/server-probes').ServerProbeSettings | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
@@ -541,6 +543,8 @@ export interface TestRunDetails {
     label?: string | null;
     latestRunId?: number | null;
     latestRunStatus?: string | null;
+    /** Link to a test in the team's test management tool, `{id}` replaced by the test's external ID. */
+    externalIdUrl?: string | null;
   };
   reports?: ReportInfo[];
   testCases?: TestCaseResult[];
@@ -1111,10 +1115,12 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   /** The latest occurrence's headline, the page's heading when it says more than the cluster's name. */
   latestHeadline: ClusterLatestHeadline | null;
   diagnosis: DiagnosisCompact | null;
-  project: { id: number; name: string; label: string | null } | null;
+  project: { id: number; name: string; label: string | null; externalIdUrl?: string | null } | null;
   affectedTestCases: Array<{
     testCaseId: number;
     title: string;
+    externalId?: string | null;
+    displayTitle?: string | null;
     filePath: string;
     /** The test's `piwi:owner` annotation, when it declares one. */
     owner?: string | null;

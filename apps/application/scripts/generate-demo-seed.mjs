@@ -168,6 +168,8 @@ const PROJECTS = [
     updated_at: ts('2025-04-25T08:30:00'),
     // Targets the checkout suite misses, so the demo report has missed targets in its risks.
     targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
+    // The checkout tests' IDs (`demoExternalId`) open in the demo's test management tool.
+    external_id_url: 'https://tcm.example.com/case/{id}',
   },
   {
     id: 2,

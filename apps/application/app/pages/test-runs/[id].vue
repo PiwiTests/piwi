@@ -24,6 +24,7 @@ if (testRunError.value) showPageLoadError(testRunError.value, 'test run');
 
 // Lightweight poll for latest run info — avoids reloading full page data on run events
 const projectId = testRun.value?.projectId;
+provideExternalIdUrl(() => testRun.value?.project?.externalIdUrl);
 type LatestRunInfo = { id: number; status: string } | null;
 const { data: latestRunInfo, refresh: refreshLatestRun } = projectId
   ? await useFetch<LatestRunInfo>(`/api/projects/${projectId}/latest-run`, { key: `latest-run-${projectId}` })

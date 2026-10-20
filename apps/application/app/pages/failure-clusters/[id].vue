@@ -57,6 +57,7 @@ const {
 } = await useFetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`);
 if (clusterError.value) showPageLoadError(clusterError.value, 'failure cluster');
 const clusterProjectId = computed(() => cluster.value?.project?.id ?? null);
+provideExternalIdUrl(() => cluster.value?.project?.externalIdUrl);
 const canTriage = computed(() => can('triage:write', clusterProjectId.value));
 const canQuarantine = computed(() => can('quarantine:write', clusterProjectId.value));
 const canRerun = computed(() => can('run:control', clusterProjectId.value));

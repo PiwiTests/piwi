@@ -18,6 +18,7 @@ if (testCaseError.value) showPageLoadError(testCaseError.value, 'test');
 const { data: historyData } = await useFetch(`/api/test-cases/${testCaseId}/history`, {
   transform: (r: { items: TestCaseHistoryPoint[] }) => r.items,
 });
+provideExternalIdUrl(() => testCase.value?.project?.externalIdUrl);
 
 // Project timeline markers, overlaid on the history chart for context.
 const historyMarkers = ref<MarkerInfo[]>([]);

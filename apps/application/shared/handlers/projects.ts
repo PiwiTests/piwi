@@ -1,3 +1,4 @@
+import { INVALID_EXTERNAL_ID_URL, normalizeExternalIdUrl } from '#shared/external-id-link';
 import {
   projects,
   testRuns,
@@ -447,6 +448,8 @@ export async function updateProject(
     repositoryUrl?: string | null;
     defaultBranch?: string | null;
     openApiUrl?: string | null;
+    /** Link to a test in the team's test management tool, holding `{id}`; null or '' removes it. */
+    externalIdUrl?: string | null;
     serverProbes?: unknown;
     ciRerun?: unknown;
     /** Whether a quarantined failure turns the run's commit status red. */
@@ -476,6 +479,7 @@ export async function updateProject(
     repositoryUrl,
     defaultBranch,
     openApiUrl,
+    externalIdUrl,
     serverProbes,
     ciRerun,
     quarantineFailsStatus,
@@ -486,6 +490,8 @@ export async function updateProject(
     coverageAreas,
     tagIds: dataTagIds,
   } = data;
+  const linkTemplate = externalIdUrl === undefined ? undefined : normalizeExternalIdUrl(externalIdUrl);
+  if (externalIdUrl !== undefined && linkTemplate === undefined) throw new Error(INVALID_EXTERNAL_ID_URL);
   // null or '' clears the repository; any other value must name one.
   const repository =
     repositoryUrl === undefined ? undefined : repositoryUrl?.trim() ? repositoryUrlFromRemote(repositoryUrl) : null;
@@ -517,6 +523,7 @@ export async function updateProject(
         repositoryUrl: repository,
         defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
+        externalIdUrl: linkTemplate,
         serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
         ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
         quarantineFailsStatus,

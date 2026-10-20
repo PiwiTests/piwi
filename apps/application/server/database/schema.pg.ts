@@ -56,6 +56,7 @@ export const projects = pgTable(
     repositoryUrl: text('repository_url'), // The repository every SCM call of the project reads (normalized https URL); pinned by the first run that names one, changed by a project admin
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
     openApiUrl: text('openapi_url'), // Declared-surface OpenAPI document URL; fetched server-side into graph route nodes with origin 'openapi'
+    externalIdUrl: text('external_id_url'), // link to a test in the team's test management tool, `{id}` replaced by its external ID; null = no link
     serverProbes: jsonb('server_probes'), // ServerProbeSettings — the level-two probe gate (enabled, allow-listed faults/routes); off by default
     routeOrigins: jsonb('route_origins'), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)

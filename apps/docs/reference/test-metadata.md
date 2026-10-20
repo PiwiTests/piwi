@@ -225,8 +225,11 @@ reporter: [
   if they had none, until each has its own. The same test in several Playwright projects is one test, not a duplicate.
   With `--shard`, each shard only sees its own tests: the dashboard also checks across shards and lists what it finds
   on the run page.
-- The ID shows before the title in the test lists, and on the test's page; click it to copy it. Search for it with
-  `id:` ([test search](/reference/test-search)).
+- The ID shows before the title in the test lists, on the test's page and on the execution page; click it to copy
+  it. Search for it with `id:` ([test search](/reference/test-search)).
+- **Test ID link:** in the project's settings (General), give the address of a test in your test management tool,
+  with `{id}` where the ID goes (`https://tcm.example.com/case/{id}`). The ID chip then opens the test there.
+- Pull-request comments, notifications and exports name a test by its ID and title: `12526 · Log in with Email`.
 
 ### Expected failures (`test.fail()`)
 

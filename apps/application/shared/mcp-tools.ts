@@ -329,7 +329,7 @@ export const MCP_TOOL_DEFS = [
     name: 'search_test_cases',
     module: 'core',
     description:
-      "Search test cases by title or file path within a project. Accepts a free-text query and returns matching test cases with basic stats. Use this to find a test case when you don't know its ID.",
+      "Search test cases by title or file path within a project, or by the external ID they have in the team's test management tool (whole value). Accepts a free-text query and returns matching test cases with basic stats. Use this to find a test case when you don't know its ID.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1757,6 +1757,8 @@ export type DesktopMcpToolName = (typeof DESKTOP_MCP_TOOL_DEFS)[number]['name'];
 export interface McpFlakyTestItem {
   testCaseId: number;
   title: string;
+  /** The ID the test has in the team's test management tool, when it declares one. */
+  externalId?: string;
   filePath: string;
   /** Tags declared on the test, `@` stripped. */
   tags?: string[];

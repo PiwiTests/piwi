@@ -22,6 +22,8 @@ interface QuarantineEntry {
   id: number;
   testCaseId: number;
   title: string;
+  externalId?: string | null;
+  displayTitle?: string | null;
   filePath: string;
   reason: string | null;
   source: string;
@@ -144,6 +146,8 @@ async function release(testCaseId: number) {
             :key="entry.id"
             :href="`/test-cases/${entry.testCaseId}`"
             :title="entry.title"
+            :display-title="entry.displayTitle"
+            :external-id="entry.externalId"
             status="quarantined"
             icon="i-lucide-shield-alert"
             icon-class="text-amber-600 dark:text-amber-400"

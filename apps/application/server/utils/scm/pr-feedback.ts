@@ -15,6 +15,7 @@
  * verification) runs for every finished run, posted or not
  * (`analyzeFinishedRunInBackground`); the posting reads its result.
  */
+import { testTextLabel } from '#shared/utils/test-label';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
 import {
   bugReports,
@@ -102,6 +103,8 @@ interface CaseRow {
   error: string | null;
   failureClusterId: number | null;
   title: string;
+  externalId: string | null;
+  displayTitle: string | null;
   filePath: string;
   tags: unknown;
   owner: string | null;
@@ -154,7 +157,7 @@ async function buildFailureEntries(
     const heal = row.failureClusterId != null ? healByCluster.get(row.failureClusterId) : undefined;
     const issue = row.failureClusterId != null ? knownIssues.get(row.failureClusterId) : undefined;
     return {
-      title: row.title,
+      title: testTextLabel(row),
       filePath: row.filePath,
       headline: caseHeadline(row)?.headline ?? null,
       errorExcerpt: errorExcerpt(row.error, PR_EXCERPT_MAX) ?? null,
@@ -209,6 +212,8 @@ export async function buildRunPrSummary(
       error: testRunsCases.error,
       failureClusterId: testRunsCases.failureClusterId,
       title: testCases.title,
+      externalId: testCases.externalId,
+      displayTitle: testCases.displayTitle,
       filePath: testCases.filePath,
       tags: testCases.tags,
       owner: testCases.owner,
@@ -310,7 +315,7 @@ export async function buildRunPrSummary(
     looksFixed: looksFixedRows.map((row) => {
       const bug = Number((row.testMeta as TestMetadata | null)?.bug) || null;
       return {
-        title: row.title,
+        title: testTextLabel(row),
         filePath: row.filePath,
         executionId: row.id,
         bugId: bug,
@@ -318,7 +323,7 @@ export async function buildRunPrSummary(
       };
     }),
     flaky: flakyRows.map((row) => ({
-      title: row.title,
+      title: testTextLabel(row),
       filePath: row.filePath,
       errorExcerpt: null,
       executionId: row.id,
