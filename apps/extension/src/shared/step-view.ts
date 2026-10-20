@@ -155,7 +155,7 @@ export const STEP_CSS = `
   .piwi-step-badge[data-kind="input"] { --piwi-kind: var(--piwi-input); }
   .piwi-step-badge[data-kind="assert"] { --piwi-kind: var(--piwi-assert); }
   .piwi-step-badge[data-kind="manual"] { --piwi-kind: var(--piwi-manual); }
-  .piwi-step-badge .piwi-icon { width: 13px; height: 13px; }
+  .piwi-step-badge .piwi-icon { width: 14px; height: 14px; }
   .piwi-step-words { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; padding-top: 1px; }
   .piwi-name { color: var(--piwi-name); font-weight: 600; }
   .piwi-value { color: var(--piwi-value); font-weight: 600; }

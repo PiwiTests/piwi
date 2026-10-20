@@ -124,7 +124,7 @@ const STYLE = `
   .step .piwi-step-badge { width: 18px; height: 18px; }
   .step .piwi-step-badge .piwi-icon { width: 12px; height: 12px; }
   .status { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 18px; flex-shrink: 0; color: #9ca3af; }
-  .status .piwi-icon { width: 13px; height: 13px; }
+  .status .piwi-icon { width: 14px; height: 14px; }
   .status[data-state="pending"] .piwi-icon { width: 8px; height: 8px; opacity: .6; }
   .status[data-state="current"] { color: #a78bfa; }
   .status[data-state="ok"] { color: #34d399; }
@@ -152,10 +152,10 @@ const STYLE = `
   .verdict.reproduced { --verdict: #f87171; }
   .verdict.not-reproduced { --verdict: #34d399; }
   .verdict.diverged, .verdict.stopped { --verdict: #fbbf24; }
-  .verdict .title { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .verdict .title { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; line-height: 20px; }
   .verdict .title .piwi-icon { color: var(--verdict); }
-  .box > .head { display: flex; align-items: center; gap: 6px; }
-  .box > .head .piwi-icon { width: 15px; height: 15px; color: #a78bfa; }
+  .box > .head { display: flex; align-items: center; gap: 6px; line-height: 20px; }
+  .box > .head .piwi-icon { color: #a78bfa; }
   .seen, .share { margin-top: 8px; }
   .share { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .message { color: #fca5a5; font-size: 12px; margin-top: 6px; }

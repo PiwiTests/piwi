@@ -84,16 +84,16 @@ export const BUTTON_CSS = `
     min-height: 28px; padding: 4px 11px; border-radius: 7px;
     border: 1px solid var(--piwi-btn-border); background: var(--piwi-btn-bg); color: inherit;
     font: inherit; font-size: 12px; font-weight: 500; line-height: 1.25; text-align: start;
-    cursor: pointer; text-decoration: none; overflow-wrap: anywhere;
+    cursor: pointer; text-decoration: none; overflow-wrap: break-word;
     transition: background-color .12s ease, border-color .12s ease, color .12s ease;
   }
   .piwi-btn:hover { background: var(--piwi-btn-hover-bg); border-color: var(--piwi-btn-hover-border); }
   .piwi-btn:focus-visible { outline: 2px solid var(--piwi-btn-focus); outline-offset: 1px; }
   .piwi-btn:disabled { opacity: .5; cursor: default; }
   .piwi-btn:disabled:hover { background: var(--piwi-btn-bg); border-color: var(--piwi-btn-border); }
-  .piwi-btn > .piwi-icon { width: 15px; height: 15px; color: var(--piwi-btn-icon); }
+  .piwi-btn > .piwi-icon { width: 16px; height: 16px; color: var(--piwi-btn-icon); }
   .piwi-btn[data-size="sm"] { min-height: 24px; padding: 2px 8px; font-size: 11.5px; gap: 5px; border-radius: 6px; }
-  .piwi-btn[data-size="sm"] > .piwi-icon { width: 13px; height: 13px; }
+  .piwi-btn[data-size="sm"] > .piwi-icon { width: 14px; height: 14px; }
   .piwi-btn[data-icon-only] { padding: 0; width: 28px; flex-shrink: 0; }
   .piwi-btn[data-icon-only][data-size="sm"] { width: 24px; }
   .piwi-btn[aria-pressed="true"] { background: var(--piwi-btn-pressed-bg); border-color: var(--piwi-btn-pressed-border); }

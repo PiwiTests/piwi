@@ -716,8 +716,10 @@ found by its icon and its color before its words are read, and a step reads at a
 
 - **Every button has an icon** from `src/shared/icons.ts` (`ICONS`: outline glyphs on a 24 × 24 grid, drawn in
   `currentColor`, built as DOM so no page's policy can block them) in front of its label. An icon-only button (a
-  panel's close ×) carries its label as `aria-label` and tooltip. A new icon goes into `ICONS` in the same style;
-  never SVG markup written elsewhere, an icon font or an image.
+  panel's close ×) carries its label as `aria-label` and tooltip. A new icon goes into `ICONS` in the same style,
+  its box centered on the grid (`icons.spec.ts` measures every glyph); never SVG markup written elsewhere, an icon font
+  or an image. An icon lands on whole pixels: its size is even (16 in a button, 14 in a small one and in a step badge)
+  and so is what is left of its box around it, a row it sits in with text having a line height in whole pixels.
 - **A button is made by `makeButton(label, onClick, { icon, tone, small, iconOnly, title, className })`**, or given
   the same look by `styleButton` when made elsewhere (a link included), from `src/shared/buttons.ts`, and styled by
   `BUTTON_CSS` in the panel's `<style>`: a panel does not style its own buttons. An HTML page names the icon in

@@ -43,7 +43,7 @@ const SEND_CSS = `
   details { margin-top: 8px; font-size: 12px; }
   details pre { max-height: 220px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
     background: rgba(128,128,128,.1); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; }
-  .done { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; margin-top: 10px; }
+  .done { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; line-height: 20px; margin-top: 10px; }
   .done > .piwi-icon { color: #34d399; }
   @media (prefers-color-scheme: light) { .done > .piwi-icon { color: #047857; } }
 `;
