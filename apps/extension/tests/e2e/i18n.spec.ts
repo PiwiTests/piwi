@@ -221,7 +221,7 @@ test.describe('in a French browser', () => {
     await expect(page.locator('#mappings .empty-mappings')).toHaveText(
       'Aucune ligne pour l’instant : ajoutez-en une ci-dessous.',
     );
-    await page.getByRole('button', { name: '+ Ajouter une ligne' }).click();
+    await page.getByRole('button', { name: 'Ajouter une ligne' }).click();
     await expect(page.getByRole('textbox', { name: 'Motif d’adresse' })).toHaveAttribute(
       'placeholder',
       'https://boutique.exemple.fr/**',

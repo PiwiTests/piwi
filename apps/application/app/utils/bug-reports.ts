@@ -44,18 +44,6 @@ export function reproductionPlace(origin: string | null): string | null {
   }
 }
 
-/** A sentence from core's phrasebook split at its Markdown code spans, so a page renders them as code. */
-export function codeSpanParts(text: string): Array<{ code: boolean; text: string }> {
-  return text
-    .split(/(`[^`]*`)/)
-    .filter(Boolean)
-    .map((part) =>
-      part.length > 1 && part.startsWith('`') && part.endsWith('`')
-        ? { code: true, text: part.slice(1, -1) }
-        : { code: false, text: part },
-    );
-}
-
 export function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }

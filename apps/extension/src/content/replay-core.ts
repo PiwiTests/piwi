@@ -1,5 +1,6 @@
 import type { RecordedStep, StepAssertion } from '@piwitests/core/recording';
 import { t, tn } from '../shared/i18n.js';
+import type { IconName } from '../shared/icons.js';
 import type { ReplayEvidence, ReplayState, ReplayStepResult } from '../shared/replay-storage.js';
 
 /**
@@ -245,22 +246,35 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
   }
 }
 
-/** The mark before a step in the replay's lists: where it is, or how it went. */
-export function stepGlyph(result: ReplayStepResult | undefined, current: boolean): string {
-  if (current) return '▸';
+/** The icon in front of a verdict's title. */
+export const VERDICT_ICONS: Record<ReplayVerdict['kind'], IconName> = {
+  reproduced: 'bug',
+  'not-reproduced': 'check-circle',
+  diverged: 'alert',
+  completed: 'check-circle',
+  stopped: 'stop',
+};
+
+/** A step's state in the replay's list, as an icon and the color it takes (`data-state`). */
+export function stepStatus(
+  result: ReplayStepResult | undefined,
+  current: boolean,
+): { icon: IconName; state: 'current' | 'ok' | 'failed' | 'diverged' | 'skipped' | 'pending' } {
+  if (current) return { icon: 'play', state: 'current' };
   switch (result?.status) {
     case 'done':
     case 'passed':
+      return { icon: 'check', state: 'ok' };
     case 'manual':
-      return '✓';
+      return { icon: 'hand', state: 'ok' };
     case 'failed':
-      return '✗';
+      return { icon: 'close', state: 'failed' };
     case 'diverged':
-      return '!';
+      return { icon: 'alert', state: 'diverged' };
     case 'skipped':
-      return '–';
+      return { icon: 'skip', state: 'skipped' };
     default:
-      return '·';
+      return { icon: 'dot', state: 'pending' };
   }
 }
 

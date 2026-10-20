@@ -6,6 +6,7 @@ import {
   expect,
   expectText,
   finished,
+  nodeText,
   panelNode,
   replayState,
   startReplay,
@@ -162,8 +163,7 @@ test('a handed-over step the person does by opening a new tab takes the replay t
   await page.getByTestId('link').click();
   const next = await opened;
   // The new tab draws the hand-over once its page is ready.
-  const doneButton = (node: DomNode) =>
-    node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === 'I did it, continue');
+  const doneButton = (node: DomNode) => node.nodeName === 'BUTTON' && nodeText(node) === 'I did it, continue';
   await expect.poll(() => panelNode(next, doneButton), { timeout: 20_000 }).not.toBeNull();
   await clickInShadow(next, 'I did it, continue');
 

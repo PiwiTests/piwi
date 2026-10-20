@@ -4,30 +4,50 @@
     <meta charset="utf-8" />
     <title data-i18n="login_title">Save login for tests</title>
     <style>
+      /* An element with the `hidden` attribute is hidden, whatever `display` a rule below gives it. */
+      [hidden] {
+        display: none !important;
+      }
       :root {
         color-scheme: light dark;
         --bg: #ffffff;
+        --surface: #f9fafb;
         --fg: #111827;
         --muted: #6b7280;
         --border: #e5e7eb;
         --accent: #7c3aed;
+        --accent-hover: #6d28d9;
+        --accent-fg: #6d28d9;
+        --success: #16a34a;
+        --error: #dc2626;
         --warn-bg: #fffbeb;
         --warn-border: #f59e0b;
+        --warn-fg: #b45309;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
       @media (prefers-color-scheme: dark) {
         :root {
           --bg: #111827;
+          --surface: #1f2937;
           --fg: #f9fafb;
           --muted: #9ca3af;
           --border: #374151;
+          --accent-fg: #c4b5fd;
+          --success: #4ade80;
+          --error: #f87171;
           --warn-bg: rgba(245, 158, 11, 0.12);
+          --warn-fg: #fbbf24;
         }
       }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--fg);
-        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        font:
+          14px/1.5 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
       }
       main {
         max-width: 640px;
@@ -35,44 +55,158 @@
         padding: 0 16px;
       }
       h1 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         font-size: 20px;
       }
+      h1 > .piwi-icon {
+        box-sizing: content-box;
+        width: 18px;
+        height: 18px;
+        padding: 6px;
+        border-radius: 9px;
+        color: var(--accent-fg);
+        background: color-mix(in srgb, var(--accent) 13%, transparent);
+      }
+      h2 {
+        margin-top: 32px;
+        font-size: 16px;
+      }
+      /* The site whose login is saved, on its chip. */
+      #site .piwi-url {
+        font-size: 13px;
+        padding: 1px 7px;
+      }
       .warning {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        line-height: 20px;
         background: var(--warn-bg);
         border: 1px solid var(--warn-border);
         border-radius: 8px;
         padding: 10px 12px;
       }
-      pre {
-        background: rgba(128, 128, 128, 0.1);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 10px 12px;
-        overflow: auto;
-        font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+      .warning > .piwi-icon {
+        width: 16px;
+        height: 16px;
+        margin-top: 2px;
+        color: var(--warn-fg);
       }
+      /* A path or a file name in a sentence: a chip in the monospace type. */
+      p code {
+        font-family: var(--mono);
+        font-size: 0.9em;
+        padding: 1px 5px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .code-box {
+        position: relative;
+      }
+      pre {
+        margin: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px 14px;
+        overflow: auto;
+        font:
+          12.5px/1.55 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      .code-box button {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+      }
+      /* Buttons: the icon before the label, in the accent color; primary (violet) for the page's one action. A line
+         height of the icon's parity keeps the icon on whole pixels. */
       button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 18px;
         color: inherit;
-        background: rgba(128, 128, 128, 0.12);
-        border: 1px solid rgba(128, 128, 128, 0.35);
-        border-radius: 6px;
-        padding: 4px 10px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 5px 11px;
         cursor: pointer;
+        transition:
+          background-color 0.12s ease,
+          border-color 0.12s ease;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      /* A click lands on the button itself, never on its icon or its label. */
+      button > * {
+        pointer-events: none;
+      }
+      button > .piwi-icon {
+        width: 14px;
+        height: 14px;
+        color: var(--accent-fg);
+      }
+      button[data-flash='ok'] > .piwi-icon {
+        color: var(--success);
+      }
+      button[data-flash='fail'] > .piwi-icon {
+        color: var(--error);
       }
       button.primary {
+        gap: 8px;
         background: var(--accent);
         border-color: var(--accent);
         color: #fff;
-        padding: 7px 16px;
+        font-size: 14px;
+        line-height: 20px;
+        padding: 8px 18px;
+      }
+      button.primary:hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+      }
+      button.primary > .piwi-icon {
+        width: 16px;
+        height: 16px;
+        color: currentColor;
       }
       button:disabled {
         opacity: 0.5;
         cursor: default;
       }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      /* Whether the file was saved: an icon, and the color of how it went. */
       #status {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
         margin-top: 10px;
-        min-height: 1.5em;
+        min-height: 20px;
+        line-height: 20px;
+      }
+      #status > .piwi-icon {
+        width: 16px;
+        height: 16px;
+        margin-top: 2px;
+      }
+      #status.ok {
+        color: var(--success);
+      }
+      #status.error {
+        color: var(--error);
       }
       .row {
         display: flex;
@@ -84,13 +218,13 @@
   </head>
   <body>
     <main>
-      <h1 data-i18n="login_title">Save login for tests</h1>
+      <h1 data-i18n="login_title" data-icon="login">Save login for tests</h1>
       <p id="site"></p>
       <p data-i18n="login_holds">
         The file holds this browser’s cookies for the site, httpOnly ones included, and the site’s localStorage, in
         Playwright’s storageState format. IndexedDB is left out.
       </p>
-      <p class="warning" role="note" data-i18n="login_warning">
+      <p class="warning" role="note" data-i18n="login_warning" data-icon="alert">
         Anyone with this file is logged in as you until the session expires. Use a test account, and keep the file out
         of your repository.
       </p>
@@ -98,14 +232,22 @@
         Save it as <code data-i18n-slot="path">playwright/.auth/user.json</code> and add
         <code data-i18n-slot="folder">playwright/.auth</code> to <code data-i18n-slot="file">.gitignore</code>.
       </p>
-      <p><button type="button" id="copy-gitignore" data-i18n="login_copyGitignore">Copy the .gitignore line</button></p>
+      <p>
+        <button type="button" id="copy-gitignore" data-i18n="login_copyGitignore" data-icon="copy">
+          Copy the .gitignore line
+        </button>
+      </p>
       <p class="row">
-        <button type="button" id="save" class="primary" data-i18n="login_save">Save login file</button>
+        <button type="button" id="save" class="primary" data-i18n="login_save" data-icon="download">
+          Save login file
+        </button>
       </p>
       <p id="status" role="status"></p>
       <h2 data-i18n="login_setupTitle">Use it in a test</h2>
-      <pre id="snippet"></pre>
-      <button type="button" id="copy-snippet" data-i18n="login_copySnippet">Copy the code</button>
+      <div class="code-box">
+        <pre id="snippet"></pre>
+        <button type="button" id="copy-snippet" data-i18n="login_copySnippet" data-icon="copy">Copy the code</button>
+      </div>
     </main>
     <script type="module" src="src/login/main.ts"></script>
   </body>

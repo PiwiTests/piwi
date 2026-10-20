@@ -562,7 +562,7 @@
     "message": "Les sites renvoient aux projets de votre instance : connectez-vous d’abord."
   },
   "options_addMapping": {
-    "message": "+ Ajouter une ligne"
+    "message": "Ajouter une ligne"
   },
   "options_noMappings": {
     "message": "Aucune ligne pour l’instant : ajoutez-en une ci-dessous."
@@ -1229,7 +1229,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Repéré par sa position (nth) : il casse si l’ordre de la liste change"
+    "message": "Repéré par sa position (nth) : il casse si l’ordre de la liste change"
   },
   "lint_dialog": {
     "message": "Contrôle : éléments difficiles à cibler"

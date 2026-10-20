@@ -25,6 +25,11 @@ export async function sendToEditor(payload: EditorSendPayload): Promise<SendToEd
 /** A Send to editor button's feedback: its label for a moment, and the reason in its tooltip on failure. */
 export function showSendResult(btn: HTMLButtonElement, result: SendToEditorResult): void {
   // A second click meanwhile restarts the feedback, and the label still goes back to the button's own.
-  flashLabel(btn, result.ok ? t('common_sentToEditor') : t('common_sendToEditorFailed'), 1500);
+  flashLabel(
+    btn,
+    result.ok ? t('common_sentToEditor') : t('common_sendToEditorFailed'),
+    1500,
+    result.ok ? 'ok' : 'fail',
+  );
   btn.title = result.ok ? '' : result.error;
 }

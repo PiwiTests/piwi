@@ -322,6 +322,11 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 - **Code inside a heading or a sentence of the situation block sits in a chip**: a locator is syntax-highlighted in
   it (`<LocatorCode chip>`, `<FailureHeadline chip>`), a commit keeps the sentence's color (`CODE_CHIP_CLASS`).
   Elsewhere in prose a locator stays plain mono (`<LocatorCode plain>`).
+- **A recorded step is shown from core's parts, never from its sentence**: `<BugStepText>` renders
+  `describeStepInParts` (or `describeExpectationInParts`), which knows each name, value, key, address and locator as it
+  writes them in any language: names and values semibold in `text-highlighted` over words in `text-default`, a key as
+  `UKbd`, and its code (an address, a test id, a locator through `LocatorCode`) in a chip, in the steps list as in the
+  situation block, since a reader scans a step for them. Don't split the Markdown sentence at its backticks or quotes.
 - **Say a fact once, in one style.** When the same fact could be a chip and words, keep the words.
 - **Measure it.** `npm run app:measure -- --check` fails when a failure page breaks a budget at 1280×800: at most 15
   text styles in the execution page's situation block and 13 in the cluster page's (a code chip or a diff counts once,

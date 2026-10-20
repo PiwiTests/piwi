@@ -18,13 +18,14 @@ import {
 } from '@piwitests/picker-dom';
 import { derivePattern, type PatternResult } from './multi-pick-derive.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
-import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
-import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
+import { getLastCopyMode } from '../shared/storage.js';
 import { createPageEngine, installDescribeHook } from './verified-locators.js';
 import { attachPanelShadow } from './panel-root.js';
 import { pickerOverlayStrings } from './picker-strings.js';
 import { holdFocus } from './modal-panel.js';
-import { copyWithFeedback } from '../shared/clipboard.js';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { ICON_CSS, iconText } from '../shared/icons.js';
+import { COPY_MODE_CSS, copyModeButtons } from './copy-mode-row.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 const MIN_PICKS = 2;
@@ -64,49 +65,52 @@ function showBetweenPicksBar(count: number, toolEpoch: number): Promise<'pick-mo
 
     const style = document.createElement('style');
     style.textContent = `
+      ${BUTTON_CSS}
       .bar {
         position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); pointer-events: auto;
         display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #111827; color: #f9fafb;
-        border-radius: 10px; padding: 8px 10px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
+        border-radius: 12px; padding: 8px 8px 8px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
         width: max-content; max-width: min(640px, calc(100vw - 32px)); box-sizing: border-box;
         font: 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
       }
       @media (prefers-color-scheme: light) {
         .bar { background: #ffffff; color: #111827; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
       }
-      button {
-        border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 12.5px; cursor: pointer;
-        border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit;
+      .label {
+        display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; hyphens: auto;
+        font-weight: 500; line-height: 18px;
       }
-      button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
-      .label { min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
-      button.primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
-      .close { border: none; background: none; opacity: .7; font-size: 16px; line-height: 1; padding: 2px 6px; }
+      .label .piwi-icon { color: #c4b5fd; }
+      @media (prefers-color-scheme: light) {
+        .label .piwi-icon { color: #6d28d9; }
+      }
     `;
     root.appendChild(style);
 
+    let result: 'pick-more' | 'derive' | 'cancel' = 'cancel';
+    const finish = (chosen: typeof result) => {
+      result = chosen;
+      close();
+    };
     const bar = document.createElement('div');
     bar.className = 'bar';
     bar.lang = uiLanguage();
     const label = document.createElement('span');
     label.className = 'label';
-    label.textContent = tn('multipick_picked', count);
-    const deriveBtn = document.createElement('button');
-    deriveBtn.type = 'button';
-    deriveBtn.className = 'primary';
-    deriveBtn.textContent = t('multipick_derive');
-    const moreBtn = document.createElement('button');
-    moreBtn.type = 'button';
-    moreBtn.textContent = t('multipick_pickMore', { max: MAX_PICKS });
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'close';
-    closeBtn.setAttribute('aria-label', t('multipick_cancel'));
-    closeBtn.textContent = '×';
+    iconText(label, 'layers', tn('multipick_picked', count));
+    const deriveBtn = makeButton(t('multipick_derive'), () => finish('derive'), { icon: 'wand', tone: 'primary' });
+    const moreBtn = makeButton(t('multipick_pickMore', { max: MAX_PICKS }), () => finish('pick-more'), {
+      icon: 'plus',
+    });
+    const closeBtn = makeButton(t('multipick_cancel'), () => finish('cancel'), {
+      icon: 'close',
+      iconOnly: true,
+      tone: 'ghost',
+      className: 'close',
+    });
     bar.append(label, moreBtn, deriveBtn, closeBtn);
     root.appendChild(bar);
 
-    let result: 'pick-more' | 'derive' | 'cancel' = 'cancel';
     // Escape is the only global shortcut — Enter is deliberately *not*
     // hijacked here: deriveBtn is focused by default, so Enter/Space already
     // activates it natively, and Tab must still reach moreBtn/closeBtn and
@@ -125,13 +129,6 @@ function showBetweenPicksBar(count: number, toolEpoch: number): Promise<'pick-mo
       host.remove();
       resolve(result);
     });
-    const finish = (chosen: typeof result) => {
-      result = chosen;
-      close();
-    };
-    deriveBtn.addEventListener('click', () => finish('derive'));
-    moreBtn.addEventListener('click', () => finish('pick-more'));
-    closeBtn.addEventListener('click', () => finish('cancel'));
     deriveBtn.focus();
   });
 }
@@ -146,22 +143,26 @@ function showMessage(text: string, toolEpoch: number): Promise<void> {
     const root = attachPanelShadow(host, { mode: 'closed' });
     const style = document.createElement('style');
     style.textContent = `
+      ${ICON_CSS}
       .bar {
         position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); pointer-events: auto;
-        background: #111827; color: #f9fafb; border-radius: 10px; padding: 10px 14px;
+        display: flex; align-items: flex-start; gap: 8px;
+        background: #111827; color: #f9fafb; border-radius: 12px; padding: 10px 14px;
         box-shadow: 0 8px 30px rgba(0,0,0,.4); font: 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
         max-width: min(480px, 90vw); width: max-content; box-sizing: border-box; cursor: pointer;
-        overflow-wrap: anywhere; hyphens: auto;
+        overflow-wrap: anywhere; hyphens: auto; line-height: 18px;
       }
+      .bar .piwi-icon { color: #fbbf24; margin-top: 1px; }
       @media (prefers-color-scheme: light) {
         .bar { background: #ffffff; color: #111827; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
+        .bar .piwi-icon { color: #b45309; }
       }
     `;
     root.appendChild(style);
     const bar = document.createElement('div');
     bar.className = 'bar';
     bar.lang = uiLanguage();
-    bar.textContent = text;
+    iconText(bar, 'info', text);
     root.appendChild(bar);
 
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -204,6 +205,8 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
   const style = document.createElement('style');
   style.textContent = `
     ${LOCATOR_SYNTAX_CSS}
+    ${BUTTON_CSS}
+    ${COPY_MODE_CSS}
     :host { all: initial; }
     * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
     .backdrop {
@@ -218,29 +221,23 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
     .header > div { min-width: 0; }
     .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; }
-    .close {
-      background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
-      line-height: 1; padding: 4px 8px; border-radius: 6px;
+    .row {
+      display: flex; flex-direction: column; gap: 7px;
+      border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px;
     }
-    .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
-    .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
-    .row code { display: block; font-size: 13px; line-height: 1.55; margin-bottom: 6px; }
-    .warn { color: #fbbf24; font-size: 11px; margin-bottom: 6px; overflow-wrap: anywhere; hyphens: auto; }
-    .copy-row { display: flex; gap: 6px; flex-wrap: wrap; }
-    button.copy {
-      background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
-      border-radius: 6px; padding: 4px 9px; font-size: 11.5px; cursor: pointer;
+    .row code { display: block; font-size: 13px; line-height: 1.55; }
+    .warn {
+      display: flex; align-items: flex-start; gap: 5px; color: #fbbf24; font-size: 11.5px; line-height: 16px;
+      overflow-wrap: anywhere; hyphens: auto;
     }
-    button.copy:hover, button.copy:focus-visible { background: rgba(128,128,128,.25); }
-    button.copy[data-active="true"] { border-color: #7c3aed; color: #a78bfa; }
+    .warn .piwi-icon { width: 14px; height: 14px; margin-top: 1px; }
     @media (prefers-color-scheme: light) {
       .sub { color: #6b7280; }
       .warn { color: #b45309; }
-      button.copy[data-active="true"] { border-color: #6d28d9; color: #6d28d9; }
     }
   `;
   root.appendChild(style);
@@ -267,11 +264,7 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
   sub.className = 'sub';
   sub.textContent = t('common_escToClose');
   titleWrap.append(title, sub);
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', t('common_close'));
-  closeBtn.textContent = '×';
-  header.append(titleWrap, closeBtn);
+  header.append(titleWrap);
   panel.appendChild(header);
 
   return new Promise<void>((resolve) => {
@@ -290,7 +283,9 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
       releaseFocus();
       resolve();
     });
-    closeBtn.addEventListener('click', finish);
+    header.append(
+      makeButton(t('common_close'), finish, { icon: 'close', iconOnly: true, tone: 'ghost', className: 'close' }),
+    );
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
     });
@@ -306,29 +301,11 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
       if (row.indexBased) {
         const warn = document.createElement('div');
         warn.className = 'warn';
-        warn.textContent = t('multipick_byPosition');
+        iconText(warn, 'alert', t('multipick_byPosition'));
         rowEl.appendChild(warn);
       }
 
-      const copyRow = document.createElement('div');
-      copyRow.className = 'copy-row';
-      for (const mode of COPY_MODES) {
-        const btn = document.createElement('button');
-        btn.className = 'copy';
-        btn.type = 'button';
-        btn.dataset.mode = mode;
-        btn.dataset.active = String(mode === activeMode);
-        btn.textContent = copyModeLabel(mode);
-        btn.addEventListener('click', () => {
-          void copyWithFeedback(renderCopyMode({ locator: row.locator }, mode), btn);
-          void setLastCopyMode(mode);
-          for (const other of panel.querySelectorAll<HTMLElement>('button.copy[data-mode]')) {
-            other.dataset.active = String(other.dataset.mode === mode);
-          }
-        });
-        copyRow.appendChild(btn);
-      }
-      rowEl.appendChild(copyRow);
+      rowEl.appendChild(copyModeButtons(row.locator, panel, activeMode));
       panel.appendChild(rowEl);
     }
 

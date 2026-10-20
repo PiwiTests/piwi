@@ -71,20 +71,3 @@ export async function requestSiteAccess(pattern: string): Promise<boolean> {
     return false;
   }
 }
-
-/** Writes `text` to the clipboard; DevTools' frames may refuse the async API, so the copy command backs it up. */
-export async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.style.cssText = 'position:fixed;opacity:0;';
-    document.body.appendChild(area);
-    area.select();
-    const copied = document.execCommand('copy');
-    area.remove();
-    return copied;
-  }
-}

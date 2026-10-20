@@ -13,6 +13,7 @@ import { statusLabel, testTitle, usePages, type CoverageContext } from './covera
 import { projectLocatorsUrl, testCaseUrl } from '../shared/instance-links.js';
 import { t, tn, uiLanguage } from '../shared/i18n.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
+import { makeButton, styleButton } from '../shared/buttons.js';
 
 export interface Drawable {
   element: Element;
@@ -319,7 +320,7 @@ export class CoverageLayer {
     if (!element || element === this.pinnedFor) return;
     const d = this.drawables.find((x) => x.element === element);
     if (!d || !this.context) return;
-    const card = el('div', 'card preview');
+    const card = el('div', 'card preview piwi-dark');
     card.setAttribute('role', 'tooltip');
     this.fillPreview(card, d, this.context);
     this.container.appendChild(card);
@@ -336,7 +337,7 @@ export class CoverageLayer {
     if (element === this.previewFor) this.showPreview(null);
     const d = this.drawables.find((x) => x.element === element);
     if (!d || !this.context) return;
-    const card = el('div', 'card pinned');
+    const card = el('div', 'card pinned piwi-dark');
     card.setAttribute('role', 'dialog');
     const description = d.covered?.description ?? d.uncovered?.description;
     card.setAttribute(
@@ -412,15 +413,18 @@ export class CoverageLayer {
       suggestion.appendChild(locatorCode(replacement.durable.locator));
     }
     const actions = el('div', 'card-actions');
-    const copy = el('button', undefined, t('coverage_copyLocator'));
-    copy.type = 'button';
-    copy.addEventListener('click', () => void copyWithFeedback(next, copy));
-    const edit = el('button', undefined, t('coverage_copyEdit'));
-    edit.type = 'button';
-    edit.title = t('coverage_copyEditTitle');
+    const copy = makeButton(t('coverage_copyLocator'), () => void copyWithFeedback(next, copy), {
+      icon: 'copy',
+      small: true,
+      title: t('coverage_copyReplacementTitle'),
+    });
     const locator = context.index.locators[entry]!;
     const sites = [...new Set(locator.uses.flatMap((use) => use.callSites))];
-    edit.addEventListener('click', () => void copyWithFeedback(editText(sites, locator.locator, next), edit));
+    const edit = makeButton(
+      t('coverage_copyEdit'),
+      () => void copyWithFeedback(editText(sites, locator.locator, next), edit),
+      { icon: 'edit', small: true, title: t('coverage_copyEditTitle') },
+    );
     actions.append(copy, edit);
     suggestion.appendChild(actions);
     block.appendChild(suggestion);
@@ -449,7 +453,12 @@ export class CoverageLayer {
     return line;
   }
 
-  private testItem(testIndex: number, context: CoverageContext, detail: string | null, link: boolean): HTMLLIElement {
+  private testItem(
+    testIndex: number,
+    context: CoverageContext,
+    detail: Array<Node | string> | null,
+    link: boolean,
+  ): HTMLLIElement {
     const test = context.index.tests[testIndex]!;
     const item = el('li');
     const dot = el('span', `dot ${test.status ?? 'unknown'}`);
@@ -465,7 +474,11 @@ export class CoverageLayer {
     } else {
       item.appendChild(el('span', undefined, testTitle(test)));
     }
-    if (detail) item.appendChild(el('span', 'meta mono', detail));
+    if (detail) {
+      const meta = el('span', 'meta');
+      meta.append(...detail);
+      item.appendChild(meta);
+    }
     return item;
   }
 
@@ -498,10 +511,13 @@ export class CoverageLayer {
     const titleWrap = el('div');
     titleWrap.appendChild(el('div', 'what', d.covered?.description ?? d.uncovered?.description ?? ''));
     titleWrap.appendChild(this.kindLine(d));
-    const close = el('button', 'close', '×');
-    close.type = 'button';
-    close.setAttribute('aria-label', t('common_close'));
-    close.addEventListener('click', () => this.callbacks.onClosePinned());
+    const close = makeButton(t('common_close'), () => this.callbacks.onClosePinned(), {
+      icon: 'close',
+      iconOnly: true,
+      tone: 'ghost',
+      small: true,
+      className: 'close',
+    });
     head.append(titleWrap, close);
     card.appendChild(head);
 
@@ -521,7 +537,17 @@ export class CoverageLayer {
         for (const use of entry.uses.slice(0, CARD_TESTS)) {
           const where = use.callSites[0] ?? index.tests[use.test]!.file;
           const pages = usePages(index, use);
-          const detail = `${use.actions.map(actionLabel).join(', ')} · ${where}${use.projects.length ? ` · ${use.projects.join(', ')}` : ''}${pages.length ? ` · ${t('coverage_onPages', { pages: `${pages.slice(0, 3).join('; ')}${pages.length > 3 ? ` +${pages.length - 3}` : ''}` })}` : ''}`;
+          const detail: Array<Node | string> = [
+            el('span', 'act', use.actions.map(actionLabel).join(', ')),
+            ' · ',
+            el('span', 'site mono', where),
+          ];
+          if (use.projects.length) detail.push(` · ${use.projects.join(', ')}`);
+          if (pages.length) {
+            detail.push(
+              ` · ${t('coverage_onPages', { pages: `${pages.slice(0, 3).join('; ')}${pages.length > 3 ? ` +${pages.length - 3}` : ''}` })}`,
+            );
+          }
           list.appendChild(this.testItem(use.test, context, detail, true));
         }
         block.appendChild(list);
@@ -530,7 +556,7 @@ export class CoverageLayer {
         card.appendChild(block);
       }
       const actions = el('div', 'card-actions');
-      const find = el('a', 'button', t('coverage_findInPiwi'));
+      const find = styleButton(el('a', 'button', t('coverage_findInPiwi')), { icon: 'search', small: true });
       find.href = projectLocatorsUrl(
         context.instanceUrl,
         context.projectId,
@@ -550,9 +576,11 @@ export class CoverageLayer {
         block.appendChild(el('div', 'hint', t('coverage_mostStableFor')));
         block.appendChild(locatorCode(suggestion));
         const actions = el('div', 'card-actions');
-        const copy = el('button', undefined, t('coverage_copyLocator'));
-        copy.type = 'button';
-        copy.addEventListener('click', () => void copyWithFeedback(suggestion, copy));
+        const copy = makeButton(t('coverage_copyLocator'), () => void copyWithFeedback(suggestion, copy), {
+          icon: 'copy',
+          small: true,
+          title: t('coverage_copyLocatorTitle'),
+        });
         actions.appendChild(copy);
         block.appendChild(actions);
         card.appendChild(block);

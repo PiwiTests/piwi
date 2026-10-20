@@ -139,7 +139,7 @@ test.describe('the Piwi panel', () => {
     await expect(panel.getByRole('status')).toHaveText(`Replaying · ${ORIGIN}`);
     const steps = panel.getByRole('listitem');
     await expect(steps).toHaveCount(3);
-    await expect(steps.nth(1)).toContainText('▸');
+    await expect(steps.nth(1).locator('.glyph [data-icon="play"]')).toHaveCount(1);
     await expect(steps.nth(1).locator('code')).toHaveText("getByTestId('apply-coupon')");
     await expect(panel.getByRole('button', { name: 'Next step' })).toBeVisible();
 

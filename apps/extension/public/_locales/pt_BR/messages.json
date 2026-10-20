@@ -562,7 +562,7 @@
     "message": "Os sites correspondem aos projetos da sua instância: conecte-se primeiro."
   },
   "options_addMapping": {
-    "message": "+ Adicionar uma linha"
+    "message": "Adicionar uma linha"
   },
   "options_noMappings": {
     "message": "Nenhuma linha ainda: adicione uma abaixo."
@@ -1229,7 +1229,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Encontrado pela posição (nth): quebra se a ordem da lista mudar"
+    "message": "Encontrado pela posição (nth): quebra se a ordem da lista mudar"
   },
   "lint_dialog": {
     "message": "Verificação: elementos difíceis de localizar"

@@ -121,6 +121,8 @@ export interface BugPhrases {
   quote(text: string): string;
   /** Code (a URL, a locator, a test id) as a Markdown code span. */
   code(text: string): string;
+  /** A key or a key combination as keyboards print it: `Ctrl+A` for `ControlOrMeta+a`. */
+  key(name: string): string;
   /** The first letter in upper case, for a sentence that starts with an expectation. */
   capitalize(text: string): string;
   /** One sentence per recorded action. */
