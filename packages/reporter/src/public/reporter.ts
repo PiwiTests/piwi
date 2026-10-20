@@ -43,6 +43,7 @@ import {
   linkBlockedTests,
 } from '@piwitests/core/status-classify';
 import { collectTestLocks, collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
+import { formatExternalIdDuplicates, planExternalIds, type ExternalIdPlan } from '../internal/collect/external-ids.js';
 import { buildErrorText } from '../internal/collect/error-text.js';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { readLeakCheck, type ResourceCensus } from '../internal/capture/resource-ledger.js';
@@ -131,6 +132,8 @@ export class PiwiDashboardReporter {
   private instanceId = '';
   private shardInfo: ShardInfo | null = null;
   private metadata: Record<string, any> = {};
+  /** Each planned test's external ID and the IDs two tests share, settled in `onBegin`. */
+  private externalIds: ExternalIdPlan | null = null;
   private enabled: boolean;
   /**
    * True under `playwright test --list`, where Playwright still constructs this
@@ -335,6 +338,7 @@ export class PiwiDashboardReporter {
     // suite is already filtered/sharded, so this matches what this shard
     // attempts.
     this.plannedTests = suite.allTests();
+    this.planExternalIds();
 
     // Detect the shard: Playwright's --shard=1/3, or the one `piwi run --shard` set.
     this.shardInfo = resolveShardInfo(config);
@@ -385,6 +389,41 @@ export class PiwiDashboardReporter {
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
     );
+  }
+
+  /**
+   * Settle each planned test's external ID before any test runs, name the IDs two tests share, and record them on
+   * the run so the dashboard lists them too.
+   */
+  private planExternalIds(): void {
+    const options = this.options.externalId ?? {};
+    const plan = planExternalIds(
+      this.plannedTests.map((test) => ({
+        testId: test.id,
+        filePath: testFile(test, this.testPathBase),
+        suitePath: this.metadataCollector.getSuiteInfo(test).suitePath ?? [],
+        title: test.title,
+        line: test.location.line,
+        annotations: test.annotations ?? [],
+      })),
+      options,
+    );
+    if (plan.patternError) {
+      this.logger.error(
+        `externalId.pattern is not a valid regular expression, so no ID is read from titles: ${plan.patternError}`,
+      );
+    }
+    for (const line of formatExternalIdDuplicates(plan.duplicates, options.onDuplicate ?? 'report'))
+      this.logger.warn(line);
+    if (plan.duplicates.length > 0) this.metadata = { ...this.metadata, externalIdDuplicates: plan.duplicates };
+    this.externalIds = plan;
+  }
+
+  /** The external ID fields of a test's payload: `null` tells the dashboard the test has none to match on. */
+  private externalIdFields(test: TestCase): { externalId?: string | null; displayTitle?: string | null } {
+    if (!this.externalIds) return {};
+    const id = this.externalIds.byTestId.get(test.id);
+    return { externalId: id?.externalId ?? null, displayTitle: id?.displayTitle ?? null };
   }
 
   /** Playwright reporter hook: called when an individual test begins */
@@ -536,6 +575,7 @@ export class PiwiDashboardReporter {
       tags: tags.length ? tags : null,
       locks: locks.length ? locks : null,
       testMeta: collectTestMetadata(annotations),
+      ...this.externalIdFields(test),
       // An annotation-less skip reclassified to `didnotrun` is a serial-group
       // cascade: an earlier test failed and Playwright skipped the rest.
       didNotRunReason: status === 'didnotrun' ? 'previous-failure' : null,
@@ -788,6 +828,7 @@ export class PiwiDashboardReporter {
         tags: tags.length ? tags : null,
         locks: locks.length ? locks : null,
         testMeta: collectTestMetadata(declaredAnnotations),
+        ...this.externalIdFields(test),
         didNotRunReason: reason,
         expectedStatus: test.expectedStatus ?? null,
       };
@@ -802,8 +843,22 @@ export class PiwiDashboardReporter {
     }
   }
 
-  /** Playwright reporter hook: called when the full test run finishes */
-  async onEnd(result: FullResult): Promise<void> {
+  /**
+   * Playwright reporter hook: called when the full test run finishes. Fails the run when two tests share an external
+   * ID and `externalId.onDuplicate` is `'fail'`.
+   */
+  async onEnd(result: FullResult): Promise<{ status?: FullResult['status'] } | void> {
+    await this.finishRun(result);
+    const duplicates = this.externalIds?.duplicates.length ?? 0;
+    if (duplicates > 0 && this.options.externalId?.onDuplicate === 'fail') {
+      this.logger.error(
+        `Failing the run: ${duplicates} external ID${duplicates === 1 ? ' is' : 's are'} declared by more than one test.`,
+      );
+      return { status: 'failed' };
+    }
+  }
+
+  private async finishRun(result: FullResult): Promise<void> {
     if (this.listMode || !this.enabled) return;
     // `onBegin` never ran: the run stopped before its tests (a global setup threw, a spec did not load).
     if (this.startTime === null) {

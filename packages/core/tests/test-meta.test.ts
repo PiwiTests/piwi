@@ -1,6 +1,13 @@
 import { describe, test, expect } from 'vitest';
 import {
+  compileExternalIdPattern,
   isPiwiAnnotation,
+  MAX_EXTERNAL_ID_CHARS,
+  MAX_EXTERNAL_ID_DUPLICATES,
+  mergeExternalIdDuplicates,
+  normalizeExternalId,
+  parseExternalId,
+  readExternalIdFromTitle,
   normalizeTestLocks,
   normalizeTestTags,
   parseTestMetadata,
@@ -187,5 +194,113 @@ describe('isPiwiAnnotation', () => {
   test("counts the reporter's own annotations as Piwi's", () => {
     expect(isPiwiAnnotation('piwi-locator-suggestion')).toBe(true);
     expect(isPiwiAnnotation('piwis')).toBe(false);
+  });
+});
+
+describe('normalizeExternalId', () => {
+  test('trims and keeps case', () => {
+    expect(normalizeExternalId('  AB-12  ')).toBe('AB-12');
+  });
+
+  test('drops blanks, non-strings, control characters and over-long values', () => {
+    for (const input of ['', '   ', 12526, null, undefined, 'a\nb', 'x'.repeat(MAX_EXTERNAL_ID_CHARS + 1)]) {
+      expect(normalizeExternalId(input)).toBeUndefined();
+    }
+    expect(normalizeExternalId('x'.repeat(MAX_EXTERNAL_ID_CHARS))).toHaveLength(MAX_EXTERNAL_ID_CHARS);
+  });
+});
+
+describe('parseExternalId', () => {
+  test('reads piwi:id, case-insensitively, the last one winning', () => {
+    expect(
+      parseExternalId([
+        { type: 'piwi:owner', description: '@team' },
+        { type: 'PIWI:ID', description: ' 1 ' },
+        { type: 'piwi:id', description: '2' },
+      ]),
+    ).toBe('2');
+  });
+
+  test('ignores an invalid value and returns undefined without an annotation', () => {
+    expect(parseExternalId([{ type: 'piwi:id', description: '   ' }])).toBeUndefined();
+    expect(parseExternalId([{ type: 'piwi:id' }])).toBeUndefined();
+    expect(parseExternalId(null)).toBeUndefined();
+  });
+
+  test('is not read as metadata', () => {
+    expect(parseTestMetadata([{ type: 'piwi:id', description: '12526' }])).toBeNull();
+  });
+});
+
+describe('readExternalIdFromTitle', () => {
+  test('takes the first capture group and removes the whole match from the title', () => {
+    const pattern = compileExternalIdPattern(/^(\d+),\s*/);
+    expect(readExternalIdFromTitle('12526, Log in modal: Log in with Email', pattern)).toEqual({
+      externalId: '12526',
+      displayTitle: 'Log in modal: Log in with Email',
+    });
+  });
+
+  test('takes the whole match when the pattern has no group', () => {
+    expect(readExternalIdFromTitle('Checkout [TC-7] pays', compileExternalIdPattern('TC-\\d+'))).toEqual({
+      externalId: 'TC-7',
+      displayTitle: 'Checkout [] pays',
+    });
+  });
+
+  test('returns null when the pattern does not match', () => {
+    expect(readExternalIdFromTitle('No id here', compileExternalIdPattern(/^(\d+),/))).toBeNull();
+  });
+
+  test('leaves out the display title when nothing is left', () => {
+    expect(readExternalIdFromTitle('12526', compileExternalIdPattern(/\d+/))).toEqual({ externalId: '12526' });
+  });
+
+  test('does not depend on the previous match of a global pattern', () => {
+    const pattern = compileExternalIdPattern(/(\d+)/g);
+    expect(readExternalIdFromTitle('1 a', pattern)?.externalId).toBe('1');
+    expect(readExternalIdFromTitle('2 b', pattern)?.externalId).toBe('2');
+  });
+
+  test('throws on a string that is not a regular expression', () => {
+    expect(() => compileExternalIdPattern('(')).toThrow();
+  });
+});
+
+describe('mergeExternalIdDuplicates', () => {
+  test('lists each ID once with every distinct test', () => {
+    const shard1 = [{ externalId: '7', tests: [{ filePath: 'a.spec.ts', title: 'A', line: 3 }] }];
+    const shard2 = [
+      {
+        externalId: '7',
+        tests: [
+          { filePath: 'a.spec.ts', title: 'A', line: 3 },
+          { filePath: 'b.spec.ts', suitePath: ['Cart'], title: 'B' },
+        ],
+      },
+    ];
+    expect(mergeExternalIdDuplicates(shard1, shard2)).toEqual([
+      {
+        externalId: '7',
+        tests: [
+          { filePath: 'a.spec.ts', title: 'A', line: 3 },
+          { filePath: 'b.spec.ts', suitePath: ['Cart'], title: 'B' },
+        ],
+      },
+    ]);
+  });
+
+  test('drops malformed entries and caps the list', () => {
+    const many = Array.from({ length: MAX_EXTERNAL_ID_DUPLICATES + 3 }, (_, i) => ({
+      externalId: String(i),
+      tests: [{ filePath: 'a.spec.ts', title: 'A' }],
+    }));
+    const merged = mergeExternalIdDuplicates(
+      null,
+      [{ externalId: 5 }, { externalId: 'x', tests: [{ title: 1 }] }],
+      many,
+    );
+    expect(merged).toHaveLength(MAX_EXTERNAL_ID_DUPLICATES);
+    expect(merged[0]?.externalId).toBe('0');
   });
 });
