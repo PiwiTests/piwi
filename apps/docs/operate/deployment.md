@@ -62,7 +62,7 @@ migrations are forward-only. Browse the published tags on
 
 | Property | Value |
 |----------|-------|
-| Base image | `node:24-alpine` |
+| Base image | `node:24-alpine`, pinned by digest |
 | Image size | ~400 MB |
 | Platforms | `linux/amd64`, `linux/arm64` |
 
@@ -99,7 +99,7 @@ services:
   piwi-dashboard:
     image: phenx/piwitests-server:latest
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000" # "3000:3000" once authentication is on
     volumes:
       - ./.data:/app/.data
     restart: unless-stopped
@@ -130,7 +130,7 @@ services:
   piwi-dashboard:
     image: phenx/piwitests-server:latest
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000" # "3000:3000" once authentication is on
     volumes:
       - ./.data:/app/.data   # still used for report/trace file storage
     environment:
@@ -322,7 +322,7 @@ On **Linux hosts**, the bind-mounted directory must be writable by the container
 ```bash
 mkdir -p .data
 sudo chown -R 1001:1001 .data   # match the container's non-root UID 1001
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
+docker run -p 127.0.0.1:3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
 ```
 
 > On Windows and macOS, Docker Desktop manages volume permissions automatically — no `chown` is needed. Just run the container with `-v ${PWD}/.data:/app/.data` (PowerShell).

@@ -89,14 +89,15 @@ Some data is skipped at the source, so it never exists to leak:
   (`capturePageInventory`, **off by default**) records the names of a page's controls and links so the
   dashboard can tell which the suite never exercises. The name of a control that holds user input — a
   textbox, `select`, `textarea` or contenteditable editor — is never read from its content, so a
-  recovery code, a draft, or a set of options never leaves the browser; link hrefs are stripped of their
-  query and hash, which can carry signed tokens.
+  recovery code or a draft never leaves the browser; link hrefs are stripped of their query and hash,
+  which can carry signed tokens.
 - **Storage and cookie values.** Page state records the *names* of `localStorage` /`sessionStorage`
   keys and their value lengths, and cookie names with their flags. Never the values. Focus, mouse and
-  selection name elements, never values or selected text.
+  selection name elements, never values or selected text. A URL fragment's credentials are masked
+  (`#access_token=[masked]`).
 - **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in Piwi's trace
-  network view, and token-shaped strings in URLs and bodies are masked too. The trace file itself is
-  stored as uploaded, so the bundled trace viewer and a downloaded trace still show them.
+  network view, and token-shaped strings in URLs and bodies are masked too. The trace file is stored
+  as uploaded, so the trace viewer and a downloaded trace still show them.
 - **Backend logs, in production.** The [backend-log integrations](./backend-logs) emit their header only
   in development and test environments by default.
 

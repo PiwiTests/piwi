@@ -22,7 +22,7 @@ import type {
   TrackerSummary,
 } from '#shared/integrations/types';
 import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue, type BuiltClusterIssue } from './documents';
-import { clusterShareTokenMinter } from './share-url';
+import { draftShareTokenMinter } from './share-url';
 import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
 import { bindingRowToResolved } from './binding';
 import { pickOwnerRoute } from '#shared/integrations/binding';
@@ -195,13 +195,13 @@ export async function buildIssueDraft(
           ...include,
           locale,
           siteUrl: opts.siteUrl,
-          mintShareToken: clusterShareTokenMinter(db),
+          mintShareToken: draftShareTokenMinter,
         })
       : await buildExecutionIssue(db, entityId, {
           ...include,
           locale,
           siteUrl: opts.siteUrl,
-          mintShareToken: clusterShareTokenMinter(db),
+          mintShareToken: draftShareTokenMinter,
         });
   if (!built) return null;
 

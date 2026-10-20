@@ -23,8 +23,14 @@ defineRouteMeta({
   },
 });
 
-/** How long a connection's loaded browser subscriptions stay fresh. */
-const SUBSCRIPTIONS_TTL_MS = 60_000;
+/** How often a connection re-checks its caller and reloads their project scope and browser subscriptions. */
+const REFRESH_INTERVAL_MS = 60_000;
+
+/** Whether `error` is requireAuth refusing the caller: a revoked session, a deleted user or API key. */
+function isAuthRefusal(error: unknown): boolean {
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
+  return statusCode === 401 || statusCode === 403;
+}
 
 interface BrowserSubscription {
   events: string[];
@@ -86,12 +92,9 @@ export default eventHandler(async (event) => {
   // until an event is addressed to them.
   let subs = await loadSubscriptions();
 
-  // Compute the caller's project scope once for the life of the connection, and
-  // never stream an event for a project they cannot access.
-  const scope = await getProjectScope(db, user);
-
-  let loadedAt = Date.now();
-  let refreshing = false;
+  // Never stream an event for a project the caller cannot access. The scope is
+  // reloaded with the subscriptions on every refresh.
+  let scope = await getProjectScope(db, user);
 
   const matchesSubscription = (type: string, projectId: number, payload: Record<string, unknown>): boolean => {
     const now = new Date();
@@ -105,24 +108,25 @@ export default eventHandler(async (event) => {
   };
 
   return createSSEEndpoint(event, (controller, encoder) => {
-    return runEventBus.subscribeNotifications((notificationEvent) => {
+    // Re-check the caller and reload their scope and subscriptions on a timer, so
+    // role, event and mute changes apply to a long-lived connection without a
+    // reconnect, and the stream ends once its session or API key stops working.
+    // A failed reload for any other reason keeps the last snapshot.
+    const refresh = setInterval(() => {
+      requireAuth(event)
+        .then(async (current) => {
+          const [nextScope, nextSubs] = await Promise.all([getProjectScope(db, current), loadSubscriptions()]);
+          scope = nextScope;
+          subs = nextSubs;
+        })
+        .catch((error) => {
+          if (isAuthRefusal(error)) stop();
+        });
+    }, REFRESH_INTERVAL_MS);
+
+    const unsubscribe = runEventBus.subscribeNotifications((notificationEvent) => {
       const projectId = notificationEvent.projectId as number | undefined;
       if (typeof projectId === 'number' && !scopeAllows(scope, projectId)) return;
-
-      // Refresh the subscription snapshot in the background when stale, so
-      // event/mute changes apply to long-lived connections without a reconnect.
-      if (Date.now() - loadedAt > SUBSCRIPTIONS_TTL_MS && !refreshing) {
-        refreshing = true;
-        loadSubscriptions()
-          .then((next) => {
-            subs = next;
-            loadedAt = Date.now();
-          })
-          .catch(() => {})
-          .finally(() => {
-            refreshing = false;
-          });
-      }
 
       // A targeted event (e.g. cluster.fixed addressed at the author of the fix)
       // is delivered to that one user regardless of their subscriptions; every
@@ -151,5 +155,16 @@ export default eventHandler(async (event) => {
         // Stream closed — unsubscribe is handled by SSE helper
       }
     });
+
+    function stop() {
+      clearInterval(refresh);
+      unsubscribe();
+      try {
+        controller.close();
+      } catch {
+        // Already closed
+      }
+    }
+    return stop;
   });
 });

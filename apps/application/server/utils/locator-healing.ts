@@ -471,6 +471,31 @@ function visibleMatchCountFromAria(
   ).length;
 }
 
+/**
+ * The ARIA-fallback alternatives that may be recommended. The failing locator's
+ * own element can be on the failing page (a strict-mode violation, an element
+ * that came late), so the locator that failed stays listed but is never the
+ * recommendation. When a failing `getByRole` finds its role and name there, the
+ * other alternatives with that name find the same element, or one named like
+ * it, and are no fix either. Other methods keep them: an ARIA name can come from
+ * an `aria-label`, which `getByText` does not read, so a `getByRole` with the
+ * name can fix a failing `getByText`.
+ */
+function ariaRecommendationPool(
+  alternatives: RankedLocator[],
+  failingLocator: LocatorHealingResult['failingLocator'],
+): RankedLocator[] {
+  if (!failingLocator) return alternatives;
+  const isFailing = (a: RankedLocator) =>
+    locatorIdentityEquals(a.method, a.args, failingLocator.method, failingLocator.args);
+  const roleName =
+    failingLocator.method === 'getByRole' && typeof failingLocator.args.name === 'string'
+      ? failingLocator.args.name
+      : null;
+  const shownName = roleName !== null && alternatives.some(isFailing) ? roleName : null;
+  return alternatives.filter((a) => !isFailing(a) && !(shownName && alternativeUsesName(a, shownName)));
+}
+
 export async function resolveHealingForCase(
   input: HealingCaseInput,
   snaps: LocatorSnapshotRow[],
@@ -554,7 +579,13 @@ export async function resolveHealingForCase(
 
   // Ladder 3: ARIA snapshot fallback.
   const ariaAlts = generateFromAriaSnapshot(aria, failingLocator);
-  if (ariaAlts) return finish(buildHealingResult(failingLocator, null, ariaAlts, 'aria-snapshot'));
+  if (ariaAlts) {
+    return finish(
+      buildHealingResult(failingLocator, null, ariaAlts, 'aria-snapshot', null, null, {
+        recommendFrom: ariaRecommendationPool(ariaAlts, failingLocator),
+      }),
+    );
+  }
   return finish(buildHealingResult(failingLocator, null, null, 'none'));
 }
 

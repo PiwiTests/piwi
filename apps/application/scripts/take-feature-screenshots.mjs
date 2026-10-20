@@ -2376,6 +2376,34 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'integrations-webhook-actions',
+    description:
+      'Settings → Integrations: Sync now on the Jira card, Disable webhook on a connection whose webhook is on, its confirmation and the sync toast',
+    tags: ['desktop'],
+    // The scene connection points at a dead port, so the sync reads nothing and says so.
+    async prepare(ctx) {
+      await prepareJiraSceneConnection(ctx);
+      await ctx.request.post(`${ctx.base}/api/integrations/connections/${jiraSceneConnectionId}/webhook-token`);
+    },
+    route: '/settings/integrations',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, settle, shoot }) {
+      const disable = page.getByRole('button', { name: 'Disable webhook' }).first();
+      await disable.waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('card', { of: '[data-shot="integrations-settings"]', pad: 12 });
+      await disable.click();
+      await page.getByRole('dialog', { name: 'Disable the webhook' }).waitFor();
+      await settle();
+      await shoot('confirm');
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.getByRole('button', { name: 'Sync now' }).first().click();
+      await page.getByText('Statuses synced').first().waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('toast');
+    },
+  },
+  {
     name: 'jira-connect-form',
     description:
       'Settings → Integrations: the Jira connect form with a pasted board URL, scoped-token steps and a sign-in check',
@@ -4646,9 +4674,9 @@ const SCENES = [
     description:
       'Execution situation block whose locator step has no line edit: the failing and recommended locator, Copy locator',
     tags: ['desktop'],
-    // Execution 587's healing reads the failure-time ARIA snapshot, and its
-    // waitForSelector line has no locator call to rewrite.
-    route: '/test-run-cases/587',
+    // Execution 648's healing reads the failure-time ARIA snapshot, and its
+    // locator lives in a helper, so the test's line has no locator call to rewrite.
+    route: '/test-run-cases/648',
     viewport: { width: 1280, height: 900 },
     of: '[data-shot="situation-block"]',
     pad: 12,
@@ -4840,6 +4868,19 @@ const SCENES = [
       await settle();
       await shoot();
     },
+  },
+  {
+    name: 'desktop-reproduce-section',
+    description:
+      "A failure's Reproduce section in the desktop shell, for a linked folder whose Playwright config starts no app (desktop shell)",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/test-run-cases/682',
+    viewport: { width: 1280, height: 1000 },
+    link: { path: READY_INSPECTION.path, exists: true },
+    inspection: { ...READY_INSPECTION, webServer: false },
+    of: '[data-shot="fix-reproduce-body"]',
+    pad: 12,
   },
   {
     name: 'desktop-nav',

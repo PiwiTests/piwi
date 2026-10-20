@@ -16,5 +16,6 @@ https://app.koyeb.com/deploy?type=docker&image=docker.io/phenx/piwitests-server:
 #
 #   koyeb service update piwi/piwi --checks 3000:http:/api/health
 #
-# Set in the Koyeb console: PIWI_AUTH_SECRET, PIWI_SECRET_KEY, PIWI_SITE_URL. Generate each secret with: openssl rand -hex 32.
+# Set in the Koyeb console: PIWI_AUTH_SECRET, PIWI_SECRET_KEY, PIWI_SETUP_TOKEN, PIWI_SITE_URL. Generate each secret with: openssl rand -hex 32.
 # Authentication is enabled above, so the service stays down until PIWI_AUTH_SECRET is set.
+# PIWI_SETUP_TOKEN: The first-admin form asks for this value, so only you can create the administrator.

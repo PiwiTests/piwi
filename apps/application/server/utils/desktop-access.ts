@@ -1,5 +1,12 @@
-import { getCookie, getRequestHeader, type H3Event } from 'h3';
+import { getCookie, getRequestHeader, setResponseHeader, type H3Event } from 'h3';
+import {
+  DESKTOP_CHALLENGE_HEADER,
+  DESKTOP_PROOF_HEADER,
+  desktopTokenProof,
+  isDesktopChallenge,
+} from '@piwitests/core/desktop-proof';
 import { timingSafeEqualStr } from './timing-safe';
+import { bearerToken } from './bearer';
 
 /**
  * Whether the request presents the desktop access token `token`, as any of:
@@ -12,12 +19,10 @@ import { timingSafeEqualStr } from './timing-safe';
  *   - an `x-piwi-token` header.
  */
 export function presentsDesktopToken(event: H3Event, token: string): boolean {
-  const authz = getRequestHeader(event, 'authorization');
-  const bearer = authz && authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : undefined;
   const presented =
     getCookie(event, 'piwi_token') ||
     getRequestHeader(event, 'x-piwi-token') ||
-    bearer ||
+    bearerToken(event) ||
     getRequestHeader(event, 'x-api-key');
   return !!presented && timingSafeEqualStr(presented, token);
 }
@@ -33,4 +38,34 @@ export function isOpenDesktopRoute(method: string, path: string): boolean {
   if (pathname === '/api/health') return true;
   if (method === 'POST' && pathname === '/api/desktop/picker-pairings') return true;
   return method === 'GET' && /^\/api\/desktop\/picker-pairings\/[0-9a-f]{16}$/.test(pathname);
+}
+
+/** The response header that answers the desktop shell's readiness probe with the launch nonce. */
+export const DESKTOP_LAUNCH_NONCE_HEADER = 'X-Piwi-Desktop-Nonce';
+
+/**
+ * The per-launch nonce the desktop shell hands its sidecar in
+ * `PIWI_DESKTOP_LAUNCH_NONCE`, or null outside the desktop app. `/api/health`
+ * echoes it so the shell loads its session bootstrap only from the server it
+ * spawned, never from another process that took the port.
+ */
+export function desktopLaunchNonce(env: Record<string, string | undefined> = process.env): string | null {
+  return env.PIWI_DESKTOP_LAUNCH_NONCE || null;
+}
+
+/**
+ * Answers Piwi Picker's challenge on `/api/health` with the proof that this
+ * server holds the desktop token, for the loopback port the request reached
+ * (`@piwitests/core/desktop-proof`): the extension sends the token only to the
+ * app that proves it. Does nothing outside the desktop app or without a challenge.
+ */
+export async function answerDesktopChallenge(
+  event: H3Event,
+  token: string | undefined = process.env.PIWI_DESKTOP_TOKEN,
+): Promise<void> {
+  if (!token) return;
+  const challenge = getRequestHeader(event, DESKTOP_CHALLENGE_HEADER);
+  const port = event.node.req.socket?.localPort;
+  if (!port || !isDesktopChallenge(challenge)) return;
+  setResponseHeader(event, DESKTOP_PROOF_HEADER, await desktopTokenProof(token, port, challenge));
 }

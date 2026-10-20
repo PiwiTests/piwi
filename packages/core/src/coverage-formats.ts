@@ -507,15 +507,6 @@ export class CoverageReportReader {
   }
 }
 
-/** A report read whole from its text: the stream reader fed once. */
-export function parseCoverageReport(text: string, format?: CoverageReportFormat): CoverageReport | null {
-  const detected = format ?? detectCoverageFormat(text.slice(0, 4096));
-  if (!detected) return null;
-  const reader = new CoverageReportReader(detected);
-  reader.write(text);
-  return reader.end();
-}
-
 /** A path with slashes, `.` and `..` segments resolved; null when it climbs above its root. */
 function normalizeSlashPath(raw: string): string | null {
   const absolute = raw.startsWith('/');

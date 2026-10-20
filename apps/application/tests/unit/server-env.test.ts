@@ -69,6 +69,20 @@ describe('server-env', () => {
     expect(env.NUXT_WASTED_WAIT_PATTERNS).toBe('*waitForTimeout*,Sleep*');
   });
 
+  test('takes the site URL from the Fly.io app name when none is set', () => {
+    const fly = envAfterShim({ FLY_APP_NAME: 'piwi-acme' });
+    expect(fly.PIWI_SITE_URL).toBe('https://piwi-acme.fly.dev');
+    expect(fly.NUXT_PUBLIC_SITE_URL).toBe('https://piwi-acme.fly.dev');
+
+    expect(envAfterShim({ FLY_APP_NAME: 'piwi-acme', PIWI_SITE_URL: 'https://piwi.acme.dev' }).PIWI_SITE_URL).toBe(
+      'https://piwi.acme.dev',
+    );
+    expect(
+      envAfterShim({ FLY_APP_NAME: 'piwi-acme', NUXT_PUBLIC_SITE_URL: 'https://piwi.acme.dev' }).PIWI_SITE_URL,
+    ).toBeUndefined();
+    expect(envAfterShim({ FLY_APP_NAME: 'evil.example/x' }).PIWI_SITE_URL).toBeUndefined();
+  });
+
   test('maps the AI provider, research and embedding settings', () => {
     const env = envAfterShim({
       PIWI_AI_PROVIDER: 'openai',

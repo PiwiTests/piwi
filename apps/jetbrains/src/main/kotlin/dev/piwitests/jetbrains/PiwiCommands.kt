@@ -112,8 +112,8 @@ object PiwiCommands {
     /** Run every test still failing or edited since its run, as `piwi/failures` lists them. */
     fun rerunFailing(project: Project) {
         background(project, "Piwi: resolving the failing tests") {
-            val failures = project.service<PiwiProjectService>().server()?.failures()?.orNull()
-            val runs = Glue.rerunFailingArgs(failures)
+            val service = project.service<PiwiProjectService>()
+            val runs = service.server()?.failures(FailuresParams(service.local().failuresGrouping))?.orNull()?.rerun.orEmpty()
             if (runs.isEmpty()) notify(project, "No failing test to re-run.") else runs.forEach { runTests(project, it) }
         }
     }
@@ -180,6 +180,7 @@ object PiwiCommands {
     fun startRun(project: Project, command: RunCommand) {
         val cwd = command.cwd ?: return
         val line = command.command?.takeIf { it.isNotBlank() } ?: return
+        if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
         command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
         val base = command.env
         val address = if (base != null && base.containsKey("PIWI_PAUSE_AT")) {
@@ -255,6 +256,7 @@ object PiwiCommands {
     fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
+        if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
         if (SystemInfo.isWindows && parts[0] in setOf("npx", "npm", "node")) {
             if (parts[0] != "node") parts[0] = "${parts[0]}.cmd"
         }

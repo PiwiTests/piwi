@@ -15,8 +15,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawn, execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import {
   fetchImpact,
   fetchResolution,
@@ -26,6 +25,7 @@ import {
 } from '../internal/support/selection-client.js';
 import { PIWI_SHARD_ENV } from '../internal/config/env.js';
 import { computeAddReporterArgs } from './add-reporter.js';
+import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
 const EXIT_OK = 0;
 const EXIT_ERROR = 2;
@@ -327,36 +327,6 @@ export async function runSelect(argv: string[], env: NodeJS.ProcessEnv = process
 
 // ── run ──────────────────────────────────────────────────────────────────────
 
-/** Resolve Playwright's CLI so we can spawn it via node — no shell, no quoting. */
-function resolvePlaywrightCli(): string | null {
-  const require = createRequire(path.join(process.cwd(), 'noop.js'));
-  for (const id of ['playwright/cli', '@playwright/test/cli', 'playwright/lib/cli/cli']) {
-    try {
-      return require.resolve(id);
-    } catch {
-      // Try the next candidate.
-    }
-  }
-  return null;
-}
-
-function spawnPlaywright(pkgRunner: string, playwrightArgs: string[], env: NodeJS.ProcessEnv): Promise<number> {
-  const cli = resolvePlaywrightCli();
-  const child = cli
-    ? spawn(process.execPath, [cli, 'test', ...playwrightArgs], { stdio: 'inherit', env })
-    : spawn(process.platform === 'win32' ? `${pkgRunner}.cmd` : pkgRunner, ['playwright', 'test', ...playwrightArgs], {
-        stdio: 'inherit',
-        env,
-      });
-  return new Promise((resolve) => {
-    child.on('error', (err) => {
-      console.error(`piwi run: could not start Playwright — ${err.message}`);
-      resolve(EXIT_ERROR);
-    });
-    child.on('exit', (code) => resolve(code ?? EXIT_ERROR));
-  });
-}
-
 /**
  * Spawn Playwright for `run`, prepending `--add-reporter @piwitests/reporter`
  * when the target config has no Piwi reporter and the installed Playwright is
@@ -369,7 +339,7 @@ export function spawnPlaywrightForRun(
 ): Promise<number> {
   const decision = computeAddReporterArgs(process.cwd(), playwrightArgs);
   if (decision.log) console.error(decision.log);
-  return spawnPlaywright(pkgRunner, [...decision.args, ...playwrightArgs], env);
+  return spawnPlaywright([...decision.args, ...playwrightArgs], env, { runner: pkgRunner, command: 'piwi run' });
 }
 
 /** The shard the resolved tests belong to, for the reporter to report — none when the run is not sharded. */

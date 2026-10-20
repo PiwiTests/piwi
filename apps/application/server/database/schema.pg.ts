@@ -53,6 +53,7 @@ export const projects = pgTable(
     diagnosisInstructions: text('diagnosis_instructions'),
     aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
+    repositoryUrl: text('repository_url'), // The repository every SCM call of the project reads (normalized https URL); pinned by the first run that names one, changed by a project admin
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
     openApiUrl: text('openapi_url'), // Declared-surface OpenAPI document URL; fetched server-side into graph route nodes with origin 'openapi'
     serverProbes: jsonb('server_probes'), // ServerProbeSettings — the level-two probe gate (enabled, allow-listed faults/routes); off by default
@@ -127,7 +128,6 @@ export const testRuns = pgTable(
     updatedAt: timestamp('updated_at', { mode: 'date' }).$defaultFn(() => new Date()),
   },
   (table) => ({
-    projectIdIdx: index('idx_test_runs_project_id').on(table.projectId),
     projectStartTimeIdx: index('idx_test_runs_project_start').on(table.projectId, table.startTime),
     projectBranchStartIdx: index('idx_test_runs_project_branch_start').on(
       table.projectId,
@@ -198,7 +198,6 @@ export const testCases = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    projectIdIdx: index('idx_test_cases_project_id').on(table.projectId),
     filePathTitleIdx: index('idx_test_cases_file_path_title').on(
       table.projectId,
       table.filePath,
@@ -279,7 +278,7 @@ export const failureClusters = pgTable(
     fixLandedRunId: integer('fix_landed_run_id'), // the run in which every affected test passed again
     fixLandedAt: timestamp('fix_landed_at', { mode: 'date' }),
     fixCommit: text('fix_commit'), // commit of that run, when the reporter recorded one
-    timeToResolutionMs: integer('time_to_resolution_ms'), // first seen → fix landed
+    timeToResolutionMs: bigint('time_to_resolution_ms', { mode: 'number' }), // first seen → fix landed, in ms (exceeds 32-bit int range past 24.8 days)
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
     flakeEvidenceRunId: integer('flake_evidence_run_id'), // latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix
     lastRerunDispatch: jsonb('last_rerun_dispatch'), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
@@ -571,6 +570,8 @@ export const testRunsCases = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
+    // A run's executions are looked up on this index: PostgreSQL costs the same
+    // lookup on the wider unique index below so high that a join reads the whole table.
     testRunIdIdx: index('idx_test_runs_cases_test_run_id').on(table.testRunId),
     // Composite: covers plain test_case_id lookups (prefix) and the
     // per-case recency sorts used by history/flakiness queries.
@@ -1255,7 +1256,6 @@ export const markers = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    projectIdIdx: index('idx_markers_project_id').on(table.projectId),
     projectOccurredIdx: index('idx_markers_project_occurred').on(table.projectId, table.occurredAt),
     runIdIdx: index('idx_markers_run_id').on(table.runId),
   }),
@@ -1449,8 +1449,6 @@ export const projectIntegrations = pgTable(
     issueType: text('issue_type'),
     labels: jsonb('labels'), // string[]
     defaultAssignee: text('default_assignee'), // account id / name
-    spaceId: text('space_id'), // Confluence space (wiki binding)
-    parentPageId: text('parent_page_id'), // Confluence parent page
     locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
     include: jsonb('include'), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
     policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
@@ -1995,7 +1993,6 @@ export const scenarioGaps = pgTable(
     evidence: jsonb('evidence'), // string[] — human-readable evidence lines
     factors: jsonb('factors'), // exposure factors: { churn, age, escapeHistory, priority }
     score: doublePrecision('score'), // exposure × (1 − protection); ranked descending
-    featureNodeId: integer('feature_node_id').references(() => graphNodes.id, { onDelete: 'set null' }),
     ticket: text('ticket'), // ticket id joined at change time
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'set null' }),
@@ -2006,7 +2003,6 @@ export const scenarioGaps = pgTable(
     assignedTo: text('assigned_to'),
     triagedBy: integer('triaged_by').references(() => users.id, { onDelete: 'set null' }), // the user who last gave a triage verdict; null when auth is off
     snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // a snoozed gap wakes at this time; null with status snoozed = until the node changes
-    snoozedAtRunId: integer('snoozed_at_run_id'), // legacy; superseded by snoozed_at_signature for "until the node changes"
     snoozedAtSignature: text('snoozed_at_signature'), // the subject node's edge fingerprint when snoozed "until the node changes"; wakes once the node's shape differs
     acceptedAt: timestamp('accepted_at', { mode: 'date' }), // when a gap was accepted; feeds the accepted-but-unwritten inbox queue
     coveredAt: timestamp('covered_at', { mode: 'date' }), // when a gap was marked covered-by; a durable per-gap "for" verdict for detector precision
@@ -2024,7 +2020,6 @@ export const scenarioGaps = pgTable(
     projectStatusIdx: index('idx_scenario_gaps_project_status').on(table.projectId, table.status),
     projectScoreIdx: index('idx_scenario_gaps_project_score').on(table.projectId, table.score),
     prIdx: index('idx_scenario_gaps_pr').on(table.projectId, table.prNumber),
-    featureNodeIdx: index('idx_scenario_gaps_feature_node').on(table.featureNodeId),
     testCaseIdx: index('idx_scenario_gaps_test_case').on(table.testCaseId),
     clusterIdx: index('idx_scenario_gaps_cluster').on(table.failureClusterId),
     triagedByIdx: index('idx_scenario_gaps_triaged_by').on(table.triagedBy),
@@ -2678,5 +2673,31 @@ export const testRunResourceReports = pgTable(
   },
   (t) => ({
     runShardIdx: uniqueIndex('idx_test_run_resource_reports_run_shard').on(t.runId, t.shard),
+  }),
+);
+
+// One batch delivery of a run's results (`/submit`, `/upload`, a shard's for a
+// sharded run), under the key the reporter generated for it, and the run it
+// went to. A delivery repeated with the same key, such as a slow upload the
+// reporter gave up on and sent again, answers with that run instead of storing
+// the results twice.
+export const runDeliveries = pgTable(
+  'run_deliveries',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    deliveryKey: text('delivery_key').notNull(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectKeyIdx: uniqueIndex('idx_run_deliveries_project_key').on(t.projectId, t.deliveryKey),
+    runIdx: index('idx_run_deliveries_run_id').on(t.runId),
   }),
 );

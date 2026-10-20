@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { StreamManager } from '../src/internal/streaming/stream-manager.js';
 import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
-import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
+import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import { HttpError } from '../src/internal/transport/http-client.js';
@@ -13,14 +13,12 @@ import type { CompleteStreamEvent, StepBeginStreamEvent, StepEndStreamEvent } fr
 
 const projectName = 'piwi-stream-test-' + process.pid;
 const projectHash = hashForProject(projectName);
+const RECOVERY_SERVER = 'http://localhost:3000';
 
 function cleanup(): void {
   const tmp = os.tmpdir();
   for (const f of fs.readdirSync(tmp)) {
-    if (
-      f.startsWith(`piwi-dashboard-stream-${projectHash}`) ||
-      f.startsWith(`piwi-dashboard-recovery-${projectHash}`)
-    ) {
+    if (f.startsWith(`piwi-dashboard-stream-${projectHash}`)) {
       try {
         fs.unlinkSync(path.join(tmp, f));
       } catch {
@@ -28,6 +26,7 @@ function cleanup(): void {
       }
     }
   }
+  fs.rmSync(recoveryFilePath(RECOVERY_SERVER, projectName), { force: true });
 }
 
 function makeOptions(overrides: Partial<PiwiDashboardOptions> = {}): PiwiDashboardOptions {
@@ -94,7 +93,7 @@ describe('StreamManager batching & drain', () => {
     const sm = new StreamManager(
       http as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       options,
@@ -129,7 +128,7 @@ describe('StreamManager batching & drain', () => {
     const sm = new StreamManager(
       http as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       options,
@@ -161,7 +160,7 @@ describe('StreamManager batching & drain', () => {
     const sm = new StreamManager(
       http as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       options,
@@ -189,7 +188,7 @@ describe('StreamManager batching & drain', () => {
     const sm = new StreamManager(
       http as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       makeOptions(),
@@ -228,7 +227,7 @@ describe('StreamManager batching & drain', () => {
     const sm = new StreamManager(
       http as any,
       buffer,
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       options,
@@ -271,7 +270,7 @@ describe('StreamManager run-scoped buffer', () => {
     const sm = new StreamManager(
       http as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       makeOptions({ streamingBatchSize: 100, streamingBatchDelay: 60000 }),
@@ -301,7 +300,7 @@ describe('StreamManager run-scoped buffer', () => {
     const sm = new StreamManager(
       {} as any,
       buffer,
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       makeOptions(),
@@ -342,7 +341,7 @@ describe('StreamManager idle heartbeat', () => {
     const sm = new StreamManager(
       http as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       makeOptions(),
@@ -421,7 +420,7 @@ describe('StreamManager live steps', () => {
     const sm = new StreamManager(
       http as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
@@ -511,7 +510,7 @@ describe('StreamManager buffer bounding', () => {
     const sm = new StreamManager(
       http as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       options,
@@ -583,7 +582,7 @@ describe('StreamManager request sizing', () => {
     const sm = new StreamManager(
       http as any,
       buffer,
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
       makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
@@ -719,7 +718,7 @@ describe('StreamManager end-of-run bounds', () => {
     const sm = new StreamManager(
       client as any,
       new StreamBuffer(projectName),
-      new CrashRecovery(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
       uploader as any,
       new FileHandler(),
       makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),

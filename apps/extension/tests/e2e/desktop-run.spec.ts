@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DESKTOP_CHALLENGE_HEADER, DESKTOP_PROOF_HEADER, desktopTokenProof } from '@piwitests/core/desktop-proof';
 import { test, expect, extensionWorker, launchWithExtension } from './fixtures.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
 
@@ -30,18 +31,27 @@ interface Received {
 /**
  * Run with Playwright in the real extension: the worker sends the steps the
  * panel confirmed to the paired desktop app, as JSON with its token, and reads
- * the request's verdict back. A local server stands in for the desktop app.
+ * the request's verdict back. A local server stands in for the desktop app; it
+ * proves it holds `proofToken` when `/api/health` asks.
  */
 test.describe('Run with Playwright, in the real extension', () => {
   let server: Server;
   let desktop: string;
   const received: Received[] = [];
+  let proofToken = 'pd_desktop';
 
   test.beforeAll(async () => {
     server = createServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
-      req.on('end', () => {
+      req.on('end', async () => {
+        if (req.url === '/api/health') {
+          const challenge = String(req.headers[DESKTOP_CHALLENGE_HEADER] ?? '');
+          const port = (server.address() as AddressInfo).port;
+          res.setHeader(DESKTOP_PROOF_HEADER, await desktopTokenProof(proofToken, port, challenge));
+          res.end('{"status":"ok"}');
+          return;
+        }
         received.push({
           method: req.method ?? '',
           url: req.url ?? '',
@@ -140,6 +150,15 @@ test.describe('Run with Playwright, in the real extension', () => {
         'POST /api/desktop/repro-requests',
         'GET /api/desktop/repro-requests/a1b2c3',
       ]);
+
+      // A program that cannot prove it holds the token, on the paired address, never receives it.
+      proofToken = 'pd_other';
+      expect(await fromTab({ type: 'piwi-desktop-repro', steps: STEPS, bugReportId: null })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('did not prove'),
+      });
+      expect(await fromTab({ type: 'piwi-desktop-repro-status', id: 'a1b2c3' })).toMatchObject({ ok: false });
+      expect(received).toHaveLength(2);
     } finally {
       await context.close();
     }

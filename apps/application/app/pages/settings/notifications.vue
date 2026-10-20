@@ -186,6 +186,13 @@ function channelTypeIcon(type: string) {
   return 'i-lucide-webhook';
 }
 
+/** Why an unverified channel shows its badge, and what verifies it. */
+function unverifiedChannelHint(type: string): string {
+  if (type === 'personal_email') return 'Verify your account email in Account settings to receive email here';
+  if (type === 'email') return 'No successful test yet: email is sent here once a test arrives';
+  return 'No successful test yet: send one to verify delivery';
+}
+
 const eventLabel = notificationEventLabel;
 </script>
 
@@ -298,10 +305,7 @@ PIWI_SMTP_PASS=secret"
               <div class="font-medium text-sm flex items-center gap-1.5">
                 {{ ch.name }}
                 <UBadge v-if="ch.type === 'personal_email'" size="xs" variant="soft" color="neutral">auto</UBadge>
-                <UTooltip
-                  v-if="ch.type !== 'personal_email' && ch.type !== 'browser' && !ch.verified"
-                  text="No successful test yet — send one to verify delivery"
-                >
+                <UTooltip v-if="ch.type !== 'browser' && !ch.verified" :text="unverifiedChannelHint(ch.type)">
                   <UBadge size="xs" variant="soft" color="warning">unverified</UBadge>
                 </UTooltip>
               </div>

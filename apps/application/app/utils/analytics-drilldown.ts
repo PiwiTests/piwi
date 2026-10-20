@@ -107,6 +107,28 @@ function list(value: unknown): string[] {
 }
 
 /** Read a drill-down address; the period resolves in its `tz`, else the viewer's zone. */
+/** The query keys `parseDrillQuery` reads. */
+const DRILL_QUERY_KEYS = [
+  'source',
+  'period',
+  'tz',
+  'environments',
+  'branches',
+  'allBranches',
+  'fullRunsOnly',
+  'status',
+];
+
+/**
+ * What identifies the drill-down a page's query carries, or null when it
+ * carries none: a change of any other key (a tab, a page of a list) leaves it
+ * the same, so the page does not apply the drill-down again.
+ */
+export function drillQueryKey(query: Record<string, unknown>): string | null {
+  if (query.source !== 'analytics') return null;
+  return JSON.stringify(DRILL_QUERY_KEYS.map((key) => query[key] ?? null));
+}
+
 export function parseDrillQuery(
   query: Record<string, unknown>,
   ctx: { now: number; timeZone: string; markers?: PeriodMarker[] },

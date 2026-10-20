@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e6831a12-db61-42d2-b184-a744a024b5bb",
+  "id": "fe985b8c-a3ea-4dc3-b0a2-55b5f5ac44ab",
   "prevId": "35010f05-965f-43e3-b989-dfdf5f3b3988",
   "tables": {
     "account_tokens": {
@@ -6962,6 +6962,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "repository_url": {
+          "name": "repository_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "default_branch": {
           "name": "default_branch",
           "type": "text",
@@ -9553,13 +9560,6 @@
         },
         "keep_reason": {
           "name": "keep_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "server_coverage_gaps": {
-          "name": "server_coverage_gaps",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

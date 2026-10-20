@@ -107,7 +107,7 @@ describe('release streaks', () => {
     expect(debt.readyToRelease).toBe(1);
   });
 
-  test('lab runs neither count toward nor break the streak', async () => {
+  test('lab, bisect, reproduction and incident runs neither count toward nor break the streak', async () => {
     const caseId = await seedCase('wobbly');
     await addQuarantine(db, 1, caseId);
     await seedExecution(caseId, 'passed');
@@ -115,6 +115,9 @@ describe('release streaks', () => {
     for (let i = 0; i < RELEASE_AFTER_CONSECUTIVE_PASSES; i++) await seedExecution(caseId, 'passed', lab);
     await seedExecution(caseId, 'failed', lab);
     await seedExecution(caseId, 'failed', { piwiProbe: true });
+    await seedExecution(caseId, 'failed', { piwiOrigin: { kind: 'bisect' } });
+    await seedExecution(caseId, 'failed', { piwiOrigin: { kind: 'reproduce' } });
+    await seedExecution(caseId, 'failed', { piwiOrigin: { kind: 'ci' }, incident: { reason: 'staging was down' } });
 
     const { entries } = await listQuarantine(db, 1);
     expect(entries[0]!.consecutivePasses).toBe(1);

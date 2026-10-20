@@ -15,7 +15,7 @@ differently.
 
 Install **Piwi** from the extensions view (`piwitests.piwi`) or, in a JetBrains IDE, from the
 **[JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)** (**Settings → Plugins**). It
-starts on a workspace that holds a Playwright config, and reads the connection the reporter already uses: the
+starts on a trusted workspace that holds a Playwright config, and reads the connection the reporter already uses: the
 `PIWI_*` variables in the environment or the workspace `.env`, or the [desktop app](/features/desktop). Otherwise,
 run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE) and sign in with the browser:
 [Editor connection](./editor-connection) has the steps.

@@ -529,7 +529,11 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 // No desktop app runs here: Connect offers none.
                 assertEquals(null, server.desktop().get(5, TimeUnit.SECONDS)?.url)
 
-                val failure = server.failures().get(5, TimeUnit.SECONDS)?.items?.single()
+                val failures = server.failures(FailuresParams("cluster")).get(5, TimeUnit.SECONDS)
+                val failure = failures?.items?.single()
+                assertEquals("cluster" to 1, failures?.grouping to failures?.failing)
+                assertEquals(listOf("failure:${failure?.executionId}"), failures?.tree?.single()?.children?.single()?.children?.map { it.key })
+                assertEquals(118, server.runId(RunIdParams(" #118 ")).get(5, TimeUnit.SECONDS)?.runId)
                 assertEquals(File(dir, "tests/pages/checkout.page.ts").toURI().toString().replace("file:/", "file:///"), failure?.uri)
                 assertEquals(4, failure?.line)
                 assertTrue(failure?.hasTrace == true)

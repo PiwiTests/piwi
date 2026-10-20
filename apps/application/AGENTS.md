@@ -133,6 +133,8 @@ export default eventHandler(async (event) => {
 - `requireAuth(event, permission)` is an **explicit override** for handlers computing their own authorization (e.g.
   `users/[id].patch.ts` self-or-admin); the meta then documents but does not drive it.
 - Streaming endpoints (`start`, `events`, `finish`, `case-files`) keep **stream-token** auth instead of `requireAuth`.
+  A run stores its main stream or setup token only as a digest (`streamTokenDigest`, checked with `matchesStreamToken`),
+  and no response carries `test_runs.stream_token`: a handler returning run rows selects `publicRunColumns()`.
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
   `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
   `Access-Control-Allow-Origin` except trace archives for the hosted trace viewer. Browser clients are same-origin
@@ -163,8 +165,9 @@ The early check only says the user holds the permission _somewhere_. The project
   that `/api/auth/me` returns. It is an affordance only (hide or disable a control); the server decides. With
   authentication off everything is allowed (virtual administrator).
 - **Safety rules:** the last administrator cannot be demoted; a Project admin edits role bindings only on projects
-  where they hold `project:members`, never on all projects; changing a user's instance role bumps `sessionEpoch`,
-  while project role and group changes take effect on the next request since access is loaded per request.
+  where they hold `project:members`, never on all projects; changing a user's instance role or signing out bumps
+  `sessionEpoch`, while project role and group changes take effect on the next request since access is loaded per
+  request.
 
 ### OpenAPI annotations
 
@@ -498,8 +501,9 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
   forbidden id renders the error page and answers 404 or 403, never an empty page with a 200.
 - **Component** — a Vue file in the matching `app/components/` subfolder. Auto-import has no folder prefix, so the name
   must be unique repo-wide; follow the reuse and responsive rules below.
-- **Unit test** — `tests/unit/*.test.ts` (Vitest). **E2E test** — `tests/*.spec.ts` (Playwright), with any project name
-  registered in `shared/test-project-names.ts`.
+- **Unit test** — `tests/unit/*.test.ts` (Vitest). One that needs a PostgreSQL server is named `*-pg.test.ts`, reads it
+  from `PIWI_POSTGRES_TEST_URL` and skips without it; CI runs those in the E2E job's PostgreSQL cell. **E2E test** —
+  `tests/*.spec.ts` (Playwright), with any project name registered in `shared/test-project-names.ts`.
 - **AI test** — an E2E that needs a model goes against the mock OpenAI-compatible server in `tests/ai-diagnosis.spec.ts`,
   so the main suite stays at zero tokens. `tests/live/` is the only place that talks to a real provider: it is excluded
   from `playwright.config.ts`, has its own config, and runs from `npm run app:test:ai:live`. Assume the live model is
@@ -537,6 +541,12 @@ from `createScmProvider` / `scmProviderForUrl` (or the pure link helpers from `#
 `tests/unit/scm-single-source.test.ts` scans `server`, `shared`, `app` and `types` for provider host literals and the
 union outside an explicit allow-list, so a new home for either is a visible diff to that list.
 
+**A token reads only the project's pinned repository.** `projects.repository_url` (`server/utils/scm/project-repository.ts`)
+is set by the first run that names a remote and changed by a project admin; `createScmProvider(url, db, projectId)`
+returns no provider when `url` (usually a run's `scm.remoteUrl`) names another. Never pair `scmProviderForUrl` with a
+token for a URL that came from run metadata or a user's link without checking it against the pinned repository
+(`projectRepositoryFor`, or `isRepositoryPinnedInScope` for a link).
+
 On the desktop app with no SCM token, `createScmProvider` returns a `LocalGitProvider` (`server/utils/scm/local-git.ts`)
 for a project linked to a clone of the repository: it reads history with git in that folder and wraps the host's own
 provider for the rest. A method added to `ScmProvider` must be added there too — a read tries git first and falls back
@@ -558,8 +568,8 @@ Re-run `npm run app:seed:demo` afterwards.
 
 ### Timed-out tests fold into `failedTests`
 
-There is no `timedOutTests` column on `test_runs`. Timed-out cases (`'timedOut'` per-case from Playwright; `'timedout'`
-in the declared `TestCaseStatus` union) fold into `failedTests` so `total = passed + failed + skipped + didNotRun`
+There is no `timedOutTests` column on `test_runs`. Timed-out cases (`'timedOut'` per-case from Playwright, stored as
+`'timedout'`) fold into `failedTests` so `total = passed + failed + skipped + didNotRun`
 reconciles and matches the UI. **Every ingest site MUST use the helpers in `shared/utils/test-counts.ts`** —
 `sumFailedAndTimedOut(body.failedTests, body.timedOutTests)` for body-field sites (`finish`, `submit`, `upload` + the
 demo `app/demo/api/reporter.ts` mirror) or `countFailedFromTally(insertedStatusCounts)` for per-status-tally sites

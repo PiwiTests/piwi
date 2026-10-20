@@ -1,19 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the Piwi Dashboard desktop shell.",
+  "description": "The bundled splash page of the Piwi Dashboard desktop shell: no command beyond the core defaults. The dashboard's own commands are granted to the sidecar's origin by runtime-capabilities/remote.json.",
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "core:window:allow-show",
-    "core:window:allow-hide",
-    "core:window:allow-set-focus",
-    "shell:allow-execute",
-    "opener:allow-open-path",
-    "opener:allow-reveal-item-in-dir",
-    "autostart:allow-enable",
-    "autostart:allow-disable",
-    "autostart:allow-is-enabled",
-    "store:default"
-  ]
+  "permissions": ["core:default"]
 }

@@ -61,6 +61,12 @@ export interface CollectedPerformanceMetrics {
 export interface CollectedTestCase {
   /** Stream-event discriminant: `'begin'` or `'complete'`. Omitted for batch-only runs. */
   type?: 'begin' | 'complete';
+  /**
+   * Playwright's `TestCase.id`, which tells apart tests that share a title and a
+   * line (a parameterized test, a `--repeat-each` repetition). Collection-only:
+   * the run counts read it, the wire never carries it.
+   */
+  testId?: string;
   title: string;
   location: string;
   status?: string;

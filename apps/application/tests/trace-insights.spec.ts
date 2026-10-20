@@ -3,10 +3,6 @@ import { createHash } from 'crypto';
 import { PROJECT } from '#shared/test-project-names';
 import { buildZip } from '../server/utils/trace-zip';
 
-function sha256(data: Buffer): string {
-  return createHash('sha256').update(data).digest('hex');
-}
-
 function sha1(text: string): string {
   return createHash('sha1').update(text).digest('hex');
 }
@@ -134,7 +130,6 @@ async function uploadRun(request: APIRequestContext, traceZip: Buffer | null) {
   };
   if (traceZip) {
     multipart.trace_0 = { name: 'trace.zip', mimeType: 'application/zip', buffer: traceZip };
-    multipart.trace_hashes = JSON.stringify({ 0: sha256(traceZip) });
   }
   const res = await request.post('/api/test-runs/upload', { multipart });
   expect(res.ok()).toBe(true);

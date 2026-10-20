@@ -119,4 +119,59 @@ describe('streamMultipart', () => {
     expect(readFileSync(attachments[0]!.path).toString()).toBe('A');
     expect(readFileSync(attachments[1]!.path).toString()).toBe('B');
   });
+
+  test('refuses too many fields, and fields over their total size', async () => {
+    const many = buildMultipart(Array.from({ length: 5 }, (_, i) => ({ name: `f${i}`, value: 'x' })));
+    await expect(streamMultipart(makeEvent(many), { maxTotalBytes: 1024, maxFields: 3 })).rejects.toMatchObject({
+      statusCode: 413,
+    });
+
+    const large = buildMultipart(Array.from({ length: 3 }, (_, i) => ({ name: `f${i}`, value: 'y'.repeat(400) })));
+    await expect(
+      streamMultipart(makeEvent(large), { maxTotalBytes: 1024, maxTotalFieldBytes: 1000 }),
+    ).rejects.toMatchObject({ statusCode: 413 });
+  });
+
+  test('runs beforeFiles once, with the fields sent ahead of the first file part', async () => {
+    const seen: Array<Record<string, string>> = [];
+    const body = buildMultipart([
+      { name: 'streamToken', value: 'tok-123' },
+      { name: 'trace', filename: 'trace.zip', data: Buffer.from('abc') },
+      { name: 'late', value: 'after-the-file' },
+      { name: 'attach_file', filename: 'a.txt', data: Buffer.from('A') },
+    ]);
+    last = await streamMultipart(makeEvent(body), {
+      maxTotalBytes: 1024,
+      beforeFiles: (fields) => void seen.push(Object.fromEntries(fields)),
+    });
+    expect(seen).toEqual([{ streamToken: 'tok-123' }]);
+    expect(last.files).toHaveLength(2);
+  });
+
+  test('a refused beforeFiles check rejects the request before any file part is written', async () => {
+    let written = false;
+    const body = buildMultipart([
+      { name: 'streamToken', value: 'wrong' },
+      { name: 'trace', filename: 'trace.zip', data: Buffer.alloc(4096, 1) },
+    ]);
+    await expect(
+      streamMultipart(makeEvent(body), {
+        maxTotalBytes: 1024 * 1024,
+        beforeFiles: () => {
+          throw Object.assign(new Error('Invalid stream token'), { statusCode: 403 });
+        },
+      }).then((result) => {
+        written = result.files.length > 0;
+        return result;
+      }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(written).toBe(false);
+  });
+
+  test('runs beforeFiles once parsing ends when no file part arrives', async () => {
+    let calls = 0;
+    const body = buildMultipart([{ name: 'streamToken', value: 'tok' }]);
+    last = await streamMultipart(makeEvent(body), { maxTotalBytes: 1024, beforeFiles: () => void calls++ });
+    expect(calls).toBe(1);
+  });
 });

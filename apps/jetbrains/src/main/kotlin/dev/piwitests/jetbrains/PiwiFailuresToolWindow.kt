@@ -45,7 +45,7 @@ import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
 
 /**
- * The failures of the latest run on the checked-out branch, as a tree (`Glue.failureTree`): the LSP client of the
+ * The failures of the latest run on the checked-out branch, as the tree the service groups (`Glue.failureNodes`): the LSP client of the
  * JetBrains IDEs highlights open files only. The run comes first, with the runs laid over it, then the failures
  * grouped by file, cluster or owner, or flat (the toggles of the toolbar, kept in `PiwiLocalSettings`): a failure of a
  * local run says so, a failure whose line changed since its run is marked edited, and the failures a later run passed
@@ -101,7 +101,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             val local = service.local()
             val result = service.failuresResult
             val live = service.runs?.contexts.orEmpty().firstNotNullOfOrNull { it.live?.takeIf { live -> live.own } }
-            val nodes = Glue.failureTree(result, local.failuresGrouping, live = live)
+            val nodes = Glue.failureNodes(result, live = live)
             val before = shown
             if (before != null && nodes != before && Glue.sameShape(before, nodes)) {
                 // Only what the nodes say changed, such as a run in progress counting its tests: each row is redrawn in
@@ -153,7 +153,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
                 remember(nodes)
             }
-            val failing = Glue.failingCount(result)
+            val failing = result?.failing ?: 0
             toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
             val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem)
             val run = Glue.runHeader(result)
@@ -193,10 +193,10 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 common.createExpandAllAction(expander, tree),
                 common.createCollapseAllAction(expander, tree),
                 Separator.getInstance(),
-                GroupFailuresAction(service, "file", "Group by File", AllIcons.Actions.GroupByFile, render),
-                GroupFailuresAction(service, "cluster", "Group by Cluster", AllIcons.Actions.GroupBy, render),
-                GroupFailuresAction(service, "owner", "Group by Owner", AllIcons.General.User, render),
-                GroupFailuresAction(service, "flat", "Flat", AllIcons.Actions.ListFiles, render),
+                GroupFailuresAction(service, "file", "Group by File", AllIcons.Actions.GroupByFile),
+                GroupFailuresAction(service, "cluster", "Group by Cluster", AllIcons.Actions.GroupBy),
+                GroupFailuresAction(service, "owner", "Group by Owner", AllIcons.General.User),
+                GroupFailuresAction(service, "flat", "Flat", AllIcons.Actions.ListFiles),
                 Separator.getInstance(),
                 actions.getAction("Piwi.OpenSettings"),
             ),
@@ -262,13 +262,12 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
     }
 
-    /** One way to group the failures, among the toolbar's toggles: selecting it keeps it for this project. */
+    /** One way to group the failures, among the toolbar's toggles: selecting it keeps it for this project and reads them so grouped. */
     private class GroupFailuresAction(
         private val service: PiwiProjectService,
         private val grouping: String,
         text: String,
         icon: Icon,
-        private val render: () -> Unit,
     ) : ToggleAction(text, null, icon), DumbAware {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
@@ -277,7 +276,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             if (!state) return
             service.local().failuresGrouping = grouping
-            render()
+            service.regroup()
         }
     }
 
@@ -359,10 +358,10 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         ) {
             val node = nodeOf(value) ?: return
             icon = when (node.icon) {
-                "fixed" -> AllIcons.RunConfigurations.TestPassed
+                "fixed", "passed" -> AllIcons.RunConfigurations.TestPassed
                 "edited" -> AllIcons.General.Information
-                "error" -> AllIcons.General.Error
-                "folder" -> AllIcons.Nodes.Folder
+                "failing", "failed" -> AllIcons.General.Error
+                "file", "cluster", "owner" -> AllIcons.Nodes.Folder
                 "history" -> AllIcons.Vcs.History
                 else -> AllIcons.RunConfigurations.TestState.Run
             }
@@ -375,7 +374,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             if (!Glue.isFixedLocally(failure) && !failure.headline.isNullOrBlank()) {
                 append("  ${failure.headline}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
             }
-            Glue.failureRunNote(failure)?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
+            node.note?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
             append("  ${node.description}", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
         }
     }

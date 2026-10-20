@@ -113,12 +113,13 @@ const alternatives = computed<RankedLocator[]>(() => {
 const userPick = computed<RankedLocator | null>(() => alternatives.value.find((a) => a.pickedByUser) ?? null);
 
 // The single recommended fix — convention-preserving where possible. Computed
-// server-side; fall back to the shared picker for payloads that lack it —
-// EXCEPT when the server deliberately withheld it because every stored
-// alternative looks stale (recomputing here would resurrect a broken pick).
+// server-side, and null when the server withheld it (every stored alternative
+// looks stale, or every candidate finds the element the failing locator
+// already names): recomputing it here would resurrect a pick that is no fix.
+// The shared picker runs only for a payload that lacks the field.
 const recommendation = computed<LocatorFixRecommendation | null>(() => {
-  if (props.healing?.recommendation) return props.healing.recommendation;
-  if (props.healing?.priorNameMayBeStale) return null;
+  if (!props.healing) return null;
+  if (props.healing.recommendation !== undefined) return props.healing.recommendation;
   if (!alternatives.value.length) return null;
   return recommendLocatorFix(props.healing?.failingLocator?.method, alternatives.value);
 });
@@ -375,32 +376,12 @@ defineExpose({
       </span>
     </template>
     <template v-if="pickTraceUrl || healing?.failingLocator" #actions>
-      <div class="flex items-center gap-1">
-        <UButton
-          v-if="healing?.failingLocator"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-mouse-pointer"
-          title="Open the failure-time DOM snapshot and click the element to pick a locator"
-          @click="pickerOpen = true"
-        >
-          Pick from snapshot
-        </UButton>
-        <UButton
-          v-if="pickTraceUrl"
-          :to="pickTraceUrl"
-          target="_blank"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-crosshair"
-          title="Open the failure trace in the trace viewer — its Pick locator tool works on the recorded page snapshots"
-          @click="onPickFromTrace"
-        >
-          Pick from trace
-        </UButton>
-      </div>
+      <LocatorPickActions
+        :snapshot="!!healing?.failingLocator"
+        :trace-url="pickTraceUrl"
+        @pick-snapshot="pickerOpen = true"
+        @pick-trace="onPickFromTrace"
+      />
     </template>
 
     <!-- Closed loop: the recommended locator now passes at this call site -->
@@ -741,32 +722,12 @@ defineExpose({
       <span>No alternatives available</span>
     </template>
     <template v-if="pickTraceUrl || healing?.failingLocator" #actions>
-      <div class="flex items-center gap-1">
-        <UButton
-          v-if="healing?.failingLocator"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-mouse-pointer"
-          title="Open the failure-time DOM snapshot and click the element to pick a locator"
-          @click="pickerOpen = true"
-        >
-          Pick from snapshot
-        </UButton>
-        <UButton
-          v-if="pickTraceUrl"
-          :to="pickTraceUrl"
-          target="_blank"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-crosshair"
-          title="Open the failure trace in the trace viewer — its Pick locator tool works on the recorded page snapshots"
-          @click="onPickFromTrace"
-        >
-          Pick from trace
-        </UButton>
-      </div>
+      <LocatorPickActions
+        :snapshot="!!healing?.failingLocator"
+        :trace-url="pickTraceUrl"
+        @pick-snapshot="pickerOpen = true"
+        @pick-trace="onPickFromTrace"
+      />
     </template>
     <UAlert color="neutral" icon="i-lucide-info" variant="subtle">
       <template #description>

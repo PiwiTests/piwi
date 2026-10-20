@@ -127,7 +127,7 @@ class PiwiSendHandler : HttpRequestHandler() {
                     notice = Glue.pickNotice(at, if (uri != null) Glue.PickOutcome.NO_LOCATOR else Glue.PickOutcome.NO_FILE)
                 }
                 val caret = caretOf(project)
-                var imports = emptyList<String>()
+                var importEdit: FileEdit? = null
                 val text = when (payload) {
                     is Glue.SendPayload.Locator -> payload.text
                     is Glue.SendPayload.Steps -> {
@@ -135,7 +135,7 @@ class PiwiSendHandler : HttpRequestHandler() {
                             ?: throw IllegalStateException("the Piwi editor service is not running in this project")
                         val params = RenderStepsParams(caret?.uri ?: "", payload.steps, caret?.line, caret?.character, "separate")
                         val rendered = server.renderSteps(params).orNull()
-                        imports = rendered?.imports.orEmpty()
+                        importEdit = rendered?.importEdit
                         rendered?.code?.takeIf { it.isNotBlank() }
                             ?: throw IllegalStateException(rendered?.warnings?.joinToString("; ") ?: "nothing to insert")
                     }
@@ -143,7 +143,7 @@ class PiwiSendHandler : HttpRequestHandler() {
                 }
                 ApplicationManager.getApplication().invokeLater {
                     try {
-                        result.complete(insertAtCaret(project, text, imports, payload is Glue.SendPayload.Locator, notice))
+                        result.complete(insertAtCaret(project, text, importEdit, payload is Glue.SendPayload.Locator, notice))
                     } catch (e: Exception) {
                         result.completeExceptionally(e)
                     }
@@ -182,7 +182,7 @@ class PiwiSendHandler : HttpRequestHandler() {
      * Replaces the range of `edit`, on one line of the file at `uri`, with its text, as one command; the file's path, or
      * null when the file or the line is not there.
      */
-    private fun replaceOnLine(project: Project, uri: String, edit: PickEdit): String? {
+    private fun replaceOnLine(project: Project, uri: String, edit: FileEdit): String? {
         val range = edit.range ?: return null
         val start = range.start ?: return null
         val end = range.end ?: return null
@@ -198,11 +198,14 @@ class PiwiSendHandler : HttpRequestHandler() {
         return file.path
     }
 
-    /** Inserts `text` at the caret, and the `imports` the file lacks after its imports, as one command. */
+    /**
+     * Inserts `text` at the caret (the service indented it for the caret's line), and the service's import edit, placed in
+     * the text before the code goes in, as one command.
+     */
     private fun insertAtCaret(
         project: Project,
         text: String,
-        imports: List<String>,
+        importEdit: FileEdit?,
         locator: Boolean,
         notice: String? = null,
     ): String? {
@@ -210,14 +213,21 @@ class PiwiSendHandler : HttpRequestHandler() {
             ?: throw IllegalStateException("no editor is open in ${project.name}")
         val document = editor.document
         val caret = editor.caretModel.primaryCaret
-        val line = document.getLineNumber(caret.offset)
-        val lineText = document.getText(com.intellij.openapi.util.TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line)))
-        val block = Glue.indentBlock(text, lineText.takeWhile { it == ' ' || it == '\t' })
         WriteCommandAction.runWriteCommandAction(project, "Insert from Piwi Picker", null, {
             val start = caret.selectionStart
-            document.replaceString(start, caret.selectionEnd, block)
-            caret.moveToOffset(start + block.length)
-            Glue.importInsertion(document.immutableCharSequence, imports)?.let { document.insertString(it.offset, it.text) }
+            val end = caret.selectionEnd
+            // Inside the selection the code replaces, the imports go at the start of its first line.
+            val at = Glue.offsetOf(document.immutableCharSequence, importEdit?.range?.start)
+                ?.let { if (it > start && it < end) document.getLineStartOffset(document.getLineNumber(start)) else it }
+            val imports = Glue.importWrite(at, importEdit?.newText, Glue.BlockWrite(start, end, text, start))
+            if (imports?.first == true) document.insertString(imports.offset, imports.text)
+            document.replaceString(start, end, text)
+            var after = start + text.length
+            if (imports?.first == false) {
+                document.insertString(imports.offset, imports.text)
+                after += imports.text.length
+            }
+            caret.moveToOffset(after)
         })
         PiwiCommands.notify(
             project,

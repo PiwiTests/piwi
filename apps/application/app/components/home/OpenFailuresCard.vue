@@ -66,14 +66,22 @@ const QUEUE_META: Record<InboxQueue, { label: string; icon: string }> = {
 };
 
 // ── Per-viewer "new since you last looked" cut (localStorage, no schema) ──────
-// Read the previous visit as the cut for this session, then stamp now so the
-// next visit measures from here.
+// The first Home visit of a browser session reads the previous session's visit
+// as the cut and stamps now; every later visit in the session keeps that cut
+// (sessionStorage), so going back to Home does not empty the New queue.
 const LAST_VISIT_KEY = 'piwi-inbox-last-visit';
+const SESSION_CUT_KEY = 'piwi-inbox-session-cut';
 const lastVisitMs = ref<number | null>(null);
 onMounted(() => {
   try {
+    const sessionCut = sessionStorage.getItem(SESSION_CUT_KEY);
+    if (sessionCut !== null) {
+      lastVisitMs.value = Number(sessionCut) || null;
+      return;
+    }
     const stored = localStorage.getItem(LAST_VISIT_KEY);
     lastVisitMs.value = stored ? Number(stored) || null : null;
+    sessionStorage.setItem(SESSION_CUT_KEY, stored ?? '');
     localStorage.setItem(LAST_VISIT_KEY, String(Date.now()));
   } catch {
     lastVisitMs.value = null;

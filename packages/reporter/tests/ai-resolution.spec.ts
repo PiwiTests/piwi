@@ -209,6 +209,23 @@ describe('resolveRun — Ajax wait', () => {
     ]);
   });
 
+  it('sends each observed URL once, at most fifty, and leaves out an overlong one', async () => {
+    const { page } = recorderPage();
+    const { resolver, requests } = loginResolver('**/api/items/**');
+    const items = Array.from({ length: 60 }, (_, i) => `https://app.example/api/items/${i}`);
+    await resolveRun('log in', {
+      page,
+      params: {},
+      resolver,
+      readSnapshot: async () => '- button "Sign in"',
+      observeResponses: async (_page, action) => {
+        await action();
+        return [`https://app.example/api/huge?q=${'x'.repeat(4_000)}`, items[0]!, ...items];
+      },
+    });
+    expect(requests.find((r) => r.kind === 'wait')?.observedResponses).toEqual(items.slice(0, 50));
+  });
+
   it('skips the wait-pick entirely when the step triggered no Ajax', async () => {
     const { page } = recorderPage();
     const { resolver, requests } = loginResolver('**/never');

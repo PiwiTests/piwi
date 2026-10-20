@@ -33,6 +33,7 @@ import {
   isHandbackMetric,
   loadHandbackCounts,
 } from './handbacks';
+import { median } from '../../utils/stats';
 
 /** The metrics summed from the scalar rows. */
 const ROLLUP_VALUE: Partial<Record<MetricId, (t: RollupTotals, cost: CiCost | null) => number | null>> = {
@@ -80,10 +81,6 @@ export const EVALUATED_METRIC_IDS = METRICS.map((m) => m.id).filter(
     id === 'quarantine-debt' ||
     isHandbackMetric(id),
 ) as MetricId[];
-
-export function isEvaluatedMetric(id: MetricId): boolean {
-  return EVALUATED_METRIC_IDS.includes(id);
-}
 
 /** A metric summed from the scalar rows (the rollups, or the matching executions). */
 export function isRollupMetric(id: MetricId): boolean {
@@ -171,13 +168,6 @@ function openAt(cluster: ClusterRow, atMs: number, now: number): boolean {
   if (cluster.status === 'open') return true;
   // Resolved or ignored: open at `atMs` only if that happened afterwards.
   return (ms(cluster.updatedAt) ?? 0) >= atMs;
-}
-
-export function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 function round(value: number, precision: number): number {

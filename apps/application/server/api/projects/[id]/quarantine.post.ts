@@ -1,7 +1,6 @@
 import { getDatabase } from '../../../database';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { addQuarantine } from '#shared/handlers/quarantine';
-import { requireAuth } from '../../../utils/auth';
 
 defineRouteMeta({
   openAPI: {
@@ -31,8 +30,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
-  const user = await requireAuth(event);
-  await requireProjectAccess(event, projectId);
+  const user = await requireProjectAccess(event, projectId);
 
   const body = (await readBody(event)) as { testCaseId?: unknown; reason?: unknown; source?: unknown };
   const testCaseId = Number(body?.testCaseId);

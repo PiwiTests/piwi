@@ -7,14 +7,23 @@ export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 // The reporter's batch submit carries a whole run as one JSON document.
 const UNCAPPED_PATHS = ['/api/test-runs/submit'];
 
+// Routes that parse a multipart body as a stream (`streamMultipart`), with caps
+// counted on the bytes read. Any other route buffers what it reads.
+const STREAMED_MULTIPART_PATHS = [
+  /^\/api\/test-runs\/upload$/,
+  /^\/api\/test-runs\/import$/,
+  /^\/api\/test-runs\/[^/]+\/case-files$/,
+  /^\/api\/projects\/[^/]+\/bug-reports$/,
+];
+
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /**
  * Why a request body must be refused before any route reads it, or null. A
- * non-multipart body has to declare its size, since h3 buffers it whole: a
- * chunked one (no `Content-Length`) gets 411, one over
- * {@link MAX_REQUEST_BODY_BYTES} gets 413. Routes that check `Content-Length`
- * against a smaller limit can then rely on it.
+ * body has to declare its size, since h3 buffers it whole: a chunked one (no
+ * `Content-Length`) gets 411, one over {@link MAX_REQUEST_BODY_BYTES} gets 413.
+ * Routes that check `Content-Length` against a smaller limit can then rely on
+ * it. A multipart body sent to a route that streams it is left to that route.
  */
 export function bodyLimitError(request: {
   method: string;
@@ -24,14 +33,15 @@ export function bodyLimitError(request: {
   transferEncoding?: string | null;
 }): { statusCode: 411 | 413; message: string } | null {
   if (!BODY_METHODS.has(request.method.toUpperCase())) return null;
-  if ((request.contentType ?? '').toLowerCase().startsWith('multipart/form-data')) return null;
+  const path = request.path.split('?')[0]!;
+  const multipart = (request.contentType ?? '').toLowerCase().startsWith('multipart/form-data');
+  if (multipart && STREAMED_MULTIPART_PATHS.some((route) => route.test(path))) return null;
   if (request.contentLength == null || request.contentLength === '') {
     return request.transferEncoding
       ? { statusCode: 411, message: 'Send the request body with a Content-Length header' }
       : null;
   }
   const length = Number(request.contentLength);
-  const path = request.path.split('?')[0]!;
   if (Number.isFinite(length) && length > MAX_REQUEST_BODY_BYTES && !UNCAPPED_PATHS.includes(path)) {
     return { statusCode: 413, message: `Request body over ${MAX_REQUEST_BODY_BYTES / 1024 / 1024} MB` };
   }

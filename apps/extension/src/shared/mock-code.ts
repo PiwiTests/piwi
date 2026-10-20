@@ -8,6 +8,8 @@
  * {@link HIDDEN_VALUE}. Headers never reach the code.
  */
 
+import { quoteJsString } from '@piwitests/core/locator-chain';
+
 export interface MockSource {
   method: string;
   url: string;
@@ -209,11 +211,6 @@ function indent(text: string, spaces: number): string {
     .join('\n');
 }
 
-/** A JavaScript string literal. */
-function literal(text: string): string {
-  return `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n')}'`;
-}
-
 function contentTypeOf(mimeType: string): string {
   return mimeType.split(';')[0]!.trim();
 }
@@ -225,10 +222,10 @@ export function mockCode(source: MockSource, options: MockOptions = {}): MockCod
   const maxInline = options.maxInlineBody ?? MAX_INLINE_BODY;
   const method = source.method.toUpperCase();
   const guard =
-    method === 'GET' ? '' : `if (route.request().method() !== ${literal(method)}) return route.fallback();\n`;
+    method === 'GET' ? '' : `if (route.request().method() !== ${quoteJsString(method)}) return route.fallback();\n`;
   const wrap = (action: string) => {
-    if (!guard) return `await page.route(${literal(pattern)}, (route) =>\n  ${indent(action, 2)},\n);`;
-    return `await page.route(${literal(pattern)}, (route) => {\n  ${guard}  return ${indent(action, 2)};\n});`;
+    if (!guard) return `await page.route(${quoteJsString(pattern)}, (route) =>\n  ${indent(action, 2)},\n);`;
+    return `await page.route(${quoteJsString(pattern)}, (route) => {\n  ${guard}  return ${indent(action, 2)};\n});`;
   };
 
   if (kind === 'abort') return { code: wrap('route.abort()'), file: null, hidden: 0 };
@@ -258,9 +255,9 @@ export function mockCode(source: MockSource, options: MockOptions = {}): MockCod
   if (text.length > maxInline) {
     const extension = json.ok || asIs ? 'json' : source.base64 ? 'bin' : 'txt';
     const path = `mocks/${mockFileName(source.url)}.${extension}`;
-    const type = contentType ? `contentType: ${literal(contentType)}, ` : '';
+    const type = contentType ? `contentType: ${quoteJsString(contentType)}, ` : '';
     return {
-      code: wrap(`route.fulfill({ ${status}${type}path: ${literal(path)} })`),
+      code: wrap(`route.fulfill({ ${status}${type}path: ${quoteJsString(path)} })`),
       file: { path, content: text, base64: !!source.base64 && !json.ok },
       hidden: count.n,
     };
@@ -268,8 +265,8 @@ export function mockCode(source: MockSource, options: MockOptions = {}): MockCod
   if (json.ok) {
     return { code: wrap(`route.fulfill({\n  ${status}json: ${indent(text, 2)},\n})`), file: null, hidden: count.n };
   }
-  const type = contentType ? `contentType: ${literal(contentType)}, ` : '';
-  const bodyCode = source.base64 ? `Buffer.from(${literal(body)}, 'base64')` : literal(body);
+  const type = contentType ? `contentType: ${quoteJsString(contentType)}, ` : '';
+  const bodyCode = source.base64 ? `Buffer.from(${quoteJsString(body)}, 'base64')` : quoteJsString(body);
   return { code: wrap(`route.fulfill({ ${status}${type}body: ${bodyCode} })`), file: null, hidden: count.n };
 }
 

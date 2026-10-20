@@ -184,6 +184,21 @@ pub(crate) fn local_get_json(server: &ServerInfo, path: &str) -> Result<serde_js
         .map_err(|_| "the local server sent something other than JSON".to_string())
 }
 
+/// A new directory for one run's verdict file: a random name under the temp
+/// dir, created fresh (never one that already exists) and, on Unix, open to the
+/// user only, so another local user can neither predict the file nor plant one.
+fn private_run_dir(prefix: &str) -> std::io::Result<PathBuf> {
+    let dir = std::env::temp_dir().join(format!("{prefix}{}", crate::random_hex_32()));
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+        builder.mode(0o700);
+    }
+    builder.create(&dir)?;
+    Ok(dir)
+}
+
 /// Ask the bundled server for the request's spec, rendered for the project.
 fn fetch_spec(
     server: &ServerInfo,
@@ -192,7 +207,7 @@ fn fetch_spec(
     spec_dir: Option<&str>,
 ) -> Result<String, String> {
     use std::io::{Read, Write};
-    if !project_id.bytes().all(|b| b.is_ascii_digit()) || project_id.is_empty() {
+    if !crate::runner::valid_project_id(project_id) {
         return Err("invalid project id".into());
     }
     let mut stream =
@@ -221,7 +236,7 @@ fn fetch_spec(
 }
 
 /// Remove the spec, then its folder when nothing else is left in it.
-fn remove_spec(spec: &Path) {
+pub(crate) fn remove_spec(spec: &Path) {
     let _ = std::fs::remove_file(spec);
     if let Some(dir) = spec.parent() {
         let _ = std::fs::remove_dir(dir); // fails, as it should, when not empty
@@ -302,23 +317,28 @@ pub async fn desktop_run_repro(
         .map_err(|e| e.to_string())??
     };
 
-    std::fs::create_dir_all(spec.parent().expect("the spec has a folder"))
-        .map_err(|e| e.to_string())?;
-    std::fs::write(&spec, code).map_err(|e| e.to_string())?;
-
-    let result_file = std::env::temp_dir().join(format!("piwi-repro-{request_id}.json"));
-    let _ = std::fs::remove_file(&result_file);
-
     let mut cmd_args: Vec<String> = vec![
         node_path(&cli),
         "test".into(),
         repro_file_filter(&request_id),
     ];
     cmd_args.extend(args);
-    let command = app
-        .shell()
-        .sidecar("node")
-        .map_err(|e| e.to_string())?
+    let sidecar = app.shell().sidecar("node").map_err(|e| e.to_string())?;
+
+    let state = app.state::<LocalRuns>();
+    let id = state.allocate_id();
+    std::fs::create_dir_all(spec.parent().expect("the spec has a folder"))
+        .map_err(|e| e.to_string())?;
+    state.track_spec(id, spec.clone());
+    let result_dir = match std::fs::write(&spec, code).and_then(|()| private_run_dir("piwi-repro-")) {
+        Ok(dir) => dir,
+        Err(e) => {
+            state.remove_spec(id);
+            return Err(e.to_string());
+        }
+    };
+    let result_file = result_dir.join("result.json");
+    let command = sidecar
         .args(cmd_args)
         .current_dir(&folder)
         .env("NO_COLOR", "1")
@@ -332,13 +352,11 @@ pub async fn desktop_run_repro(
     let (mut rx, child) = match spawned {
         Ok(pair) => pair,
         Err(e) => {
-            remove_spec(&spec);
+            state.remove_spec(id);
+            let _ = std::fs::remove_dir_all(&result_dir);
             return Err(e.to_string());
         }
     };
-
-    let state = app.state::<LocalRuns>();
-    let id = state.allocate_id();
     state.track_child(id, child);
 
     let emit_app = app.clone();
@@ -359,12 +377,12 @@ pub async fn desktop_run_repro(
                 CommandEvent::Terminated(status) => {
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
                         runs.forget_child(id);
+                        runs.remove_spec(id);
                     }
-                    remove_spec(&spec);
                     let recorded = std::fs::read(&result_file)
                         .ok()
                         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
-                    let _ = std::fs::remove_file(&result_file);
+                    let _ = std::fs::remove_dir_all(&result_dir);
                     let _ = emit_app.emit(RUN_EVENT, &RunEventPayload::repro(id, recorded));
                     RunEventPayload::exit(id, status.code)
                 }
@@ -381,6 +399,21 @@ pub async fn desktop_run_repro(
 mod tests {
     use super::*;
     use std::path::Component;
+
+    #[test]
+    fn each_run_gets_a_new_private_verdict_dir() {
+        let a = private_run_dir("piwi-repro-test-").expect("create a run dir");
+        let b = private_run_dir("piwi-repro-test-").expect("create another run dir");
+        assert_ne!(a, b);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(&a).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700);
+        }
+        let _ = std::fs::remove_dir_all(&a);
+        let _ = std::fs::remove_dir_all(&b);
+    }
 
     /// A linked folder holding `tests/`, removed when the test ends.
     struct Checkout(PathBuf);

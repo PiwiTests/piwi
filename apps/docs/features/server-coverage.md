@@ -62,8 +62,9 @@ answers it is the one that served the run's first requests.
 
 ## Limits
 
-- **Run level only:** lambdas created at startup (inline minimal API handlers, inline middleware, DI factory lambdas)
-  and work outside a request (hosted services, timers). The methods they call count normally.
+- **Run level only:** lambdas created at startup (inline minimal API handlers, inline middleware, DI factory lambdas),
+  work outside a request (hosted services, timers), and work a request started that still runs once the reporter
+  collected its coverage. The methods they call count normally.
 - **API calls** through Playwright's `request` fixture keep their last response's coverage only: a redirect's earlier
   responses, and a response `failOnStatusCode` turns into an error, name none.
 - **One backend per request:** a call the backend makes to another counts there only if it forwards the

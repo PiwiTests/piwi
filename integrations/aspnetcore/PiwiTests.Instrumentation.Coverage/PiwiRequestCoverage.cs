@@ -8,7 +8,9 @@ namespace PiwiTests.Instrumentation.Coverage;
 /// <summary>
 /// The coverage of one HTTP request: one payload per instrumented method it called, created on the method's first
 /// call. A host starts recording into it with <see cref="PiwiCoverageRecorder.Begin"/>; work the request starts
-/// (<c>Task.Run</c>, fire-and-forget tasks) inherits it and records into it too.
+/// (<c>Task.Run</c>, fire-and-forget tasks) inherits it and records into it too, until the request's coverage goes to
+/// run level (<see cref="PiwiCoverageRecorder.AddToRunLevel"/>): from then on, that work records into the shared
+/// payloads.
 /// </summary>
 public sealed class PiwiRequestCoverage
 {
@@ -20,12 +22,19 @@ public sealed class PiwiRequestCoverage
     // By module index, then by method definition row.
     private bool[]?[]?[] _modules = new bool[]?[]?[PiwiCoverageRecorder.Modules.Count];
     private long _bytes;
+    private int _closed;
+
+    /// <summary>True once the request's coverage went to run level: nothing records into it any more.</summary>
+    internal bool IsClosed => Volatile.Read(ref _closed) != 0;
 
     /// <summary>True once an instrumented method ran while this request was being served.</summary>
     public bool HasPayloads => Volatile.Read(ref _bytes) > 0;
 
     /// <summary>The approximate memory the request's payloads take, in bytes.</summary>
     public long ApproximateBytes => Volatile.Read(ref _bytes);
+
+    /// <summary>Stops recording into this request: later calls record into the shared payloads.</summary>
+    internal void Close() => Volatile.Write(ref _closed, 1);
 
     /// <summary>The payload of the method at <paramref name="row"/> of <paramref name="module"/> for this request.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

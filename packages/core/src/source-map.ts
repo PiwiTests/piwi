@@ -26,8 +26,6 @@ export interface SourceMapLookup {
   sourceAt(line: number, column: number): number | null;
   /** The source and original 0-based line a generated line and column map to; null when unmapped. */
   originalAt(line: number, column: number): { source: number; line: number } | null;
-  /** Whether a segment at or after a generated position and before an end position maps to a source index. */
-  mapsBetween(source: number, start: GeneratedPosition, end: GeneratedPosition): boolean;
   /**
    * The original 0-based line of the first segment, in generated order, at or after a generated position and before
    * an end position that maps to a source index; null when none does.
@@ -225,14 +223,6 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
       return originalAt(line, column)?.source ?? null;
     },
     originalAt,
-    mapsBetween(source, start, end) {
-      let found = false;
-      eachSegmentBetween(segments, start, end, (i) => {
-        found = segments.sources[i] === source;
-        return found;
-      });
-      return found;
-    },
     firstOriginalLineBetween(source, start, end) {
       let first: number | null = null;
       eachSegmentBetween(segments, start, end, (i) => {

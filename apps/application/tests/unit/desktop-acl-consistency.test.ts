@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test, expect } from 'vitest';
 
@@ -9,7 +9,7 @@ import { describe, test, expect } from 'vitest';
  * runs at a *remote* origin (`http://127.0.0.1:<port>`). Tauri refuses to expose
  * app (custom) commands to remote content unless a capability explicitly grants
  * them — so a command that is registered in `generate_handler!` but not declared
- * in `build.rs` and granted in `capabilities/remote.json` is silently rejected
+ * in `build.rs` and granted in `runtime-capabilities/remote.json` is silently rejected
  * by the ACL at runtime (`Command … not allowed by ACL`), which is invisible to
  * every compile-time and lint check.
  *
@@ -52,7 +52,7 @@ function grantedCommands(capabilityJson: string): string[] {
 describe('desktop shell ACL wiring', () => {
   const handlers = handlerCommands(read('../../../desktop/src-tauri/src/lib.rs'));
   const manifest = manifestCommands(read('../../../desktop/src-tauri/build.rs'));
-  const remoteGrants = grantedCommands(read('../../../desktop/src-tauri/capabilities/remote.json'));
+  const remoteGrants = grantedCommands(read('../../../desktop/src-tauri/runtime-capabilities/remote.json'));
 
   test('every registered command exists (sanity)', () => {
     expect(handlers.length).toBeGreaterThan(0);
@@ -66,6 +66,14 @@ describe('desktop shell ACL wiring', () => {
     // Missing grants here are exactly the "not allowed by ACL" runtime bug.
     const missing = handlers.filter((cmd) => !remoteGrants.includes(cmd));
     expect(missing, `commands not granted to the loopback origin in remote.json: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  test('no capability compiled into the app grants remote content: the shell adds it for the sidecar origin', () => {
+    const dir = fileURLToPath(new URL('../../../desktop/src-tauri/capabilities/', import.meta.url));
+    const remote = readdirSync(dir)
+      .filter((file) => file.endsWith('.json'))
+      .filter((file) => 'remote' in (JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as object));
+    expect(remote).toEqual([]);
   });
 
   test('no stale grants that no longer map to a command', () => {

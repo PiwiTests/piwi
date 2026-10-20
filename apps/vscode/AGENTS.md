@@ -41,17 +41,18 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   `piwi.coverageShown`, shown by default) is in the palette only once a file showed marks (`piwi.hasCoverage`): a
   workspace without coverage shows nothing of it.
 - `src/failures-view.ts` is the **Failures** view of the **Piwi** panel (`viewsContainers.panel`): a `TreeView` over
-  the failures `piwi/failuresChanged` pushes (`show`), read from `piwi/failures` 200 ms after the extension starts or a
-  `piwi/statusChanged`, and drawn again when a `piwi/runStatusChanged` moves the editor's own run in progress
-  (`ownLiveRun`); a push is never answered with a read. Its nodes are
-  `failureTree` in `src/glue.ts`: the run (its age, or the editor's own run in progress), **Your runs since**, then the
-  failures by file, cluster, owner or flat (`piwi.groupFailuresBy`, kept in `workspaceState` as
-  `piwi.failuresGrouping`). A failure's `contextValue` (`piwi.failure.<state>` and `trace`, `screenshot`, `agent`,
+  the failures `piwi/failuresChanged` pushes (`show`), read from `piwi/failures` with the grouping 200 ms after the
+  extension starts or a `piwi/statusChanged`, and when the grouping changes, and drawn again when a
+  `piwi/runStatusChanged` moves the editor's own run in progress (`ownLiveRun`); a push is never answered with a read.
+  Its nodes are the tree the service grouped (`FailuresResult.tree`), drawn by `failureNodes` in `src/glue.ts` with a
+  run's age, or the editor's own run in progress: the run, **Your runs since**, then the failures by file, cluster,
+  owner or flat (`piwi.groupFailuresBy`, kept in `workspaceState` as `piwi.failuresGrouping`). A failure's `contextValue` (`piwi.failure.<state>` and `trace`, `screenshot`, `agent`,
   `desktop`) decides its inline actions and context menu in `package.json`; **Copy context for agent** asks
   `piwi/agentContext`. The badge counts the failing tests; **Follow the active editor** (`piwi.toggleFollowEditor`,
   `piwi.stopFollowingEditor`, kept as `piwi.followEditor`) reveals the active file's first failure; the welcome
-  content follows the `piwi.failuresView` context key. **Re-run the failing tests** (`piwi.rerunFailing`) runs
-  `rerunFailingArgs`, one run per Playwright config, and **Run this test** `failureRunArgs`: both name the failure's
+  content follows the `piwi.failuresView` context key. The badge is `FailuresResult.failing`. **Re-run the failing
+  tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, and **Run this test**
+  `failureRunArgs`: both name the failure's
   config (`root`). The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 - `piwi/runEnded` is a notification (`runVerdict` in `src/glue.ts`): a warning with **Re-run failing** when something
   fails, an information otherwise, with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**, as
@@ -69,7 +70,7 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   (`piwi.openRun`) is in the palette too.
 - **Piwi: Compare with…** (`piwi.compareWith`, also in the failures view's title bar and the tooltip) picks the
   baseline of the active file's context (`baselinePicks` in `src/glue.ts`: the ladder, each of `RunStatus.branches`, a
-  run by its id through an input box, `runIdOf`, and the local runs only), keeps it in `workspaceState`
+  run by its id through an input box, which `piwi/runId` reads, and the local runs only), keeps it in `workspaceState`
   (`piwi.baseline`, by root, the ladder as no entry: `withBaseline`), sends it with `piwi/setBaseline`, and sends the
   whole map in the credentials (`baselines`). The tooltip and the view's root node name it (`baselineLine`); with the
   local runs alone, the root is `Your local runs`.
@@ -95,7 +96,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   (`lastRun`).
 - `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in
   global state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and
-  copies the pairing address. A recorded flow is rendered by the service (`piwi/renderSteps`) before it is inserted.
+  copies the pairing address. A recorded flow is rendered by the service (`piwi/renderSteps`, indented for the
+  caret's line) before it is inserted, with the service's import edit in the same edit.
   A locator with `at`, picked while a run was paused at a breakpoint, asks `piwi/applyPick` and applies its edit as a
   workspace edit on that line; when the line holds no locator, it is inserted at the cursor, and the notification
   says why (`pickNotice` in `src/glue.ts`).
@@ -104,14 +106,15 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   first, next to the active test file or in the config's `testDir` (`file`). The start page and the page expression
   (asked when there are several candidates) are kept in `workspaceState`, with the Playwright project, asked only when
   `piwi/record` lists them. Nothing is written before the first `piwi/recordingChanged`; each one then replaces the
-  recorded block (first at `RecordResult.placement`), with the import lines the file lacks in the same edit, tinted
+  recorded block (first at `RecordResult.placement`), with the service's import edit (`importEdit`) in the same edit,
+  tinted
   with `piwi.recordingBlockBackground`, a CodeLens above it (the state, the step count, Stop, Pause or Resume), the
   recording in the status bar and its warnings as diagnostics, which stay after Stop until the block is edited. The
   block is followed through the edits around it; typing inside it pauses the recording (Resume writes it again, Keep my
   edits stops). Closing the file or the window stops its recording.
-- `src/glue.ts` is the pure half (the status bar item, the failures view's tree, the MCP configuration to paste, re-indenting an inserted block,
-  the recorded block's text, writes and imports, and following it through a change: `writeBlock`, `followBlock`),
-  tested without an editor.
+- `src/glue.ts` is the pure half (the status bar item, the failures view's nodes, the MCP configuration to paste, the
+  recorded block's text and writes with the service's import edit, and following them through a change: `writeBlock`,
+  `followBlock`, `followEdit`), tested without an editor.
 
 ## Rules
 

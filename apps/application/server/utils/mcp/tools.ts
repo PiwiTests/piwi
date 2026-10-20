@@ -98,15 +98,7 @@ import {
   type SelectionDefinition,
   type SelectionFormat,
 } from '#shared/selection';
-import {
-  projects,
-  testRuns,
-  testRunsCases,
-  testCases,
-  failureClusters,
-  failureDiagnoses,
-  graphEdges,
-} from '../../database/schema';
+import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';
@@ -156,6 +148,7 @@ import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
+import { readProjectRepositoryUrl } from '../scm/project-repository';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
 import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
@@ -189,6 +182,7 @@ import type { HandbackActor } from '#shared/handback-outcomes';
 import type { FailureCluster, FailureDiagnosis, User } from '../../database/schema';
 import {
   PROJECT_ROLE_LABELS,
+  PROJECT_ROLES,
   can,
   holdsAnywhere,
   isProjectPermission,
@@ -337,26 +331,34 @@ async function loadCluster(db: DbClient, id: number): Promise<FailureCluster | n
   return cluster ?? null;
 }
 
-/** The refusal naming a missing permission and who holds it, so the agent can tell its user what to ask for. */
-function permissionRefusal(permission: Permission, projectId?: number): string {
+/** The refusal naming the missing permissions and who holds them, so the agent can tell its user what to ask for. */
+function permissionRefusal(permissions: readonly Permission[], projectId?: number): string {
   const where = projectId === undefined ? '' : ` on project ${projectId}`;
+  const granting = new Set(permissions.filter(isProjectPermission).flatMap(rolesGranting));
   let holders = 'administrators only';
-  if (isProjectPermission(permission)) {
-    const labels = rolesGranting(permission).map((role) => PROJECT_ROLE_LABELS[role]);
+  if (granting.size > 0) {
+    const labels = PROJECT_ROLES.filter((role) => granting.has(role)).map((role) => PROJECT_ROLE_LABELS[role]);
     const last = labels.pop();
     holders = labels.length ? `held by the ${labels.join(', ')} and ${last} roles` : `held by the ${last} role`;
   }
-  return `This action requires the ${permission} permission${where} (${holders})`;
+  return `This action requires the ${permissions.join(' or ')} permission${where} (${holders})`;
 }
 
 /**
- * Throw unless the caller holds `permission` on `projectId`, as `can` decides:
- * a write tool checks the permission its REST twin declares on the project it
- * acts on, and an instance permission (no project) needs an administrator.
- * Reading a project is not enough to write to it.
+ * Throw unless the caller holds `permission` (or one of the list) on
+ * `projectId`, as `can` decides: a write tool checks the permission its REST
+ * twin declares on the project it acts on, and an instance permission (no
+ * project) needs an administrator. Reading a project is not enough to write to it.
  */
-export function assertPermission(ctx: McpContext, permission: Permission, projectId?: number): void {
-  if (!can(ctx.access, permission, projectId)) throw new Error(permissionRefusal(permission, projectId));
+export function assertPermission(
+  ctx: McpContext,
+  permission: Permission | readonly Permission[],
+  projectId?: number,
+): void {
+  const permissions = typeof permission === 'string' ? [permission] : permission;
+  if (!permissions.some((p) => can(ctx.access, p, projectId))) {
+    throw new Error(permissionRefusal(permissions, projectId));
+  }
 }
 
 /** The refusal of a diagnosis run on an instance with no AI provider, naming the way that still works. */
@@ -1385,9 +1387,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const limit = Math.min(100, Number(params.limit) || 20);
     const branch = params.branch as string | undefined;
 
-    const repoUrl = await resolveProjectRepoUrl(db, projectId);
+    const repoUrl = await readProjectRepositoryUrl(db, projectId);
     if (!repoUrl)
-      return { commits: [], error: 'No repository URL found for this project (missing from test run metadata)' };
+      return { commits: [], error: 'No repository is set for this project (set it in its source control settings)' };
 
     const provider = await createScmProvider(repoUrl, db, projectId);
     if (!provider) return { commits: [], error: 'SCM provider not configured or unsupported' };
@@ -1411,8 +1413,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const sha = (params.sha as string)?.trim();
     if (!sha) return { error: 'sha is required' };
 
-    const repoUrl = await resolveProjectRepoUrl(db, projectId);
-    if (!repoUrl) return { error: 'No repository URL found for this project (missing from test run metadata)' };
+    const repoUrl = await readProjectRepositoryUrl(db, projectId);
+    if (!repoUrl) return { error: 'No repository is set for this project (set it in its source control settings)' };
 
     const provider = await createScmProvider(repoUrl, db, projectId);
     if (!provider) return { error: 'SCM provider not configured or unsupported' };
@@ -2514,7 +2516,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     // projects where they hold it.
     const permission: ProjectPermission =
       action === 'quarantine' || action === 'release' ? 'quarantine:write' : 'triage:write';
-    if (!holdsAnywhere(ctx.access, permission)) throw new Error(permissionRefusal(permission));
+    if (!holdsAnywhere(ctx.access, permission)) throw new Error(permissionRefusal([permission]));
     const rows = await db
       .select({ id: failureClusters.id, projectId: failureClusters.projectId })
       .from(failureClusters)
@@ -2771,7 +2773,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const id = numericParam(params.runId, 'runId');
     const input = parseSetRunIncident({ incident: params.incident, reason: params.reason });
     if (typeof input === 'string') throw new Error(input);
-    if ((await checkEntityScope(db, ctx, id, resolveRunProjectId, 'project:read')) === 'not-found') return null;
+    const projectId = await checkEntityScope(db, ctx, id, resolveRunProjectId);
+    if (projectId === 'not-found') return null;
+    assertPermission(ctx, ['run:submit', 'run:control'], projectId);
     const by = ctx.user?.id ? ctx.user.name || ctx.user.username : null;
     const state = await decideRunIncident(db, id, input, by);
     return dropNulls({
@@ -2797,7 +2801,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);
-    const link = await createEnrichedLink(db, validation.data);
+    const link = await createEnrichedLink(db, validation.data, ctx.scope);
     if (!link) throw new Error('Failed to create link');
     return dropNulls({
       id: link.id,
@@ -3292,19 +3296,6 @@ function toolScopeQuery(params: Record<string, unknown>, ctx: McpContext): Recor
 function mcpDashboardActor(ctx: McpContext): DashboardActor {
   if (!isAuthEnabled()) return dashboardActorFor(null, null);
   return dashboardActorFor(ctx.user?.id ?? null, ctx.access);
-}
-
-async function resolveProjectRepoUrl(db: DbClient, projectId: number): Promise<string | null> {
-  const [run] = await db
-    .select({ metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
-    .orderBy(desc(testRuns.startTime))
-    .limit(1);
-  if (!run) return null;
-  const meta = run.metadata as Record<string, unknown> | null;
-  const scm = meta?.scm as Record<string, unknown> | null;
-  return typeof scm?.remoteUrl === 'string' ? scm.remoteUrl : null;
 }
 
 // Merge the shared catalog with the server-only handlers. Coherence between the

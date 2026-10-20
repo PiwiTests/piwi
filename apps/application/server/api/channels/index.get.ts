@@ -1,22 +1,24 @@
 import { eq, or, isNull } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { notificationChannels, users } from '../../database/schema';
-import { requireAuth } from '../../utils/auth';
-import { sanitizeChannelConfig } from '../../utils/channels';
+import { getRequestAccess, requireAuth } from '../../utils/auth';
+import { channelConfigFor } from '../../utils/channels';
 import { canEncryptSecrets } from '../../utils/crypto';
+import { isAdministrator } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Notifications'],
     summary: 'List notification channels',
     description:
-      'Returns channels owned by the current user and global (admin-managed) channels. Auto-creates a personal email channel if the user has an account email set. With authentication disabled every channel is global. `canStoreSecrets` is false when `PIWI_SECRET_KEY` is unset, in which case a webhook channel cannot store a signing secret.',
+      'Returns channels owned by the current user and global (admin-managed) channels. Auto-creates a personal email channel if the user has an account email set. A webhook `url` shows in full to the channel owner and to administrators; anyone else reads its origin. With authentication disabled every channel is global. `canStoreSecrets` is false when `PIWI_SECRET_KEY` is unset, in which case a webhook channel cannot store a signing secret.',
     'x-required-permission': 'signed-in',
   },
 });
 
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
+  const isAdmin = isAdministrator(await getRequestAccess(event));
   const db = await getDatabase();
 
   // Fetch live user record for email / emailVerified (session may be stale)
@@ -55,7 +57,7 @@ export default eventHandler(async (event) => {
       const isOwnPersonal = c.type === 'personal_email' && c.userId === user.id;
       const config = isOwnPersonal
         ? { address: dbUser?.email ?? '' }
-        : sanitizeChannelConfig((c.config ?? {}) as Record<string, unknown>);
+        : channelConfigFor((c.config ?? {}) as Record<string, unknown>, { ownsChannel: c.userId === user.id, isAdmin });
       const verified = isOwnPersonal ? Boolean(dbUser?.emailVerified) : Boolean(c.verified);
 
       return {

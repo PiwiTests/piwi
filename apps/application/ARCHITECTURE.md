@@ -20,9 +20,9 @@ types/        Front-end API response types (`api.ts`)
 
 ## Shared types & core
 
-- `shared/types.ts` — the **wire contract**: `TestCasePayload`, `StreamEventPayload`, `TestRunSubmitPayload`,
-  `TestRunFinishPayload` and the `TestRunStatus` / `TestCaseStatus` unions. Server endpoints import it directly via
-  `#shared/types`.
+- `shared/types.ts` — the **wire contract**: `TestCasePayload`, `StreamEventPayload`, `TestRunSubmitPayload` and
+  `TestRunFinishPayload`. Server endpoints import it directly via `#shared/types`; every ingest route and the demo map a
+  wire test case to what `persistRunCases` stores with `mapWireCaseToRunCase` (`server/utils/map-wire-case.ts`).
 - `shared/permissions.ts` holds the **authorization model**: `InstanceRole`, `ProjectRole`, `Permission`, the matrix
   `ROLE_PERMISSIONS`, a user's `AccessSummary` and the checks on it (`can`, `passesEarlyCheck`, `projectScopeFor`).
   Pure, imported by the server, the MCP tools, the demo and `useAuth`.
@@ -92,7 +92,7 @@ Non-obvious ones:
 - **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
   at query time.
 - **`notification_deliveries`** — an outbox: `dedupeKey` unique for idempotency, `status`, `attempts` + `scheduledFor`
-  for progressive retry (1/5/15/60/240 min).
+  for progressive retry: five retries, after 1/5/15/60/240 min (`server/utils/outbox.ts`).
 - **`resource_findings`** — one row per project and finding identity (`shared/resource-fingerprint.mjs`: verdict,
   kind, scope and where it was opened, line included), with the runs it was first and last seen in, ordered by start
   time; `resource_occurrences` holds each run's showing with the run's branch. Written on finalize by

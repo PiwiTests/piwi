@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,8 +32,10 @@ internal sealed class PiwiCoverageSettings
 
 /// <summary>
 /// Server coverage for the middleware: in <see cref="PiwiCoverageMode.Test"/> mode, each request records into
-/// its own <see cref="PiwiRequestCoverage"/>, named on its response (<c>X-Piwi-Coverage: &lt;process&gt;.&lt;sequence&gt;</c>)
-/// when it recorded something, and kept until the reporter collects it. Serves
+/// its own <see cref="PiwiRequestCoverage"/>, named on its response
+/// (<c>X-Piwi-Coverage: &lt;process&gt;.&lt;sequence&gt;.&lt;secret&gt;</c>, the secret random per request, so only
+/// the client that received an id can collect its coverage) when it recorded something, and kept until the reporter
+/// collects it. Serves
 /// <c>POST /__piwi/coverage/collect</c> (the coverage of the request ids a test received, merged per group) and
 /// <c>GET /__piwi/coverage/run</c> (the run-level coverage), both naming the process's <c>instance</c>. Everything
 /// here is inactive until code built with coverage instrumentation runs in the process.
@@ -95,9 +98,10 @@ internal sealed class PiwiServerCoverage
             return null;
 
         var sequence = Interlocked.Increment(ref s_sequence);
+        var secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         request.Sequence = sequence;
-        AddToRunLevel(_store.Add(sequence, request.Coverage, request.Ended));
-        return $"{ProcessKey}.{sequence}";
+        AddToRunLevel(_store.Add(sequence, secret, request.Coverage, request.Ended));
+        return $"{ProcessKey}.{sequence}.{secret}";
     }
 
     /// <summary>Stops recording the current request's coverage.</summary>
@@ -176,7 +180,7 @@ internal sealed class PiwiServerCoverage
                     if (!seen.Add(id))
                         continue;
 
-                    if (Sequence(id) is { } sequence && _store.Take(sequence) is { } coverage)
+                    if (ParseId(id) is { } parsed && _store.Take(parsed.Sequence, parsed.Secret) is { } coverage)
                     {
                         report.AddRequest(coverage);
                         collected.Add(coverage);
@@ -249,15 +253,17 @@ internal sealed class PiwiServerCoverage
         writer.WriteEndObject();
     }
 
-    /// <summary>The sequence of a request id this process gave out, or null.</summary>
-    internal static long? Sequence(string id)
+    /// <summary>The sequence and the secret of a request id this process gave out, or null.</summary>
+    internal static (long Sequence, string Secret)? ParseId(string id)
     {
-        var dot = id.LastIndexOf('.');
-        if (dot <= 0 || !id.AsSpan(0, dot).SequenceEqual(ProcessKey))
+        var parts = id.Split('.');
+        if (parts.Length != 3 || parts[0] != ProcessKey || parts[2].Length == 0)
             return null;
 
-        return long.TryParse(id.AsSpan(dot + 1), System.Globalization.NumberStyles.None,
-            System.Globalization.CultureInfo.InvariantCulture, out var sequence) && sequence > 0 ? sequence : null;
+        return long.TryParse(parts[1], System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var sequence) && sequence > 0
+            ? (sequence, parts[2])
+            : null;
     }
 
     private Func<string, string?> RepositoryPath(HttpContext context)

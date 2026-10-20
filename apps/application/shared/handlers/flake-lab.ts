@@ -74,6 +74,7 @@ import {
   type FlakeSuspectStanding,
   type FlakeVerifyVerdict,
 } from '../flake-lab';
+import { median } from '../utils/stats';
 
 export * from '../flake-lab';
 
@@ -183,11 +184,8 @@ function splitSuite(suitePath: string | null | undefined): string[] {
   return suitePath ? suitePath.split('\x1f').filter(Boolean) : [];
 }
 
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid]! : Math.round((sorted[mid - 1]! + sorted[mid]!) / 2);
+function roundOrNull(value: number | null): number | null {
+  return value === null ? null : Math.round(value);
 }
 
 function scmCommit(metadata: unknown): string | null {
@@ -391,8 +389,8 @@ async function loadPlanHistory(db: DrizzleDB, testCaseId: number, now: Date) {
   return {
     errorSignatures: signatures,
     failureCommit: failed.map((r) => scmCommit(r.metadata)).find((c) => c) ?? null,
-    medianDurationMs: median(
-      rows.filter((r) => r.status === 'passed' && r.duration != null).map((r) => r.duration as number),
+    medianDurationMs: roundOrNull(
+      median(rows.filter((r) => r.status === 'passed' && r.duration != null).map((r) => r.duration as number)),
     ),
     project,
   };

@@ -121,15 +121,15 @@ process that runs none writes nothing.
 In `test` mode, a response whose request ran instrumented code before the response started carries the request's id:
 
 ```
-X-Piwi-Coverage: 3f9a1c0b7e21.42
+X-Piwi-Coverage: 3f9a1c0b7e21.42.9c4e1f0a7b3d52e86f1a0c9d4b7e2a31
 ```
 
-The id is `<process key>.<sequence>`; the process key is the process's instance id, random per process, so an id from an earlier process reads as missing. The Piwi reporter records the ids each test's pages receive and collects them once the test ends. Static files and requests that ran no instrumented code get no id.
+The id is `<process key>.<sequence>.<secret>`; the process key is the process's instance id, random per process, so an id from an earlier process reads as missing, and the secret is random per request, so only a client that received an id can collect its coverage. The Piwi reporter records the ids each test's pages receive and collects them once the test ends. Static files and requests that ran no instrumented code get no id.
 
 **`POST /__piwi/coverage/collect`** returns, per group, the coverage of its requests merged, and forgets them:
 
 ```json
-{ "granularity": "lines", "groups": [{ "key": "test-1", "requests": ["3f9a1c0b7e21.42", "3f9a1c0b7e21.43"] }] }
+{ "granularity": "lines", "groups": [{ "key": "test-1", "requests": ["3f9a1c0b7e21.42.9c4e1f0a7b3d52e86f1a0c9d4b7e2a31", "3f9a1c0b7e21.43.e07b5d2c91a46f38b0d7c5e2a9f14b66"] }] }
 ```
 
 ```json
@@ -148,7 +148,7 @@ The id is `<process key>.<sequence>`; the process key is the process's instance 
           "checksums": ["sha256:9f2c…"]
         }
       ],
-      "missing": ["3f9a1c0b7e21.43"]
+      "missing": ["3f9a1c0b7e21.43.e07b5d2c91a46f38b0d7c5e2a9f14b66"]
     }
   ]
 }

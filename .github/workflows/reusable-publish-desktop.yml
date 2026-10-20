@@ -16,17 +16,23 @@ on:
           each OS's native modules.
         type: string
         required: true
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
 
 permissions:
   contents: read
 
 env:
   # Match the runtime the app is built and tested against (apps/application/engines).
-  PIWI_NODE_VERSION: 24.4.1
+  PIWI_NODE_VERSION: 24.22.0
 
 jobs:
   desktop:
     name: desktop (${{ matrix.target }}, ${{ matrix.bundles }})
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: write # upload installers to the release
     strategy:
@@ -68,7 +74,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
@@ -76,8 +82,9 @@ jobs:
           install: 'false'
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       # Tauri's Linux prerequisites: WebKitGTK for the webview, appindicator for
@@ -104,7 +111,7 @@ jobs:
             squashfs-tools
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/desktop/src-tauri
 
@@ -113,7 +120,7 @@ jobs:
         run: npm install
 
       - name: Download server bundle
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ inputs.server-artifact }}
           path: apps/application/.output
@@ -132,7 +139,7 @@ jobs:
         working-directory: apps/desktop
         shell: pwsh
         run: |
-          choco install upx -y --no-progress
+          choco install upx --version=5.2.1 -y --no-progress
           upx --best --lzma "src-tauri/binaries/node-${{ matrix.target }}.exe"
 
       - name: Stage server (native modules for this OS)
@@ -144,7 +151,7 @@ jobs:
         run: npx tauri icon ../application/public/logo.svg
 
       - name: Build & release desktop app
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Linux AppImage bundling runs linuxdeploy (and its plugins), each a
@@ -169,9 +176,9 @@ jobs:
           # below. Each leg's overlay (matrix.updaterConfig) is applied only when
           # the secret is present, so releases without it build exactly as
           # before, installers with no update artifacts and apps that report
-          # updates as unsupported.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # updates as unsupported. The key reaches a release tag's build only.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         with:
           projectPath: apps/desktop
           # Retry a failed asset upload. Uploading the installers to the release
@@ -183,7 +190,7 @@ jobs:
           # it must NOT write the shared latest.json, the step near the end
           # publishes its manifest instead. Every other leg keeps the default.
           uploadUpdaterJson: ${{ matrix.bundles == 'nsis' && 'false' || 'true' }}
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && format('--config {0}', matrix.updaterConfig) || '' }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && format('--config {0}', matrix.updaterConfig) || '' }}
           # Attach to the release release-please already made for this tag. On a
           # manual dispatch (no tag) tagName is empty, so tauri-action just builds.
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
@@ -232,7 +239,7 @@ jobs:
       # (no .sig produced), matching the .msi channel's "updates unsupported".
       - name: Publish NSIS updater manifest (latest-nsis.json)
         if: ${{ matrix.bundles == 'nsis' && startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require('fs');
@@ -275,7 +282,7 @@ jobs:
       # artifact name to keep them from colliding.
       - name: Upload installers (dry-run)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: piwi-desktop-${{ matrix.target }}-${{ matrix.bundles }}
           path: |

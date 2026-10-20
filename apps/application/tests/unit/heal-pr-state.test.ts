@@ -123,8 +123,8 @@ beforeAll(async () => {
     migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
   });
   await db.insert(schema.projects).values([
-    { id: 1, name: 'checkout' },
-    { id: 2, name: 'search' },
+    { id: 1, name: 'checkout', repositoryUrl: 'https://github.com/acme/app' },
+    { id: 2, name: 'search', repositoryUrl: 'https://github.com/acme/app' },
   ]);
   await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
 });

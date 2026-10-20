@@ -24,4 +24,7 @@ resulting `https://railway.com/new/template/<code>` URL is what the Deploy on Ra
 | `PIWI_AUTH_ENABLED` | `true` |
 | `PIWI_AUTH_SECRET` | `${{ secret(64) }}` |
 | `PIWI_SECRET_KEY` | `${{ secret(64) }}` |
+| `PIWI_SETUP_TOKEN` | `${{ secret(64) }}` |
 | `PIWI_SITE_URL` | `https://${{ RAILWAY_PUBLIC_DOMAIN }}` |
+
+`PIWI_SETUP_TOKEN`: The first-admin form asks for this value, so only you can create the administrator.

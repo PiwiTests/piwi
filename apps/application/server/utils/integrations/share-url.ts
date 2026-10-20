@@ -7,8 +7,11 @@ import type { DbClient } from '../../database';
 import { mintShareLink, shareLinksEnabled } from '../share-links';
 import type { ShareTokenMinter } from './documents';
 
-/** A minter bound to `db`; yields null when share links are disabled or minting fails. */
-export function clusterShareTokenMinter(db: DbClient): ShareTokenMinter {
+/**
+ * A minter bound to `db` that records who asked for the link; yields null when
+ * share links are disabled or minting fails.
+ */
+export function clusterShareTokenMinter(db: DbClient, createdBy: number | null): ShareTokenMinter {
   return async (projectId, clusterId) => {
     if (!shareLinksEnabled()) return null;
     try {
@@ -16,7 +19,7 @@ export function clusterShareTokenMinter(db: DbClient): ShareTokenMinter {
         projectId,
         entityKind: 'cluster',
         entityId: clusterId,
-        createdBy: null,
+        createdBy,
       });
       return minted.token;
     } catch {
@@ -24,3 +27,9 @@ export function clusterShareTokenMinter(db: DbClient): ShareTokenMinter {
     }
   };
 }
+
+/** The token a draft shows where the issue's share link goes; the link is created when the issue is filed. */
+export const DRAFT_SHARE_TOKEN = '…';
+
+/** A draft's minter: it shows where the share link goes and creates none. */
+export const draftShareTokenMinter: ShareTokenMinter = async () => (shareLinksEnabled() ? DRAFT_SHARE_TOKEN : null);

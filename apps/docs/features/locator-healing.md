@@ -9,7 +9,7 @@ lang: en-US
 <Needs reporter fixtures />
 
 When a locator stops matching (a button was renamed, an element moved, a hashed class changed), Piwi suggests
-concrete, ranked replacements, captured from the last run where the test passed, instead of leaving you to guess.
+ranked replacements, captured from the last run where the test passed.
 Healing is read-only: it never rewrites your test. [Auto-heal PRs](./auto-heal) is the separate, opt-in feature that
 opens the fix as a pull request.
 
@@ -41,7 +41,8 @@ When a locator later fails, the server looks for replacements, most trustworthy 
    snapshot.
 3. **Fingerprint**: the call site moved lines, but the locator matches a prior snapshot.
 4. **Cross-test**: another test in the project captured the same locator.
-5. **ARIA fallback**: no snapshot exists, so limited suggestions come from the failure-time ARIA snapshot.
+5. **ARIA fallback**: no snapshot exists, so limited suggestions come from the failure-time ARIA snapshot: elements
+   sharing a word or the role with the failing locator.
 
 A snapshot found by rungs 2 to 4 is then checked against the failing page's ARIA snapshot. When the element is gone
 under its old name and a confident match exists, fresh locators for the element it most likely became replace the

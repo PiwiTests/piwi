@@ -64,6 +64,7 @@ export interface RunProgressBroadcast {
 }
 
 export interface RunState {
+  /** The stored form of the run's main stream token (`streamTokenDigest`). */
   streamToken: string;
   projectId: number;
   shardTokens?: Set<string>;

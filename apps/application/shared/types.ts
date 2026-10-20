@@ -49,30 +49,6 @@ export type {
   WorkerHealth,
 };
 
-// ── Test status types ──────────────────────────────────────────────────────────
-// These mirror the values stored in the test_runs.status column and the
-// Playwright result.status values.
-
-export type TestRunStatus =
-  | 'passed'
-  | 'failed'
-  | 'timedout'
-  | 'interrupted'
-  | 'running'
-  | 'cancelled'
-  | 'initializing'
-  | 'finalizing';
-
-// `didnotrun` = a test that never executed: cut short by `maxFailures` or
-// skipped as a side effect of an earlier failure in a `describe.serial` group.
-// Distinct from `skipped`, which is reserved for intentional `test.skip()` /
-// `test.fixme()`.
-// `timedout` is the canonical stored spelling: ingest normalizes Playwright's
-// camelCase `timedOut` wire value (`normalizeTestCaseStatus`), while a stored
-// row may still carry the camelCase form — readers match both via
-// `FAILED_STATUS_KEYS` (shared/utils/test-counts.ts).
-export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout' | 'didnotrun';
-
 // ── Roles ─────────────────────────────────────────────────────────────────────
 // Instance roles, project roles and permissions live in `#shared/permissions`.
 
@@ -84,6 +60,11 @@ export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout' | 'did
 export interface TestCasePayload {
   title: string;
   location: string;
+  /**
+   * `passed`, `failed`, `timedOut` (stored as `timedout`, see `normalizeTestCaseStatus`), `skipped` for an
+   * intentional `test.skip()` / `test.fixme()`, or `didnotrun` for a test that never executed: cut short by
+   * `maxFailures`, or skipped after an earlier failure in a `describe.serial` group.
+   */
   status: string;
   duration?: number | null;
   /** Effective per-test timeout in ms (`TestCase.timeout`); `0` means unbounded. */
@@ -179,6 +160,11 @@ export interface TestRunSubmitPayload {
   filterDetails?: FilterDetails | null;
   /** The run's resource findings and what it cost its machine, measured by the reporter. */
   resourceReport?: WireResourceReport | null;
+  /**
+   * An id the client generates once for these results and sends with every attempt to deliver them: a delivery
+   * repeating a key the project already took answers with the run it went to and stores nothing.
+   */
+  deliveryKey?: string;
 }
 
 // ── Streaming event payload ───────────────────────────────────────────────────

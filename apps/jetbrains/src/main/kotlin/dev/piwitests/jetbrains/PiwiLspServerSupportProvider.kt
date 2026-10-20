@@ -38,7 +38,9 @@ import java.util.concurrent.CompletableFuture
  */
 class PiwiLspServerSupportProvider : LspServerSupportProvider {
     override fun fileOpened(project: Project, file: VirtualFile, serverStarter: LspServerSupportProvider.LspServerStarter) {
-        if (!isSupported(file) || !project.service<PiwiProjectService>().hasPlaywrightConfig()) return
+        val service = project.service<PiwiProjectService>()
+        if (!isSupported(file) || !service.hasPlaywrightConfig()) return
+        if (!service.trusted()) return service.waitForTrust()
         serverStarter.ensureServerStarted(PiwiLspServerDescriptor(project))
     }
 

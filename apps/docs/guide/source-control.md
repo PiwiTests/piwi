@@ -52,11 +52,17 @@ features always need one.
 
 ### Which repository
 
-Piwi takes the repository from the run: the reporter records the Git remote URL, the branch and the commit of the
-checkout it runs in (see [SCM information](/reference/test-metadata#scm-information-git)). Supported hosts are
-`github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. List each self-hosted GitLab host in
-[`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): the remote URL comes from the reporter, so Piwi sends
-the token only to a host you named. A run without a remote URL has nothing to diff.
+Each project reads one repository, shown in the **Repository** field of the **Source control** section. The reporter
+records the Git remote URL, the branch and the commit of the checkout it runs in (see
+[SCM information](/reference/test-metadata#scm-information-git)), and the first run that names a remote sets the
+field. A run whose remote names another repository is left out of every call that uses the token: its commits, diffs
+and source are not read, and nothing is written for it. A project admin can change the field, or clear it so that the
+next run sets it again. With the instance-wide token, a link to a repository no readable project uses is unfurled as a
+public page, without the token.
+
+Supported hosts are `github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. List each self-hosted GitLab
+host in [`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): Piwi sends the token only to a host you
+named. A run without a remote URL has nothing to diff.
 
 ### Scopes
 

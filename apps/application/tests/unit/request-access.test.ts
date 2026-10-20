@@ -101,7 +101,8 @@ async function statusOf(promise: Promise<unknown>): Promise<{ statusCode: number
   }
 }
 
-const event = (e: FakeEvent) => e as never;
+// The request as h3 reads it too: the bearer token is read through h3's own getRequestHeader.
+const event = (e: FakeEvent) => Object.assign(e, { node: { req: { headers: e.headers } } }) as never;
 const insufficient = { statusCode: 403, message: 'Insufficient permissions' };
 const noAccess = { statusCode: 403, message: 'No access to this project' };
 

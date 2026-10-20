@@ -1,10 +1,11 @@
-import { clearUserSession, isAuthEnabled } from '../../utils/auth';
+import { clearUserSession, getCurrentUser, isAuthEnabled, revokeUserSessions } from '../../utils/auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'Logout',
-    description: 'Clears the current user session and logs the user out.',
+    description:
+      "Clears the current user session and revokes every session of the signed-in user, so a copy of the session cookie stops working and the user's other browsers are signed out too.",
     security: [],
   },
 });
@@ -17,6 +18,8 @@ export default eventHandler(async (event) => {
     });
   }
 
+  const user = await getCurrentUser(event);
+  if (user) await revokeUserSessions(user.id);
   await clearUserSession(event);
 
   return {

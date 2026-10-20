@@ -64,6 +64,9 @@ describe('mockCode', () => {
   it('fulfills any other body with its content type', () => {
     const { code } = mockCode({ ...cart, mimeType: 'text/html', body: "<p>It's here</p>\n" });
     expect(code).toContain("route.fulfill({ contentType: 'text/html', body: '<p>It\\'s here</p>\\n' })");
+    // A tab, a control character or a line separator stays escaped, so the literal holds on one line.
+    const odd = mockCode({ ...cart, mimeType: 'text/plain', body: 'a\tb\u0001c\u2028d' }).code;
+    expect(odd).toContain("body: 'a\\tb\\u0001c\\u2028d'");
     const binary = mockCode({ ...cart, mimeType: 'image/png', body: 'iVBORw0KGgo=', base64: true });
     expect(binary.code).toContain("body: Buffer.from('iVBORw0KGgo=', 'base64')");
   });

@@ -409,6 +409,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         v-if="testRun?.id && !incident"
         variant="action"
         :run-id="testRun.id"
+        :project-id="testRun.projectId"
         :incident="null"
         :review="incidentReview"
         @changed="emit('label-updated')"
@@ -425,6 +426,7 @@ function onLabelKeydown(e: KeyboardEvent) {
       <RunIncidentLine
         variant="line"
         :run-id="testRun.id"
+        :project-id="testRun.projectId"
         :incident="incident"
         :review="incidentReview"
         @changed="emit('label-updated')"

@@ -4,7 +4,6 @@ import { apiError } from './api-error';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and, inArray } from 'drizzle-orm';
-import type { InstanceRole } from '#shared/permissions';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { findUserByEmail } from '#shared/handlers/users';
 import { setUserSession, isAuthEnabled, getCurrentUser } from './auth';
@@ -616,8 +615,6 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
     // Set session
     const sessionData: SessionData = {
       userId: user.id,
-      username: user.username,
-      role: user.role as InstanceRole,
       sessionEpoch: user.sessionEpoch,
     };
     await setUserSession(event, sessionData);

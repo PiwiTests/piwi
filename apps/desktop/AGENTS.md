@@ -20,11 +20,19 @@ installers ship side by side: the `.msi` installs per machine (admin); the NSIS 
 
 - **Never fork the server.** The desktop app must keep running the unmodified built server. Anything the shell needs
   from the backend goes in `apps/application/` behind a desktop-aware guard, not into a desktop-only copy.
+- **The window trusts only the sidecar it spawned.** The readiness probe requires the per-launch nonce the shell
+  passes the sidecar (`PIWI_DESKTOP_LAUNCH_NONCE`, echoed by `/api/health`) before loading the session bootstrap;
+  the main window may only navigate to its bundled pages and the sidecar's exact origin; and the IPC capability
+  (`src-tauri/runtime-capabilities/remote.json`) is added at startup for that origin only, never for a port
+  wildcard. A command that turns webview input into a path or a process takes only known values: digits-only
+  project ids, the known IDE launcher names (`is_known_launcher`).
 - **Everything binds `127.0.0.1`.** Local access is gated by a per-launch token enforced by
   `apps/application/server/middleware/desktop-guard.ts` — so only the app, not other local processes or browser pages, can
   reach the bundled API. Any new desktop-only route must stay behind that guard. The guard leaves three open
-  (`isOpenDesktopRoute` in `server/utils/desktop-access.ts`): the readiness probe, and Piwi Picker's pairing start and
-  poll, which it sends before it holds the token. The start answers only an extension's JSON request and keeps at most
+  (`isOpenDesktopRoute` in `server/utils/desktop-access.ts`): the readiness probe, which also answers Piwi Picker's
+  challenge with the proof that this server holds the token (`@piwitests/core/desktop-proof`, bound to the port it
+  answers on) before the extension sends it, and Piwi Picker's pairing start and poll, which it sends before it holds
+  the token. The start answers only an extension's JSON request and keeps at most
   three waiting; the poll answers only with the secret the start gave; the token goes out once, after **Allow** in the
   window (`DesktopPickerPairingModal`), behind the guard. A route added to that list needs the same care.
 - **The reporter discovery file is a cross-package contract.** The shell publishes `{ url, token, projects }` to

@@ -9,6 +9,7 @@ import {
   type SubscriptionFilters,
 } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
+import { emailDestinationVerified } from './email-verified';
 
 function parseDigestHHMM(digestAt: string | null | undefined): { hour: number; minute: number } | null {
   if (!digestAt) return null;
@@ -68,6 +69,9 @@ export async function matchAndEnqueue(
     // Global subscriptions (userId null) are admin-managed and span every
     // project; per-user subscriptions re-check the subscriber's access.
     if (sub.userId != null && !(await subscriberCanAccess(sub.userId))) continue;
+
+    // Email goes only to an address its owner proved they hold.
+    if (!(await emailDestinationVerified(db, channel))) continue;
 
     // Check event is subscribed
     const events = (sub.events as string[] | null) ?? [];

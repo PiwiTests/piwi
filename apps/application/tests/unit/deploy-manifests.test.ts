@@ -26,7 +26,13 @@ describe('deploy manifests', () => {
 
   test('no generated secret is committed as a literal', () => {
     for (const [relative, contents] of Object.entries(manifests)) {
-      expect(contents, relative).not.toMatch(/PIWI_(AUTH_SECRET|SECRET_KEY)\s*[:=]\s*['"]?[0-9a-f]{16}/);
+      expect(contents, relative).not.toMatch(/PIWI_(AUTH_SECRET|SECRET_KEY|SETUP_TOKEN)\s*[:=]\s*['"]?[0-9a-f]{16}/);
+    }
+  });
+
+  test('every template has the platform generate a setup token or says to set one', () => {
+    for (const [relative, contents] of Object.entries(manifests)) {
+      if (relative !== 'railway.json') expect(contents, relative).toContain('PIWI_SETUP_TOKEN');
     }
   });
 });

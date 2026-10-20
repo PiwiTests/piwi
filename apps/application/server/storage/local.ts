@@ -50,9 +50,16 @@ export class LocalStorageAdapter implements StorageAdapter {
     return await readFileAsync(fullPath);
   }
 
+  /** Whether a regular file is stored at `path`; a directory is not one. */
   async exists(path: string): Promise<boolean> {
     const fullPath = this.resolvePath(path);
-    return existsSync(fullPath);
+    try {
+      return (await stat(fullPath)).isFile();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+      throw error;
+    }
   }
 
   async fileSize(path: string): Promise<number | null> {

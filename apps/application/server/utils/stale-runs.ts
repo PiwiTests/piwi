@@ -1,4 +1,4 @@
-import { eq, and, lt, or, isNull } from 'drizzle-orm';
+import { eq, and, lt, or, isNull, not, sql } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { DbClient } from '../database';
 import { runEventBus } from './run-events';
@@ -15,6 +15,14 @@ import { emitRunInterrupted } from './notifications/run-notifications';
 // run is reaped early, the next event or heartbeat carrying its stream token revives it
 // (see revive-run.ts).
 export const STALE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes without activity → mark interrupted
+
+// A sharded run delivered by batch submissions waits, running, for its other
+// shards' submissions, which send no heartbeat: shards of one pipeline can end
+// far apart. It counts as stale only once quiet for this long.
+export const BATCH_SHARD_WAIT_MS = 60 * 60 * 1000;
+
+/** A sharded run delivered by batch submissions: it never had a stream token. */
+const awaitsBatchShards = sql`(${testRuns.streamToken} is null and coalesce(${testRuns.shardTotal}, 0) > 1)`;
 
 // A finalizing run has already reported its end at /finish and only waits for
 // its report upload, which a large report keeps busy far longer than a
@@ -47,8 +55,9 @@ export async function settleStaleFinalizingRuns(db: DbClient, now = Date.now()):
 
 /**
  * Mark every initializing or running run with no activity for
- * `STALE_TIMEOUT_MS` as `interrupted` — its reporter was killed or lost its
- * connection before reporting the end. Each reaped run gets its counters
+ * `STALE_TIMEOUT_MS` (`BATCH_SHARD_WAIT_MS` for a batch sharded run) as
+ * `interrupted` — its reporter was killed or lost its connection before
+ * reporting the end. Each reaped run gets its counters
  * reconciled and its end announced on its own stream and on the global
  * lifecycle stream, like a run that finished normally, a `run.interrupted`
  * notification sent, and its day's rollup recomputed, since an interrupted run
@@ -63,7 +72,13 @@ export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promis
       status: 'interrupted',
       updatedAt: new Date(now),
     })
-    .where(and(or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')), quietSince(staleThreshold)))
+    .where(
+      and(
+        or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
+        quietSince(staleThreshold),
+        or(not(awaitsBatchShards), quietSince(new Date(now - BATCH_SHARD_WAIT_MS))),
+      ),
+    )
     .returning({
       id: testRuns.id,
       projectId: testRuns.projectId,

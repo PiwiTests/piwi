@@ -15,6 +15,7 @@ import type { DrizzleDB } from './db';
 import { loadSelectionCatalog, type CatalogRow } from './selections';
 import { eligibleExecutionSql } from '../run-eligibility';
 import { locksSpanningTests } from '../selection';
+import { lowerPercentile } from '../utils/stats';
 
 /** A proposed tag for one test, with the evidence for it. */
 export interface TagSuggestion {
@@ -116,18 +117,15 @@ function routeFamily(route: string): string | null {
   return null;
 }
 
-function percentile(values: number[], p: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)));
-  return sorted[idx]!;
-}
-
 /** Tests markedly slower than the suite's 95th percentile, not already tagged slow. */
 function computeSlowSuggestions(catalog: CatalogRow[]): TagSuggestion[] {
   const durations = catalog.map((r) => r.avgDurationMs).filter((d): d is number => d !== null && d > 0);
-  const p95 = percentile(durations, 0.95);
-  if (p95 === null || p95 <= 0) return [];
+  if (durations.length === 0) return [];
+  const p95 = lowerPercentile(
+    durations.sort((a, b) => a - b),
+    95,
+  );
+  if (p95 <= 0) return [];
 
   const suggestions: TagSuggestion[] = [];
   for (const row of catalog) {

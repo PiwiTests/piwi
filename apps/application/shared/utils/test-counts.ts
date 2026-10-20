@@ -8,16 +8,16 @@
  * retry command).
  *
  * Status string note: Playwright emits `'timedOut'` (camelCase) as
- * `TestResult.status`, while Piwi's declared `TestCaseStatus` union uses the
- * lowercase `'timedout'`. Both forms are accepted here so the folding is
- * robust regardless of which path produced the value.
+ * `TestResult.status`, while Piwi stores the lowercase `'timedout'`. Both
+ * forms are accepted here so the folding is robust regardless of which path
+ * produced the value.
  */
 
 import { isFixmeSkip } from './skip-kind';
 
 /**
  * Per-status tally keys that should be counted as "failed".
- * `timedOut` (Playwright wire value) and `timedout` (declared type / lowercase).
+ * `timedOut` (Playwright wire value) and `timedout` (the stored spelling).
  */
 export const FAILED_STATUS_KEYS = ['failed', 'timedOut', 'timedout'] as const;
 
@@ -28,8 +28,8 @@ export function isFailedStatus(status: string | null | undefined): boolean {
 
 /**
  * Canonical spelling for a per-case status. The wire may carry Playwright's
- * camelCase `timedOut`; every stored value uses the lowercase `TestCaseStatus`
- * form. A stored row can still hold the camelCase form, so readers match both
+ * camelCase `timedOut`; every stored value uses the lowercase form. A stored
+ * row can still hold the camelCase form, so readers match both
  * (`FAILED_STATUS_KEYS`) while writers go through this.
  */
 export function normalizeTestCaseStatus(status: string): string {

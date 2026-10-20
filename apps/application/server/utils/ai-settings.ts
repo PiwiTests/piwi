@@ -108,18 +108,21 @@ export function rolesFromLegacy(flat: {
     };
   }
   if (flat.researchModel) {
-    roles.research = flat.researchProvider
-      ? {
-          provider: flat.researchProvider,
-          model: flat.researchModel,
-          baseUrl: flat.researchBaseUrl,
-          apiKey: flat.researchApiKey || flat.apiKey,
-          temperature: parseEnvTemperature(flat.researchTemperature),
-        }
-      : { reuse: 'diagnosis', model: flat.researchModel, temperature: parseEnvTemperature(flat.researchTemperature) };
+    // Provider, base URL and key each default to the main role's: with none of its own, research reuses it.
+    const temperature = parseEnvTemperature(flat.researchTemperature);
+    roles.research =
+      flat.researchProvider || flat.researchBaseUrl || flat.researchApiKey
+        ? {
+            provider: flat.researchProvider || flat.provider,
+            model: flat.researchModel,
+            baseUrl: flat.researchBaseUrl || flat.baseUrl,
+            apiKey: flat.researchApiKey || flat.apiKey,
+            temperature,
+          }
+        : { reuse: 'diagnosis', model: flat.researchModel, temperature };
   }
   if (flat.embeddingModel) {
-    // Provider/baseUrl/key default to the main role's (mirrors resolveAiConfig).
+    // Provider, base URL and key each default to the main role's.
     roles.embedding = {
       provider: flat.embeddingProvider || flat.provider,
       model: flat.embeddingModel,

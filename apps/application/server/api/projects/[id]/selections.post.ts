@@ -1,6 +1,5 @@
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { getDatabase } from '../../../database';
-import { requireAuth } from '../../../utils/auth';
 import { createSelection, SelectionError } from '#shared/handlers/selections';
 
 defineRouteMeta({
@@ -32,8 +31,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
-  const user = await requireAuth(event);
-  await requireProjectAccess(event, projectId);
+  const user = await requireProjectAccess(event, projectId);
 
   const body = (await readBody(event)) as {
     key?: unknown;

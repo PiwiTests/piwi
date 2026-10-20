@@ -150,30 +150,6 @@ export async function createLink(
   return { success: true, link: result[0] ?? null };
 }
 
-export async function patchLink(
-  db: DrizzleDB,
-  id: number,
-  data: { url?: string; title?: string | null },
-  resolver?: LinkConnectionResolver,
-) {
-  const existing = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
-  if (!existing[0]) throw new Error('Link not found');
-
-  const updates: any = { updatedAt: new Date() };
-  if (data.url !== undefined) {
-    const resolved = await resolveUrl(data.url, resolver);
-    updates.url = data.url;
-    updates.provider = resolved.provider;
-    updates.key = resolved.key;
-    updates.connectionId = resolved.connectionId;
-    updates.externalId = resolved.externalId;
-  }
-  if (data.title !== undefined) updates.title = data.title;
-  await db.update(entityLinks).set(updates).where(eq(entityLinks.id, id));
-  const updated = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
-  return { success: true, link: updated[0] ?? null };
-}
-
 export async function deleteLink(db: DrizzleDB, id: number) {
   const existing = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
   if (!existing[0]) throw new Error('Link not found');
@@ -197,17 +173,4 @@ export async function deleteLinksTo(
     .where(and(eq(fkColumnFor(entityType), entityId), eq(sql`trim(${entityLinks.url})`, url.trim())))
     .returning({ id: entityLinks.id });
   return removed.length;
-}
-
-export async function refreshLinkMeta(db: DrizzleDB, id: number, resolver?: LinkConnectionResolver) {
-  const existing = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
-  if (!existing[0]) throw new Error('Link not found');
-  const link = existing[0];
-  const { provider, key, connectionId, externalId } = await resolveUrl(link.url, resolver);
-  await db
-    .update(entityLinks)
-    .set({ provider, key, connectionId, externalId, updatedAt: new Date() })
-    .where(eq(entityLinks.id, id));
-  const updated = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
-  return { success: true, link: updated[0] ?? null };
 }

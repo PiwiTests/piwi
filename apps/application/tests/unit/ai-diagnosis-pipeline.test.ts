@@ -29,6 +29,9 @@ const provider = vi.hoisted(() => ({
   /** Which provider calls ran, in order. */
   calls: [] as string[],
   researchFails: false,
+  /** The options each context build received, and the images each diagnosis call sent. */
+  contextOptions: [] as Array<{ textOnly?: boolean }>,
+  sentImages: [] as unknown[],
 }));
 
 vi.mock('#shared/handlers/test-cases', async (importOriginal) => ({
@@ -40,18 +43,21 @@ vi.mock('#shared/handlers/test-cases', async (importOriginal) => ({
 }));
 
 vi.mock('../../server/utils/ai-context', () => ({
-  buildDiagnosisContext: async () => ({
-    scope: 'cluster',
-    text: 'context',
-    sections: [],
-    coverage: {},
-    scmChanges: null,
-    images: [],
-    sourceFiles: [],
-    tokenEstimate: 1,
-    textTokenEstimate: 1,
-    imageTokenEstimate: 0,
-  }),
+  buildDiagnosisContext: async (_db: unknown, opts: { textOnly?: boolean }) => {
+    provider.contextOptions.push(opts);
+    return {
+      scope: 'cluster',
+      text: 'context',
+      sections: [],
+      coverage: {},
+      scmChanges: null,
+      images: [],
+      sourceFiles: [],
+      tokenEstimate: 1,
+      textTokenEstimate: 1,
+      imageTokenEstimate: 0,
+    };
+  },
 }));
 
 vi.mock('../../server/utils/notifications/emit', () => ({ emitNotification: () => {} }));
@@ -65,8 +71,9 @@ vi.mock('../../server/utils/ai-provider', async (importOriginal) => {
       if (provider.researchFails) throw new Error('research model unavailable');
       return { text: '{"hypotheses":[],"dataGaps":[],"notes":""}', model: 'research-model', ...usage };
     },
-    streamAiProvider: async function* () {
+    streamAiProvider: async function* (_config: unknown, opts: { images?: unknown }) {
       provider.calls.push('diagnosis');
+      provider.sentImages.push(opts.images);
       yield { type: 'text', data: '{"summary":"Checkout button is disabled",' };
       yield { type: 'text', data: '"category":"app-bug"}' };
       yield { type: 'done', data: { model: 'main-model', ...usage } };
@@ -159,6 +166,8 @@ beforeEach(async () => {
   clues.strengthByExecution.clear();
   provider.calls.length = 0;
   provider.researchFails = false;
+  provider.contextOptions.length = 0;
+  provider.sentImages.length = 0;
   delete process.env.PIWI_AI_AUTO_DIAGNOSE_MAX;
   vi.spyOn(console, 'debug').mockImplementation(() => {});
 
@@ -366,6 +375,36 @@ describe('streamClusterDiagnosis stages', () => {
   });
 });
 
+describe('a text-only provider', () => {
+  test('the local Claude CLI gets a text-only context and no image, even one the user attached', async () => {
+    const cluster = await seedCluster(1);
+    const cli: ResolvedAiRole = {
+      provider: 'claude-cli',
+      apiKey: '',
+      model: 'sonnet',
+      baseUrl: null,
+      temperature: null,
+    };
+    const config: AiConfig = {
+      ...cli,
+      autoDiagnose: false,
+      source: 'settings',
+      roles: { diagnosis: cli, research: null, embedding: null },
+    };
+    await streamClusterDiagnosis(dbc, cluster, config, {
+      images: [{ name: 'user', mediaType: 'image/png', data: 'aGVsbG8=' }],
+    });
+    expect(provider.contextOptions.map((o) => o.textOnly)).toEqual([true]);
+    expect(provider.sentImages).toEqual([undefined]);
+  });
+
+  test('an API provider gets the full context', async () => {
+    const cluster = await seedCluster(1);
+    await streamClusterDiagnosis(dbc, cluster, aiConfig(null), {});
+    expect(provider.contextOptions.map((o) => o.textOnly)).toEqual([false]);
+  });
+});
+
 describe('the stage frame', () => {
   test('is an SSE event named stage carrying the stage name', () => {
     expect(diagnosisFrame.stage('research')).toBe('event: stage\ndata: {"stage":"research"}\n\n');
@@ -391,7 +430,7 @@ describe('the stage frame', () => {
       value && typeof value === 'object' && 'value' in value ? value.value : value,
     );
     vi.stubGlobal('onScopeDispose', () => {});
-    vi.stubGlobal('$fetch', { raw: async () => ({ _data: body }) });
+    vi.stubGlobal('$fetch', { raw: async () => ({ ok: true, status: 200, _data: body }) });
 
     const streaming = useStreamingDiagnosis(7);
     const seen: Array<DiagnosisStage | null> = [];
@@ -401,5 +440,64 @@ describe('the stage frame', () => {
     expect(seen).toEqual(['research', 'diagnosis']);
     expect(streaming.thinkingText.value).toBe('Looking at the button');
     expect(streaming.status.value).toBe('complete');
+  });
+
+  /** Stub what the streaming composable reads from Nuxt, with `$fetch` answering `raw` and plain calls. */
+  function stubStreamingGlobals(
+    raw: () => Promise<unknown>,
+    get: (url: string) => Promise<unknown> = async () => ({}),
+  ) {
+    vi.stubGlobal('ref', ref);
+    vi.stubGlobal('unref', (value: unknown) =>
+      value && typeof value === 'object' && 'value' in value ? value.value : value,
+    );
+    vi.stubGlobal('onScopeDispose', () => {});
+    vi.stubGlobal('$fetch', Object.assign(get, { raw }));
+  }
+
+  const jsonStream = (value: unknown) =>
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(value)));
+        controller.close();
+      },
+    });
+
+  test('a refusal is an error carrying its message, not a silent success', async () => {
+    stubStreamingGlobals(async () => ({
+      ok: false,
+      status: 503,
+      _data: jsonStream({ statusCode: 503, message: 'AI diagnosis is not configured' }),
+    }));
+    const streaming = useStreamingDiagnosis(7);
+    await streaming.startStream();
+    expect(streaming.status.value).toBe('error');
+    expect(streaming.error.value).toBe('AI diagnosis is not configured');
+  });
+
+  test('a diagnosis already running is followed until it completes', async () => {
+    vi.useFakeTimers();
+    try {
+      const answers = [{ diagnosis: { id: 3, status: 'running' } }, { diagnosis: { id: 3, status: 'completed' } }];
+      const polled: string[] = [];
+      stubStreamingGlobals(
+        async () => ({ ok: false, status: 409, _data: jsonStream({ message: 'Diagnosis is already running' }) }),
+        async (url) => {
+          polled.push(url);
+          return answers.shift();
+        },
+      );
+      const streaming = useStreamingDiagnosis(7);
+      const done = streaming.startStream();
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(streaming.status.value).toBe('streaming');
+      await vi.advanceTimersByTimeAsync(3_000);
+      await done;
+      expect(polled).toEqual(['/api/failure-clusters/7/diagnosis', '/api/failure-clusters/7/diagnosis']);
+      expect(streaming.status.value).toBe('complete');
+      expect(streaming.result.value).toMatchObject({ id: 3, status: 'completed' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

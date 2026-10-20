@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/server",
-  "version": "0.55.0",
+  "version": "0.56.0",
   "description": "Self-hosted dashboard that keeps and explains your Playwright test results — run with npx @piwitests/server",
   "type": "module",
   "bin": {
@@ -39,6 +39,6 @@
   },
   "dependencies": {
     "@libsql/client": "0.17.4",
-    "sharp": "0.35.3"
+    "sharp": "0.35.5"
   }
 }

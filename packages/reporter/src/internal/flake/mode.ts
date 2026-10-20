@@ -13,7 +13,6 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { Page } from '@playwright/test';
 import {
   COMMAND_CONDITION_KINDS,
@@ -32,6 +31,7 @@ import { parseRunOriginRef, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire
 import { requestRouteKey } from '@piwitests/core/page-key';
 import { PIWI_FLAKE_ENV, PIWI_PROBE_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
+import { relativeTestPath } from '../support/test-paths.js';
 import type { RouteAction } from '../probe/faults.js';
 import { installRouteRules, performRouteAction, type RouteRule } from '../probe/interception.js';
 import { isProbeMode } from '../probe/mode.js';
@@ -98,15 +98,20 @@ export function flakeRunMetadata(stamp: FlakeLabRunStamp, base: Record<string, u
 export interface FlakeTestIdentity {
   /** Absolute spec path, as Playwright reports it. */
   file: string | null;
+  /** The folder spec paths are named relative to (the Playwright config's); the working directory by default. */
+  base?: string;
   title: string;
   /** `[file, ...describe titles, test title]`. */
   titlePath?: string[];
   project: string | null;
 }
 
-/** A spec path in the shape the dashboard stores: project-root-relative, POSIX separators. */
-export function relativeTestFile(file: string | null | undefined): string | null {
-  return file ? path.relative(process.cwd(), file).split(path.sep).join('/') : null;
+/**
+ * A spec path in the shape the dashboard stores: relative to `base` (the
+ * Playwright config's folder), POSIX separators.
+ */
+export function relativeTestFile(file: string | null | undefined, base: string = process.cwd()): string | null {
+  return file ? relativeTestPath(file, base) : null;
 }
 
 /**
@@ -117,7 +122,7 @@ export function relativeTestFile(file: string | null | undefined): string | null
  */
 export function flakeRoleForTest(plan: FlakePlan, test: FlakeTestIdentity): 'target' | 'companion' | null {
   const running = {
-    file: relativeTestFile(test.file),
+    file: relativeTestFile(test.file, test.base),
     title: test.title,
     suite: test.titlePath ? test.titlePath.slice(1, -1) : undefined,
   };
@@ -261,6 +266,8 @@ export async function installFlakeConditions(page: Page, plan: FlakePlan): Promi
 export interface FlakeAttempt {
   role: 'target' | 'companion';
   file: string | null;
+  /** The folder `file` is named relative to (the Playwright config's); the working directory by default. */
+  base?: string;
   title: string;
   project: string | null;
   browserName: string | null;
@@ -290,7 +297,7 @@ export function flakeResultLine(plan: FlakePlan, attempt: FlakeAttempt): FlakeRe
     experimentId: plan.experimentId,
     armId: plan.arm.id,
     role: attempt.role,
-    file: relativeTestFile(attempt.file),
+    file: relativeTestFile(attempt.file, attempt.base),
     title: attempt.title,
     project: attempt.project,
     browserName: attempt.browserName,

@@ -8,11 +8,14 @@ import {
   extractStackFrames,
   extractTopFrame,
   extractTopFrameFile,
+  readLocatorHeader,
   stripAnsi,
   withoutStackFrames,
   type ParsedPlaywrightError,
 } from '../src/error-parse';
 import { ERRORS, type ErrorKey } from './fixtures/playwright-errors';
+import { extractErrorSignature } from '../src/error-signature';
+import { appendErrorLocation } from '../src/error-text';
 
 type Expected = Partial<Omit<ParsedPlaywrightError, 'messageHead'>>;
 
@@ -473,8 +476,48 @@ describe('locator and frame helpers', () => {
     expect(extractMessageHead('1\n2\n3\n4\n5\n6\n7')).toBe('1\n2\n3\n4\n5');
   });
 
+  test('readLocatorHeader reads the Locator: line of a web-first assertion only', () => {
+    const text =
+      "Error: expect(locator).toBeVisible() failed\n\nLocator:  getByRole('button', { name: 'Pay' }) \nExpected: visible";
+    expect(readLocatorHeader(text)).toBe("getByRole('button', { name: 'Pay' })");
+    expect(readLocatorHeader("locator.click: Timeout 5000ms exceeded.\n  - waiting for getByText('x')")).toBeNull();
+  });
+
   test('stripAnsi removes SGR codes only', () => {
     expect(stripAnsi('\x1b[31mred\x1b[39m text \x1b[0m')).toBe('red text ');
     expect(stripAnsi('plain')).toBe('plain');
+  });
+});
+
+describe('parsing time stays linear in the text', () => {
+  // Whitespace runs that a line-anchored `\s` pattern rescans from every line break.
+  const pathological = {
+    'blank lines': `Error: boom${'\n'.repeat(200_000)}x`,
+    'space lines': `Error: boom${'\n '.repeat(100_000)}x`,
+    'trailing-space lines': `Error: boom${' \n'.repeat(100_000)}x`,
+    'unindented at lines': `Error: boom${'\n\nat x'.repeat(40_000)}`,
+  };
+
+  test.each(Object.entries(pathological))('%s parse in well under a second', (_name, text) => {
+    const started = performance.now();
+    parsePlaywrightError(text);
+    extractErrorSignature(text);
+    extractStackFrames(text);
+    appendErrorLocation(text, { file: 'a.spec.ts', line: 1, column: 1 });
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  test('the message head still ends where a stack frame follows blank lines', () => {
+    expect(extractMessageHead('Error: boom\n\n\n    at f (a.ts:1:2)')).toBe('Error: boom');
+    // The fingerprint hashes the head: a blank line, then `at `, starts the stack.
+    expect(extractMessageHead('Error: boom\n\nat least one more line')).toBe('Error: boom');
+    expect(extractMessageHead('Error: boom\nat least one more line')).toBe('Error: boom\nat least one more line');
+    expect(extractMessageHead('Error: boom\n \nat f (a.ts:1:2)')).toBe('Error: boom');
+  });
+
+  test('a frame after blank lines and CRLF line ends is still read', () => {
+    expect(extractStackFrames('Error: boom\r\n\r\n    at f (/app/a.spec.ts:3:4)\r\n')).toEqual([
+      { file: '/app/a.spec.ts', line: 3, column: 4 },
+    ]);
   });
 });

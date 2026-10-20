@@ -64,7 +64,7 @@ import { renderEnvironmentDiffMarkdown } from '#shared/environment-diff';
 import { selectCaseScreenshots } from './case-screenshots';
 import { supportedImageMediaType } from '#shared/file-classify';
 import { getOrComputeVisualDiff } from './visual-diff';
-import { parseAriaCandidates, textSimilarity } from '#shared/locator-fingerprint';
+import { parseAriaCandidates, significantWordSimilarity } from '#shared/locator-fingerprint';
 import { isFailedStatus } from '#shared/utils/test-counts';
 import type {
   BuildContextOptions,
@@ -1110,6 +1110,16 @@ async function resolveErrorContextAria(db: DbClient, rep: RepresentativeRow): Pr
   }
 }
 
+/** The line of the visual-diff section that tells the model its overlay is attached. */
+const VISUAL_DIFF_OVERLAY_NOTE = '\n- The diff overlay (red = changed pixels) is attached as image "visual-diff".';
+
+/** The sections as a text-only provider reads them: no screenshot reference, no attached-overlay note. */
+function textOnlySections(sections: ContextSection[]): ContextSection[] {
+  return sections
+    .filter((s) => s.id !== 'screenshots')
+    .map((s) => (s.id === 'visualDiff' ? { ...s, markdown: s.markdown.replace(VISUAL_DIFF_OVERLAY_NOTE, '') } : s));
+}
+
 /** Auto-resolve screenshots for the representative execution. */
 async function resolveScreenshots(
   db: DbClient,
@@ -1547,53 +1557,51 @@ function parseLocatorFromError(
 /**
  * Nearest accessible-name hint for locator failures.
  * When the failing error contains a role/name locator, parse the stored ARIA
- * snapshot and surface the closest candidates. Parsing and similarity reuse
- * the shared healing helpers (`parseAriaCandidates` / `textSimilarity`) so
- * this section agrees with the locator-healing pipeline.
+ * snapshot and surface the related candidates: those whose name shares a
+ * significant word with the requested one, or the lone element of the
+ * requested role. Parsing and similarity reuse the shared healing helpers
+ * (`parseAriaCandidates` / `significantWordSimilarity`) so this section agrees
+ * with the locator-healing pipeline. Null when nothing on the page relates.
  */
-function nearestAriaNamesSection(rep: RepresentativeRow): string | null {
+export function nearestAriaNamesSection(rep: Pick<RepresentativeRow, 'error' | 'ariaSnapshot'>): string | null {
   if (!rep.error && !rep.ariaSnapshot) return null;
   const error = rep.error?.trim() || '';
   const snapshot = rep.ariaSnapshot?.trim() || '';
   if (!error || !snapshot) return null;
 
   const locator = parseLocatorFromError(error);
-  if (!locator) return null;
+  if (!locator?.name) return null;
+  const requestedName = locator.name;
 
   const entries = parseAriaCandidates(snapshot).filter(
     (e): e is { role: string; name: string; level: number | null } => e.name != null,
   );
-  if (entries.length === 0) return null;
-
-  // Filter entries matching the locator's role
   const sameRole = locator.role ? entries.filter((e) => e.role === locator.role) : entries;
+  const loneOfRole = locator.role != null && sameRole.length === 1;
 
-  if (sameRole.length === 0 || !locator.name) return null;
-
-  // Score by token similarity
-  const scored = sameRole.map((e) => ({
-    ...e,
-    score: textSimilarity(locator.name, e.name),
-  }));
-  scored.sort((a, b) => b.score - a.score);
-
-  const top = scored.slice(0, 5).filter((e) => e.score > 0 || e.name);
+  const top = sameRole
+    .map((e) => ({ ...e, score: significantWordSimilarity(requestedName, e.name) }))
+    .filter((e) => e.score > 0 || loneOfRole)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
   if (top.length === 0) return null;
 
   const lines: string[] = ['### Nearest matching elements (from ARIA)'];
   const requested =
     locator.method === 'getByRole'
-      ? `getByRole('${locator.role ?? ''}', { name: '${locator.name}'${locator.exact ? ', exact: true' : ''} })`
-      : `${locator.method}('${locator.name}')`;
+      ? `getByRole('${locator.role ?? ''}', { name: '${requestedName}'${locator.exact ? ', exact: true' : ''} })`
+      : `${locator.method}('${requestedName}')`;
   lines.push(`Requested: ${requested}`);
   for (const e of top) {
     const note =
       e.score >= 1
         ? ''
-        : e.score > 0.3
-          ? ` — close match (score: ${e.score.toFixed(2)})`
-          : ` — partial match (score: ${e.score.toFixed(2)})`;
-    const exactHint = locator.exact && e.name !== locator.name ? ' — exact:false would match' : '';
+        : e.score === 0
+          ? ` — the only ${e.role} on the page`
+          : e.score > 0.3
+            ? ` — close match (score: ${e.score.toFixed(2)})`
+            : ` — partial match (score: ${e.score.toFixed(2)})`;
+    const exactHint = locator.exact && e.name !== requestedName ? ' — exact:false would match' : '';
     lines.push(`Present:   ${e.role} "${e.name}"${exactHint}${note}`);
   }
 
@@ -2937,13 +2945,13 @@ export async function buildDiagnosisContext(
           ? '\n- ⚠️ The screenshots have different dimensions (viewport change?) — compared on a padded union canvas, so the ratio is inflated and unreliable.'
           : '';
         const baselineNote = d.baselineNote ? ` — ${d.baselineNote}` : '';
-        const md = `## Visual Diff vs Last Pass\nPixel comparison of the failing screenshot against the same test's last passing screenshot (run #${d.baselineRunId}${baselineNote}):\n- Changed pixels: ${d.changedPixels} of ${d.width * d.height} (${pct}%)${mismatchNote}\n- The diff overlay (red = changed pixels) is attached as image "visual-diff".`;
+        const md = `## Visual Diff vs Last Pass\nPixel comparison of the failing screenshot against the same test's last passing screenshot (run #${d.baselineRunId}${baselineNote}):\n- Changed pixels: ${d.changedPixels} of ${d.width * d.height} (${pct}%)${mismatchNote}${VISUAL_DIFF_OVERLAY_NOTE}`;
         push(section('visualDiff', 'Visual Diff vs Last Pass', md));
         coverage = {
           ...coverage,
           visualDiff: { changedPixelRatio: d.changedPixelRatio, dimensionMismatch: d.dimensionMismatch },
         };
-        if (images.length < limits.maxImages) {
+        if (!opts.textOnly && images.length < limits.maxImages) {
           try {
             const overlay = await getStorage().readFile(d.path);
             images.push({ name: 'visual-diff', mediaType: 'image/png', data: overlay.toString('base64') });
@@ -3116,19 +3124,26 @@ export async function buildDiagnosisContext(
     })!;
   }
 
-  const coverageBlock = buildCoverageBlock(contextSections, {
-    hasCluster: Boolean(cluster),
-    notApplicable: coverage.notApplicable,
-    absentReasons,
-  });
-
   // Sort sections into a fixed narrative order — stable across re-runs
   // (makes prompt caching effective) and optimised for one-pass reading.
   const orderMap = new Map(SECTION_ORDER.map((id, i) => [id, i]));
   contextSections.sort((a, b) => (orderMap.get(a.id) ?? 999) - (orderMap.get(b.id) ?? 999));
 
-  const text = [coverageBlock, ...contextSections.map((s) => s.markdown).filter(Boolean)].join('\n\n');
-  const textChars = contextSections.reduce((sum, s) => sum + s.chars, 0) + coverageBlock.length;
+  // A text-only provider is sent no image: the prompt leaves out the screenshot
+  // references and the overlay note, while `sections` stay the same whatever the
+  // provider, so the staleness hash computed from them does not depend on it.
+  const sentSections = opts.textOnly ? textOnlySections(contextSections) : contextSections;
+  if (opts.textOnly) images = [];
+  const coverageBlock = buildCoverageBlock(sentSections, {
+    hasCluster: Boolean(cluster),
+    notApplicable: opts.textOnly
+      ? { ...coverage.notApplicable, screenshots: 'the AI provider reads text only' }
+      : coverage.notApplicable,
+    absentReasons,
+  });
+
+  const text = [coverageBlock, ...sentSections.map((s) => s.markdown).filter(Boolean)].join('\n\n');
+  const textChars = sentSections.reduce((sum, s) => sum + s.chars, 0) + coverageBlock.length;
 
   // Images are billed as vision tokens (fixed per-image estimate), not as the
   // base64 text length — counting the base64 as text over-estimates by ~100×.

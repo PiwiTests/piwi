@@ -22,15 +22,21 @@ function srcFiles(dir: string): string[] {
   });
 }
 
-// Captures the specifier of `import ... from 'x'`, `export ... from 'x'`, and bare `import 'x'` at the start of a line
-// (so a string literal such as `'import'` is not read as one).
-const IMPORT_RE = /\bfrom\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]/gm;
+// Captures the specifier of `import ... from 'x'`, `export ... from 'x'`, and bare `import 'x'` at the start of a line,
+// so a string literal such as `'import'`, or `'from'` in a word list, is not read as one.
+const IMPORT_RE = /(?<!['"\w])from\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]/gm;
 
 describe('@piwitests/core boundary', () => {
   test('declares no dependencies or devDependencies', () => {
     expect(pkg.dependencies ?? {}).toEqual({});
     expect(pkg.devDependencies ?? {}).toEqual({});
     expect(pkg.private).toBe(true);
+  });
+
+  test('the import scan reads statements, not string literals', () => {
+    const specs = (text: string) => [...text.matchAll(IMPORT_RE)].map((m) => m[1] ?? m[2]);
+    expect(specs(`import { a } from './a';\nexport * from "./b";\nimport './c';`)).toEqual(['./a', './b', './c']);
+    expect(specs(`const words = ['to', 'from', 'with'];\nconst kind = 'import';`)).toEqual([]);
   });
 
   test('src imports only relative paths — no node:, no app/reporter, no third-party', () => {

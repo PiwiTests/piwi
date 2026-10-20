@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { projects, testRuns, testRunsCases } from '../database/schema';
 import type { DbClient as DB } from '../database';
 import { resolveRunBranch } from './run-branch';
@@ -6,6 +6,9 @@ import { resolveDefaultBranch } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { selectBaselineRun } from './branch-baseline';
 import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
+
+/** Execution ids one flag UPDATE sets at most. */
+const UPDATE_BATCH = 500;
 
 /**
  * Compute isNewRegression and isNewFlaky signals for all test_runs_cases
@@ -72,47 +75,34 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));
 
-  const updates: Array<{ id: number; isNewRegression: boolean | null; isNewFlaky: boolean | null }> = [];
+  const newRegressionIds: number[] = [];
+  const newFlakyIds: number[] = [];
 
   for (const cc of currentCases) {
     const baseline = baselineByCaseId.get(cc.testCaseId);
-    let isNewRegression: boolean | null = null;
-    let isNewFlaky: boolean | null = null;
+    if (!baseline) continue;
 
-    if (baseline) {
-      // isNewRegression: failed in current, passed in baseline
-      const isFail = cc.status === 'failed' || cc.status === 'timedOut' || cc.status === 'timedout';
-      const wasPass = baseline.status === 'passed';
-      if (isFail && wasPass) {
-        isNewRegression = true;
-      }
+    // isNewRegression: failed in current, passed in baseline
+    const isFail = cc.status === 'failed' || cc.status === 'timedOut' || cc.status === 'timedout';
+    if (isFail && baseline.status === 'passed') newRegressionIds.push(cc.id);
 
-      // isNewFlaky: retry-pass in current, no retries + passed in baseline
-      if (cc.status === 'passed' && (cc.retries ?? 0) > 0 && baseline.retries === 0 && baseline.status === 'passed') {
-        isNewFlaky = true;
-      }
-    }
-
-    updates.push({ id: cc.id, isNewRegression, isNewFlaky });
-  }
-
-  // Batch-update — store booleans as 0/1 integers, run updates in parallel
-  const pending = [];
-  for (const u of updates) {
-    const setData: Record<string, unknown> = {};
-    if (u.isNewRegression === true) setData.isNewRegression = 1;
-    else if (u.isNewRegression === false) setData.isNewRegression = 0;
-    if (u.isNewFlaky === true) setData.isNewFlaky = 1;
-    else if (u.isNewFlaky === false) setData.isNewFlaky = 0;
-
-    if (Object.keys(setData).length > 0) {
-      pending.push(
-        db
-          .update(testRunsCases)
-          .set(setData as any)
-          .where(eq(testRunsCases.id, u.id)),
-      );
+    // isNewFlaky: retry-pass in current, no retries + passed in baseline
+    if (cc.status === 'passed' && (cc.retries ?? 0) > 0 && baseline.retries === 0 && baseline.status === 'passed') {
+      newFlakyIds.push(cc.id);
     }
   }
-  await Promise.all(pending);
+
+  // One UPDATE per flag and batch of ids, within the database's bound-parameter limit.
+  for (let i = 0; i < newRegressionIds.length; i += UPDATE_BATCH) {
+    await db
+      .update(testRunsCases)
+      .set({ isNewRegression: 1 })
+      .where(inArray(testRunsCases.id, newRegressionIds.slice(i, i + UPDATE_BATCH)));
+  }
+  for (let i = 0; i < newFlakyIds.length; i += UPDATE_BATCH) {
+    await db
+      .update(testRunsCases)
+      .set({ isNewFlaky: 1 })
+      .where(inArray(testRunsCases.id, newFlakyIds.slice(i, i + UPDATE_BATCH)));
+  }
 }

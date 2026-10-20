@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { generateAnchoredAlternatives, mergeCandidates, ANCHOR_KIND_SCORES } from '../src/anchor-alternatives.js';
 import type { PickedAnchorInfo } from '../src/overlay-anchors.js';
 
@@ -81,6 +82,24 @@ describe('generateAnchoredAlternatives', () => {
 
   it('returns nothing for a role-less leaf', () => {
     expect(generateAnchoredAlternatives({ role: null, level: null }, [anchor({ id: 'x', idCount: 1 })])).toEqual([]);
+  });
+});
+
+describe('generateAnchoredAlternatives with hostile attributes', () => {
+  it('quotes a raw role so every candidate parses as a locator with the role as one string', () => {
+    const role = "button'), require('child_process').execSync('id'), ('";
+    const alts = generateAnchoredAlternatives({ role, level: null }, [
+      anchor({ testId: 'form\nline', testIdCount: 1 }),
+      anchor({ role, ariaLabel: 'Main\u2028', labeledRoleCount: 1 }),
+    ]);
+    expect(alts.length).toBeGreaterThan(0);
+    for (const alt of alts) {
+      expect(alt.locator).not.toMatch(/[\n\r\u2028\u2029]/);
+      const chain = parseLocatorChain(alt.locator);
+      const leafCall = chain.calls[chain.calls.length - 1]!;
+      expect(leafCall.method).toBe('getByRole');
+      expect(leafCall.args).toEqual([{ type: 'string', value: role }]);
+    }
   });
 });
 

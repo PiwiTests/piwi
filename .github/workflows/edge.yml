@@ -20,4 +20,3 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/reusable-publish-container.yml
-    secrets: inherit

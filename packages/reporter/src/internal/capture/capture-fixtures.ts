@@ -85,6 +85,7 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
+import { maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -114,6 +115,7 @@ import {
 } from '../collect/coverage-settings.js';
 import type { LineRange } from '@piwitests/core/coverage';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
+import { configDirFromConfig } from '../support/test-paths.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
 import {
   codeReachRoots,
@@ -472,9 +474,7 @@ async function stopSinkCodeReach(
   }
   if (stopping.length > 0) {
     const info = sink.testInfo;
-    const configFile = info?.config.configFile;
-    const configDir = configFile ? path.dirname(configFile) : (info?.config.rootDir ?? process.cwd());
-    const roots = codeReachRoots(configDir, configuredCodeReachRoots());
+    const roots = codeReachRoots(configDirFromConfig(info?.config), configuredCodeReachRoots());
     for (const [page, session] of stopping) {
       session.stopping = stopPageCodeReach(sink, page, session, roots);
       underway.push(session.stopping);
@@ -700,7 +700,8 @@ const TOKEN_MASK_RES = [/\beyJ[\w-]{10,}\.[\w-]{5,}\.[\w-]{5,}\b/g, /\b[0-9a-f]{
  * Assemble the wire page-state from the in-page reads, the context cookies and
  * what the page was doing (`readPageInteraction`). Pure and Node-side so the
  * sanitization (token masking, caps, value-free cookies, well-formed element
- * paths) is unit-testable.
+ * paths) is unit-testable. The URL goes without its fragment, which `hash`
+ * carries with its credentials masked (`#access_token=[masked]`).
  */
 export function buildPageState(
   raw: RawPageState,
@@ -721,8 +722,8 @@ export function buildPageState(
     }));
 
   return {
-    url: raw.url,
-    hash: raw.hash || null,
+    url: raw.url.split('#')[0]!,
+    hash: raw.hash ? maskUrlFragment(raw.hash) : null,
     historyState: historyState || null,
     localStorage: capStorage(raw.localStorage),
     sessionStorage: capStorage(raw.sessionStorage),
@@ -2393,6 +2394,7 @@ export const piwiFixtures: Fixtures<
         const plan = loadFlakePlan();
         const role = flakeRoleForTest(plan, {
           file: testInfo.file,
+          base: configDirFromConfig(testInfo.config),
           title: testInfo.title,
           titlePath: testInfo.titlePath,
           project: testInfo.project.name,
@@ -2407,6 +2409,7 @@ export const piwiFixtures: Fixtures<
           title: testInfo.title,
           file: testInfo.file,
           titlePath: testInfo.titlePath,
+          base: configDirFromConfig(testInfo.config),
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
@@ -2468,6 +2471,7 @@ async function recordFlakeAttempt(flake: NonNullable<CaptureSink['flake']>, test
     flakeResultLine(flake.plan, {
       role: flake.role,
       file: testInfo.file,
+      base: configDirFromConfig(testInfo.config),
       title: testInfo.title,
       project: testInfo.project.name || null,
       browserName: flake.browserName,

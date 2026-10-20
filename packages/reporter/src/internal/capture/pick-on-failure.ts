@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { locatorCallValues, parseLeafLocatorCall } from '@piwitests/core/locator-chain';
+import { readLocatorHeader, stripAnsi } from '@piwitests/core/error-parse';
 import type { Page, TestInfo } from '@playwright/test';
 import {
   installPickerOverlay,
@@ -95,9 +96,6 @@ export interface UserPickResult {
 // so nothing is captured — but Playwright's error still names the locator
 // (`Locator: …`) and its call site, which is enough to run the picker.
 
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-
 /**
  * Parse a Playwright locator expression into `{ method, args }` for its leaf —
  * the last locating call, which identifies the resolved element, mirroring the
@@ -122,10 +120,9 @@ export function deriveFailedLocator(testInfo: TestInfo): FailedLocatorInfo | nul
   };
   const errors = info.errors && info.errors.length > 0 ? info.errors : info.error ? [info.error] : [];
   for (const err of errors) {
-    const text = `${err.message ?? ''}\n${err.stack ?? ''}`.replace(ANSI_RE, '');
-    const line = /^\s*Locator:\s*(.+)$/m.exec(text);
-    if (!line) continue;
-    const parsed = parseLeafLocatorExpression(line[1]!.trim());
+    const header = readLocatorHeader(stripAnsi(`${err.message ?? ''}\n${err.stack ?? ''}`));
+    if (!header) continue;
+    const parsed = parseLeafLocatorExpression(header);
     if (!parsed) continue;
     const loc = err.location;
     const location = loc

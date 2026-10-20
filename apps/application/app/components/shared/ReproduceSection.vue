@@ -140,32 +140,6 @@ const { copy: copySha, copied: shaCopied } = useCopy();
 // ── The app under test ────────────────────────────────────────────────────────
 const baseUrl = computed(() => props.reproduce.env.find((e) => e.label === 'Base URL')?.value ?? null);
 const hasWebServer = computed(() => inspection.value?.webServer ?? false);
-const startCommand = computed(() => link.value?.startCommand ?? null);
-
-// The inline "set a start command" editor.
-const editingStart = ref(false);
-const draftCommand = ref('');
-const draftReadiness = ref('');
-const savingStart = ref(false);
-function openStartEditor() {
-  draftCommand.value = link.value?.startCommand ?? '';
-  draftReadiness.value = link.value?.readinessUrl ?? baseUrl.value ?? '';
-  editingStart.value = true;
-}
-async function saveStartCommand() {
-  const id = projectId.value;
-  if (id == null) return;
-  savingStart.value = true;
-  try {
-    await setDesktopProjectStartCommand(id, draftCommand.value || null, draftReadiness.value || null);
-    await refreshLink();
-    editingStart.value = false;
-  } catch (error) {
-    toast.add({ title: 'Could not save the start command', description: errorMessage(error), color: 'error' });
-  } finally {
-    savingStart.value = false;
-  }
-}
 </script>
 
 <template>
@@ -314,36 +288,10 @@ async function saveStartCommand() {
         <p v-if="hasWebServer" class="text-xs text-dimmed">
           Playwright's <code class="font-mono">webServer</code> starts the app at each commit.
         </p>
-        <template v-else>
-          <p class="text-xs text-dimmed">
-            Your tests target <span class="font-mono">{{ baseUrl || 'the configured base URL' }}</span
-            >; reproducing or bisecting this repository only exercises test-side changes.
-          </p>
-          <div v-if="!editingStart" class="flex flex-wrap items-center gap-2">
-            <span v-if="startCommand" class="text-xs text-muted">
-              Start command: <code class="font-mono">{{ startCommand }}</code>
-              <template v-if="link?.readinessUrl">
-                (ready at <span class="font-mono">{{ link.readinessUrl }}</span
-                >)
-              </template>
-            </span>
-            <UButton size="xs" color="neutral" variant="link" class="px-0" @click="openStartEditor">
-              {{ startCommand ? 'Edit start command…' : 'Set a start command…' }}
-            </UButton>
-          </div>
-          <div v-else class="space-y-1.5 rounded-md border border-default p-2">
-            <UFormField label="Start command" size="xs">
-              <UInput v-model="draftCommand" placeholder="npm run dev" size="xs" class="w-full font-mono" />
-            </UFormField>
-            <UFormField label="Ready when this URL answers" size="xs">
-              <UInput v-model="draftReadiness" placeholder="http://localhost:3000" size="xs" class="w-full font-mono" />
-            </UFormField>
-            <div class="flex items-center gap-2">
-              <UButton size="xs" color="primary" :loading="savingStart" @click="saveStartCommand">Save</UButton>
-              <UButton size="xs" color="neutral" variant="ghost" @click="editingStart = false">Cancel</UButton>
-            </div>
-          </div>
-        </template>
+        <p v-else class="text-xs text-dimmed">
+          Your tests target <span class="font-mono">{{ baseUrl || 'the configured base URL' }}</span
+          >; reproducing or bisecting this repository only exercises test-side changes.
+        </p>
       </div>
       <p class="text-xs text-dimmed">
         Piwi reproduces and bisects one repository. When the app under test lives in another repo, its history is not

@@ -33,6 +33,8 @@ import {
 } from '../reports/deliver';
 import { deliveredShareUrl } from '../reports/context';
 import { teamsDigestMessage, teamsEventMessage, teamsReportMessage } from './teams';
+import { slackEscape, slackLink } from './slack';
+import { emailDestinationVerified } from './email-verified';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 /** Slack digest messages list at most this many items; the rest are counted. */
@@ -48,6 +50,7 @@ interface ChannelRow {
   type: string;
   userId: number | null;
   config: unknown;
+  verified?: boolean | null;
 }
 
 interface DeliveryRow {
@@ -58,8 +61,15 @@ interface DeliveryRow {
   scheduledFor: Date | null;
 }
 
-/** Resolve the destination address for an email or personal_email channel. */
+/** Resolve the destination address for an email or personal_email channel, refusing an unverified one. */
 async function resolveEmailAddress(db: Db, channel: ChannelRow): Promise<string> {
+  if (!(await emailDestinationVerified(db, channel))) {
+    throw new Error(
+      channel.type === 'personal_email'
+        ? 'Account email not verified'
+        : 'Email channel not verified: send it a test from Settings → Notifications',
+    );
+  }
   if (channel.type === 'personal_email') {
     if (!channel.userId) throw new Error('Personal email channel has no owner');
     const [owner] = await db.select({ email: users.email }).from(users).where(eq(users.id, channel.userId));
@@ -102,7 +112,7 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   const webhookUrl = config.webhookUrl as string;
   if (!webhookUrl) throw new Error('No Slack webhook URL configured');
 
-  const text = renderEventSubject(event, payload);
+  const text = slackEscape(renderEventSubject(event, payload));
   let emoji = ':bell:';
   if (event.startsWith('run.failed')) emoji = ':x:';
   else if (event === 'run.interrupted') emoji = ':warning:';
@@ -114,8 +124,8 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   else if (event === 'environment.incident') emoji = ':construction:';
 
   const base = siteBase();
-  // Slack section text is capped at 3000 chars; keep excerpts short.
-  const slackExcerpt = (s: string) => (s.length > 600 ? s.slice(0, 600) + '…' : s);
+  // Slack section text is capped at 3000 chars; keep excerpts short, then escape them.
+  const slackExcerpt = (s: string) => slackEscape(s.length > 600 ? s.slice(0, 600) + '…' : s);
 
   const blocks: Record<string, unknown>[] = [{ type: 'section', text: { type: 'mrkdwn', text: `${emoji} *${text}*` } }];
 
@@ -123,7 +133,7 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
     const p = payload as RunFinishedPayload;
     for (const f of p.topFailures ?? []) {
       const path = failureTargetPath(f);
-      const link = path ? `<${base}${path}|${f.title}>` : f.title;
+      const link = path ? slackLink(`${base}${path}`, f.title) : slackEscape(f.title);
       const headline = f.headline ? `\n${slackExcerpt(f.headline)}` : '';
       const excerpt = f.errorExcerpt ? `\n\`\`\`${slackExcerpt(f.errorExcerpt)}\`\`\`` : '';
       blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `• *${link}*${headline}${excerpt}` } });
@@ -131,33 +141,36 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   } else if (event === 'cluster.new') {
     const p = payload as ClusterNewPayload;
     const parts: string[] = [];
-    if (p.title && p.title !== p.signature) parts.push(`*${p.title}*`);
+    if (p.title && p.title !== p.signature) parts.push(`*${slackEscape(p.title)}*`);
     parts.push(`\`${slackExcerpt(p.signature)}\``);
     if (p.affectedCases) parts.push(`${p.affectedCases} affected test${p.affectedCases === 1 ? '' : 's'}`);
     if (p.sampleErrorExcerpt) parts.push(`\`\`\`${slackExcerpt(p.sampleErrorExcerpt)}\`\`\``);
-    if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
-    parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
+    if (p.knownIssue) parts.push(`Tracked in ${slackLink(p.knownIssue.url, p.knownIssue.key)}`);
+    parts.push(slackLink(`${base}/failure-clusters/${p.clusterId}`, 'View cluster'));
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
   } else if (event === 'cluster.fixed' || event === 'cluster.regressed') {
     const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
-    const parts: string[] = [p.title || `\`${slackExcerpt(p.signature)}\``];
+    const parts: string[] = [p.title ? slackEscape(p.title) : `\`${slackExcerpt(p.signature)}\``];
     const { triageNote } = clusterOutcome(event, p);
-    if (triageNote) parts.push(triageNote);
-    if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
-    parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
+    if (triageNote) parts.push(slackEscape(triageNote));
+    if (p.knownIssue) parts.push(`Tracked in ${slackLink(p.knownIssue.url, p.knownIssue.key)}`);
+    parts.push(slackLink(`${base}/failure-clusters/${p.clusterId}`, 'View cluster'));
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
   } else if (event === 'environment.incident') {
     const p = payload as EnvironmentIncidentPayload;
-    const parts = [p.reason, 'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).'];
-    parts.push(`<${base}/test-runs/${p.runId}|View run>`);
+    const parts = [
+      slackEscape(p.reason),
+      'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).',
+    ];
+    parts.push(slackLink(`${base}/test-runs/${p.runId}`, 'View run'));
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
   } else if (event === 'bug.looks_fixed') {
     const p = payload as BugLooksFixedPayload;
     for (const t of p.tests.slice(0, TOP_FAILURES_LIMIT)) {
-      const link = `<${base}/test-run-cases/${t.executionId}|${t.title}>`;
+      const link = slackLink(`${base}/test-run-cases/${t.executionId}`, t.title);
       blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: `• *${link}* passes: remove \`test.fail()\` in \`${t.filePath}\`` },
+        text: { type: 'mrkdwn', text: `• *${link}* passes: remove \`test.fail()\` in \`${slackEscape(t.filePath)}\`` },
       });
     }
   }
@@ -176,7 +189,7 @@ async function sendSlackDigest(config: Record<string, unknown>, items: DigestIte
   for (const { event, payload } of items.slice(0, SLACK_DIGEST_MAX_ITEMS)) {
     const line = renderEventSubject(event, payload);
     const path = notificationTargetPath(event, payload);
-    const text = path ? `• <${base}${path}|${line}>` : `• ${line}`;
+    const text = path ? `• ${slackLink(`${base}${path}`, line)}` : `• ${slackEscape(line)}`;
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text } });
   }
   if (items.length > SLACK_DIGEST_MAX_ITEMS) {

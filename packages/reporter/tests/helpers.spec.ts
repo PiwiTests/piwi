@@ -339,6 +339,20 @@ describe('collectSourceFrames', () => {
     }
   });
 
+  it('reads a long run of blank lines in linear time', () => {
+    const { root, spec, helper } = makeProject();
+    try {
+      const error = `Error: boom${'\n'.repeat(200_000)}    at checkout (${helper}:15:10)`;
+      const started = performance.now();
+      const frames = collectSourceFrames(error, spec, 42, { projectRoot: root, context: 1 });
+      expect(performance.now() - started).toBeLessThan(1000);
+      // The frame sits past the scanned start of the text, so the test file stands in.
+      expect(frames.map((f) => f.file)).toEqual([path.join('tests', 'checkout.spec.ts')]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('caps the number of frames', () => {
     const { root, spec, helper } = makeProject();
     try {

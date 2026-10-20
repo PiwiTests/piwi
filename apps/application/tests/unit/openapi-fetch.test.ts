@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { fetchOpenApiManifest } from '../../server/utils/surface-manifest';
+import { fetchOpenApiManifest } from '../../server/utils/openapi-surface';
 
 /**
  * The OpenAPI URL is admin-supplied, so the fetch goes through the SSRF guard

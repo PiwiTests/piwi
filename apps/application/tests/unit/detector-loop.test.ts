@@ -6,7 +6,7 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { computeDetectorPrecision, isDetectorMuted, MUTE_MIN_VERDICTS } from '../../shared/handlers/detector-precision';
 import { detectMatrix, detectEscapedDefect } from '../../shared/handlers/scenario-gaps';
-import { selectWeeklyDigest, renderDigest } from '../../shared/handlers/gap-digest';
+import { selectWeeklyDigest } from '../../shared/handlers/gap-digest';
 
 describe('computeDetectorPrecision / isDetectorMuted', () => {
   test('folds for/against into precision and mutes below threshold with enough verdicts', () => {
@@ -137,10 +137,6 @@ describe('selectWeeklyDigest', () => {
       createdAt: 100,
     }));
     expect(selectWeeklyDigest(many, 50, 5)[0]!.gaps).toHaveLength(5);
-  });
-
-  test('renders a Markdown body', () => {
-    expect(renderDigest(selectWeeklyDigest(gaps, 50, 5))).toContain('New scenario gaps this week');
   });
 
   test('leaves out the gaps of a detector muted on their project', () => {

@@ -104,6 +104,9 @@
   "common_desktopUnsupported": {
     "message": "Este endereço não é um aplicativo de desktop do Piwi que possa executar relatórios de bug."
   },
+  "common_desktopNotProven": {
+    "message": "O programa neste endereço não provou ser o aplicativo de desktop pareado, então o token não foi enviado. Verifique se o aplicativo está aberto e atualizado e pareie novamente."
+  },
   "common_desktopStatus": {
     "message": "O aplicativo de desktop respondeu $status$.",
     "placeholders": {

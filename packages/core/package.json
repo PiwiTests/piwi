@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/core",
-  "version": "0.55.0",
+  "version": "0.56.0",
   "description": "Pure cross-cutting logic and wire shapes shared by the Piwi Dashboard app and the Playwright reporter",
   "private": true,
   "type": "module",
@@ -50,6 +50,7 @@
     "./line-diff": "./src/line-diff.ts",
     "./editor-send": "./src/editor-send.ts",
     "./picker-marker": "./src/picker-marker.ts",
+    "./desktop-proof": "./src/desktop-proof.ts",
     "./bisect": "./src/bisect.ts",
     "./desktop-job": "./src/desktop-job.ts",
     "./file-routes": "./src/file-routes.ts",

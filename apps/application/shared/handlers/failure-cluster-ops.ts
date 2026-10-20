@@ -3,7 +3,7 @@
  * and demo reporter implementations.
  */
 
-import { eq, ne, and, or, inArray, sql, isNull, count } from 'drizzle-orm';
+import { eq, ne, and, or, inArray, sql, isNull, count, type AnyColumn, type SQL } from 'drizzle-orm';
 import {
   testRuns,
   testRunsCases,
@@ -66,6 +66,24 @@ export async function assignFailureClusters(
   });
 }
 
+/** The start time of run `runId`, as a SQL subquery. */
+function runStart(runId: SQL | AnyColumn | number): SQL {
+  return sql`(select ${testRuns.startTime} from ${testRuns} where ${testRuns.id} = ${runId})`;
+}
+
+/**
+ * A cluster's first and last seen runs once run `testRunId` saw it: the last
+ * seen run moves only to a run that started later (a historical import leaves
+ * it where it is), and the first seen run moves back to a run that started
+ * earlier. A seen run that no longer exists is replaced as the last one.
+ */
+function seenInRun(testRunId: number) {
+  return {
+    lastSeenRunId: sql`case when coalesce(${runStart(failureClusters.lastSeenRunId)} <= ${runStart(testRunId)}, true) then ${testRunId} else ${failureClusters.lastSeenRunId} end`,
+    firstSeenRunId: sql`case when ${runStart(failureClusters.firstSeenRunId)} > ${runStart(testRunId)} then ${testRunId} else ${failureClusters.firstSeenRunId} end`,
+  };
+}
+
 /** Row index → cluster for the rows whose test has a route for its fingerprint; bumps each routed cluster. */
 async function routeMovedTests(
   db: DrizzleDB,
@@ -122,7 +140,7 @@ async function routeMovedTests(
       db
         .update(failureClusters)
         .set({
-          lastSeenRunId: testRunId,
+          ...seenInRun(testRunId),
           occurrences: sql`${failureClusters.occurrences} + ${countByCluster.get(cluster.id)!}`,
           updatedAt: new Date(),
           ...(options.wakeSnoozed !== false
@@ -254,8 +272,9 @@ export async function splitFailureCluster(
 
 /**
  * Get-or-create the `failure_clusters` rows for a batch of fingerprints and
- * return fingerprint → cluster id. Existing clusters get their lastSeenRunId
- * and occurrences bumped; new ones start at this run. Insert races with
+ * return fingerprint → cluster id. Existing clusters get their occurrences
+ * bumped and their first and last seen runs moved to this run when it started
+ * before or after them; new ones start at this run. Insert races with
  * concurrent streaming batches are resolved via the unique
  * (projectId, fingerprint) index + onConflictDoNothing. With `wakeSnoozed`
  * false, a recurrence leaves an "until it recurs" snooze in place.
@@ -271,7 +290,8 @@ export async function getOrCreateFailureClusters(
   const ids = new Map<string, number>();
   if (pending.size === 0) return ids;
 
-  // Bump a re-hit cluster: always advance lastSeenRunId/occurrences, and refresh
+  // Bump a re-hit cluster: count the occurrences, move its first and last seen
+  // runs to this run when it started before or after them, and refresh
   // the display exemplar (sampleError + its derived signature/errorType/selector)
   // to this occurrence when it is a better one. The fingerprint and the frozen
   // fingerprintSample are deliberately left untouched, so refreshing the display
@@ -285,7 +305,7 @@ export async function getOrCreateFailureClusters(
     db
       .update(failureClusters)
       .set({
-        lastSeenRunId: testRunId,
+        ...seenInRun(testRunId),
         occurrences: sql`${failureClusters.occurrences} + ${p.count}`,
         updatedAt: new Date(),
         // A fresh occurrence wakes an "until it recurs" snooze — the cluster

@@ -1,5 +1,4 @@
 import { testRunsCases } from '../../../database/schema';
-import { queryFlag } from '../../../utils/query-params';
 import { eq } from 'drizzle-orm';
 import { buildDiagnosisContext } from '../../../utils/ai-context';
 import { loadDiagnosisSystemPrompt } from '../../../utils/ai-diagnosis';
@@ -34,13 +33,6 @@ defineRouteMeta({
         schema: { type: 'array', items: { type: 'string' } },
         description: 'Specific commit SHAs to include in the context; repeat the parameter for multiple.',
       },
-      {
-        name: 'includeImages',
-        in: 'query',
-        required: false,
-        schema: { type: 'boolean' },
-        description: 'Include screenshot images in the previewed context (default false).',
-      },
     ],
     'x-required-permission': 'project:read',
   },
@@ -66,7 +58,6 @@ export default eventHandler(async (event) => {
       ? [String(selectedCommitShasRaw)]
       : undefined;
   const format = query.format as string | undefined;
-  const includeImages = queryFlag(event, 'includeImages');
 
   const ctx = await buildDiagnosisContext(db, {
     kind: 'execution',
@@ -74,7 +65,6 @@ export default eventHandler(async (event) => {
     clusterId: trc.failureClusterId ?? undefined,
     baseCommit,
     selectedCommitShas,
-    includeImages,
   });
 
   if (format === 'prompt') {

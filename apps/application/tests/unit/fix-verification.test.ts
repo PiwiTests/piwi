@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 
 /**
@@ -334,6 +334,42 @@ describe('verifyClusterFixes — status transitions', () => {
     const mine = emitted.find((e) => (e.payload as { clusterId?: number }).clusterId === clusterId);
     expect(mine?.event).toBe('cluster.fixed');
     expect(mine?.payload).toMatchObject({ fixAuthor: { name: 'Ada Lovelace', email: 'ada@example.com' } });
+  });
+});
+
+describe('verifyClusterFixes — a cluster that cannot be verified', () => {
+  test('leaves the other clusters of the run verified', async () => {
+    const failing = await insertRun('failed', 'eee555');
+    const broken = await insertCluster({ firstSeenRunId: failing });
+    const healthy = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', broken, 1);
+    await insertCase(failing, 'failed', healthy, 2);
+    // The database refuses the broken cluster's write, as PostgreSQL refused a time to resolution past int4.
+    await db.run(
+      sql.raw(
+        `create trigger refuse_fix_${broken} before update of fix_landed_run_id on failure_clusters ` +
+          `when new.id = ${broken} begin select raise(abort, 'integer out of range'); end`,
+      ),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const green = await insertRun('passed', 'fff666');
+      await insertCase(green, 'passed', null, 1);
+      await insertCase(green, 'passed', null, 2);
+
+      const fixed = (await verifyClusterFixes(db, green)).map((f) => f.clusterId);
+      expect(fixed).toContain(healthy);
+      expect(fixed).not.toContain(broken);
+      expect((await cluster(healthy)).fixLandedRunId).toBe(green);
+      expect((await cluster(broken)).fixLandedRunId).toBeNull();
+      expect(emitted.filter((e) => e.event === 'cluster.fixed').map((e) => e.payload.clusterId)).toContain(healthy);
+    } finally {
+      vi.mocked(console.error).mockRestore();
+      await db.run(sql.raw(`drop trigger refuse_fix_${broken}`));
+      // The tests below share the database: the broken cluster must not wait for their runs.
+      await db.delete(schema.testRunsCases).where(eq(schema.testRunsCases.failureClusterId, broken));
+      await db.delete(schema.failureClusters).where(eq(schema.failureClusters.id, broken));
+    }
   });
 });
 

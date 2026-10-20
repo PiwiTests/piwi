@@ -13,15 +13,17 @@
 ```bash
 # Linux / macOS
 mkdir -p .data && sudo chown -R 1001:1001 .data # the container runs as non-root UID 1001
-docker run -d --name piwi-dashboard -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
+docker run -d --name piwi-dashboard -p 127.0.0.1:3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
 ```
 
 ```powershell
 # Windows (PowerShell)
-docker run -d --name piwi-dashboard -p 3000:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-server:latest
+docker run -d --name piwi-dashboard -p 127.0.0.1:3000:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-server:latest
 ```
 
 Open `http://localhost:3000`. The SQLite database and file storage are created automatically inside `.data/`.
+
+> **Reachable from this machine only.** With authentication off, the default, anyone who reaches the port is an administrator. Publish it on every interface (`-p 3000:3000`) only once [authentication](https://piwitests.dev/operate/authentication) is on.
 
 > **Linux hosts:** without the `chown`, Docker auto-creates `.data` owned by `root` and the container (non-root UID 1001) can't write to it. Docker Desktop on Windows and macOS handles this for you.
 
@@ -33,7 +35,7 @@ Then point the [Playwright reporter](https://piwitests.dev/guide/reporter) at it
 
 | Property   | Value                              |
 |------------|------------------------------------|
-| Base image | `node:24-alpine`                   |
+| Base image | `node:24-alpine`, pinned by digest |
 | Platforms  | `linux/amd64`, `linux/arm64`       |
 | Image size | ~400 MB                            |
 | Run as     | Non-root (`nodejs`, UID 1001)      |

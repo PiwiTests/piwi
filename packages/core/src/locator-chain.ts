@@ -339,18 +339,25 @@ export function tryParseLocatorChain(expr: string): LocatorChain | null {
 }
 
 /**
- * Quote a string the way Playwright prints it: `JSON.stringify`'s escapes
- * (control characters as `\n`, `\r`, `\u001b`, …) inside single quotes.
+ * Quote a string as a single-quoted JavaScript string literal, the way
+ * Playwright prints it: `JSON.stringify`'s escapes (control characters as `\n`,
+ * `\r`, `\u001b`, …) plus the line separators U+2028 and U+2029, so the literal
+ * always stays on one line. Every locator text Piwi generates quotes its strings
+ * with it, and {@link parseLocatorChain} reads them back.
  */
-function quote(value: string): string {
-  const json = JSON.stringify(value);
-  return `'${json.slice(1, -1).replace(/\\"/g, '"').replace(/'/g, "\\'")}'`;
+export function quoteJsString(value: string): string {
+  const json = JSON.stringify(value).slice(1, -1);
+  return `'${json
+    .replace(/\\"/g, '"')
+    .replace(/'/g, "\\'")
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')}'`;
 }
 
 function renderArg(arg: LocatorArg): string {
   switch (arg.type) {
     case 'string':
-      return quote(arg.value);
+      return quoteJsString(arg.value);
     case 'regex':
       return `/${arg.source}/${arg.flags}`;
     case 'number':
@@ -359,7 +366,7 @@ function renderArg(arg: LocatorArg): string {
     case 'object':
       return arg.entries.length === 0
         ? '{}'
-        : `{ ${arg.entries.map(([k, v]) => `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : quote(k)}: ${renderArg(v)}`).join(', ')} }`;
+        : `{ ${arg.entries.map(([k, v]) => `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : quoteJsString(k)}: ${renderArg(v)}`).join(', ')} }`;
     case 'chain':
       return renderLocatorChain(arg.chain);
   }

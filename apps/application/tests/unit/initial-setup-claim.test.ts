@@ -9,7 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // import time when PIWI_DATABASE_URL is set, so clear it before auth.ts (which
 // imports the barrel) is loaded.
 delete process.env.PIWI_DATABASE_URL;
-const { claimInitialSetup, releaseInitialSetup } = await import('../../server/utils/auth');
+const { claimInitialSetup, completeInitialSetup, releaseInitialSetup } = await import('../../server/utils/auth');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -38,6 +38,20 @@ describe('claimInitialSetup', () => {
   test('a set of concurrent claims yields exactly one winner', async () => {
     const results = await Promise.all(Array.from({ length: 8 }, () => claimInitialSetup(db)));
     expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  test('a finished setup is taken over by exactly one of a set of concurrent claims', async () => {
+    // The caller gates on "no administrator exists", so this is an instance whose administrator is gone.
+    expect(await claimInitialSetup(db)).toBe(true);
+    await completeInitialSetup(db);
+    const results = await Promise.all(Array.from({ length: 8 }, () => claimInitialSetup(db)));
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  test('a setup finished before this version is taken over too', async () => {
+    await db.insert(schema.appSettings).values({ key: 'initial_setup_completed', value: true, updatedAt: new Date(0) });
+    expect(await claimInitialSetup(db)).toBe(true);
+    expect(await claimInitialSetup(db)).toBe(false);
   });
 
   test('releasing a claim lets setup be retried', async () => {

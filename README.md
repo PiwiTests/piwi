@@ -91,15 +91,17 @@ Docker below; the desktop app replaces step 1 only, and everything after it is i
 ```bash
 # Linux / macOS
 mkdir -p .data && sudo chown -R 1001:1001 .data # the container runs as non-root UID 1001
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
+docker run -p 127.0.0.1:3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
 ```
 
 ```powershell
 # Windows (PowerShell)
-docker run -p 3000:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-server:latest
+docker run -p 127.0.0.1:3000:3000 -v ${PWD}/.data:/app/.data phenx/piwitests-server:latest
 ```
 
-Visit `http://localhost:3000`. A [`docker-compose.yml`](./docker-compose.yml) is included, and with
+Visit `http://localhost:3000`. The port is published on this machine only: with authentication off, anyone who
+reaches it is an administrator, so publish it on every interface (`-p 3000:3000`) only once
+[authentication](https://piwitests.dev/operate/authentication) is on. A [`docker-compose.yml`](./docker-compose.yml) is included, and with
 **Node.js 22+** you can skip Docker entirely — `npx @piwitests/server` creates its `.data/` in the
 current directory.
 

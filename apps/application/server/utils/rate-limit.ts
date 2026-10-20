@@ -22,22 +22,35 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): bo
   return true;
 }
 
-/** Whether `key` has reached `limit` within its current window, without counting this call. */
-export function isRateLimited(key: string, limit: number): boolean {
+/** Give back one slot `checkRateLimit` took under `key`, for a request that turned out not to count. */
+export function releaseRateLimit(key: string): void {
   const entry = store.get(key);
-  if (!entry || entry.resetAt < Date.now()) return false;
-  return entry.count >= limit;
+  if (entry && entry.resetAt >= Date.now() && entry.count > 0) entry.count--;
 }
 
-/** Record one hit against `key`, starting a fresh window if none is active. Used to count failures. */
-export function recordRateLimitHit(key: string, windowMs: number): void {
-  const now = Date.now();
-  const entry = store.get(key);
-  if (!entry || entry.resetAt < now) {
-    store.set(key, { count: 1, resetAt: now + windowMs });
-  } else {
-    entry.count++;
+/**
+ * Run a lookup under a limit on the lookups that miss (an unknown code or id),
+ * with 429 past it. Each request takes a slot before the lookup runs, so
+ * concurrent requests cannot all pass the check, and gives it back unless
+ * `missed` says the lookup missed; a lookup that throws gives it back too.
+ */
+export async function limitLookupMisses<T>(
+  event: H3Event,
+  key: string,
+  { limit, windowMs }: { limit: number; windowMs: number },
+  lookup: () => Promise<T>,
+  missed: (result: T) => boolean,
+): Promise<T> {
+  if (!checkRateLimit(key, limit, windowMs)) throw rateLimitedError(event, [key]);
+  let result: T;
+  try {
+    result = await lookup();
+  } catch (error) {
+    releaseRateLimit(key);
+    throw error;
   }
+  if (!missed(result)) releaseRateLimit(key);
+  return result;
 }
 
 /** Clear a key's counter (e.g. after a success), so it no longer counts toward a lockout. */

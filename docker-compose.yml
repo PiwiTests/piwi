@@ -7,7 +7,10 @@ services:
   piwi:
     image: phenx/piwitests-server:latest
     ports:
-      - "3000:3000"
+      # Reachable from this machine only: with authentication off, anyone who
+      # reaches the port is an administrator. Publish it on every interface
+      # ("3000:3000") only once PIWI_AUTH_ENABLED is on (below).
+      - "127.0.0.1:3000:3000"
     volumes:
       # On Linux hosts the container runs as uid 1001 — make the folder writable first:
       #   mkdir -p .data && sudo chown -R 1001:1001 .data

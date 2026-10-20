@@ -4,8 +4,12 @@ import type { ConnectionSummary, ConnectionTestResult } from '#shared/integratio
 import { ATLASSIAN_API_TOKENS_URL, jiraWebhooksAdminUrl, tokenExpiry } from '#shared/integrations/jira-setup';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { looksPrivateHost } from '#shared/utils/private-host';
+import type { ApiResponse } from '~~/types/api';
+import { trackerSyncToast } from '~/utils/tracker-sync';
 
 const toast = useToast();
+const { canAnywhere } = useAuth();
+const canManageConnections = computed(() => canAnywhere('connections:manage'));
 const { app: appConfig } = useRuntimeConfig();
 const { data, refresh } = await useFetch<{ connections: ConnectionSummary[]; canStoreSecrets: boolean }>(
   '/api/integrations/connections',
@@ -122,6 +126,38 @@ async function generateWebhook(conn: ConnectionSummary) {
   }
 }
 
+const webhookToDisable = ref<ConnectionSummary | null>(null);
+const isDisableWebhookOpen = ref(false);
+const disablingWebhook = ref<number | null>(null);
+
+function askDisableWebhook(conn: ConnectionSummary) {
+  webhookToDisable.value = conn;
+  isDisableWebhookOpen.value = true;
+}
+
+async function confirmDisableWebhook() {
+  const conn = webhookToDisable.value;
+  isDisableWebhookOpen.value = false;
+  if (!conn) return;
+  disablingWebhook.value = conn.id;
+  try {
+    await $fetch<
+      ApiResponse<typeof import('~~/server/api/integrations/connections/[id]/webhook-token.delete').default>
+    >(`/api/integrations/connections/${conn.id}/webhook-token`, { method: 'DELETE' });
+    delete webhookUrls[conn.id];
+    await refresh();
+    toast.add({
+      title: 'Webhook disabled',
+      description: 'Piwi ignores calls to its URL; the status sync keeps the statuses current.',
+      color: 'success',
+    });
+  } catch (err) {
+    toast.add({ title: 'Could not disable the webhook', description: errorMessage(err), color: 'error' });
+  } finally {
+    disablingWebhook.value = null;
+  }
+}
+
 /** The server answers with a path when `PIWI_SITE_URL` is unset; Jira needs the full address. */
 function absoluteUrl(url: string): string {
   if (!url.startsWith('/')) return url;
@@ -135,6 +171,24 @@ function reachableFromCloud(url: string): boolean {
     return !looksPrivateHost(new URL(url).hostname);
   } catch {
     return false;
+  }
+}
+
+// ── Status sync ─────────────────────────────────────────────────────────────
+const syncing = ref(false);
+async function syncNow() {
+  syncing.value = true;
+  try {
+    const result = await $fetch<ApiResponse<typeof import('~~/server/api/integrations/sync.post').default>>(
+      '/api/integrations/sync',
+      { method: 'POST' },
+    );
+    toast.add(trackerSyncToast(result));
+    await refresh();
+  } catch (err) {
+    toast.add({ title: 'Could not sync the statuses', description: errorMessage(err), color: 'error' });
+  } finally {
+    syncing.value = false;
   }
 }
 
@@ -174,6 +228,18 @@ function errorMessage(err: unknown): string {
         <template #subtitle>
           Connect {{ provider.label }} so pinned links unfurl with a title and status, and refresh through the
           connection.
+        </template>
+        <template v-if="canManageConnections && connectionsFor(provider.name).length > 0" #actions>
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            icon="i-lucide-refresh-cw"
+            label="Sync now"
+            title="Read the status of every linked issue that is due for a refresh, as the scheduled sync does"
+            :loading="syncing"
+            @click="syncNow"
+          />
         </template>
 
         <div class="space-y-4">
@@ -270,6 +336,16 @@ function errorMessage(err: unknown): string {
                   :loading="webhooking === conn.id"
                   @click="generateWebhook(conn)"
                 />
+                <UButton
+                  v-if="provider.name === 'jira' && conn.hasWebhookToken && canManageConnections"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-webhook-off"
+                  label="Disable webhook"
+                  :loading="disablingWebhook === conn.id"
+                  @click="askDisableWebhook(conn)"
+                />
               </div>
 
               <!-- The webhook URL, shown once after generating. -->
@@ -327,5 +403,23 @@ function errorMessage(err: unknown): string {
         </template>
       </SectionCard>
     </div>
+
+    <ClientOnly>
+      <UModal :open="isDisableWebhookOpen" title="Disable the webhook" @update:open="isDisableWebhookOpen = $event">
+        <template #body>
+          <p class="text-sm text-highlighted leading-relaxed">
+            Disable the inbound webhook of <strong>{{ webhookToDisable?.name }}</strong
+            >? Piwi ignores Jira's calls to its URL from now on, and the statuses refresh on the status sync only.
+            Enable it again to get a new URL.
+          </p>
+        </template>
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
+            <UButton color="neutral" variant="ghost" label="Cancel" @click="isDisableWebhookOpen = false" />
+            <UButton color="error" label="Disable webhook" icon="i-lucide-webhook-off" @click="confirmDisableWebhook" />
+          </div>
+        </template>
+      </UModal>
+    </ClientOnly>
   </CapabilityDeclinedGuard>
 </template>

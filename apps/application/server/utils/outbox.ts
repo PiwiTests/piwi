@@ -14,11 +14,11 @@ import { and, eq, inArray, lte } from 'drizzle-orm';
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { DrizzleDB } from '#shared/handlers/db';
 
-/** After this many attempts a failed row is terminal rather than retried. */
-export const OUTBOX_MAX_ATTEMPTS = 5;
-
-/** Minutes to wait before attempt N, indexed by the just-incremented count. */
+/** Minutes to wait before each retry: the first retry waits 1 minute, the last one 4 hours. */
 export const OUTBOX_BACKOFF_MINUTES = [1, 5, 15, 60, 240];
+
+/** After this many attempts (the first one and a retry per backoff step) a failed row is terminal. */
+export const OUTBOX_MAX_ATTEMPTS = OUTBOX_BACKOFF_MINUTES.length + 1;
 
 /**
  * The status of a row an attempt has claimed. While a row holds it,
@@ -87,6 +87,6 @@ export function nextAttempt(
   const backoffMs =
     retryAfterMs != null && retryAfterMs > 0
       ? retryAfterMs
-      : (OUTBOX_BACKOFF_MINUTES[Math.min(attempts, OUTBOX_BACKOFF_MINUTES.length - 1)] ?? 240) * 60 * 1000;
+      : OUTBOX_BACKOFF_MINUTES[Math.min(attempts, OUTBOX_BACKOFF_MINUTES.length) - 1]! * 60 * 1000;
   return { status: 'pending', scheduledFor: new Date(now.getTime() + backoffMs) };
 }

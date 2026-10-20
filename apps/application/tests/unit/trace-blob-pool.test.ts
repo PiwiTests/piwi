@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -50,17 +51,20 @@ const { upsertTraceBlob, backfillTraceBlobStoredSizes, backfillTraceBlobResource
   await import('../../server/utils/trace-blobs');
 const { reconstructTraceZip } = await import('../../server/utils/trace-reconstruct');
 const { getTraceSnapshotResourceFromBlob } = await import('../../server/utils/trace-evidence');
-const { gcTraceBlobs, reclaimOrphanTraceResources } = await import('../../server/utils/delete-run-files');
+const { gcTraceBlobs, reclaimOrphanTraceBlobs, reclaimOrphanTraceResources, ORPHAN_TRACE_BLOB_GRACE_MS } =
+  await import('../../server/utils/delete-run-files');
 const { withTracePoolIngest, reclaimTracePoolUnlessIngesting } = await import('../../server/utils/trace-pool-guard');
 const { getStorageAnalysis } = await import('../../shared/handlers/admin-storage');
 const { parseTraceManifest, pooledEntryPoolName, pooledTraceEntryName } =
   await import('../../server/utils/trace-manifest');
-const { buildZip, parseZip, parseZipDirectory } = await import('../../server/utils/trace-zip');
+const { buildZip, parseZip, parseZipDirectory, ZipLimitError } = await import('../../server/utils/trace-zip');
 const { LocalStorageAdapter } = await import('../../server/storage/local');
 
 const png = (seed: number) => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, seed, seed + 1, seed + 2]);
 const jpeg = (seed: number) => Buffer.from([0xff, 0xd8, 0xff, 0xe0, seed, seed + 1, seed + 2]);
 const css = Buffer.from('body { color: red; }\n'.repeat(20), 'utf8');
+/** Playwright names a snapshot resource by the SHA-1 of its bytes. */
+const cssName = `${createHash('sha1').update(css).digest('hex')}.css`;
 
 /**
  * A Playwright 1.63-shaped trace: two actions with before/after screenshots,
@@ -83,7 +87,7 @@ function buildTrace(screens: { c1Before: Buffer; c1After: Buffer; c2Before: Buff
       { name: 'trace.trace', data: Buffer.from(events.map((e) => JSON.stringify(e)).join('\n'), 'utf8') },
       { name: 'trace.network', data: Buffer.from('', 'utf8') },
       { name: 'aria/c1-before.json', data: Buffer.from(JSON.stringify([{ role: 'document' }]), 'utf8') },
-      { name: 'resources/0a1b2c.css', data: css },
+      { name: `resources/${cssName}`, data: css },
       { name: 'screenshots/c1-before.png', data: screens.c1Before },
       { name: 'screenshots/c1-after.png', data: screens.c1After },
       { name: 'screenshots/c2-before.png', data: screens.c2Before },
@@ -94,9 +98,8 @@ function buildTrace(screens: { c1Before: Buffer; c1After: Buffer; c2Before: Buff
   );
 }
 
-/** A distinct SHA-256-shaped hash per trace, so each lands on its own content-addressed path. */
-let hashCounter = 0;
-const nextHash = () => (++hashCounter).toString(16).padStart(64, '0');
+/** Store a trace under the SHA-256 of its bytes, as every caller does. */
+const ingestTrace = (trace: Buffer) => upsertTraceBlob(1, createHash('sha256').update(trace).digest('hex'), trace);
 
 const poolWrites = () => writes.filter((p) => p.includes('/trace-resources/'));
 const entryMap = (entries: { name: string; data: Buffer }[]) =>
@@ -121,7 +124,7 @@ afterEach(async () => {
 describe('upsertTraceBlob pools screenshots and screencast frames', () => {
   test('stores each distinct image once and keeps them out of the slim ZIP', async () => {
     const trace = buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) });
-    const blob = await upsertTraceBlob(1, nextHash(), trace);
+    const blob = await ingestTrace(trace);
 
     // The slim ZIP keeps the event streams and the aria snapshot only.
     const slimNames = parseZipDirectory(storageFiles.get(blob.path)!).map((e) => e.name);
@@ -130,7 +133,7 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
     // Five image entries, three distinct contents: two screenshots and one frame, plus the CSS.
     expect(poolWrites()).toHaveLength(4);
     const manifest = parseTraceManifest(storageFiles.get(blob.path.replace(/\.zip$/, '.manifest.json'))!);
-    expect(manifest.resources).toEqual(['0a1b2c.css']);
+    expect(manifest.resources).toEqual([cssName]);
     const pooled = manifest.pooledEntries;
     expect(Object.keys(pooled).sort()).toEqual([
       'screencast/page@p1-1000.jpeg',
@@ -160,10 +163,10 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
   });
 
   test('a later trace writes only the images the pool does not hold yet', async () => {
-    await upsertTraceBlob(1, nextHash(), buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
     writes.length = 0;
 
-    await upsertTraceBlob(1, nextHash(), buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
+    await ingestTrace(buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
 
     // Only png(3) is new: png(2), the frame and the CSS are already pooled.
     expect(poolWrites()).toHaveLength(1);
@@ -174,7 +177,7 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
       { name: 'trace.trace', data: Buffer.from('{"type":"before","callId":"c1"}', 'utf8') },
       { name: 'screenshots/c1-before.png', data: png(9) },
     ]);
-    const blob = await upsertTraceBlob(1, nextHash(), trace);
+    const blob = await ingestTrace(trace);
 
     expect(parseZipDirectory(storageFiles.get(blob.path)!).map((e) => e.name)).toEqual(['trace.trace']);
     expect(poolWrites()).toHaveLength(1);
@@ -182,7 +185,7 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
 
   test('reconstruction restores every original entry, byte for byte', async () => {
     const trace = buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) });
-    const blob = await upsertTraceBlob(1, nextHash(), trace);
+    const blob = await ingestTrace(trace);
 
     // The storage mock implements every method reconstruction uses.
     const storage = (await import('../../server/storage')).getStorage();
@@ -198,11 +201,7 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
   });
 
   test('the screenshot view serves a pooled screenshot', async () => {
-    const blob = await upsertTraceBlob(
-      1,
-      nextHash(),
-      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
-    );
+    const blob = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
 
     const shot = await getTraceSnapshotResourceFromBlob(blob.path, 'c2', 'screen', 'before');
     expect(shot?.contentType).toBe('image/png');
@@ -216,9 +215,7 @@ describe('pooled names cannot be planted', () => {
     // Trace 1 ships junk under the pool name trace 2's real screenshot will get.
     const planted = `resources/${pooledTraceEntryName('screenshots/c2-before.png', png(2))}`;
     const junk = Buffer.from('not the screenshot');
-    const first = await upsertTraceBlob(
-      1,
-      nextHash(),
+    const first = await ingestTrace(
       buildZip([
         { name: 'trace.trace', data: Buffer.from('{"type":"before","callId":"c0"}', 'utf8') },
         { name: planted, data: junk },
@@ -227,13 +224,48 @@ describe('pooled names cannot be planted', () => {
     expect(parseZipDirectory(storageFiles.get(first.path)!).map((e) => e.name)).toContain(planted);
     expect(poolWrites()).toHaveLength(0);
 
-    const second = await upsertTraceBlob(
-      1,
-      nextHash(),
-      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
-    );
+    const second = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
     const shot = await getTraceSnapshotResourceFromBlob(second.path, 'c2', 'screen', 'before');
     expect(shot!.bytes.equals(png(2))).toBe(true);
+  });
+
+  test("a resources/ entry whose bytes are not its name's SHA-1 stays in its own slim ZIP", async () => {
+    // A name another trace's real stylesheet will have, with other bytes.
+    const forged = `resources/${cssName}`;
+    const first = await ingestTrace(
+      buildZip([
+        { name: 'trace.trace', data: Buffer.from('{"type":"before","callId":"c0"}', 'utf8') },
+        { name: forged, data: Buffer.from('body { display: none; }') },
+        { name: 'resources/src@4abfab78d432fdcee7aa7afcefcd17bffdb020ed.txt', data: Buffer.from('source') },
+      ]),
+    );
+    const slim = parseZipDirectory(storageFiles.get(first.path)!).map((e) => e.name);
+    expect(slim).toContain(forged);
+    expect(slim).toContain('resources/src@4abfab78d432fdcee7aa7afcefcd17bffdb020ed.txt');
+    expect(poolWrites()).toHaveLength(0);
+
+    await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    expect(storageFiles.has(`project-1/trace-resources/${cssName}`)).toBe(true);
+  });
+
+  test('a trace whose bytes are not its hash is refused', async () => {
+    const trace = buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) });
+    await expect(upsertTraceBlob(1, 'f'.repeat(64), trace)).rejects.toMatchObject({ statusCode: 400 });
+    expect(writes).toHaveLength(0);
+  });
+
+  test('an archive over the ZIP limits is refused, never stored as is', async () => {
+    const trace = buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) });
+    // Point every central-directory entry at the first local header: entries that share their bytes.
+    const eocd = trace.length - 22;
+    const count = trace.readUInt16LE(eocd + 10);
+    let pos = trace.readUInt32LE(eocd + 16);
+    for (let i = 0; i < count; i++) {
+      trace.writeUInt32LE(0, pos + 42);
+      pos += 46 + trace.readUInt16LE(pos + 28) + trace.readUInt16LE(pos + 30) + trace.readUInt16LE(pos + 32);
+    }
+    await expect(ingestTrace(trace)).rejects.toThrow(ZipLimitError);
+    expect(writes).toHaveLength(0);
   });
 
   test('an entry name such as constructor resolves to no pool file', () => {
@@ -256,11 +288,7 @@ describe('reconstruction and storage errors', () => {
   }
 
   test('a pooled file that is gone is left out of the rebuilt trace', async () => {
-    const blob = await upsertTraceBlob(
-      1,
-      nextHash(),
-      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
-    );
+    const blob = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
     const manifest = parseTraceManifest(storageFiles.get(blob.path.replace(/\.zip$/, '.manifest.json'))!);
     storageFiles.delete(`project-1/trace-resources/${manifest.pooledEntries['screenshots/c1-before.png']}`);
 
@@ -270,11 +298,7 @@ describe('reconstruction and storage errors', () => {
   });
 
   test('a pooled file that exists but cannot be read fails the rebuild instead of dropping the entry', async () => {
-    const blob = await upsertTraceBlob(
-      1,
-      nextHash(),
-      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
-    );
+    const blob = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
     const manifest = parseTraceManifest(storageFiles.get(blob.path.replace(/\.zip$/, '.manifest.json'))!);
     failingReads.add(`project-1/trace-resources/${manifest.pooledEntries['screenshots/c1-before.png']}`);
 
@@ -294,7 +318,7 @@ describe('screenshots and frames beyond one chunk', () => {
       { name: 'screenshots/b.png', data: big },
       { name: 'screenshots/c.png', data: png(1) },
     ]);
-    const blob = await upsertTraceBlob(1, nextHash(), trace);
+    const blob = await ingestTrace(trace);
 
     expect(poolWrites()).toHaveLength(2);
     const manifest = parseTraceManifest(storageFiles.get(blob.path.replace(/\.zip$/, '.manifest.json'))!);
@@ -334,12 +358,8 @@ describe('the pool guard', () => {
   });
 
   test('a delete during an ingestion keeps the pool, and the nightly sweep frees it afterwards', async () => {
-    const first = await upsertTraceBlob(
-      1,
-      nextHash(),
-      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
-    );
-    await upsertTraceBlob(1, nextHash(), buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
+    const first = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    await ingestTrace(buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
     const firstManifest = parseTraceManifest(storageFiles.get(first.path.replace(/\.zip$/, '.manifest.json'))!);
     const onlyInFirst = `project-1/trace-resources/${firstManifest.pooledEntries['screenshots/c1-before.png']}`;
 
@@ -351,14 +371,54 @@ describe('the pool guard', () => {
   });
 });
 
+describe('the nightly sweep deletes traces no execution links', () => {
+  async function linkedRun() {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId: 1, status: 'passed', startTime: new Date() })
+      .returning();
+    return run!.id;
+  }
+
+  test('a blob unlinked past the grace period goes, with the pool files only it used', async () => {
+    const orphan = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    const linked = await ingestTrace(buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
+    const runId = await linkedRun();
+    await db.insert(schema.files).values({ testRunId: runId, type: 'trace', path: linked.path, blobId: linked.id });
+    const manifest = parseTraceManifest(storageFiles.get(orphan.path.replace(/\.zip$/, '.manifest.json'))!);
+    const onlyInOrphan = `project-1/trace-resources/${manifest.pooledEntries['screenshots/c1-before.png']}`;
+    const shared = `project-1/trace-resources/${manifest.pooledEntries['screenshots/c1-after.png']}`;
+
+    // Within the grace period an upload may still be about to link it.
+    expect(await reclaimOrphanTraceBlobs(db as never)).toBe(0);
+    expect(storageFiles.has(orphan.path)).toBe(true);
+
+    const later = Date.now() + ORPHAN_TRACE_BLOB_GRACE_MS + 60_000;
+    expect(await reclaimOrphanTraceBlobs(db as never, later)).toBe(1);
+    expect((await db.select().from(schema.traceBlobs)).map((b) => b.id)).toEqual([linked.id]);
+    expect(storageFiles.has(orphan.path)).toBe(false);
+    expect(storageFiles.has(onlyInOrphan)).toBe(false);
+    expect(storageFiles.has(shared)).toBe(true);
+    expect(storageFiles.has(linked.path)).toBe(true);
+  });
+
+  test('a project with a trace being ingested is left for the next sweep', async () => {
+    await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    const later = Date.now() + ORPHAN_TRACE_BLOB_GRACE_MS + 60_000;
+
+    let release!: () => void;
+    const ingest = withTracePoolIngest(1, () => new Promise<void>((resolve) => (release = resolve)));
+    expect(await reclaimOrphanTraceBlobs(db as never, later)).toBe(0);
+    release();
+    await ingest;
+    expect(await reclaimOrphanTraceBlobs(db as never, later)).toBe(1);
+  });
+});
+
 describe('pooled images are reference-counted', () => {
   test('deleting one trace frees only the images no other trace uses', async () => {
-    const first = await upsertTraceBlob(
-      1,
-      nextHash(),
-      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
-    );
-    await upsertTraceBlob(1, nextHash(), buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
+    const first = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    await ingestTrace(buildTrace({ c1Before: png(2), c1After: png(3), c2Before: png(3) }));
     const firstManifest = parseTraceManifest(storageFiles.get(first.path.replace(/\.zip$/, '.manifest.json'))!);
     const onlyInFirst = firstManifest.pooledEntries['screenshots/c1-before.png']!;
     const shared = firstManifest.pooledEntries['screenshots/c1-after.png']!;
@@ -368,15 +428,11 @@ describe('pooled images are reference-counted', () => {
 
     expect(storageFiles.has(`project-1/trace-resources/${onlyInFirst}`)).toBe(false);
     expect(storageFiles.has(`project-1/trace-resources/${shared}`)).toBe(true);
-    expect(storageFiles.has('project-1/trace-resources/0a1b2c.css')).toBe(true);
+    expect(storageFiles.has(`project-1/trace-resources/${cssName}`)).toBe(true);
   });
 
   test('the link backfill reads pooled entries from the manifest', async () => {
-    const blob = await upsertTraceBlob(
-      1,
-      nextHash(),
-      buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }),
-    );
+    const blob = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
     await db.delete(schema.traceBlobResources);
     await db.update(schema.traceBlobs).set({ resourcesIndexed: false });
 

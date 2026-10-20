@@ -22,6 +22,11 @@ later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `P
 (`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
 while it does not run.
 
+- **Nothing starts in an untrusted project.** In a project opened in safe mode (`PiwiProjectService.trusted`, the
+  platform's `isTrusted`), the plugin starts no editor service, runs no command (`PiwiCommands.run`, `startRun`) and
+  reads no `.env` for Open in IDE: each of them runs or believes what the repository holds. A supported file opened
+  meanwhile says once that Piwi waits for the trust (`Glue.UNTRUSTED`); the next file opened once it is trusted
+  starts the service.
 - `PiwiLspServerSupportProvider.kt` registers the service; the LSP client renders its diagnostics, quick fixes and
   hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`; `piwi.desktopJob`,
   from a quick fix or a flaky test's Code Vision line, and the `piwi/desktopJobChanged` notifications, with the share
@@ -63,9 +68,11 @@ while it does not run.
   as it comes and tells its listeners once on the event thread for the pushes meanwhile. It reads the three whole
   (`refreshStatus`, one read at a time, another asked for meanwhile following it) only when the plugin starts, on
   Refresh and after new credentials; a push that comes during that read wins over it.
-- The tool window (`PiwiFailuresToolWindow.kt`) is a `Tree` on a `DefaultTreeModel` of `Glue.failureTree`, the nodes
-  VS Code's view has: the run, **Your runs since**, then the failures grouped by file, cluster, owner or flat (the
-  toolbar's `ToggleAction`s, kept in `PiwiLocalSettings.failuresGrouping`). A `ColoredTreeCellRenderer` draws a
+- The tool window (`PiwiFailuresToolWindow.kt`) is a `Tree` on a `DefaultTreeModel` of `Glue.failureNodes`, the tree the
+  service grouped (`FailuresResult.tree`) with a run's age, the nodes VS Code's view has: the run, **Your runs since**,
+  then the failures grouped by file, cluster, owner or flat (the toolbar's `ToggleAction`s, kept in
+  `PiwiLocalSettings.failuresGrouping`, sent with every `piwi/failures`, and read again at once by
+  `PiwiProjectService.regroup`, the service keeping it for what it pushes). A `ColoredTreeCellRenderer` draws a
   failure's title, headline, run (`Glue.failureRunNote`: `your run #N`, `edited since run #N` with the information
   icon, fixed with the passed icon) and place; `TreeSpeedSearch` finds a title. The tree is built again only when
   its nodes changed, from `piwi/failuresChanged` as the edits move them too, keeping the expanded and selected nodes
@@ -76,10 +83,10 @@ while it does not run.
   (`PopupHandler.installPopupMenu`) runs the test, opens the trace, the screenshot or the page, copies the context for
   an agent (`piwi/agentContext`) and, on a CI failure while the desktop app runs, passes it to the app, through
   `PiwiCommands`. **Re-run the Failing Tests** (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs
-  `Glue.rerunFailingArgs`, one run per Playwright config, and **Run This Test** `Glue.failureRunArgs`: both name the
+  `FailuresResult.rerun`, one run per Playwright config, and **Run This Test** `Glue.failureRunArgs`: both name the
   failure's config (`WorkspaceFailure.root`). **Compare With…** (`Piwi.CompareWith`, **Tools → Piwi** and the toolbar) is a popup of
   `Glue.baselineEntries` (the ladder, each of `RunStatus.branches`, a run by its id through `Messages.showInputDialog`,
-  the local runs only) for the context of the file at hand; `PiwiProjectService.setBaseline` keeps the choice in
+  which `piwi/runId` reads on a pooled thread, a balloon saying when the text is not one, the local runs only) for the context of the file at hand; `PiwiProjectService.setBaseline` keeps the choice in
   `PiwiLocalSettings.baselines` (by root, `Glue.encodeBaseline`, the ladder as no entry), sends `piwi/setBaseline`, and
   `credentials()` sends them all as `baselines`. The header line names it (`Glue.runHeader`). The service
   starts with the first supported file opened (2024.1 has no way to start it without one): until then the status is
@@ -136,8 +143,8 @@ while it does not run.
   text the service read, followed through the changes made since `piwi/record` was sent (`DocumentChanges`,
   `Glue.followLineStart`, `Glue.firstBlockWrite`; a block on the file's last line keeps its final line break). Each
   later one replaces it whole (`Glue.recordedBlock`) with the import lines the file lacks after its imports in the same
-  command (`Glue.importInsertion`: the service sends only the lines whose names the file does not bind, and a line the
-  file holds as written is left out), and range markers follow it; Enter at the end of its last line is below it. The
+  command (`RecordingUpdate.importEdit`, placed by the service in the text as it stands: `Glue.importWrite` makes it
+  before the block's write or after it, above the block), and range markers follow it; Enter at the end of its last line is below it. The
   block is tinted with `PIWI_RECORDING_BLOCK`, with a gutter mark offering Stop, Pause and Resume; its warnings are
   weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes; the banner over
   the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step count and the
@@ -155,7 +162,8 @@ while it does not run.
   `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`). A locator with `at`, picked while a
   run was paused at a breakpoint, asks `piwi/applyPick` and replaces the range it answers in a write command; when the
   line holds no locator, it is inserted at the caret, and the balloon says why (`Glue.pickNotice`). A recorded flow goes through
-  `piwi/renderSteps` with the caret, for its page expression, and its import lines apart, added like a recording's.
+  `piwi/renderSteps` with the caret, for its page expression and its line's indentation, and its import edit apart,
+  made with the insertion (`Glue.importWrite`).
 - `PiwiOpenHandler.kt` is the dashboard's Open in IDE: `GET /api/piwi/open?file=…&line=…&column=…[&root=…][&check]` on
   the built-in server, a `RestService`. It answers only a page whose `Origin` is the Piwi instance an open project is
   connected to (its settings, `PIWI_DASHBOARD_URL` in the environment or in a Playwright config folder's `.env`, the

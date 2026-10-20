@@ -4,7 +4,7 @@ name: CI
 # areas the change touches, and each job runs for the areas it covers; a change to the workflows or to the Node
 # version runs them all. A pull request runs the dashboard E2E suite on two backends and the package smoke test on
 # Linux; main runs every backend and every system, and the JetBrains Plugin Verifier on every IDE. The extension,
-# VS Code and desktop suites run on pull requests only.
+# VS Code and desktop suites and the container image check run on pull requests only.
 on:
   pull_request:
   push:
@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
@@ -59,18 +59,20 @@ jobs:
       desktop: ${{ steps.filter.outputs.desktop == 'true' || steps.filter.outputs.ci == 'true' }}
       docs: ${{ steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
       dotnet: ${{ steps.filter.outputs.dotnet == 'true' || steps.filter.outputs.ci == 'true' }}
+      container: ${{ steps.filter.outputs.app == 'true' || steps.filter.outputs.container == 'true' || steps.filter.outputs.ci == 'true' }}
       e2e_matrix: ${{ steps.matrices.outputs.e2e }}
       smoke_matrix: ${{ steps.matrices.outputs.smoke }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `app` is what the dashboard's build, E2E, package smoke and demo jobs depend on: the server bundles the docs
-      # pages and the changelog for its MCP tools. `js` is every workspace the checks job lints and tests.
+      # pages and the changelog for its MCP tools. `js` is every workspace the checks job formats, lints and tests,
+      # and what knip reads besides them (its config, the configs of the tools it knows, the git hooks).
       - name: Read the areas the change touches
         id: filter
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             ci:
@@ -104,6 +106,9 @@ jobs:
               - 'package-lock.json'
               - 'tsconfig.json'
               - 'knip.ts'
+              - 'commitlint.config.js'
+              - '.husky/**'
+              - '.editorconfig'
             extension:
               - 'apps/extension/**'
               - 'packages/core/**'
@@ -127,8 +132,18 @@ jobs:
               - 'apps/extension/scripts/build.mjs'
             desktop:
               - 'apps/desktop/**'
+            # The site, and what apps/docs/scripts generate pages from.
             docs:
               - 'apps/docs/**'
+              - 'apps/application/shared/**'
+              - 'apps/application/package.json'
+              - 'packages/reporter/src/public/options.ts'
+              - 'packages/reporter/src/internal/config/env.ts'
+              - 'CHANGELOG.md'
+            # With `app`: what the server image is built from.
+            container:
+              - 'Dockerfile'
+              - '.dockerignore'
             dotnet:
               - 'integrations/aspnetcore/**'
               - 'integrations/serilog/**'
@@ -175,30 +190,27 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
 
       # Restored after the install so the postinstall `nuxt prepare` cannot
-      # clobber it. `experimental.buildCache` reuses whatever still matches.
-      # npm hoists the workspace, so the build cache lands in the root
-      # node_modules; the application copy holds the font and jiti caches.
-      - name: Cache Nuxt build
-        uses: actions/cache@v6
+      # clobber it. It holds the tool caches (jiti, Vite, fonts), never a Nuxt
+      # build: `experimental.buildCache` is off on CI (nuxt.config.ts), so every
+      # build compiles the client from the commit's own sources.
+      - name: Cache build tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules/.cache
             apps/application/node_modules/.cache
-          # `nuxt-build-v2-` carries a manual cache version — bump the token to
-          # discard a poisoned build cache. `experimental.buildCache` does not hash
-          # the `#shared` modules (apps/application/shared/**), so a source-only
-          # change there — e.g. the DOCS_BASE_URL constant — can otherwise be served
-          # from a stale cached chunk and inline the old value into the built output.
-          key: nuxt-build-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          # `nuxt-build-v3-` carries a manual cache version — bump the token to
+          # discard the cached content.
+          key: nuxt-build-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
           restore-keys: |
-            nuxt-build-v2-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-            nuxt-build-v2-${{ runner.os }}-
+            nuxt-build-v3-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nuxt-build-v3-${{ runner.os }}-
 
       # The reporter dist is imported by playwright.config.ts.
       - name: Build reporter
@@ -210,7 +222,7 @@ jobs:
         run: npm run app:build
 
       - name: Upload build output
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-output
           path: |
@@ -229,13 +241,28 @@ jobs:
           npm pack --workspace @piwitests/server --workspace @piwitests/reporter --pack-destination npm-packages
 
       - name: Upload npm packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-packages
           path: npm-packages/*.tgz
           retention-days: 1
           # The tarballs are already gzipped.
           compression-level: 0
+
+      # The performance job of a pull request measures against its base commit's build, restored by this key and path
+      # (reusable-perf.yml). A cache saved on main serves every pull request; one a pull request saves serves it alone.
+      - name: Stage the build as a performance base
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p base/apps/application
+          cp -a apps/application/.output base/apps/application/.output
+
+      - name: Save the build as a performance base
+        if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: base/apps/application/.output
+          key: perf-base-output-v1-${{ github.sha }}
 
   # Backend-agnostic checks. Independent of the E2E matrix, so they run alongside it.
   checks:
@@ -252,12 +279,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
         with:
           playwright: shell
+
+      # Every workspace's files as the pre-commit hook formats them.
+      - name: Check formatting
+        run: |
+          npm run app:format:check -w apps/application
+          npm run extension:format:check -w apps/extension
+          npm run vscode:format:check -w apps/vscode
+          npm run core:format:check -w packages/core
+          npm run picker-dom:format:check -w packages/picker-dom
+          npm run editor:format:check -w packages/editor
+          npm run reporter:format:check -w packages/reporter
 
       - name: Lint
         working-directory: apps/application
@@ -316,10 +354,15 @@ jobs:
         working-directory: packages/picker-dom
         run: npm run picker-dom:test:integration
 
-      # The reporter's flake-run and build-output specs load the built package.
+      # The reporter's flake-run and build-output specs load the built package, and so does knip, through the
+      # dashboard's Playwright config.
       - name: Build reporter
         working-directory: packages/reporter
         run: npm run reporter:build
+
+      # Unused files, exports and dependencies, and imports of packages a workspace does not declare.
+      - name: Knip
+        run: npm run knip
 
       - name: Test reporter
         working-directory: packages/reporter
@@ -333,7 +376,7 @@ jobs:
 
       - name: Report reporter coverage on the PR
         if: github.event_name == 'pull_request'
-        uses: davelosert/vitest-coverage-report-action@v2
+        uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2.13.1
         with:
           working-directory: ./packages/reporter
           name: Reporter
@@ -345,7 +388,7 @@ jobs:
 
       - name: Report application coverage on the PR
         if: github.event_name == 'pull_request'
-        uses: davelosert/vitest-coverage-report-action@v2
+        uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2.13.1
         with:
           working-directory: ./apps/application
           name: Application
@@ -373,7 +416,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The containers boot while node and the dependencies install; the readiness
       # probes below collect them once that work is done.
@@ -411,7 +454,7 @@ jobs:
           playwright: shell
 
       - name: Download build output
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-output
 
@@ -442,6 +485,15 @@ jobs:
           # Separate database for the main app server so it never races the
           # dedicated postgresql.spec.ts server (which owns playwright_test).
           docker exec -e PGPASSWORD=postgres postgres psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE playwright_main;'
+
+      # The unit tests that need a PostgreSQL server (`*-pg.test.ts`), once per run: in the first shard of the s3 +
+      # postgres cell, the one a pull request and main both run. Each test creates and drops a database of its own.
+      - name: Run the PostgreSQL unit tests
+        if: matrix.database == 'postgres' && matrix.storage == 's3' && matrix.shard == 1
+        working-directory: apps/application
+        env:
+          PIWI_POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/playwright_test
+        run: npm run app:test:unit -- tests/unit/*-pg.test.ts
 
       - name: Run Playwright Tests
         working-directory: apps/application
@@ -474,7 +526,7 @@ jobs:
 
       - name: Upload blob report
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: blob-report-${{ matrix.storage }}-${{ matrix.database }}-${{ matrix.shard }}
           path: apps/application/blob-report
@@ -499,7 +551,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
@@ -508,7 +560,7 @@ jobs:
           install: 'false'
 
       - name: Download npm packages
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: npm-packages
           path: npm-packages
@@ -525,7 +577,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
@@ -558,10 +610,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.x'
 
@@ -571,6 +623,39 @@ jobs:
       - name: Build and test
         working-directory: integrations/aspnetcore
         run: dotnet test PiwiTests.Instrumentation.slnx -c Release
+
+  # The server image as the release publishes it, for linux/amd64: built, started on an empty data folder and asked
+  # for /api/health. On main and on a release tag, the publish workflow runs the same check before any tag moves.
+  container:
+    name: Container image
+    needs: changes
+    if: needs.changes.outputs.container == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Reads the layer cache main's image builds write, and writes none.
+      - name: Build the image (linux/amd64)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: piwi-server:ci
+          build-args: |
+            PIWI_BUILD_SHA=${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/piwitests/platform:buildcache-linux-amd64
+
+      - name: Check the image answers
+        uses: ./.github/actions/container-health
+        with:
+          image: piwi-server:ci
 
   # docs.yml builds and deploys the site from main; a pull request that changes it builds it here first.
   docs:
@@ -582,7 +667,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the docs workspace
         uses: ./.github/actions/setup-workspace
@@ -637,7 +722,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, checks, e2e, package-smoke, demo, aspnet, docs, extension, vscode, jetbrains, desktop, perf]
+    needs: [versions, changes, build, checks, e2e, package-smoke, demo, aspnet, container, docs, extension, vscode, jetbrains, desktop, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

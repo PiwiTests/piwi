@@ -4,6 +4,7 @@ import { notificationChannels, users } from '../../../database/schema';
 import { getRequestAccess, requireAuth } from '../../../utils/auth';
 import { decryptSecret, getEncryptionKey } from '../../../utils/crypto';
 import { deliverChannelTest } from '../../../utils/notifications/channel-test';
+import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../../utils/rate-limit';
 import { channelDeliveryHint, isDeliverableChannelType, type ChannelType } from '#shared/notifications/channel-setup';
 import { isAdministrator } from '#shared/permissions';
 
@@ -12,7 +13,7 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'Send test notification',
     description:
-      'Sends a test notification through the specified channel and marks it verified on success. Global channels can only be tested by administrators. Soft-fail: a reachable endpoint that rejects the delivery (bad webhook URL, SMTP failure, non-2xx response) returns HTTP 200 with `{ success: false, error }` — the request was processed, only the delivery attempt failed. HTTP error statuses are reserved for request-level problems (bad id, missing channel, not authorized).',
+      'Sends a test notification through the specified channel and marks it verified on success; an email channel receives notifications only once verified. Global channels can only be tested by administrators. A caller sends at most ten tests a minute, saved or unsaved channels alike (429 past that). Soft-fail: a reachable endpoint that rejects the delivery (bad webhook URL, SMTP failure, non-2xx response) returns HTTP 200 with `{ success: false, error }` — the request was processed, only the delivery attempt failed. HTTP error statuses are reserved for request-level problems (bad id, missing channel, not authorized).',
     'x-required-permission': 'signed-in',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     responses: {
@@ -54,6 +55,11 @@ export default eventHandler(async (event) => {
   if (!allowed) {
     throw apiError({ statusCode: 403, message: 'Not authorized' });
   }
+
+  // The same budget as testing an unsaved channel. With authentication off every
+  // caller is user 0, so the source address tells callers apart.
+  const rateKey = `channel-test:${user.id || rateLimitClientIp(event)}`;
+  if (!checkRateLimit(rateKey, 10, 60_000)) throw rateLimitedError(event, [rateKey]);
 
   const config = (channel.config ?? {}) as Record<string, unknown>;
   const type = channel.type as ChannelType | 'personal_email';

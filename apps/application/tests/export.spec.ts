@@ -9,7 +9,7 @@
 
 import { test, expect, type APIRequestContext } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
-import { parseZipSync } from '../server/utils/trace-zip';
+import { parseZipSync } from './utils/zip';
 
 const ERROR_TEXT =
   "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('checkout-pay')";

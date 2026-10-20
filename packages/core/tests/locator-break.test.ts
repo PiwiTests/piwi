@@ -260,6 +260,12 @@ describe('helpers', () => {
     expect(buildLiteralEdit("getByText('Save')", 'Save', "Don't save")!.new).toBe("getByText('Don\\'t save')");
     expect(buildLiteralEdit('getByText(LABELS.pay)', 'Pay now', 'Pay')).toBeNull();
   });
+
+  test('buildLiteralEdit keeps the new value on the line', () => {
+    expect(buildLiteralEdit("getByText('Save')", 'Save', 'a\rb\u2028c\u2029d\ne')!.new).toBe(
+      "getByText('a\\rb\\u2028c\\u2029d\\ne')",
+    );
+  });
 });
 
 describe('reachOfIndex', () => {

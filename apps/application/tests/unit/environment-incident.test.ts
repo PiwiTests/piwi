@@ -8,7 +8,7 @@ import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import type { User } from '../../server/database/schema';
 import { ADMIN_ACCESS, InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
-import { recordRouteMeta, type RouteAccessState } from './route-access';
+import { recordRouteMeta, underRoutePermission, type RouteAccessState } from './route-access';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) are loaded.
@@ -35,11 +35,18 @@ vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) =
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('getRouterParam', (event: RouteEvent, name: string) => event.params[name]);
 vi.stubGlobal('readBody', async (event: RouteEvent) => event.body);
+vi.stubGlobal('getRequestHeader', () => undefined);
 vi.stubGlobal('apiError', apiError);
 
 type Handler = (event: RouteEvent) => Promise<any>;
-const gate = (await import('../../server/api/test-runs/[id]/gate.post')).default as unknown as Handler;
-const markIncident = (await import('../../server/api/test-runs/[id]/incident.post')).default as unknown as Handler;
+const gate = underRoutePermission(
+  state,
+  (await import('../../server/api/test-runs/[id]/gate.post')).default as unknown as Handler,
+);
+const markIncident = underRoutePermission(
+  state,
+  (await import('../../server/api/test-runs/[id]/incident.post')).default as unknown as Handler,
+);
 const { runFinalizeSideEffects } = await import('../../server/utils/run-finalize-side-effects');
 const { getProjectFlakyTests } = await import('#shared/handlers/projects');
 const { buildNotificationDedupeKey, passesSubscriptionFilters } = await import('#shared/notification-events');
@@ -194,12 +201,11 @@ describe('the environment.incident event', () => {
 });
 
 describe('a person marks and clears a run', () => {
-  test('through the route, as a Viewer of the project, and the gate follows', async () => {
+  test('through the route, as an Uploader of the project, and the gate follows', async () => {
     await seedRun(1, 1, T0, 10, 2);
-    // A Viewer of the project may mark a run.
     state.caller = {
       user: { id: 5, role: InstanceRole.MEMBER, name: 'Ada' } as User,
-      access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.VIEWER }]),
+      access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.UPLOADER }]),
     };
     const marked = await markIncident({
       params: { id: '1' },
@@ -211,6 +217,22 @@ describe('a person marks and clears a run', () => {
     const cleared = await markIncident({ params: { id: '1' }, body: { incident: false } });
     expect(cleared).toMatchObject({ incident: null, review: { decision: 'cleared', by: 'Ada' } });
     expect((await gate({ params: { id: '1' }, body: { maxFailed: 0 } })).verdict).toBe('failed');
+    // An Uploader's evaluations are stored.
+    expect(await db.select().from(schema.gateEvaluations)).toHaveLength(2);
+  });
+
+  test('a Viewer of the project may not mark a run, and evaluates the gate without storing it', async () => {
+    await seedRun(1, 1, T0, 10, 2);
+    state.caller = {
+      user: { id: 6, role: InstanceRole.MEMBER, name: 'Sam' } as User,
+      access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.VIEWER }]),
+    };
+    await expect(markIncident({ params: { id: '1' }, body: { incident: true } })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    // A Viewer gets the verdict, and the evaluation is not stored.
+    expect((await gate({ params: { id: '1' }, body: { maxFailed: 0 } })).verdict).toBe('failed');
+    expect(await db.select().from(schema.gateEvaluations)).toHaveLength(0);
   });
 
   test('a bad body is refused', async () => {

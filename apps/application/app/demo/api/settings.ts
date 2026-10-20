@@ -152,16 +152,6 @@ export async function apiPutAutoHeal(body: { settings?: Partial<AutoHealSettings
 }
 
 /**
- * GET /api/heal-actions
- *
- * Auto-heal opens PRs through the SCM, which the browser demo has no access to,
- * so there is never anything to list.
- */
-export async function apiGetHealActions() {
-  return { actions: [] as never[] };
-}
-
-/**
  * Date & time localization settings, mirroring
  * server/api/settings/locale.{get,put}.ts minus the env layer — the browser has
  * no `useRuntimeConfig`, so the demo is always `envManaged: false`.

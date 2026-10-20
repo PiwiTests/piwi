@@ -1,5 +1,5 @@
 {
-  "id": "4362a431-4deb-425b-928d-d3528053db78",
+  "id": "f7ab57a0-2c8c-451d-b597-c1e713f5e4c5",
   "prevId": "d50f6af9-c6d1-44c2-ac7b-2c545a375e61",
   "version": "7",
   "dialect": "postgresql",
@@ -8635,6 +8635,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "repository_url": {
+          "name": "repository_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "default_branch": {
           "name": "default_branch",
           "type": "text",
@@ -11686,12 +11692,6 @@
         "keep_reason": {
           "name": "keep_reason",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "server_coverage_gaps": {
-          "name": "server_coverage_gaps",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

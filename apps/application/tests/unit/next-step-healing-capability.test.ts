@@ -21,7 +21,7 @@ const { setInstanceDecisions, setProjectDecisions } = await import('#shared/hand
 type Step = { kind: string; primary: { label: string; action: string } } | null | undefined;
 
 const ERROR =
-  "TimeoutError: page.waitForSelector: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.modal.is-open') to be visible\n\n    at tests/ui/modal.spec.ts:15:16";
+  "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Show modal' })\n\n    at tests/ui/modal.spec.ts:15:16";
 const ARIA = '- document:\n  - main:\n    - heading "Modal"\n    - button "Open modal"';
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -41,7 +41,7 @@ beforeEach(async () => {
     id: 1,
     projectId: 1,
     fingerprint: 'fp-modal',
-    signature: "waiting for locator('.modal.is-open')",
+    signature: "waiting for getByRole('button', { name: 'Show modal' })",
     errorType: 'timeout',
     firstSeenRunId: 1,
     lastSeenRunId: 1,

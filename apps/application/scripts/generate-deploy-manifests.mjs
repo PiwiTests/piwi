@@ -25,8 +25,9 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 /**
  * What a one-click deploy provisions. Deliberately short: the app boots with no
- * configuration at all, so anything beyond "don't publish an open dashboard and
- * don't store credentials in the clear" belongs in the docs, not in a template.
+ * configuration at all, so anything beyond "don't publish an open dashboard, don't
+ * let a stranger create its first administrator and don't store credentials in
+ * the clear" belongs in the docs, not in a template.
  */
 const DEPLOY_VARS = [
   {
@@ -36,6 +37,11 @@ const DEPLOY_VARS = [
   },
   { name: 'PIWI_AUTH_SECRET', platformValue: 'generate' },
   { name: 'PIWI_SECRET_KEY', platformValue: 'generate' },
+  {
+    name: 'PIWI_SETUP_TOKEN',
+    platformValue: 'generate',
+    comment: 'The first-admin form asks for this value, so only you can create the administrator.',
+  },
   { name: 'PIWI_SITE_URL', platformValue: 'url' },
 ];
 

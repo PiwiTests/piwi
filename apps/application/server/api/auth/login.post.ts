@@ -1,10 +1,10 @@
 import { getDatabase } from '../../database';
 import { authUserView, verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
 import {
-  isRateLimited,
+  checkRateLimit,
   rateLimitClientIp,
   rateLimitedError,
-  recordRateLimitHit,
+  releaseRateLimit,
   resetRateLimit,
 } from '../../utils/rate-limit';
 import { z } from 'zod';
@@ -49,23 +49,27 @@ export default eventHandler(async (event) => {
 
   const ipKey = `login:ip:${rateLimitClientIp(event)}`;
   const accountKey = `login:user:${username.toLowerCase()}`;
-  // Throttle repeated failures — per source and per account — so credentials
-  // can't be brute-forced online. Only failed attempts count; a valid login
-  // clears the account's counter.
-  if (isRateLimited(ipKey, 20) || isRateLimited(accountKey, 5)) {
-    throw rateLimitedError(event, [ipKey, accountKey], 'Too many failed attempts. Please wait before trying again.');
+  // Throttle failed attempts, per source and per account, so credentials can't
+  // be brute-forced online. Every attempt takes its slot before the password is
+  // checked, so attempts sent together count as well; a valid login gives the
+  // source's slot back and clears the account's counter.
+  const limited = () =>
+    rateLimitedError(event, [ipKey, accountKey], 'Too many failed attempts. Please wait before trying again.');
+  if (!checkRateLimit(ipKey, 20, WINDOW_MS)) throw limited();
+  if (!checkRateLimit(accountKey, 5, WINDOW_MS)) {
+    releaseRateLimit(ipKey);
+    throw limited();
   }
 
   const user = await verifyUser(username, password);
   if (!user) {
-    recordRateLimitHit(ipKey, WINDOW_MS);
-    recordRateLimitHit(accountKey, WINDOW_MS);
     throw apiError({
       statusCode: 401,
       message: 'Invalid username or password',
     });
   }
 
+  releaseRateLimit(ipKey);
   resetRateLimit(accountKey);
 
   const view = await authUserView(await getDatabase(), user);
@@ -73,8 +77,6 @@ export default eventHandler(async (event) => {
   // Set session
   await setUserSession(event, {
     userId: user.id,
-    username: user.username,
-    role: view.role,
     sessionEpoch: user.sessionEpoch,
   });
 

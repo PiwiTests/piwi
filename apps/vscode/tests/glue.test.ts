@@ -4,6 +4,8 @@ import type {
   DesktopJobUpdate,
   DesktopResult,
   FailuresResult,
+  FailureTreeNode,
+  FileEdit,
   LiveRun,
   RunEnded,
   RunStatusResult,
@@ -19,11 +21,10 @@ import {
   connectChoices,
   desktopJobNotice,
   disconnectQuestion,
-  failingCount,
-  failureRunNote,
-  failureTree,
+  failureNodes,
   followBlock,
-  importInsertion,
+  followEdit,
+  importChange,
   recordInto,
   mcpConfiguration,
   newTestFileName,
@@ -33,9 +34,7 @@ import {
   recordingView,
   refreshingText,
   relativeTime,
-  rerunFailingArgs,
   failureRunArgs,
-  runIdOf,
   runsInFiles,
   filesRedraw,
   ownLiveRun,
@@ -45,7 +44,6 @@ import {
   testDecorations,
   withBaseline,
   writeBlock,
-  type FailureNode,
   type RecordedBlock,
   type TextChange,
   type TextSpan,
@@ -610,16 +608,6 @@ describe('Compare with…', () => {
     expect(byId.find((p) => p.choice === 'run-by-id')!.description).toBe('current: run #118');
   });
 
-  test('reads a run id, with or without its #', () => {
-    expect([runIdOf('118'), runIdOf(' #118 '), runIdOf('0'), runIdOf('run 118'), runIdOf('')]).toEqual([
-      118,
-      118,
-      null,
-      null,
-      null,
-    ]);
-  });
-
   test('keeps a choice per root, the ladder as none', () => {
     const kept = withBaseline({ '/a': { kind: 'local' } }, '/b', { kind: 'run', runId: 118 });
     expect(kept).toEqual({ '/a': { kind: 'local' }, '/b': { kind: 'run', runId: 118 } });
@@ -726,6 +714,8 @@ const span = (startLine: number, startCharacter: number, endLine: number, endCha
   end: at(endLine, endCharacter),
 });
 const change = (range: TextSpan, text: string): TextChange => ({ range, text });
+/** The service's edit inserting `newText` at the start of `line`. */
+const insert = (line: number, newText: string): FileEdit => ({ range: span(line, 0, line, 0), newText });
 
 /** Applies changes made in one edit to a text, as the editor does: at the same position, in the order given. */
 function applied(text: string, changes: TextChange[]): string {
@@ -796,57 +786,6 @@ describe('following the recorded block', () => {
   });
 });
 
-describe('the imports a recorded block needs', () => {
-  const spec = [
-    "import { test } from '@playwright/test';",
-    'import {',
-    '  expect,',
-    "} from '@playwright/test';",
-    '',
-    "test('pays', async ({ page }) => {});",
-  ];
-
-  test('go after the last top-level import statement', () => {
-    expect(importInsertion(spec, ["import { CartPage } from './pages/cart.page';"])).toEqual({
-      range: span(4, 0, 4, 0),
-      text: "import { CartPage } from './pages/cart.page';\n",
-    });
-  });
-
-  test('go at the top of a file without imports, or at its end after a last import line', () => {
-    expect(importInsertion(["test('a', () => {});"], ["import { a } from './a';"])).toEqual({
-      range: span(0, 0, 0, 0),
-      text: "import { a } from './a';\n",
-    });
-    expect(importInsertion(["import { b } from './b';"], ["import { a } from './a';"])).toEqual({
-      range: span(0, 24, 0, 24),
-      text: "\nimport { a } from './a';",
-    });
-  });
-
-  test('are left out when the file has them, written another way', () => {
-    const lines = [`import {test} from "@playwright/test"`, "import { CartPage } from './pages/cart.page';"];
-    expect(
-      importInsertion(lines, [
-        "import { test } from '@playwright/test';",
-        "import { CartPage } from './pages/cart.page'",
-      ]),
-    ).toBeNull();
-    expect(importInsertion(lines, ["import { a } from './a';", "import { a } from './a';"])?.text).toBe(
-      "\nimport { a } from './a';",
-    );
-  });
-
-  test('count what an edit writes, and not the lines it replaces', () => {
-    const imports = ["import { a } from './a';"];
-    expect(importInsertion(['x', 'y'], imports, { start: 0, end: 0 }, "import { a } from './a';")).toBeNull();
-    expect(importInsertion(["import { a } from './a';", 'y'], imports, { start: 0, end: 0 }, 'z')).toEqual({
-      range: span(0, 0, 0, 0),
-      text: "import { a } from './a';\n",
-    });
-  });
-});
-
 describe('where a recording writes', () => {
   test('outside every test, function and class, a new test; anywhere else, the steps there', () => {
     expect(recordInto('test')).toBe('steps');
@@ -872,7 +811,7 @@ describe('writing the recorded block', () => {
   );
 
   test('the first write puts the block on a new line where the placement says', () => {
-    const write = writeBlock(spec, placedBlock({ line: 4, newLine: true, indent: '  ' }), steps, []);
+    const write = writeBlock(spec, placedBlock({ line: 4, newLine: true, indent: '  ' }), steps, null);
     expect(write.block).toEqual(span(4, 0, 5, 22));
     expect(applied(text, write.changes).split('\n')).toEqual([
       "import { test } from '@playwright/test';",
@@ -888,25 +827,25 @@ describe('writing the recorded block', () => {
 
   test('or in place of the blank line it names, unless something was typed there since', () => {
     const lines = ['a', '   ', 'b'];
-    const write = writeBlock(lines, placedBlock({ line: 1, newLine: false, indent: '' }), 'one\ntwo', []);
+    const write = writeBlock(lines, placedBlock({ line: 1, newLine: false, indent: '' }), 'one\ntwo', null);
     expect(applied(lines.join('\n'), write.changes)).toBe('a\none\ntwo\nb');
     expect(write.block).toEqual(span(1, 0, 2, 3));
     const typed = ['a', 'typed', 'b'];
-    const kept = writeBlock(typed, placedBlock({ line: 1, newLine: false, indent: '' }), 'one', []);
+    const kept = writeBlock(typed, placedBlock({ line: 1, newLine: false, indent: '' }), 'one', null);
     expect(applied(typed.join('\n'), kept.changes)).toBe('a\none\ntyped\nb');
   });
 
   test('a placement past the last line goes after it', () => {
-    const write = writeBlock(['a', 'b'], placedBlock({ line: 2, newLine: true, indent: '' }), 'c', []);
+    const write = writeBlock(['a', 'b'], placedBlock({ line: 2, newLine: true, indent: '' }), 'c', null);
     expect(applied('a\nb', write.changes)).toBe('a\nb\nc');
     expect(write.block).toEqual(span(2, 0, 2, 1));
   });
 
-  test('later writes replace the block, and the missing imports go in the same edit', () => {
+  test('later writes replace the block, and the service’s import edit goes in the same edit', () => {
     const lines = [...spec.slice(0, 4), ...steps.split('\n'), ...spec.slice(4)];
     const block: RecordedBlock = { range: span(4, 0, 5, 22), first: null };
     const next = recordedBlockText('const cartPage = new CartPage(page);\nawait cartPage.pay();', '  ');
-    const write = writeBlock(lines, block, next, ["import { CartPage } from './pages/cart.page';"]);
+    const write = writeBlock(lines, block, next, insert(1, "import { CartPage } from './pages/cart.page';\n"));
     expect(applied(lines.join('\n'), write.changes).split('\n')).toEqual([
       "import { test } from '@playwright/test';",
       "import { CartPage } from './pages/cart.page';",
@@ -923,9 +862,7 @@ describe('writing the recorded block', () => {
 
   test('a whole file holds its imports itself', () => {
     const file = "import { test } from '@playwright/test';\nimport { CartPage } from './pages/cart.page';\n\ntest();";
-    const write = writeBlock([''], placedBlock({ line: 0, newLine: false, indent: '' }), file, [
-      "import { CartPage } from './pages/cart.page';",
-    ]);
+    const write = writeBlock([''], placedBlock({ line: 0, newLine: false, indent: '' }), file, null);
     expect(write.changes).toEqual([change(span(0, 0, 0, 0), file)]);
     expect(write.block).toEqual(span(0, 0, 3, 7));
   });
@@ -933,23 +870,23 @@ describe('writing the recorded block', () => {
   test('the block keeps lines of its own when an edit left other code on its first or last line', () => {
     const lines = ['before();', 'x = 1; old();', 'after();'];
     const block: RecordedBlock = { range: span(1, 7, 1, 13), first: null };
-    const write = writeBlock(lines, block, 'one();', []);
+    const write = writeBlock(lines, block, 'one();', null);
     expect(applied(lines.join('\n'), write.changes)).toBe('before();\nx = 1; \none();\nafter();');
     expect(write.block).toEqual(span(2, 0, 2, 6));
     const emptied: RecordedBlock = { range: span(1, 0, 1, 0), first: null };
-    expect(applied('a\nb', writeBlock(['a', 'b'], emptied, 'one', []).changes)).toBe('a\none\nb');
+    expect(applied('a\nb', writeBlock(['a', 'b'], emptied, 'one', null).changes)).toBe('a\none\nb');
   });
 
   test('through a recording: written, moved by an edit above, then written again in its new place', () => {
     let lines = spec;
     let block = placedBlock({ line: 4, newLine: true, indent: '  ' });
-    const first = writeBlock(lines, block, recordedBlockText('await page.reload();', '  '), []);
+    const first = writeBlock(lines, block, recordedBlockText('await page.reload();', '  '), null);
     lines = applied(lines.join('\n'), first.changes).split('\n');
     block = { range: first.block, first: null };
     const above = change(span(1, 0, 1, 0), '// the cart\n');
     lines = applied(lines.join('\n'), [above]).split('\n');
     block = { ...block, range: followBlock(block.range, above).block };
-    const second = writeBlock(lines, block, steps, []);
+    const second = writeBlock(lines, block, steps, null);
     expect(applied(lines.join('\n'), second.changes).split('\n')).toEqual([
       "import { test } from '@playwright/test';",
       '// the cart',
@@ -961,6 +898,43 @@ describe('writing the recorded block', () => {
       '});',
       '',
     ]);
+  });
+});
+
+describe('the import edit of an update', () => {
+  const spec = ["import { test } from '@playwright/test';", '', "test('pays', async ({ page }) => {", '', '});'];
+
+  test('on the first write, at the line the block goes on, goes above the block', () => {
+    const write = writeBlock(
+      spec,
+      placedBlock({ line: 1, newLine: true, indent: '' }),
+      'x();',
+      insert(1, 'import a;\n'),
+    );
+    expect(applied(spec.join('\n'), write.changes).split('\n')).toEqual([
+      "import { test } from '@playwright/test';",
+      'import a;',
+      'x();',
+      '',
+      "test('pays', async ({ page }) => {",
+      '',
+      '});',
+    ]);
+    expect(write.block).toEqual(span(2, 0, 2, 4));
+  });
+
+  test('inside the range the block replaces, it is left out', () => {
+    const lines = ['a', '  one();', '  two();', 'b'];
+    const block: RecordedBlock = { range: span(1, 0, 2, 8), first: null };
+    const write = writeBlock(lines, block, '  three();', insert(2, 'import a;\n'));
+    expect(write.changes).toHaveLength(1);
+    expect(importChange(null)).toBeNull();
+  });
+
+  test('a write made again follows it through the changes made meanwhile', () => {
+    const edit = insert(1, 'import a;\n');
+    expect(followEdit(edit, [change(span(0, 0, 0, 0), '// head\n')]).range).toEqual(span(2, 0, 2, 0));
+    expect(followEdit(edit, [change(span(3, 0, 3, 0), 'x();\n')]).range).toEqual(span(1, 0, 1, 0));
   });
 });
 
@@ -1028,169 +1002,137 @@ describe('a new test file', () => {
 
 describe('the failures view', () => {
   const now = Date.parse('2026-09-27T10:04:00.000Z');
-  const base = { url: 'http://piwi/test-run-cases/1', hasTrace: false, headline: 'Failed', isNew: false } as const;
+  const base = { url: 'http://piwi/test-run-cases/1', hasTrace: false, isNew: false } as const;
+  const failing = {
+    ...base,
+    uri: 'file:///w/tests/login.spec.ts',
+    line: 41,
+    title: 'logs in',
+    headline: "getByRole('button') was not visible",
+    executionId: 1,
+    runId: 120,
+    source: 'ci' as const,
+    state: 'failing' as const,
+    root: '/w/apps/shop',
+    testCaseId: 7,
+  };
+  const leaf = (over: Partial<FailureTreeNode>): FailureTreeNode => ({
+    key: 'failure:1',
+    kind: 'failure',
+    label: 'logs in',
+    description: 'tests/login.spec.ts:42 · chromium · new',
+    tooltip: ['logs in', "getByRole('button') was not visible", 'run #120', 'Owner: @team_auth'],
+    note: null,
+    icon: 'failing',
+    expanded: false,
+    url: 'http://piwi/test-run-cases/1',
+    executionId: 1,
+    children: [],
+    ...over,
+  });
   const result: FailuresResult = {
-    items: [
+    items: [failing, { ...failing, executionId: 3, title: 'pays', state: 'edited', source: 'own', runId: 124 }],
+    grouping: 'file',
+    runLabel: 'Run #120 · CI · feature/x · 2 failing',
+    failing: 2,
+    rerun: [{ uri: failing.uri, root: '/w/apps/shop', testIds: [7] }],
+    tree: [
       {
-        ...base,
-        uri: 'file:///w/tests/login.spec.ts',
-        line: 41,
-        title: 'logs in',
-        headline: "getByRole('button') was not visible",
-        executionId: 1,
-        runId: 120,
-        hasTrace: true,
-        source: 'ci',
-        state: 'failing',
-        browserName: 'chromium',
-        file: 'tests/login.spec.ts',
-        testCaseId: 7,
-        clusterId: 3,
-        clusterTitle: 'Login button hidden',
-        owner: '@team-auth',
-        isNew: true,
-        hasScreenshot: true,
-      },
-      {
-        ...base,
-        uri: 'file:///w/tests/login.spec.ts',
-        line: 41,
-        title: 'logs in',
-        executionId: 2,
-        runId: 120,
-        source: 'ci',
-        state: 'failing',
-        browserName: 'firefox',
-        file: 'tests/login.spec.ts',
-        testCaseId: 7,
-        clusterId: 3,
-        clusterTitle: 'Login button hidden',
-        owner: '@team-auth',
-      },
-      {
-        ...base,
-        uri: 'file:///w/tests/pages/checkout.page.ts',
-        line: 4,
-        title: 'pays',
-        executionId: 3,
-        runId: 124,
-        source: 'own',
-        state: 'edited',
-        browserName: 'chromium',
-        file: 'tests/checkout.spec.ts',
-        testCaseId: 8,
-        clusterId: null,
-        owner: null,
-      },
-      {
-        ...base,
-        uri: 'file:///w/tests/checkout.spec.ts',
-        line: 9,
-        title: 'removes a row',
-        headline: null,
-        executionId: 4,
-        runId: 124,
-        source: 'own',
-        state: 'fixed-locally',
-        browserName: 'chromium',
-        file: 'tests/checkout.spec.ts',
-        testCaseId: 9,
-      },
-    ],
-    run: {
-      id: 120,
-      branch: 'feature/x',
-      status: 'failed',
-      startTime: '2026-09-27T10:00:00.000Z',
-      totalTests: 9,
-      passedTests: 6,
-      failedTests: 3,
-      flakyTests: 0,
-      skippedTests: 0,
-      url: 'http://piwi/test-runs/120',
-      origin: 'ci',
-      own: false,
-    },
-    overlays: [
-      {
-        id: 124,
-        origin: 'editor',
-        startTime: '2026-09-27T10:02:00.000Z',
-        status: 'failed',
-        totalTests: 2,
-        passedTests: 1,
-        failedTests: 1,
-        url: 'http://piwi/test-runs/124',
-        own: true,
+        key: 'run',
+        kind: 'run',
+        label: 'Run #120 · CI · feature/x · 2 failing',
+        description: '',
+        startTime: '2026-09-27T10:00:00.000Z',
+        tooltip: [
+          'Baseline: CI run #120 on feature/x',
+          'Run #120 of feature/x: 6 passed, 3 failed, 0 flaky, 0 skipped',
+        ],
+        icon: 'run',
+        expanded: true,
+        url: 'http://piwi/test-runs/120',
+        children: [
+          {
+            key: 'runs',
+            kind: 'runs',
+            label: 'Your runs since',
+            description: '1 run',
+            tooltip: ['The runs of feature/x since run #120, laid over it test by test'],
+            icon: 'history',
+            expanded: false,
+            url: null,
+            children: [
+              {
+                key: 'overlay:124',
+                kind: 'overlay',
+                label: '#124 · your run · 1 passed, 1 failed',
+                description: '',
+                startTime: '2026-09-27T10:02:00.000Z',
+                tooltip: ['Run #124, your run: 1 passed, 1 failed of 2'],
+                icon: 'failed',
+                expanded: false,
+                url: 'http://piwi/test-runs/124',
+                children: [],
+              },
+            ],
+          },
+          {
+            key: 'group:file:tests/login.spec.ts',
+            kind: 'group',
+            label: 'tests/login.spec.ts',
+            description: '2 failing',
+            tooltip: ['tests/login.spec.ts'],
+            icon: 'file',
+            expanded: true,
+            url: null,
+            children: [
+              leaf({}),
+              leaf({
+                key: 'failure:3',
+                label: 'pays',
+                icon: 'edited',
+                executionId: 3,
+                note: 'edited since your run #124',
+              }),
+            ],
+          },
+        ],
       },
     ],
   };
-  const labels = (nodes: FailureNode[]): unknown =>
-    nodes.map((n) => (n.children.length ? [`${n.label} (${n.description})`, labels(n.children)] : n.label));
 
-  test('show the run, the runs since, and the failures by file, failing first', () => {
-    const [root] = failureTree(result, 'file', { now });
+  test('draws the service’s tree: ages after the descriptions, codicons, and what opens each node', () => {
+    const [root] = failureNodes(result, { now });
     expect(root).toMatchObject({
+      key: 'run',
       kind: 'run',
-      label: 'Run #120 · CI · feature/x · 2 failing · 1 fixed locally',
+      label: 'Run #120 · CI · feature/x · 2 failing',
       description: '4 min ago',
+      icon: 'beaker',
       state: 'expanded',
       url: 'http://piwi/test-runs/120',
     });
-    expect(labels(root!.children)).toEqual([
-      ['Your runs since (1 run)', ['#124 · your run · 2 min ago · 1 passed, 1 failed']],
-      ['tests/checkout.spec.ts (1 failing · 1 fixed locally)', ['pays', 'removes a row']],
-      ['tests/login.spec.ts (1 failing)', ['logs in', 'logs in']],
-    ]);
-    expect(root!.children[0]).toMatchObject({ state: 'collapsed' });
-    expect(root!.children[0]!.children[0]).toMatchObject({ kind: 'overlay', url: 'http://piwi/test-runs/124' });
-  });
-
-  test('the run names the baseline chosen; the local runs alone are the root without one', () => {
-    const label = 'CI run #120 on feature/x';
-    const [root] = failureTree({ ...result, baseline: { choice: { kind: 'ladder' }, label } }, 'file', { now });
-    expect(root!.tooltip).toMatch(/^Baseline: CI run #120 on feature\/x\n\nRun #120 of feature\/x: 6 passed/);
-    const local = { choice: { kind: 'local' as const }, label: 'your local runs only' };
-    const [alone] = failureTree({ ...result, run: null, baseline: local }, 'file', { now });
-    expect(alone).toMatchObject({
-      kind: 'run',
-      label: 'Your local runs · 2 failing · 1 fixed locally',
-      description: 'no baseline',
-      tooltip: 'Baseline: your local runs only',
-      url: null,
-    });
-    expect(alone!.children.map((n) => n.label)).toEqual(['Your runs', 'tests/checkout.spec.ts', 'tests/login.spec.ts']);
-  });
-
-  test('a failure says where, on which project, and whether it is new, with its run in the tooltip', () => {
-    const [root] = failureTree(result, 'flat', { now });
-    const [first, second, edited, fixed] = root!.children.slice(1);
-    expect(first).toMatchObject({
-      kind: 'failure',
-      label: 'logs in',
-      description: 'tests/login.spec.ts:42 · chromium · new',
+    const [runs, group] = root!.children;
+    expect(runs).toMatchObject({ icon: 'history', state: 'collapsed', description: '1 run' });
+    expect(runs!.children[0]).toMatchObject({
+      label: '#124 · your run · 1 passed, 1 failed',
+      description: '2 min ago',
       icon: 'error',
-      url: 'http://piwi/test-run-cases/1',
+      state: 'none',
     });
-    expect(first!.tooltip).toBe(
-      "**logs in**\n\ngetByRole('button') was not visible\n\nrun #120\n\nCluster: Login button hidden\n\nOwner: @team-auth",
-    );
-    expect(second!.description).toBe('tests/login.spec.ts:42 · firefox');
-    // It shows in the page object its stack goes through.
-    expect(edited).toMatchObject({ icon: 'edit', description: 'checkout.page.ts:5 · chromium' });
-    expect(edited!.tooltip).toContain('edited since your run #124');
-    expect(fixed).toMatchObject({ icon: 'check' });
-    expect(fixed!.tooltip).toContain('fixed locally in your run #124');
+    expect(group).toMatchObject({ icon: 'file', state: 'expanded', description: '2 failing' });
+    const [first, edited] = group!.children;
+    expect(first).toMatchObject({ kind: 'failure', icon: 'error', state: 'none', failure: failing });
+    expect(edited).toMatchObject({ icon: 'edit', failure: { executionId: 3, state: 'edited' } });
   });
 
-  test('groups by cluster or owner, the failures without one last', () => {
-    const [byCluster] = failureTree(result, 'cluster', { now });
-    expect(byCluster!.children.slice(1).map((g) => [g.label, g.description])).toEqual([
-      ['Login button hidden', '1 failing'],
-      ['Ungrouped', '1 failing · 1 fixed locally'],
-    ]);
-    const [byOwner] = failureTree(result, 'owner', { now });
-    expect(byOwner!.children.slice(1).map((g) => g.label)).toEqual(['@team-auth', 'Unowned']);
+  test('a hover is the service’s lines as Markdown, a failure’s title in bold', () => {
+    const [root] = failureNodes(result, { now });
+    expect(root!.tooltip).toBe(
+      'Baseline: CI run #120 on feature/x\n\nRun #120 of feature/x: 6 passed, 3 failed, 0 flaky, 0 skipped',
+    );
+    expect(root!.children[1]!.children[0]!.tooltip).toBe(
+      "**logs in**\n\ngetByRole('button') was not visible\n\nrun #120\n\nOwner: @team\\_auth",
+    );
   });
 
   test('while the editor’s own run is live, the run counts it', () => {
@@ -1203,49 +1145,23 @@ describe('the failures view', () => {
       startedAt: '2026-09-27T10:03:00.000Z',
       own: true,
     };
-    expect(failureTree(result, 'file', { now, live })[0]!.description).toBe('running 4/9');
-    expect(failureTree(result, 'file', { now, live: { ...live, own: false } })[0]!.description).toBe('4 min ago');
+    const [root] = failureNodes(result, { now, live });
+    expect(root!.description).toBe('running 4/9');
+    expect(root!.tooltip).toMatch(/\n\nYour run #125 is running: 4\/9$/);
+    expect(failureNodes(result, { now, live: { ...live, own: false } })[0]!.description).toBe('4 min ago');
   });
 
-  test('without a failure, nothing; from an older service, the groups alone', () => {
-    expect(failureTree({ items: [], run: result.run }, 'file', { now })).toEqual([]);
-    expect(failureTree(null, 'file')).toEqual([]);
-    const older = failureTree({ items: [{ ...result.items[0]!, file: undefined, testCaseId: undefined }] }, 'file');
-    expect(older.map((n) => n.label)).toEqual(['login.spec.ts']);
+  test('without a tree, nothing', () => {
+    expect(failureNodes(null)).toEqual([]);
+    expect(failureNodes({ ...result, tree: [] })).toEqual([]);
   });
 
-  test('counts the failing tests, and re-runs them once per Playwright config', () => {
-    expect(failingCount(result)).toBe(2);
-    expect(rerunFailingArgs(result)).toEqual([{ uri: 'file:///w/tests/login.spec.ts', testIds: [7, 8] }]);
-    expect(rerunFailingArgs({ items: [result.items[3]!] })).toEqual([]);
-    expect(rerunFailingArgs(null)).toEqual([]);
-    const [a, b] = result.items;
-    const twoConfigs = {
-      items: [
-        { ...a!, root: '/w/apps/shop' },
-        { ...b!, root: '/w/apps/admin', uri: 'file:///w/shared/pages/admin.ts', testCaseId: 8 },
-        { ...a!, root: '/w/apps/shop', testCaseId: 9 },
-      ],
-    };
-    expect(rerunFailingArgs(twoConfigs)).toEqual([
-      { uri: a!.uri, root: '/w/apps/shop', testIds: [7, 9] },
-      { uri: 'file:///w/shared/pages/admin.ts', root: '/w/apps/admin', testIds: [8] },
-    ]);
-    expect(failureRunArgs(twoConfigs.items[1]!)).toEqual({
+  test('Run this test names the failure’s config', () => {
+    expect(failureRunArgs({ ...failing, root: '/w/apps/admin', uri: 'file:///w/shared/pages/admin.ts' })).toEqual({
       uri: 'file:///w/shared/pages/admin.ts',
       root: '/w/apps/admin',
-      testIds: [8],
+      testIds: [7],
     });
-  });
-
-  test('a failure names its run', () => {
-    const f = result.items[0]!;
-    expect(failureRunNote(f)).toBe('run #120');
-    expect(failureRunNote({ ...f, source: 'local', runId: 124 })).toBe('local run #124');
-    expect(failureRunNote({ ...f, source: 'ci', state: 'fixed-locally', runId: 125 })).toBe('fixed in run #125');
-    expect(failureRunNote({ ...f, source: 'local', state: 'fixed-locally', runId: 124 })).toBe(
-      'fixed locally in run #124',
-    );
   });
 });
 

@@ -2,7 +2,7 @@
   "name": "piwi",
   "displayName": "Piwi",
   "description": "Your Playwright suite's history in the editor: CI failures at their lines, healing in place, the tests behind each locator and file, and the locators a change breaks",
-  "version": "0.55.0",
+  "version": "0.56.0",
   "publisher": "piwitests",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
@@ -555,6 +555,7 @@
     "test": "npm run vscode:test"
   },
   "devDependencies": {
+    "@piwitests/core": "*",
     "@piwitests/editor": "*",
     "@types/vscode": "~1.91.0",
     "@vscode/test-electron": "^3.1.0",

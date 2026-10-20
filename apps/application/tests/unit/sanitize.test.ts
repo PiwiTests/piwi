@@ -46,6 +46,19 @@ describe('sanitizeGitRemoteUrl (secret leak prevention)', () => {
   test('returns an SSH remote (unparseable as URL) unchanged', () => {
     expect(sanitizeGitRemoteUrl('git@github.com:org/repo.git')).toBe('git@github.com:org/repo.git');
   });
+
+  test('drops a URL of a scheme a git remote does not use', () => {
+    expect(sanitizeGitRemoteUrl('javascript://github.com/%0aalert(1)')).toBeNull();
+    expect(sanitizeGitRemoteUrl(' javascript:alert(1)')).toBeNull();
+    expect(sanitizeGitRemoteUrl('data:text/html,<script>alert(1)</script>')).toBeNull();
+    expect(sanitizeGitRemoteUrl('ssh://git@github.com/org/repo.git')).toBe('ssh://github.com/org/repo.git');
+  });
+
+  test('sanitizeMetadata leaves out a remote URL it drops', () => {
+    expect(sanitizeMetadata({ scm: { remoteUrl: 'javascript:alert(1)', commit: 'abc' } })).toEqual({
+      scm: { commit: 'abc' },
+    });
+  });
 });
 
 describe('sanitizeNetworkRequests', () => {

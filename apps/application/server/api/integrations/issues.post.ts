@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Create an issue from a failure or a bug report',
     description:
-      "Enqueues a create-issue action and makes one immediate attempt. A duplicate of an issue already filed for the same cluster (from the cluster or any of its executions) or the same bug report is a no-op answered with `alreadyFiled`; once that issue's link is removed or the issue is Done, the next create files a new one. When the tracker does not answer, the response is `pending` with the tracker's error: the outbox retries it and links the issue once it is created, and creating again retries it at once. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request. Requires `issue:create` (Contributor and above on the project).",
+      "Enqueues a create-issue action and makes one immediate attempt. A duplicate of an issue already filed for the same cluster (from the cluster or any of its executions) or the same bug report is a no-op answered with `alreadyFiled`; once that issue's link is removed or the issue is Done, the next create files a new one. When the tracker does not answer, the response is `pending` with the tracker's error: the outbox retries it and links the issue once it is created, and creating again retries it at once. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request. `include.includeShareLink` creates one share link for the issue, recorded as the caller's, and needs `share:create` on the project: without it the issue carries no share link. Requires `issue:create` (Contributor and above on the project).",
     'x-required-permission': 'issue:create',
   },
 });
@@ -55,6 +55,12 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
     throw apiError({ statusCode: 403, message: 'No access to this project' });
   }
 
+  // A share link is public: only a caller who may create one gets it in the ticket.
+  const include =
+    input.include?.includeShareLink && !(await canAccessProject(db, user, projectId, 'share:create'))
+      ? { ...input.include, includeShareLink: false }
+      : input.include;
+
   const outcome = await createIssue(db, {
     entityType: input.entityType,
     entityId: input.entityId,
@@ -65,7 +71,7 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
     labels: input.labels,
     assignee: input.assignee ?? null,
     locale: input.locale,
-    include: input.include,
+    include,
     fields: normalizeFieldValues(input.fields),
     requestedBy: user.id || null,
     siteUrl: process.env.PIWI_SITE_URL ?? null,

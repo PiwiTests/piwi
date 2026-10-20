@@ -11,7 +11,7 @@ const props = withDefaults(
   },
 );
 
-const { name, viewUrl, downloadUrl, onView, onDownload } = useTraceLinks(() => props.trace);
+const { name, viewUrl, viewUnavailable, downloadUrl, onView, onDownload } = useTraceLinks(() => props.trace);
 </script>
 
 <template>
@@ -31,6 +31,8 @@ const { name, viewUrl, downloadUrl, onView, onDownload } = useTraceLinks(() => p
         color="neutral"
         variant="outline"
         label="Open trace"
+        :disabled="!!viewUnavailable"
+        :title="viewUnavailable ?? undefined"
         @click="onView"
       />
       <UButton
