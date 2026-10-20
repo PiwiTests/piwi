@@ -45,10 +45,10 @@ const shownOptional = computed(() => [
   ...added.value.filter((f) => !optionalWithValue.value.includes(f)),
 ]);
 /** Optional fields that could take a value, for the "Set a default for another field" menu. */
-const addableItems = computed(() =>
-  settableFields(props.fields, props.skipped)
-    .filter((f) => !required.value.includes(f) && !added.value.includes(f) && !hasFieldValue(values.value[f.id]?.value))
-    .map((f) => ({ label: f.name, onSelect: () => void added.value.push(f) })),
+const addable = computed(() =>
+  settableFields(props.fields, props.skipped).filter(
+    (f) => !required.value.includes(f) && !added.value.includes(f) && !hasFieldValue(values.value[f.id]?.value),
+  ),
 );
 /** Values for fields this screen does not have: kept, but not sent. */
 const offScreen = computed(() => {
@@ -86,17 +86,12 @@ function remove(id: string) {
       :project-key="projectKey"
       removable
     />
-    <UDropdownMenu v-if="addableItems.length" :items="addableItems">
-      <UButton
-        type="button"
-        color="neutral"
-        variant="outline"
-        size="xs"
-        icon="i-lucide-plus"
-        trailing-icon="i-lucide-chevron-down"
-        label="Set a default for another field"
-      />
-    </UDropdownMenu>
+    <TrackerFieldPicker
+      v-if="addable.length"
+      :fields="addable"
+      label="Set a default for another field"
+      @pick="(f) => added.push(f)"
+    />
     <p v-for="[id, entry] in offScreen" :key="id" class="text-xs text-muted">
       {{ id }} = {{ entry.label }} is not on {{ screenLabel }}, so it is not sent.
       <button type="button" :class="SENTENCE_LINK_CLASS" @click="remove(id)">Remove it</button>

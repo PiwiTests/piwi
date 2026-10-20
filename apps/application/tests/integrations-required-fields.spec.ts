@@ -45,7 +45,7 @@ const TEAM = 'customfield_10001';
 const SQUAD = 'customfield_10060';
 const TAGS = 'customfield_10070';
 
-/** The Bug type's create screen: Severity and Team are required, Components, Squad and Tags are not. */
+/** The Bug type's create screen: Severity and Team are required, Parent, Components, Squad and Tags are not. */
 const BUG_SCREEN = [
   { fieldId: 'project', name: 'Project', required: true, schema: { type: 'project', system: 'project' } },
   { fieldId: 'issuetype', name: 'Issue type', required: true, schema: { type: 'issuetype', system: 'issuetype' } },
@@ -67,6 +67,7 @@ const BUG_SCREEN = [
     required: true,
     schema: { type: 'team', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team' },
   },
+  { fieldId: 'parent', name: 'Parent', required: false, schema: { type: 'issuelink', system: 'parent' } },
   {
     fieldId: 'components',
     name: 'Components',
@@ -83,6 +84,12 @@ const BUG_SCREEN = [
   },
 ];
 
+/** The issues the mock's issue picker finds: epics to parent a bug under. */
+const PICKER_ISSUES = [
+  { key: 'PROJ-7', summary: 'Checkout epic' },
+  { key: 'PROJ-8', summary: 'Payments epic' },
+];
+
 interface MockJira {
   server: http.Server;
   /** The fields of every issue created, in order. */
@@ -91,6 +98,10 @@ interface MockJira {
   requireSquad: boolean;
   /** Another such validator: Tags must be set. */
   requireTags: boolean;
+  /** Another: the Parent the screen leaves optional must be set. */
+  requireParent: boolean;
+  /** Every issue picker search, with the JQL it was scoped to. */
+  pickerQueries: { query: string; jql: string | null }[];
   /** Every transition made, in order. */
   moves: { key: string; id: string; fields: Record<string, unknown> | null }[];
 }
@@ -135,6 +146,8 @@ function startMockJira(port: number): MockJira {
     creates: [],
     requireSquad: false,
     requireTags: false,
+    requireParent: false,
+    pickerQueries: [],
     moves: [],
   };
   let counter = 300;
@@ -163,6 +176,21 @@ function startMockJira(port: number): MockJira {
       return send({ startAt: 0, maxResults: 100, total: BUG_SCREEN.length, fields: BUG_SCREEN });
     }
     if (path === '/rest/api/3/user/assignable/search') return send([{ accountId: 'acct-2', displayName: 'Assignee' }]);
+    if (path === '/rest/api/3/issue/picker') {
+      const query = url.searchParams.get('query') ?? '';
+      state.pickerQueries.push({ query, jql: url.searchParams.get('currentJQL') });
+      const hits = PICKER_ISSUES.filter((i) => `${i.key} ${i.summary}`.toLowerCase().includes(query.toLowerCase()));
+      return send({
+        sections: [
+          { id: 'hs', label: 'History Search', issues: [] },
+          {
+            id: 'cs',
+            label: 'Current Search',
+            issues: hits.map((i) => ({ key: i.key, summary: `<b>${i.summary}</b>`, summaryText: i.summary })),
+          },
+        ],
+      });
+    }
     if (req.method === 'POST' && path === '/rest/api/3/search/jql') {
       // The binding's sample-issue lookup names a status category; the create's dedupe search does not.
       return readBody(req, (raw) => {
@@ -205,6 +233,9 @@ function startMockJira(port: number): MockJira {
         if (!fields[TEAM]) errors[TEAM] = 'Team is required.';
         if (state.requireSquad && !fields[SQUAD]) errors[SQUAD] = 'Squad is required.';
         if (state.requireTags && !(fields[TAGS] as string[] | undefined)?.length) errors[TAGS] = 'Tags is required.';
+        if (state.requireParent && !(fields.parent as { key?: string } | undefined)?.key) {
+          errors.parent = 'Parent is required.';
+        }
         if (Object.keys(errors).length) return send({ errorMessages: [], errors }, 400);
         state.creates.push(fields);
         counter++;
@@ -236,7 +267,7 @@ function startMockJira(port: number): MockJira {
 }
 
 /** The failing tests the suite seeds, one cluster each. */
-const SEEDED_TESTS = ['refused', 'dialog', 'validator', 'agent'] as const;
+const SEEDED_TESTS = ['refused', 'dialog', 'validator', 'agent', 'parent'] as const;
 type SeededTest = (typeof SEEDED_TESTS)[number];
 
 function locationOf(title: SeededTest): string {
@@ -277,12 +308,13 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     });
     connectionId = (await created.json()).connection.id;
 
-    // Four distinct failures → four clusters to file against.
+    // Distinct failures → one cluster each to file against.
     const failures: Record<SeededTest, string> = {
       refused: `TimeoutError: locator.click: Timeout 5000ms exceeded. [${tag}]`,
       dialog: `Error: expect(locator).toBeVisible() failed [${tag}]`,
       validator: `TypeError: Cannot read properties of undefined (reading 'total') [${tag}]`,
       agent: `Error: page.goto: net::ERR_CONNECTION_REFUSED [${tag}]`,
+      parent: `RangeError: Maximum call stack size exceeded [${tag}]`,
     };
     const submit = await request.post('/api/test-runs/submit', {
       data: {
@@ -290,9 +322,9 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
         status: 'failed',
         startTime: new Date().toISOString(),
         duration: 1000,
-        totalTests: 4,
+        totalTests: SEEDED_TESTS.length,
         passedTests: 0,
-        failedTests: 4,
+        failedTests: SEEDED_TESTS.length,
         skippedTests: 0,
         testCases: SEEDED_TESTS.map((title) => ({
           title,
@@ -417,6 +449,42 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       });
     } finally {
       mock.requireTags = false;
+    }
+  });
+
+  test('a field the screen leaves optional is added on demand, and its issue is searched', async ({ page }) => {
+    mock.requireParent = true;
+    try {
+      await page.goto(`/failure-clusters/${clusters.parent}`);
+      await waitForHydration(page);
+      const open = page.locator('[data-shot="issue-line-create"]').first();
+      await expect(open).toBeVisible({ timeout: 30_000 });
+      await open.click();
+      const dialog = page.getByRole('dialog');
+      const asked = dialog.locator('[data-shot="create-issue-fields"]');
+      await expect(asked).toBeVisible({ timeout: 15_000 });
+      await asked.locator(`[data-field-id="${TEAM}"] input`).fill('team-checkout');
+
+      // Jira leaves the Parent optional on the screen, so it is not asked for: add it.
+      await expect(dialog.locator('[data-field-id="parent"]')).toHaveCount(0);
+      await dialog.getByText('Add a field').click();
+      await page.keyboard.type('Par');
+      await page.getByRole('option', { name: 'Parent', exact: true }).click();
+      const parent = dialog.locator('[data-shot="create-issue-added-fields"] [data-field-id="parent"]');
+      await expect(parent).toBeVisible();
+
+      // Its input searches the Jira project's issues by key or summary.
+      await parent.getByText('Search an issue').click();
+      await page.keyboard.type('checkout');
+      await page.getByRole('option', { name: 'PROJ-7 — Checkout epic' }).click();
+      await expect(parent).toContainText('PROJ-7 — Checkout epic');
+      expect(mock.pickerQueries).toContainEqual({ query: 'checkout', jql: 'project = "PROJ"' });
+
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+      await expect(page.getByText(/PROJ-\d+ created/).first()).toBeVisible();
+      expect(mock.creates.at(-1)).toMatchObject({ parent: { key: 'PROJ-7' }, [TEAM]: 'team-checkout' });
+    } finally {
+      mock.requireParent = false;
     }
   });
 

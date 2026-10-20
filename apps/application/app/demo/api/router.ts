@@ -344,6 +344,7 @@ import {
   demoCreateFields,
   demoTransitionSample,
   demoAssignable,
+  demoIssuePicker,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
   demoAutoCreatePreview,
@@ -3288,6 +3289,12 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
     permission: 'issue:create',
     handler: async () => demoAssignable(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/issue-picker$/,
+    permission: 'issue:create',
+    handler: async (_m, _body, query) => demoIssuePicker(query?.get('q') ?? ''),
   },
   {
     method: 'POST',

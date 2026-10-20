@@ -131,6 +131,12 @@ export interface TrackerUserOption {
   email?: string | null;
 }
 
+/** An issue a field can point at (a parent, an epic), for the create modal's issue picker. */
+export interface TrackerIssueOption {
+  key: string;
+  summary: string;
+}
+
 /** An issue that may already track the failure — leads the modal so a person links it. */
 export interface ExistingIssueCandidate {
   key: string;

@@ -11,12 +11,15 @@ import type {
   TrackerUserOption,
 } from '#shared/integrations/types';
 import {
+  fieldForProblem,
   hasFieldValue,
   joinFieldNames,
+  MANAGED_FIELDS,
   missingRequiredFields,
   requiredFieldsToFill,
   settableFields,
   type FieldValues,
+  type TrackerField,
 } from '#shared/integrations/fields';
 import { withTypedValue } from '~/utils/text-format';
 
@@ -106,18 +109,45 @@ const {
   () => projectKey.value,
   () => issueType.value,
 );
-/** The fields to ask for: the required ones Piwi does not fill, plus any Jira refused. */
+/**
+ * The fields to ask for: the required ones Piwi does not fill, plus any Jira
+ * refused — even one its screen does not list, which a workflow validator can
+ * require (a parent).
+ */
 const askedFields = computed(() => {
   const required = requiredFieldsToFill(screenFields.value);
-  const refused = new Set(fieldProblems.value.map((p) => p.id));
-  const extra = settableFields(screenFields.value).filter((f) => refused.has(f.id) && !required.includes(f));
+  const settable = settableFields(screenFields.value);
+  const extra: TrackerField[] = [];
+  for (const problem of fieldProblems.value) {
+    if (MANAGED_FIELDS.has(problem.id) || [...required, ...extra].some((f) => f.id === problem.id)) continue;
+    extra.push(settable.find((f) => f.id === problem.id) ?? fieldForProblem(problem));
+  }
   return [...required, ...extra];
 });
+/** Optional fields added on demand for this issue, each shown with its input until removed. */
+const addedFields = ref<TrackerField[]>([]);
+/** The optional fields of the screen that can still be added. */
+const addableFields = computed(() =>
+  settableFields(screenFields.value).filter(
+    (f) => !askedFields.value.some((a) => a.id === f.id) && !addedFields.value.some((a) => a.id === f.id),
+  ),
+);
+function addField(field: TrackerField) {
+  addedFields.value = [...addedFields.value, field];
+}
+/** Removing an added field drops its value for this issue: the project's default, if any, applies again. */
+function removeField(id: string) {
+  addedFields.value = addedFields.value.filter((f) => f.id !== id);
+  const fallback = draft.value?.fieldValues?.[id];
+  if (fallback) fieldValues.value = { ...fieldValues.value, [id]: fallback };
+}
+// Another project or issue type has another screen: the fields added for this one go.
+watch([connectionId, projectKey, issueType], () => (addedFields.value = []));
 /** Optional project defaults that ride along without being asked for: "Components to Checkout". */
 const projectDefaultsLine = computed(() =>
   joinFieldNames(
-    settableFields(screenFields.value)
-      .filter((f) => !askedFields.value.includes(f) && hasFieldValue(fieldValues.value[f.id]?.value))
+    addableFields.value
+      .filter((f) => hasFieldValue(fieldValues.value[f.id]?.value))
       .map((f) => `${f.name} to ${fieldValues.value[f.id]!.label}`),
   ),
 );
@@ -180,6 +210,7 @@ function applyDraft(d: IssueDraft) {
   include.value = { ...d.include };
   fieldValues.value = { ...(d.fieldValues ?? {}) };
   fieldProblems.value = [];
+  addedFields.value = [];
 }
 
 async function loadDraft() {
@@ -470,9 +501,26 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
                 :project-key="projectKey"
               />
             </div>
+            <div v-if="addedFields.length" class="space-y-2" data-shot="create-issue-added-fields">
+              <p class="text-xs font-medium text-gray-500">Other fields</p>
+              <TrackerFieldsList
+                v-model="fieldValues"
+                :fields="addedFields"
+                :connection-id="connectionId"
+                :project-key="projectKey"
+                removable
+                @remove="removeField"
+              />
+            </div>
             <p v-if="projectDefaultsLine" class="text-xs text-muted">
               The project settings also set {{ projectDefaultsLine }}.
             </p>
+            <TrackerFieldPicker
+              v-if="!fieldsLoading && addableFields.length"
+              :fields="addableFields"
+              label="Add a field"
+              @pick="addField"
+            />
           </template>
 
           <UFormField label="Assignee">

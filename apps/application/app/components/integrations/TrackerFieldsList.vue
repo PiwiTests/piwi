@@ -3,7 +3,7 @@
  * A grid of tracker fields, each labelled with its Jira name (marked when
  * required) and edited through {@link TrackerFieldInput}. Edits the field values
  * as one map; a removable list adds a clear button per row, for the optional
- * defaults a project chose to set.
+ * defaults a project chose to set or the fields a create added on demand.
  */
 import type { FieldValue, FieldValues, TrackerField } from '#shared/integrations/fields';
 
@@ -16,6 +16,11 @@ defineProps<{
 }>();
 
 const values = defineModel<FieldValues>({ required: true });
+
+const emit = defineEmits<{
+  /** A row's remove button was clicked, after its value was cleared. */
+  remove: [id: string];
+}>();
 
 function update(id: string, value: FieldValue | null | undefined) {
   const next = { ...values.value };
@@ -53,7 +58,10 @@ function update(id: string, value: FieldValue | null | undefined) {
           size="xs"
           :title="`Stop setting ${field.name}`"
           :aria-label="`Stop setting ${field.name}`"
-          @click="update(field.id, null)"
+          @click="
+            update(field.id, null);
+            emit('remove', field.id);
+          "
         />
       </div>
     </UFormField>

@@ -1,4 +1,5 @@
 import type { IssueDocument } from '#shared/integrations/document';
+import type { TrackerIssueOption } from '#shared/integrations/types';
 import type { TrackerField } from '#shared/integrations/fields';
 
 /** Tracker providers that have a server-side client. */
@@ -95,6 +96,8 @@ export interface IssueTracker {
   /** The fields of the create screen for a project and issue type (id or name). */
   listCreateFields?(projectKey: string, issueType: string): Promise<TrackerField[]>;
   searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]>;
+  /** Issues matching a key or words of a summary, the project's first, for a field that points at an issue. */
+  pickIssues?(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]>;
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;
   addComment(key: string, body: IssueDocument): Promise<void>;

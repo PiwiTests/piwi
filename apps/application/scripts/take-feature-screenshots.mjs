@@ -1029,6 +1029,15 @@ async function prepareReportSchedule({ base, request }) {
  */
 const JIRA_SCREEN_FIELDS = [
   {
+    id: 'parent',
+    name: 'Parent',
+    required: false,
+    hasDefault: false,
+    kind: 'issue',
+    options: null,
+    typeName: 'parent',
+  },
+  {
     id: 'customfield_10050',
     name: 'Severity',
     required: true,
@@ -1190,6 +1199,16 @@ async function routeJiraScreen(page) {
     route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS } }),
   );
   await page.route('**/api/integrations/connections/*/assignable*', (route) => route.fulfill({ json: { users: [] } }));
+  await page.route('**/api/integrations/connections/*/issue-picker*', (route) =>
+    route.fulfill({
+      json: {
+        issues: [
+          { key: 'CHK-12', summary: 'Checkout reliability' },
+          { key: 'CHK-31', summary: 'Checkout payment providers' },
+        ],
+      },
+    }),
+  );
 }
 
 // The evidence-footer scene seeds its own fixtures-free project; `prepare`
@@ -2626,6 +2645,40 @@ const SCENES = [
       const dialog = page.getByRole('dialog');
       await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
       await dialog.getByTestId('create-issue-missing').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'create-issue-added-field',
+    description: 'Create issue modal with a Parent added on demand, its issue search open',
+    tags: ['desktop'],
+    prepare: prepareJiraSceneConnection,
+    route: '/failure-clusters/7',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/issue-draft*', async (route) => {
+        const draft = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...draft,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            fieldValues: JIRA_FIELD_DEFAULTS,
+          },
+        });
+      });
+      await page.locator('[data-shot="issue-line-create"]').first().click();
+      const dialog = page.getByRole('dialog');
+      await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
+      await dialog.getByText('Add a field').click();
+      await page.getByRole('option', { name: 'Parent', exact: true }).click();
+      const parent = dialog.locator('[data-shot="create-issue-added-fields"] [data-field-id="parent"]');
+      await parent.getByText('Search an issue').click();
+      await page.keyboard.type('checkout');
+      await page.getByRole('option', { name: 'CHK-12 — Checkout reliability' }).waitFor();
       await settle();
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },

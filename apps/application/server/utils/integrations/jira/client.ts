@@ -17,6 +17,7 @@ import type {
 import { statusColorForCategory, toStatusCategory } from '../types';
 import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
 import type { TrackerField } from '#shared/integrations/fields';
+import type { TrackerIssueOption } from '#shared/integrations/types';
 import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
 import { createHash } from 'node:crypto';
 
@@ -34,6 +35,14 @@ export function jiraSummary(title: string): string {
 /** Create metadata is paged; a screen past this many fields is read no further. */
 const CREATE_META_PAGE_SIZE = 100;
 const CREATE_META_MAX_PAGES = 10;
+
+/** The most issues the issue picker returns. */
+const ISSUE_PICKER_LIMIT = 20;
+
+/** The picker's summary marks the matched words with HTML; its text is what is shown. */
+function stripTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '');
+}
 
 /**
  * Project search is paged too, and Jira may serve fewer per page than asked; a
@@ -359,6 +368,24 @@ export class JiraClient implements IssueTracker {
     return (data ?? [])
       .filter((u) => u.accountId)
       .map((u) => ({ id: u.accountId ?? '', displayName: u.displayName ?? '', email: u.emailAddress ?? null }));
+  }
+
+  async pickIssues(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]> {
+    const params = new URLSearchParams({ query, showSubTasks: 'true', showSubTaskParent: 'true' });
+    if (projectKey) params.set('currentJQL', `project = ${JSON.stringify(projectKey)}`);
+    const data = await this.request<{
+      sections?: { id?: string; issues?: { key?: string; summaryText?: string; summary?: string }[] }[];
+    }>(`/rest/api/3/issue/picker?${params.toString()}`);
+    // The picker answers with the issues the JQL scopes ("cs") and the ones seen lately ("hs"): the project's first.
+    const sections = [...(data.sections ?? [])].sort((a, b) => Number(b.id === 'cs') - Number(a.id === 'cs'));
+    const out = new Map<string, TrackerIssueOption>();
+    for (const section of sections) {
+      for (const issue of section.issues ?? []) {
+        if (!issue.key || out.has(issue.key)) continue;
+        out.set(issue.key, { key: issue.key, summary: issue.summaryText ?? stripTags(issue.summary ?? '') });
+      }
+    }
+    return [...out.values()].slice(0, ISSUE_PICKER_LIMIT);
   }
 
   async listTransitions(key: string): Promise<TrackerTransition[]> {
