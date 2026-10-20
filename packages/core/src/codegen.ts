@@ -100,7 +100,13 @@ export interface CodegenOptions {
   testSteps?: 'none' | 'page';
 }
 
-type CodegenWarningCode = 'no-locator' | 'brittle-locator' | 'redacted-value' | 'incomplete-assertion' | 'file-needed';
+type CodegenWarningCode =
+  | 'no-locator'
+  | 'brittle-locator'
+  | 'redacted-value'
+  | 'incomplete-assertion'
+  | 'file-needed'
+  | 'manual-step';
 
 /** Something about a step the reader of the generated spec should check. */
 export interface CodegenWarning {
@@ -110,8 +116,8 @@ export interface CodegenWarning {
   /**
    * The value the message names, for a reader that words the warning itself
    * from its code: the brittle locator, the environment variable of a redacted
-   * value, the matcher an incomplete assertion lacks a value for, or the names
-   * of the files a file step needs.
+   * value, the matcher an incomplete assertion lacks a value for, the names
+   * of the files a file step needs, or what a manual step asks to do.
    */
   detail?: string;
   /** The warning in English. */
@@ -400,7 +406,10 @@ function renderAssertStep(step: RecordedStep, index: number, ctx: RenderContext)
       });
       return [`  // Step ${index + 1}: ${matcher} without an expected value.`];
     }
-    arg = quote(matcher === 'toHaveURL' ? urlForCode(assertion.expected, ctx) : assertion.expected);
+    arg =
+      matcher === 'toHaveCount'
+        ? String(Number.parseInt(assertion.expected, 10) || 0)
+        : quote(matcher === 'toHaveURL' ? urlForCode(assertion.expected, ctx) : assertion.expected);
   }
   const subject = matcher === 'toHaveURL' ? ctx.page : locatorForStep(step, index, ctx);
   let line = `  await expect(${subject})${not}.${matcher}(${arg});`;
@@ -419,10 +428,30 @@ export function fileNames(value: string | null): string[] {
     .filter(Boolean);
 }
 
+/**
+ * A manual step as a comment, never as code: what to do, and the call it
+ * stands for and where it is in the test when the step says.
+ */
+function renderManualStep(step: RecordedStep, index: number, ctx: RenderContext): string[] {
+  const description = commentText(step.manual?.description ?? '') || 'a step to do by hand';
+  ctx.warnings.push({
+    step: index,
+    code: 'manual-step',
+    detail: description,
+    message: `Step ${index + 1} cannot be written as code: ${description}`,
+  });
+  const lines = [`  // Manual step: ${description}`];
+  const call = step.manual?.call ? commentText(step.manual.call) : '';
+  const location = step.manual?.location ? commentText(step.manual.location) : '';
+  if (call || location) lines.push(`  //   ${[call, location ? `at ${location}` : ''].filter(Boolean).join(' ')}`);
+  return lines;
+}
+
 function renderRawStep(step: RecordedStep, index: number, ctx: RenderContext): string[] {
   const { page } = ctx;
   if (step.action === 'goto') return [`  await ${page}.goto(${quote(urlForCode(step.value ?? step.pageUrl, ctx))});`];
   if (step.action === 'assert' || step.action === 'assertVisible') return renderAssertStep(step, index, ctx);
+  if (step.action === 'manual') return renderManualStep(step, index, ctx);
   if (step.action === 'press' && !step.target) {
     return [`  await ${page}.keyboard.press(${quote(step.value ?? 'Enter')});`];
   }
@@ -705,8 +734,9 @@ function expectFailLine(options: CodegenOptions): string | null {
   return reason ? `  test.fail(); // ${reason}` : '  test.fail();';
 }
 
-/** Whether two recorded pages differ, by page key. */
+/** Whether two recorded pages are the same, by page key; a page that is not known (empty) matches any. */
 function samePage(a: string, b: string): boolean {
+  if (!a || !b) return true;
   const ka = pageKey(a);
   const kb = pageKey(b);
   return ka === null || kb === null || ka === kb;
@@ -777,7 +807,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   /** Starts a page's `test.step` at the next line when the step at `index` is on another page than the last one. */
   const enterPageOf = (index: number): void => {
     const url = steps[index]?.pageUrl;
-    if (options.testSteps !== 'page' || url == null) return;
+    if (options.testSteps !== 'page' || !url) return;
     const last = pageStarts[pageStarts.length - 1];
     if (!last || !samePage(last.url, url)) pageStarts.push({ line: bodyLines.length, url });
   };
@@ -800,7 +830,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     // The wait for the next page is that page's first line.
     enterPageOf(last + 1);
     if (pattern) bodyLines.push(`  await expect(${page}).toHaveURL(${pattern});`);
-    const acts = next.action !== 'assert' && next.action !== 'assertVisible';
+    const acts = next.action !== 'assert' && next.action !== 'assertVisible' && next.action !== 'manual';
     const chosen = acts && next.target ? chooseLocator(next.target, options) : null;
     if (chosen) bodyLines.push(`  await expect(${page}.${chosen.text}).toHaveCount(1);`);
   };

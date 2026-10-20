@@ -44,11 +44,12 @@ export type BugSubject =
 /** A typed value: the text, or a password that was not recorded. */
 export type BugStepValue = { kind: 'text'; text: string } | { kind: 'password' };
 
-export type BugState = 'visible' | 'hidden' | 'enabled' | 'disabled';
+export type BugState = 'visible' | 'hidden' | 'enabled' | 'disabled' | 'checked';
 
-/** What a step expects of its subject. */
+/** What a step expects of its subject: `contains` is part of its text, `count` how many elements its locator finds. */
 export type BugExpectation =
-  | { matcher: 'text' | 'value' | 'name' | 'url'; expected: string }
+  | { matcher: 'text' | 'value' | 'name' | 'url' | 'contains'; expected: string }
+  | { matcher: 'count'; count: number }
   | { matcher: 'state'; state: BugState };
 
 /** What a report holds besides its steps, counted for its one-line summary. */
@@ -79,6 +80,8 @@ interface BugReportPhrases {
   note(text: string): string;
   /** Under a step: the viewport size the page has from that step on, such as `390×844`, and the browser's zoom when not 100% (`1.25`). */
   viewport(size: string, zoom: number | null): string;
+  /** Under a step: the test failed at this step in the run the report was made from. */
+  failedInRun: string;
   expectedHeading: string;
   nothingMarked: string;
   /** A line of "Expected and actual": step number, the expectation, and what the page showed when known. */
@@ -102,6 +105,11 @@ interface BugReportPhrases {
   requestLine(entry: { request: string; status: number; page: string; time: string }): string;
   outlineHeading: string;
   outlineNote: string;
+  /** A report made from a test run: the calls of the test its steps leave out. */
+  notReplayedHeading: string;
+  notReplayedNote: string;
+  /** One left-out call: its title in code, where it is in the test when known, and why. */
+  notReplayedLine(entry: { call: string; location: string | null; reason: string }): string;
 }
 
 export interface BugPhrases {
@@ -131,6 +139,8 @@ export interface BugPhrases {
     setInputFiles(subject: BugSubject, files: readonly string[]): string;
     /** Dragging one element and dropping it on another. */
     dragTo(subject: BugSubject, target: BugSubject): string;
+    /** A step to do by hand, from its description (in the words of whoever wrote it). */
+    manual(description: string): string;
   };
   /** What should be true of a subject, starting in lower case where the language allows. */
   expectation(subject: BugSubject, expectation: BugExpectation, negated: boolean): string;

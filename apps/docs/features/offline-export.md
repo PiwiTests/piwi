@@ -27,6 +27,16 @@ The **Export** button sits on a test-case execution (`/test-run-cases/:id`) and 
 
 A cluster export carries the most recent failing execution of each affected test.
 
+## Replay the failure in a browser
+
+A failed execution's **Export** also offers **Bug report (.piwibug)**: the failure as the
+[bug report file](/reference/bug-report-file) Piwi Picker writes, to play in your own browser with
+[Replay](./replay-a-bug-report#a-report-made-from-a-test-run). It holds the test's steps up to the failure, the failing
+assertion with its expected and received values, the failed requests, the console's errors and the failure
+screenshot. The line under it counts the steps, those done by hand and the calls of the test the steps leave out; the
+button's tooltip names those calls. **Steps (steps.json)**, under **Copy to clipboard**, copies the steps alone, to
+paste into Replay.
+
 ## What an export leaves out, and why it tells you
 
 Exports are bounded so one download cannot exhaust the server:

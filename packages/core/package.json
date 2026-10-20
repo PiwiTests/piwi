@@ -34,6 +34,7 @@
     "./page-key": "./src/page-key.ts",
     "./steps": "./src/steps.ts",
     "./bug-report": "./src/bug-report.ts",
+    "./execution-steps": "./src/execution-steps.ts",
     "./bug-phrases": "./src/bug-phrases.ts",
     "./locator-text-match": "./src/locator-text-match.ts",
     "./diff-anchors": "./src/diff-anchors.ts",

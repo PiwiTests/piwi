@@ -472,7 +472,11 @@ and its screenshot, outlined where the recording found its element (`piwi-replay
 records it as `manual`, **Skip this step** as `skipped`, **Stop here** as `diverged` and ends the replay. The panel
 also lists the element's recorded locators (the replay's own first, three at most), and the cursor overlay marks the
 elements they find on the page (`FakeCursor.marks`), looked for again every `HAND_OVER_LOOK_MS` while the person acts. The
-hand-over is in the replay's state, so it waits on the page the person's own action loads. A replay keeps its step
+hand-over is in the replay's state, so it waits on the page the person's own action loads. A `manual` step (a
+report made from a test run, `@piwitests/core/execution-steps`) is always handed over, with the line of the test it
+stands for; a step whose `pageUrl` is empty waits for no page. Such a report's `export` block names the step the test
+failed at; `readReportFile` reads it into `ReplayState.runFailedStep`, and `replayVerdict` says a stop there failed as
+in the run (`asInRun`) and a pass there did not reproduce it (`runStep`). A replay keeps its step
 screenshots in the worker's IndexedDB too: the start message carries the images of a chosen `.piwibug` (`views`), the
 recording's view ids (`recordingViews`), or asks to keep the last replay's (`keepViews`, Replay again); anything else
 clears them. For a report from the connected instance, the worker fetches a step's screenshot only when that step is

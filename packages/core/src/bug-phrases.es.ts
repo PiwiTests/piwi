@@ -133,6 +133,7 @@ const STATES: Record<BugState, [masculine: string, feminine: string]> = {
   hidden: ['oculto', 'oculta'],
   enabled: ['habilitado', 'habilitada'],
   disabled: ['deshabilitado', 'deshabilitada'],
+  checked: ['marcado', 'marcada'],
 };
 
 const number = (n: number): string => new Intl.NumberFormat('es').format(n);
@@ -164,6 +165,7 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
         ? `Vaciar ${phrase(s)}`
         : `Elegir ${files.length === 1 ? 'el archivo' : 'los archivos'} ${files.map(quote).join(', ')} en ${phrase(s)}`,
     dragTo: (s, target) => `Arrastrar ${phrase(s)} hasta ${phrase(target)}`,
+    manual: (description) => `A mano: ${description}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'no debería' : 'debería';
@@ -177,6 +179,10 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
         return `${text} ${should} llamarse ${quote(e.expected)}`;
       case 'url':
         return `la página ${should} ser ${markdownCode(e.expected)}`;
+      case 'contains':
+        return `${text} ${should} contener ${quote(e.expected)}`;
+      case 'count':
+        return `${text} ${should} corresponder a ${plural(e.count, 'elemento', 'elementos')}`;
       case 'state':
         return `${text} ${should} estar ${STATES[e.state][n.gender === 'feminine' ? 1 : 0]}`;
     }
@@ -204,6 +210,7 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
     actual: (v) => `Resultado: ${v}`,
     note: (text) => `Nota: ${text}`,
     viewport: (size, zoom) => `Ventana desde este paso: ${size}${zoom != null ? `, con zoom al ${percent(zoom)}` : ''}`,
+    failedInRun: 'El test falló aquí en la ejecución de la que sale este informe',
     expectedHeading: 'Resultado esperado y obtenido',
     nothingMarked: 'No se marcó nada como incorrecto.',
     expectedLine: (step, expectation, actual) =>
@@ -232,5 +239,9 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
     outlineHeading: 'Esquema de la página',
     outlineNote:
       'Creado por Piwi Picker a partir de la página; la forma YAML de una instantánea ARIA, no la de Playwright.',
+    notReplayedHeading: 'No reproducido',
+    notReplayedNote:
+      'Llamadas del test que estos pasos dejan fuera, así que ni Replay ni el test generado las ejecutan:',
+    notReplayedLine: (e) => `${e.call}${e.location ? ` en ${e.location}` : ''}: ${e.reason}`,
   },
 };

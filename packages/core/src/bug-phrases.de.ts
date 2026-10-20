@@ -142,6 +142,7 @@ const STATES: Record<BugState, string> = {
   hidden: 'ausgeblendet',
   enabled: 'nutzbar',
   disabled: 'ausgegraut',
+  checked: 'aktiviert',
 };
 
 const capitalize = (text: string): string => `${text.charAt(0).toLocaleUpperCase('de')}${text.slice(1)}`;
@@ -177,6 +178,7 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
             `${files.length === 1 ? 'die Datei' : 'die Dateien'} ${files.map(quote).join(', ')} ${inDative(s)} auswählen`,
           ),
     dragTo: (s, target) => capitalize(`${subject(s, 'accusative')} auf ${subject(target, 'accusative')} ziehen`),
+    manual: (description) => `Von Hand: ${description}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'sollte nicht' : 'sollte';
@@ -190,6 +192,10 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
         return `${text} ${should} ${quote(e.expected)} heißen`;
       case 'url':
         return `die Seite ${should} ${markdownCode(e.expected)} sein`;
+      case 'contains':
+        return `${text} ${should} ${quote(e.expected)} enthalten`;
+      case 'count':
+        return `${text} ${should} ${plural(e.count, 'Element', 'Elemente')} finden`;
       case 'state':
         return `${text} ${should} ${STATES[e.state]} sein`;
     }
@@ -215,6 +221,7 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
     actual: (v) => `Ergebnis: ${v}`,
     note: (text) => `Notiz: ${text}`,
     viewport: (size, zoom) => `Viewport ab diesem Schritt: ${size}${zoom != null ? `, Zoom ${percent(zoom)}` : ''}`,
+    failedInRun: 'Hier ist der Test in dem Lauf fehlgeschlagen, aus dem dieser Bericht stammt',
     expectedHeading: 'Erwartet und tatsächlich',
     nothingMarked: 'Nichts wurde als Fehler markiert.',
     expectedLine: (step, expectation, actual) =>
@@ -243,5 +250,8 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
     outlineHeading: 'Seitenstruktur',
     outlineNote:
       'Von Piwi Picker aus der Seite erstellt; die YAML-Form eines ARIA-Snapshots, nicht die von Playwright selbst.',
+    notReplayedHeading: 'Nicht wiedergegeben',
+    notReplayedNote: 'Aufrufe des Tests, die diese Schritte auslassen, sodass weder Replay noch der Test sie ausführt:',
+    notReplayedLine: (e) => `${e.call}${e.location ? ` in ${e.location}` : ''}: ${e.reason}`,
   },
 };

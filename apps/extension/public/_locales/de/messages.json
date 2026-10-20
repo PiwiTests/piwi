@@ -2785,6 +2785,12 @@
   "replay_foundDisabled": {
     "message": "ausgegraut"
   },
+  "replay_foundChecked": {
+    "message": "aktiviert"
+  },
+  "replay_foundUnchecked": {
+    "message": "nicht aktiviert"
+  },
   "replay_verdictReproduced": {
     "message": "Reproduziert: Der Bug tritt hier auf"
   },
@@ -2854,6 +2860,15 @@
   "replay_verdictNotReproducedDetail": {
     "message": "Alle erwarteten Ergebnisse treffen auf dieser Seite zu."
   },
+  "replay_verdictNotReproducedRun": {
+    "message": "Schritt $step$, an dem der Test in seinem Lauf fehlgeschlagen ist, ließ sich hier abspielen.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "replay_verdictDiverged": {
     "message": "Bug nicht erreicht: Abbruch bei Schritt $step$",
     "placeholders": {
@@ -2869,6 +2884,24 @@
       "reason": {
         "content": "$1",
         "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
+  "replay_verdictFailedAsInRun": {
+    "message": "Fehlgeschlagen bei Schritt $step$, wie im Testlauf",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictFailedAsInRunDetail": {
+    "message": "$reason$ Der Test ist in seinem Lauf an genau diesem Schritt fehlgeschlagen.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByRole('button', { name: 'Pay' })."
       }
     }
   },
@@ -2979,6 +3012,18 @@
   },
   "replay_reasonActionFailed": {
     "message": "Die Seite hat auf die Aktion nicht so reagiert wie bei der Aufzeichnung."
+  },
+  "replay_reasonManual": {
+    "message": "Der Test tut das auf eine Weise, die Replay nicht abspielen kann."
+  },
+  "replay_reasonManualAt": {
+    "message": "Der Test tut das in $location$ auf eine Weise, die Replay nicht abspielen kann.",
+    "placeholders": {
+      "location": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      }
+    }
   },
   "replay_reasonCovered": {
     "message": "$other$ verdeckt $element$ an der Stelle, auf die der Zeiger träfe.",
@@ -3201,6 +3246,24 @@
   },
   "replay_chooseFile": {
     "message": "Oder wählen Sie die .piwibug-Datei des Berichts oder seine steps.json, von Piwi Picker gespeichert:"
+  },
+  "replay_pasteSteps": {
+    "message": "Oder den Text einer steps.json einfügen, etwa die aus Piwi kopierten Schritte"
+  },
+  "replay_pasteLabel": {
+    "message": "Einzufügende Schritte"
+  },
+  "replay_pasteUse": {
+    "message": "Diese Schritte verwenden"
+  },
+  "replay_pasteNotSteps": {
+    "message": "Der eingefügte Text ist keine Schrittdatei: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "steps[2].action: is not a known action"
+      }
+    }
   },
   "replay_fromPiwi": {
     "message": "Oder ein Bug-Report von $project$ auf Piwi:",
@@ -5564,6 +5627,19 @@
       "files": {
         "content": "$1",
         "example": "invoice.pdf"
+      }
+    }
+  },
+  "codegen_manualStep": {
+    "message": "Schritt $step$ wird von Hand ausgeführt: $description$",
+    "placeholders": {
+      "description": {
+        "content": "$1",
+        "example": "Open the page the test writes itself"
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
       }
     }
   },

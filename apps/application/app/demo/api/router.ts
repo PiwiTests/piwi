@@ -124,7 +124,12 @@ import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
-import { apiExportTestRunCase, apiExportFailureCluster } from './export';
+import {
+  apiExecutionBugReport,
+  apiExecutionReplaySteps,
+  apiExportTestRunCase,
+  apiExportFailureCluster,
+} from './export';
 import {
   apiCreateReportSchedule,
   apiCreateReportSnapshot,
@@ -1894,6 +1899,22 @@ const routes: RouteEntry[] = [
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return apiExportTestRunCase(+m[1]!, q as URLSearchParams | undefined);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/piwibug$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiExecutionBugReport(+m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/replay-steps$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiExecutionReplaySteps(+m[1]!);
     },
   },
   {

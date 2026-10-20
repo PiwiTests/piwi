@@ -745,6 +745,7 @@ interface StartReplayMessage {
   inject?: unknown;
   startOn?: unknown;
   bugReportId?: unknown;
+  runFailedStep?: unknown;
   views?: unknown;
   recordingViews?: unknown;
   keepViews?: unknown;
@@ -773,7 +774,20 @@ async function startReplayNow(
         : null;
     const bugReportId =
       typeof message.bugReportId === 'number' && Number.isInteger(message.bugReportId) ? message.bugReportId : null;
-    const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage, bugReportId);
+    const failed = message.runFailedStep;
+    const runFailedStep =
+      typeof failed === 'number' && Number.isInteger(failed) && failed >= 0 && failed < parsed.steps.steps.length
+        ? failed
+        : null;
+    const replay = newReplayState(
+      parsed.steps,
+      origin,
+      message.stepMode === true,
+      Date.now(),
+      startPage,
+      bugReportId,
+      runFailedStep,
+    );
     // A replay under a request condition says so, while it runs and in its verdict.
     const conditions = await conditionsFor(tab, tab.url);
     await prepareReplayViews(message);
@@ -894,7 +908,10 @@ function handleReplayTab(message: { replayId?: unknown }, tab: chrome.tabs.Tab |
 async function stepOpenedTab(state: ReplayState, replayTabId: number, tab: chrome.tabs.Tab): Promise<boolean> {
   const steps = sessionFromSteps(state.steps, state.origin).steps;
   const handed = state.handOver?.step === state.position;
-  const pages = steps.slice(state.position, state.position + (handed ? 2 : 1)).map((s) => pageKey(s.pageUrl));
+  // A step whose page is not known (made from a test run, after a click that may navigate) names no page to follow.
+  const pages = steps
+    .slice(state.position, state.position + (handed ? 2 : 1))
+    .flatMap((s) => (s.pageUrl ? [pageKey(s.pageUrl)] : []));
   const there = tab.url ? pageKey(tab.url) : null;
   if (there === null || !pages.includes(there)) return false;
   const left = await chrome.tabs.get(replayTabId).catch(() => null);

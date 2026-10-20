@@ -172,6 +172,12 @@ Markdown, and writes the ZIP (fflate, so it runs in the demo's service worker to
 `ExportAssetReader` that fetches evidence bytes. `server/utils/trace-zip.ts` is unrelated — it stores rather than
 deflates and exists for trace-blob reconstruction.
 
+A failed execution's `.piwibug` (Piwi Picker's bug report file) is the same split again:
+`shared/handlers/execution-bug-report.ts` reads the execution and writes the archive, every entry stored, through the
+same `ExportAssetReader`; the conversion of the stored steps into a steps document is `bugReportFromExecution` in
+`@piwitests/core/execution-steps`, and the archive's text files come from `bugReportTextFiles`
+(`@piwitests/core/bug-report`), which Piwi Picker writes its own archives with.
+
 ## Front end
 
 ### Pages (`app/pages/`)

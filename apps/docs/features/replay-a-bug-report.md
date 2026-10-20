@@ -17,8 +17,11 @@ hand.
 
 - From the finished report, **Replay** plays it at once on the same site.
 - From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the
-  [`.piwibug` file](/reference/bug-report-file) (or the same file named `.zip`) or its `steps.json`, the report just
-  recorded in this browser, or, connected, one of the project's reports on Piwi.
+  [`.piwibug` file](/reference/bug-report-file) (or the same file named `.zip`) or its `steps.json`, the text of a
+  `steps.json` pasted in, the report just recorded in this browser, or, connected, one of the project's reports on
+  Piwi.
+- From a failed execution on the dashboard, **Export → Bug report (.piwibug)** makes a report from the test run
+  ([below](#a-report-made-from-a-test-run)), and **Steps (steps.json)** copies its steps to paste.
 
 The steps run on the tab's site, whichever site they were recorded on. A step that opens its page in a new tab, such as
 a link that opens an order beside the list, takes the replay to that tab, as the recording went on there.
@@ -33,6 +36,8 @@ visible, enabled and still. The replay ends with one of three answers:
 - **Not reproduced**: every expected result holds here.
 - **Could not reach the bug**: a step could not be played (it found no element, several, or a disabled one, or the
   flow ended on another page) and you stopped there. The data, the login or a flag differ here.
+- **Failed at step 4, as in the test run**: in a report made from a test run, the step that could not be played is
+  the one the test failed at.
 
 Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
 "POST /api/cart/coupon answered 500". For a report from Piwi, **Share result…** records the answer on the report, with
@@ -54,6 +59,23 @@ choose:
 - **Stop here**: it ends there, and says it could not reach the bug.
 
 Under the answer, the panel lists the steps played by hand.
+
+## A report made from a test run
+
+A `.piwibug` exported from a failed execution holds the test's steps up to the failure, setup hooks included, and its
+failing assertion with what it expected and what the run received. What the run did not keep enough of to play
+becomes a **manual step**, which Replay hands to you as above, with the line of the test it stands for: a click at a
+point of the page, a value the run kept only in part, a file choice, a check with a regular expression. API requests,
+scripts run in the page, route mocks and checks on values are not steps at all: the report's Markdown lists them under
+**Not replayed**, with why.
+
+When the test failed on an action rather than on an assertion, the report says which step; reaching it and failing
+there answers **Failed at step N, as in the test run**, and playing it answers **Not reproduced**. A typed password is
+never in the report: the step asks for it.
+
+A test run does not keep the page each step happened on once a click may have opened another, so Replay does not
+follow such a step into a new tab: it stays in the tab it started in, and a step the test played in a popup is handed
+to you.
 
 ## Trusted input
 
