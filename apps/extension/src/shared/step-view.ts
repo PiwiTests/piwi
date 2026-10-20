@@ -1,17 +1,18 @@
 import { highlightLocator } from '@piwitests/picker-dom';
-import { describeStepInWords } from '@piwitests/core/bug-report';
+import { describeStepInParts, type StepPart } from '@piwitests/core/bug-report';
 import type { BugPhrases } from '@piwitests/core/bug-phrases';
 import type { RecordedStep } from '@piwitests/core/recording';
 import { interfacePhrases } from './core-words.js';
 import { ICON_CSS, icon, type IconName } from './icons.js';
-import { urlParts, wordTokens, type WordToken } from './step-tokens.js';
+import { sentenceTokens, urlParts, type SentenceToken } from './sentence-tokens.js';
 
-export { urlParts } from './step-tokens.js';
+export { urlParts } from './sentence-tokens.js';
 
 /**
  * A step as the panels show it: a badge saying what kind of action it is, and
  * its words with what a reader looks for set apart: the names and values in
- * quotes, the keys, the addresses and the locators.
+ * quotes, the keys, the addresses and the locators. The parts come from core
+ * (`describeStepInParts`), which knows each one as it writes the sentence.
  */
 
 /** The kinds of step, each with its badge color: going somewhere, acting, typing or choosing, checking, by hand. */
@@ -48,7 +49,7 @@ export function stepBadge(step: RecordedStep): HTMLElement {
 export function stepWords(step: RecordedStep, phrases: BugPhrases = interfacePhrases()): HTMLElement {
   const words = document.createElement('span');
   words.className = 'piwi-step-words';
-  words.append(...richWords(describeStepInWords(step, phrases), step, phrases));
+  words.append(...describeStepInParts(step, phrases).map(partNode));
   return words;
 }
 
@@ -60,40 +61,36 @@ export function stepView(step: RecordedStep, phrases: BugPhrases = interfacePhra
   return view;
 }
 
-/** `text` as nodes, its parts set apart: see {@link wordTokens}. */
-export function richWords(text: string, step: RecordedStep | null, phrases: BugPhrases): Node[] {
-  return wordTokens(text, step, phrases).map(tokenNode);
-}
-
 /** A sentence that is no step, such as why a step failed: its locators, addresses and quoted texts set apart. */
 export function richText(text: string, phrases: BugPhrases = interfacePhrases()): Node[] {
-  return richWords(text, null, phrases);
+  return sentenceTokens(text, phrases).map(partNode);
 }
 
-function tokenNode(token: WordToken): Node {
-  switch (token.kind) {
+/** A part of a step or of a sentence as a node: code highlighted, a quoted text or a key in its own style. */
+function partNode(part: StepPart | SentenceToken): Node {
+  switch (part.kind) {
     case 'text':
-      return document.createTextNode(token.text);
+      return document.createTextNode(part.text);
     case 'url':
-      return urlView(token.text);
+      return urlView(part.text);
     case 'locator': {
       const code = document.createElement('code');
       code.className = 'piwi-loc piwi-inline';
-      code.innerHTML = highlightLocator(token.text);
+      code.innerHTML = highlightLocator(part.text);
       return code;
     }
     case 'code':
     case 'key': {
-      const code = document.createElement(token.kind === 'key' ? 'kbd' : 'code');
-      code.className = token.kind === 'key' ? 'piwi-kbd' : 'piwi-code';
-      code.textContent = token.text;
+      const code = document.createElement(part.kind === 'key' ? 'kbd' : 'code');
+      code.className = part.kind === 'key' ? 'piwi-kbd' : 'piwi-code';
+      code.textContent = part.text;
       return code;
     }
     default: {
-      const quoted = document.createElement('span');
-      quoted.className = `piwi-${token.kind}`;
-      quoted.textContent = token.text;
-      return quoted;
+      const span = document.createElement('span');
+      span.className = `piwi-${part.kind}`;
+      span.textContent = part.text;
+      return span;
     }
   }
 }
@@ -160,6 +157,7 @@ export const STEP_CSS = `
   .piwi-name { color: var(--piwi-name); font-weight: 600; }
   .piwi-value { color: var(--piwi-value); font-weight: 600; }
   .piwi-quote { font-weight: 600; }
+  .piwi-words { font-style: italic; }
   .piwi-kbd, .piwi-code, .piwi-url, .piwi-loc.piwi-inline {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em;
     padding: 0 4px; border-radius: 4px; background: var(--piwi-chip); border: 1px solid var(--piwi-chip-border);

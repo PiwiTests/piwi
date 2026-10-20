@@ -160,6 +160,7 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
   roles: ROLES,
   quote,
   code: markdownCode,
+  key,
   capitalize,
   steps: {
     goto: (url) => `${markdownCode(url)} öffnen`,

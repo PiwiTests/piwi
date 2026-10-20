@@ -740,11 +740,13 @@ found by its icon and its color before its words are read, and a step reads at a
   `copyWithFeedback` (and a passing text through `flashLabel`), which keeps the icon and flashes a check or a cross.
 - **A step is shown by `stepView(step)`** (`src/shared/step-view.ts`, its look in `STEP_CSS`): a badge by kind of
   action (going somewhere, acting, typing or choosing, checking, by hand) and its words with the quoted names, the typed
-  value, the key, the test ids, the addresses and the locators set apart. Never `describeStepInWords` shown as bare
-  text, nor with its backticks stripped. A sentence naming a locator, an address or a quoted text (why a step failed, a
-  verdict) goes through `richText`, an address alone through `urlView` (origin and query dimmed, path in front), a URL
-  pattern or a site through `patternView` (`src/shared/pattern-view.ts`, its wildcards set apart). The pure half,
-  `step-tokens.ts`, is unit-tested.
+  value, the key, the test ids, the addresses and the locators set apart. The parts come from core's
+  `describeStepInParts`, which knows each one as the phrasebook writes the sentence; never read them back out of
+  `describeStepInWords`, nor show it as bare text or with its backticks stripped (a plain caption joins the parts'
+  texts). A sentence that is no step and names a locator, an address or a quoted text (why a step failed, a verdict)
+  goes through `richText` (`sentence-tokens.ts`, unit-tested), an address alone through `urlView` (origin and query
+  dimmed, path in front), a URL pattern or a site through `patternView` (`src/shared/pattern-view.ts`, its wildcards
+  set apart).
 - **Colors are dark first, with the light scheme's under `prefers-color-scheme: light`**, as custom properties set on
   the surface's root; a surface dark in both schemes puts `piwi-dark` on an ancestor.
 

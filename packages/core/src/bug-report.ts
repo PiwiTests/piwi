@@ -302,43 +302,71 @@ function line(s: string): string {
   return s.replace(/\s+/g, ' ').replace(/</g, '&lt;').trim();
 }
 
+/** What kind of code a step names: an address, a locator, or other code (a test id). */
+export type StepCodeKind = 'url' | 'locator' | 'code';
+
+/**
+ * What a step's sentence takes from the step besides the phrasebook's own
+ * words: the page's names and texts, the values typed or expected, the files
+ * chosen, code, the key pressed and what a person wrote. {@link WORDS} writes
+ * them as the sentence shows them; {@link describeStepInParts} writes a
+ * stand-in for each, to find where the phrasebook put it.
+ */
+interface StepWriter {
+  /** A name or a text of the page, or a value typed or expected, on one line; a file's name as it is. */
+  text(kind: 'name' | 'value' | 'file', text: string): string;
+  /** A URL, a locator or a test id, as it is. */
+  code(kind: StepCodeKind, text: string): string;
+  /** A key's name, such as `ControlOrMeta+a`, which the phrasebook writes as keyboards print it. */
+  key(name: string): string;
+  /** What a person wrote, such as a manual step's description, on one line. */
+  words(text: string): string;
+}
+
+const WORDS: StepWriter = {
+  text: (kind, text) => (kind === 'file' ? text : line(text)),
+  code: (_kind, text) => text,
+  key: (name) => name,
+  words: line,
+};
+
 /**
  * How a report names an element: its role and name, its test id, its text, or
  * its tag. `byText: false` leaves out the names that come from its text, for an
  * assertion about that text: "Total: 50" should read "Total: 45" names the
  * element by the very value that is wrong.
  */
-function subjectOf(target: RecordedTarget | null, byText = true): BugSubject {
+function subjectOf(target: RecordedTarget | null, byText = true, w: StepWriter = WORDS): BugSubject {
   if (!target) return { kind: 'page' };
   const locator = target.alternatives[0]?.locator;
   if (!byText) {
-    if (target.testId) return { kind: 'testId', testId: target.testId };
-    if (locator) return { kind: 'locator', locator };
+    if (target.testId) return { kind: 'testId', testId: w.code('code', target.testId) };
+    if (locator) return { kind: 'locator', locator: w.code('locator', locator) };
     return { kind: 'element', role: target.role, tagName: target.tagName, definite: true };
   }
   if (target.role && target.accessibleName)
-    return { kind: 'named', role: target.role, name: line(target.accessibleName) };
-  if (target.accessibleName) return { kind: 'name', name: line(target.accessibleName) };
-  if (target.testId) return { kind: 'testId', testId: target.testId };
+    return { kind: 'named', role: target.role, name: w.text('name', target.accessibleName) };
+  if (target.accessibleName) return { kind: 'name', name: w.text('name', target.accessibleName) };
+  if (target.testId) return { kind: 'testId', testId: w.code('code', target.testId) };
   if (target.text)
-    return { kind: 'text', role: target.role, tagName: target.tagName, text: line(target.text.slice(0, 80)) };
-  if (locator) return { kind: 'locator', locator };
+    return { kind: 'text', role: target.role, tagName: target.tagName, text: w.text('name', target.text.slice(0, 80)) };
+  if (locator) return { kind: 'locator', locator: w.code('locator', locator) };
   return { kind: 'element', role: target.role, tagName: target.tagName, definite: false };
 }
 
-function expectationOf(a: StepAssertion): BugExpectation {
+function expectationOf(a: StepAssertion, w: StepWriter = WORDS): BugExpectation {
   const expected = a.expected ?? '';
   switch (a.matcher) {
     case 'toHaveText':
-      return { matcher: 'text', expected: line(expected) };
+      return { matcher: 'text', expected: w.text('value', expected) };
     case 'toHaveValue':
-      return { matcher: 'value', expected: line(expected) };
+      return { matcher: 'value', expected: w.text('value', expected) };
     case 'toHaveAccessibleName':
-      return { matcher: 'name', expected: line(expected) };
+      return { matcher: 'name', expected: w.text('value', expected) };
     case 'toHaveURL':
-      return { matcher: 'url', expected };
+      return { matcher: 'url', expected: w.code('url', expected) };
     case 'toContainText':
-      return { matcher: 'contains', expected: line(expected) };
+      return { matcher: 'contains', expected: w.text('value', expected) };
     case 'toHaveCount':
       return { matcher: 'count', count: Number.parseInt(expected, 10) || 0 };
     case 'toBeChecked':
@@ -354,21 +382,26 @@ function expectationOf(a: StepAssertion): BugExpectation {
   }
 }
 
-/** An expectation in plain words, such as `button "Apply" should read "Total: 42"`, in the phrasebook's language. */
-export function describeExpectation(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
+function expectationSentence(step: RecordedStep, phrases: BugPhrases, w: StepWriter): string {
   const a = step.assertion;
-  if (!a) return phrases.expectation(subjectOf(step.target), { matcher: 'state', state: 'visible' }, false);
+  if (!a) return phrases.expectation(subjectOf(step.target, true, w), { matcher: 'state', state: 'visible' }, false);
   const byText = a.matcher !== 'toHaveText' && a.matcher !== 'toHaveAccessibleName' && a.matcher !== 'toContainText';
-  return phrases.expectation(subjectOf(step.target, byText), expectationOf(a), !!a.negated);
+  return phrases.expectation(subjectOf(step.target, byText, w), expectationOf(a, w), !!a.negated);
 }
 
-/** A step in plain words, for a person reproducing it by hand, in the phrasebook's language. */
-export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
-  const target = subjectOf(step.target);
-  const value: BugStepValue = step.redacted ? { kind: 'password' } : { kind: 'text', text: line(step.value ?? '') };
+/** An expectation in plain words, such as `button "Apply" should read "Total: 42"`, in the phrasebook's language. */
+export function describeExpectation(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
+  return expectationSentence(step, phrases, WORDS);
+}
+
+function stepSentence(step: RecordedStep, phrases: BugPhrases, w: StepWriter): string {
+  const target = subjectOf(step.target, true, w);
+  const value: BugStepValue = step.redacted
+    ? { kind: 'password' }
+    : { kind: 'text', text: w.text('value', step.value ?? '') };
   switch (step.action) {
     case 'goto':
-      return phrases.steps.goto(step.value ?? step.pageUrl);
+      return phrases.steps.goto(w.code('url', step.value ?? step.pageUrl));
     case 'click':
       return phrases.steps.click(target);
     case 'hover':
@@ -382,19 +415,93 @@ export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = EN
     case 'selectOption':
       return phrases.steps.selectOption(target, value);
     case 'press':
-      return phrases.steps.press(step.value ?? 'Enter', step.target ? target : null);
+      return phrases.steps.press(w.key(step.value ?? 'Enter'), step.target ? target : null);
     case 'dblclick':
       return phrases.steps.dblclick(target);
     case 'setInputFiles':
-      return phrases.steps.setInputFiles(target, fileNames(step.value));
+      return phrases.steps.setInputFiles(
+        target,
+        fileNames(step.value).map((file) => w.text('file', file)),
+      );
     case 'dragTo':
-      return phrases.steps.dragTo(target, subjectOf(step.dropTarget ?? null));
+      return phrases.steps.dragTo(target, subjectOf(step.dropTarget ?? null, true, w));
     case 'assertVisible':
     case 'assert':
-      return phrases.capitalize(describeExpectation(step, phrases));
+      return phrases.capitalize(expectationSentence(step, phrases, w));
     case 'manual':
-      return phrases.steps.manual(line(step.manual?.description ?? ''));
+      return phrases.steps.manual(w.words(step.manual?.description ?? ''));
   }
+}
+
+/** A step in plain words, for a person reproducing it by hand, in the phrasebook's language. */
+export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
+  return stepSentence(step, phrases, WORDS);
+}
+
+/**
+ * A part of a step's sentence: the phrasebook's words (`text`), a name of the
+ * page, a value typed, expected or chosen (a file), each in its quotation marks
+ * as the sentence has it, the key pressed, a URL, a locator or a test id
+ * (`code`), or what a person wrote (`words`).
+ */
+export interface StepPart {
+  kind: 'text' | 'name' | 'value' | 'key' | 'words' | StepCodeKind;
+  text: string;
+}
+
+/** The first of the characters that stand in for a step's parts: Unicode's private use area, which no phrasebook writes. */
+const STAND_IN = 0xe000;
+
+/**
+ * A step's sentence, as {@link describeStepInWords} writes it, in its parts,
+ * for a surface that sets the names, values, keys and code apart. Each part
+ * comes from the step itself, never from reading the sentence again: the
+ * phrasebook writes the sentence around a stand-in for each, and the parts
+ * take their places. Joined, the parts read as the sentence without its
+ * Markdown code marks; a page's text keeps its `<`, which the sentence escapes
+ * for Markdown.
+ */
+export function describeStepInParts(step: RecordedStep, phrases: BugPhrases = ENGLISH): StepPart[] {
+  const parts: StepPart[] = [];
+  const standIn = (part: StepPart): string => {
+    parts.push(part);
+    return String.fromCharCode(STAND_IN + parts.length - 1);
+  };
+  const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+  const sentence = stepSentence(step, phrases, {
+    text: (kind, text) =>
+      standIn({ kind: kind === 'name' ? 'name' : 'value', text: kind === 'file' ? text : oneLine(text) }),
+    code: (kind, text) => standIn({ kind, text }),
+    key: (name) => standIn({ kind: 'key', text: phrases.key(name) }),
+    words: (text) => standIn({ kind: 'words', text: oneLine(text) }),
+  });
+
+  // Where each stand-in landed, with the quotation marks or the code marks the phrasebook put around it.
+  const placed: { start: number; end: number; part: StepPart }[] = [];
+  parts.forEach((part, i) => {
+    const mark = String.fromCharCode(STAND_IN + i);
+    const forms: [string, StepPart][] = [
+      [phrases.quote(mark), { ...part, text: phrases.quote(part.text) }],
+      [phrases.code(mark), part],
+      [mark, part],
+    ];
+    const form = forms.find(([written]) => sentence.includes(written));
+    if (!form) return;
+    for (let at = sentence.indexOf(form[0]); at !== -1; at = sentence.indexOf(form[0], at + form[0].length)) {
+      placed.push({ start: at, end: at + form[0].length, part: form[1] });
+    }
+  });
+  placed.sort((a, b) => a.start - b.start);
+
+  const out: StepPart[] = [];
+  let last = 0;
+  for (const { start, end, part } of placed) {
+    if (start > last) out.push({ kind: 'text', text: sentence.slice(last, start) });
+    out.push(part);
+    last = end;
+  }
+  if (last < sentence.length) out.push({ kind: 'text', text: sentence.slice(last) });
+  return out;
 }
 
 function formatTime(time: number): string {

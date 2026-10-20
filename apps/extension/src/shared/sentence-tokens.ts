@@ -1,29 +1,24 @@
 import { scanLocatorChain } from '@piwitests/core/locator-chain';
 import type { BugPhrases } from '@piwitests/core/bug-phrases';
-import type { RecordedStep } from '@piwitests/core/recording';
 
 /**
- * A step's words, or any sentence, cut into the parts a reader looks for:
- * addresses, locators, other code, the key of a press, and the quoted names
- * and values. The pure half of `step-view.ts`, which draws them.
+ * A sentence that is no step (why a step failed, a verdict) cut into the parts
+ * a reader looks for: addresses, locators, other code, and the quoted texts.
+ * The pure half of `richText` in `step-view.ts`; a step's own parts come from
+ * core (`describeStepInParts`).
  */
 
-export type WordToken = {
-  kind: 'text' | 'url' | 'locator' | 'code' | 'key' | 'name' | 'value' | 'quote';
+export type SentenceToken = {
+  kind: 'text' | 'url' | 'locator' | 'code' | 'quote';
   text: string;
 };
 
-/** One line of text, as core writes a quoted name or value. */
-const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
-
 /**
  * `text` as tokens: its Markdown code spans and its locators as code, then
- * the quoted names and values (`step`'s value told apart, any quote of a
- * sentence that is no step a `quote`), and outside the quotes the addresses
- * and the key of a press.
+ * its quoted texts, and outside the quotes its addresses.
  */
-export function wordTokens(text: string, step: RecordedStep | null, phrases: BugPhrases): WordToken[] {
-  const tokens: WordToken[] = [];
+export function sentenceTokens(text: string, phrases: BugPhrases): SentenceToken[] {
+  const tokens: SentenceToken[] = [];
   for (const part of splitCode(text)) {
     if (part.code) {
       tokens.push({ kind: codeKind(part.text), text: part.text });
@@ -31,7 +26,7 @@ export function wordTokens(text: string, step: RecordedStep | null, phrases: Bug
     }
     for (const piece of splitLocators(part.text)) {
       if (piece.code) tokens.push({ kind: 'locator', text: piece.text });
-      else tokens.push(...quotedTokens(piece.text, step, phrases));
+      else tokens.push(...quotedTokens(piece.text, phrases));
     }
   }
   return tokens;
@@ -122,56 +117,25 @@ function quoteMarks(phrases: BugPhrases): [string, string] {
   return [open.trim() || '"', close.trim() || '"'];
 }
 
-/** The key a press step names, as the phrasebook writes it (`Ctrl+A`), or null. */
-function pressedKey(step: RecordedStep, phrases: BugPhrases): string | null {
-  if (step.action !== 'press' || !step.value) return null;
-  const [before = '', after = ''] = phrases.steps.press('\u0000', null).split('\u0000');
-  const full = phrases.steps.press(step.value, null);
-  if (!full.startsWith(before) || !full.endsWith(after)) return null;
-  return full.slice(before.length, full.length - after.length) || null;
-}
-
-function quotedTokens(text: string, step: RecordedStep | null, phrases: BugPhrases): WordToken[] {
+function quotedTokens(text: string, phrases: BugPhrases): SentenceToken[] {
   const [open, close] = quoteMarks(phrases);
-  const value = step?.value != null && !step.redacted ? oneLine(step.value) : null;
-  const key = step ? pressedKey(step, phrases) : null;
-  const tokens: WordToken[] = [];
+  const tokens: SentenceToken[] = [];
   let rest = text;
   while (rest) {
     const start = rest.indexOf(open);
     const end = start === -1 ? -1 : rest.indexOf(close, start + open.length);
     if (start === -1 || end === -1) break;
-    tokens.push(...plainTokens(rest.slice(0, start), key));
-    const inner = rest.slice(start + open.length, end);
-    const kind = !step ? 'quote' : value !== null && oneLine(inner) === value ? 'value' : 'name';
-    tokens.push({ kind, text: rest.slice(start, end + close.length) });
+    tokens.push(...urlTokens(rest.slice(0, start)));
+    tokens.push({ kind: 'quote', text: rest.slice(start, end + close.length) });
     rest = rest.slice(end + close.length);
   }
-  tokens.push(...plainTokens(rest, key));
+  tokens.push(...urlTokens(rest));
   return tokens;
 }
 
-/** Text outside the quotes: its addresses, and the key of a press. */
-function plainTokens(text: string, key: string | null): WordToken[] {
-  return splitUrls(text).flatMap((part) =>
-    part.code ? [{ kind: 'url', text: part.text } as WordToken] : keyTokens(part.text, key),
-  );
-}
-
-/** Where `key` stands in `text` as a word of its own, not inside one (the P of "Press P"); -1 when it does not. */
-function keyIndex(text: string, key: string): number {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'u').exec(text)?.index ?? -1;
-}
-
-function keyTokens(text: string, key: string | null): WordToken[] {
-  const at = key ? keyIndex(text, key) : -1;
-  if (!key || at === -1) return text ? [{ kind: 'text', text }] : [];
-  const tokens: WordToken[] = [];
-  if (at > 0) tokens.push({ kind: 'text', text: text.slice(0, at) });
-  tokens.push({ kind: 'key', text: key });
-  if (at + key.length < text.length) tokens.push({ kind: 'text', text: text.slice(at + key.length) });
-  return tokens;
+/** Text outside the quotes, its addresses set apart. */
+function urlTokens(text: string): SentenceToken[] {
+  return splitUrls(text).map((part) => ({ kind: part.code ? 'url' : 'text', text: part.text }));
 }
 
 /** An address split into its origin, its path, and its query and fragment; text that is no address is all path. */

@@ -1,4 +1,4 @@
-import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInWords } from '@piwitests/core/bug-report';
+import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInParts } from '@piwitests/core/bug-report';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
@@ -181,7 +181,9 @@ const STYLE = `
 
 /** A step in plain words, without the Markdown code marks the report uses: for the cursor's caption. */
 function plainStepWords(step: RecordedStep): string {
-  return describeStepInWords(step, interfacePhrases()).replace(/`+/g, '');
+  return describeStepInParts(step, interfacePhrases())
+    .map((part) => part.text)
+    .join('');
 }
 
 function pathOf(url: string): string {
