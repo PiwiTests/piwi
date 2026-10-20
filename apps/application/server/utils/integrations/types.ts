@@ -12,6 +12,8 @@ export interface TrackerUser {
   id: string;
   displayName: string;
   email?: string | null;
+  /** The person's avatar: a URL on a public avatar host, or a path on the tracker's site. */
+  icon?: string | null;
 }
 
 export interface TrackerProject {

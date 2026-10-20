@@ -26,6 +26,7 @@ const props = defineProps<{
 }>();
 
 const model = defineModel<FieldValue | null | undefined>();
+const trackerIcon = useTrackerIcon();
 
 function set(value: unknown, label: string) {
   model.value = value == null || label === '' ? null : { value, label };
@@ -109,8 +110,13 @@ function addTag(text: string) {
 
 // ── People, searched among the project's assignable users ─────────────────────
 const people = ref<TrackerUserOption[]>([]);
-const peopleItems = computed(() => {
-  const items = people.value.map((u) => ({ label: u.displayName || u.id, value: u.id }));
+type PickerItem = { label: string; value: string; avatar?: AvatarProps };
+const peopleItems = computed((): PickerItem[] => {
+  const items: PickerItem[] = people.value.map((u) => ({
+    label: u.displayName || u.id,
+    value: u.id,
+    avatar: trackerIcon(props.connectionId, u.icon, 'round'),
+  }));
   // Keep the chosen people listed even before a search brings them back.
   const chosen = selectedPeople.value.filter((id) => !items.some((i) => i.value === id));
   const labels = (model.value?.label ?? '').split(', ');
@@ -122,6 +128,8 @@ const selectedPeople = computed(() => {
   const one = (v as { accountId?: string } | null)?.accountId;
   return one ? [one] : [];
 });
+/** The chosen person's avatar, once a search has listed them. */
+const personAvatar = computed(() => peopleItems.value.find((i) => i.value === selectedPeople.value[0])?.avatar);
 const personLabel = (id: string) => peopleItems.value.find((i) => i.value === id)?.label ?? id;
 const person = computed({
   get: () => selectedPeople.value[0],
@@ -161,9 +169,8 @@ const chosenIssueKey = computed(() => {
   const v = model.value?.value;
   return typeof v === 'string' ? v : ((v as { key?: string } | null | undefined)?.key ?? undefined);
 });
-const trackerIcon = useTrackerIcon();
 const issueItems = computed(() => {
-  const items: { label: string; value: string; avatar?: AvatarProps }[] = issues.value.map((i) => ({
+  const items: PickerItem[] = issues.value.map((i) => ({
     label: issueLabel(i),
     value: i.key,
     avatar: trackerIcon(props.connectionId, i.icon),
@@ -259,6 +266,7 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     v-else-if="field.kind === 'user'"
     v-model="person"
     :items="peopleItems"
+    :avatar="personAvatar"
     value-key="value"
     searchable
     placeholder="Search a person"

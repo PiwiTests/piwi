@@ -1188,6 +1188,8 @@ const JIRA_SCENE_ICONS = {
     '<rect width="16" height="16" rx="3" fill="#4bade8"/><path d="M4.5 8.2l2.3 2.3 4.7-5" stroke="#fff" stroke-width="2" fill="none"/>',
   '/icons/epic':
     '<rect width="16" height="16" rx="3" fill="#904ee2"/><path d="M9.5 3L5 9h3l-1.5 4L11 7H8z" fill="#fff"/>',
+  '/icons/person':
+    '<circle cx="8" cy="8" r="8" fill="#ff8b00"/><circle cx="8" cy="6.2" r="2.6" fill="#fff"/><path d="M3.5 13.5a4.5 4.5 0 019 0z" fill="#fff"/>',
   '/icons/project':
     '<rect width="16" height="16" rx="3" fill="#36b37e"/><path d="M4 11l3-6 2 4 1.5-2L12 11z" fill="#fff"/>',
 };
@@ -1219,7 +1221,9 @@ async function routeJiraScreen(page) {
   await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
     route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS } }),
   );
-  await page.route('**/api/integrations/connections/*/assignable*', (route) => route.fulfill({ json: { users: [] } }));
+  await page.route('**/api/integrations/connections/*/assignable*', (route) =>
+    route.fulfill({ json: { users: [{ id: 'acct-1', displayName: 'Dana Reyes', icon: jiraSceneIcon('person') }] } }),
+  );
   await page.route('**/api/integrations/connections/*/issue-picker*', (route) =>
     route.fulfill({
       json: {
@@ -2694,6 +2698,8 @@ const SCENES = [
       await page.locator('[data-shot="issue-line-create"]').first().click();
       const dialog = page.getByRole('dialog');
       await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
+      await dialog.getByText('Unassigned').click();
+      await page.getByRole('option', { name: 'Dana Reyes' }).click();
       await dialog.getByText('Add a field').click();
       await page.getByRole('option', { name: 'Parent', exact: true }).click();
       const parent = dialog.locator('[data-shot="create-issue-added-fields"] [data-field-id="parent"]');

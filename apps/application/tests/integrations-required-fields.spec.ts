@@ -89,6 +89,9 @@ const ICON_PATH = '/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303
 const ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#904ee2"/></svg>';
 
+/** A person's avatar on the site, as Jira serves one a person uploaded. */
+const USER_AVATAR_PATH = '/secure/useravatar?size=small&avatarId=10122';
+
 /** The issues the mock's issue picker finds: epics to parent a bug under. */
 const PICKER_ISSUES = [
   { key: 'PROJ-7', summary: 'Checkout epic' },
@@ -188,7 +191,19 @@ function startMockJira(port: number): MockJira {
     if (path === '/rest/api/3/issue/createmeta/PROJ/issuetypes/10004') {
       return send({ startAt: 0, maxResults: 100, total: BUG_SCREEN.length, fields: BUG_SCREEN });
     }
-    if (path === '/rest/api/3/user/assignable/search') return send([{ accountId: 'acct-2', displayName: 'Assignee' }]);
+    if (path === '/rest/api/3/user/assignable/search') {
+      return send([
+        {
+          accountId: 'acct-2',
+          displayName: 'Assignee',
+          avatarUrls: { '24x24': `http://127.0.0.1:${port}${USER_AVATAR_PATH}` },
+        },
+      ]);
+    }
+    if (`${path}${url.search}` === USER_AVATAR_PATH) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return res.end(ICON_SVG);
+    }
     if (path === '/rest/api/3/issue/picker') {
       const query = url.searchParams.get('query') ?? '';
       state.pickerQueries.push({ query, jql: url.searchParams.get('currentJQL') });
@@ -390,7 +405,9 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     });
   });
 
-  test("issue types carry Jira's icon, served through the connection and nothing else", async ({ request }) => {
+  test("issue types and people carry Jira's icons, served through the connection and nothing else", async ({
+    request,
+  }) => {
     const { issueTypes } = await (
       await request.get(`/api/integrations/connections/${connectionId}/projects/PROJ/issue-types`)
     ).json();
@@ -403,6 +420,16 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     expect(icon.headers()['content-type']).toBe('image/svg+xml');
     expect(icon.headers()['content-security-policy']).toContain('sandbox');
     expect(await icon.text()).toBe(ICON_SVG);
+
+    // A person's avatar comes the same way.
+    const { users } = await (
+      await request.get(`/api/integrations/connections/${connectionId}/assignable?project=PROJ&q=`)
+    ).json();
+    expect(users[0]).toMatchObject({ id: 'acct-2', icon: USER_AVATAR_PATH });
+    const avatar = await request.get(
+      `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent(USER_AVATAR_PATH)}`,
+    );
+    expect(avatar.status()).toBe(200);
 
     const other = await request.get(
       `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent('/rest/api/3/myself')}`,

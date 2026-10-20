@@ -228,7 +228,11 @@ async function loadDraft() {
     applyDraft(d);
     // The pickers name the project and the type, with their icons, rather than a bare key and id.
     void loadProjects();
-    if (projectKey.value) void loadIssueTypes();
+    if (projectKey.value) {
+      void loadIssueTypes();
+      // The prefilled assignee shows with its name and avatar rather than an account id.
+      if (assignee.value) void searchAssignable();
+    }
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -287,6 +291,7 @@ async function searchAssignable() {
       `/api/integrations/connections/${connectionId.value}/assignable?${params.toString()}`,
     );
     assignableUsers.value = users;
+    for (const u of users) seenUsers.set(u.id, u);
   } catch {
     /* the modal falls back to the prefilled assignee */
   }
@@ -311,7 +316,19 @@ const issueTypeItems = computed(() =>
 const projectAvatar = computed(() => projectItems.value.find((p) => p.value === projectKey.value)?.avatar);
 const issueTypeAvatar = computed(() => issueTypeItems.value.find((t) => t.value === issueType.value)?.avatar);
 
-const assigneeItems = computed(() => assignableUsers.value.map((u) => ({ label: u.displayName || u.id, value: u.id })));
+/** Every person a search listed, so the chosen assignee keeps its name and avatar after another search. */
+const seenUsers = reactive(new Map<string, TrackerUserOption>());
+const userItem = (u: TrackerUserOption) => ({
+  label: u.displayName || u.id,
+  value: u.id,
+  avatar: trackerIcon(connectionId.value, u.icon, 'round'),
+});
+const assigneeItems = computed(() => {
+  const items = assignableUsers.value.map(userItem);
+  const chosen = assignee.value ? seenUsers.get(assignee.value) : undefined;
+  return chosen && !items.some((i) => i.value === chosen.id) ? [userItem(chosen), ...items] : items;
+});
+const assigneeAvatar = computed(() => assigneeItems.value.find((i) => i.value === assignee.value)?.avatar);
 
 watch(open, (isOpen) => {
   if (isOpen) {
@@ -546,6 +563,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <USelectMenu
               v-model="assignee"
               :items="assigneeItems"
+              :avatar="assigneeAvatar"
               value-key="value"
               searchable
               :placeholder="assignee || 'Unassigned'"

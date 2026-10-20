@@ -19,7 +19,7 @@ import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
 import type { TrackerField } from '#shared/integrations/fields';
 import type { TrackerIssueOption } from '#shared/integrations/types';
 import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
-import { isJiraIconPath, jiraIconPath, MAX_ICON_BYTES } from './icons';
+import { isJiraIconPath, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
 import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
@@ -99,6 +99,7 @@ interface JiraUser {
   accountId?: string;
   displayName?: string;
   emailAddress?: string | null;
+  avatarUrls?: Record<string, string>;
 }
 
 interface JiraIssueResponse {
@@ -375,7 +376,12 @@ export class JiraClient implements IssueTracker {
     const data = await this.request<JiraUser[]>(`/rest/api/3/user/assignable/search?${params.toString()}`);
     return (data ?? [])
       .filter((u) => u.accountId)
-      .map((u) => ({ id: u.accountId ?? '', displayName: u.displayName ?? '', email: u.emailAddress ?? null }));
+      .map((u) => ({
+        id: u.accountId ?? '',
+        displayName: u.displayName ?? '',
+        email: u.emailAddress ?? null,
+        icon: jiraAvatar(u.avatarUrls?.['24x24'] ?? u.avatarUrls?.['16x16'], this.baseUrl),
+      }));
   }
 
   async pickIssues(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]> {

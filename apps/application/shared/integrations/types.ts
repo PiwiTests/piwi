@@ -133,6 +133,8 @@ export interface TrackerUserOption {
   id: string;
   displayName: string;
   email?: string | null;
+  /** The person's avatar, shown through the connection's icon route. */
+  icon?: string | null;
 }
 
 /** An issue a field can point at (a parent, an epic), for the create modal's issue picker. */
