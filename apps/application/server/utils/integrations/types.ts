@@ -104,7 +104,10 @@ export interface IssueTracker {
   searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]>;
   /** Issues matching a key or words of a summary, the project's first, for a field that points at an issue. */
   pickIssues?(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]>;
-  /** An icon the tracker serves behind its sign-in (an issue type's, a project's), by its path on the site. */
+  /**
+   * An icon the tracker serves behind its sign-in (an issue type's, a project's), by its path on the site.
+   * Null when there is no such image; throws when the tracker cannot answer for now.
+   */
   fetchIcon?(path: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;

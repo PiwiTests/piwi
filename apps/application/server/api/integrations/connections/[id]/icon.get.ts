@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Read a tracker icon',
     description:
-      "An icon the tracker serves behind its own sign-in — an issue type's, a project's avatar — fetched through the connection, so the create-issue modal shows it to a reader who is not signed in to Jira. `path` is the icon's path on the site, as the pickers return it; only Jira's icon and avatar paths are served. A person's avatar on Atlassian's public avatar service or Gravatar is passed as its URL and fetched without the connection's credentials, so the browser never calls a third party. Cached for an hour. Requires `issue:create` on at least one project (Contributor and above).",
+      "An icon the tracker serves behind its own sign-in — an issue type's, a project's avatar — fetched through the connection, so the create-issue modal shows it to a reader who is not signed in to Jira. `path` is the icon's path on the site, as the pickers return it; only Jira's icon and avatar paths are served. A person's avatar on Atlassian's public avatar service or Gravatar is passed as its URL and fetched without the connection's credentials, so the browser never calls a third party. An icon found missing is remembered for an hour; one the tracker could not serve for now (an outage, a rate limit) is not, and answers 502. Cached for an hour. Requires `issue:create` on at least one project (Contributor and above).",
     'x-required-permission': 'issue:create',
   },
 });
@@ -26,18 +26,18 @@ export default eventHandler(async (event) => {
 
   const cacheKey = `${id}:${path}`;
   let icon = iconCache.get(cacheKey);
-  if (icon === undefined && external) {
-    icon = await fetchExternalAvatar(path).catch(() => null);
-    iconCache.set(cacheKey, icon);
-  } else if (icon === undefined) {
-    const db = await getDatabase();
-    const tracker = await createTracker(db, id);
-    if (!tracker) throw apiError({ statusCode: 404, message: 'Connection not found or has no credentials' });
-    try {
-      icon = (await tracker.fetchIcon?.(path)) ?? null;
-    } catch {
-      icon = null;
+  if (icon === undefined) {
+    const tracker = external ? null : await createTracker(await getDatabase(), id);
+    if (!external && !tracker) {
+      throw apiError({ statusCode: 404, message: 'Connection not found or has no credentials' });
     }
+    try {
+      icon = external ? await fetchExternalAvatar(path) : ((await tracker!.fetchIcon?.(path)) ?? null);
+    } catch {
+      // Unavailable for now (a timeout, a rate limit, an outage): not remembered, so the next view asks again.
+      throw apiError({ statusCode: 502, message: 'The tracker could not serve this icon right now' });
+    }
+    // Only an answer that there is no such image is remembered as missing.
     iconCache.set(cacheKey, icon);
   }
   if (!icon) throw apiError({ statusCode: 404, message: 'Icon not found' });

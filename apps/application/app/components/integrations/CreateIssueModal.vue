@@ -135,14 +135,23 @@ const addableFields = computed(() =>
 function addField(field: TrackerField) {
   addedFields.value = [...addedFields.value, field];
 }
-/** Removing an added field drops its value for this issue: the project's default, if any, applies again. */
-function removeField(id: string) {
-  addedFields.value = addedFields.value.filter((f) => f.id !== id);
-  const fallback = draft.value?.fieldValues?.[id];
-  if (fallback) fieldValues.value = { ...fieldValues.value, [id]: fallback };
+/**
+ * Removing added fields drops the values set for this issue: the project's
+ * default, if any, applies again, and nothing else is sent for them.
+ */
+function removeFields(ids: string[]) {
+  addedFields.value = addedFields.value.filter((f) => !ids.includes(f.id));
+  const next = { ...fieldValues.value };
+  for (const id of ids) {
+    const fallback = draft.value?.fieldValues?.[id];
+    if (fallback) next[id] = fallback;
+    else delete next[id];
+  }
+  fieldValues.value = next;
 }
-// Another project or issue type has another screen: the fields added for this one go.
-watch([connectionId, projectKey, issueType], () => (addedFields.value = []));
+const removeField = (id: string) => removeFields([id]);
+// Another project or issue type has another screen: the fields added for this one go, with their values.
+watch([connectionId, projectKey, issueType], () => removeFields(addedFields.value.map((f) => f.id)));
 /** Optional project defaults that ride along without being asked for: "Components to Checkout". */
 const projectDefaultsLine = computed(() =>
   joinFieldNames(
