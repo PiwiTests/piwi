@@ -19,6 +19,10 @@ import { renderSessionTab } from './panel-session.js';
 import { setUpViewportRow } from './panel-viewport.js';
 import { SESSION_KEY } from '../shared/session-storage.js';
 import { patternOrigin } from '../shared/web-origin.js';
+import { decorateIcons } from '../shared/icons.js';
+import { STEP_CSS } from '../shared/step-view.js';
+import { PATTERN_CSS } from '../shared/pattern-view.js';
+import { button, iconLine, noAccessText } from './ui.js';
 
 /**
  * The Piwi panel in DevTools. It mirrors what runs on the page, from the same
@@ -101,29 +105,27 @@ async function togglePlaywrightView(): Promise<void> {
   const injected = await injectContentScript('playwright-view.js');
   if (injected.ok) return;
   const pattern = sitePattern(await inspectedOrigin());
-  const text = document.createElement('span');
   if (!pattern) {
-    text.textContent = t('devtools_restricted');
-    notice.replaceChildren(text);
+    notice.replaceChildren(iconLine('blocked', '', t('devtools_restricted')));
     return;
   }
-  text.textContent = t('devtools_noAccess', { site: patternOrigin(pattern) });
-  const allow = document.createElement('button');
-  allow.type = 'button';
-  allow.className = 'primary';
-  allow.textContent = t('devtools_allowSite');
-  allow.addEventListener('click', () => {
-    void requestSiteAccess(pattern).then((granted) => {
-      if (!granted) return;
-      notice.replaceChildren();
-      void injectContentScript('playwright-view.js');
-    });
+  const text = iconLine('lock', '', ...noAccessText(patternOrigin(pattern)));
+  const allow = button(
+    t('devtools_allowSite'),
+    () => {
+      void requestSiteAccess(pattern).then((granted) => {
+        if (!granted) return;
+        notice.replaceChildren();
+        void injectContentScript('playwright-view.js');
+      });
+    },
+    { icon: 'check', tone: 'primary' },
+  );
+  const dismiss = button(t('common_close'), () => notice.replaceChildren(), {
+    icon: 'close',
+    iconOnly: true,
+    tone: 'ghost',
   });
-  const dismiss = document.createElement('button');
-  dismiss.type = 'button';
-  dismiss.className = 'link';
-  dismiss.textContent = t('common_close');
-  dismiss.addEventListener('click', () => notice.replaceChildren());
   notice.replaceChildren(text, allow, dismiss);
 }
 
@@ -152,9 +154,7 @@ function wireViewport(): void {
     if (!open || set) return;
     set = true;
     void setUpViewportRow(inspectedTab, (text) => {
-      const line = document.createElement('span');
-      line.textContent = text;
-      notice.replaceChildren(line);
+      notice.replaceChildren(iconLine('alert', 'warn-text', text));
     });
   });
 }
@@ -179,8 +179,9 @@ async function start(): Promise<void> {
   document.documentElement.lang = uiLanguage();
   localizeDocument();
   const style = document.createElement('style');
-  style.textContent = LOCATOR_SYNTAX_CSS;
+  style.textContent = `${LOCATOR_SYNTAX_CSS}${STEP_CSS}${PATTERN_CSS}`;
   document.head.appendChild(style);
+  decorateIcons();
 
   document.getElementById('playwright-view')!.addEventListener('click', () => void togglePlaywrightView());
   document.getElementById('save-login')!.addEventListener('click', () => void openSaveLogin());

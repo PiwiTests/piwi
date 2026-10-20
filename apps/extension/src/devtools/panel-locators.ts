@@ -3,7 +3,8 @@ import { formatNumber, t, tn } from '../shared/i18n.js';
 import { patternOrigin } from '../shared/web-origin.js';
 import { requestSiteAccess } from './inspected.js';
 import { callPageScript, revealMatch } from './page-script.js';
-import { button, el, emptyState } from './ui.js';
+import { icon } from '../shared/icons.js';
+import { button, el, emptyState, iconLine, noAccessText } from './ui.js';
 
 /**
  * The Locators tab: the locator console beside DevTools. A locator typed here
@@ -19,9 +20,16 @@ const LISTED = 50;
 
 let expression = '';
 
-function matchLabel(match: LocatorMatch): string {
-  if (!match.role) return `<${match.tag}>`;
-  return match.name ? `${match.role} · ${match.name}` : match.role;
+/** What a match is: its role on a chip and its name, or its tag when it has no role. */
+function matchView(match: LocatorMatch): HTMLElement {
+  const words = el('div', 'step-words');
+  if (!match.role) {
+    words.appendChild(el('code', 'role', `<${match.tag}>`));
+    return words;
+  }
+  words.appendChild(el('span', 'role', match.role));
+  if (match.name) words.append(' · ', el('span', 'match-name', match.name));
+  return words;
 }
 
 export function renderLocatorsTab(container: HTMLElement): void {
@@ -46,7 +54,7 @@ export function renderLocatorsTab(container: HTMLElement): void {
     expression = input.value.trim();
     if (!expression) {
       verdict.replaceChildren();
-      results.replaceChildren(el('p', 'view-note', t('devtools_locatorsHint')));
+      results.replaceChildren(iconLine('info', 'view-note', t('devtools_locatorsHint')));
       void callPageScript('highlight', null);
       return;
     }
@@ -65,11 +73,9 @@ export function renderLocatorsTab(container: HTMLElement): void {
             if (granted) void run();
           });
         },
-        'primary',
+        { icon: 'check', tone: 'primary' },
       );
-      results.replaceChildren(
-        emptyState('lock', t('devtools_noAccess', { site: patternOrigin(answer.pattern) }), allow),
-      );
+      results.replaceChildren(emptyState('lock', noAccessText(patternOrigin(answer.pattern)), allow));
       return;
     }
     const result = answer.value;
@@ -81,30 +87,37 @@ export function renderLocatorsTab(container: HTMLElement): void {
       results.replaceChildren();
       return;
     }
-    verdict.className = result.count === 1 ? 'status good-text' : 'status warn-text';
-    verdict.textContent =
+    verdict.className = result.count === 1 ? 'status icon-line good-text' : 'status icon-line warn-text';
+    const said = el('span');
+    said.textContent =
       result.count === 1
-        ? `✓ ${t('console_unique')}`
+        ? t('console_unique')
         : result.count === 0
           ? t('console_none')
-          : `⚠ ${tn('console_many', result.count)}`;
+          : tn('console_many', result.count);
+    verdict.replaceChildren(
+      icon(result.count === 1 ? 'check-circle' : result.count === 0 ? 'x-circle' : 'alert'),
+      said,
+    );
     const list = el('ol', 'steps matches');
     list.setAttribute('aria-label', t('devtools_matches'));
-    const revealNote = el('p', 'view-note warn-text');
+    const revealNote = el('div', 'reveal-note');
     revealNote.setAttribute('aria-live', 'polite');
     result.matches.forEach((match, index) => {
       const row = el('li');
-      row.append(el('span', 'glyph'), el('div', 'step-words', matchLabel(match)));
+      row.append(el('span', 'glyph'), matchView(match));
       if (match.text && match.text !== match.name) row.appendChild(el('div', 'detail', match.text));
       const reveal = button(
         t('devtools_reveal'),
         () => {
-          revealNote.textContent = '';
+          revealNote.replaceChildren();
           void revealMatch(index).then((revealed) => {
-            if (!revealed) revealNote.textContent = t('devtools_revealFailed');
+            if (!revealed) {
+              revealNote.replaceChildren(iconLine('alert', 'view-note warn-text', t('devtools_revealFailed')));
+            }
           });
         },
-        'link reveal',
+        { icon: 'pointer', tone: 'ghost', className: 'reveal' },
       );
       row.appendChild(reveal);
       const on = () => void callPageScript('highlight', index);

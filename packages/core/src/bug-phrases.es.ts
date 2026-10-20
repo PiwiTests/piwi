@@ -149,6 +149,7 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
   roles: ROLES,
   quote,
   code: markdownCode,
+  key,
   capitalize: (text) => `${text.charAt(0).toLocaleUpperCase('es')}${text.slice(1)}`,
   steps: {
     goto: (url) => `Abrir ${markdownCode(url)}`,

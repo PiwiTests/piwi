@@ -14,7 +14,6 @@ import {
   BUG_REPORT_EXTENSION,
   BUG_REPORT_MEDIA_TYPE,
   bugContextFrom,
-  describeStepInWords,
   emptyBugEvidence,
   expectedSteps,
   renderBugSpec,
@@ -75,6 +74,9 @@ import { attachPanelShadow } from './panel-root.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { activePathPrefixes } from '../shared/active-project.js';
 import { openSendPreview, SEND_DIALOG_HOST_ID, sendTarget } from './bug-send-panel.js';
+import { BUTTON_CSS, makeButton, styleButton, type ButtonOptions } from '../shared/buttons.js';
+import type { IconName } from '../shared/icons.js';
+import { richText, STEP_CSS, stepView, urlView } from '../shared/step-view.js';
 
 /**
  * The bug recording's page UI: its HUD, the three ways to say what is wrong
@@ -145,18 +147,19 @@ function reportLanguage(): ReportLanguage {
 const PANEL_CSS = `
   ${SHARED_STYLE}
   ${LOCATOR_SYNTAX_CSS}
+  ${BUTTON_CSS}
+  ${STEP_CSS}
   .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 6vh; }
   .panel { background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px; width: min(640px, 92vw); max-height: 86vh;
     overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
   @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
   .panel { color-scheme: dark; }
+  .panel:focus { outline: none; }
   option { background: #1f2937; color: #f9fafb; }
   @media (prefers-color-scheme: light) { .panel { color-scheme: light; } option { background: #ffffff; color: #111827; } }
   .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
   .title { font-weight: 600; font-size: 14px; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
   .sub { color: #9ca3af; font-size: 12px; overflow-wrap: anywhere; }
-  .close { background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px; }
-  .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
   label { display: block; font-size: 11.5px; color: #9ca3af; margin: 10px 0 4px; overflow-wrap: anywhere; }
   input, select { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 6px;
     border: 1px solid rgba(128,128,128,.4); background: rgba(128,128,128,.1); color: inherit; }
@@ -165,16 +168,13 @@ const PANEL_CSS = `
   .message { color: #fca5a5; font-size: 12px; margin-top: 8px; min-height: 1em; }
   .message:empty { display: none; }
   .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
-  button.action { background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
-    border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
-  button.action:hover, button.action:focus-visible { background: rgba(128,128,128,.25); }
-  button.action.primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
-  button.action.danger:hover, button.action.danger:focus-visible { background: rgba(248,113,113,.2); border-color: #f87171; }
-  .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 240px; overflow: auto; margin: 10px 0; }
-  .step { padding: 6px 10px; font-size: 12px; border-bottom: 1px solid rgba(128,128,128,.15); display: flex; gap: 8px; }
+  .actions .discard { margin-inline-start: auto; }
+  .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 260px; overflow: auto; margin: 10px 0; }
+  .step { padding: 6px 10px; font-size: 12.5px; border-bottom: 1px solid rgba(128,128,128,.15); display: flex; gap: 8px; align-items: flex-start; }
   .step:last-child { border-bottom: none; }
-  .step-idx { color: #9ca3af; flex-shrink: 0; width: 20px; }
-  .step.marked { background: rgba(239,68,68,.1); }
+  .step-idx { color: #9ca3af; flex-shrink: 0; min-width: 18px; text-align: end; font-size: 11px; padding-top: 3px; font-variant-numeric: tabular-nums; }
+  .step .piwi-step { flex: 1; }
+  .step.marked { background: rgba(239,68,68,.1); box-shadow: inset 3px 0 0 #ef4444; }
   .step-actual { color: #fca5a5; }
   .evidence { font-size: 12px; color: #9ca3af; }
   .warn { color: #fca5a5; font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
@@ -386,6 +386,7 @@ export function openRecordDialog<T>(
   title: string,
   build: (parts: DialogParts) => { focus: HTMLElement; submit: () => T | null | Promise<T | null> },
   submitLabel: string = t('bug_addToReport'),
+  submitIcon: IconName = 'flag',
 ): Promise<T | null> {
   document.getElementById(BUG_DIALOG_HOST_ID)?.remove();
   const host = document.createElement('div');
@@ -428,12 +429,10 @@ export function openRecordDialog<T>(
   actions.className = 'actions';
   const addBtn = document.createElement('button');
   addBtn.type = 'submit';
-  addBtn.className = 'action primary';
   addBtn.textContent = submitLabel;
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'action';
-  cancelBtn.textContent = t('common_cancel');
+  styleButton(addBtn, { icon: submitIcon, tone: 'primary', className: 'action primary' });
+  let cancel = (): void => undefined;
+  const cancelBtn = makeButton(t('common_cancel'), () => cancel(), { icon: 'close', className: 'action' });
   actions.append(addBtn, cancelBtn);
   form.append(message, actions);
   panel.append(heading, form);
@@ -452,13 +451,13 @@ export function openRecordDialog<T>(
       resolve(value);
     };
     removed.observe(document, { childList: true, subtree: true });
+    cancel = () => close(null);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       void Promise.resolve(submit()).then((value) => {
         if (value != null) close(value);
       });
     });
-    cancelBtn.addEventListener('click', () => close(null));
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) close(null);
     });
@@ -696,7 +695,7 @@ function wrongPageDialog(): Promise<StepAssertion | null> {
   return openRecordDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
     const sub = document.createElement('div');
     sub.className = 'sub';
-    sub.textContent = t('bug_youAreOn', { path: here });
+    sub.append(...tNodes('bug_youAreOn', { path: urlView(here) }));
     form.appendChild(sub);
     const expected = input(location.pathname, '/checkout/thanks');
     field(t('bug_pageShouldBe'), expected);
@@ -839,16 +838,15 @@ function stepRow(step: RecordedStep, index: number): HTMLElement {
   row.className = step.action === 'assert' ? 'step marked' : 'step';
   const idx = document.createElement('span');
   idx.className = 'step-idx';
-  idx.textContent = String(index + 1);
-  const text = document.createElement('span');
-  text.textContent = describeStepInWords(step, interfacePhrases());
-  row.append(idx, text);
+  idx.textContent = formatNumber(index + 1);
+  const view = stepView(step);
+  row.append(idx, view);
   const assertion = step.assertion;
   if (step.action === 'assert' && assertion?.actual != null) {
     const shown = document.createElement('span');
     shown.className = 'step-actual';
-    shown.textContent = ` · ${actualInWords(assertion.matcher, assertion.actual)}`;
-    text.appendChild(shown);
+    shown.append(' · ', ...richText(actualInWords(assertion.matcher, assertion.actual)));
+    view.querySelector('.piwi-step-words')?.appendChild(shown);
   }
   return row;
 }
@@ -911,6 +909,9 @@ export function renderBugHud(
   const style = document.createElement('style');
   style.textContent = `
     ${SHARED_STYLE}
+    ${LOCATOR_SYNTAX_CSS}
+    ${BUTTON_CSS}
+    ${STEP_CSS}
     .bar { display: flex; flex-direction: column; gap: 8px; background: #111827; color: #f9fafb; border-radius: 12px;
       padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4); font-size: 12.5px; width: 360px; max-width: calc(100vw - 32px); }
     @media (prefers-color-scheme: light) {
@@ -921,18 +922,20 @@ export function renderBugHud(
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
     @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
     .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
-    .steps { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; max-height: 150px; overflow: auto; }
-    .step { display: flex; gap: 6px; overflow-wrap: anywhere; }
-    .step-idx { color: #9ca3af; width: 16px; flex-shrink: 0; text-align: right; }
-    .step.marked { color: #fca5a5; }
+    .steps { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; max-height: 170px; overflow: auto; }
+    .step { display: flex; gap: 6px; overflow-wrap: anywhere; align-items: flex-start; }
+    .step-idx { color: #9ca3af; width: 16px; flex-shrink: 0; text-align: right; padding-top: 2px; font-variant-numeric: tabular-nums; }
+    .step .piwi-step { flex: 1; gap: 6px; }
+    .step .piwi-step-badge { width: 18px; height: 18px; }
+    .step .piwi-step-badge .piwi-icon { width: 12px; height: 12px; }
+    .step.marked .piwi-step-words { color: #fca5a5; }
     .step-actual { opacity: .85; }
-    button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
-      border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
-    button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
-    button.finish { background: #dc2626; border-color: #dc2626; color: #fff; margin-left: auto; }
+    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .buttons .piwi-btn { justify-content: flex-start; }
+    .buttons .finish { grid-column: 1 / -1; justify-content: center; }
     .evidence { color: #9ca3af; font-size: 11px; overflow-wrap: anywhere; }
     .warn { color: #fca5a5; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
-    @media (prefers-color-scheme: light) { .warn, .step.marked { color: #b91c1c; } .evidence, .step-idx { color: #6b7280; } }
+    @media (prefers-color-scheme: light) { .warn, .step.marked .piwi-step-words { color: #b91c1c; } .evidence, .step-idx { color: #6b7280; } }
   `;
   const bar = document.createElement('div');
   bar.className = 'bar';
@@ -964,22 +967,20 @@ export function renderBugHud(
   }
 
   const buttons = document.createElement('div');
-  buttons.className = 'row';
-  const button = (action: keyof BugHudHandlers, label: string, className = '') => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
+  buttons.className = 'buttons';
+  const button = (action: keyof BugHudHandlers, label: string, options: ButtonOptions) => {
+    const b = makeButton(label, () => handlers[action](), { small: true, ...options });
     b.dataset.action = action;
-    if (className) b.className = className;
-    b.addEventListener('click', () => handlers[action]());
     buttons.appendChild(b);
     return b;
   };
-  button('mark', t('bug_mark')).title = t('bug_markHint');
-  button('missing', t('bug_missing')).title = t('bug_missingHint');
-  button('wrongPage', t('bug_wrongPage')).title = t('bug_wrongPageHint');
-  if (evidence.debugging?.state === 'on') button('screenshot', t('bug_screenshot')).title = t('bug_screenshotHint');
-  button('finish', t('bug_finish'), 'finish');
+  button('mark', t('bug_mark'), { icon: 'flag', title: t('bug_markHint') });
+  button('missing', t('bug_missing'), { icon: 'missing', title: t('bug_missingHint') });
+  button('wrongPage', t('bug_wrongPage'), { icon: 'globe', title: t('bug_wrongPageHint') });
+  if (evidence.debugging?.state === 'on') {
+    button('screenshot', t('bug_screenshot'), { icon: 'camera', title: t('bug_screenshotHint') });
+  }
+  button('finish', t('bug_finish'), { icon: 'check', tone: 'success', className: 'finish' });
   bar.appendChild(buttons);
 
   const summary = document.createElement('div');
@@ -1071,10 +1072,12 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   const heading = document.createElement('div');
   heading.className = 'title';
   heading.textContent = tn('bug_finishTitle', initial.steps.steps.length);
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', t('common_close'));
-  closeBtn.textContent = '×';
+  const closeBtn = makeButton(t('common_close'), () => closePanel(), {
+    icon: 'close',
+    iconOnly: true,
+    tone: 'ghost',
+    className: 'close',
+  });
   header.append(heading, closeBtn);
   panel.appendChild(header);
 
@@ -1139,20 +1142,18 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
 
   const actions = document.createElement('div');
   actions.className = 'actions';
-  const action = (label: string, className: string, onClick: (btn: HTMLButtonElement) => void) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `action ${className}`.trim();
-    b.textContent = label;
-    b.addEventListener('click', () => onClick(b));
+  const action = (label: string, options: ButtonOptions, onClick: (btn: HTMLButtonElement) => void) => {
+    const b: HTMLButtonElement = makeButton(label, () => onClick(b), options);
     actions.appendChild(b);
     return b;
   };
-  action(t('bug_copyTest'), 'primary', (b) => void copyToClipboard(renderBugSpec(report()).code, b)).title =
-    t('bug_copyTestHint');
-  action(t('bug_copyReport'), '', (b) => void copyToClipboard(bugReportMarkdown(report(), reportLanguage()), b)).title =
-    t('bug_copyReportHint');
-  action(t('bug_downloadReport'), '', () => {
+  action(t('bug_copyTest'), { icon: 'code', tone: 'primary', title: t('bug_copyTestHint') }, (b) => {
+    void copyToClipboard(renderBugSpec(report()).code, b);
+  });
+  action(t('bug_copyReport'), { icon: 'copy', title: t('bug_copyReportHint') }, (b) => {
+    void copyToClipboard(bugReportMarkdown(report(), reportLanguage()), b);
+  });
+  action(t('bug_downloadReport'), { icon: 'download', title: t('bug_downloadReportHint') }, () => {
     const current = report();
     downloadBlob(
       new Blob([bugReportArchive(current, screenshots, reportLanguage(), stepImages) as BlobPart], {
@@ -1160,7 +1161,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
       }),
       `piwi-bug-${fileStamp(current.context.time)}.${BUG_REPORT_EXTENSION}`,
     );
-  }).title = t('bug_downloadReportHint');
+  });
 
   const controller = new AbortController();
   const closePanel = () => {
@@ -1169,7 +1170,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   };
   const replayMessage = document.createElement('div');
   replayMessage.className = 'warn';
-  action(t('bug_replay'), '', (b) => {
+  action(t('bug_replay'), { icon: 'play', title: t('bug_replayHint') }, (b) => {
     b.disabled = true;
     void (async () => {
       let response: { ok: boolean; error?: string } | undefined;
@@ -1192,8 +1193,8 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
         replayMessage.textContent = response?.error ?? t('common_replayStartFailed');
       }
     })();
-  }).title = t('bug_replayHint');
-  const sendBtn = action(t('bug_sendToPiwi'), '', () => {
+  });
+  const sendBtn = action(t('bug_sendToPiwi'), { icon: 'send', title: t('bug_sendToPiwiHint') }, () => {
     void sendTarget().then((target) => {
       if (!target.project) {
         replayMessage.textContent = t('bug_sendNoProject');
@@ -1208,9 +1209,10 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
       });
     });
   });
-  sendBtn.title = t('bug_sendToPiwiHint');
   sendBtn.hidden = true;
-  action(t('common_discard'), 'danger', () => void onDiscard().then(closePanel, closePanel));
+  action(t('common_discard'), { icon: 'trash', tone: 'remove', className: 'discard' }, () => {
+    void onDiscard().then(closePanel, closePanel);
+  });
   panel.append(actions, replayMessage);
 
   const local = document.createElement('div');
@@ -1223,7 +1225,6 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
     local.textContent = t('bug_staysLocalUntilSent');
   });
 
-  closeBtn.addEventListener('click', closePanel);
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) closePanel();
   });

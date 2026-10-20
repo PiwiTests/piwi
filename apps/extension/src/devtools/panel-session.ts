@@ -1,10 +1,11 @@
 import { highlightLocator } from '@piwitests/picker-dom';
+import { copyWithFeedback } from '../shared/clipboard.js';
 import { t, tn } from '../shared/i18n.js';
 import { renderFixture, renderJson, renderMarkdown } from '../shared/session-export.js';
 import { clearSessionPicks, getSessionPicks, removeSessionPick } from '../shared/session-storage.js';
-import { copyText } from './inspected.js';
+import { urlView } from '../shared/step-view.js';
 import { viewHead } from './panel-record.js';
-import { button, el, emptyState, flash } from './ui.js';
+import { button, el, emptyState } from './ui.js';
 
 /**
  * The Session tab: the elements named so far with Add to session in the
@@ -12,18 +13,10 @@ import { button, el, emptyState, flash } from './ui.js';
  * Markdown table or JSON.
  */
 
-function pathOf(url: string): string {
-  try {
-    return new URL(url).pathname;
-  } catch {
-    return url;
-  }
-}
-
 export async function renderSessionTab(container: HTMLElement): Promise<void> {
   const picks = await getSessionPicks();
   if (picks.length === 0) {
-    container.replaceChildren(emptyState('select', t('devtools_sessionEmpty')));
+    container.replaceChildren(emptyState('pointer', t('devtools_sessionEmpty')));
     return;
   }
   const copies = [
@@ -32,31 +25,28 @@ export async function renderSessionTab(container: HTMLElement): Promise<void> {
     [t('session_copyJson'), () => renderJson(picks)],
   ] as const;
   const actions: HTMLElement[] = copies.map(([label, render], i) => {
-    const copy = button(
-      label,
-      () => {
-        void copyText(render()).then((copied) => {
-          if (copied) flash(copy, t('common_copied'));
-        });
-      },
-      i === 0 ? 'primary' : '',
-    );
+    const copy = button(label, () => void copyWithFeedback(render(), copy), {
+      icon: 'copy',
+      ...(i === 0 ? { tone: 'primary' as const } : {}),
+    });
     return copy;
   });
-  actions.push(button(t('session_clear'), () => void clearSessionPicks(), 'danger'));
+  actions.push(button(t('session_clear'), () => void clearSessionPicks(), { icon: 'trash', tone: 'remove' }));
 
   const list = el('ol', 'steps');
   for (const pick of picks) {
     const row = el('li');
     const code = el('code', 'piwi-loc');
     code.innerHTML = highlightLocator(pick.locator);
-    row.append(
-      el('span', 'glyph'),
-      el('div', 'step-words', pick.name),
-      code,
-      el('div', 'detail', pathOf(pick.pageUrl)),
-    );
-    const remove = button(t('devtools_remove'), () => void removeSessionPick(pick.name), 'link reveal');
+    const page = el('div', 'detail');
+    page.appendChild(urlView(pick.pageUrl, { origin: false }));
+    row.append(el('span', 'glyph'), el('div', 'step-words pick-name', pick.name), code, page);
+    const remove = button(t('devtools_remove'), () => void removeSessionPick(pick.name), {
+      icon: 'trash',
+      tone: 'remove',
+      small: true,
+      className: 'reveal',
+    });
     remove.setAttribute('aria-label', t('session_remove', { name: pick.name }));
     row.appendChild(remove);
     list.appendChild(row);

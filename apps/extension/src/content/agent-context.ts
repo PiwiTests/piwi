@@ -1,9 +1,38 @@
 import { reportedRequestUrl } from '@piwitests/core/bug-report';
 import { checkLocators, rankElement, type CheckedLocator } from './verified-locators.js';
 
+/** What a part of the block is, for the panel to set it apart: the copy is the parts' text alone. */
+export type ContextPartKind =
+  | 'plain'
+  | 'head'
+  | 'label'
+  | 'url'
+  | 'tag'
+  | 'attr'
+  | 'string'
+  | 'score'
+  | 'locator'
+  | 'note';
+
+export interface ContextPart {
+  kind: ContextPartKind;
+  text: string;
+}
+
+/** A line of the block, as its parts. */
+export type ContextLine = ContextPart[];
+
+const part = (kind: ContextPartKind, text: string): ContextPart => ({ kind, text });
+
+/** The block as the agent receives it: each line's parts, joined. */
+export function contextText(lines: readonly ContextLine[]): string {
+  return lines.map((line) => line.map((p) => p.text).join('')).join('\n');
+}
+
 /**
  * Bundles the page's address, a compact element summary, and every ranked
- * locator alternative into one paste-able block for an AI coding agent.
+ * locator alternative into one paste-able block for an AI coding agent: its
+ * lines as parts, which the panel sets apart and `contextText` joins.
  *
  * Addresses, the page's and a link's `href`, are written as a bug report
  * writes them (`reportedRequestUrl`): ids collapsed, query values removed,
@@ -18,7 +47,7 @@ import { checkLocators, rankElement, type CheckedLocator } from './verified-loca
  * Depends on generateAlternatives, tested via the real built bundle (see
  * agent-context-panel.ts), same as assertion-suggest.ts/lint-scan.ts.
  */
-export function buildAgentContext(el: Element, pageUrl: string): string {
+export function buildAgentContext(el: Element, pageUrl: string): ContextLine[] {
   function normalizeText(s: string): string {
     return s.replace(/\s+/g, ' ').trim();
   }
@@ -40,18 +69,26 @@ export function buildAgentContext(el: Element, pageUrl: string): string {
   }
 
   /** What the page says about a locator, for the agent: nothing for one finding the element alone. */
-  function note(locator: CheckedLocator): string {
+  function note(locator: CheckedLocator): ContextPart[] {
     switch (locator.verdict) {
       case 'narrowed':
-        return ` (narrowed from ${locator.from!.locator}, which finds ${locator.from!.count} elements)`;
+        return [
+          part('note', ' (narrowed from '),
+          part('locator', locator.from!.locator),
+          part('note', `, which finds ${locator.from!.count} elements)`),
+        ];
       case 'position':
-        return ` (by position: ${locator.from!.locator} finds ${locator.from!.count} elements)`;
+        return [
+          part('note', ' (by position: '),
+          part('locator', locator.from!.locator),
+          part('note', ` finds ${locator.from!.count} elements)`),
+        ];
       case 'ambiguous':
-        return ` (finds ${locator.count} elements on this page)`;
+        return [part('note', ` (finds ${locator.count} elements on this page)`)];
       case 'unchecked':
-        return ' (not checked on this page)';
+        return [part('note', ' (not checked on this page)')];
       default:
-        return '';
+        return [];
     }
   }
 
@@ -59,27 +96,54 @@ export function buildAgentContext(el: Element, pageUrl: string): string {
   const ranked = checkLocators(el, candidates, { keepAmbiguous: true });
   const text = normalizeText(el.textContent ?? '');
 
-  const attrLine = Object.entries(attrs.attributes)
-    .filter(([, v]) => v != null)
-    .map(([k, v]) => `${k}="${attributeValue(k, v!)}"`)
-    .join(' ');
+  const lines: ContextLine[] = [
+    [part('head', '## Piwi element context')],
+    [],
+    [part('label', 'Page:'), part('plain', ' '), part('url', pageAddress(pageUrl))],
+    [],
+  ];
 
-  const lines: string[] = ['## Piwi element context', '', `Page: ${pageAddress(pageUrl)}`, ''];
+  const nameBits: ContextPart[][] = [];
+  if (role) nameBits.push([part('plain', `role: ${role}`)]);
+  if (accessibleName) nameBits.push([part('plain', 'accessible name: '), part('string', `"${accessibleName}"`)]);
+  lines.push([
+    part('label', 'Element:'),
+    part('plain', ' '),
+    part('tag', `<${attrs.tagName}>`),
+    ...(nameBits.length > 0
+      ? [part('plain', ' — '), ...nameBits.flatMap((bit, i) => (i > 0 ? [part('plain', ', '), ...bit] : bit))]
+      : []),
+  ]);
 
-  const nameBits = [role ? `role: ${role}` : null, accessibleName ? `accessible name: "${accessibleName}"` : null]
-    .filter(Boolean)
-    .join(', ');
-  lines.push(`Element: <${attrs.tagName}>${nameBits ? ` — ${nameBits}` : ''}`);
-  if (attrLine) lines.push(`Attributes: ${attrLine}`);
-  if (text) lines.push(`Text: "${text}"`);
+  const attributes = Object.entries(attrs.attributes).filter((entry): entry is [string, string] => entry[1] != null);
+  if (attributes.length > 0) {
+    lines.push([
+      part('label', 'Attributes:'),
+      ...attributes.flatMap(([k, v]) => [
+        part('plain', ' '),
+        part('attr', k),
+        part('plain', '='),
+        part('string', `"${attributeValue(k, v)}"`),
+      ]),
+    ]);
+  }
+  if (text) lines.push([part('label', 'Text:'), part('plain', ' '), part('string', `"${text}"`)]);
 
-  lines.push('');
+  lines.push([]);
   if (ranked.length > 0) {
-    lines.push('Ranked locators (best first):');
-    for (const [i, r] of ranked.entries()) lines.push(`${i + 1}. [${r.score}] ${r.locator}${note(r)}`);
+    lines.push([part('label', 'Ranked locators (best first):')]);
+    for (const [i, r] of ranked.entries()) {
+      lines.push([
+        part('note', `${i + 1}. `),
+        part('score', `[${r.score}]`),
+        part('plain', ' '),
+        part('locator', r.locator),
+        ...note(r),
+      ]);
+    }
   } else {
-    lines.push('No stable locator alternative could be generated for this element.');
+    lines.push([part('plain', 'No stable locator alternative could be generated for this element.')]);
   }
 
-  return lines.join('\n');
+  return lines;
 }

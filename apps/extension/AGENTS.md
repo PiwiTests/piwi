@@ -620,6 +620,11 @@ pane to the Elements panel (`devtools-sidebar.html`, `src/devtools/sidebar.ts`).
 they have `chrome.scripting`, `chrome.permissions` and `chrome.storage` as well as `chrome.devtools`. Both pages
 share `src/devtools/devtools.css` (DevTools' own look: 12px type, flat toolbars, the theme through the frame's color
 scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (buttons, empty states and their icons).
+`button()` there is the shared `makeButton` (`src/shared/buttons.ts`: an icon from `src/shared/icons.ts` and a tone),
+which `devtools.css` draws compact through its `data-tone` rules; a button of the HTML pages names its icon in
+`data-icon` and its tone in `data-tone`. A step is drawn by `stepView`, an address by `urlView`, and a URL pattern or
+a site's address by `patternView` (`src/shared/pattern-view.ts`), with `STEP_CSS` and `PATTERN_CSS` in the page's
+style.
 
 - **The selection reaches the ranking through `inspectedWindow.eval`.** The pane injects `devtools-rank.js` into the
   inspected tab (`src/devtools/selection.ts`) and calls `__piwiRankSelected($0)` with `useContentScriptContext`, so
@@ -708,6 +713,42 @@ the focus on its first control, Tab kept inside, and the focus given back as it 
 Assertions, Context for an AI agent, Test functions). **A copy button goes through `copyWithFeedback`**
 (`src/shared/clipboard.ts`, extension pages too): the copy command when the clipboard API refuses, Copied or Not copied
 for a moment, and the button's own label back however often it is clicked.
+
+## Buttons, icons and readable steps
+
+Every surface (the in-page panels, the popup, the settings, Save login, DevTools) is built the same way, so a button is
+found by its icon and its color before its words are read, and a step reads at a glance:
+
+- **Every button has an icon** from `src/shared/icons.ts` (`ICONS`: outline glyphs on a 24 × 24 grid, drawn in
+  `currentColor`, built as DOM so no page's policy can block them) in front of its label. An icon-only button (a
+  panel's close ×) carries its label as `aria-label` and tooltip. A new icon goes into `ICONS` in the same style,
+  its box centered on the grid (`icons.spec.ts` measures every glyph); never SVG markup written elsewhere, an icon font
+  or an image. An icon lands on whole pixels: its size is even (16 in a button, 14 in a small one and in a step badge)
+  and so is what is left of its box around it, a row it sits in with text having a line height in whole pixels.
+- **A button is made by `makeButton(label, onClick, { icon, tone, small, iconOnly, title, className })`**, or given
+  the same look by `styleButton` when made elsewhere (a link included), from `src/shared/buttons.ts`, and styled by
+  `BUTTON_CSS` in the panel's `<style>`: a panel does not style its own buttons. An HTML page names the icon in
+  `data-icon` (and the tone in `data-tone`) and calls `decorateIcons()` after `localizeDocument()`, which writes the
+  texts.
+- **The tone says what a button does:** `primary` (violet), the surface's main action, one per group; `success`
+  (green), what completes or goes on with a flow (Finish, I did it, continue); `danger` (solid red), what stops what
+  runs (Stop); `remove` (red text), what discards or takes away (Discard, Remove, Unpair, Disconnect), set apart at the
+  end of its row; `neutral`, any other, its icon in the accent color; `ghost`, a close button or a small inline action.
+- **A verdict, a warning or a status line leads with its icon** (`check-circle`, `alert`, `x-circle`…) in its color,
+  and a count is a badge.
+- **A label changes through `setLabel`**, never `textContent`, which drops the icon. A copy goes through
+  `copyWithFeedback` (and a passing text through `flashLabel`), which keeps the icon and flashes a check or a cross.
+- **A step is shown by `stepView(step)`** (`src/shared/step-view.ts`, its look in `STEP_CSS`): a badge by kind of
+  action (going somewhere, acting, typing or choosing, checking, by hand) and its words with the quoted names, the typed
+  value, the key, the test ids, the addresses and the locators set apart. The parts come from core's
+  `describeStepInParts`, which knows each one as the phrasebook writes the sentence; never read them back out of
+  `describeStepInWords`, nor show it as bare text or with its backticks stripped (a plain caption joins the parts'
+  texts). A sentence that is no step and names a locator, an address or a quoted text (why a step failed, a verdict)
+  goes through `richText` (`sentence-tokens.ts`, unit-tested), an address alone through `urlView` (origin and query
+  dimmed, path in front), a URL pattern or a site through `patternView` (`src/shared/pattern-view.ts`, its wildcards
+  set apart).
+- **Colors are dark first, with the light scheme's under `prefers-color-scheme: light`**, as custom properties set on
+  the surface's root; a surface dark in both schemes puts `piwi-dark` on an ancestor.
 
 ## Rules
 

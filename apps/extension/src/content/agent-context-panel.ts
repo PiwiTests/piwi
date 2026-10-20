@@ -9,12 +9,26 @@ import {
   toolIsCurrent,
   waitForGlobal,
 } from '../shared/tool-session.js';
-import { installPickerOverlay, removePickerOverlay, type PickerOverlayArg } from '@piwitests/picker-dom';
-import { buildAgentContext } from './agent-context.js';
+import {
+  highlightLocator,
+  installPickerOverlay,
+  LOCATOR_SYNTAX_CSS,
+  removePickerOverlay,
+  type PickerOverlayArg,
+} from '@piwitests/picker-dom';
+import {
+  buildAgentContext,
+  contextText,
+  type ContextLine,
+  type ContextPart,
+  type ContextPartKind,
+} from './agent-context.js';
 import { attachPanelShadow } from './panel-root.js';
 import { pickerOverlayStrings } from './picker-strings.js';
 import { holdFocus } from './modal-panel.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { STEP_CSS, urlView } from '../shared/step-view.js';
 
 const HOST_ID = 'piwi-agent-context-host';
 
@@ -24,7 +38,39 @@ function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
 }
 
-function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
+/** The style of each kind of part of the block. */
+const PART_CLASSES: Record<Exclude<ContextPartKind, 'plain' | 'url' | 'locator'>, string> = {
+  head: 'ctx-head',
+  label: 'ctx-label',
+  tag: 'ctx-tag',
+  attr: 'ctx-attr',
+  string: 'ctx-string',
+  score: 'ctx-score',
+  note: 'ctx-dim',
+};
+
+/** A part of the block as a node: an address and a locator highlighted, any other part in its style. */
+function partNode({ kind, text }: ContextPart): Node {
+  if (kind === 'plain') return document.createTextNode(text);
+  if (kind === 'url') return urlView(text);
+  const span = document.createElement('span');
+  if (kind === 'locator') {
+    span.className = 'piwi-loc';
+    span.innerHTML = highlightLocator(text);
+  } else {
+    span.className = PART_CLASSES[kind];
+    span.textContent = text;
+  }
+  return span;
+}
+
+/** The block, line by line, its parts set apart; its text is the copy's, character for character. */
+function contextNodes(lines: readonly ContextLine[]): Node[] {
+  return lines.flatMap((line, i) => [...(i > 0 ? [document.createTextNode('\n')] : []), ...line.map(partNode)]);
+}
+
+function renderContextPanel(lines: ContextLine[], toolEpoch: number): Promise<void> {
+  const context = contextText(lines);
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -42,6 +88,9 @@ function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
 
   const style = document.createElement('style');
   style.textContent = `
+    ${LOCATOR_SYNTAX_CSS}
+    ${BUTTON_CSS}
+    ${STEP_CSS}
     :host { all: initial; }
     * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
     .backdrop {
@@ -56,28 +105,34 @@ function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
     .header > div { min-width: 0; }
+    .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; overflow-wrap: anywhere; hyphens: auto; }
-    @media (prefers-color-scheme: light) {
-      .sub { color: #6b7280; }
-    }
-    .close {
-      background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
-      line-height: 1; padding: 4px 8px; border-radius: 6px;
-    }
-    .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
     pre {
       background: rgba(128,128,128,.1); border: 1px solid rgba(128,128,128,.3); border-radius: 8px;
-      padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow: auto; margin: 0 0 10px 0;
+      padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word; max-height: 56vh; overflow: auto; margin: 0;
     }
-    button.copy {
-      background: #7c3aed; color: #fff; border: 1px solid #7c3aed; border-radius: 6px;
-      padding: 7px 14px; font: inherit; font-size: 12.5px; cursor: pointer;
+    pre .piwi-loc, pre .piwi-url { font-family: inherit; }
+    pre .piwi-url { font-size: inherit; padding: 0; border: 0; background: none; }
+    .ctx-head { font-weight: 700; color: #c4b5fd; }
+    .ctx-label { color: #9ca3af; }
+    .ctx-dim { color: #9ca3af; }
+    .ctx-score {
+      color: #c4b5fd; font-weight: 600; font-variant-numeric: tabular-nums;
     }
-    button.copy:hover, button.copy:focus-visible { background: #6d28d9; }
+    .ctx-tag { color: #f87171; font-weight: 600; }
+    .ctx-attr { color: #93c5fd; }
+    .ctx-string { color: #86efac; }
+    @media (prefers-color-scheme: light) {
+      .sub, .ctx-label, .ctx-dim { color: #6b7280; }
+      .ctx-head, .ctx-score { color: #6d28d9; }
+      .ctx-tag { color: #b91c1c; }
+      .ctx-attr { color: #1d4ed8; }
+      .ctx-string { color: #15803d; }
+    }
   `;
   root.appendChild(style);
 
@@ -100,25 +155,22 @@ function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
   sub.className = 'sub';
   sub.textContent = `${t('agent_hint')} · ${t('common_escToClose')}`;
   titleWrap.append(title, sub);
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', t('common_close'));
-  closeBtn.textContent = '×';
-  header.append(titleWrap, closeBtn);
+  const headerActions = document.createElement('div');
+  headerActions.className = 'header-actions';
+  const copyBtn = makeButton(t('common_copy'), () => void copyWithFeedback(context, copyBtn), {
+    icon: 'copy',
+    tone: 'primary',
+    className: 'copy',
+  });
+  headerActions.append(copyBtn);
+  header.append(titleWrap, headerActions);
   panel.appendChild(header);
 
   const pre = document.createElement('pre');
   // The block is written for a coding agent, in English, whatever the interface language.
   pre.lang = 'en';
-  pre.textContent = context;
+  pre.append(...contextNodes(lines));
   panel.appendChild(pre);
-
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'copy';
-  copyBtn.type = 'button';
-  copyBtn.textContent = t('common_copy');
-  copyBtn.addEventListener('click', () => void copyWithFeedback(context, copyBtn));
-  panel.appendChild(copyBtn);
 
   return new Promise<void>((resolve) => {
     let releaseFocus = () => {};
@@ -136,7 +188,9 @@ function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
       releaseFocus();
       resolve();
     });
-    closeBtn.addEventListener('click', finish);
+    headerActions.append(
+      makeButton(t('common_close'), finish, { icon: 'close', iconOnly: true, tone: 'ghost', className: 'close' }),
+    );
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
     });
@@ -174,8 +228,8 @@ async function runAgentContextPanel(): Promise<void> {
     removePickerOverlay();
 
     const el = g.__piwiPickedElement as Element;
-    const context = buildAgentContext(el, location.href);
-    await renderContextPanel(context, toolEpoch);
+    const lines = buildAgentContext(el, location.href);
+    await renderContextPanel(lines, toolEpoch);
   } finally {
     // A flow another tool took over from leaves the pick globals to that tool.
     if (toolIsCurrent(toolEpoch)) clearPickGlobals();

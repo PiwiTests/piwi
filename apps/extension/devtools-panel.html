@@ -8,18 +8,18 @@
   <body class="panel">
     <header class="toolbar">
       <div role="tablist" aria-label="Piwi">
-        <button type="button" role="tab" id="tab-record" data-tab="record" aria-controls="content" data-i18n="devtools_tabRecord">Record</button>
-        <button type="button" role="tab" id="tab-replay" data-tab="replay" aria-controls="content" data-i18n="devtools_tabReplay">Replay</button>
-        <button type="button" role="tab" id="tab-network" data-tab="network" aria-controls="content" data-i18n="devtools_tabNetwork">Network</button>
-        <button type="button" role="tab" id="tab-locators" data-tab="locators" aria-controls="content" data-i18n="devtools_tabLocators">Locators</button>
-        <button type="button" role="tab" id="tab-session" data-tab="session" aria-controls="content" data-i18n="devtools_tabSession">Session</button>
+        <button type="button" role="tab" id="tab-record" data-tab="record" aria-controls="content" data-i18n="devtools_tabRecord" data-icon="record">Record</button>
+        <button type="button" role="tab" id="tab-replay" data-tab="replay" aria-controls="content" data-i18n="devtools_tabReplay" data-icon="replay">Replay</button>
+        <button type="button" role="tab" id="tab-network" data-tab="network" aria-controls="content" data-i18n="devtools_tabNetwork" data-icon="network">Network</button>
+        <button type="button" role="tab" id="tab-locators" data-tab="locators" aria-controls="content" data-i18n="devtools_tabLocators" data-icon="search">Locators</button>
+        <button type="button" role="tab" id="tab-session" data-tab="session" aria-controls="content" data-i18n="devtools_tabSession" data-icon="list">Session</button>
       </div>
       <div class="tools">
-        <button type="button" id="viewport-toggle" aria-expanded="false" aria-controls="viewport-row" data-i18n="devtools_viewport">
+        <button type="button" id="viewport-toggle" aria-expanded="false" aria-controls="viewport-row" data-i18n="devtools_viewport" data-i18n-title="devtools_viewport" data-icon="viewport">
           Viewport
         </button>
-        <button type="button" id="playwright-view" data-i18n="devtools_playwrightView">Playwright view</button>
-        <button type="button" id="save-login" data-i18n="devtools_saveLogin">Save login for tests</button>
+        <button type="button" id="playwright-view" data-i18n="devtools_playwrightView" data-i18n-title="devtools_playwrightView" data-icon="eye">Playwright view</button>
+        <button type="button" id="save-login" data-i18n="devtools_saveLogin" data-i18n-title="devtools_saveLogin" data-icon="login">Save login for tests</button>
       </div>
     </header>
     <form id="viewport-row" class="subbar" hidden>
@@ -30,12 +30,12 @@
         ×
         <input id="viewport-height" type="number" min="200" max="4000" value="844" aria-label="Height" data-i18n-aria-label="devtools_viewportHeight" />
       </span>
-      <button type="submit" data-i18n="devtools_viewportOpen">Open in a new window</button>
-      <button type="button" id="viewport-here" data-i18n="devtools_viewportHere" hidden>In this tab</button>
+      <button type="submit" data-i18n="devtools_viewportOpen" data-icon="external" data-tone="primary">Open in a new window</button>
+      <button type="button" id="viewport-here" data-i18n="devtools_viewportHere" data-icon="viewport" hidden>In this tab</button>
       <span class="note" id="viewport-note" data-i18n="devtools_viewportOnly">Viewport only: no touch, pixel ratio or user agent.</span>
       <span class="note viewport-current" id="viewport-current" hidden>
         <span id="viewport-current-text"></span>
-        <button type="button" id="viewport-reset" class="link" data-i18n="devtools_viewportReset">Back to the window’s size</button>
+        <button type="button" id="viewport-reset" data-i18n="devtools_viewportReset" data-icon="undo" data-tone="ghost">Back to the window’s size</button>
       </span>
     </form>
     <div id="notice" aria-live="polite"></div>

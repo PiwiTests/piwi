@@ -13,9 +13,14 @@ import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shar
 import { injectionFailureText } from '../shared/injection-failure.js';
 import { getReplayState, getReplayTab } from '../shared/replay-storage.js';
 import { originPattern, webOrigin } from '../shared/web-origin.js';
+import { ICON_CSS, decorateIcons, icon, iconText, type IconName } from '../shared/icons.js';
 
 await initI18n();
 localizeDocument();
+const iconStyle = document.createElement('style');
+iconStyle.textContent = ICON_CSS;
+document.head.appendChild(iconStyle);
+decorateIcons();
 // The "running" mark after a tile's label is drawn by CSS.
 document.documentElement.style.setProperty('--piwi-running', JSON.stringify(` ·  ${t('popup_running')}`));
 
@@ -34,6 +39,11 @@ const bugBtn = document.getElementById('report-bug') as HTMLButtonElement;
 const bugLabel = document.getElementById('report-bug-label')!;
 const bugHint = document.getElementById('report-bug-hint')!;
 const replayBtn = document.getElementById('replay-bug') as HTMLButtonElement;
+/** The status line, filled only when a tool cannot run here: why, after a warning icon. */
+function showStatus(text: string): void {
+  iconText(statusEl, 'alert', text);
+}
+
 /** Set once the connection settings are read: "Tested elements" needs a Piwi instance. */
 let connected = false;
 
@@ -45,14 +55,14 @@ async function activeTab(): Promise<chrome.tabs.Tab | null> {
 async function inject(file: string): Promise<void> {
   const tab = await activeTab();
   if (tab?.id == null) {
-    statusEl.textContent = t('popup_noTab');
+    showStatus(t('popup_noTab'));
     return;
   }
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [file] });
     window.close();
   } catch (error) {
-    statusEl.textContent = injectionFailureText(error, tab.url);
+    showStatus(injectionFailureText(error, tab.url));
   }
 }
 
@@ -275,6 +285,18 @@ async function recordUiState(): Promise<{ state: RecordUiState; mode: RecordingM
   return { state: 'idle', mode: 'actions', steps: 0 };
 }
 
+/**
+ * What a tile does now, by its icon and its color: stop what runs, finish a bug report, or review what was recorded.
+ * Report a bug also takes `waiting`, muted, while another recording runs.
+ */
+type TileState = 'stop' | 'finish' | 'review';
+
+/** Gives `tile` the icon and the color of what it does now. */
+function setTileState(tile: HTMLButtonElement, state: TileState | null, glyph: IconName): void {
+  if (state) tile.dataset.state = state;
+  tile.querySelector(':scope > svg')?.replaceWith(icon(glyph));
+}
+
 async function refreshRecordButton(): Promise<void> {
   const [{ state, mode, steps }] = await Promise.all([recordUiState(), tabRead]);
   uiState = state;
@@ -284,9 +306,11 @@ async function refreshRecordButton(): Promise<void> {
   if (state === 'recording') {
     recordLabel.textContent = bug ? t('popup_finishBugReport', { count }) : t('popup_stopRecording', { count });
     recordHint.textContent = t('popup_stepsSoFar');
+    setTileState(recordBtn, bug ? 'finish' : 'stop', bug ? 'check' : 'stop');
   } else if (state === 'stopped') {
     recordLabel.textContent = bug ? t('popup_reviewBugReport') : t('popup_reviewRecording', { count });
     recordHint.textContent = t('popup_notExported');
+    setTileState(recordBtn, 'review', 'list');
   } else {
     recordLabel.textContent = t('popup_record');
     recordHint.textContent = t('popup_recordHint');
@@ -296,12 +320,15 @@ async function refreshRecordButton(): Promise<void> {
   if (state === 'recording' && bug) {
     bugLabel.textContent = t('popup_takeScreenshot');
     bugHint.textContent = tn('popup_screenshotHint', steps);
+    setTileState(bugBtn, null, 'camera');
   } else if (state === 'stopped' && bug) {
     bugLabel.textContent = t('popup_reviewBugReport');
     bugHint.textContent = t('popup_reviewBugReportHint');
+    setTileState(bugBtn, 'review', 'list');
   } else if (state !== 'idle') {
     bugLabel.textContent = t('popup_reportBug');
     bugHint.textContent = t('popup_finishFirst');
+    bugBtn.dataset.state = 'waiting';
   } else {
     bugLabel.textContent = t('popup_reportBug');
     bugHint.textContent = t('popup_reportBugHint');
@@ -319,7 +346,7 @@ async function startRecordingFlow(
     // Drop the intent the click parked for the worker, so a later unrelated
     // grant for this same origin can't revive a recording the user declined.
     await clearRecordIntent().catch(() => undefined);
-    statusEl.textContent = t('popup_permissionNeeded');
+    showStatus(t('popup_permissionNeeded'));
     return;
   }
 
@@ -327,7 +354,7 @@ async function startRecordingFlow(
     .sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode })
     .catch(() => undefined)) as { ok: boolean; error?: string } | undefined;
   if (!response?.ok) {
-    statusEl.textContent = response?.error ?? t('common_recordingStartFailed');
+    showStatus(response?.error ?? t('common_recordingStartFailed'));
     return;
   }
   window.close();
@@ -380,7 +407,7 @@ function requestRecording(mode: RecordingMode): void {
   // Only a web page's site can be granted: never a browser page, a file or another extension.
   const pattern = originPattern(recordTab?.url);
   if (pattern == null || recordTab?.id == null) {
-    statusEl.textContent = t('popup_cannotRecord');
+    showStatus(t('popup_cannotRecord'));
     return;
   }
   const tabId = recordTab.id;
@@ -389,7 +416,7 @@ function requestRecording(mode: RecordingMode): void {
   try {
     granted = chrome.permissions.request({ origins: [pattern] });
   } catch {
-    statusEl.textContent = t('popup_permissionNeeded');
+    showStatus(t('popup_permissionNeeded'));
     return;
   }
   // Park the intent so the background can still start the recording if this
@@ -425,7 +452,7 @@ async function bugScreenshotFlow(): Promise<void> {
     await chrome.tabs.sendMessage(tab.id, { type: 'piwi-bug-take-screenshot' });
     window.close();
   } catch {
-    statusEl.textContent = t('popup_notRecordedTab');
+    showStatus(t('popup_notRecordedTab'));
   }
 }
 
@@ -439,7 +466,7 @@ bugBtn.addEventListener('click', () => {
     return;
   }
   if (uiState !== 'idle') {
-    statusEl.textContent = t('popup_finishBeforeBug');
+    showStatus(t('popup_finishBeforeBug'));
     return;
   }
   requestRecording('bug');
@@ -454,13 +481,13 @@ bugBtn.addEventListener('click', () => {
 replayBtn.addEventListener('click', () => {
   const pattern = originPattern(recordTab?.url);
   if (pattern == null || recordTab?.id == null) {
-    statusEl.textContent = t('popup_cannotReplay');
+    showStatus(t('popup_cannotReplay'));
     return;
   }
   void chrome.permissions.request({ origins: [pattern] }).catch(() => false);
   const tabId = recordTab.id;
   void replayInOtherTab(tabId).then((elsewhere) => {
-    if (elsewhere) statusEl.textContent = t('popup_replayElsewhere');
+    if (elsewhere) showStatus(t('popup_replayElsewhere'));
     else void inject('replay-panel.js');
   });
 });
@@ -495,7 +522,7 @@ void tabRead.then(() => {
 void refreshRecordButton().catch(() => {
   // Left disabled on purpose: acting on a state we failed to read could start a
   // second recording over a live one.
-  statusEl.textContent = t('popup_stateUnreadable');
+  showStatus(t('popup_stateUnreadable'));
 });
 void refreshActiveProjectSelect()
   .catch(() => undefined)

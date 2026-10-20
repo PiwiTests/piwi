@@ -1,5 +1,5 @@
 import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { emulationLines } from '../shared/condition-words.js';
+import { CONDITION_ICONS, conditionWords, cpuText, throttleText } from '../shared/condition-words.js';
 import {
   CONDITIONS_MESSAGE_SOURCE,
   isCondition,
@@ -9,6 +9,8 @@ import {
   type RequestCondition,
 } from '../shared/request-conditions.js';
 import { attachPanelShadow } from './panel-root.js';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { icon, iconText, type IconName } from '../shared/icons.js';
 
 /**
  * The isolated-world half of Slow down or fail a request: asks the background
@@ -47,9 +49,39 @@ async function conditionsForThisTab(): Promise<TabConditions> {
   }
 }
 
+/** A condition in words, its method and address pattern set apart as code. */
+function conditionNodes(condition: RequestCondition): Array<Node | string> {
+  const request = document.createElement('span');
+  request.className = 'request';
+  const method = document.createElement('span');
+  method.className = 'method';
+  method.textContent = condition.method;
+  const pattern = document.createElement('code');
+  pattern.textContent = condition.pattern;
+  request.append(method, ' ', pattern);
+  return conditionWords(condition, request);
+}
+
+interface BannerLine {
+  icon: IconName;
+  words: Array<Node | string>;
+}
+
+/** Each line of the banner: its icon and its words, the requests' conditions first, then the page's network and CPU. */
+function bannerLines(on: TabConditions): BannerLine[] {
+  const lines: BannerLine[] = on.conditions.map((condition) => ({
+    icon: CONDITION_ICONS[condition.kind],
+    words: conditionNodes(condition),
+  }));
+  if (on.throttle)
+    lines.push({ icon: on.throttle === 'offline' ? 'blocked' : 'network', words: [throttleText(on.throttle)] });
+  if (on.cpuRate) lines.push({ icon: 'gauge', words: [cpuText(on.cpuRate)] });
+  return lines;
+}
+
 function drawBanner(on: TabConditions): void {
   document.getElementById(BANNER_HOST_ID)?.remove();
-  const lines = emulationLines(on);
+  const lines = bannerLines(on);
   if (lines.length === 0) return;
   const host = document.createElement('div');
   host.id = BANNER_HOST_ID;
@@ -57,37 +89,53 @@ function drawBanner(on: TabConditions): void {
   const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = `
+    ${BUTTON_CSS}
     .bar {
-      display: flex; gap: 10px; align-items: center; max-width: min(560px, 90vw);
-      background: #78350f; color: #fffbeb; border-radius: 8px; padding: 7px 10px;
-      font: 12.5px ui-sans-serif, system-ui, -apple-system, sans-serif; box-shadow: 0 6px 24px rgba(0,0,0,.35);
+      display: flex; gap: 12px; align-items: center; max-width: min(560px, 90vw); box-sizing: border-box;
+      background: #78350f; color: #fffbeb; border-radius: 10px; padding: 8px 8px 8px 12px;
+      border: 1px solid rgba(251,191,36,.45);
+      font: 12.5px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif; box-shadow: 0 6px 24px rgba(0,0,0,.35);
     }
-    ul { margin: 0; padding: 0 0 0 16px; }
-    button {
-      font: inherit; color: inherit; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.4);
-      border-radius: 6px; padding: 3px 9px; cursor: pointer; flex-shrink: 0;
+    .text { min-width: 0; }
+    .title { display: flex; align-items: center; gap: 6px; font-weight: 700; line-height: 18px; }
+    .title .piwi-icon { color: #fcd34d; }
+    ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+    li { display: flex; align-items: flex-start; gap: 6px; line-height: 18px; overflow-wrap: anywhere; }
+    li .piwi-icon { width: 14px; height: 14px; margin-top: 2px; color: #fcd34d; }
+    .request { white-space: nowrap; }
+    .method {
+      font: 700 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 0 4px; border-radius: 4px;
+      background: rgba(255,251,235,.18);
     }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; color: #fde68a;
+      white-space: normal; overflow-wrap: anywhere;
+    }
+    .bar .piwi-btn { flex-shrink: 0; }
   `;
   const bar = document.createElement('div');
-  bar.className = 'bar';
+  bar.className = 'bar piwi-dark';
   bar.setAttribute('role', 'status');
   bar.lang = uiLanguage();
   const text = document.createElement('div');
-  const title = document.createElement('strong');
-  title.textContent = tn('devtools_conditionsOn', lines.length);
+  text.className = 'text';
+  const title = document.createElement('div');
+  title.className = 'title';
+  const heading = document.createElement('span');
+  heading.textContent = tn('devtools_conditionsOn', lines.length);
+  title.append(icon('alert'), heading);
   const list = document.createElement('ul');
   for (const line of lines) {
-    const item = document.createElement('li');
-    item.textContent = line;
-    list.appendChild(item);
+    list.appendChild(iconText(document.createElement('li'), line.icon, ...line.words));
   }
   text.append(title, list);
-  const off = document.createElement('button');
-  off.type = 'button';
-  off.textContent = t('devtools_conditionsOff');
-  off.addEventListener('click', () => {
-    void chrome.runtime.sendMessage({ type: 'piwi-clear-conditions' }).catch(() => undefined);
-  });
+  const off = makeButton(
+    t('devtools_conditionsOff'),
+    () => {
+      void chrome.runtime.sendMessage({ type: 'piwi-clear-conditions' }).catch(() => undefined);
+    },
+    { icon: 'stop', tone: 'danger', small: true },
+  );
   bar.append(text, off);
   root.append(style, bar);
   (document.body ?? document.documentElement).appendChild(host);
@@ -96,7 +144,7 @@ function drawBanner(on: TabConditions): void {
 async function relay(): Promise<void> {
   const [on] = await Promise.all([conditionsForThisTab(), initI18n()]);
   window.postMessage({ source: CONDITIONS_MESSAGE_SOURCE, conditions: on.forPage }, '*');
-  if (emulationLines(on).length === 0) return;
+  if (on.conditions.length === 0 && !on.throttle && !on.cpuRate) return;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => drawBanner(on), { once: true });
   } else drawBanner(on);

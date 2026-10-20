@@ -1,15 +1,19 @@
-import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
+import { formatNumber, initI18n, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel, toolIsCurrent } from '../shared/tool-session.js';
 import { scanForLintIssues, type LintFinding, type LintScan } from './lint-scan.js';
 import { attachPanelShadow } from './panel-root.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { withIcon } from '../shared/icons.js';
 
 const HOST_ID = 'piwi-lint-overlay-host';
+/** The attribute each finding suggests adding. */
+const TEST_ID_ATTRIBUTE = 'data-testid';
 
 function markdownChecklist(findings: LintFinding[]): string {
   const lines = findings.map((f) => {
     const name = f.accessibleName ? ` "${f.accessibleName}"` : '';
-    return `- [ ] \`${f.element.tagName.toLowerCase()}\` (role: ${f.role}${name}) — add \`data-testid="${f.suggestedTestId}"\``;
+    return `- [ ] \`${f.element.tagName.toLowerCase()}\` (role: ${f.role}${name}) — add \`${TEST_ID_ATTRIBUTE}="${f.suggestedTestId}"\``;
   });
   return lines.join('\n');
 }
@@ -49,39 +53,53 @@ function toggleLintOverlay(): void {
       background: rgba(239,68,68,.14); border-radius: 4px;
       box-shadow: 0 0 0 1px rgba(255,255,255,.9), 0 0 0 3px rgba(69,10,10,.5);
     }
+    ${BUTTON_CSS}
     .panel {
-      position: fixed; top: 12px; right: 12px; pointer-events: auto; width: min(360px, 88vw);
+      position: fixed; top: 12px; right: 12px; pointer-events: auto; width: min(380px, 88vw);
       max-height: 82vh; overflow: auto; background: #111827; color: #f9fafb; border-radius: 12px;
       padding: 14px; box-shadow: 0 8px 40px rgba(0,0,0,.5); font: 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
     }
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-    .title { font-weight: 600; font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
-    .close {
-      background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 17px;
-      line-height: 1; padding: 2px 7px; border-radius: 6px;
+    .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .title {
+      display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13.5px; line-height: 18px; min-width: 0;
+      overflow-wrap: anywhere; hyphens: auto;
     }
-    .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
+    .title[data-state="found"] > .piwi-icon { color: #f87171; }
+    .title[data-state="none"] > .piwi-icon { color: #34d399; }
+    .title[data-state="checking"] > .piwi-icon { color: #a78bfa; }
     .empty, .notice { color: #9ca3af; font-size: 12.5px; overflow-wrap: anywhere; hyphens: auto; }
     .notice { margin-bottom: 8px; }
-    .export {
-      display: block; width: 100%; margin-bottom: 10px; padding: 6px 10px; border-radius: 6px;
-      border: 1px solid #f87171; background: rgba(248,113,113,.12); color: inherit; font: inherit;
-      font-size: 12px; cursor: pointer;
+    .export { width: 100%; margin-bottom: 10px; }
+    .row {
+      display: flex; flex-direction: column; gap: 6px;
+      border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 7px; font-size: 12px;
     }
-    .export:hover, .export:focus-visible { background: rgba(248,113,113,.22); }
-    .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 7px 9px; margin-bottom: 7px; font-size: 12px; }
-    .row .tag { color: #f87171; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row .head { overflow-wrap: anywhere; }
+    .row .tag { color: #f87171; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
     .row .name { color: #9ca3af; overflow-wrap: anywhere; }
+    .row .name .role { color: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row .name .named { color: #f9fafb; font-weight: 600; }
+    .row .fix { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .row code {
-      display: block; margin-top: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      word-break: break-all; cursor: pointer; border: 1px dashed rgba(128,128,128,.4); border-radius: 5px; padding: 3px 6px;
+      flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all;
+      cursor: pointer; border: 1px dashed rgba(128,128,128,.45); border-radius: 6px; padding: 3px 7px;
+      background: rgba(148,163,184,.08);
     }
+    .row code:hover { border-style: solid; }
+    .row code .attr { color: #93c5fd; }
+    .row code .value { color: #86efac; }
     @media (prefers-color-scheme: light) {
       .empty, .notice, .row .name { color: #6b7280; }
       .row .tag { color: #b91c1c; }
+      .row .name .named { color: #111827; }
+      .row code .attr { color: #1d4ed8; }
+      .row code .value { color: #15803d; }
+      .title[data-state="found"] > .piwi-icon { color: #dc2626; }
+      .title[data-state="none"] > .piwi-icon { color: #059669; }
+      .title[data-state="checking"] > .piwi-icon { color: #6d28d9; }
     }
   `;
   root.appendChild(style);
@@ -100,12 +118,15 @@ function toggleLintOverlay(): void {
   header.className = 'header';
   const title = document.createElement('div');
   title.className = 'title';
+  title.dataset.state = 'checking';
   title.textContent = t('lint_checking');
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.type = 'button';
-  closeBtn.setAttribute('aria-label', t('lint_close'));
-  closeBtn.textContent = '×';
+  withIcon(title, 'search');
+  const closeBtn = makeButton(t('lint_close'), () => off(), {
+    icon: 'close',
+    iconOnly: true,
+    tone: 'ghost',
+    className: 'close',
+  });
   header.append(title, closeBtn);
   panel.appendChild(header);
   root.appendChild(panel);
@@ -114,6 +135,8 @@ function toggleLintOverlay(): void {
 
   const showFindings = (scan: LintScan) => {
     title.textContent = findings.length === 0 ? t('lint_none') : tn('lint_found', findings.length);
+    title.dataset.state = findings.length === 0 ? 'none' : 'found';
+    withIcon(title, findings.length === 0 ? 'check-circle' : 'alert');
     if (scan.checked < scan.interactive) {
       const notice = document.createElement('div');
       notice.className = 'notice';
@@ -131,32 +154,54 @@ function toggleLintOverlay(): void {
       panel.appendChild(empty);
       return;
     }
-    const exportBtn = document.createElement('button');
-    exportBtn.className = 'export';
-    exportBtn.type = 'button';
-    exportBtn.textContent = t('lint_copyChecklist');
-    exportBtn.addEventListener('click', () => void copyWithFeedback(markdownChecklist(findings), exportBtn));
+    const exportBtn = makeButton(
+      t('lint_copyChecklist'),
+      () => void copyWithFeedback(markdownChecklist(findings), exportBtn),
+      { icon: 'list', tone: 'primary', className: 'export' },
+    );
     panel.appendChild(exportBtn);
 
     for (const f of findings) {
       const row = document.createElement('div');
       row.className = 'row';
       const head = document.createElement('div');
+      head.className = 'head';
       const tag = document.createElement('span');
       tag.className = 'tag';
       tag.textContent = `<${f.element.tagName.toLowerCase()}>`;
       const name = document.createElement('span');
       name.className = 'name';
-      name.textContent = f.accessibleName
-        ? t('lint_roleNamed', { role: f.role, name: f.accessibleName })
-        : t('lint_role', { role: f.role });
+      const role = document.createElement('span');
+      role.className = 'role';
+      role.textContent = f.role;
+      if (f.accessibleName) {
+        const named = document.createElement('span');
+        named.className = 'named';
+        named.textContent = f.accessibleName;
+        name.append(...tNodes('lint_roleNamed', { role, name: named }));
+      } else {
+        name.append(...tNodes('lint_role', { role }));
+      }
       head.append(tag, ' ', name);
-      const attribute = `data-testid="${f.suggestedTestId}"`;
+      const attribute = `${TEST_ID_ATTRIBUTE}="${f.suggestedTestId}"`;
+      const fix = document.createElement('div');
+      fix.className = 'fix';
       const code = document.createElement('code');
-      code.textContent = attribute;
+      const attr = document.createElement('span');
+      attr.className = 'attr';
+      attr.textContent = TEST_ID_ATTRIBUTE;
+      const value = document.createElement('span');
+      value.className = 'value';
+      value.textContent = `"${f.suggestedTestId}"`;
+      code.append(attr, '=', value);
       code.title = t('common_clickToCopy');
-      code.addEventListener('click', () => void copyWithFeedback(attribute, code));
-      row.append(head, code);
+      const copy = makeButton(t('common_copy'), () => void copyWithFeedback(attribute, copy), {
+        icon: 'copy',
+        small: true,
+      });
+      code.addEventListener('click', () => void copyWithFeedback(attribute, copy));
+      fix.append(code, copy);
+      row.append(head, fix);
       panel.appendChild(row);
     }
   };
@@ -206,7 +251,6 @@ function toggleLintOverlay(): void {
   document.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition, true);
-  closeBtn.addEventListener('click', off);
 
   void scanForLintIssues({ keepGoing: () => !closed && toolIsCurrent(toolEpoch) }).then((scan) => {
     if (!scan || closed || !toolIsCurrent(toolEpoch)) return;
