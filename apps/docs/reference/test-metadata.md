@@ -220,7 +220,9 @@ reporter: [
   `testInfo.annotations.push()`.
 - An ID is up to 120 characters, case-sensitive.
 - The first run that declares an ID gives it to the existing test it matches by file, describe blocks and title, so
-  turning the option on keeps every history.
+  turning the option on keeps every history. A test that already has an ID never takes another one: a test whose ID
+  changed in your test management tool starts a new history, which you can join to the old one by merging them.
+- Imports of older runs and Flake Lab runs match tests by their ID but never rename, move or give an ID to a test.
 - **Duplicates:** an ID names one test. Tests declaring the same ID are matched by file, describe blocks and title, as
   if they had none, until each has its own. The same test in several Playwright projects is one test, not a duplicate.
   With `--shard`, each shard only sees its own tests: the dashboard also checks across shards and lists what it finds
@@ -230,6 +232,11 @@ reporter: [
 - **Test ID link:** in the project's settings (General), give the address of a test in your test management tool,
   with `{id}` where the ID goes (`https://tcm.example.com/case/{id}`). The ID chip then opens the test there.
 - Pull-request comments, notifications and exports name a test by its ID and title: `12526 · Log in with Email`.
+- **Merging two tests:** a rename or a move that was not matched (before the test had an ID, for example) leaves the
+  history in two halves. On the test's page, project managers can use **Merge…** to pick the other half: its
+  executions, quarantine, failure clusters, locators, coverage, bug reports and links move to this test, and the
+  other test is deleted. Two tests that ran in the same run are two tests, and are never merged. This cannot be
+  undone.
 
 ### Expected failures (`test.fail()`)
 

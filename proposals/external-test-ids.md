@@ -4,7 +4,7 @@ A proposal to let a test keep its history when it is renamed or moved, by matchi
 gives it in its test management tool. It records the design agreed on
 [PiwiTests/platform#847](https://github.com/PiwiTests/platform/issues/847), the stages, and the questions left open.
 
-**Status.** Stages 1 to 3 built (see [As built](#as-built)); stage 4 not started.
+**Status.** Built, stages 1 to 4 (see [As built](#as-built)).
 
 **Summary.** Piwi matches a test to its stored test case on the file path, the describe path and the title. Any rename
 or move creates a new test case, and flakiness, failure clusters, quarantine and trends restart from zero. This
@@ -336,6 +336,24 @@ What differs from the design above, or what it left open:
   disagree on whole-value against contains).
 - **Demo**: the checkout specs' tests have IDs `CHK-<spec><case>` (`demoExternalId` in
   `shared/demo/demo-test-meta.mjs`), seeded and sent by the run simulator.
+
+- **Review fixes**, after a review of stages 1 to 3:
+  - imports of older runs and lab runs match without writing (no rename, move or ID given);
+  - tests whose ID is known are matched first, and **a test case holding an ID never takes a different one**: a
+    test with another ID is another test, whatever its title. This replaces step 2's "ID changed in the test
+    management tool keeps its history": such a test starts a new history, and a merge joins the two;
+  - only a unique-index conflict is read as another server process taking the ID;
+  - the duplicate list survives the reporter's metadata at begin and finish;
+  - with `onDuplicate: 'fail'`, the dashboard records the failed status the run exits with;
+  - the live stream carries the ID.
+- **Stage 4**:
+  - the test ID link is a project setting (`projects.external_id_url`, General settings), given to the chips
+    through `provideExternalIdUrl` on the run, project, test, execution and cluster pages;
+  - pull-request comments, notifications and exports use `testTextLabel` (`12526 · Log in`);
+  - the merge is `POST /api/test-cases/:id/merge { sourceId }` (`project:manage`), `mergeTestCases` in
+    `shared/handlers/test-case-merge.ts`, shared with the demo: refused for two test cases that ran in one run;
+    per-test rows with a unique key are kept once (the target's); one active quarantine is kept; the target takes
+    the source's ID when it holds none; the matching cache is invalidated and the feature graph rebuilt.
 
 ## Tests
 

@@ -191,6 +191,13 @@ const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.valu
               label="Reproduce locally"
               :preset-options="{ mode: 'grep', repeatEach: 20, trace: true }"
             />
+            <TestCaseMergeButton
+              v-if="testCase?.project"
+              :test-case-id="testCase.id"
+              :project-id="testCase.project.id"
+              :label="testLabel(testCase)"
+              @merged="refresh()"
+            />
             <NuxtLink v-if="testCase?.lastExecutionId" :to="`/test-run-cases/${testCase.lastExecutionId}`">
               <UButton size="sm" variant="outline" trailing-icon="i-lucide-arrow-right">Latest execution</UButton>
             </NuxtLink>

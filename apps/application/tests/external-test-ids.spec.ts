@@ -81,3 +81,53 @@ test.describe.serial('External test IDs', () => {
     await expect(page.getByTestId('run-external-id-duplicates-fact')).toHaveText('1 duplicate test ID');
   });
 });
+
+test.describe.serial('External test IDs: link and merge', () => {
+  let projectId: number;
+  let targetId: number;
+  let sourceId: number;
+
+  test('the project link turns the ID chip into a link to the test management tool', async ({ request, page }) => {
+    const runId = await submit(request, [
+      { title: 'Pay by card', location: 'tests/pay.spec.ts:3:1', externalId: 'PAY-1' },
+    ]);
+    const run = await runCases(request, runId);
+    projectId = run.projectId;
+    targetId = run.testCases[0].testCaseId;
+
+    const invalid = await request.patch(`/api/projects/${projectId}`, { data: { externalIdUrl: 'https://tcm.test/' } });
+    expect(invalid.status()).toBe(400);
+    const saved = await request.patch(`/api/projects/${projectId}`, {
+      data: { externalIdUrl: 'https://tcm.example.com/case/{id}' },
+    });
+    expect(saved.ok()).toBeTruthy();
+
+    await page.goto(`/test-cases/${targetId}`);
+    const chip = page.getByRole('heading', { level: 1 }).getByTestId('test-id-chip');
+    await expect(chip).toHaveAttribute('href', 'https://tcm.example.com/case/PAY-1');
+  });
+
+  test('merging moves the other test case history here and deletes it', async ({ request }) => {
+    const runId = await submit(request, [{ title: 'Pay with a card', location: 'tests/pay.spec.ts:3:1' }]);
+    sourceId = (await runCases(request, runId)).testCases[0].testCaseId;
+    expect(sourceId).not.toBe(targetId);
+
+    const merged = await request.post(`/api/test-cases/${targetId}/merge`, { data: { sourceId } });
+    expect(merged.ok()).toBeTruthy();
+    expect(await merged.json()).toMatchObject({ ok: true, executionsMoved: 1 });
+
+    expect((await request.get(`/api/test-cases/${sourceId}`)).status()).toBe(404);
+    const target = await (await request.get(`/api/test-cases/${targetId}`)).json();
+    expect(target.totalRuns).toBe(2);
+  });
+
+  test('two tests that ran in the same run are not merged', async ({ request }) => {
+    const runId = await submit(request, [
+      { title: 'Refund', location: 'tests/refund.spec.ts:3:1' },
+      { title: 'Refund twice', location: 'tests/refund.spec.ts:9:1' },
+    ]);
+    const [a, b] = (await runCases(request, runId)).testCases;
+    const refused = await request.post(`/api/test-cases/${a.testCaseId}/merge`, { data: { sourceId: b.testCaseId } });
+    expect(refused.status()).toBe(409);
+  });
+});
