@@ -453,22 +453,19 @@ export interface StepPart {
 const STAND_IN = 0xe000;
 
 /**
- * A step's sentence, as {@link describeStepInWords} writes it, in its parts,
- * for a surface that sets the names, values, keys and code apart. Each part
- * comes from the step itself, never from reading the sentence again: the
- * phrasebook writes the sentence around a stand-in for each, and the parts
- * take their places. Joined, the parts read as the sentence without its
- * Markdown code marks; a page's text keeps its `<`, which the sentence escapes
- * for Markdown.
+ * A sentence `write` builds with the phrasebook, in its parts: the phrasebook
+ * writes it around a stand-in for each part the writer is given, and the
+ * parts take their places, with the quotation marks the phrasebook put around
+ * a name or a value.
  */
-export function describeStepInParts(step: RecordedStep, phrases: BugPhrases = ENGLISH): StepPart[] {
+function sentenceInParts(phrases: BugPhrases, write: (w: StepWriter) => string): StepPart[] {
   const parts: StepPart[] = [];
   const standIn = (part: StepPart): string => {
     parts.push(part);
     return String.fromCharCode(STAND_IN + parts.length - 1);
   };
   const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
-  const sentence = stepSentence(step, phrases, {
+  const sentence = write({
     text: (kind, text) =>
       standIn({ kind: kind === 'name' ? 'name' : 'value', text: kind === 'file' ? text : oneLine(text) }),
     code: (kind, text) => standIn({ kind, text }),
@@ -502,6 +499,22 @@ export function describeStepInParts(step: RecordedStep, phrases: BugPhrases = EN
   }
   if (last < sentence.length) out.push({ kind: 'text', text: sentence.slice(last) });
   return out;
+}
+
+/**
+ * A step's sentence, as {@link describeStepInWords} writes it, in its parts,
+ * for a surface that sets the names, values, keys and code apart. Each part
+ * comes from the step itself, never from reading the sentence again. Joined,
+ * the parts read as the sentence without its Markdown code marks; a page's
+ * text keeps its `<`, which the sentence escapes for Markdown.
+ */
+export function describeStepInParts(step: RecordedStep, phrases: BugPhrases = ENGLISH): StepPart[] {
+  return sentenceInParts(phrases, (w) => stepSentence(step, phrases, w));
+}
+
+/** An expectation, as {@link describeExpectation} writes it, in its parts: see {@link describeStepInParts}. */
+export function describeExpectationInParts(step: RecordedStep, phrases: BugPhrases = ENGLISH): StepPart[] {
+  return sentenceInParts(phrases, (w) => expectationSentence(step, phrases, w));
 }
 
 function formatTime(time: number): string {

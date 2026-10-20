@@ -1,6 +1,12 @@
 import { describe, test, expect } from 'vitest';
 import { BUG_PHRASES } from '../src/bug-phrases';
-import { describeStepInParts, describeStepInWords, type StepPart } from '../src/bug-report';
+import {
+  describeExpectation,
+  describeExpectationInParts,
+  describeStepInParts,
+  describeStepInWords,
+  type StepPart,
+} from '../src/bug-report';
 import { ASSERTION_MATCHERS, type RecordedStep, type RecordedTarget, type StepAction } from '../src/recording';
 
 const english = BUG_PHRASES.en!;
@@ -83,6 +89,19 @@ describe('describeStepInParts', () => {
       for (const s of STEPS)
         expect(joined(describeStepInParts(s, phrases)), phrases.language).toBe(describeStepInWords(s, phrases));
     }
+  });
+
+  test('in every language, an expectation’s parts joined are the expectation, in lower case where the language allows', () => {
+    for (const phrases of Object.values(BUG_PHRASES)) {
+      for (const s of STEPS.filter((each) => each.action === 'assert')) {
+        expect(joined(describeExpectationInParts(s, phrases)), phrases.language).toBe(describeExpectation(s, phrases));
+      }
+    }
+    const text = STEPS.find((each) => each.assertion?.matcher === 'toHaveText')!;
+    expect(marked(describeExpectationInParts(text, english))).toEqual([
+      `locator:getByRole('button', { name: 'Apply' })`,
+      'value:"Total: 42"',
+    ]);
   });
 
   test('tells the name of the field from the value typed, in the order each language puts them', () => {
