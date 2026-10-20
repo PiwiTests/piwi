@@ -89,6 +89,9 @@ const ICON_PATH = '/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303
 const ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#904ee2"/></svg>';
 
+/** An icon the mock fails to serve once (an outage), then serves. */
+const FLAKY_ICON_PATH = '/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium';
+
 /** A person's avatar on the site, as Jira serves one a person uploaded. */
 const USER_AVATAR_PATH = '/secure/useravatar?size=small&avatarId=10122';
 
@@ -110,6 +113,8 @@ interface MockJira {
   requireParent: boolean;
   /** Every issue picker search, with the JQL it was scoped to. */
   pickerQueries: { query: string; jql: string | null }[];
+  /** How many times the flaky icon was asked for. */
+  flakyIconHits: number;
   /** Every transition made, in order. */
   moves: { key: string; id: string; fields: Record<string, unknown> | null }[];
 }
@@ -156,6 +161,7 @@ function startMockJira(port: number): MockJira {
     requireTags: false,
     requireParent: false,
     pickerQueries: [],
+    flakyIconHits: 0,
     moves: [],
   };
   let counter = 300;
@@ -182,13 +188,21 @@ function startMockJira(port: number): MockJira {
       return send({
         id: '1',
         key: 'PROJ',
-        issueTypes: [{ id: '10004', name: 'Bug', iconUrl: `http://127.0.0.1:${port}${ICON_PATH}` }],
+        issueTypes: [
+          { id: '10004', name: 'Bug', iconUrl: `http://127.0.0.1:${port}${ICON_PATH}` },
+          { id: '10005', name: 'Task' },
+        ],
       });
+    if (`${path}${url.search}` === FLAKY_ICON_PATH) {
+      if (++state.flakyIconHits === 1) return send({ errorMessages: ['Service unavailable'] }, 503);
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return res.end(ICON_SVG);
+    }
     if (`${path}${url.search}` === ICON_PATH) {
       res.setHeader('Content-Type', 'image/svg+xml');
       return res.end(ICON_SVG);
     }
-    if (path === '/rest/api/3/issue/createmeta/PROJ/issuetypes/10004') {
+    if (/^\/rest\/api\/3\/issue\/createmeta\/PROJ\/issuetypes\/1000[45]$/.test(path)) {
       return send({ startAt: 0, maxResults: 100, total: BUG_SCREEN.length, fields: BUG_SCREEN });
     }
     if (path === '/rest/api/3/user/assignable/search') {
@@ -411,7 +425,10 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     const { issueTypes } = await (
       await request.get(`/api/integrations/connections/${connectionId}/projects/PROJ/issue-types`)
     ).json();
-    expect(issueTypes).toEqual([{ id: '10004', name: 'Bug', icon: ICON_PATH }]);
+    expect(issueTypes).toEqual([
+      { id: '10004', name: 'Bug', icon: ICON_PATH },
+      { id: '10005', name: 'Task', icon: null },
+    ]);
 
     const icon = await request.get(
       `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent(ICON_PATH)}`,
@@ -430,6 +447,18 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent(USER_AVATAR_PATH)}`,
     );
     expect(avatar.status()).toBe(200);
+
+    // An encoded dot segment cannot reach another Jira path with the connection's credentials.
+    const escaped = await request.get(
+      `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent('/images/icons/%2e%2e/%2e%2e/rest/api/3/myself')}`,
+    );
+    expect(escaped.status()).toBe(400);
+
+    // An outage is not remembered: the next view gets the icon.
+    const flaky = `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent(FLAKY_ICON_PATH)}`;
+    expect((await request.get(flaky)).status()).toBe(502);
+    expect((await request.get(flaky)).status()).toBe(200);
+    expect(mock.flakyIconHits).toBe(2);
 
     const other = await request.get(
       `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent('/rest/api/3/myself')}`,
@@ -556,6 +585,37 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     } finally {
       mock.requireParent = false;
     }
+  });
+
+  test('a field added for one issue type is not sent once the type changes', async ({ page }) => {
+    await page.goto(`/failure-clusters/${clusters.refused}`);
+    await waitForHydration(page);
+    const open = page.locator('[data-shot="issue-line-create"]').first();
+    await expect(open).toBeVisible({ timeout: 30_000 });
+    await open.click();
+    const dialog = page.getByRole('dialog');
+    const asked = dialog.locator('[data-shot="create-issue-fields"]');
+    const team = asked.locator(`[data-field-id="${TEAM}"] input`);
+    await expect(asked).toBeVisible({ timeout: 15_000 });
+
+    await dialog.getByText('Add a field').click();
+    await page.getByRole('option', { name: 'Squad', exact: true }).click();
+    const squad = dialog.locator(`[data-shot="create-issue-added-fields"] [data-field-id="${SQUAD}"]`);
+    await squad.locator('input').fill('Payments');
+
+    // Another issue type, then back: the added field and its value are gone.
+    await dialog.getByText('Bug', { exact: true }).click();
+    await page.getByRole('option', { name: 'Task', exact: true }).click();
+    await expect(squad).toHaveCount(0);
+    await dialog.getByText('Task', { exact: true }).click();
+    await page.getByRole('option', { name: 'Bug', exact: true }).click();
+    await expect(team).toBeVisible({ timeout: 15_000 });
+    await team.fill('team-checkout');
+
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(page.getByText(/PROJ-\d+ created/).first()).toBeVisible();
+    expect(mock.creates.at(-1)).toMatchObject({ [TEAM]: 'team-checkout' });
+    expect(mock.creates.at(-1)).not.toHaveProperty(SQUAD);
   });
 
   test('a refusal Jira names is final, and creating again replaces it', async ({ request }) => {

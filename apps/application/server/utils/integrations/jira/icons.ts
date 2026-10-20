@@ -19,9 +19,33 @@ const GATEWAY_PREFIX = /^\/ex\/jira\/[^/]+(?=\/)/;
 /** The most bytes an icon may weigh. */
 export const MAX_ICON_BYTES = 256 * 1024;
 
-/** Whether a path is one Jira serves icons from, with no way out of it. */
+/** A base the path is resolved against, only to read back how a URL parser normalizes it. */
+const PARSE_BASE = 'https://jira.invalid';
+
+/**
+ * Whether a path is one Jira serves icons from, with no way out of it. The
+ * path part is checked as the request will resolve it: it must already be in
+ * that form, so no dot segment, encoded (`%2e%2e`) or not, can step out of an
+ * icon folder. Only the query may carry escapes.
+ */
 export function isJiraIconPath(path: string): boolean {
-  return ICON_PATH.test(path) && !path.includes('..') && !path.includes('\\') && !path.startsWith('//');
+  const query = path.indexOf('?');
+  const pathname = query === -1 ? path : path.slice(0, query);
+  if (!pathname.startsWith('/') || pathname.startsWith('//') || /[%\\#\s]/.test(pathname) || path.includes('#')) {
+    return false;
+  }
+  let resolved: string;
+  try {
+    resolved = new URL(path, PARSE_BASE).pathname;
+  } catch {
+    return false;
+  }
+  return resolved === pathname && ICON_PATH.test(pathname);
+}
+
+/** Whether an answer says the icon is unavailable for now (rate limit, outage, credentials), not missing. */
+export function isTransientIconStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 408 || status === 429 || status >= 500;
 }
 
 /**
@@ -78,7 +102,7 @@ const MAX_AVATAR_REDIRECTS = 3;
 /**
  * A person's avatar from a public avatar host, with no credentials, following
  * redirects only while they stay on those hosts. Null when it is not an image,
- * is too large, or leaves them.
+ * is too large, or leaves them; throws when the host cannot answer for now.
  */
 export async function fetchExternalAvatar(
   url: string,
@@ -98,6 +122,7 @@ export async function fetchExternalAvatar(
       current = new URL(location, current).toString();
       continue;
     }
+    if (isTransientIconStatus(response.status)) throw new Error(`avatar host answered ${response.status}`);
     const mime = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
     if (!response.ok || !mime.startsWith('image/')) return null;
     const bytes = new Uint8Array(await response.arrayBuffer());
