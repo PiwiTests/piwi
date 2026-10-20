@@ -991,7 +991,7 @@ test.describe('Run with Playwright', () => {
 
     const desktop = await chooseReport(page);
     await expect(desktop).toContainText('Sends to the desktop app at http://127.0.0.1:4318');
-    await expect(desktop).toContainText('5. ');
+    await expect(desktop).toContainText('The element with test id cart-total should read "Total: 42"');
     const sentTypes = () => page.evaluate(() => ((globalThis as any).__piwiSent as any[]).map((m) => m.type));
     expect(await sentTypes()).not.toContain('piwi-desktop-repro');
 
@@ -1325,11 +1325,9 @@ test.describe('replay-panel.js in French', () => {
     await expect(done).toContainText('Terminé : Coupon not applied');
     await expect(done).toContainText('Résultat : «\u202fTotal: 40\u202f».');
     // The steps in French words, the page's texts as they are.
-    await expect(done).toContainText('2. Saisir «\u202falice\u202f» dans le champ de texte «\u202fUsername\u202f»');
-    await expect(done).toContainText('4. Cliquer sur le bouton «\u202fApply coupon\u202f»');
-    await expect(done).toContainText(
-      '5. L’élément avec le test id cart-total devrait afficher «\u202fTotal: 42\u202f»',
-    );
+    await expect(done).toContainText('Saisir «\u202falice\u202f» dans le champ de texte «\u202fUsername\u202f»');
+    await expect(done).toContainText('Cliquer sur le bouton «\u202fApply coupon\u202f»');
+    await expect(done).toContainText('L’élément avec le test id cart-total devrait afficher «\u202fTotal: 42\u202f»');
     await expect(done.getByRole('button', { name: 'Rejouer' })).toBeVisible();
     await expect(done.getByRole('button', { name: 'Fermer' })).toBeVisible();
     expect(await clippedInShadows(page)).toEqual([]);

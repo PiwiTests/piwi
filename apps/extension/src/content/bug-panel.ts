@@ -76,7 +76,7 @@ import { activePathPrefixes } from '../shared/active-project.js';
 import { openSendPreview, SEND_DIALOG_HOST_ID, sendTarget } from './bug-send-panel.js';
 import { BUTTON_CSS, makeButton, styleButton, type ButtonOptions } from '../shared/buttons.js';
 import type { IconName } from '../shared/icons.js';
-import { STEP_CSS, stepView, urlView } from '../shared/step-view.js';
+import { richText, STEP_CSS, stepView, urlView } from '../shared/step-view.js';
 
 /**
  * The bug recording's page UI: its HUD, the three ways to say what is wrong
@@ -844,7 +844,7 @@ function stepRow(step: RecordedStep, index: number): HTMLElement {
   if (step.action === 'assert' && assertion?.actual != null) {
     const shown = document.createElement('span');
     shown.className = 'step-actual';
-    shown.textContent = ` · ${actualInWords(assertion.matcher, assertion.actual)}`;
+    shown.append(' · ', ...richText(actualInWords(assertion.matcher, assertion.actual)));
     view.querySelector('.piwi-step-words')?.appendChild(shown);
   }
   return row;

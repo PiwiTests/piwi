@@ -141,6 +141,7 @@ export const ICONS = {
   gauge: ['M12 14.5l4-4.5', 'M3.5 17.5a8.5 8.5 0 1117 0'],
   blocked: [CIRCLE(12, 12, 8), 'M6.5 6.5l11 11'],
   'server-error': ['M4 4.5h16v6H4z', 'M4 13.5h16v6H4z', 'M7.5 7.5h.01', 'M7.5 16.5h.01', 'M12 16.5h4.5'],
+  dot: [{ fill: CIRCLE(12, 12, 3) }],
   // Directions.
   'arrow-right': ['M5 12h14', 'M13 6l6 6-6 6'],
   'arrow-left': ['M19 12H5', 'M11 6l-6 6 6 6'],

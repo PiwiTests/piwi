@@ -709,6 +709,34 @@ Assertions, Context for an AI agent, Test functions). **A copy button goes throu
 (`src/shared/clipboard.ts`, extension pages too): the copy command when the clipboard API refuses, Copied or Not copied
 for a moment, and the button's own label back however often it is clicked.
 
+## Buttons, icons and readable steps
+
+Every surface (the in-page panels, the popup, the settings, Save login, DevTools) is built the same way, so a button is
+found by its icon and its color before its words are read, and a step reads at a glance:
+
+- **Every button has an icon** from `src/shared/icons.ts` (`ICONS`: outline glyphs on a 24 × 24 grid, drawn in
+  `currentColor`, built as DOM so no page's policy can block them) in front of its label. An icon-only button (a
+  panel's close ×) carries its label as `aria-label` and tooltip. A new icon goes into `ICONS` in the same style;
+  never SVG markup written elsewhere, an icon font or an image.
+- **A button is made by `makeButton(label, onClick, { icon, tone, small, iconOnly, title, className })`**, or given
+  the same look by `styleButton` when made elsewhere (a link included), from `src/shared/buttons.ts`, and styled by
+  `BUTTON_CSS` in the panel's `<style>`: a panel does not style its own buttons. An HTML page names the icon in
+  `data-icon` and calls `decorateIcons()` after `localizeDocument()`, which writes the texts.
+- **The tone says what a button does:** `primary` (violet), the surface's main action, one per group; `success`
+  (green), what completes or goes on with a flow (Finish, I did it, continue); `danger` (solid red), what stops what
+  runs (Stop); `remove` (red text), what discards or takes away (Discard, Remove, Unpair, Disconnect), set apart at the
+  end of its row; `neutral`, any other, its icon in the accent color; `ghost`, a close button or a small inline action.
+- **A label changes through `setLabel`**, never `textContent`, which drops the icon. A copy goes through
+  `copyWithFeedback` (and a passing text through `flashLabel`), which keeps the icon and flashes a check or a cross.
+- **A step is shown by `stepView(step)`** (`src/shared/step-view.ts`, its look in `STEP_CSS`): a badge by kind of
+  action (going somewhere, acting, typing or choosing, checking, by hand) and its words with the quoted names, the typed
+  value, the key, the test ids, the addresses and the locators set apart. Never `describeStepInWords` shown as bare
+  text, nor with its backticks stripped. A sentence naming a locator, an address or a quoted text (why a step failed, a
+  verdict) goes through `richText`, an address alone through `urlView` (origin and query dimmed, path in front). The
+  pure half, `step-tokens.ts`, is unit-tested.
+- **Colors are dark first, with the light scheme's under `prefers-color-scheme: light`**, as custom properties set on
+  the surface's root; a surface dark in both schemes puts `piwi-dark` on an ancestor.
+
 ## Rules
 
 - **No network call from a content script, ever.** Picking/recording talk to no server.
