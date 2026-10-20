@@ -8,6 +8,7 @@ import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { downloadBlob } from '../shared/download.js';
+import { icon, type IconName } from '../shared/icons.js';
 import { stepView } from '../shared/step-view.js';
 import { t, tn } from '../shared/i18n.js';
 import {
@@ -26,9 +27,10 @@ import { button, el, emptyState, iconLine } from './ui.js';
  * values and addresses set apart, and the locator it was recorded with.
  * `glyph` is the replay's mark for it; the list numbers the steps itself.
  */
-export function stepRow(step: RecordedStep, glyph = ''): HTMLLIElement {
+export function stepRow(step: RecordedStep, glyph: IconName | null = null): HTMLLIElement {
   const item = el('li');
-  const mark = el('span', 'glyph', glyph);
+  const mark = el('span', 'glyph');
+  if (glyph) mark.append(icon(glyph));
   mark.setAttribute('aria-hidden', 'true');
   const words = stepView(step);
   words.classList.add('step-words');

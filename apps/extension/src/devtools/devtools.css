@@ -835,8 +835,16 @@ ol.steps li > .reveal {
 ol.steps li > .glyph {
   grid-column: 2;
   grid-row: 1;
-  width: 1.4em;
+  display: flex;
+  align-items: center;
+  width: 20px;
+  height: 18px;
   color: var(--faint);
+}
+
+ol.steps li > .glyph .piwi-icon {
+  width: 14px;
+  height: 14px;
 }
 
 ol.steps li > .glyph:empty {
@@ -844,7 +852,8 @@ ol.steps li > .glyph:empty {
 }
 
 ol.steps li[data-status='done'] > .glyph,
-ol.steps li[data-status='passed'] > .glyph {
+ol.steps li[data-status='passed'] > .glyph,
+ol.steps li[data-status='manual'] > .glyph {
   color: var(--good);
 }
 

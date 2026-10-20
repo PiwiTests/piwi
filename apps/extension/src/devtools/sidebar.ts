@@ -1,6 +1,6 @@
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { copyWithFeedback } from '../shared/clipboard.js';
-import { COPY_MODES, copyModeLabel, renderCopyMode, type CopyMode } from '../shared/copy-modes.js';
+import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
 import { stabilityRulesText } from '../shared/core-words.js';
 import { describeSelection, type SelectionLocator, type SelectionRanking } from '../shared/devtools-selection.js';
 import { initI18n, localizeDocument, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
@@ -13,13 +13,6 @@ import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
 import { requestSiteAccess } from './inspected.js';
 import { button, el, emptyState, iconLine, noAccessText, type IconName } from './ui.js';
 import { rankDevtoolsSelection, type RankOutcome } from './selection.js';
-
-/** Each copy mode's icon: the locator as code, the action it drives, the assertion it checks. */
-const COPY_MODE_ICONS: Record<CopyMode, IconName> = {
-  bare: 'code',
-  action: 'pointer',
-  expect: 'check-circle',
-};
 
 /**
  * The Piwi pane of the Elements panel: the ranked, verified locators of the

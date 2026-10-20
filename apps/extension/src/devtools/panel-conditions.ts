@@ -1,5 +1,5 @@
-import { cpuText, throttleText } from '../shared/condition-words.js';
-import { formatNumber, t, tNodes } from '../shared/i18n.js';
+import { conditionWords, cpuText, throttleText } from '../shared/condition-words.js';
+import { t, tNodes } from '../shared/i18n.js';
 import { icon } from '../shared/icons.js';
 import { patternView } from '../shared/pattern-view.js';
 import {
@@ -71,14 +71,7 @@ async function onThisTabAt(origin: string | null): Promise<TabConditions> {
 export function conditionView(condition: RequestCondition): Array<Node | string> {
   const request = el('span', 'condition-request');
   request.append(methodView(condition.method), ' ', patternView(condition.pattern));
-  switch (condition.kind) {
-    case 'delay':
-      return tNodes('devtools_conditionDelay', { request, seconds: formatNumber(condition.delayMs / 1000) });
-    case 'error':
-      return tNodes('devtools_conditionError', { request });
-    case 'abort':
-      return tNodes('devtools_conditionAbort', { request });
-  }
+  return conditionWords(condition, request);
 }
 
 /** Whether this browser gives the extension the debugging protocol: Chrome and Edge do, Firefox does not. */

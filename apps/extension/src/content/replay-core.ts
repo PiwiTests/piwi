@@ -246,25 +246,6 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
   }
 }
 
-/** The mark before a step in the replay's lists: where it is, or how it went. */
-export function stepGlyph(result: ReplayStepResult | undefined, current: boolean): string {
-  if (current) return '▸';
-  switch (result?.status) {
-    case 'done':
-    case 'passed':
-    case 'manual':
-      return '✓';
-    case 'failed':
-      return '✗';
-    case 'diverged':
-      return '!';
-    case 'skipped':
-      return '–';
-    default:
-      return '·';
-  }
-}
-
 /** The icon in front of a verdict's title. */
 export const VERDICT_ICONS: Record<ReplayVerdict['kind'], IconName> = {
   reproduced: 'bug',

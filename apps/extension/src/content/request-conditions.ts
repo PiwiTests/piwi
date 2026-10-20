@@ -1,5 +1,5 @@
-import { formatNumber, initI18n, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
-import { cpuText, emulationLines, throttleText } from '../shared/condition-words.js';
+import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
+import { CONDITION_ICONS, conditionWords, cpuText, emulationLines, throttleText } from '../shared/condition-words.js';
 import {
   CONDITIONS_MESSAGE_SOURCE,
   isCondition,
@@ -50,12 +50,6 @@ async function conditionsForThisTab(): Promise<TabConditions> {
 }
 
 /** What each kind of condition does, by icon. */
-const CONDITION_ICONS: Record<RequestCondition['kind'], IconName> = {
-  delay: 'clock',
-  error: 'server-error',
-  abort: 'blocked',
-};
-
 /** A condition in words, its method and address pattern set apart as code. */
 function conditionNodes(condition: RequestCondition): Array<Node | string> {
   const request = document.createElement('span');
@@ -66,14 +60,7 @@ function conditionNodes(condition: RequestCondition): Array<Node | string> {
   const pattern = document.createElement('code');
   pattern.textContent = condition.pattern;
   request.append(method, ' ', pattern);
-  switch (condition.kind) {
-    case 'delay':
-      return tNodes('devtools_conditionDelay', { request, seconds: formatNumber(condition.delayMs / 1000) });
-    case 'error':
-      return tNodes('devtools_conditionError', { request });
-    case 'abort':
-      return tNodes('devtools_conditionAbort', { request });
-  }
+  return conditionWords(condition, request);
 }
 
 interface BannerLine {

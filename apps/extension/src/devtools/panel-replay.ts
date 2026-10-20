@@ -1,12 +1,19 @@
 import { sessionFromSteps } from '@piwitests/core/steps';
 import { interfacePhrases } from '../shared/core-words.js';
 import { t } from '../shared/i18n.js';
-import { icon, type IconName } from '../shared/icons.js';
+import { icon } from '../shared/icons.js';
 import { getReplayState, updateReplayState, type ReplayState } from '../shared/replay-storage.js';
 import { richWords } from '../shared/step-view.js';
 import { patternView } from '../shared/pattern-view.js';
 import { hostPattern } from '../shared/web-origin.js';
-import { driverText, replayVerdict, stepGlyph, verdictText, type ReplayVerdict } from '../content/replay-core.js';
+import {
+  driverText,
+  replayVerdict,
+  stepStatus,
+  VERDICT_ICONS,
+  verdictText,
+  type ReplayVerdict,
+} from '../content/replay-core.js';
 import { conditionView } from './panel-conditions.js';
 import { stepRow, viewHead } from './panel-record.js';
 import { button, el, emptyState, iconLine } from './ui.js';
@@ -41,12 +48,12 @@ async function change(state: ReplayState, next: Partial<ReplayState>, wake: bool
   await notifyReplay(state.origin, wake);
 }
 
-const VERDICT_TONES: Record<ReplayVerdict['kind'], { tone: string; icon: IconName }> = {
-  reproduced: { tone: 'bad', icon: 'bug' },
-  diverged: { tone: 'warn', icon: 'alert' },
-  stopped: { tone: 'warn', icon: 'stop' },
-  'not-reproduced': { tone: 'good', icon: 'check-circle' },
-  completed: { tone: 'good', icon: 'check-circle' },
+const VERDICT_TONES: Record<ReplayVerdict['kind'], string> = {
+  reproduced: 'bad',
+  diverged: 'warn',
+  stopped: 'warn',
+  'not-reproduced': 'good',
+  completed: 'good',
 };
 
 /**
@@ -106,13 +113,12 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
   if (done) {
     const verdict = replayVerdict(steps, state.results, state.status === 'stopped', state.runFailedStep ?? null);
     const { title, detail } = verdictText(verdict, steps);
-    const look = VERDICT_TONES[verdict.kind];
-    const box = el('div', `verdict ${look.tone}`);
+    const box = el('div', `verdict ${VERDICT_TONES[verdict.kind]}`);
     const words = el('div');
     const detailEl = el('div');
     detailEl.append(...richWords(detail, null, interfacePhrases()));
     words.append(el('strong', '', title), detailEl);
-    box.append(icon(look.icon), words);
+    box.append(icon(VERDICT_ICONS[verdict.kind]), words);
     parts.push(box);
   }
 
@@ -120,7 +126,7 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
   steps.forEach((step, index) => {
     const result = state.results[index];
     const current = !done && index === state.position;
-    const row = stepRow(step, stepGlyph(result, current));
+    const row = stepRow(step, stepStatus(result, current).icon);
     if (current) row.classList.add('current');
     if (result?.status) row.dataset.status = result.status;
     if (result?.detail) row.appendChild(el('div', 'detail', result.detail));

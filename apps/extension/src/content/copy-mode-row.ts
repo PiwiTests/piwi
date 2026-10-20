@@ -1,12 +1,9 @@
-import { COPY_MODES, copyModeLabel, renderCopyMode, type CopyMode } from '../shared/copy-modes.js';
+import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, renderCopyMode, type CopyMode } from '../shared/copy-modes.js';
 import { setLastCopyMode } from '../shared/storage.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { makeButton } from '../shared/buttons.js';
-import { icon, type IconName } from '../shared/icons.js';
+import { icon } from '../shared/icons.js';
 import { t } from '../shared/i18n.js';
-
-/** Each copy mode's icon: the locator itself, a click on it, an assertion on it. */
-const MODE_ICONS: Record<CopyMode, IconName> = { bare: 'code', action: 'pointer', expect: 'check-circle' };
 
 /**
  * The copy buttons under a locator, one per copy mode, joined as one control
@@ -39,7 +36,7 @@ export function copyModeButtons(
         }
         onChoose?.(mode);
       },
-      { icon: MODE_ICONS[mode], small: true, className: 'copy' },
+      { icon: COPY_MODE_ICONS[mode], small: true, className: 'copy' },
     );
     button.dataset.mode = mode;
     button.dataset.active = String(mode === active);
