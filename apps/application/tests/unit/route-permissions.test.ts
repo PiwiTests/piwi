@@ -30,6 +30,8 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
     'A dashboard spans projects; its live link renders only the projects its minter may share (`share:create`), checked at every view.',
   'server/api/integrations/connections/[id]/assignable.get.ts':
     'Reads tracker metadata through a connection for the create-issue dialog; no Piwi project in the request.',
+  'server/api/integrations/connections/[id]/icon.get.ts':
+    'Serves a tracker icon through a connection for the create-issue dialog; no Piwi project in the request.',
   'server/api/integrations/connections/[id]/issue-picker.get.ts':
     'Searches tracker issues through a connection for a create-issue field; no Piwi project in the request.',
   'server/api/integrations/connections/[id]/projects.get.ts':

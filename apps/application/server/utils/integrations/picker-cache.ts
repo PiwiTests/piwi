@@ -18,3 +18,5 @@ export const createFieldsCache = new TtlCache<TrackerField[]>(TTL_MS);
 export const transitionsCache = new TtlCache<TransitionSample>(TTL_MS);
 /** Issues come and go faster than projects: an issue filed a minute ago is found. */
 export const issuePickerCache = new TtlCache<TrackerIssueOption[]>(60 * 1000);
+/** Icons barely change: an hour, and a missing one (null) is remembered too. */
+export const iconCache = new TtlCache<{ bytes: Uint8Array; mime: string } | null>(60 * 60 * 1000, 300);

@@ -14,6 +14,7 @@ import {
   type FieldValue,
   type TrackerField,
 } from '#shared/integrations/fields';
+import type { AvatarProps } from '@nuxt/ui';
 import type { TrackerIssueOption, TrackerUserOption } from '#shared/integrations/types';
 import { withTypedValue } from '~/utils/text-format';
 
@@ -160,13 +161,20 @@ const chosenIssueKey = computed(() => {
   const v = model.value?.value;
   return typeof v === 'string' ? v : ((v as { key?: string } | null | undefined)?.key ?? undefined);
 });
+const trackerIcon = useTrackerIcon();
 const issueItems = computed(() => {
-  const items = issues.value.map((i) => ({ label: issueLabel(i), value: i.key }));
+  const items: { label: string; value: string; avatar?: AvatarProps }[] = issues.value.map((i) => ({
+    label: issueLabel(i),
+    value: i.key,
+    avatar: trackerIcon(props.connectionId, i.icon),
+  }));
   // Keep the chosen issue listed even before a search brings it back.
   const key = chosenIssueKey.value;
   if (key && !items.some((i) => i.value === key)) items.unshift({ label: model.value?.label || key, value: key });
   return items;
 });
+/** The chosen issue's type icon, once a search has listed it. */
+const issueAvatar = computed(() => issueItems.value.find((i) => i.value === chosenIssueKey.value)?.avatar);
 const issueKey = computed({
   get: () => chosenIssueKey.value,
   set: (typed: string | undefined) => {
@@ -234,6 +242,7 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     v-else-if="field.kind === 'issue' || field.kind === 'issue-key'"
     v-model="issueKey"
     :items="issueItems"
+    :avatar="issueAvatar"
     value-key="value"
     :loading="issuesLoading"
     ignore-filter

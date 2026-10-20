@@ -1181,16 +1181,37 @@ async function prepareClusterOneTracked({ base, request }) {
  * Answers the Jira pickers and the create screen in the page, so a scene shows
  * the required-fields UI for project CHK and its Bug type without a Jira.
  */
+/** Jira-like icons for the scenes' fake site, by the path the pickers name them with. */
+const JIRA_SCENE_ICONS = {
+  '/icons/bug': '<rect width="16" height="16" rx="3" fill="#e5493a"/><circle cx="8" cy="8" r="3.5" fill="#fff"/>',
+  '/icons/task':
+    '<rect width="16" height="16" rx="3" fill="#4bade8"/><path d="M4.5 8.2l2.3 2.3 4.7-5" stroke="#fff" stroke-width="2" fill="none"/>',
+  '/icons/epic':
+    '<rect width="16" height="16" rx="3" fill="#904ee2"/><path d="M9.5 3L5 9h3l-1.5 4L11 7H8z" fill="#fff"/>',
+  '/icons/project':
+    '<rect width="16" height="16" rx="3" fill="#36b37e"/><path d="M4 11l3-6 2 4 1.5-2L12 11z" fill="#fff"/>',
+};
+const jiraSceneIcon = (name) => `/rest/api/3/universal_avatar/view/type/scene/avatar/${name}`;
+
 async function routeJiraScreen(page) {
+  await page.route('**/api/integrations/connections/*/icon*', (route) => {
+    const path = new URL(route.request().url()).searchParams.get('path') ?? '';
+    const name = Object.keys(JIRA_SCENE_ICONS).find((key) => path.endsWith(key.slice('/icons/'.length)));
+    if (!name) return route.fulfill({ status: 404 });
+    return route.fulfill({
+      contentType: 'image/svg+xml',
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">${JIRA_SCENE_ICONS[name]}</svg>`,
+    });
+  });
   await page.route('**/api/integrations/connections/*/projects', (route) =>
-    route.fulfill({ json: { projects: [{ id: '1', key: 'CHK', name: 'Checkout' }] } }),
+    route.fulfill({ json: { projects: [{ id: '1', key: 'CHK', name: 'Checkout', icon: jiraSceneIcon('project') }] } }),
   );
   await page.route('**/api/integrations/connections/*/projects/*/issue-types', (route) =>
     route.fulfill({
       json: {
         issueTypes: [
-          { id: '10004', name: 'Bug' },
-          { id: '10006', name: 'Task' },
+          { id: '10004', name: 'Bug', icon: jiraSceneIcon('bug') },
+          { id: '10006', name: 'Task', icon: jiraSceneIcon('task') },
         ],
       },
     }),
@@ -1203,8 +1224,8 @@ async function routeJiraScreen(page) {
     route.fulfill({
       json: {
         issues: [
-          { key: 'CHK-12', summary: 'Checkout reliability' },
-          { key: 'CHK-31', summary: 'Checkout payment providers' },
+          { key: 'CHK-12', summary: 'Checkout reliability', icon: jiraSceneIcon('epic') },
+          { key: 'CHK-31', summary: 'Checkout payment providers', icon: jiraSceneIcon('epic') },
         ],
       },
     }),

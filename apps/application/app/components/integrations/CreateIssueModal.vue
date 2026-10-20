@@ -226,6 +226,8 @@ async function loadDraft() {
     params.set('includeShareLink', String(include.value.includeShareLink));
     const d = await $fetch<IssueDraft>(`/api/integrations/issue-draft?${params.toString()}`);
     applyDraft(d);
+    // The pickers name the project and the type, with their icons, rather than a bare key and id.
+    void loadProjects();
     if (projectKey.value) void loadIssueTypes();
   } catch (err) {
     error.value = errorMessage(err);
@@ -293,6 +295,21 @@ async function searchAssignable() {
 function addLabel(text: string) {
   labels.value = withTypedValue(labels.value, text);
 }
+
+// Jira's own icons beside the project and the issue type, as Jira shows them.
+const trackerIcon = useTrackerIcon();
+const projectItems = computed(() =>
+  projects.value.map((p) => ({
+    label: `${p.key} — ${p.name}`,
+    value: p.key,
+    avatar: trackerIcon(connectionId.value, p.icon),
+  })),
+);
+const issueTypeItems = computed(() =>
+  issueTypes.value.map((t) => ({ label: t.name, value: t.id, avatar: trackerIcon(connectionId.value, t.icon) })),
+);
+const projectAvatar = computed(() => projectItems.value.find((p) => p.value === projectKey.value)?.avatar);
+const issueTypeAvatar = computed(() => issueTypeItems.value.find((t) => t.value === issueType.value)?.avatar);
 
 const assigneeItems = computed(() => assignableUsers.value.map((u) => ({ label: u.displayName || u.id, value: u.id })));
 
@@ -463,7 +480,8 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <UFormField label="Jira project">
               <USelectMenu
                 v-model="projectKey"
-                :items="projects.map((p) => ({ label: `${p.key} — ${p.name}`, value: p.key }))"
+                :items="projectItems"
+                :avatar="projectAvatar"
                 value-key="value"
                 :placeholder="projectKey || 'Select a project'"
                 class="w-full"
@@ -473,7 +491,8 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <UFormField label="Issue type">
               <USelectMenu
                 v-model="issueType"
-                :items="issueTypes.map((t) => ({ label: t.name, value: t.id }))"
+                :items="issueTypeItems"
+                :avatar="issueTypeAvatar"
                 value-key="value"
                 :placeholder="issueType || 'Select a type'"
                 class="w-full"

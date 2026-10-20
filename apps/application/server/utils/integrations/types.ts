@@ -18,11 +18,15 @@ export interface TrackerProject {
   id: string;
   key: string;
   name: string;
+  /** The project's avatar, as a path on the tracker's site served through the connection. */
+  icon?: string | null;
 }
 
 export interface TrackerIssueType {
   id: string;
   name: string;
+  /** The issue type's icon, as a path on the tracker's site served through the connection. */
+  icon?: string | null;
 }
 
 export interface TrackerTransition {
@@ -98,6 +102,8 @@ export interface IssueTracker {
   searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]>;
   /** Issues matching a key or words of a summary, the project's first, for a field that points at an issue. */
   pickIssues?(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]>;
+  /** An icon the tracker serves behind its sign-in (an issue type's, a project's), by its path on the site. */
+  fetchIcon?(path: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;
   addComment(key: string, body: IssueDocument): Promise<void>;

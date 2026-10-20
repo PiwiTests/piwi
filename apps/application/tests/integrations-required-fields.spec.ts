@@ -84,6 +84,11 @@ const BUG_SCREEN = [
   },
 ];
 
+/** The path the mock serves its issue type icons from, as Jira Cloud does. */
+const ICON_PATH = '/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium';
+const ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#904ee2"/></svg>';
+
 /** The issues the mock's issue picker finds: epics to parent a bug under. */
 const PICKER_ISSUES = [
   { key: 'PROJ-7', summary: 'Checkout epic' },
@@ -171,7 +176,15 @@ function startMockJira(port: number): MockJira {
     if (path === '/rest/api/3/myself') return send({ accountId: 'acct-1', displayName: 'Mock Jira User' });
     if (path === '/rest/api/3/project/search') return send({ values: [{ id: '1', key: 'PROJ', name: 'Project' }] });
     if (path === '/rest/api/3/project/PROJ')
-      return send({ id: '1', key: 'PROJ', issueTypes: [{ id: '10004', name: 'Bug' }] });
+      return send({
+        id: '1',
+        key: 'PROJ',
+        issueTypes: [{ id: '10004', name: 'Bug', iconUrl: `http://127.0.0.1:${port}${ICON_PATH}` }],
+      });
+    if (`${path}${url.search}` === ICON_PATH) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return res.end(ICON_SVG);
+    }
     if (path === '/rest/api/3/issue/createmeta/PROJ/issuetypes/10004') {
       return send({ startAt: 0, maxResults: 100, total: BUG_SCREEN.length, fields: BUG_SCREEN });
     }
@@ -186,7 +199,12 @@ function startMockJira(port: number): MockJira {
           {
             id: 'cs',
             label: 'Current Search',
-            issues: hits.map((i) => ({ key: i.key, summary: `<b>${i.summary}</b>`, summaryText: i.summary })),
+            issues: hits.map((i) => ({
+              key: i.key,
+              summary: `<b>${i.summary}</b>`,
+              summaryText: i.summary,
+              img: ICON_PATH,
+            })),
           },
         ],
       });
@@ -372,6 +390,26 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     });
   });
 
+  test("issue types carry Jira's icon, served through the connection and nothing else", async ({ request }) => {
+    const { issueTypes } = await (
+      await request.get(`/api/integrations/connections/${connectionId}/projects/PROJ/issue-types`)
+    ).json();
+    expect(issueTypes).toEqual([{ id: '10004', name: 'Bug', icon: ICON_PATH }]);
+
+    const icon = await request.get(
+      `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent(ICON_PATH)}`,
+    );
+    expect(icon.status()).toBe(200);
+    expect(icon.headers()['content-type']).toBe('image/svg+xml');
+    expect(icon.headers()['content-security-policy']).toContain('sandbox');
+    expect(await icon.text()).toBe(ICON_SVG);
+
+    const other = await request.get(
+      `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent('/rest/api/3/myself')}`,
+    );
+    expect(other.status()).toBe(400);
+  });
+
   test('a create that leaves a required field empty is refused before Jira is called', async ({ request }) => {
     const res = await request.post('/api/integrations/issues', { data: createBody(clusters.refused!) });
     expect(res.ok()).toBe(true);
@@ -476,7 +514,12 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       // Its input searches the Jira project's issues by key or summary.
       await parent.getByText('Search an issue').click();
       await page.keyboard.type('checkout');
-      await page.getByRole('option', { name: 'PROJ-7 — Checkout epic' }).click();
+      // Each issue shows its type's icon, as Jira draws it.
+      const epic = page.getByRole('option', { name: 'PROJ-7 — Checkout epic' });
+      await expect
+        .poll(() => epic.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+        .toBeGreaterThan(0);
+      await epic.click();
       await expect(parent).toContainText('PROJ-7 — Checkout epic');
       expect(mock.pickerQueries).toContainEqual({ query: 'checkout', jql: 'project = "PROJ"' });
 
