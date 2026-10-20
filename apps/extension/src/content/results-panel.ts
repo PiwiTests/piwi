@@ -24,7 +24,7 @@ import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 import { bindToTool, toolIsCurrent } from '../shared/tool-session.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { BUTTON_CSS, makeButton, styleButton } from '../shared/buttons.js';
-import { icon, type IconName } from '../shared/icons.js';
+import { iconText, type IconName } from '../shared/icons.js';
 import { COPY_MODE_CSS, copyModeButtons } from './copy-mode-row.js';
 
 const HOST_ID = 'piwi-picker-results-host';
@@ -470,9 +470,7 @@ async function fillPiwiSection(
     const code = document.createElement('code');
     code.className = 'piwi-loc';
     code.innerHTML = highlightLocator(index.locators[entry]!.locator);
-    const words = document.createElement('span');
-    words.append(...tNodes('pick_brittle', { locator: code, reasons: stabilityText(stabilities[entry]!) }));
-    line.append(icon('alert'), words);
+    iconText(line, 'alert', ...tNodes('pick_brittle', { locator: code, reasons: stabilityText(stabilities[entry]!) }));
     children.push(line);
   }
   if (brittle.length) children.push(muted(t('pick_useRankedInstead')));
@@ -493,10 +491,7 @@ async function fillPiwiSection(
 /** `el` with `className`, saying `text` after the icon `name`. */
 function withLeadingIcon<T extends HTMLElement>(el: T, name: IconName, className: string, text: string): T {
   el.className = className;
-  const words = document.createElement('span');
-  words.textContent = text;
-  el.append(icon(name), words);
-  return el;
+  return iconText(el, name, text);
 }
 
 /** What the engine found for a locator, under it; nothing for one it could not evaluate. */

@@ -117,7 +117,7 @@ export function urlView(address: string, options: { origin?: boolean } = {}): HT
   };
   const originOnly = !parts.path && !parts.rest;
   if (options.origin !== false || originOnly) add(parts.origin, originOnly ? 'piwi-url-path' : 'piwi-url-origin');
-  if (!originOnly) add(parts.path || '/', 'piwi-url-path');
+  if (!originOnly) add(parts.path || (options.origin === false ? '/' : ''), 'piwi-url-path');
   add(parts.rest, 'piwi-url-rest');
   return view;
 }

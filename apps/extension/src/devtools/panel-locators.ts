@@ -3,6 +3,7 @@ import { formatNumber, t, tn } from '../shared/i18n.js';
 import { patternOrigin } from '../shared/web-origin.js';
 import { requestSiteAccess } from './inspected.js';
 import { callPageScript, revealMatch } from './page-script.js';
+import { icon } from '../shared/icons.js';
 import { button, el, emptyState, iconLine, noAccessText } from './ui.js';
 
 /**
@@ -86,13 +87,18 @@ export function renderLocatorsTab(container: HTMLElement): void {
       results.replaceChildren();
       return;
     }
-    verdict.className = result.count === 1 ? 'status good-text' : 'status warn-text';
-    verdict.textContent =
+    verdict.className = result.count === 1 ? 'status icon-line good-text' : 'status icon-line warn-text';
+    const said = el('span');
+    said.textContent =
       result.count === 1
-        ? `✓ ${t('console_unique')}`
+        ? t('console_unique')
         : result.count === 0
           ? t('console_none')
-          : `⚠ ${tn('console_many', result.count)}`;
+          : tn('console_many', result.count);
+    verdict.replaceChildren(
+      icon(result.count === 1 ? 'check-circle' : result.count === 0 ? 'x-circle' : 'alert'),
+      said,
+    );
     const list = el('ol', 'steps matches');
     list.setAttribute('aria-label', t('devtools_matches'));
     const revealNote = el('div', 'reveal-note');

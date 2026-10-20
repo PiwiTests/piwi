@@ -177,13 +177,16 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
       top.append(method, btn);
       row.appendChild(top);
 
-      if (candidate.detail != null) {
+      const shown = candidate.values ?? (candidate.detail != null ? [candidate.detail] : []);
+      if (shown.length > 0) {
         const detail = document.createElement('div');
         detail.className = 'detail';
-        const value = document.createElement('span');
-        value.className = 'piwi-value';
-        value.textContent = interfacePhrases().quote(candidate.detail);
-        detail.appendChild(value);
+        shown.forEach((text, i) => {
+          const value = document.createElement('span');
+          value.className = 'piwi-value';
+          value.textContent = interfacePhrases().quote(text);
+          detail.append(...(i > 0 ? [', '] : []), value);
+        });
         row.appendChild(detail);
       }
 

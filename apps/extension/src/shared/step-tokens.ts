@@ -17,9 +17,10 @@ export type WordToken = {
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 /**
- * `text` as tokens: its Markdown code spans, locators and addresses as code,
- * and in what remains the quoted names and values (`step`'s value told apart,
- * any quote of a sentence that is no step a `quote`), and the key of a press.
+ * `text` as tokens: its Markdown code spans and its locators as code, then
+ * the quoted names and values (`step`'s value told apart, any quote of a
+ * sentence that is no step a `quote`), and outside the quotes the addresses
+ * and the key of a press.
  */
 export function wordTokens(text: string, step: RecordedStep | null, phrases: BugPhrases): WordToken[] {
   const tokens: WordToken[] = [];
@@ -28,8 +29,8 @@ export function wordTokens(text: string, step: RecordedStep | null, phrases: Bug
       tokens.push({ kind: codeKind(part.text), text: part.text });
       continue;
     }
-    for (const piece of splitInlineCode(part.text)) {
-      if (piece.code) tokens.push({ kind: codeKind(piece.text), text: piece.text });
+    for (const piece of splitLocators(part.text)) {
+      if (piece.code) tokens.push({ kind: 'locator', text: piece.text });
       else tokens.push(...quotedTokens(piece.text, step, phrases));
     }
   }
@@ -39,28 +40,37 @@ export function wordTokens(text: string, step: RecordedStep | null, phrases: Bug
 const INLINE_LOCATOR = /\b(?:getBy(?:Role|Text|Label|Placeholder|AltText|Title|TestId)|locator|frameLocator)\(/g;
 const INLINE_URL = /\bhttps?:\/\/[^\s"'«»„“”<>]+/g;
 
-/** Splits the locator expressions and the http addresses written in plain text out of it. */
-function splitInlineCode(text: string): { text: string; code: boolean }[] {
-  const found: { start: number; end: number }[] = [];
-  for (const match of text.matchAll(INLINE_LOCATOR)) {
-    if (found.some((f) => match.index < f.end)) continue;
-    const scanned = scanLocatorChain(text.slice(match.index));
-    if (scanned && scanned.end > 0) found.push({ start: match.index, end: match.index + scanned.end });
-  }
-  for (const match of text.matchAll(INLINE_URL)) {
-    const end = match.index + match[0].replace(/[.,;:!?)]+$/, '').length;
-    if (!found.some((f) => match.index < f.end && end > f.start)) found.push({ start: match.index, end });
-  }
-  found.sort((a, b) => a.start - b.start);
+/** `text` cut at `spans`, in order: each span as code, the text between them as text. */
+function splitSpans(text: string, spans: { start: number; end: number }[]): { text: string; code: boolean }[] {
   const parts: { text: string; code: boolean }[] = [];
   let last = 0;
-  for (const { start, end } of found) {
+  for (const { start, end } of spans) {
     if (start > last) parts.push({ text: text.slice(last, start), code: false });
     parts.push({ text: text.slice(start, end), code: true });
     last = end;
   }
   if (last < text.length) parts.push({ text: text.slice(last), code: false });
   return parts;
+}
+
+/** Splits the locator expressions written in plain text out of it, each as far as core's parser reads it. */
+function splitLocators(text: string): { text: string; code: boolean }[] {
+  const found: { start: number; end: number }[] = [];
+  for (const match of text.matchAll(INLINE_LOCATOR)) {
+    if (found.some((f) => match.index < f.end)) continue;
+    const scanned = scanLocatorChain(text.slice(match.index));
+    if (scanned && scanned.end > 0) found.push({ start: match.index, end: match.index + scanned.end });
+  }
+  return splitSpans(text, found);
+}
+
+/** Splits the http addresses written in plain text out of it, without the punctuation that ends a sentence. */
+function splitUrls(text: string): { text: string; code: boolean }[] {
+  const found = [...text.matchAll(INLINE_URL)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].replace(/[.,;:!?)]+$/, '').length,
+  }));
+  return splitSpans(text, found);
 }
 
 /** Splits Markdown inline code spans (any fence length) out of `text`. */
@@ -131,18 +141,31 @@ function quotedTokens(text: string, step: RecordedStep | null, phrases: BugPhras
     const start = rest.indexOf(open);
     const end = start === -1 ? -1 : rest.indexOf(close, start + open.length);
     if (start === -1 || end === -1) break;
-    tokens.push(...keyTokens(rest.slice(0, start), key));
+    tokens.push(...plainTokens(rest.slice(0, start), key));
     const inner = rest.slice(start + open.length, end);
     const kind = !step ? 'quote' : value !== null && oneLine(inner) === value ? 'value' : 'name';
     tokens.push({ kind, text: rest.slice(start, end + close.length) });
     rest = rest.slice(end + close.length);
   }
-  tokens.push(...keyTokens(rest, key));
+  tokens.push(...plainTokens(rest, key));
   return tokens;
 }
 
+/** Text outside the quotes: its addresses, and the key of a press. */
+function plainTokens(text: string, key: string | null): WordToken[] {
+  return splitUrls(text).flatMap((part) =>
+    part.code ? [{ kind: 'url', text: part.text } as WordToken] : keyTokens(part.text, key),
+  );
+}
+
+/** Where `key` stands in `text` as a word of its own, not inside one (the P of "Press P"); -1 when it does not. */
+function keyIndex(text: string, key: string): number {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'u').exec(text)?.index ?? -1;
+}
+
 function keyTokens(text: string, key: string | null): WordToken[] {
-  const at = key ? text.indexOf(key) : -1;
+  const at = key ? keyIndex(text, key) : -1;
   if (!key || at === -1) return text ? [{ kind: 'text', text }] : [];
   const tokens: WordToken[] = [];
   if (at > 0) tokens.push({ kind: 'text', text: text.slice(0, at) });

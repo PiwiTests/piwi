@@ -1,9 +1,8 @@
 import { sessionFromSteps } from '@piwitests/core/steps';
-import { interfacePhrases } from '../shared/core-words.js';
 import { t } from '../shared/i18n.js';
 import { icon } from '../shared/icons.js';
 import { getReplayState, updateReplayState, type ReplayState } from '../shared/replay-storage.js';
-import { richWords } from '../shared/step-view.js';
+import { richText } from '../shared/step-view.js';
 import { patternView } from '../shared/pattern-view.js';
 import { hostPattern } from '../shared/web-origin.js';
 import {
@@ -116,7 +115,7 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
     const box = el('div', `verdict ${VERDICT_TONES[verdict.kind]}`);
     const words = el('div');
     const detailEl = el('div');
-    detailEl.append(...richWords(detail, null, interfacePhrases()));
+    detailEl.append(...richText(detail));
     words.append(el('strong', '', title), detailEl);
     box.append(icon(VERDICT_ICONS[verdict.kind]), words);
     parts.push(box);
@@ -129,7 +128,11 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
     const row = stepRow(step, stepStatus(result, current).icon);
     if (current) row.classList.add('current');
     if (result?.status) row.dataset.status = result.status;
-    if (result?.detail) row.appendChild(el('div', 'detail', result.detail));
+    if (result?.detail) {
+      const why = el('div', 'detail');
+      why.append(...richText(result.detail));
+      row.appendChild(why);
+    }
     if (result?.driver)
       row.appendChild(el('div', 'detail', t(result.driver === 'cdp' ? 'replay_stepTrusted' : 'replay_stepEvents')));
     list.appendChild(row);

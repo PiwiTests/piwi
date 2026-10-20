@@ -4,7 +4,7 @@ import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, renderCopyMode } from '../s
 import { stabilityRulesText } from '../shared/core-words.js';
 import { describeSelection, type SelectionLocator, type SelectionRanking } from '../shared/devtools-selection.js';
 import { initI18n, localizeDocument, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
-import { decorateIcons } from '../shared/icons.js';
+import { decorateIcons, icon } from '../shared/icons.js';
 import { PATTERN_CSS } from '../shared/pattern-view.js';
 import { isReservedPickName, isValidPickName } from '../shared/session-export.js';
 import { STEP_CSS } from '../shared/step-view.js';
@@ -101,7 +101,7 @@ function renderRanking(ranking: SelectionRanking): void {
   show(ranking, list);
 }
 
-/** `✓ unique · stable`, `3 matches · brittle: CSS class`, and whether it reads as good or as a warning. */
+/** `unique · stable`, `3 matches · brittle: CSS class`, and whether it reads as good or as a warning. */
 function verdictText(locator: SelectionLocator): { text: string; tone: 'good' | 'warn' } {
   const stability =
     locator.stability === 'stable'
@@ -113,11 +113,11 @@ function verdictText(locator: SelectionLocator): { text: string; tone: 'good' | 
     case 'unique':
     case 'narrowed':
       return {
-        text: `✓ ${t('devtools_unique')} · ${stability}`,
+        text: `${t('devtools_unique')} · ${stability}`,
         tone: locator.stability === 'brittle' ? 'warn' : 'good',
       };
     case 'position':
-      return { text: `✓ ${t('devtools_byPosition')} · ${stability}`, tone: 'warn' };
+      return { text: `${t('devtools_byPosition')} · ${stability}`, tone: 'warn' };
     case 'ambiguous':
       return { text: `${tn('devtools_matches', locator.count ?? 0)} · ${stability}`, tone: 'warn' };
     case 'unchecked':
@@ -134,7 +134,8 @@ function locatorRow(
   const code = el('code', 'piwi-loc');
   code.innerHTML = highlightLocator(locator.locator);
   const verdict = verdictText(locator);
-  const badge = el('div', `locator-verdict badge ${verdict.tone}`, verdict.text);
+  const badge = el('div', `locator-verdict badge ${verdict.tone}`);
+  badge.append(icon(verdict.tone === 'good' ? 'check-circle' : 'alert'), verdict.text);
 
   const actions = el('div', 'row-actions');
   actions.appendChild(el('span', 'copy-label', t('devtools_copyAs')));

@@ -13,7 +13,7 @@ import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shar
 import { injectionFailureText } from '../shared/injection-failure.js';
 import { getReplayState, getReplayTab } from '../shared/replay-storage.js';
 import { originPattern, webOrigin } from '../shared/web-origin.js';
-import { ICON_CSS, decorateIcons, icon, type IconName } from '../shared/icons.js';
+import { ICON_CSS, decorateIcons, icon, iconText, type IconName } from '../shared/icons.js';
 
 await initI18n();
 localizeDocument();
@@ -41,9 +41,7 @@ const bugHint = document.getElementById('report-bug-hint')!;
 const replayBtn = document.getElementById('replay-bug') as HTMLButtonElement;
 /** The status line, filled only when a tool cannot run here: why, after a warning icon. */
 function showStatus(text: string): void {
-  const words = document.createElement('span');
-  words.textContent = text;
-  statusEl.replaceChildren(icon('alert'), words);
+  iconText(statusEl, 'alert', text);
 }
 
 /** Set once the connection settings are read: "Tested elements" needs a Piwi instance. */

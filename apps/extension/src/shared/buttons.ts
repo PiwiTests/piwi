@@ -29,16 +29,15 @@ export function makeButton(
 ): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
-  styleButton(button, options);
   if (options.iconOnly && options.icon) {
     button.append(icon(options.icon));
     button.setAttribute('aria-label', label);
     button.title = options.title ?? label;
   } else {
     button.textContent = label;
-    if (options.icon) withIcon(button, options.icon);
     if (options.title) button.title = options.title;
   }
+  styleButton(button, options);
   button.addEventListener('click', onClick);
   return button;
 }

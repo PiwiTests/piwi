@@ -196,6 +196,17 @@ export function icon(name: IconName): SVGSVGElement {
   return svg;
 }
 
+/**
+ * Fills `el` with `name`'s icon and then `text` in a span of its own, so the
+ * words wrap beside the icon: a status line, a verdict, a warning.
+ */
+export function iconText<T extends HTMLElement>(el: T, name: IconName, ...text: Array<Node | string>): T {
+  const words = document.createElement('span');
+  words.append(...text);
+  el.replaceChildren(icon(name), words);
+  return el;
+}
+
 const LABEL_CLASS = 'piwi-label';
 
 /**
@@ -243,7 +254,7 @@ export function setLabel(el: HTMLElement, text: string): void {
  * writes the elements' texts.
  */
 export function decorateIcons(root: ParentNode = document): void {
-  for (const el of root.querySelectorAll<HTMLElement>('[data-icon]')) {
+  for (const el of root.querySelectorAll<HTMLElement>(':not(svg)[data-icon]')) {
     const name = el.dataset.icon as IconName;
     if (name in ICONS) withIcon(el, name);
   }

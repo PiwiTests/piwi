@@ -28,6 +28,10 @@
           --ok: #34d399;
         }
       }
+      /* An element with the `hidden` attribute is hidden, whatever `display` a rule below gives it. */
+      [hidden] {
+        display: none !important;
+      }
       * {
         box-sizing: border-box;
       }

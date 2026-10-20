@@ -1123,7 +1123,7 @@ function handOverBox(handed: HandOver, step: RecordedStep): HTMLElement {
       'hand-over-skip',
     ),
     keyed(
-      button(t('replay_handOverStop'), () => handed.answer('stop'), { icon: 'stop', tone: 'remove' }),
+      button(t('replay_handOverStop'), () => handed.answer('stop'), { icon: 'stop', tone: 'danger' }),
       'hand-over-stop',
     ),
   );

@@ -42,16 +42,3 @@ export function throttleText(throttle: NetworkThrottle): string {
 export function cpuText(rate: number): string {
   return t('devtools_cpuSlower', { rate: formatNumber(rate) });
 }
-
-/** Everything on for a tab, in words: each request's condition, then the page's network and CPU. */
-export function emulationLines(state: {
-  conditions: readonly RequestCondition[];
-  throttle?: NetworkThrottle | null;
-  cpuRate?: number | null;
-}): string[] {
-  return [
-    ...state.conditions.map(conditionText),
-    ...(state.throttle ? [throttleText(state.throttle)] : []),
-    ...(state.cpuRate ? [cpuText(state.cpuRate)] : []),
-  ];
-}

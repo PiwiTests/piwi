@@ -16,7 +16,13 @@ import {
   removePickerOverlay,
   type PickerOverlayArg,
 } from '@piwitests/picker-dom';
-import { buildAgentContext } from './agent-context.js';
+import {
+  buildAgentContext,
+  contextText,
+  type ContextLine,
+  type ContextPart,
+  type ContextPartKind,
+} from './agent-context.js';
 import { attachPanelShadow } from './panel-root.js';
 import { pickerOverlayStrings } from './picker-strings.js';
 import { holdFocus } from './modal-panel.js';
@@ -32,93 +38,39 @@ function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
 }
 
-/** A span of `text` with `className`. */
-function part(className: string, text: string): HTMLElement {
+/** The style of each kind of part of the block. */
+const PART_CLASSES: Record<Exclude<ContextPartKind, 'plain' | 'url' | 'locator'>, string> = {
+  head: 'ctx-head',
+  label: 'ctx-label',
+  tag: 'ctx-tag',
+  attr: 'ctx-attr',
+  string: 'ctx-string',
+  score: 'ctx-score',
+  note: 'ctx-dim',
+};
+
+/** A part of the block as a node: an address and a locator highlighted, any other part in its style. */
+function partNode({ kind, text }: ContextPart): Node {
+  if (kind === 'plain') return document.createTextNode(text);
+  if (kind === 'url') return urlView(text);
   const span = document.createElement('span');
-  span.className = className;
-  span.textContent = text;
+  if (kind === 'locator') {
+    span.className = 'piwi-loc';
+    span.innerHTML = highlightLocator(text);
+  } else {
+    span.className = PART_CLASSES[kind];
+    span.textContent = text;
+  }
   return span;
 }
 
-/** A locator, highlighted. */
-function locatorPart(locator: string): HTMLElement {
-  const code = document.createElement('span');
-  code.className = 'piwi-loc';
-  code.innerHTML = highlightLocator(locator);
-  return code;
+/** The block, line by line, its parts set apart; its text is the copy's, character for character. */
+function contextNodes(lines: readonly ContextLine[]): Node[] {
+  return lines.flatMap((line, i) => [...(i > 0 ? [document.createTextNode('\n')] : []), ...line.map(partNode)]);
 }
 
-/** The ranked line's note on what the locator finds on the page, as `buildAgentContext` writes it. */
-const RANKED_NOTE = / \((?:narrowed from |by position: |finds |not checked on this page)[\s\S]*\)$/;
-/** An attribute of the Attributes line: its name, and its quoted value up to the next attribute. */
-const ATTRIBUTE = /([\w:-]+)=("[\s\S]*?")(?= [\w:-]+="|$)/g;
-/** A quoted name or text. */
-const QUOTED = /("[^"]*")/;
-
-/** `text` with its quoted parts as strings. */
-function quotedParts(text: string): Node[] {
-  return text
-    .split(QUOTED)
-    .filter(Boolean)
-    .map((piece) => (QUOTED.test(piece) ? part('ctx-string', piece) : document.createTextNode(piece)));
-}
-
-/**
- * One line of the block as `buildAgentContext` writes it, its parts set
- * apart: the heading, each label, the address, the tag, the attributes'
- * names, and each ranked locator with its score. The text stays the block's,
- * character for character.
- */
-function contextLine(line: string): Node[] {
-  if (line.startsWith('## ')) return [part('ctx-head', line)];
-  const ranked = /^(\d+\. )\[(\d+)\] (.+)$/.exec(line);
-  if (ranked) {
-    const [, number, score, rest] = ranked as unknown as [string, string, string, string];
-    const note = RANKED_NOTE.exec(rest);
-    const locator = note ? rest.slice(0, note.index) : rest;
-    const nodes: Node[] = [part('ctx-dim', number), part('ctx-score', `[${score}]`), document.createTextNode(' ')];
-    nodes.push(locatorPart(locator));
-    if (note) nodes.push(part('ctx-dim', note[0]));
-    return nodes;
-  }
-  if (line.endsWith(':')) return [part('ctx-label', line)];
-  const labelled = /^([A-Z][A-Za-z ]*:) (.*)$/.exec(line);
-  if (!labelled) return [document.createTextNode(line)];
-  const [, label, rest] = labelled as unknown as [string, string, string];
-  const nodes: Node[] = [part('ctx-label', label), document.createTextNode(' ')];
-  if (label === 'Page:') {
-    nodes.push(urlView(rest));
-  } else if (label === 'Element:') {
-    const tag = /^(<[^>]+>)([\s\S]*)$/.exec(rest);
-    if (tag) nodes.push(part('ctx-tag', tag[1]!), ...quotedParts(tag[2]!));
-    else nodes.push(...quotedParts(rest));
-  } else if (label === 'Attributes:') {
-    let last = 0;
-    for (const match of rest.matchAll(ATTRIBUTE)) {
-      if (match.index > last) nodes.push(document.createTextNode(rest.slice(last, match.index)));
-      nodes.push(part('ctx-attr', match[1]!), document.createTextNode('='), part('ctx-string', match[2]!));
-      last = match.index + match[0].length;
-    }
-    if (last < rest.length) nodes.push(document.createTextNode(rest.slice(last)));
-  } else if (label === 'Text:') {
-    nodes.push(part('ctx-string', rest));
-  } else {
-    nodes.push(document.createTextNode(rest));
-  }
-  return nodes;
-}
-
-/** The block, line by line, its parts set apart by {@link contextLine}. */
-function contextNodes(context: string): Node[] {
-  const nodes: Node[] = [];
-  for (const [i, line] of context.split('\n').entries()) {
-    if (i > 0) nodes.push(document.createTextNode('\n'));
-    nodes.push(...contextLine(line));
-  }
-  return nodes;
-}
-
-function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
+function renderContextPanel(lines: ContextLine[], toolEpoch: number): Promise<void> {
+  const context = contextText(lines);
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -217,7 +169,7 @@ function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
   const pre = document.createElement('pre');
   // The block is written for a coding agent, in English, whatever the interface language.
   pre.lang = 'en';
-  pre.append(...contextNodes(context));
+  pre.append(...contextNodes(lines));
   panel.appendChild(pre);
 
   return new Promise<void>((resolve) => {
@@ -276,8 +228,8 @@ async function runAgentContextPanel(): Promise<void> {
     removePickerOverlay();
 
     const el = g.__piwiPickedElement as Element;
-    const context = buildAgentContext(el, location.href);
-    await renderContextPanel(context, toolEpoch);
+    const lines = buildAgentContext(el, location.href);
+    await renderContextPanel(lines, toolEpoch);
   } finally {
     // A flow another tool took over from leaves the pick globals to that tool.
     if (toolIsCurrent(toolEpoch)) clearPickGlobals();

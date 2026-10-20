@@ -24,7 +24,7 @@ import { attachPanelShadow } from './panel-root.js';
 import { pickerOverlayStrings } from './picker-strings.js';
 import { holdFocus } from './modal-panel.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
-import { ICON_CSS, icon } from '../shared/icons.js';
+import { ICON_CSS, iconText } from '../shared/icons.js';
 import { COPY_MODE_CSS, copyModeButtons } from './copy-mode-row.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
@@ -97,9 +97,7 @@ function showBetweenPicksBar(count: number, toolEpoch: number): Promise<'pick-mo
     bar.lang = uiLanguage();
     const label = document.createElement('span');
     label.className = 'label';
-    const words = document.createElement('span');
-    words.textContent = tn('multipick_picked', count);
-    label.append(icon('layers'), words);
+    iconText(label, 'layers', tn('multipick_picked', count));
     const deriveBtn = makeButton(t('multipick_derive'), () => finish('derive'), { icon: 'wand', tone: 'primary' });
     const moreBtn = makeButton(t('multipick_pickMore', { max: MAX_PICKS }), () => finish('pick-more'), {
       icon: 'plus',
@@ -164,9 +162,7 @@ function showMessage(text: string, toolEpoch: number): Promise<void> {
     const bar = document.createElement('div');
     bar.className = 'bar';
     bar.lang = uiLanguage();
-    const words = document.createElement('span');
-    words.textContent = text;
-    bar.append(icon('info'), words);
+    iconText(bar, 'info', text);
     root.appendChild(bar);
 
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -305,9 +301,7 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
       if (row.indexBased) {
         const warn = document.createElement('div');
         warn.className = 'warn';
-        const words = document.createElement('span');
-        words.textContent = t('multipick_byPosition');
-        warn.append(icon('alert'), words);
+        iconText(warn, 'alert', t('multipick_byPosition'));
         rowEl.appendChild(warn);
       }
 

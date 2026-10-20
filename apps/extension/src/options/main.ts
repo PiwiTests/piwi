@@ -56,7 +56,7 @@ import {
   type MessageKey,
 } from '../shared/i18n.js';
 import { isDraftLanguage, TRANSLATION_ISSUE_URL } from '../shared/languages.js';
-import { decorateIcons, icon } from '../shared/icons.js';
+import { decorateIcons, icon, iconText } from '../shared/icons.js';
 import { STEP_CSS } from '../shared/step-view.js';
 import { PATTERN_CSS, patternView } from '../shared/pattern-view.js';
 
@@ -150,9 +150,8 @@ function writeStatus(el: HTMLElement, text: StatusText, kind: StatusKind): void 
     el.replaceChildren();
     return;
   }
-  const words = document.createElement('span');
-  words.append(...parts);
-  el.replaceChildren(...(kind ? [icon(kind === 'ok' ? 'check-circle' : 'alert')] : []), words);
+  if (kind) iconText(el, kind === 'ok' ? 'check-circle' : 'alert', ...parts);
+  else el.replaceChildren(...parts);
 }
 
 /** The Connect to Piwi card's status line. */
@@ -420,13 +419,13 @@ function renderInstanceState(): void {
   connectedAsEl.hidden = !synced;
   connectedAsEl.replaceChildren();
   if (synced) {
-    const words = document.createElement('span');
-    words.append(
+    iconText(
+      connectedAsEl,
+      'check-circle',
       ...(stored.connectedAs
         ? tNodes('options_connectedAs', { name: strong(stored.connectedAs) })
         : [t('options_connectedNoAuth')]),
     );
-    connectedAsEl.append(icon('check-circle'), words);
   }
   sitesConnectFirst.hidden = kept;
   sitesBody.hidden = !kept;

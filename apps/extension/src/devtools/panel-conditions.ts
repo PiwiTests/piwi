@@ -263,7 +263,7 @@ export async function renderConditions(strip: HTMLElement, pageOrigin: string | 
   const allOff = button(
     t('devtools_conditionsAllOff'),
     () => void setState(origin, { conditions: [], throttle: null, cpuRate: null }, report),
-    { icon: 'stop', tone: 'remove' },
+    { icon: 'stop', tone: 'danger' },
   );
   const title = el('span', 'strip-title');
   title.append(icon('gauge'), t('devtools_conditionsTitle'));

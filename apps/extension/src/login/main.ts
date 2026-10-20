@@ -3,7 +3,7 @@ import { cookieOriginPatterns, setupSnippet, toStorageState, type BrowserCookie 
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { downloadBlob } from '../shared/download.js';
 import { webOrigin } from '../shared/web-origin.js';
-import { decorateIcons, icon } from '../shared/icons.js';
+import { decorateIcons, iconText } from '../shared/icons.js';
 import { STEP_CSS } from '../shared/step-view.js';
 import { PATTERN_CSS, patternView } from '../shared/pattern-view.js';
 
@@ -52,10 +52,8 @@ function copyButton(button: HTMLButtonElement, text: () => string): void {
 
 /** The status line: what happened, after a check when the file was saved or a warning when it was not. */
 function showStatus(status: HTMLElement, kind: 'ok' | 'error', ...text: Array<Node | string>): void {
-  const words = document.createElement('span');
-  words.append(...text);
   status.className = kind;
-  status.replaceChildren(icon(kind === 'ok' ? 'check-circle' : 'alert'), words);
+  iconText(status, kind === 'ok' ? 'check-circle' : 'alert', ...text);
 }
 
 async function start(): Promise<void> {

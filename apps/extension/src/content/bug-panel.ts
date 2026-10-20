@@ -980,7 +980,7 @@ export function renderBugHud(
   if (evidence.debugging?.state === 'on') {
     button('screenshot', t('bug_screenshot'), { icon: 'camera', title: t('bug_screenshotHint') });
   }
-  button('finish', t('bug_finish'), { icon: 'check', tone: 'danger', className: 'finish' });
+  button('finish', t('bug_finish'), { icon: 'check', tone: 'success', className: 'finish' });
   bar.appendChild(buttons);
 
   const summary = document.createElement('div');

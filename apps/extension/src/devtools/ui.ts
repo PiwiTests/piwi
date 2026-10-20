@@ -2,7 +2,7 @@
 
 import { makeButton, type ButtonOptions } from '../shared/buttons.js';
 import { tNodes } from '../shared/i18n.js';
-import { icon, type IconName } from '../shared/icons.js';
+import { icon, iconText, type IconName } from '../shared/icons.js';
 import { patternView } from '../shared/pattern-view.js';
 
 export type { IconName };
@@ -49,9 +49,5 @@ export function methodView(method: string): HTMLElement {
 
 /** A line of text after an icon: a note, a warning, what a view says it waits for. */
 export function iconLine(name: IconName, className: string, ...text: Array<Node | string>): HTMLElement {
-  const line = el('p', `icon-line ${className}`.trim());
-  const words = el('span');
-  words.append(...text);
-  line.append(icon(name), words);
-  return line;
+  return iconText(el('p', `icon-line ${className}`.trim()), name, ...text);
 }

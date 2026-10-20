@@ -1,5 +1,5 @@
 import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { CONDITION_ICONS, conditionWords, cpuText, emulationLines, throttleText } from '../shared/condition-words.js';
+import { CONDITION_ICONS, conditionWords, cpuText, throttleText } from '../shared/condition-words.js';
 import {
   CONDITIONS_MESSAGE_SOURCE,
   isCondition,
@@ -10,7 +10,7 @@ import {
 } from '../shared/request-conditions.js';
 import { attachPanelShadow } from './panel-root.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
-import { icon, type IconName } from '../shared/icons.js';
+import { icon, iconText, type IconName } from '../shared/icons.js';
 
 /**
  * The isolated-world half of Slow down or fail a request: asks the background
@@ -49,7 +49,6 @@ async function conditionsForThisTab(): Promise<TabConditions> {
   }
 }
 
-/** What each kind of condition does, by icon. */
 /** A condition in words, its method and address pattern set apart as code. */
 function conditionNodes(condition: RequestCondition): Array<Node | string> {
   const request = document.createElement('span');
@@ -82,7 +81,7 @@ function bannerLines(on: TabConditions): BannerLine[] {
 
 function drawBanner(on: TabConditions): void {
   document.getElementById(BANNER_HOST_ID)?.remove();
-  const lines = emulationLines(on);
+  const lines = bannerLines(on);
   if (lines.length === 0) return;
   const host = document.createElement('div');
   host.id = BANNER_HOST_ID;
@@ -126,12 +125,8 @@ function drawBanner(on: TabConditions): void {
   heading.textContent = tn('devtools_conditionsOn', lines.length);
   title.append(icon('alert'), heading);
   const list = document.createElement('ul');
-  for (const line of bannerLines(on)) {
-    const item = document.createElement('li');
-    const words = document.createElement('span');
-    words.append(...line.words);
-    item.append(icon(line.icon), words);
-    list.appendChild(item);
+  for (const line of lines) {
+    list.appendChild(iconText(document.createElement('li'), line.icon, ...line.words));
   }
   text.append(title, list);
   const off = makeButton(
@@ -149,7 +144,7 @@ function drawBanner(on: TabConditions): void {
 async function relay(): Promise<void> {
   const [on] = await Promise.all([conditionsForThisTab(), initI18n()]);
   window.postMessage({ source: CONDITIONS_MESSAGE_SOURCE, conditions: on.forPage }, '*');
-  if (emulationLines(on).length === 0) return;
+  if (on.conditions.length === 0 && !on.throttle && !on.cpuRate) return;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => drawBanner(on), { once: true });
   } else drawBanner(on);

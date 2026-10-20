@@ -12,7 +12,7 @@ import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } fr
 import { attachPanelShadow } from './panel-root.js';
 import { holdFocus } from './modal-panel.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
-import { icon, setLabel, type IconName } from '../shared/icons.js';
+import { icon, iconText, setLabel, type IconName } from '../shared/icons.js';
 
 const HOST_ID = 'piwi-test-function-host';
 const MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
@@ -63,9 +63,7 @@ function renderResult(result: FunctionTestResult): HTMLElement {
   for (const step of result.steps) {
     const line = document.createElement('div');
     line.className = `step ${step.verdict}`;
-    const words = document.createElement('span');
-    words.textContent = stepLabel(step);
-    line.append(icon(STEP_ICONS[step.verdict]), words);
+    iconText(line, STEP_ICONS[step.verdict], stepLabel(step));
     steps.appendChild(line);
   }
   row.appendChild(steps);

@@ -62,6 +62,24 @@ describe('wordTokens', () => {
     expect(marked(step({ target: byLocator }))).toEqual([`locator:locator('#total')`]);
   });
 
+  it('marks the key as a word of its own, not the same letter inside a word', () => {
+    expect(marked(step({ action: 'press', value: 'p' }))).toEqual(['key:P']);
+    const press = step({ action: 'press', value: 'a' });
+    expect(wordTokens(describeStepInWords(press, fr), press, fr)).toEqual([
+      { kind: 'text', text: 'Appuyer sur ' },
+      { kind: 'key', text: 'A' },
+    ]);
+  });
+
+  it('keeps an address inside a quoted name in its name, and the next quote pairs as it should', () => {
+    const drag = step({
+      action: 'dragTo',
+      target: target({ tagName: 'a', role: 'link', accessibleName: 'https://a.test/x' }),
+      dropTarget: target({ tagName: 'section', role: 'region', accessibleName: 'Drop' }),
+    });
+    expect(marked(drag)).toEqual(['name:"https://a.test/x"', 'name:"Drop"']);
+  });
+
   it('finds the locators and addresses written in a sentence, and its quoted texts', () => {
     const tokens = wordTokens(
       `Nothing on this page matches getByRole('button', { name: 'Apply' }).first(). Found "Total: 40" on https://shop.test/cart.`,
