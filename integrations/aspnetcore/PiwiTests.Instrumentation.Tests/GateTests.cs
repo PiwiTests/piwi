@@ -105,7 +105,7 @@ public class GateTests
 
     [Theory]
     [InlineData("Development", true)]
-    [InlineData("Production", false)]
+    [InlineData("Staging", false)]
     public async Task The_parameterless_overload_keeps_the_default(string environment, bool expected)
     {
         await using var app = await TestApp.StartAsync(environment, (a, _) => a.UsePiwiTestLogs());
@@ -126,7 +126,7 @@ public class GateTests
 
     [Theory]
     [InlineData("Podman", true)]
-    [InlineData("Production", false)]
+    [InlineData("Staging", false)]
     public async Task A_classic_Configure_passes_environment_names(string environment, bool expected)
     {
         await using var app = await TestApp.StartAsync(environment,

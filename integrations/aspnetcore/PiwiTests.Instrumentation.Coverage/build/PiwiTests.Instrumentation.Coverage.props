@@ -5,6 +5,16 @@
     <Instrument>TestCoverage</Instrument>
   </PropertyGroup>
 
+  <!-- PiwiCoverageForbidden=true marks a build no coverage instrumentation may reach, e.g. a Directory.Build.props's
+       <PiwiCoverageForbidden Condition="'$(Configuration)' == 'Release'">true</PiwiCoverageForbidden> when the test
+       environment is built in another configuration: a coverage build of it fails. Read when the target runs, after the
+       project file. -->
+  <Target Name="PiwiForbidCoverageBuild" BeforeTargets="CoreCompile"
+          Condition="'$(PiwiCoverageForbidden)' == 'true' and ('$(PiwiCoverage)' == 'true' or '$(Instrument)' == 'TestCoverage')">
+    <Error Code="PIWI001"
+           Text="$(MSBuildProjectName) is built with coverage instrumentation (-p:PiwiCoverage=true), but PiwiCoverageForbidden is true for this build ($(Configuration)): a coverage build runs slower code and must not ship. Build the test environment in a configuration that does not set PiwiCoverageForbidden." />
+  </Target>
+
   <!-- A relative PIWI_COVERAGE_OUTPUT names a path in the directory dotnet test runs in: the VSTest host, which runs in
        the test project's output directory, gets it as a full path through the run settings. Inline run settings on the
        dotnet test command line replace these, and the host then resolves the path against its own directory. -->

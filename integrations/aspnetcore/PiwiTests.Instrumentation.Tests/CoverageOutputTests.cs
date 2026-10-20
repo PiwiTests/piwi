@@ -40,6 +40,27 @@ public class CoverageOutputTests
     }
 
     [Fact]
+    public void A_coverage_build_fails_where_PiwiCoverageForbidden_is_set()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"piwi-coverage-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var build = new[] { "build", FixtureSource.RepositoryFile(UnitFixture), "-c", "Release", "-p:PiwiCoverageForbidden=true" };
+
+            var (exitCode, output) = RunDotnet(root, [.. build, "-p:PiwiCoverage=true", "--artifacts-path", Path.Combine(root, "coverage")]);
+            Assert.NotEqual(0, exitCode);
+            Assert.Contains("PIWI001", output);
+
+            DotnetTest(root, [.. build, "--artifacts-path", Path.Combine(root, "plain")]);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void A_test_host_on_a_coverage_build_writes_its_report_at_exit_one_file_per_host()
     {
         var root = Path.Combine(Path.GetTempPath(), $"piwi-coverage-{Guid.NewGuid():N}");
@@ -138,6 +159,13 @@ public class CoverageOutputTests
     /// </summary>
     private static void DotnetTest(string directory, string[] arguments)
     {
+        var (exitCode, output) = RunDotnet(directory, arguments);
+        Assert.True(exitCode == 0, $"dotnet {arguments[0]} exited with {exitCode}:\n{output}");
+    }
+
+    /// <summary>Runs <c>dotnet</c> as <see cref="DotnetTest"/> does: its exit code, and its output and errors.</summary>
+    private static (int ExitCode, string Output) RunDotnet(string directory, string[] arguments)
+    {
         var start = new ProcessStartInfo(Dotnet())
         {
             WorkingDirectory = directory,
@@ -159,8 +187,8 @@ public class CoverageOutputTests
         using var process = Process.Start(start)!;
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();
-        Assert.True(process.WaitForExit(TimeSpan.FromMinutes(5)), "dotnet test did not finish in 5 minutes");
-        Assert.True(process.ExitCode == 0, $"dotnet test exited with {process.ExitCode}:\n{output.Result}\n{error.Result}");
+        Assert.True(process.WaitForExit(TimeSpan.FromMinutes(5)), $"dotnet {arguments[0]} did not finish in 5 minutes");
+        return (process.ExitCode, $"{output.Result}\n{error.Result}");
     }
 
     /// <summary>The <c>dotnet</c> executable running this test host, else the one on the path.</summary>

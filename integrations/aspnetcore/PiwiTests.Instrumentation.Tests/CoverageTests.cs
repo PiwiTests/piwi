@@ -446,11 +446,34 @@ public class CoverageTests
     }
 
     [Fact]
+    public async Task Refuses_to_start_a_coverage_build_in_production()
+    {
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => TestApp.StartAsync(
+            "Production",
+            (a, _) => a.UsePiwiTestLogs(),
+            services: s => s.AddPiwiTestLogs(o => o.Coverage = new PiwiCoverageSettings { IsInstrumented = () => true })));
+
+        Assert.Contains("-p:PiwiCoverage=true", error.Message);
+        Assert.Contains("Production", error.Message);
+    }
+
+    [Fact]
+    public async Task Starts_a_build_without_coverage_in_production()
+    {
+        await using var app = await TestApp.StartAsync(
+            "Production",
+            (a, _) => a.UsePiwiTestLogs(),
+            services: s => s.AddPiwiTestLogs(o => o.Coverage = new PiwiCoverageSettings { IsInstrumented = () => false }));
+
+        Assert.Null(CoverageTestApp.RequestId(await app.Client.GetAsync("/json")));
+    }
+
+    [Fact]
     public async Task Warns_when_a_coverage_build_runs_where_the_middleware_is_not_active()
     {
         var logs = new ListLoggerProvider();
         await using var app = await TestApp.StartAsync(
-            "Production",
+            "Staging",
             (a, _) => a.UsePiwiTestLogs(),
             services: s =>
             {
@@ -459,7 +482,7 @@ public class CoverageTests
             });
 
         var warning = Assert.Single(logs.Messages, m => m.Contains("-p:PiwiCoverage=true", StringComparison.Ordinal));
-        Assert.Contains("Production", warning);
+        Assert.Contains("Staging", warning);
         Assert.Null(CoverageTestApp.RequestId(await app.Client.GetAsync("/json")));
     }
 

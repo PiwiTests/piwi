@@ -66,7 +66,20 @@ A build made apart from `dotnet test`, such as the end-to-end environment's, see
 
    Set the property on the command line or in `Directory.Build.props`, not in a project file: the package's props read it before the project file.
 
-**Never ship a coverage build to production.** It runs slower code than the production build (every method call asks the recorder for its payload, property getters are no longer inlined), and the coverage endpoints expose source paths and line numbers. In a coverage build, `UsePiwiTestLogs()` logs a warning when the environment is one the middleware is not active in.
+**Never ship a coverage build to production.** It runs slower code than the production build (every method call asks the recorder for its payload, property getters are no longer inlined), and the coverage endpoints expose source paths and line numbers. Two guards stop one that slips through:
+
+- **At startup:** in a coverage build, `UsePiwiTestLogs()` throws in the Production environment, unless the middleware is active there (`PIWI_TEST_LOGS_ENVIRONMENTS` names it). In another environment it is not active in, it logs a warning. A test host writing its report to `PIWI_COVERAGE_OUTPUT` is not stopped.
+- **At build time:** set `PiwiCoverageForbidden` to `true` for a build no instrumentation may reach, and a coverage build of it fails with `PIWI001`. With the test environment built in another configuration, a `Directory.Build.props` forbids Release:
+
+  ```xml
+  <Project>
+    <PropertyGroup>
+      <PiwiCoverageForbidden Condition="'$(Configuration)' == 'Release'">true</PiwiCoverageForbidden>
+    </PropertyGroup>
+  </Project>
+  ```
+
+Without `-p:PiwiCoverage=true`, the package does nothing to a build: its code is not instrumented, and the middleware serves no coverage.
 
 ## Modes
 
