@@ -2,9 +2,11 @@ import type { Page, Worker } from '@playwright/test';
 import {
   clickInShadow,
   debuggerAttached,
+  type DomNode,
   expect,
   expectText,
   finished,
+  panelNode,
   replayState,
   startReplay,
   step,
@@ -159,6 +161,10 @@ test('a handed-over step the person does by opening a new tab takes the replay t
   const opened = context.waitForEvent('page');
   await page.getByTestId('link').click();
   const next = await opened;
+  // The new tab draws the hand-over once its page is ready.
+  const doneButton = (node: DomNode) =>
+    node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === 'I did it, continue');
+  await expect.poll(() => panelNode(next, doneButton), { timeout: 20_000 }).not.toBeNull();
   await clickInShadow(next, 'I did it, continue');
 
   const state = await finished(worker);
