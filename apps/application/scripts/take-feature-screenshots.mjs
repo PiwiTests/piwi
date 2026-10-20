@@ -1029,6 +1029,15 @@ async function prepareReportSchedule({ base, request }) {
  */
 const JIRA_SCREEN_FIELDS = [
   {
+    id: 'parent',
+    name: 'Parent',
+    required: false,
+    hasDefault: false,
+    kind: 'issue',
+    options: null,
+    typeName: 'parent',
+  },
+  {
     id: 'customfield_10050',
     name: 'Severity',
     required: true,
@@ -1172,16 +1181,39 @@ async function prepareClusterOneTracked({ base, request }) {
  * Answers the Jira pickers and the create screen in the page, so a scene shows
  * the required-fields UI for project CHK and its Bug type without a Jira.
  */
+/** Jira-like icons for the scenes' fake site, by the path the pickers name them with. */
+const JIRA_SCENE_ICONS = {
+  '/icons/bug': '<rect width="16" height="16" rx="3" fill="#e5493a"/><circle cx="8" cy="8" r="3.5" fill="#fff"/>',
+  '/icons/task':
+    '<rect width="16" height="16" rx="3" fill="#4bade8"/><path d="M4.5 8.2l2.3 2.3 4.7-5" stroke="#fff" stroke-width="2" fill="none"/>',
+  '/icons/epic':
+    '<rect width="16" height="16" rx="3" fill="#904ee2"/><path d="M9.5 3L5 9h3l-1.5 4L11 7H8z" fill="#fff"/>',
+  '/icons/person':
+    '<circle cx="8" cy="8" r="8" fill="#ff8b00"/><circle cx="8" cy="6.2" r="2.6" fill="#fff"/><path d="M3.5 13.5a4.5 4.5 0 019 0z" fill="#fff"/>',
+  '/icons/project':
+    '<rect width="16" height="16" rx="3" fill="#36b37e"/><path d="M4 11l3-6 2 4 1.5-2L12 11z" fill="#fff"/>',
+};
+const jiraSceneIcon = (name) => `/rest/api/3/universal_avatar/view/type/scene/avatar/${name}`;
+
 async function routeJiraScreen(page) {
+  await page.route('**/api/integrations/connections/*/icon*', (route) => {
+    const path = new URL(route.request().url()).searchParams.get('path') ?? '';
+    const name = Object.keys(JIRA_SCENE_ICONS).find((key) => path.endsWith(key.slice('/icons/'.length)));
+    if (!name) return route.fulfill({ status: 404 });
+    return route.fulfill({
+      contentType: 'image/svg+xml',
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">${JIRA_SCENE_ICONS[name]}</svg>`,
+    });
+  });
   await page.route('**/api/integrations/connections/*/projects', (route) =>
-    route.fulfill({ json: { projects: [{ id: '1', key: 'CHK', name: 'Checkout' }] } }),
+    route.fulfill({ json: { projects: [{ id: '1', key: 'CHK', name: 'Checkout', icon: jiraSceneIcon('project') }] } }),
   );
   await page.route('**/api/integrations/connections/*/projects/*/issue-types', (route) =>
     route.fulfill({
       json: {
         issueTypes: [
-          { id: '10004', name: 'Bug' },
-          { id: '10006', name: 'Task' },
+          { id: '10004', name: 'Bug', icon: jiraSceneIcon('bug') },
+          { id: '10006', name: 'Task', icon: jiraSceneIcon('task') },
         ],
       },
     }),
@@ -1189,7 +1221,19 @@ async function routeJiraScreen(page) {
   await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
     route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS } }),
   );
-  await page.route('**/api/integrations/connections/*/assignable*', (route) => route.fulfill({ json: { users: [] } }));
+  await page.route('**/api/integrations/connections/*/assignable*', (route) =>
+    route.fulfill({ json: { users: [{ id: 'acct-1', displayName: 'Dana Reyes', icon: jiraSceneIcon('person') }] } }),
+  );
+  await page.route('**/api/integrations/connections/*/issue-picker*', (route) =>
+    route.fulfill({
+      json: {
+        issues: [
+          { key: 'CHK-12', summary: 'Checkout reliability', icon: jiraSceneIcon('epic') },
+          { key: 'CHK-31', summary: 'Checkout payment providers', icon: jiraSceneIcon('epic') },
+        ],
+      },
+    }),
+  );
 }
 
 // The evidence-footer scene seeds its own fixtures-free project; `prepare`
@@ -2626,6 +2670,42 @@ const SCENES = [
       const dialog = page.getByRole('dialog');
       await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
       await dialog.getByTestId('create-issue-missing').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'create-issue-added-field',
+    description: 'Create issue modal with a Parent added on demand, its issue search open',
+    tags: ['desktop'],
+    prepare: prepareJiraSceneConnection,
+    route: '/failure-clusters/7',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/issue-draft*', async (route) => {
+        const draft = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...draft,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            fieldValues: JIRA_FIELD_DEFAULTS,
+          },
+        });
+      });
+      await page.locator('[data-shot="issue-line-create"]').first().click();
+      const dialog = page.getByRole('dialog');
+      await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
+      await dialog.getByText('Unassigned').click();
+      await page.getByRole('option', { name: 'Dana Reyes' }).click();
+      await dialog.getByText('Add a field').click();
+      await page.getByRole('option', { name: 'Parent', exact: true }).click();
+      const parent = dialog.locator('[data-shot="create-issue-added-fields"] [data-field-id="parent"]');
+      await parent.getByText('Search an issue').click();
+      await page.keyboard.type('checkout');
+      await page.getByRole('option', { name: 'CHK-12 — Checkout reliability' }).waitFor();
       await settle();
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },

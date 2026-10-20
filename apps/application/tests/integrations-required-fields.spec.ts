@@ -45,7 +45,7 @@ const TEAM = 'customfield_10001';
 const SQUAD = 'customfield_10060';
 const TAGS = 'customfield_10070';
 
-/** The Bug type's create screen: Severity and Team are required, Components, Squad and Tags are not. */
+/** The Bug type's create screen: Severity and Team are required, Parent, Components, Squad and Tags are not. */
 const BUG_SCREEN = [
   { fieldId: 'project', name: 'Project', required: true, schema: { type: 'project', system: 'project' } },
   { fieldId: 'issuetype', name: 'Issue type', required: true, schema: { type: 'issuetype', system: 'issuetype' } },
@@ -67,6 +67,7 @@ const BUG_SCREEN = [
     required: true,
     schema: { type: 'team', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team' },
   },
+  { fieldId: 'parent', name: 'Parent', required: false, schema: { type: 'issuelink', system: 'parent' } },
   {
     fieldId: 'components',
     name: 'Components',
@@ -83,6 +84,20 @@ const BUG_SCREEN = [
   },
 ];
 
+/** The path the mock serves its issue type icons from, as Jira Cloud does. */
+const ICON_PATH = '/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium';
+const ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#904ee2"/></svg>';
+
+/** A person's avatar on the site, as Jira serves one a person uploaded. */
+const USER_AVATAR_PATH = '/secure/useravatar?size=small&avatarId=10122';
+
+/** The issues the mock's issue picker finds: epics to parent a bug under. */
+const PICKER_ISSUES = [
+  { key: 'PROJ-7', summary: 'Checkout epic' },
+  { key: 'PROJ-8', summary: 'Payments epic' },
+];
+
 interface MockJira {
   server: http.Server;
   /** The fields of every issue created, in order. */
@@ -91,6 +106,10 @@ interface MockJira {
   requireSquad: boolean;
   /** Another such validator: Tags must be set. */
   requireTags: boolean;
+  /** Another: the Parent the screen leaves optional must be set. */
+  requireParent: boolean;
+  /** Every issue picker search, with the JQL it was scoped to. */
+  pickerQueries: { query: string; jql: string | null }[];
   /** Every transition made, in order. */
   moves: { key: string; id: string; fields: Record<string, unknown> | null }[];
 }
@@ -135,6 +154,8 @@ function startMockJira(port: number): MockJira {
     creates: [],
     requireSquad: false,
     requireTags: false,
+    requireParent: false,
+    pickerQueries: [],
     moves: [],
   };
   let counter = 300;
@@ -158,11 +179,51 @@ function startMockJira(port: number): MockJira {
     if (path === '/rest/api/3/myself') return send({ accountId: 'acct-1', displayName: 'Mock Jira User' });
     if (path === '/rest/api/3/project/search') return send({ values: [{ id: '1', key: 'PROJ', name: 'Project' }] });
     if (path === '/rest/api/3/project/PROJ')
-      return send({ id: '1', key: 'PROJ', issueTypes: [{ id: '10004', name: 'Bug' }] });
+      return send({
+        id: '1',
+        key: 'PROJ',
+        issueTypes: [{ id: '10004', name: 'Bug', iconUrl: `http://127.0.0.1:${port}${ICON_PATH}` }],
+      });
+    if (`${path}${url.search}` === ICON_PATH) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return res.end(ICON_SVG);
+    }
     if (path === '/rest/api/3/issue/createmeta/PROJ/issuetypes/10004') {
       return send({ startAt: 0, maxResults: 100, total: BUG_SCREEN.length, fields: BUG_SCREEN });
     }
-    if (path === '/rest/api/3/user/assignable/search') return send([{ accountId: 'acct-2', displayName: 'Assignee' }]);
+    if (path === '/rest/api/3/user/assignable/search') {
+      return send([
+        {
+          accountId: 'acct-2',
+          displayName: 'Assignee',
+          avatarUrls: { '24x24': `http://127.0.0.1:${port}${USER_AVATAR_PATH}` },
+        },
+      ]);
+    }
+    if (`${path}${url.search}` === USER_AVATAR_PATH) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return res.end(ICON_SVG);
+    }
+    if (path === '/rest/api/3/issue/picker') {
+      const query = url.searchParams.get('query') ?? '';
+      state.pickerQueries.push({ query, jql: url.searchParams.get('currentJQL') });
+      const hits = PICKER_ISSUES.filter((i) => `${i.key} ${i.summary}`.toLowerCase().includes(query.toLowerCase()));
+      return send({
+        sections: [
+          { id: 'hs', label: 'History Search', issues: [] },
+          {
+            id: 'cs',
+            label: 'Current Search',
+            issues: hits.map((i) => ({
+              key: i.key,
+              summary: `<b>${i.summary}</b>`,
+              summaryText: i.summary,
+              img: ICON_PATH,
+            })),
+          },
+        ],
+      });
+    }
     if (req.method === 'POST' && path === '/rest/api/3/search/jql') {
       // The binding's sample-issue lookup names a status category; the create's dedupe search does not.
       return readBody(req, (raw) => {
@@ -205,6 +266,9 @@ function startMockJira(port: number): MockJira {
         if (!fields[TEAM]) errors[TEAM] = 'Team is required.';
         if (state.requireSquad && !fields[SQUAD]) errors[SQUAD] = 'Squad is required.';
         if (state.requireTags && !(fields[TAGS] as string[] | undefined)?.length) errors[TAGS] = 'Tags is required.';
+        if (state.requireParent && !(fields.parent as { key?: string } | undefined)?.key) {
+          errors.parent = 'Parent is required.';
+        }
         if (Object.keys(errors).length) return send({ errorMessages: [], errors }, 400);
         state.creates.push(fields);
         counter++;
@@ -236,7 +300,7 @@ function startMockJira(port: number): MockJira {
 }
 
 /** The failing tests the suite seeds, one cluster each. */
-const SEEDED_TESTS = ['refused', 'dialog', 'validator', 'agent'] as const;
+const SEEDED_TESTS = ['refused', 'dialog', 'validator', 'agent', 'parent'] as const;
 type SeededTest = (typeof SEEDED_TESTS)[number];
 
 function locationOf(title: SeededTest): string {
@@ -277,12 +341,13 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     });
     connectionId = (await created.json()).connection.id;
 
-    // Four distinct failures → four clusters to file against.
+    // Distinct failures → one cluster each to file against.
     const failures: Record<SeededTest, string> = {
       refused: `TimeoutError: locator.click: Timeout 5000ms exceeded. [${tag}]`,
       dialog: `Error: expect(locator).toBeVisible() failed [${tag}]`,
       validator: `TypeError: Cannot read properties of undefined (reading 'total') [${tag}]`,
       agent: `Error: page.goto: net::ERR_CONNECTION_REFUSED [${tag}]`,
+      parent: `RangeError: Maximum call stack size exceeded [${tag}]`,
     };
     const submit = await request.post('/api/test-runs/submit', {
       data: {
@@ -290,9 +355,9 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
         status: 'failed',
         startTime: new Date().toISOString(),
         duration: 1000,
-        totalTests: 4,
+        totalTests: SEEDED_TESTS.length,
         passedTests: 0,
-        failedTests: 4,
+        failedTests: SEEDED_TESTS.length,
         skippedTests: 0,
         testCases: SEEDED_TESTS.map((title) => ({
           title,
@@ -338,6 +403,38 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       kind: 'raw',
       typeName: 'atlassian-team',
     });
+  });
+
+  test("issue types and people carry Jira's icons, served through the connection and nothing else", async ({
+    request,
+  }) => {
+    const { issueTypes } = await (
+      await request.get(`/api/integrations/connections/${connectionId}/projects/PROJ/issue-types`)
+    ).json();
+    expect(issueTypes).toEqual([{ id: '10004', name: 'Bug', icon: ICON_PATH }]);
+
+    const icon = await request.get(
+      `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent(ICON_PATH)}`,
+    );
+    expect(icon.status()).toBe(200);
+    expect(icon.headers()['content-type']).toBe('image/svg+xml');
+    expect(icon.headers()['content-security-policy']).toContain('sandbox');
+    expect(await icon.text()).toBe(ICON_SVG);
+
+    // A person's avatar comes the same way.
+    const { users } = await (
+      await request.get(`/api/integrations/connections/${connectionId}/assignable?project=PROJ&q=`)
+    ).json();
+    expect(users[0]).toMatchObject({ id: 'acct-2', icon: USER_AVATAR_PATH });
+    const avatar = await request.get(
+      `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent(USER_AVATAR_PATH)}`,
+    );
+    expect(avatar.status()).toBe(200);
+
+    const other = await request.get(
+      `/api/integrations/connections/${connectionId}/icon?path=${encodeURIComponent('/rest/api/3/myself')}`,
+    );
+    expect(other.status()).toBe(400);
   });
 
   test('a create that leaves a required field empty is refused before Jira is called', async ({ request }) => {
@@ -417,6 +514,47 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       });
     } finally {
       mock.requireTags = false;
+    }
+  });
+
+  test('a field the screen leaves optional is added on demand, and its issue is searched', async ({ page }) => {
+    mock.requireParent = true;
+    try {
+      await page.goto(`/failure-clusters/${clusters.parent}`);
+      await waitForHydration(page);
+      const open = page.locator('[data-shot="issue-line-create"]').first();
+      await expect(open).toBeVisible({ timeout: 30_000 });
+      await open.click();
+      const dialog = page.getByRole('dialog');
+      const asked = dialog.locator('[data-shot="create-issue-fields"]');
+      await expect(asked).toBeVisible({ timeout: 15_000 });
+      await asked.locator(`[data-field-id="${TEAM}"] input`).fill('team-checkout');
+
+      // Jira leaves the Parent optional on the screen, so it is not asked for: add it.
+      await expect(dialog.locator('[data-field-id="parent"]')).toHaveCount(0);
+      await dialog.getByText('Add a field').click();
+      await page.keyboard.type('Par');
+      await page.getByRole('option', { name: 'Parent', exact: true }).click();
+      const parent = dialog.locator('[data-shot="create-issue-added-fields"] [data-field-id="parent"]');
+      await expect(parent).toBeVisible();
+
+      // Its input searches the Jira project's issues by key or summary.
+      await parent.getByText('Search an issue').click();
+      await page.keyboard.type('checkout');
+      // Each issue shows its type's icon, as Jira draws it.
+      const epic = page.getByRole('option', { name: 'PROJ-7 — Checkout epic' });
+      await expect
+        .poll(() => epic.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+        .toBeGreaterThan(0);
+      await epic.click();
+      await expect(parent).toContainText('PROJ-7 — Checkout epic');
+      expect(mock.pickerQueries).toContainEqual({ query: 'checkout', jql: 'project = "PROJ"' });
+
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+      await expect(page.getByText(/PROJ-\d+ created/).first()).toBeVisible();
+      expect(mock.creates.at(-1)).toMatchObject({ parent: { key: 'PROJ-7' }, [TEAM]: 'team-checkout' });
+    } finally {
+      mock.requireParent = false;
     }
   });
 

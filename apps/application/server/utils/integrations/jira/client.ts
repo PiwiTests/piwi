@@ -17,7 +17,9 @@ import type {
 import { statusColorForCategory, toStatusCategory } from '../types';
 import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
 import type { TrackerField } from '#shared/integrations/fields';
+import type { TrackerIssueOption } from '#shared/integrations/types';
 import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
+import { isJiraIconPath, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
 import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
@@ -34,6 +36,14 @@ export function jiraSummary(title: string): string {
 /** Create metadata is paged; a screen past this many fields is read no further. */
 const CREATE_META_PAGE_SIZE = 100;
 const CREATE_META_MAX_PAGES = 10;
+
+/** The most issues the issue picker returns. */
+const ISSUE_PICKER_LIMIT = 20;
+
+/** The picker's summary marks the matched words with HTML; its text is what is shown. */
+function stripTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '');
+}
 
 /**
  * Project search is paged too, and Jira may serve fewer per page than asked; a
@@ -89,6 +99,7 @@ interface JiraUser {
   accountId?: string;
   displayName?: string;
   emailAddress?: string | null;
+  avatarUrls?: Record<string, string>;
 }
 
 interface JiraIssueResponse {
@@ -302,12 +313,15 @@ export class JiraClient implements IssueTracker {
     let startAt = 0;
     for (let page = 0; page < PROJECT_SEARCH_MAX_PAGES; page++) {
       const data = await this.request<{
-        values?: { id?: string; key?: string; name?: string }[];
+        values?: { id?: string; key?: string; name?: string; avatarUrls?: Record<string, string> }[];
         total?: number;
         isLast?: boolean;
       }>(`/rest/api/3/project/search?startAt=${startAt}&maxResults=${PROJECT_SEARCH_PAGE_SIZE}`);
       const items = data.values ?? [];
-      for (const p of items) projects.push({ id: p.id ?? '', key: p.key ?? '', name: p.name ?? '' });
+      for (const p of items) {
+        const icon = jiraIconPath(p.avatarUrls?.['24x24'] ?? p.avatarUrls?.['16x16'], this.baseUrl);
+        projects.push({ id: p.id ?? '', key: p.key ?? '', name: p.name ?? '', icon });
+      }
       startAt += items.length;
       const more =
         data.isLast === false || (data.isLast == null && typeof data.total === 'number' && startAt < data.total);
@@ -317,10 +331,14 @@ export class JiraClient implements IssueTracker {
   }
 
   async listIssueTypes(projectKey: string): Promise<TrackerIssueType[]> {
-    const data = await this.request<{ issueTypes?: { id?: string; name?: string }[] }>(
+    const data = await this.request<{ issueTypes?: { id?: string; name?: string; iconUrl?: string }[] }>(
       `/rest/api/3/project/${encodeURIComponent(projectKey)}`,
     );
-    return (data.issueTypes ?? []).map((t) => ({ id: t.id ?? '', name: t.name ?? '' }));
+    return (data.issueTypes ?? []).map((t) => ({
+      id: t.id ?? '',
+      name: t.name ?? '',
+      icon: jiraIconPath(t.iconUrl, this.baseUrl),
+    }));
   }
 
   /**
@@ -358,7 +376,46 @@ export class JiraClient implements IssueTracker {
     const data = await this.request<JiraUser[]>(`/rest/api/3/user/assignable/search?${params.toString()}`);
     return (data ?? [])
       .filter((u) => u.accountId)
-      .map((u) => ({ id: u.accountId ?? '', displayName: u.displayName ?? '', email: u.emailAddress ?? null }));
+      .map((u) => ({
+        id: u.accountId ?? '',
+        displayName: u.displayName ?? '',
+        email: u.emailAddress ?? null,
+        icon: jiraAvatar(u.avatarUrls?.['24x24'] ?? u.avatarUrls?.['16x16'], this.baseUrl),
+      }));
+  }
+
+  async pickIssues(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]> {
+    const params = new URLSearchParams({ query, showSubTasks: 'true', showSubTaskParent: 'true' });
+    if (projectKey) params.set('currentJQL', `project = ${JSON.stringify(projectKey)}`);
+    const data = await this.request<{
+      sections?: { id?: string; issues?: { key?: string; summaryText?: string; summary?: string; img?: string }[] }[];
+    }>(`/rest/api/3/issue/picker?${params.toString()}`);
+    // The picker answers with the issues the JQL scopes ("cs") and the ones seen lately ("hs"): the project's first.
+    const sections = [...(data.sections ?? [])].sort((a, b) => Number(b.id === 'cs') - Number(a.id === 'cs'));
+    const out = new Map<string, TrackerIssueOption>();
+    for (const section of sections) {
+      for (const issue of section.issues ?? []) {
+        if (!issue.key || out.has(issue.key)) continue;
+        out.set(issue.key, {
+          key: issue.key,
+          summary: issue.summaryText ?? stripTags(issue.summary ?? ''),
+          icon: jiraIconPath(issue.img, this.baseUrl),
+        });
+      }
+    }
+    return [...out.values()].slice(0, ISSUE_PICKER_LIMIT);
+  }
+
+  async fetchIcon(path: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+    if (!isJiraIconPath(path)) return null;
+    const response = await this.apiFetch(path, () => ({
+      headers: { Authorization: this.authHeader(), Accept: 'image/*' },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    }));
+    const mime = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
+    if (!response.ok || !mime.startsWith('image/')) return null;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return bytes.byteLength > MAX_ICON_BYTES ? null : { bytes, mime };
   }
 
   async listTransitions(key: string): Promise<TrackerTransition[]> {

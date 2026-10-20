@@ -49,7 +49,7 @@ export const HELP_TOPICS = {
   },
   'integrations.required-fields': {
     title: 'Required Jira fields',
-    text: 'Fields the Jira project requires for this issue type, beyond what Piwi fills (summary, description, labels, assignee). A value set in the project settings fills every issue filed from the project; the create modal asks for any still empty, and a create that would leave one empty is refused before Jira is called. You can also set optional fields, such as components. The fix and reopen transitions can require fields too, such as a resolution: set them under each transition.',
+    text: 'Fields the Jira project requires for this issue type, beyond what Piwi fills (summary, description, labels, assignee). A value set in the project settings fills every issue filed from the project; the create modal asks for any still empty, and a create that would leave one empty is refused before Jira is called. You can also set any optional field, such as components or a parent, in the settings for every issue or in the create modal with Add a field for one. The fix and reopen transitions can require fields too, such as a resolution: set them under each transition.',
     doc: 'features/issue-tracking#required-jira-fields',
   },
   'integrations.known-issue': {
