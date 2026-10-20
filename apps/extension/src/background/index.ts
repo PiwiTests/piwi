@@ -16,6 +16,7 @@ import {
   setReplayTab,
   type ReplayState,
 } from '../shared/replay-storage.js';
+import { pageKey } from '@piwitests/core/page-key';
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
 import { postToEditor } from '../shared/piwi-client.js';
 import { editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
@@ -868,7 +869,12 @@ function handleReplayTab(message: { replayId?: unknown }, tab: chrome.tabs.Tab |
     const bound = await getReplayTab();
     if (bound?.replayId === state.id) {
       if (bound.tabId === tab.id) return { ok: true };
-      if (state.status !== 'running' && state.status !== 'paused') await endReplay(state);
+      const running = state.status === 'running' || state.status === 'paused';
+      if (running && bound.opened?.includes(tab.id) && (await stepOpenedTab(state, bound.tabId, tab))) {
+        await moveReplay(state.id, bound.tabId, tab.id);
+        return { ok: true };
+      }
+      if (!running) await endReplay(state);
       return { ok: false };
     }
     await setReplayTab({ replayId: state.id, tabId: tab.id });
@@ -877,6 +883,51 @@ function handleReplayTab(message: { replayId?: unknown }, tab: chrome.tabs.Tab |
   replayTabQueue = answer.catch(() => undefined);
   return answer;
 }
+
+/**
+ * Whether a tab the replay's tab opened shows the page the replay's step
+ * happened on, while the replay's tab does not: the last step opened its page
+ * there. A step handed to the person may be what they opened it with, and the
+ * page is then the next step's. A tab merely opened beside it (Chrome names
+ * the tab in front as the opener of a new one) leaves the replay where it is.
+ */
+async function stepOpenedTab(state: ReplayState, replayTabId: number, tab: chrome.tabs.Tab): Promise<boolean> {
+  const steps = sessionFromSteps(state.steps, state.origin).steps;
+  const handed = state.handOver?.step === state.position;
+  const pages = steps.slice(state.position, state.position + (handed ? 2 : 1)).map((s) => pageKey(s.pageUrl));
+  const there = tab.url ? pageKey(tab.url) : null;
+  if (there === null || !pages.includes(there)) return false;
+  const left = await chrome.tabs.get(replayTabId).catch(() => null);
+  return !left?.url || pageKey(left.url) !== there;
+}
+
+/**
+ * A step opened its page in a new tab, and the replay goes on there: the tab
+ * it leaves gets its debugging session and its size back, and its page lets
+ * go of the replay.
+ */
+async function moveReplay(replayId: string, from: number, to: number): Promise<void> {
+  await setReplayTab({ replayId, tabId: to });
+  await releaseReplayTab(from);
+  await chrome.tabs.sendMessage(from, { type: 'piwi-replay-moved', replayId }).catch(() => undefined);
+}
+
+/** The most tabs a replay's tab is remembered to have opened; the latest are kept. */
+const OPENED_TABS_KEPT = 20;
+
+// A tab the replay's tab opens while the replay runs may take the replay on, once its page asks (`handleReplayTab`).
+chrome.tabs.onCreated.addListener((tab) => {
+  const { id, openerTabId } = tab;
+  if (id == null || openerTabId == null) return;
+  replayTabQueue = replayTabQueue
+    .then(async () => {
+      const [state, bound] = await Promise.all([getReplayState(), getReplayTab()]);
+      if (!state || (state.status !== 'running' && state.status !== 'paused')) return;
+      if (bound?.replayId !== state.id || bound.tabId !== openerTabId) return;
+      await setReplayTab({ ...bound, opened: [...(bound.opened ?? []), id].slice(-OPENED_TABS_KEPT) });
+    })
+    .catch(() => undefined);
+});
 
 /** Ends a replay no page of its tab will finish: nothing of it stays registered or attached. */
 async function endReplay(state: ReplayState): Promise<void> {
