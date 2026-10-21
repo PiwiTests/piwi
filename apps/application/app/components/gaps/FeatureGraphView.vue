@@ -8,11 +8,13 @@
  * hundred routes still draws as a readable star. Every edge runs from the
  * center to one neighbor, so nothing crosses. Nodes are colored by their worst
  * open gap and edges by kind; clicking a node recenters. Plain SVG, no library.
- * A file node whose tests recorded coverage of it links its coverage page,
- * where the project records coverage.
+ * A file or handler node whose tests, or a suite of the latest coverage,
+ * recorded coverage of it links its coverage page, unless the project
+ * declined coverage.
  */
 import { sameFilePath } from '@piwitests/core/locator-break';
 import type { FileCoverage } from '~~/server/utils/coverage';
+import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 import { compareBySeverity, gapClassBadgeColor, gapClassFill, graphEdgeStroke } from '~/utils/gap-classes';
 import { coverageFileRoute } from '~/utils/coverage-view';
 import { errorMessage } from '~/utils';
@@ -42,7 +44,7 @@ interface FeatureGraph {
 const props = defineProps<{ projectId: number; seedNode: string }>();
 const emit = defineEmits<{ (e: 'select', node: { kind: string; key: string }): void }>();
 
-const { state: capabilityState } = await useProjectCapabilities(props.projectId);
+const { isHidden } = await useProjectCapabilities(props.projectId);
 
 const graph = ref<FeatureGraph | null>(null);
 const loading = ref(false);
@@ -99,19 +101,34 @@ const seed = computed<GraphNode | null>(() => {
 });
 const neighbors = computed(() => graph.value?.nodes.filter((n) => n.depth > 0) ?? []);
 
-/** The seed's path when it is a file whose tests recorded coverage of it, for its coverage page. */
-const coveredFile = ref<string | null>(null);
+/**
+ * The seed's coverage page when it is a file (or a route handler, a file too)
+ * that tests recorded coverage of, or that a suite of the latest coverage
+ * names: the file marked by test, else by suite.
+ */
+const coveredFile = ref<{ path: string; query: Record<string, string> } | null>(null);
 watch(
-  () => [seed.value?.kind, seed.value?.key, capabilityState('coverage')] as const,
-  async ([kind, key, coverage], _old, onCleanup) => {
+  () => [seed.value?.kind, seed.value?.key, isHidden('coverage')] as const,
+  async ([kind, key, hidden], _old, onCleanup) => {
     let stale = false;
     onCleanup(() => (stale = true));
     coveredFile.value = null;
-    if (kind !== 'file' || !key || coverage !== 'active') return;
+    if ((kind !== 'file' && kind !== 'handler') || !key || hidden) return;
     const read = await $fetch<FileCoverage>(`/api/projects/${props.projectId}/coverage`, {
       query: { file: key },
     }).catch(() => null);
-    if (!stale && read?.fragments.some((f) => sameFilePath(f.path, key))) coveredFile.value = key;
+    if (stale) return;
+    if (read?.fragments.some((f) => sameFilePath(f.path, key))) {
+      coveredFile.value = coverageFileRoute(props.projectId, key);
+      return;
+    }
+    const summary = await $fetch<CoverageSummary>(`/api/projects/${props.projectId}/coverage-summary`, {
+      query: { file: key },
+    }).catch(() => null);
+    if (!stale && summary?.file) {
+      const route = coverageFileRoute(props.projectId, summary.file.path);
+      coveredFile.value = { ...route, query: { ...route.query, marks: 'suites' } };
+    }
   },
   { immediate: true },
 );
@@ -318,9 +335,9 @@ function select(node: { kind: string; key: string }) {
         <span v-if="coveredFile" class="text-xs text-muted"
           >·
           <NuxtLink
-            :to="coverageFileRoute(projectId, coveredFile)"
+            :to="coveredFile"
             :class="SENTENCE_LINK_CLASS"
-            title="Which tests run each line of this file"
+            title="Which tests and suites run each line of this file"
             data-coverage-link
             >the lines they run</NuxtLink
           ></span

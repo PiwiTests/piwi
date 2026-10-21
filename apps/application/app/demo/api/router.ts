@@ -232,7 +232,7 @@ import {
   issueScenarioDraft,
   listAcceptedUnwritten,
 } from '#shared/handlers/scenario-gaps';
-import { getFeatureGraph, getFeatureMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
+import { getFeatureGraph, getFeatureMap, getFileTestMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
 import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
 import { getMapHealth } from '#shared/handlers/map-health';
 import { parseRouteNodeKey } from '#shared/graph';
@@ -2866,6 +2866,16 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getFeatureMap(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/file$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const path = query?.get('path')?.trim();
+      if (!path) throw demoHttpError(400, 'path is required: a repository-relative file path');
+      return getFileTestMap(await getDemoDb(), +m[1]!, path);
     },
   },
   {

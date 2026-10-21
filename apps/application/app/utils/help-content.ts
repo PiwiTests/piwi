@@ -762,6 +762,16 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/code-reach#which-tests-run-a-file',
   },
+  'coverage.test-map': {
+    title: 'In the Test Map',
+    text: [
+      'Coverage says which lines of the file ran; the Test Map says which user paths reach it, and which tests are still to write on them.',
+      '',
+      '- **Nodes** — the file’s route handler and the routes it serves, the page or route its file name gives it, and the file itself when a test ran it or it changed unreached.',
+      '- **Gaps** — each node’s open scenario gaps, the highest exposure first: tests that do not exist yet. Open a node to see its graph on the Gaps tab.',
+    ].join('\n'),
+    doc: 'guide/concepts#coverage-and-the-test-map',
+  },
   'coverage.combined': {
     title: 'Combined coverage',
     text: [

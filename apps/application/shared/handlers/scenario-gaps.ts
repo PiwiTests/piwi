@@ -3631,10 +3631,31 @@ export async function listScenarioGaps(
     .limit(limit);
 
   const mapped = rows.map(mapGapRow);
+  const ownerOf = await featureOwnersOf(
+    db,
+    projectId,
+    mapped.map((g) => g.subject),
+  );
+  for (const gap of mapped) {
+    const owner = ownerOf(gap.subject);
+    if (!owner) continue;
+    if (owner.hub) gap.hub = true;
+    else gap.feature = owner.feature;
+  }
 
-  // Resolve each gap's feature from the `groups` edges (feature → node), canonical:
-  // the feature reaching the node, else the one inferring it with the most
-  // confidence, ties by name. A hub belongs to no one feature.
+  return mapped;
+}
+
+/**
+ * The feature each subject belongs to, from the canonical `groups` edges
+ * (feature → node): the feature reaching the node, else the one inferring it
+ * with the most confidence, ties by name. A hub belongs to no one feature.
+ */
+export async function featureOwnersOf(
+  db: DrizzleDB,
+  projectId: number,
+  subjects: GapSubject[],
+): Promise<(subject: GapSubject) => GapFeatureOwner | undefined> {
   const groupRows = await db
     .select({
       feature: graphEdges.fromKey,
@@ -3645,22 +3666,8 @@ export async function listScenarioGaps(
     })
     .from(graphEdges)
     .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'groups'), isNull(graphEdges.branch)));
-  if (groupRows.length > 0) {
-    const ownerOf = await loadGapFeatureOwners(
-      db,
-      projectId,
-      groupRows,
-      mapped.map((g) => g.subject),
-    );
-    for (const gap of mapped) {
-      const owner = ownerOf(gap.subject);
-      if (!owner) continue;
-      if (owner.hub) gap.hub = true;
-      else gap.feature = owner.feature;
-    }
-  }
-
-  return mapped;
+  if (groupRows.length === 0) return () => undefined;
+  return loadGapFeatureOwners(db, projectId, groupRows, subjects);
 }
 
 // ── Triage ───────────────────────────────────────────────────────────────────

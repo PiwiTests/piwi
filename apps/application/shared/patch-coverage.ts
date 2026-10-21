@@ -6,7 +6,7 @@
  */
 import { lineInRanges, normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import { diffFileFromPatch } from '@piwitests/core/diff-anchors';
-import { coveragePercent, type CombinedFile, type CoverageSuiteKind } from './coverage-combine';
+import { coveragePercent, type CombinedFile, type CoverageSuiteKind } from '#shared/coverage-combine';
 
 /** One suite's share of a change's lines. */
 export interface PatchSuiteLines {

@@ -128,7 +128,7 @@ Every bar on the coverage page splits lines by class, as a file's marks do. **Fi
 folder and file with its bar, sortable by lines not run; beside it, the selected folder's suites and least-covered
 files. A file opens on its source, through the
 [source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next range** jumps to
-the next lines no suite ran.
+the next lines no suite ran. **In the Test Map** lists its routes and pages with their [scenario gaps](./scenario-gaps).
 
 <figure>
   <img src="/screenshots/combined-coverage-file.png" alt="A file's lines marked by suite">
