@@ -148,7 +148,7 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     name: 'Editor extensions (VS Code, JetBrains)',
     summary:
       'The Piwi extension for VS Code (and Cursor, VSCodium) and the Piwi plugin for JetBrains IDEs with the LSP API (WebStorm, IntelliJ IDEA Ultimate, Rider). They record tests in a browser the project’s own Playwright opens, written at the cursor as you go; show the latest CI failures on the branch at their failing lines with the locator heal as a quick fix, the tests behind each locator and file, brittle locators and the locators an unsaved change breaks; and set up Piwi’s MCP server for the editor’s agent.',
-    get: 'Install Piwi (`piwitests.piwi`) from the VS Code extensions view, or in a JetBrains IDE from Settings → Plugins or the JetBrains Marketplace (https://plugins.jetbrains.com/plugin/34674-piwi). It reads the reporter’s connection (the environment, the workspace `.env` or the desktop app); otherwise Piwi: Connect signs in with the browser and creates an API key for the editor.',
+    get: 'Install Piwi (`piwitests.piwi`) from the VS Code extensions view or the Visual Studio Marketplace (https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi), or in a JetBrains IDE from Settings → Plugins or the JetBrains Marketplace (https://plugins.jetbrains.com/plugin/34674-piwi). It reads the reporter’s connection (the environment, the workspace `.env` or the desktop app); otherwise Piwi: Connect signs in with the browser and creates an API key for the editor.',
     when: 'You want CI results where you edit the tests: failures at their lines, heals applied in place, and the tests a change reaches.',
     needs: [],
     doc: 'features/editors',

@@ -10,6 +10,7 @@ import {
   JETBRAINS_PLUGIN_URL,
   PICKER_CHROME_URL,
   PICKER_FIREFOX_URL,
+  VSCODE_EXTENSION_URL,
 } from '#shared/companion-links';
 
 const isDesktop = useIsDesktop();
@@ -110,11 +111,14 @@ const isDesktop = useIsDesktop();
         <div class="flex-1 min-w-0">
           <h3 class="font-medium mb-1">Editor extensions</h3>
           <p class="text-sm text-gray-600 dark:text-gray-400">
-            The Piwi plugin for JetBrains IDEs (WebStorm, IntelliJ IDEA Ultimate, Rider) and the Piwi extension for VS
-            Code put this dashboard's answers on the line you edit: the latest CI failures at their failing lines with
+            The Piwi extension for VS Code and the Piwi plugin for JetBrains IDEs (WebStorm, IntelliJ IDEA Ultimate,
+            Rider) put this dashboard's answers on the line you edit: the latest CI failures at their failing lines with
             the locator heal as a quick fix, and the tests behind each locator and file.
           </p>
-          <div class="flex items-center gap-3 mt-2 text-sm">
+          <div class="flex flex-wrap items-center gap-3 mt-2 text-sm">
+            <UButton :to="VSCODE_EXTENSION_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+              Visual Studio Marketplace
+            </UButton>
             <UButton :to="JETBRAINS_PLUGIN_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
               JetBrains Marketplace
             </UButton>
