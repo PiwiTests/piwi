@@ -28,6 +28,14 @@ export function pageScenarios({ projectId, runId, executionId }) {
 }
 
 /**
+ * The pages shard `index` (from 1) of `total` measures: a contiguous run of
+ * `pages`, so the shards' results joined in shard order keep the list's order.
+ */
+export function shardPages(pages, { index, total }) {
+  return pages.slice(Math.floor(((index - 1) * pages.length) / total), Math.floor((index * pages.length) / total));
+}
+
+/**
  * API calls measured on their own besides the ones the pages make in the
  * browser: the ones a page makes while it renders on the server, which the
  * browser never sees, and the trace views a failed execution's evidence tabs

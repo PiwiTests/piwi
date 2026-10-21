@@ -59,19 +59,25 @@ export async function activeStatements(sql, database) {
   return n;
 }
 
-/** Every statement recorded for `database`, keyed by query id. */
+/**
+ * Every statement recorded for `database`, keyed by query id, without its
+ * text: reading the texts reads every text the server keeps, the seed's bulk
+ * inserts included (tens of MB), which took longer than most requests the
+ * suite measures. `nameStatements` reads the texts once, at the end.
+ */
 export async function statementSnapshot(sql, database) {
   const rows = await sql`
-    SELECT s.queryid::text AS id, s.query, s.calls::float8 AS calls, s.total_exec_time AS exec_ms,
+    SELECT s.queryid::text AS id, s.calls::float8 AS calls, s.total_exec_time AS exec_ms,
            s.rows::float8 AS rows, (s.shared_blks_hit + s.shared_blks_read)::float8 AS blocks
-    FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid
+    FROM pg_stat_statements(false) s JOIN pg_database d ON d.oid = s.dbid
     WHERE d.datname = ${database}`;
   return new Map(rows.map((r) => [r.id, r]));
 }
 
 /**
  * What ran between two snapshots: totals and one entry per distinct statement,
- * most-called first.
+ * most-called first. Each entry names its statement by query id until
+ * `nameStatements` gives it its text.
  */
 export function statementDelta(before, after) {
   const queries = [];
@@ -80,7 +86,7 @@ export function statementDelta(before, after) {
     const calls = now.calls - (then?.calls ?? 0);
     if (calls <= 0) continue;
     queries.push({
-      query: now.query,
+      id,
       calls,
       ms: now.exec_ms - (then?.exec_ms ?? 0),
       rows: now.rows - (then?.rows ?? 0),
@@ -90,4 +96,20 @@ export function statementDelta(before, after) {
   queries.sort((a, b) => b.calls - a.calls || b.ms - a.ms);
   const sum = (key) => queries.reduce((total, q) => total + q[key], 0);
   return { statements: sum('calls'), ms: sum('ms'), rows: sum('rows'), blocks: sum('blocks'), queries };
+}
+
+/** Replace the query id of each entry of `queries` (from `statementDelta` on `database`) by its text, in one read. */
+export async function nameStatements(sql, database, queries) {
+  const unnamed = queries.filter((q) => q.id !== undefined);
+  const ids = [...new Set(unnamed.map((q) => q.id))];
+  if (ids.length === 0) return;
+  const rows = await sql`
+    SELECT s.queryid::text AS id, s.query
+    FROM pg_stat_statements(true) s JOIN pg_database d ON d.oid = s.dbid
+    WHERE d.datname = ${database} AND s.queryid::text = ANY(${ids})`;
+  const texts = new Map(rows.map((r) => [r.id, r.query]));
+  for (const q of unnamed) {
+    q.query = texts.get(q.id) ?? `(statement ${q.id})`;
+    delete q.id;
+  }
 }

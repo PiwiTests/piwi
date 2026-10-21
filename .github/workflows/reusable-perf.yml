@@ -4,7 +4,10 @@ name: Performance
 # execution's page with a large trace) on the pull request's build and on its base commit's, against the same dataset
 # in PostgreSQL, and posts the comparison as one comment on the pull request, updated on every push: render and load
 # times, the SQL each request runs, and every regression past its threshold. The suite is apps/application/scripts/perf.
-# A regression is reported, not enforced: the job fails only when the suite itself cannot run.
+# The pages are split across the `measure` jobs, which run at once: each measures both builds in turn on its own pages
+# (`run.mjs --shard`), so every comparison is made on one machine, and the `report` job joins their results. The base
+# commit's build is the one ci.yml's `perf-base` job cached.
+# A regression is reported, not enforced: the jobs fail only when the suite itself cannot run.
 on:
   workflow_call:
 
@@ -12,15 +15,17 @@ permissions:
   contents: read
 
 jobs:
-  perf:
-    name: Performance
+  measure:
+    name: Measure (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 20
 
-    permissions:
-      contents: read
-      # Posts and updates the comparison comment.
-      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # One machine per entry, each measuring a contiguous share of the pages. Two keep each job near five minutes,
+        # where one machine took ten to sixteen; every entry adds its own setup and seed, about two minutes.
+        shard: [1, 2]
 
     steps:
       # The merge commit and its first parent: the base the pull request is measured against.
@@ -55,40 +60,13 @@ jobs:
           echo "short=$(git rev-parse --short HEAD^1)" >> "$GITHUB_OUTPUT"
           echo "head_short=$(git rev-parse --short HEAD^2)" >> "$GITHUB_OUTPUT"
 
-      # The base commit's build: the one ci.yml's build job saved when it ran on main, else one this pull request built
-      # on an earlier run.
+      # Saved by ci.yml: by the build job when the base commit ran on main, else by the perf-base job of this run.
       - name: Restore the base build
-        id: base-build
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
-
-      - name: Check out the base
-        if: steps.base-build.outputs.cache-hit != 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ steps.base.outputs.sha }}
-          path: base
-
-      - name: Install the base
-        if: steps.base-build.outputs.cache-hit != 'true'
-        uses: ./.github/actions/setup-workspace
-        with:
-          directory: base
-
-      - name: Build the base
-        if: steps.base-build.outputs.cache-hit != 'true'
-        working-directory: base/apps/application
-        run: npm run app:build
-
-      # Readable by this pull request's later runs only: a pull request's cache serves no other.
-      - name: Save the base build
-        if: steps.base-build.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: base/apps/application/.output
-          key: perf-base-output-v1-${{ steps.base.outputs.sha }}
+          fail-on-cache-miss: true
 
       - name: Wait for PostgreSQL
         run: timeout 60 bash -c 'until docker exec postgres psql -h 127.0.0.1 -U postgres -c "SELECT 1" >/dev/null 2>&1; do sleep 1; done'
@@ -98,7 +76,8 @@ jobs:
         env:
           BASE_LABEL: ${{ github.base_ref }} ${{ steps.base.outputs.short }}
           HEAD_LABEL: '#${{ github.event.pull_request.number }} ${{ steps.base.outputs.head_short }}'
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+          OUT: ../../perf/results-${{ matrix.shard }}.json
         run: |
           node scripts/perf/run.mjs \
             --target base=../../base/apps/application/.output \
@@ -107,11 +86,55 @@ jobs:
             --label "head=${HEAD_LABEL}" \
             --database postgres \
             --pg-url postgresql://postgres:postgres@127.0.0.1:5432/postgres \
-            --out ../../perf/results.json
-          node scripts/perf/report.mjs --results ../../perf/results.json --out ../../perf/report.md --run-url "${RUN_URL}"
+            --shard "${SHARD}" \
+            --out "${OUT}"
 
       - name: Upload the results
-        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-shard-${{ matrix.shard }}
+          path: perf
+          retention-days: 1
+
+  report:
+    name: Report
+    needs: measure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      # Posts and updates the comparison comment.
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The report reads Node's own modules only: no install.
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          install: 'false'
+
+      - name: Download the results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: perf-shard-*
+          merge-multiple: true
+          path: perf
+
+      # Fails when a shard's results are missing, rather than reporting on part of the pages.
+      - name: Join the results and write the report
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          shards=()
+          for file in perf/results-*.json; do shards+=(--results "$file"); done
+          node apps/application/scripts/perf/report.mjs "${shards[@]}" \
+            --merged perf/results.json --out perf/report.md --run-url "${RUN_URL}"
+
+      - name: Upload the results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: perf-results

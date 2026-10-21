@@ -13,6 +13,12 @@ import { compareMetric, compareResults, sqlDiff } from '../../scripts/perf/lib/c
 import { COMMENT_MARKER, renderComparison } from '../../scripts/perf/lib/markdown.mjs';
 // @ts-expect-error — see above
 import { startOtlpReceiver, traceIdFromServerTiming } from '../../scripts/perf/lib/otlp-receiver.mjs';
+// @ts-expect-error — see above
+import { pageScenarios, shardPages } from '../../scripts/perf/lib/scenarios.mjs';
+// @ts-expect-error — see above
+import { mergeResults } from '../../scripts/perf/lib/merge.mjs';
+// @ts-expect-error — see above
+import { statementDelta } from '../../scripts/perf/lib/pg.mjs';
 
 type Batch = { table: string; rows: Record<string, unknown>[] } | { manifest: { counts: Record<string, number> } };
 
@@ -301,5 +307,105 @@ describe('performance trace receiver', () => {
     expect(sql.statements).toBe(3);
     expect(sql.queries[0]).toMatchObject({ query: 'select 1', calls: 2 });
     expect(sql.nested).toEqual([{ request: 'GET /api/capabilities', statements: 2 }]);
+  });
+});
+
+describe('performance suite split across machines', () => {
+  const pages = pageScenarios({ projectId: 1, runId: 2, executionId: 3 }) as Array<{ id: string }>;
+
+  it('gives each shard a contiguous run of the pages, every page once', () => {
+    for (const total of [1, 2, 3, 5]) {
+      const shards = Array.from({ length: total }, (_, i) => shardPages(pages, { index: i + 1, total }));
+      expect(shards.flat()).toEqual(pages);
+      const sizes = shards.map((s: unknown[]) => s.length);
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  const shard = (index: number, total: number, pageIds: string[], apis: Array<[string, string[]]>) => ({
+    version: 1,
+    meta: {
+      startedAt: `2026-10-21T10:0${index}:00.000Z`,
+      finishedAt: `2026-10-21T10:1${index}:00.000Z`,
+      scale: 'large',
+      shard: { index, total },
+      machine: { cpus: 4, cpuModel: `CPU ${index}`, node: 'v24' },
+      targets: [{ name: 'base' }, { name: 'head' }],
+    },
+    pages: pageIds.map((id) => ({ id, label: id, path: `/${id}`, targets: {} })),
+    apis: apis.map(([path, calledBy]) => ({
+      path,
+      calledBy,
+      targets: { base: { ms: [index], calledBy }, head: { ms: [index], calledBy } },
+    })),
+  });
+
+  it('joins the shards in page order, keeping an API call from the first shard that measured it', () => {
+    const merged = mergeResults([
+      shard(
+        2,
+        2,
+        ['c', 'd'],
+        [
+          ['/api/me', ['c']],
+          ['/api/runs', ['d']],
+        ],
+      ),
+      shard(
+        1,
+        2,
+        ['a', 'b'],
+        [
+          ['/api/me', ['a', 'b']],
+          ['/api/projects', ['a']],
+        ],
+      ),
+    ]);
+    expect(merged.pages.map((p: { id: string }) => p.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(merged.apis.map((a: { path: string }) => a.path)).toEqual(['/api/me', '/api/projects', '/api/runs']);
+    const me = merged.apis[0];
+    expect(me.targets.base.ms).toEqual([1]);
+    expect(me.calledBy).toEqual(['a', 'b', 'c']);
+    expect(me.targets.head.calledBy).toEqual(['a', 'b', 'c']);
+    expect(merged.meta.startedAt).toBe('2026-10-21T10:01:00.000Z');
+    expect(merged.meta.finishedAt).toBe('2026-10-21T10:12:00.000Z');
+    expect(merged.meta.shards.map((s: { pages: string[] }) => s.pages)).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+  });
+
+  it('refuses a run with a shard missing', () => {
+    expect(() => mergeResults([shard(1, 3, ['a'], []), shard(3, 3, ['c'], [])])).toThrow(/shards 1 to 3/);
+  });
+
+  it('names the machine of each shard in the report', () => {
+    const merged = mergeResults([shard(1, 2, ['a', 'b'], []), shard(2, 2, ['c'], [])]);
+    const md = renderComparison(
+      { ...merged.meta, samples: { warmup: 2, ssr: 12, load: 6, api: 8 }, database: 'postgres' },
+      compareResults(merged, 'base', 'head'),
+    );
+    expect(md).toContain('split across 2 machines');
+    expect(md).toContain('Machines: pages 1–2 on 4 × CPU 1, Node v24; page 3 on 4 × CPU 2, Node v24.');
+  });
+});
+
+describe('performance SQL counts', () => {
+  it('names each statement by its query id until its text is read', () => {
+    const before = new Map([['7', { calls: 2, exec_ms: 1, rows: 2, blocks: 4 }]]);
+    const after = new Map([
+      ['7', { calls: 5, exec_ms: 4, rows: 5, blocks: 10 }],
+      ['9', { calls: 1, exec_ms: 1, rows: 1, blocks: 1 }],
+    ]);
+    expect(statementDelta(before, after)).toEqual({
+      statements: 4,
+      ms: 4,
+      rows: 4,
+      blocks: 7,
+      queries: [
+        { id: '7', calls: 3, ms: 3, rows: 3, blocks: 6 },
+        { id: '9', calls: 1, ms: 1, rows: 1, blocks: 1 },
+      ],
+    });
   });
 });
