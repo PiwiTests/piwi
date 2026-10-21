@@ -111,7 +111,6 @@ const tests = [
   position: relative;
   z-index: 1;
   filter: drop-shadow(0 10px 24px rgb(124 58 237 / 0.35));
-  animation: float 6s ease-in-out infinite;
 }
 
 .mark svg {
@@ -319,16 +318,6 @@ const tests = [
 }
 
 /* ── The clock ───────────────────────────────────────────────────────── */
-
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
 
 @keyframes blink {
   0%,
@@ -547,7 +536,7 @@ const tests = [
     transform: scale(1);
   }
   56.5% {
-    transform: scale(1.35);
+    transform: scale(1.25);
   }
 }
 
