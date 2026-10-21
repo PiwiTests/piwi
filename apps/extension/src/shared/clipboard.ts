@@ -1,26 +1,39 @@
 import { t } from './i18n.js';
+import { labelText, setLabel, withIcon, type IconName } from './icons.js';
 
 /** How long a button shows what a copy did before its own label comes back. */
 const FEEDBACK_MS = 1200;
 
-/** A button showing a passing text: its own label, and the timer that puts it back. */
-const flashing = new WeakMap<HTMLElement, { label: string; timer: ReturnType<typeof setTimeout> }>();
+/** A button showing a passing text: its own label and icon, and the timer that puts them back. */
+const flashing = new WeakMap<
+  HTMLElement,
+  { label: string; icon: IconName | null; timer: ReturnType<typeof setTimeout> }
+>();
 
 /**
  * Shows `text` on `button` for a moment, then the button's own label again.
  * A second call meanwhile replaces the first: its timer starts over, and the
- * label it goes back to is still the button's own.
+ * label it goes back to is still the button's own. With `outcome`, a button
+ * with an icon shows a check or a cross in its place meanwhile.
  */
-export function flashLabel(button: HTMLElement, text: string, ms = FEEDBACK_MS): void {
+export function flashLabel(button: HTMLElement, text: string, ms = FEEDBACK_MS, outcome?: 'ok' | 'fail'): void {
   const shown = flashing.get(button);
   if (shown) clearTimeout(shown.timer);
-  const label = shown?.label ?? button.textContent ?? '';
-  button.textContent = text;
+  const glyph = button.querySelector(':scope > .piwi-icon')?.getAttribute('data-icon') as IconName | undefined;
+  const label = shown?.label ?? labelText(button);
+  const own = shown ? shown.icon : (glyph ?? null);
+  setLabel(button, text);
+  if (own && outcome) {
+    withIcon(button, outcome === 'ok' ? 'check' : 'close');
+    button.dataset.flash = outcome;
+  }
   const timer = setTimeout(() => {
     flashing.delete(button);
-    button.textContent = label;
+    setLabel(button, label);
+    if (own) withIcon(button, own);
+    delete button.dataset.flash;
   }, ms);
-  flashing.set(button, { label, timer });
+  flashing.set(button, { label, icon: own, timer });
 }
 
 /**
@@ -61,6 +74,6 @@ async function writeClipboard(text: string, near: HTMLElement): Promise<boolean>
  */
 export async function copyWithFeedback(text: string, button: HTMLElement): Promise<boolean> {
   const copied = await writeClipboard(text, button);
-  flashLabel(button, copied ? t('common_copied') : t('common_copyFailed'));
+  flashLabel(button, copied ? t('common_copied') : t('common_copyFailed'), FEEDBACK_MS, copied ? 'ok' : 'fail');
   return copied;
 }

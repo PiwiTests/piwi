@@ -1,9 +1,9 @@
-import { describeStepInWords } from '@piwitests/core/bug-report';
 import { sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
-import { interfacePhrases } from '../shared/core-words.js';
-import { formatNumber, t, uiLanguage } from '../shared/i18n.js';
+import { formatNumber, t, tNodes, uiLanguage } from '../shared/i18n.js';
+import { icon } from '../shared/icons.js';
+import { richText, stepView, urlView } from '../shared/step-view.js';
 import { DESKTOP_DIALOG_HOST_ID } from './record-ui.js';
-import { verdictText, wait, type ReplayVerdict } from './replay-core.js';
+import { VERDICT_ICONS, verdictText, wait, type ReplayVerdict } from './replay-core.js';
 import { attachPanelShadow } from './panel-root.js';
 import { shareable, shareResultRow } from './share-result.js';
 import { askWorker, button, DIALOG_CSS, holdFocus } from './replay-ui.js';
@@ -60,7 +60,8 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   const root = attachPanelShadow(host, { mode: 'closed' });
   const css = document.createElement('style');
   css.textContent = `${style}${DIALOG_CSS}
-    pre { max-height: 180px; overflow: auto; font-size: 11px; white-space: pre-wrap; }`;
+    pre { max-height: 180px; overflow: auto; font-size: 11px; white-space: pre-wrap; }
+    .steps .step { align-items: flex-start; }`;
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
   const panel = document.createElement('div');
@@ -78,8 +79,11 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   };
 
   const title = document.createElement('div');
-  title.className = 'title';
-  title.textContent = t('replay_desktopTitle');
+  title.className = 'head';
+  const titleText = document.createElement('div');
+  titleText.className = 'title';
+  titleText.textContent = t('replay_desktopTitle');
+  title.append(icon('terminal'), titleText);
   const body = document.createElement('div');
   const row = document.createElement('div');
   row.className = 'row';
@@ -97,12 +101,11 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   };
 
   const recorded = sessionFromSteps(steps, steps.origin ?? location.origin).steps;
-  const phrases = interfacePhrases();
 
   /** How the request ended: declined, expired, or run, with the verdict when it is one this version shows. */
   const showEnd = (status: ReproStatus | null, answer: unknown) => {
     body.replaceChildren();
-    row.replaceChildren(button(t('common_close'), close));
+    row.replaceChildren(button(t('common_close'), close, { icon: 'close' }));
     if (status === 'declined') return body.append(line(t('replay_desktopDeclined')));
     if (status === 'expired') return body.append(line(t('replay_desktopExpired')));
     const verdict = status === 'done' ? asReplayVerdict(answer) : null;
@@ -110,7 +113,11 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
     const { title: verdictTitle, detail } = verdictText(verdict, recorded);
     const box = document.createElement('div');
     box.className = `verdict ${verdict.kind}`;
-    box.append(line(verdictTitle, 'title'), line(detail, ''));
+    const heading = line(verdictTitle, 'title');
+    heading.prepend(icon(VERDICT_ICONS[verdict.kind]));
+    const said = line('', '');
+    said.append(...richText(detail));
+    box.append(heading, said);
     body.append(line(t('replay_desktopRanIn')), box);
     if (bugReportId && shareable(verdict.kind)) {
       body.append(
@@ -148,11 +155,16 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   };
 
   const showPreview = (url: string) => {
-    body.append(line(t('replay_desktopPreview', { url })));
+    const preview = line('');
+    preview.append(...tNodes('replay_desktopPreview', { url: urlView(url) }));
+    body.append(preview);
     const list = document.createElement('div');
     list.className = 'steps';
     recorded.forEach((step, i) => {
-      list.append(line(`${formatNumber(i + 1)}. ${describeStepInWords(step, phrases).replace(/`+/g, '')}`, 'step'));
+      const item = document.createElement('div');
+      item.className = 'step';
+      item.append(line(formatNumber(i + 1), 'num'), stepView(step));
+      list.append(item);
     });
     const details = document.createElement('details');
     const summary = document.createElement('summary');
@@ -178,13 +190,13 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
             return;
           }
           body.replaceChildren(line(t(answer.windowOpen ? 'replay_desktopWaiting' : 'replay_desktopNoWindow')));
-          row.replaceChildren(button(t('common_close'), close));
+          row.replaceChildren(button(t('common_close'), close, { icon: 'close' }));
           void poll(answer.id);
         });
       },
-      'primary',
+      { icon: 'send', tone: 'primary' },
     );
-    row.append(send, button(t('common_cancel'), close));
+    row.append(send, button(t('common_cancel'), close, { icon: 'close', className: 'end' }));
   };
 
   void askWorker<DesktopTarget>({ type: 'piwi-desktop-target' }, { paired: false, url: null }).then((target) => {
@@ -200,9 +212,9 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
           void askWorker({ type: 'piwi-open-options' }, null);
           close();
         },
-        'primary',
+        { icon: 'settings', tone: 'primary' },
       ),
-      button(t('common_cancel'), close),
+      button(t('common_cancel'), close, { icon: 'close', className: 'end' }),
     );
   });
 

@@ -1122,6 +1122,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
     externalId?: string | null;
     displayTitle?: string | null;
     filePath: string;
+    /** The describe blocks around the test, outermost first. */
+    suitePath: string[];
     /** The test's `piwi:owner` annotation, when it declares one. */
     owner?: string | null;
     runCount: number;

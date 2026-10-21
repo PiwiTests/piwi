@@ -21,6 +21,10 @@ import { attachPanelShadow } from './panel-root.js';
 import { pickerOverlayStrings } from './picker-strings.js';
 import { holdFocus } from './modal-panel.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { icon } from '../shared/icons.js';
+import { STEP_CSS } from '../shared/step-view.js';
+import { interfacePhrases } from '../shared/core-words.js';
 
 const HOST_ID = 'piwi-assertion-panel-host';
 
@@ -50,6 +54,8 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
   const style = document.createElement('style');
   style.textContent = `
     ${LOCATOR_SYNTAX_CSS}
+    ${BUTTON_CSS}
+    ${STEP_CSS}
     :host { all: initial; }
     * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
     .backdrop {
@@ -64,29 +70,29 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
     .header > div { min-width: 0; }
     .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; overflow-wrap: anywhere; }
-    .close {
-      background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
-      line-height: 1; padding: 4px 8px; border-radius: 6px;
-    }
-    .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
     .empty { color: #9ca3af; font-size: 12.5px; overflow-wrap: anywhere; }
-    .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
-    .row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-    .method { color: #c4b5fd; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
-    .detail { color: #9ca3af; font-size: 11.5px; margin-bottom: 6px; word-break: break-word; }
-    .row code { display: block; font-size: 13px; line-height: 1.55; margin-bottom: 6px; }
-    button.copy {
-      background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
-      border-radius: 6px; padding: 4px 9px; font-size: 11.5px; cursor: pointer; flex-shrink: 0;
+    .row {
+      display: flex; flex-direction: column; gap: 7px;
+      border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px;
     }
-    button.copy:hover, button.copy:focus-visible { background: rgba(128,128,128,.25); }
+    .row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .method {
+      display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere;
+      color: #c4b5fd; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; font-weight: 600;
+    }
+    .detail { font-size: 12px; word-break: break-word; }
+    .row code {
+      display: block; font-size: 12.5px; line-height: 1.55; padding: 6px 8px; border-radius: 6px;
+      background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.2);
+    }
     @media (prefers-color-scheme: light) {
-      .sub, .empty, .detail { color: #6b7280; }
+      .sub, .empty { color: #6b7280; }
       .method { color: #6d28d9; }
+      .row code { background: rgba(100,116,139,.06); border-color: rgba(100,116,139,.18); }
     }
   `;
   root.appendChild(style);
@@ -116,11 +122,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
     sub.append(...tNodes('assert_locator', { locator }));
   }
   titleWrap.append(title, sub);
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', t('common_close'));
-  closeBtn.textContent = '×';
-  header.append(titleWrap, closeBtn);
+  header.append(titleWrap);
   panel.appendChild(header);
 
   if (suggestion.candidates.length === 0) {
@@ -146,7 +148,9 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
       releaseFocus();
       resolve();
     });
-    closeBtn.addEventListener('click', finish);
+    header.append(
+      makeButton(t('common_close'), finish, { icon: 'close', iconOnly: true, tone: 'ghost', className: 'close' }),
+    );
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
     });
@@ -158,19 +162,31 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
       top.className = 'row-top';
       const method = document.createElement('span');
       method.className = 'method';
-      method.textContent = candidate.method;
-      const btn = document.createElement('button');
-      btn.className = 'copy';
-      btn.type = 'button';
-      btn.textContent = t('common_copy');
-      btn.addEventListener('click', () => void copyWithFeedback(candidate.expectLine, btn));
+      const badge = document.createElement('span');
+      badge.className = 'piwi-step-badge';
+      badge.dataset.kind = 'assert';
+      badge.appendChild(icon('check-circle'));
+      const name = document.createElement('span');
+      name.textContent = candidate.method;
+      method.append(badge, name);
+      const btn = makeButton(t('common_copy'), () => void copyWithFeedback(candidate.expectLine, btn), {
+        icon: 'copy',
+        small: true,
+        className: 'copy',
+      });
       top.append(method, btn);
       row.appendChild(top);
 
-      if (candidate.detail != null) {
+      const shown = candidate.values ?? (candidate.detail != null ? [candidate.detail] : []);
+      if (shown.length > 0) {
         const detail = document.createElement('div');
         detail.className = 'detail';
-        detail.textContent = candidate.detail;
+        shown.forEach((text, i) => {
+          const value = document.createElement('span');
+          value.className = 'piwi-value';
+          value.textContent = interfacePhrases().quote(text);
+          detail.append(...(i > 0 ? [', '] : []), value);
+        });
         row.appendChild(detail);
       }
 

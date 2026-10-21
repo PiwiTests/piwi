@@ -1,6 +1,8 @@
-import { describeStepInWords, type BugReport } from '@piwitests/core/bug-report';
+import type { BugReport } from '@piwitests/core/bug-report';
 import type { StoredBugScreenshot } from '../shared/bug-storage.js';
-import { interfacePhrases } from '../shared/core-words.js';
+import { makeButton, styleButton } from '../shared/buttons.js';
+import { icon, setLabel } from '../shared/icons.js';
+import { stepView } from '../shared/step-view.js';
 import { t, tn, uiLanguage } from '../shared/i18n.js';
 import { attachPanelShadow } from './panel-root.js';
 import { withoutStepShots } from './bug-report-files.js';
@@ -36,13 +38,14 @@ const SEND_CSS = `
   .check input { width: auto; margin: 2px 0 0; flex-shrink: 0; }
   .first { border: 1px solid rgba(124,58,237,.5); background: rgba(124,58,237,.12); border-radius: 8px; padding: 8px 10px; margin: 10px 0; font-size: 12px; }
   .always { font-size: 12.5px; margin: 10px 0 4px; }
-  ol.sent-steps { margin: 4px 0 8px; padding-left: 22px; font-size: 12px; max-height: 160px; overflow: auto; }
+  ol.sent-steps { margin: 4px 0 8px; padding: 6px 8px; list-style: none; font-size: 12px; max-height: 180px; overflow: auto;
+    border: 1px solid rgba(128,128,128,.3); border-radius: 8px; display: flex; flex-direction: column; gap: 4px; }
   details { margin-top: 8px; font-size: 12px; }
   details pre { max-height: 220px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
     background: rgba(128,128,128,.1); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; }
-  .done { font-size: 13px; margin-top: 10px; }
-  .done a { color: #a78bfa; }
-  @media (prefers-color-scheme: light) { .done a { color: #6d28d9; } }
+  .done { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; line-height: 20px; margin-top: 10px; }
+  .done > .piwi-icon { color: #34d399; }
+  @media (prefers-color-scheme: light) { .done > .piwi-icon { color: #047857; } }
 `;
 
 /**
@@ -171,7 +174,7 @@ export function openSendPreview(opts: {
     stepList.replaceChildren(
       ...shown.steps.steps.map((step) => {
         const li = document.createElement('li');
-        li.textContent = describeStepInWords(step, interfacePhrases());
+        li.append(stepView(step));
         return li;
       }),
     );
@@ -184,20 +187,18 @@ export function openSendPreview(opts: {
   message.setAttribute('role', 'alert');
   const actions = document.createElement('div');
   actions.className = 'actions';
-  const sendBtn = document.createElement('button');
-  sendBtn.type = 'button';
-  sendBtn.className = 'action primary';
-  sendBtn.textContent = t('bug_send');
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'action';
-  cancelBtn.textContent = t('common_cancel');
+  const sendBtn = makeButton(t('bug_send'), () => send(), {
+    icon: 'send',
+    tone: 'primary',
+    className: 'action primary',
+  });
+  const cancelBtn = makeButton(t('common_cancel'), () => close(), { icon: 'close', className: 'action' });
   actions.append(sendBtn, cancelBtn);
   panel.append(message, actions);
 
-  sendBtn.addEventListener('click', () => {
+  const send = () => {
     sendBtn.disabled = true;
-    sendBtn.textContent = t('bug_sending');
+    setLabel(sendBtn, t('bug_sending'));
     message.textContent = '';
     void (async () => {
       let answer:
@@ -225,24 +226,20 @@ export function openSendPreview(opts: {
         const done = document.createElement('div');
         done.className = 'done';
         done.setAttribute('role', 'status');
-        done.append(`${t('bug_sent', { id: answer.id })} `);
+        done.append(icon('check-circle'), t('bug_sent', { id: answer.id }));
         if (answer.url) {
           const link = document.createElement('a');
           link.href = answer.url;
           link.target = '_blank';
           link.rel = 'noopener noreferrer';
           link.textContent = t('bug_openInPiwi');
-          done.appendChild(link);
+          done.appendChild(styleButton(link, { icon: 'external', small: true }));
         }
         const issueLine = document.createElement('div');
         issueLine.className = 'sub';
         if (answer.issue?.key) issueLine.textContent = t('bug_issueCreated', { key: answer.issue.key });
         else if (answer.issue && answer.issue.status !== 'failed') issueLine.textContent = t('bug_issueQueued');
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.className = 'action';
-        closeBtn.textContent = t('common_close');
-        closeBtn.addEventListener('click', close);
+        const closeBtn = makeButton(t('common_close'), () => close(), { icon: 'close', className: 'action' });
         const row = document.createElement('div');
         row.className = 'actions';
         row.appendChild(closeBtn);
@@ -251,11 +248,10 @@ export function openSendPreview(opts: {
         return;
       }
       sendBtn.disabled = false;
-      sendBtn.textContent = t('bug_send');
+      setLabel(sendBtn, t('bug_send'));
       message.textContent = t('bug_sendFailed', { error: answer?.error ?? t('common_workerNoAnswer') });
     })();
-  });
-  cancelBtn.addEventListener('click', close);
+  };
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) close();
   });

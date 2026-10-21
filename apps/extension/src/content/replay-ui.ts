@@ -1,12 +1,10 @@
+import { makeButton, type ButtonOptions } from '../shared/buttons.js';
+
 /** What the replay's panel and its dialogs (Run with Playwright, Share result) build with. */
 
-export function button(label: string, onClick: () => void, className = ''): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.textContent = label;
-  if (className) b.className = className;
-  b.addEventListener('click', onClick);
-  return b;
+/** A small button of the replay's surfaces: its icon, its label and its tone. */
+export function button(label: string, onClick: () => void, options: ButtonOptions = {}): HTMLButtonElement {
+  return makeButton(label, onClick, { small: true, ...options });
 }
 
 /** Sends a message to the background worker: its answer, or `fallback` when it gives none or cannot be reached. */

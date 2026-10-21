@@ -125,6 +125,7 @@ function checkElementDialog(element: Element, target: RecordedTarget): Promise<S
       };
     },
     t('record_checkAdd'),
+    'check-circle',
   );
 }
 
@@ -148,6 +149,7 @@ function checkAddressDialog(): Promise<StepAssertion | null> {
       };
     },
     t('record_checkAdd'),
+    'check-circle',
   );
 }
 

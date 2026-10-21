@@ -210,11 +210,13 @@ export async function panelNode(page: Page, match: (node: DomNode) => boolean): 
   }
 }
 
+/** The text of `node` and everything inside it, as `textContent` reads it. */
+export function nodeText(node: DomNode): string {
+  return (node.nodeValue ?? '') + (node.children ?? []).map(nodeText).join('');
+}
+
 async function buttonNode(page: Page, label: string): Promise<number> {
-  const backendNodeId = await panelNode(
-    page,
-    (node) => node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === label),
-  );
+  const backendNodeId = await panelNode(page, (node) => node.nodeName === 'BUTTON' && nodeText(node) === label);
   expect(backendNodeId, `a button reading "${label}"`).not.toBeNull();
   return backendNodeId!;
 }

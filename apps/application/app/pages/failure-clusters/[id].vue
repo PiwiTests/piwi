@@ -144,6 +144,8 @@ const cluesFailureAt = computed(() => cluesData.value?.failureAt ?? null);
 const defaultHint = useEvidenceHint(clues, story, () => mostLikely.value);
 const hasTrace = computed(() => (execTraces.value?.length ?? 0) > 0);
 const selectedRunId = computed(() => (execution.value as { testRun?: { id?: number } } | null)?.testRun?.id ?? null);
+/** The line the selected test is declared on, from its execution. */
+const selectedLine = computed(() => (execution.value as { line?: number | null } | null)?.line ?? null);
 
 // ── The heading: the latest occurrence's headline when it says more ─────────
 // The server builds the headline from the latest occurrence, so the heading
@@ -861,9 +863,16 @@ const breadcrumbItems = computed(() => [
                 help="case.evidence"
                 @decline-fixtures="declineClusterFixtures"
               >
-                <!-- The test, the run and the occurrence the evidence is of -->
+                <!-- The test (its title path), the run and the occurrence the evidence is of -->
                 <template v-if="selectedCase" #subject>
-                  {{ selectedCase.title }}
+                  <TestTitlePath
+                    :file-path="selectedCase.filePath"
+                    :line="selectedLine"
+                    :suite-path="selectedCase.suitePath"
+                    :project-key="cluster.project?.id"
+                    :project-name="cluster.project?.name"
+                    >{{ selectedCase.title }}</TestTitlePath
+                  >
                   <template v-if="selectedRunId">
                     ·
                     <NuxtLink :to="`/test-runs/${selectedRunId}`" :class="SENTENCE_LINK_CLASS"

@@ -6,8 +6,8 @@
  */
 import type { BugReportDetail } from '#shared/handlers/bug-reports';
 import type { DetailTabItem } from '~/components/shared/DetailPageLayout.vue';
-import { describeExpectation, expectedSteps } from '@piwitests/core/bug-report';
-import { BUG_REPORT_STATUS, capitalize, reproductionPlace, verdictLabel } from '~/utils/bug-reports';
+import { describeStepInParts, expectedSteps } from '@piwitests/core/bug-report';
+import { BUG_REPORT_STATUS, reproductionPlace, verdictLabel } from '~/utils/bug-reports';
 
 const route = useRoute();
 const toast = useToast();
@@ -45,7 +45,7 @@ const claim = computed(() => {
   if (!r) return null;
   const [first] = expectedSteps({ v: 1, steps: r.steps, evidence: r.evidence, context: r.context });
   if (!first) return null;
-  return { text: describeExpectation(first.step), actual: first.step.assertion?.actual ?? null, step: first.index };
+  return { parts: describeStepInParts(first.step), actual: first.step.assertion?.actual ?? null, step: first.index };
 });
 
 const next = computed(() => {
@@ -178,8 +178,8 @@ async function setStatus(status: 'open' | 'dismissed') {
             </template>
             <template v-if="claim" #situation>
               <p data-shot="bug-report-claim">
-                <BugPhraseText :text="capitalize(claim.text)" /><template v-if="claim.actual != null"
-                  >; the page showed "{{ claim.actual }}"</template
+                <BugStepText :parts="claim.parts" /><template v-if="claim.actual != null"
+                  >; the page showed <span class="font-semibold text-highlighted">"{{ claim.actual }}"</span></template
                 >.
               </p>
             </template>

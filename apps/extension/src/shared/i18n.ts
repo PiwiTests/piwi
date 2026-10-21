@@ -232,6 +232,21 @@ export function tNodes<K extends MessageKey>(
   return lookupNodes(key, values);
 }
 
+/** Like {@link tn}, where a placeholder other than `$count$` may also be a node. */
+export function tnNodes<B extends PluralKey>(
+  base: B,
+  count: number,
+  slots: Record<Exclude<PlaceholderName<`${B}_other` & MessageKey>, 'count'>, Node | string | number>,
+): Array<Node | string> {
+  const values: Record<string, Node | string> = { count: new Intl.NumberFormat(safeLocale()).format(count) };
+  for (const [name, value] of Object.entries(slots as Record<string, Node | string | number>)) {
+    values[name] = typeof value === 'number' ? String(value) : value;
+  }
+  const category = new Intl.PluralRules(safeLocale()).select(count);
+  const key = lookup(`${base}_${category}`) ? `${base}_${category}` : `${base}_other`;
+  return lookupNodes(key, values);
+}
+
 const ATTRIBUTES = [
   ['data-i18n-title', 'title'],
   ['data-i18n-placeholder', 'placeholder'],

@@ -12,7 +12,9 @@
         --muted: #6b7280;
         --border: #e5e7eb;
         --accent: #7c3aed;
+        --accent-fg: #6d28d9;
         --bug: #dc2626;
+        --ok: #059669;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -21,8 +23,14 @@
           --fg: #f9fafb;
           --muted: #9ca3af;
           --border: #374151;
+          --accent-fg: #c4b5fd;
           --bug: #f87171;
+          --ok: #34d399;
         }
+      }
+      /* An element with the `hidden` attribute is hidden, whatever `display` a rule below gives it. */
+      [hidden] {
+        display: none !important;
       }
       * {
         box-sizing: border-box;
@@ -127,15 +135,35 @@
       .add-site-row[hidden] {
         display: none;
       }
-      .add-site-row button {
+      /* The popup's small buttons: the icon before the label, in the accent color, on whole pixels. */
+      .add-site-row button,
+      .worker-notice button {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
         flex-shrink: 0;
         font: inherit;
-        padding: 3px 8px;
+        font-weight: 500;
+        line-height: 16px;
+        padding: 3px 9px;
         border-radius: 6px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: var(--fg);
         cursor: pointer;
+      }
+      .add-site-row button:hover,
+      .add-site-row button:focus-visible,
+      .worker-notice button:hover,
+      .worker-notice button:focus-visible {
+        border-color: var(--accent);
+        outline: none;
+      }
+      .add-site-row button > svg,
+      .worker-notice button > svg {
+        width: 12px;
+        height: 12px;
+        color: var(--accent-fg);
       }
       .grid {
         display: grid;
@@ -189,6 +217,42 @@
       .tile.compact {
         padding: 6px 10px;
       }
+      /* Record and Report a bug while a recording runs: red to stop it, green to finish a bug report, the accent to
+         review what was recorded. */
+      .tile[data-state='stop'] {
+        border-color: color-mix(in srgb, var(--bug) 60%, transparent);
+        background: color-mix(in srgb, var(--bug) 7%, var(--surface));
+      }
+      .tile[data-state='stop'] svg {
+        color: var(--bug);
+      }
+      .tile[data-state='finish'] {
+        border-color: color-mix(in srgb, var(--ok) 60%, transparent);
+        background: color-mix(in srgb, var(--ok) 8%, var(--surface));
+      }
+      .tile[data-state='finish'] svg {
+        color: var(--ok);
+      }
+      .tile[data-state='review'] svg {
+        color: var(--accent-fg);
+      }
+      /* Report a bug while another recording runs: it waits for that one to end. */
+      .tile[data-state='waiting'] {
+        border-color: var(--border);
+        background: var(--surface);
+      }
+      .tile[data-state='waiting'] svg,
+      .tile[data-state='waiting'] .label {
+        color: var(--muted);
+      }
+      .tile[data-state='stop']:hover,
+      .tile[data-state='stop']:focus-visible {
+        border-color: var(--bug);
+      }
+      .tile[data-state='finish']:hover,
+      .tile[data-state='finish']:focus-visible {
+        border-color: var(--ok);
+      }
       /* The tool currently running on the page. Only one can be, so this also
          answers "did that actually start?" at a glance. */
       .tile.running {
@@ -209,7 +273,7 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 1px;
+        gap: 2px;
       }
       .tile svg {
         width: 18px;
@@ -229,7 +293,7 @@
       .tile .label {
         font-size: 12.5px;
         font-weight: 600;
-        line-height: 1.3;
+        line-height: 16px;
       }
       .tile.compact .label {
         font-weight: 500;
@@ -237,7 +301,7 @@
       .tile .hint {
         color: var(--muted);
         font-size: 10.5px;
-        line-height: 1.35;
+        line-height: 14px;
       }
       .tile.primary .hint {
         color: #ffffffcc;
@@ -276,12 +340,12 @@
         border: 1px dashed var(--border);
         border-radius: 8px;
         font-size: 11px;
-        line-height: 1.45;
+        line-height: 16px;
         color: var(--muted);
       }
       .devtools-note svg {
-        width: 15px;
-        height: 15px;
+        width: 14px;
+        height: 14px;
         flex-shrink: 0;
         margin-top: 1px;
         stroke: currentColor;
@@ -307,9 +371,18 @@
         padding: 1px 4px;
       }
       #status {
-        color: var(--muted);
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
         font-size: 11.5px;
+        line-height: 16px;
         margin-bottom: 8px;
+      }
+      #status > svg {
+        width: 12px;
+        height: 12px;
+        margin-top: 2px;
+        color: #d97706;
       }
       /* Only ever filled in on an error: collapsed until there is something to say. */
       #status:empty {
@@ -332,21 +405,6 @@
       .worker-notice p {
         flex: 1;
         margin: 0;
-      }
-      .worker-notice button {
-        flex-shrink: 0;
-        padding: 3px 8px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--surface);
-        color: var(--fg);
-        font: inherit;
-        cursor: pointer;
-      }
-      .worker-notice button:hover,
-      .worker-notice button:focus-visible {
-        border-color: var(--accent);
-        outline: none;
       }
     </style>
   </head>
@@ -372,7 +430,7 @@
           Piwi Picker was rebuilt since it was loaded, and part of it still runs the previous build, so some tools won’t
           answer. Reloading ends a recording in progress.
         </p>
-        <button id="worker-reload" type="button" data-i18n="popup_reload">Reload Piwi Picker</button>
+        <button id="worker-reload" type="button" data-i18n="popup_reload" data-icon="refresh">Reload Piwi Picker</button>
       </div>
       <div id="status" role="status"></div>
       <div id="active-project-row" class="active-project-row" style="display: none">
@@ -385,6 +443,7 @@
             type="button"
             data-i18n="popup_addSite"
             data-i18n-title="popup_addSiteTitle"
+            data-icon="plus"
             title="Open the settings with this site’s pattern filled in"
           >
             Add this site

@@ -10,11 +10,11 @@ import {
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
-import { describeStepInWords } from '@piwitests/core/bug-report';
 import { IDE_PAUSED_MESSAGE, type IdeRecorderSettings } from '@piwitests/core/ide-recorder';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { interfacePhrases } from '../shared/core-words.js';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { STEP_CSS, stepView } from '../shared/step-view.js';
 import { relayEvidence } from '../shared/bug-relay.js';
 import { classifyInputKind } from './record-capture.js';
 import { isSensitiveField, rememberChangedFields } from './sensitive-fields.js';
@@ -465,6 +465,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   style.textContent = `
     ${SHARED_STYLE}
     ${LOCATOR_SYNTAX_CSS}
+    ${BUTTON_CSS}
     .bar {
       display: flex; flex-direction: column; gap: 8px; background: #111827; color: #f9fafb;
       border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
@@ -478,14 +479,10 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
     .dot.paused { background: #9ca3af; animation: none; }
     .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
-    button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
-      border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
-    button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
-    button.stop { background: #dc2626; border-color: #dc2626; color: #fff; }
-    button:disabled { opacity: .5; cursor: default; }
     .checks { display: flex; gap: 6px; flex-wrap: wrap; }
     .section-title { color: #9ca3af; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-all; display: block; }
+    code.last { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-all; display: block;
+      padding: 5px 7px; border-radius: 6px; background: rgba(148,163,184,.12); border: 1px solid rgba(148,163,184,.22); }
     .match { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
     .match-name { font-family: ui-monospace, monospace; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .match-bar { width: 34px; height: 4px; border-radius: 2px; background: rgba(128,128,128,.25); overflow: hidden; flex-shrink: 0; }
@@ -519,19 +516,24 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = hudTitle(steps.length);
-  const stopBtn = document.createElement('button');
-  stopBtn.type = 'button';
-  stopBtn.className = 'stop';
-  stopBtn.textContent = t('common_stop');
-  stopBtn.addEventListener('click', () => void handleStop());
+  const stopBtn = makeButton(t('common_stop'), () => void handleStop(), {
+    icon: 'stop',
+    tone: 'danger',
+    small: true,
+    className: 'stop',
+  });
   if (IDE_BUILD) {
     dot.classList.toggle('paused', idePaused);
-    const pauseBtn = document.createElement('button');
-    pauseBtn.type = 'button';
-    pauseBtn.className = 'pause';
-    pauseBtn.textContent = idePaused ? t('record_resume') : t('record_pause');
+    const pauseBtn = makeButton(
+      idePaused ? t('record_resume') : t('record_pause'),
+      () => void setIdePaused(!idePaused),
+      {
+        icon: idePaused ? 'play' : 'pause',
+        small: true,
+        className: 'pause',
+      },
+    );
     pauseBtn.setAttribute('aria-pressed', String(idePaused));
-    pauseBtn.addEventListener('click', () => void setIdePaused(!idePaused));
     topRow.append(dot, title, pauseBtn, stopBtn);
   } else {
     topRow.append(dot, title, stopBtn);
@@ -548,15 +550,12 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   // Checks of what the page shows now; none while paused, when nothing is recorded.
   const checks = document.createElement('div');
   checks.className = 'checks';
-  for (const [label, run] of [
-    ['record_checkElement', runCheckElementFlow],
-    ['record_checkAddress', runCheckAddressFlow],
+  for (const [label, glyph, run] of [
+    ['record_checkElement', 'check-circle', runCheckElementFlow],
+    ['record_checkAddress', 'globe', runCheckAddressFlow],
   ] as const) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = t(label);
+    const button = makeButton(t(label), () => void run(bugHooks), { icon: glyph, small: true });
     button.disabled = IDE_BUILD && idePaused;
-    button.addEventListener('click', () => void run(bugHooks));
     checks.appendChild(button);
   }
   bar.appendChild(checks);
@@ -574,7 +573,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     locTitle.className = 'section-title';
     locTitle.textContent = t('record_lastLocator');
     const code = document.createElement('code');
-    code.className = 'piwi-loc';
+    code.className = 'piwi-loc last';
     code.innerHTML = highlightLocator(lastTarget.alternatives[0].locator);
     bar.append(locTitle, code);
   }
@@ -662,29 +661,26 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   const style = document.createElement('style');
   style.textContent = `
     ${SHARED_STYLE}
+    ${LOCATOR_SYNTAX_CSS}
+    ${BUTTON_CSS}
+    ${STEP_CSS}
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 6vh; }
     .panel { background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px; width: min(680px, 92vw); max-height: 84vh;
       overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
     @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
     .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
     .header > div { min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
+    .panel:focus { outline: none; }
     .title { font-weight: 600; font-size: 14px; }
     .sub { color: #9ca3af; font-size: 12px; }
-    .close { background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px; }
-    .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
-    .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 240px; overflow: auto; margin-bottom: 12px; }
-    .step { padding: 6px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
-      border-bottom: 1px solid rgba(128,128,128,.15); display: flex; gap: 8px; align-items: center; }
-    .step-desc { min-width: 0; overflow-wrap: anywhere; }
+    .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 280px; overflow: auto; margin-bottom: 12px; }
+    .step { padding: 6px 10px; font-size: 12.5px; border-bottom: 1px solid rgba(128,128,128,.15); display: flex; gap: 8px; align-items: flex-start; }
+    .step-desc { min-width: 0; flex: 1; }
     .step:last-child { border-bottom: none; }
-    .step-idx { color: #9ca3af; flex-shrink: 0; min-width: 20px; }
-    .step-fn { margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(124,58,237,.2); color: #a78bfa; flex-shrink: 0; }
+    .step-idx { color: #9ca3af; flex-shrink: 0; min-width: 18px; text-align: end; font-variant-numeric: tabular-nums; font-size: 11px; padding-top: 3px; }
+    .step-fn { margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(124,58,237,.2); color: #a78bfa; flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    button.action { background: rgba(128,128,128,.12); color: inherit; border: 1px solid rgba(128,128,128,.3);
-      border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; text-align: start; overflow-wrap: anywhere; }
-    button.action:hover, button.action:focus-visible { background: rgba(128,128,128,.25); }
-    button.action.primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
-    button.action.danger:hover, button.action.danger:focus-visible { background: rgba(248,113,113,.2); border-color: #f87171; }
+    .actions .discard { margin-inline-start: auto; }
     .empty { color: #9ca3af; font-size: 12.5px; padding: 16px; text-align: center; }
     @media (prefers-color-scheme: light) {
       .sub, .step-idx, .empty { color: #6b7280; }
@@ -717,10 +713,6 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
         ? t('record_noFunctionMatches')
         : t('record_notConnected');
   titleWrap.append(title, sub);
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', t('common_close'));
-  closeBtn.textContent = '×';
   // Every close path (the ×, the backdrop, Discard, Escape) goes through one
   // function, which detaches the document-level Escape listener below with the panel.
   const closeController = new AbortController();
@@ -728,7 +720,12 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     closeController.abort();
     host.remove();
   };
-  closeBtn.addEventListener('click', closePanel);
+  const closeBtn = makeButton(t('common_close'), closePanel, {
+    icon: 'close',
+    iconOnly: true,
+    tone: 'ghost',
+    className: 'close',
+  });
   header.append(titleWrap, closeBtn);
   panel.appendChild(header);
 
@@ -746,9 +743,8 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
       const idx = document.createElement('span');
       idx.className = 'step-idx';
       idx.textContent = formatNumber(i + 1);
-      const desc = document.createElement('span');
-      desc.className = 'step-desc';
-      desc.textContent = describeStepInWords(step, interfacePhrases());
+      const desc = stepView(step);
+      desc.classList.add('step-desc');
       row.append(idx, desc);
       const span = withCatalog.matchedSpans.find((s) => i >= s.startStep && i <= s.endStep);
       if (span) {
@@ -766,52 +762,48 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   actions.className = 'actions';
 
   if (steps.length > 0) {
-    const copyPrimary = document.createElement('button');
-    copyPrimary.type = 'button';
-    copyPrimary.className = 'action primary';
-    copyPrimary.textContent = catalog.length > 0 ? t('record_copyCodeWithFunctions') : t('record_copyCode');
-    copyPrimary.addEventListener('click', () => void copyToClipboard(withCatalog.code, copyPrimary));
+    const copyPrimary = makeButton(
+      catalog.length > 0 ? t('record_copyCodeWithFunctions') : t('record_copyCode'),
+      () => void copyToClipboard(withCatalog.code, copyPrimary),
+      { icon: 'copy', tone: 'primary' },
+    );
     actions.appendChild(copyPrimary);
 
     if (catalog.length > 0 && withCatalog.matchedSpans.length > 0) {
-      const copyRaw = document.createElement('button');
-      copyRaw.type = 'button';
-      copyRaw.className = 'action';
-      copyRaw.textContent = t('record_copyCodeWithoutFunctions');
-      copyRaw.addEventListener('click', () => void copyToClipboard(raw.code, copyRaw));
+      const copyRaw = makeButton(t('record_copyCodeWithoutFunctions'), () => void copyToClipboard(raw.code, copyRaw), {
+        icon: 'code',
+      });
       actions.appendChild(copyRaw);
     }
 
-    const downloadBtn = document.createElement('button');
-    downloadBtn.type = 'button';
-    downloadBtn.className = 'action';
-    downloadBtn.textContent = t('record_downloadSteps');
-    downloadBtn.title = t('record_downloadStepsTitle');
-    downloadBtn.addEventListener('click', () => downloadSteps(toStepsDocument(session)));
-    actions.appendChild(downloadBtn);
+    actions.appendChild(
+      makeButton(t('record_downloadSteps'), () => downloadSteps(toStepsDocument(session)), {
+        icon: 'download',
+        title: t('record_downloadStepsTitle'),
+      }),
+    );
 
     if (await getEditorPairing().catch(() => null)) {
-      const sendBtn = document.createElement('button');
-      sendBtn.type = 'button';
-      sendBtn.className = 'action';
-      sendBtn.textContent = t('record_sendToEditor');
-      sendBtn.addEventListener('click', () => {
-        void sendToEditor({ kind: 'steps', steps: toStepsDocument(session) }).then((result) =>
-          showSendResult(sendBtn, result),
-        );
-      });
+      const sendBtn = makeButton(
+        t('record_sendToEditor'),
+        () => {
+          void sendToEditor({ kind: 'steps', steps: toStepsDocument(session) }).then((result) =>
+            showSendResult(sendBtn, result),
+          );
+        },
+        { icon: 'send' },
+      );
       actions.appendChild(sendBtn);
     }
   }
 
-  const discardBtn = document.createElement('button');
-  discardBtn.type = 'button';
-  discardBtn.className = 'action danger';
-  discardBtn.textContent = t('common_discard');
-  discardBtn.addEventListener('click', () => {
-    void discardRecording().then(closePanel, closePanel);
-  });
-  actions.appendChild(discardBtn);
+  actions.appendChild(
+    makeButton(t('common_discard'), () => void discardRecording().then(closePanel, closePanel), {
+      icon: 'trash',
+      tone: 'remove',
+      className: 'discard',
+    }),
+  );
   panel.appendChild(actions);
 
   backdrop.addEventListener('click', (e) => {

@@ -698,7 +698,7 @@
     "description": "Settings page, Project mappings card: shown instead of the pattern lists before Piwi Picker is connected to an instance."
   },
   "options_addMapping": {
-    "message": "+ Add a line",
+    "message": "Add a line",
     "description": "Settings page: button adding a line to the project mappings."
   },
   "options_noMappings": {
@@ -1510,7 +1510,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Found by its position (nth): it breaks if the order of the list changes",
+    "message": "Found by its position (nth): it breaks if the order of the list changes",
     "description": "Multi-pick: warning under a locator that finds its item only by its place in the list. “nth” is Playwright code, kept as it is."
   },
   "lint_dialog": {

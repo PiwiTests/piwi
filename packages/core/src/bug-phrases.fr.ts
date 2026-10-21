@@ -155,6 +155,7 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
   roles: ROLES,
   quote,
   code: markdownCode,
+  key,
   capitalize: (text) => `${text.charAt(0).toLocaleUpperCase('fr')}${text.slice(1)}`,
   steps: {
     goto: (url) => `Ouvrir ${markdownCode(url)}`,

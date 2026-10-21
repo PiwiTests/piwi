@@ -42,7 +42,7 @@ test.describe('the Piwi panel’s Locators tab', () => {
 
     const input = panel.getByRole('textbox', { name: 'Locator to try' });
     await input.fill("getByRole('button', { name: 'Show popup' })");
-    await expect(panel.getByRole('status')).toHaveText('⚠ 2 elements: strict mode fails');
+    await expect(panel.getByRole('status')).toHaveText('2 elements: strict mode fails');
     const matches = panel.getByRole('list', { name: 'Elements found' }).getByRole('listitem');
     await expect(matches).toHaveText([/button · Show popup/, /button · Show popup/]);
     await expect(shop.getByRole('button', { name: 'Show popup' })).toHaveCount(2);
@@ -55,7 +55,7 @@ test.describe('the Piwi panel’s Locators tab', () => {
     await expect(shop.locator('#piwi-devtools-highlight')).toHaveCount(0);
 
     await input.fill("getByTestId('apply-coupon')");
-    await expect(panel.getByRole('status')).toHaveText('✓ One element: strict mode passes');
+    await expect(panel.getByRole('status')).toHaveText('One element: strict mode passes');
     await input.fill("getByRole('button', {");
     await expect(panel.getByRole('status')).toContainText('The console can’t read this locator');
   });
@@ -74,7 +74,7 @@ test.describe('the Piwi panel’s Locators tab', () => {
     const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
     await panel.getByRole('tab', { name: 'Locators' }).click();
     await panel.getByRole('textbox', { name: 'Locator to try' }).fill("getByRole('button', { name: 'Gift wrap' })");
-    await expect(panel.getByRole('status')).toHaveText('✓ One element: strict mode passes');
+    await expect(panel.getByRole('status')).toHaveText('One element: strict mode passes');
     const match = panel.getByRole('list', { name: 'Elements found' }).getByRole('listitem');
     await match.getByRole('button', { name: 'Reveal' }).click();
     await expect.poll(() => shop.evaluate(() => (globalThis as { __inspected?: string }).__inspected)).toBe('wrap');

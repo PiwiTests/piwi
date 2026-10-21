@@ -1,5 +1,7 @@
-import { conditionText, cpuText, throttleText } from '../shared/condition-words.js';
-import { t } from '../shared/i18n.js';
+import { conditionWords, cpuText, throttleText } from '../shared/condition-words.js';
+import { t, tNodes } from '../shared/i18n.js';
+import { icon } from '../shared/icons.js';
+import { patternView } from '../shared/pattern-view.js';
 import {
   CONDITIONS_KEY,
   CPU_RATES,
@@ -14,7 +16,7 @@ import {
 import { mockUrlPattern } from '../shared/mock-code.js';
 import { sessionArea } from '../shared/session-area.js';
 import { inspectedTabId, requestSiteAccess, sitePattern } from './inspected.js';
-import { button, el } from './ui.js';
+import { button, el, methodView } from './ui.js';
 import type { NetworkEntry } from './panel-network.js';
 
 /**
@@ -60,6 +62,16 @@ async function onThisTabAt(origin: string | null): Promise<TabConditions> {
   const on = await onThisTab();
   if (on.origin === null || on.origin === origin) return on;
   return { ...on, conditions: [], throttle: null, cpuRate: null };
+}
+
+/**
+ * A condition in words, as `conditionText` says it, its request's method and
+ * pattern set apart: for the strip and the Replay tab's list.
+ */
+export function conditionView(condition: RequestCondition): Array<Node | string> {
+  const request = el('span', 'condition-request');
+  request.append(methodView(condition.method), ' ', patternView(condition.pattern));
+  return conditionWords(condition, request);
 }
 
 /** Whether this browser gives the extension the debugging protocol: Chrome and Edge do, Firefox does not. */
@@ -179,9 +191,9 @@ export function conditionActions(entry: NetworkEntry, origin: string | null): HT
   const controls = el('div', 'controls');
   controls.append(
     seconds,
-    button(t('devtools_slowDown'), () => add('delay')),
-    button(t('devtools_failError'), () => add('error')),
-    button(t('devtools_failAbort'), () => add('abort')),
+    button(t('devtools_slowDown'), () => add('delay'), { icon: 'gauge' }),
+    button(t('devtools_failError'), () => add('error'), { icon: 'server-error' }),
+    button(t('devtools_failAbort'), () => add('abort'), { icon: 'blocked' }),
     status,
   );
   const limits = el('details', 'limits');
@@ -219,54 +231,48 @@ export async function renderConditions(strip: HTMLElement, pageOrigin: string | 
     status.textContent = text;
   };
   const list = el('ul');
-  for (const condition of conditions) {
+  /** A line of the strip: what is on, and Remove while the page shows the origin it was set for. */
+  const line = (text: Array<Node | string>, remove: () => void) => {
     const item = el('li');
+    const words = el('span');
+    words.append(...text);
     item.append(
-      el('span', '', conditionText(condition)),
-      ...(away
-        ? []
-        : [
-            button(
-              t('devtools_conditionRemove'),
-              () =>
-                void setConditions(
-                  origin,
-                  conditions.filter((c) => c.id !== condition.id),
-                  report,
-                ),
-              'link',
-            ),
-          ]),
+      words,
+      ...(away ? [] : [button(t('devtools_conditionRemove'), remove, { icon: 'close', tone: 'remove', small: true })]),
     );
     list.appendChild(item);
+  };
+  for (const condition of conditions) {
+    line(conditionView(condition), () => {
+      void setConditions(
+        origin,
+        conditions.filter((c) => c.id !== condition.id),
+        report,
+      );
+    });
   }
   const whole: Array<[string, Partial<TabConditions>]> = [
     ...(on.throttle ? [[throttleText(on.throttle), { throttle: null }] as [string, Partial<TabConditions>]] : []),
     ...(on.cpuRate ? [[cpuText(on.cpuRate), { cpuRate: null }] as [string, Partial<TabConditions>]] : []),
   ];
   for (const [text, off] of whole) {
-    const item = el('li');
-    item.append(
-      el('span', '', text),
-      ...(away
-        ? []
-        : [
-            button(
-              t('devtools_conditionRemove'),
-              () => void setState(origin, { conditions, throttle: on.throttle, cpuRate: on.cpuRate, ...off }, report),
-              'link',
-            ),
-          ]),
-    );
-    list.appendChild(item);
+    line([text], () => {
+      void setState(origin, { conditions, throttle: on.throttle, cpuRate: on.cpuRate, ...off }, report);
+    });
   }
   const allOff = button(
     t('devtools_conditionsAllOff'),
     () => void setState(origin, { conditions: [], throttle: null, cpuRate: null }, report),
-    'danger',
+    { icon: 'stop', tone: 'danger' },
   );
-  const parts: HTMLElement[] = [el('span', 'strip-title', t('devtools_conditionsTitle')), list, allOff, status];
-  if (away) parts.push(el('span', 'strip-note', t('devtools_conditionsSetFor', { site: origin })));
+  const title = el('span', 'strip-title');
+  title.append(icon('gauge'), t('devtools_conditionsTitle'));
+  const parts: HTMLElement[] = [title, list, allOff, status];
+  if (away) {
+    const note = el('span', 'strip-note');
+    note.append(...tNodes('devtools_conditionsSetFor', { site: patternView(origin) }));
+    parts.push(note);
+  }
   if (on.via === 'debugger') parts.push(el('span', 'strip-note', t('devtools_conditionsDebugging')));
   if (lostNote) parts.push(el('span', 'warn-text', lostNote));
   strip.replaceChildren(...parts);
