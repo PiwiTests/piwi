@@ -241,7 +241,7 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
       // A fault counts as applied only when it actually changes what the page
       // sees (`out.changed`): a mutated status or body. A no-op (a `stale-value`
       // with no prior body to replay, a `drop-field` on a non-JSON body) records
-      // as not applied, so an unnoticed no-op never reads as a coverage gap.
+      // as not applied, so an unnoticed no-op never reads as a scenario gap.
       applied = out.changed;
       if (applied) appliedFault = item.fault;
       const headers = fulfillHeaders(response.headers(), out.contentType);

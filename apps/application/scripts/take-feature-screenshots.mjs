@@ -4249,11 +4249,11 @@ const SCENES = [
   },
   // The same commit's file view of the users endpoints, marked by suite: line
   // 40, which the back end's unit tests and the Playwright suite both ran, is
-  // selected, and the gaps no suite ran are one click away.
+  // selected, and the lines no suite ran are one click away.
   {
     name: 'combined-coverage-file',
     description:
-      'A file’s view marked by suite at the covered commit: each line by the kinds of suite that ran it, the gap controls, and the suites of the selected line',
+      'A file’s view marked by suite at the covered commit: each line by the kinds of suite that ran it, the controls that step through the lines not run, and the suites of the selected line',
     tags: ['docs'],
     out: 'docs',
     route: '/',
@@ -4263,7 +4263,7 @@ const SCENES = [
       await goto(`/projects/${COVERAGE_SCENE_PROJECT}/coverage?file=api/Users/UsersEndpoints.cs&marks=suites&line=40`);
       const view = page.locator('[data-shot="coverage-file"]');
       await view.locator('[data-coverage-source] [data-line="40"][data-selected]').waitFor({ timeout: 60_000 });
-      await view.getByTestId('coverage-gap-next').waitFor({ timeout: 30_000 });
+      await view.getByTestId('coverage-unrun-next').waitFor({ timeout: 30_000 });
       await view.locator('[data-coverage-test]').first().waitFor({ timeout: 30_000 });
       // The source scrolls inside its own box: show ListUsers and UpdateUser, lines 28–65, and end the image there.
       const scroller = view.getByLabel('Source of api/Users/UsersEndpoints.cs');

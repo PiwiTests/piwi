@@ -21,7 +21,8 @@
  * at the commit, which suites ran the file's lines; with `?marks=suites`, or
  * for a file no test recorded, each line is marked by the kinds of suite that
  * ran it, read from the commit's combined coverage alone. The previous and
- * next gap (lines no test, or no suite, ran) are one click away. Every link
+ * next range of lines not run (no test, or no suite, ran them) are one click
+ * away. Every link
  * between the overview and a file keeps the pinned commit, the branch and
  * the area. The notes on the commit's suites (one carried, one incomplete,
  * only the commit's totals kept) sit above the file.
@@ -51,7 +52,7 @@ import {
   folderTrail,
   formatCount,
   formatPercent,
-  gapSteps,
+  rangeSteps,
   plural,
   suitesOnLines,
   type CoverageLinkContext,
@@ -266,32 +267,35 @@ const firstLine = computed(
     null,
 );
 
-/** Lines no test ran, or no suite with marks by suite: what to cover next. */
-const gaps = computed<LineRange[]>(() =>
+/** Lines not run: no test ran them, or no suite with marks by suite. What to cover next. */
+const unrunRanges = computed<LineRange[]>(() =>
   marks.value === 'suites' ? (combinedFile.value?.classes.none ?? []) : (version.value?.notExecuted ?? []),
 );
-const steps = computed(() => gapSteps(gaps.value, selection.value));
+const steps = computed(() => rangeSteps(unrunRanges.value, selection.value));
 const sourceView = ref<{ reveal: (line: number, flash?: boolean) => void } | null>(null);
-function goToGap(gap: LineRange | null) {
-  if (!gap) return;
-  anchor = gap[0];
-  setSelection(gap);
-  sourceView.value?.reveal(gap[0], true);
+function goToRange(range: LineRange | null) {
+  if (!range) return;
+  anchor = range[0];
+  setSelection(range);
+  sourceView.value?.reveal(range[0], true);
 }
-const gapSentence = computed(() => {
-  const n = gaps.value.length;
+/** Who did not run the lines: no suite with marks by suite, else no test. */
+const unrunBy = computed(() => (marks.value === 'suites' ? 'suite' : 'test'));
+const unrunSentence = computed(() => {
+  const n = unrunRanges.value.length;
   if (n === 0) return marks.value === 'suites' ? 'Every line of this file ran in a suite.' : null;
   const i = steps.value.index;
   if (i === null) {
-    return `${plural(n, 'gap')}: ${plural(countLines(gaps.value), 'line')}.`;
+    const lines = `${plural(countLines(unrunRanges.value), 'line')} no ${unrunBy.value} ran`;
+    return n === 1 ? `${lines}.` : `${lines}, in ${n} ranges.`;
   }
-  const gap = gaps.value[i]!;
+  const range = unrunRanges.value[i]!;
   const functions =
     marks.value === 'suites' ? (combinedFile.value?.knownFunctions ?? []) : (version.value?.functions ?? []);
-  const fn = enclosingFunction(functions, gap[0]);
+  const fn = enclosingFunction(functions, range[0]);
   const name = fn ? functionNameAt(sourceLines.value?.[fn[0] - 1]) : null;
-  const lines = gap[0] === gap[1] ? `line ${gap[0]}` : `lines ${gap[0]}–${gap[1]}`;
-  return `Gap ${i + 1} of ${n} · ${lines}${name ? ` · in ${name}` : ''}`;
+  const lines = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
+  return `Lines no ${unrunBy.value} ran, range ${i + 1} of ${n} · ${lines}${name ? ` · in ${name}` : ''}`;
 });
 
 // The source at the version shown, read when the version changes.
@@ -506,21 +510,22 @@ const nearestSentence = computed(() => {
           <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
             <div v-if="shownBlob" class="min-w-0 space-y-2">
               <div
-                v-if="gapSentence"
+                v-if="unrunSentence"
                 class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted"
-                data-testid="coverage-file-gaps"
+                data-testid="coverage-file-unrun"
               >
-                <span class="tabular-nums">{{ gapSentence }}</span>
-                <span v-if="gaps.length" class="inline-flex gap-1">
+                <span class="tabular-nums">{{ unrunSentence }}</span>
+                <span v-if="unrunRanges.length" class="inline-flex gap-1">
                   <UButton
                     size="xs"
                     color="neutral"
                     variant="outline"
                     icon="i-lucide-chevron-up"
                     :disabled="!steps.previous"
-                    data-testid="coverage-gap-previous"
-                    @click="goToGap(steps.previous)"
-                    >Previous gap</UButton
+                    :title="`The previous lines no ${unrunBy} ran`"
+                    data-testid="coverage-unrun-previous"
+                    @click="goToRange(steps.previous)"
+                    >Previous range</UButton
                   >
                   <UButton
                     size="xs"
@@ -528,9 +533,10 @@ const nearestSentence = computed(() => {
                     variant="outline"
                     trailing-icon="i-lucide-chevron-down"
                     :disabled="!steps.next"
-                    data-testid="coverage-gap-next"
-                    @click="goToGap(steps.next)"
-                    >Next gap</UButton
+                    :title="`The next lines no ${unrunBy} ran`"
+                    data-testid="coverage-unrun-next"
+                    @click="goToRange(steps.next)"
+                    >Next range</UButton
                   >
                 </span>
               </div>
@@ -634,8 +640,8 @@ const nearestSentence = computed(() => {
                     selectionSuites
                       ? selectionSuitesSentence
                       : version
-                        ? 'Select a line, or a gap, to see which suites ran it. The tests recorded this file by file only.'
-                        : 'Select a line, or a gap, to see which suites ran it. No end-to-end test recorded this file.'
+                        ? 'Select a line to see which suites ran it. The tests recorded this file by file only.'
+                        : 'Select a line to see which suites ran it. No end-to-end test recorded this file.'
                   }}
                 </p>
               </SectionCard>

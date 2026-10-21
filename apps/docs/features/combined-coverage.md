@@ -127,8 +127,8 @@ not count.
 Every bar on the coverage page splits lines by class, as a file's marks do. **Files** is a foldable tree, each
 folder and file with its bar, sortable by lines not run; beside it, the selected folder's suites and least-covered
 files. A file opens on its source, through the
-[source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next gap** jumps to
-the next lines none ran.
+[source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next range** jumps to
+the next lines no suite ran.
 
 <figure>
   <img src="/screenshots/combined-coverage-file.png" alt="A file's lines marked by suite">

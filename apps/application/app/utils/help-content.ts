@@ -693,7 +693,7 @@ export const HELP_TOPICS = {
   },
   'coverage.least-covered': {
     title: 'Files to cover next',
-    text: 'The files of this folder with the most executable lines no suite ran, unit or end to end, the most first, then the lowest share run. Undetermined lines (in a function the browser ran) are not counted. A file opens with each line marked by the suites that ran it, and the next gap one click away.',
+    text: 'The files of this folder with the most executable lines no suite ran, unit or end to end, the most first, then the lowest share run. Undetermined lines (in a function the browser ran) are not counted. A file opens with each line marked by the suites that ran it, and the next lines no suite ran one click away.',
     doc: 'features/combined-coverage#find-what-is-not-covered',
   },
   'coverage.combined-marks': {
