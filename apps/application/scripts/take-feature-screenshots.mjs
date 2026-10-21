@@ -683,20 +683,12 @@ function sceneMode(scene) {
  * so `--check` does not report them as orphans. Everything else in there must
  * have a scene.
  *
- *   - the remaining gallery images come from the live-demo capture described in
- *     `apps/docs/AGENTS.md` ("Marketing screenshots");
  *   - `demo-live-run-poster.png` is written by `record-demo-video.mjs`, with
  *     the video it stands in for;
  *   - `tested-elements-overlay.png` is the browser extension's overlay, written
  *     by its `tests/e2e/docs-screenshots.spec.ts` with `PIWI_DOCS_SHOTS=1`.
  */
-const EXTERNAL_DOCS_IMAGES = new Set([
-  'demo-live-run-poster.png',
-  'failure-clusters-tab.png',
-  'flaky-tests.png',
-  'projects.png',
-  'tested-elements-overlay.png',
-]);
+const EXTERNAL_DOCS_IMAGES = new Set(['demo-live-run-poster.png', 'tested-elements-overlay.png']);
 
 /** The steps of the coupon report the repro-request scene shows. */
 const REPRO_SCENE_STEPS = (() => {
@@ -3023,6 +3015,82 @@ const SCENES = [
     route: '/projects/1?tab=performance',
     viewport: { width: 1280, height: 720 },
     charts: true,
+  },
+  {
+    name: 'projects',
+    description: 'Projects list: every project with its latest run, status bar and tags (docs gallery)',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects',
+    viewport: { width: 1280, height: 720 },
+  },
+  {
+    name: 'failure-clusters-tab',
+    description:
+      'Failures tab: the failure inbox, one row per cluster of tests that failed for the same reason (docs gallery)',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1?tab=failures',
+    viewport: { width: 1280, height: 720 },
+  },
+  {
+    name: 'flaky-tests',
+    description:
+      'Failures tab, Flaky view: each intermittent test scored and ranked by the CI time it wastes (docs gallery)',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1?tab=flaky-tests',
+    viewport: { width: 1280, height: 720 },
+    prepare: classifyFlakyTests,
+  },
+  {
+    name: 'flake-lab',
+    description: "Flake Lab tab: the project's experiments, each with its test, conditions and verdict",
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1?tab=flake-lab',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'bug-report',
+    description: "A bug report's page: the recorded steps, the evidence and why the suite missed it",
+    tags: ['docs'],
+    out: 'docs',
+    route: '/bug-reports/1',
+    viewport: { width: 1280, height: 900 },
+  },
+  {
+    name: 'test-selections',
+    description: 'Project selections: the built-in and defined selections, each with its tests and health',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1/selections',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'test-functions',
+    description:
+      'Test functions catalog: the page-object methods and helpers extracted from the suite, with their parameters',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/5/test-functions',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'notifications',
+    description: 'Settings → Notifications: email status, the channels and what each one is subscribed to',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/notifications',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'mcp-page',
+    description: 'MCP page: the server URL, the client setup for each agent and the tools it exposes',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/mcp',
+    viewport: { width: 1280, height: 800 },
   },
 
   // ── README tour ───────────────────────────────────────────────────────────
