@@ -179,22 +179,29 @@ watch(
 );
 
 if (props.syncQuery) {
-  const syncUrl = () => {
-    const catalogQuery = {
-      q: q.value || undefined,
-      status: statuses.value.length > 0 ? statuses.value.join(',') : undefined,
-      age: age.value !== defaultAge ? String(age.value) : undefined,
-      sort: sort.value !== DEFAULT_SORT ? sort.value : undefined,
-      dir: dir.value !== SORT_DIRECTIONS[sort.value] ? dir.value : undefined,
-      page: page.value > 1 ? String(page.value) : undefined,
-      pageSize: pageSize.value !== DEFAULT_PAGE_SIZE ? String(pageSize.value) : undefined,
-    };
+  /** The catalog's state as URL keys; a key at its default is left out. */
+  const catalogQuery = () => ({
+    q: q.value || undefined,
+    status: statuses.value.length > 0 ? statuses.value.join(',') : undefined,
+    age: age.value !== defaultAge ? String(age.value) : undefined,
+    sort: sort.value !== DEFAULT_SORT ? sort.value : undefined,
+    dir: dir.value !== SORT_DIRECTIONS[sort.value] ? dir.value : undefined,
+    page: page.value > 1 ? String(page.value) : undefined,
+    pageSize: pageSize.value !== DEFAULT_PAGE_SIZE ? String(pageSize.value) : undefined,
+  });
+  const keepQuery = (query: ReturnType<typeof catalogQuery>) => {
     savedQuery.value = Object.fromEntries(
-      Object.entries(catalogQuery).filter((entry): entry is [string, string] => entry[1] !== undefined),
+      Object.entries(query).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
-    // `tags`, `locks` and `owner` are folded into the search.
-    void replaceQuery(router, { ...catalogQuery, tags: undefined, locks: undefined, owner: undefined });
   };
+  const syncUrl = () => {
+    const query = catalogQuery();
+    keepQuery(query);
+    // `tags`, `locks` and `owner` are folded into the search.
+    void replaceQuery(router, { ...query, tags: undefined, locks: undefined, owner: undefined });
+  };
+  // What the catalog opened with is what the user last saw, link or not.
+  keepQuery(catalogQuery());
   watch([q, statuses, age, sort, dir, page, pageSize], syncUrl);
   // A link that filtered by tags, locks or owner shows them as search terms, and
   // a catalog restored from the page's view state shows its filters, in the URL too.

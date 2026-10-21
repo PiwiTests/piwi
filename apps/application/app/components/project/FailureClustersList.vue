@@ -20,19 +20,18 @@ const emit = defineEmits<{ count: [total: number] }>();
 
 // 'all' is a real select value so the control shows its current choice; the API
 // takes no status param for it. A status the page passes (an analytics
-// drill-down) wins over the one kept for the page.
-const statusFilter = useViewState<'all' | 'open' | 'resolved' | 'ignored'>(
-  'failures:clusters-status',
-  () => props.initialStatus ?? 'all',
-);
-if (props.initialStatus) statusFilter.value = props.initialStatus;
-const sorting = useViewState<SortingState>('failures:clusters-sorting', () => []);
+// drill-down) sets it when it is new; a choice made after it is kept.
+const statusFilter = useViewState<'all' | 'open' | 'resolved' | 'ignored'>('failures:clusters-status', () => 'all');
+const appliedInitialStatus = useViewState<string | null>('failures:clusters-initial-status', () => null);
 watch(
   () => props.initialStatus,
   (status) => {
-    if (status) statusFilter.value = status;
+    if (status && status !== appliedInitialStatus.value) statusFilter.value = status;
+    appliedInitialStatus.value = status ?? null;
   },
+  { immediate: true },
 );
+const sorting = useViewState<SortingState>('failures:clusters-sorting', () => []);
 const {
   data: clusters,
   status: clustersStatus,

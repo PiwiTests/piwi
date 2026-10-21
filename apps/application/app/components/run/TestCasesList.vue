@@ -664,14 +664,20 @@ const userScrolledAway = ref(false);
 const highlightedCaseId = ref<number | null>(null);
 
 // Where the list was scrolled to, with the row heights it had measured, so
-// coming back to the run opens the list on the same rows.
+// coming back to the run opens the list on the same rows. A list whose rows
+// changed meanwhile (a count-bar filter picked from another tab) opens at the top.
 const savedScroll = useViewState<{ top: number; cache: CacheSnapshot } | null>('run-tests:scroll', () => null);
 const restoredScroll = savedScroll.value;
-let scrollTop = restoredScroll?.top ?? 0;
+let scrollTop = 0;
+function showsSameRows(keys: CacheSnapshot['keys']): boolean {
+  return keys.length === rows.value.length && rows.value.every((row, index) => row.key === keys[index]);
+}
 watch(
   scrollerRef,
   (scroller) => {
-    if (scroller && restoredScroll) nextTick(() => scroller.scrollToPosition(restoredScroll.top));
+    if (!scroller || !restoredScroll || !showsSameRows(restoredScroll.cache.keys)) return;
+    scrollTop = restoredScroll.top;
+    nextTick(() => scroller.scrollToPosition(restoredScroll.top));
   },
   { once: true },
 );

@@ -48,10 +48,14 @@ const STATUS_OPTIONS = [
   { label: 'All', value: 'all' },
 ];
 const STATUS_VALUES = new Set(STATUS_OPTIONS.map((o) => o.value));
-// A `?gapStatus=` link wins over the status kept for the page.
 const statusFilter = useViewState<string>('gaps:status', () => 'open');
-if (typeof route.query.gapStatus === 'string' && STATUS_VALUES.has(route.query.gapStatus))
-  statusFilter.value = route.query.gapStatus;
+// A `?gapStatus=` link sets the status when it is new; a choice made after it
+// is kept, Back to the same link included.
+const linkedStatus =
+  typeof route.query.gapStatus === 'string' && STATUS_VALUES.has(route.query.gapStatus) ? route.query.gapStatus : null;
+const appliedLinkedStatus = useViewState<string | null>('gaps:linked-status', () => null);
+if (linkedStatus && linkedStatus !== appliedLinkedStatus.value) statusFilter.value = linkedStatus;
+appliedLinkedStatus.value = linkedStatus;
 
 /** The most gaps one request returns; the server caps here, so a full page is truncated. */
 const PAGE_LIMIT = 200;

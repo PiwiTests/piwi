@@ -460,7 +460,7 @@ useViewScroll(
 onMounted(() => {
   if (route.query.tab !== activeTab.value) {
     const section = route.query.tab === 'members' ? { section: 'members' } : {};
-    router.replace({ query: { ...route.query, tab: activeTab.value, ...section }, hash: route.hash });
+    void replaceQuery(router, { tab: activeTab.value, ...section }, { hash: route.hash });
   }
 });
 
