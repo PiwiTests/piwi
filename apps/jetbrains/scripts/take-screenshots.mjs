@@ -1,26 +1,28 @@
 #!/usr/bin/env node
-// Captures the plugin's illustrations for the docs site and the Marketplace listing: WebStorm, the one the Gradle
-// build downloaded, opens the fixture project of apps/vscode/scripts/lib/editor-fixture.mjs with the built plugin
-// against the stub Piwi instance served from this process, on an Xvfb display this script starts; the keys and
-// clicks the scenes need go through `xinput.py` (XTEST), and ImageMagick's `import` captures the screen. The images
-// are rendered at 2× (`sun.java2d.uiScale`) and written at the window's width, 1440 px, to
-// apps/docs/public/screenshots/jetbrains-<scene>.png.
+// Captures the plugin's illustrations for the docs site and the Marketplace listing: the latest WebStorm release,
+// downloaded into `.ide/` on the first run, opens the fixture project of apps/vscode/scripts/lib/editor-fixture.mjs
+// with the built plugin against the stub Piwi instance served from this process, on an Xvfb display this script
+// starts. Each scene is one launch of the IDE with its file and line on the command line, which is what puts the
+// caret there with the editor focused; the keys a scene then needs go through `xinput.py` (XTEST) and the shortcuts
+// of a keymap this script writes, and ImageMagick's `import` captures the screen. The images are rendered at 2×
+// (`sun.java2d.uiScale`) and written at the window's width, 1440 px, to apps/docs/public/screenshots/jetbrains-<scene>.png.
 //
 //   npm run editor:build -w packages/editor && (cd apps/jetbrains && ./gradlew buildPlugin)
-//   node scripts/take-screenshots.mjs [--out <dir>] [--scene <name>…] [--ide <WebStorm directory>] [--probe]
+//   node scripts/take-screenshots.mjs [--out <dir>] [--scene <name>…] [--ide <WebStorm directory>] [--probe] [--keep]
 //
-// `--probe` only starts the IDE on the project, waits, captures the screen as it stands and exits: the way to look
-// at what the IDE shows before a scene drives it.
-//
-// The IDE must be activated: a WebStorm release asks for a licence and an EAP build for a JetBrains account before it
-// shows the project, and neither can be answered from a script. The config directory this script writes holds no
-// licence, so run it on a machine whose IDE is activated and pass that IDE's config directory with `--config <dir>`
-// (its `idea.key` and settings are copied; the scenes' state is written beside them). The scenes have not yet been
-// driven through an activated IDE: `--probe` is the verified part.
+// The IDE keeps its config directory in `.ide/config` across runs, because the licence lives there: on a machine with
+// none, `--start-trial` answers the licence dialog's Start trial tab, which claims WebStorm's 30-day trial for this
+// IDE version on this machine with no account (an internet connection is all it needs; a version's trial is claimed
+// once per machine), and `--config <dir>` copies an activated IDE's config directory in instead. An EAP build asks
+// for a JetBrains account, so it cannot serve. `--ide` names another installed release. `--probe` only opens the
+// page object at its failing line, waits, captures the screen as it stands and exits: the way to look at what the
+// IDE shows before a scene drives it. `--keep` leaves the run's temporary directory, with the IDE's logs.
 import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import {
   FAILING_LINE,
@@ -47,25 +49,55 @@ const only = args.filter((a, i) => args[i - 1] === '--scene');
 const probe = args.includes('--probe');
 /** An activated IDE's config directory, copied so the IDE starts licensed. */
 const configFrom = option('--config') ? path.resolve(option('--config')) : undefined;
+const startTrial = args.includes('--start-trial');
 
-/** The WebStorm the Gradle build downloaded for `platformVersion`, unless `--ide` names one. */
-function findIde() {
+/** Where the downloaded IDE lives, beside the Gradle sandbox: gitignored. */
+const IDE_DIR = path.join(pluginRoot, '.ide');
+
+/**
+ * The shortcuts the scenes press, bound by the keymap this script writes: the IDE's actions have none of their own
+ * for these, and a shortcut is deterministic where a click on the tool window's button or a search for the action
+ * is not. The chords are spelled as the keymap and as `xinput.py` take them.
+ */
+const KEYS = {
+  piwiToolWindow: { action: 'ActivatePiwiToolWindow', keymap: 'shift ctrl alt F10', xinput: 'shift+ctrl+alt+F10' },
+  clearNotifications: {
+    action: 'ClearAllNotifications',
+    keymap: 'shift ctrl alt F11',
+    xinput: 'shift+ctrl+alt+F11',
+  },
+  hideToolWindows: { action: 'HideAllWindows', keymap: 'shift ctrl alt F12', xinput: 'shift+ctrl+alt+F12' },
+};
+
+/**
+ * The IDE to run: `--ide`, else the latest WebStorm release, downloaded into `.ide/` once from JetBrains' releases
+ * API (the Linux tar.gz, about 1 GB) and kept.
+ */
+async function findIde() {
   if (option('--ide')) return path.resolve(option('--ide'));
-  const caches = path.join(os.homedir(), '.gradle', 'caches');
-  const found = [];
-  const walk = (dir, depth) => {
-    if (depth > 5 || !fs.existsSync(dir)) return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const full = path.join(dir, entry.name);
-      if (/^WebStorm-/.test(entry.name) && fs.existsSync(path.join(full, 'bin', 'webstorm.sh'))) found.push(full);
-      else walk(full, depth + 1);
-    }
-  };
-  walk(caches, 0);
-  if (!found.length)
-    throw new Error('No WebStorm under ~/.gradle/caches: run `./gradlew buildPlugin` first, or pass --ide.');
-  return found.sort().at(-1);
+  const isIde = (name) => /^WebStorm-/.test(name) && fs.existsSync(path.join(IDE_DIR, name, 'bin', 'webstorm.sh'));
+  const installed = fs.existsSync(IDE_DIR) ? fs.readdirSync(IDE_DIR).filter(isIde).sort() : [];
+  if (installed.length) return path.join(IDE_DIR, installed.at(-1));
+  const releases = await fetch(
+    'https://data.services.jetbrains.com/products/releases?code=WS&latest=true&type=release',
+  );
+  if (!releases.ok) throw new Error(`JetBrains' releases API answered ${releases.status}`);
+  const release = (await releases.json()).WS?.[0];
+  const link = release?.downloads?.linux?.link;
+  if (!link) throw new Error('The latest WebStorm release has no Linux download.');
+  console.log(
+    `downloading WebStorm ${release.version} (${release.build}) into ${path.relative(process.cwd(), IDE_DIR)}…`,
+  );
+  fs.mkdirSync(IDE_DIR, { recursive: true });
+  const archive = path.join(IDE_DIR, path.basename(new URL(link).pathname));
+  const download = await fetch(link);
+  if (!download.ok || !download.body) throw new Error(`The WebStorm download answered ${download.status}`);
+  await pipeline(Readable.fromWeb(download.body), fs.createWriteStream(archive));
+  execFileSync('tar', ['-xzf', archive, '-C', IDE_DIR]);
+  fs.rmSync(archive, { force: true });
+  const unpacked = fs.readdirSync(IDE_DIR).filter(isIde).sort();
+  if (!unpacked.length) throw new Error('The WebStorm archive held no WebStorm-* directory.');
+  return path.join(IDE_DIR, unpacked.at(-1));
 }
 
 /** The built plugin, unpacked into a plugins directory of its own. */
@@ -77,7 +109,7 @@ function unpackPlugin(into) {
   execFileSync('unzip', ['-q', path.join(dist, zip), '-d', into]);
 }
 
-/** The project's IDE state: the page object open at the failing line, the Piwi tool window below the editor. */
+/** The project's IDE state: the window's size, the project tree open on the tests, the Piwi tool window below. */
 function writeIdeaState(workspace) {
   const idea = path.join(workspace, '.idea');
   fs.mkdirSync(idea, { recursive: true });
@@ -91,28 +123,6 @@ function writeIdeaState(workspace) {
     <option name="y" value="0" />
     <option name="width" value="${WINDOW.width}" />
     <option name="height" value="${WINDOW.height}" />
-  </component>
-  <component name="FileEditorManager">
-    <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/${SPEC_FILE}">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="0">
-              <caret line="0" column="0" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="true">
-        <entry file="file://$PROJECT_DIR$/${PAGE_OBJECT_FILE}">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="308">
-              <caret line="${FAILING_LINE - 1}" column="4" selection-start-line="${FAILING_LINE - 1}" selection-start-column="4" selection-end-line="${FAILING_LINE - 1}" selection-end-column="4" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-    </leaf>
   </component>
   <component name="ProjectView">
     <navigator proportions="" version="1">
@@ -147,7 +157,7 @@ function writeIdeaState(workspace) {
     <frame x="0" y="0" width="${WINDOW.width}" height="${WINDOW.height}" extended-state="0" />
     <layout>
       <window_info id="Project" active="false" visible="true" weight="0.22" order="0" content_ui="combo" />
-      <window_info id="Piwi" anchor="bottom" active="false" visible="true" weight="0.32" order="0" />
+      <window_info id="Piwi" anchor="bottom" active="false" visible="false" weight="0.32" order="0" />
       <window_info id="Problems View" anchor="bottom" visible="false" order="1" />
     </layout>
   </component>
@@ -158,17 +168,22 @@ function writeIdeaState(workspace) {
 
 /** The IDE's own directories, under one temporary root: its settings, its caches and the built plugin. */
 function writeIdeDirs(root, ide) {
+  // The settings stay in `.ide/config` from run to run, with the licence the IDE holds; the rest is this run's.
   const dirs = {
-    config: path.join(root, 'config'),
+    config: path.join(IDE_DIR, 'config'),
     system: path.join(root, 'system'),
     plugins: path.join(root, 'plugins'),
     log: path.join(root, 'log'),
   };
   for (const dir of Object.values(dirs)) fs.mkdirSync(dir, { recursive: true });
-  if (configFrom) fs.cpSync(configFrom, dirs.config, { recursive: true });
+  if (configFrom) fs.cpSync(configFrom, dirs.config, { recursive: true, force: true });
   unpackPlugin(dirs.plugins);
-  // No tips, no update checks, and no AI Assistant promotion in the frame.
-  fs.writeFileSync(path.join(dirs.config, 'disabled_plugins.txt'), 'com.intellij.ml.llm\n');
+  // No AI Assistant promotion in the frame, and no JetBrains OS Integration: its daemon fails to start on a bare
+  // display and reports an IDE error in the status bar.
+  fs.writeFileSync(
+    path.join(dirs.config, 'disabled_plugins.txt'),
+    ['com.intellij.ml.llm', 'com.intellij.platform.daemon', ''].join('\n'),
+  );
   const options = path.join(dirs.config, 'options');
   fs.mkdirSync(options, { recursive: true });
   fs.writeFileSync(
@@ -200,11 +215,45 @@ function writeIdeDirs(root, ide) {
 </application>
 `,
   );
+  // No code author hints above the declarations: the fixture's one commit would sign every line, and the summaries
+  // the plugin adds above the tests are the point.
   fs.writeFileSync(
     path.join(options, 'editor.xml'),
     `<application>
   <component name="EditorSettings">
     <option name="IS_WHITESPACES_SHOWN" value="false" />
+  </component>
+  <component name="CodeVisionSettings">
+    <option name="disabledCodeVisionProviderIds">
+      <set>
+        <option value="vcs.code.vision" />
+      </set>
+    </option>
+  </component>
+</application>
+`,
+  );
+  // The scenes' shortcuts, on top of the IDE's own keymap for Linux.
+  const keymaps = path.join(dirs.config, 'keymaps');
+  fs.mkdirSync(keymaps, { recursive: true });
+  fs.writeFileSync(
+    path.join(keymaps, 'Screenshots.xml'),
+    `<keymap version="1" name="Screenshots" parent="Default for XWin">
+${Object.values(KEYS)
+  .map(
+    (key) => `  <action id="${key.action}">
+    <keyboard-shortcut first-keystroke="${key.keymap}" />
+  </action>`,
+  )
+  .join('\n')}
+</keymap>
+`,
+  );
+  fs.writeFileSync(
+    path.join(options, 'keymap.xml'),
+    `<application>
+  <component name="KeymapManager">
+    <active_keymap name="Screenshots" />
   </component>
 </application>
 `,
@@ -251,6 +300,10 @@ function writeIdeDirs(root, ide) {
       '-Dide.show.tips.on.startup.default.value=false',
       '-Dide.no.platform.update=true',
       '-Didea.suppress.statistics.report=true',
+      '-Didea.fatal.error.notification=disabled',
+      // The "got it" tooltips, among them the trial's on the status bar widget, which no notification action clears.
+      // (Not `user.home`: the trial is bound to the machine through it, and the IDE asks for a licence again.)
+      '-Dide.integration.test.disable.got.it.tooltips=true',
       '-Dawt.useSystemAAFontSettings=lcd',
       '',
     ].join('\n'),
@@ -278,6 +331,39 @@ async function shoot(name) {
   console.log(`wrote ${path.relative(process.cwd(), file)}`);
 }
 
+/** Whether the config directory holds a licence or a trial: the IDE writes it as `<product>.key`. */
+function licensed(config) {
+  return fs.readdirSync(config).some((name) => name.endsWith('.key'));
+}
+
+/**
+ * The licence dialog, when the IDE shows one: with `--start-trial`, its Start trial tab and the button there, at the
+ * places they take in a 1440 × 900 window at 2×; without, the run stops and says what to do.
+ */
+async function claimTrialIfAsked(dirs) {
+  if (licensed(dirs.config)) return;
+  const log = path.join(dirs.log, 'idea.log');
+  const asked = () => fs.existsSync(log) && /License required/.test(fs.readFileSync(log, 'utf-8'));
+  const start = Date.now();
+  while (!asked() && Date.now() - start < 60_000) await sleep(2000);
+  if (!asked()) return;
+  if (!startTrial) {
+    throw new Error(
+      'The IDE asks for a licence. Run again with --start-trial to claim its 30-day trial on this machine, or pass ' +
+        'the config directory of an activated IDE with --config.',
+    );
+  }
+  await sleep(8000);
+  xinput('move', 1837, 476, 'sleep', 0.3, 'click', 1, 'sleep', 2.5, 'move', 1297, 801, 'sleep', 0.3, 'click', 1);
+  const claimed = Date.now();
+  while (!licensed(dirs.config) && Date.now() - claimed < 60_000) await sleep(2000);
+  if (!licensed(dirs.config)) throw new Error('The trial did not start: is the machine online?');
+  // The dialog now shows the trial; Close is where the Quit button was.
+  await sleep(2000);
+  xinput('move', 2197, 1430, 'sleep', 0.3, 'click', 1);
+  console.log('trial started: the IDE keeps it in .ide/config');
+}
+
 /** Waits until the IDE's log says the project is open and the editor service runs, or `ms` passed. */
 async function waitForIde(logDir, ms) {
   const log = path.join(logDir, 'idea.log');
@@ -287,8 +373,8 @@ async function waitForIde(logDir, ms) {
     if (fs.existsSync(log)) {
       const text = fs.readFileSync(log, 'utf-8');
       seen = {
-        project: /Project opened|Loaded project|project opened/i.test(text),
-        lsp: /LSP server|piwi-language-server|Piwi/i.test(text),
+        project: /Project frame set to|project opened/i.test(text),
+        lsp: /LSP server|piwi-language-server|PiwiLsp/i.test(text),
       };
       if (seen.project && seen.lsp) return seen;
     }
@@ -297,24 +383,101 @@ async function waitForIde(logDir, ms) {
   return seen;
 }
 
+/**
+ * One launch of the IDE on the project, with `file` open at `line:column` and the editor focused, as the command
+ * line puts it (the editor state of workspace.xml is not restored on a fresh project); `work` runs once the project
+ * is open and the first diagnostics are in, and the IDE is stopped after it.
+ */
+async function withIde(run, { file, line, column }, work) {
+  const { ide, root, dirs, workspace, url } = run;
+  fs.rmSync(dirs.log, { recursive: true, force: true });
+  fs.mkdirSync(dirs.log, { recursive: true });
+  const ideLog = fs.openSync(path.join(root, `ide-${path.basename(file, '.ts')}.out`), 'w');
+  // JAVA_TOOL_OPTIONS would override the IDE's own options, and it says so in a notification.
+  const { JAVA_TOOL_OPTIONS: _javaToolOptions, ...env } = process.env;
+  // The native launcher, where the release has one; the shell script otherwise. Both read the same variables.
+  const launcher = ['webstorm', 'webstorm.sh'].map((name) => path.join(ide, 'bin', name)).find((f) => fs.existsSync(f));
+  const idea = spawn(
+    launcher,
+    [workspace, '--line', String(line), '--column', String(column), path.join(workspace, file)],
+    {
+      env: {
+        ...env,
+        DISPLAY,
+        // The launcher reads these two names, whatever the product is called.
+        WEBIDE_PROPERTIES: dirs.properties,
+        WEBIDE_VM_OPTIONS: dirs.vmoptions,
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: PROJECT.name,
+        PIWI_DESKTOP_CONFIG: path.join(root, 'no-desktop.json'),
+      },
+      stdio: ['ignore', ideLog, ideLog],
+      detached: true,
+    },
+  );
+  try {
+    const seen = await waitForIde(dirs.log, 120_000);
+    await claimTrialIfAsked(dirs);
+    console.log(
+      `IDE: project ${seen.project ? 'open' : 'not seen'}, editor service ${seen.lsp ? 'started' : 'not seen'}, ${file}:${line}`,
+    );
+    // Indexing and the first diagnostics take a while after the project opens; then the balloons go.
+    await sleep(40_000);
+    xinput('key', KEYS.clearNotifications.xinput);
+    await sleep(1500);
+    await work();
+  } finally {
+    try {
+      process.kill(-idea.pid, 'SIGTERM');
+    } catch {}
+    await sleep(4000);
+    try {
+      process.kill(-idea.pid, 'SIGKILL');
+    } catch {}
+    fs.closeSync(ideLog);
+  }
+}
+
 const SCENES = {
-  /** The page object at its failing line, the Piwi tool window below with the run's failures. */
-  async failures() {
-    await shoot('failures');
+  /**
+   * The spec with the plugin's summaries above its tests, the run's failures in the Piwi tool window below, across
+   * the width: the project view would show the fixture's temporary path.
+   */
+  failures: {
+    file: SPEC_FILE,
+    line: 1,
+    column: 1,
+    async run() {
+      xinput('key', KEYS.hideToolWindows.xinput);
+      await sleep(1500);
+      xinput('key', KEYS.piwiToolWindow.xinput);
+      await sleep(4000);
+      await shoot('failures');
+    },
   },
 
-  /** The quick fixes on the failing line, Alt+Enter. */
-  async heal() {
-    xinput('key', 'alt+Return');
-    await sleep(2500);
-    await shoot('heal');
-    xinput('key', 'Escape');
-    await sleep(500);
+  /**
+   * The page object at its failing line, Alt+Enter: the replacement locator among the quick fixes, with the edit's
+   * preview beside the popup, which the editor alone leaves room for.
+   */
+  heal: {
+    file: PAGE_OBJECT_FILE,
+    line: FAILING_LINE,
+    column: 5,
+    async run() {
+      xinput('key', KEYS.hideToolWindows.xinput);
+      await sleep(1500);
+      xinput('key', 'alt+Return');
+      await sleep(3000);
+      await shoot('heal');
+      xinput('key', 'Escape');
+      await sleep(500);
+    },
   },
 };
 
 async function main() {
-  const ide = findIde();
+  const ide = await findIde();
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-jetbrains-shots-')));
   const { workspace, commit } = writeWorkspace(root);
   writeIdeaState(workspace);
@@ -328,47 +491,18 @@ async function main() {
     },
   );
   await sleep(1500);
-  const ideLog = fs.openSync(path.join(root, 'ide.out'), 'w');
-  // JAVA_TOOL_OPTIONS would override the IDE's own options, and it says so in a notification.
-  const { JAVA_TOOL_OPTIONS: _javaToolOptions, ...env } = process.env;
-  const idea = spawn(path.join(ide, 'bin', 'webstorm.sh'), [workspace], {
-    env: {
-      ...env,
-      DISPLAY,
-      // The launcher reads these two names, whatever the product is called.
-      WEBIDE_PROPERTIES: dirs.properties,
-      WEBIDE_VM_OPTIONS: dirs.vmoptions,
-      PIWI_DASHBOARD_URL: url,
-      PIWI_PROJECT_NAME: PROJECT.name,
-      PIWI_DESKTOP_CONFIG: path.join(root, 'no-desktop.json'),
-    },
-    stdio: ['ignore', ideLog, ideLog],
-    detached: true,
-  });
+  const run = { ide, root, dirs, workspace, url };
   try {
-    const seen = await waitForIde(dirs.log, probe ? 90_000 : 180_000);
-    console.log(
-      `IDE: project ${seen.project ? 'open' : 'not seen'}, editor service ${seen.lsp ? 'started' : 'not seen'}`,
-    );
-    // Indexing and the first diagnostics take a while after the project opens.
-    await sleep(probe ? 20_000 : 45_000);
     if (probe) {
-      await shoot('probe');
+      await withIde(run, SCENES.heal, () => shoot('probe'));
       return;
     }
     const names = Object.keys(SCENES).filter((name) => only.length === 0 || only.includes(name));
-    for (const name of names) await SCENES[name]();
+    for (const name of names) await withIde(run, SCENES[name], SCENES[name].run);
   } finally {
-    try {
-      process.kill(-idea.pid, 'SIGTERM');
-    } catch {}
-    await sleep(3000);
-    try {
-      process.kill(-idea.pid, 'SIGKILL');
-    } catch {}
     xvfb.kill('SIGTERM');
     server.close();
-    fs.closeSync(ideLog);
+    // The config directory is not under `root`: it stays, with the licence.
     if (!args.includes('--keep')) fs.rmSync(root, { recursive: true, force: true });
     else console.log(`kept ${root}`);
   }

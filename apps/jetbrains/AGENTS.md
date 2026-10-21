@@ -236,15 +236,19 @@ npm run editor:build -w packages/editor   # from the repository root: the bundle
 
 **Screenshots.** `scripts/take-screenshots.mjs` writes the plugin's illustrations
 (`apps/docs/public/screenshots/jetbrains-*.png`, shown by the docs and the README; the Marketplace listing's are
-uploaded by hand from them): it starts an Xvfb display, opens the fixture project of
-`apps/vscode/scripts/lib/editor-fixture.mjs` against its stub instance in a WebStorm (the one the Gradle build
-downloaded, or `--ide <directory>`; a licence-free EAP build is the one to use), with the built plugin unpacked from
-`build/distributions/`, the IDE's state pre-written (the page object open at its failing line, the Piwi tool window
-below), sends the keys a scene needs through `scripts/xinput.py` (XTEST) and captures the screen with ImageMagick's
-`import`. `--probe` captures the IDE as it stands without driving it. The IDE must be activated first: a release
-asks for a licence and an EAP build for a JetBrains account before the project shows, so run the script where an
-activated IDE's config directory can be passed with `--config`; the scenes still await a first run through one, and
-until then the plugin's pages show the VS Code captures of the same editor service.
+uploaded by hand from them). It starts an Xvfb display and, for each scene, launches the latest WebStorm release
+(downloaded into `.ide/`, gitignored, on the first run) on the fixture project of
+`apps/vscode/scripts/lib/editor-fixture.mjs` against its stub instance, with the built plugin unpacked from
+`build/distributions/` and the scene's file and line on the command line, which is what puts the caret there with the
+editor focused (the editor state of a pre-written `workspace.xml` is not restored on a fresh project). The keys a
+scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes where the
+IDE's actions have none (the Piwi tool window, the notifications), and ImageMagick's `import` captures the screen.
+The IDE's config directory stays in `.ide/config` across runs because the licence lives there: on a machine without
+one, the IDE shows its licence dialog, and `--start-trial` answers its Start trial tab, which claims the release's
+30-day trial with no account (an internet connection suffices; a version's trial is claimed once per machine);
+`--config` copies an activated IDE's config directory in instead. An EAP build asks for a JetBrains account, so it
+cannot serve. `--ide` names another installed release, `--probe` captures the IDE as it stands without driving it,
+and `--keep` leaves the run's directory with the IDE's logs.
 
 **The JDK.** Gradle runs on the JDK 21 that `gradle/gradle-daemon-jvm.properties` names, whatever `JAVA_HOME` points to
 (the wrapper starts on JDK 11 or later), and the build compiles with a JDK 21 toolchain (`jvmToolchain(21)`). When the

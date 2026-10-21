@@ -17,6 +17,7 @@ apps/jetbrains/.gradle
 apps/jetbrains/.intellijPlatform
 apps/jetbrains/.kotlin
 apps/jetbrains/build
+apps/jetbrains/.ide
 
 # Feature screenshots (scripts/take-feature-screenshots.mjs)
 .screens
