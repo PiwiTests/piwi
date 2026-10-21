@@ -17,6 +17,11 @@ and a **Learn more** link into these docs, and every source path [opens in your 
 beside the recent activity, then the **failure inbox** of open clusters, triaged from the row or the keyboard
 ([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)).
 
+<figure>
+  <img src="/screenshots/home.png" alt="Home in light and dark: the filters, the stat strip, the Project health table and the recent activity">
+  <figcaption>Home, in the light and the dark theme.</figcaption>
+</figure>
+
 ## Analytics
 
 `/analytics`: trends across projects and over time, where Home shows what is happening now. The filters at the top
@@ -34,6 +39,11 @@ the trend charts.
 
 `/projects`: every project with search, tag filters, its last run and pass/fail bar. A project is created on its
 first result, or with **New project**.
+
+<figure>
+  <img src="/screenshots/projects.png" alt="The projects list: five projects with their tags, run count, latest run, branch, duration, status and test status bar">
+  <figcaption>Every project with its latest run.</figcaption>
+</figure>
 
 ## Project detail
 

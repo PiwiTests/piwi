@@ -79,6 +79,11 @@ with a real API key. The **MCP server** page of the dashboard shows both forms. 
 [desktop app](/features/desktop#connecting-ai-assistants), the MCP server page detects the installed clients and
 writes their entry in one click instead.
 
+<figure>
+  <img src="/screenshots/mcp-client-setup.png" alt="The MCP server page's client setup card: one tab per agent, here Claude Code with its claude mcp add command">
+  <figcaption>The <strong>MCP server</strong> page writes the setup for each client with this dashboard's URL already filled in.</figcaption>
+</figure>
+
 ### Claude Code (CLI)
 
 ```bash

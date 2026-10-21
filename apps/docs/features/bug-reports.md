@@ -34,6 +34,11 @@ The report keeps the language it was written in; the test Piwi writes from it is
 **Bug reports**, in a project's **More** menu, lists them newest first, by status. A report's page says what the
 tester expected and what the page showed instead, where the report stands, and what to do next, with four tabs:
 
+<figure>
+  <img src="/screenshots/bug-report.png" alt="A bug report's page: the situation, state, next step and why the suite missed it, over the Steps tab with the expected total and the value the page showed">
+  <figcaption>A report's page: what was expected, what the page showed, where the report stands and what to do next.</figcaption>
+</figure>
+
 - **Steps**: the steps in words, each marked step with its expected result, the value the page showed and the note.
 - **Evidence**: the screenshots, the page as each step began with its element outlined, the failed requests, the
   console entries and the page's outline.

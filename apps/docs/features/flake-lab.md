@@ -107,6 +107,11 @@ still fails, or too few runs passed to say) · `2` error.
 - Over [MCP](/features/mcp), `get_flake_profile` and `plan_flake_experiment` give an agent the experiments and the
   arms to run; the `stabilize-flaky-tests` [agent skill](/features/agent-skills) follows this loop.
 
+<figure>
+  <img src="/screenshots/flake-lab.png" alt="The Flake Lab tab: counts of flaky tests, tests not tried in the lab, reproduced flakes waiting for a fix and verified fixes, over the list of tests with the command each needs next">
+  <figcaption>The project's <strong>Flake Lab</strong> tab: where each flaky test stands, and the command that takes it to the next step.</figcaption>
+</figure>
+
 The lab's own runs are stamped as flake-lab runs, kept out of the flaky score, clusters, notifications, quarantine,
 the suspects, the editor's CI failures and every other comparison between runs.
 

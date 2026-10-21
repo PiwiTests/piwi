@@ -1124,6 +1124,24 @@ const JIRA_FIELD_DEFAULTS = {
   components: { value: [{ id: '10200' }], label: 'Checkout' },
 };
 
+/**
+ * One Slack channel subscribed to project 1, so the notifications settings
+ * capture neither section empty. Reruns reuse the rows from the previous run
+ * instead of duplicating them.
+ */
+async function prepareTeamSlackChannel({ base, request }) {
+  const list = await (await request.get(`${base}/api/channels`)).json();
+  if (list.items.some((c) => c.name === 'Team Slack')) return;
+  const ch = await (
+    await request.post(`${base}/api/channels`, {
+      data: { name: 'Team Slack', type: 'slack', config: { webhookUrl: 'https://hooks.slack.com/services/T/B/x' } },
+    })
+  ).json();
+  await request.post(`${base}/api/subscriptions`, {
+    data: { channelId: ch.channel.id, projectId: 1, events: ['run.failed', 'cluster.new'] },
+  });
+}
+
 /** The db-managed connection the required-fields scenes bind; its dead port means no Jira is contacted. */
 let jiraSceneConnectionId = 0;
 
@@ -2323,7 +2341,7 @@ const SCENES = [
     description: 'Execution Locators tab: every locator the test used, in order, with how many tests share each chain',
     tags: ['docs'],
     out: 'docs',
-    route: '/test-run-cases/711',
+    route: '/test-run-cases/229',
     viewport: { width: 1280, height: 1400 },
     async run({ page, shoot, settle, openTab }) {
       await openTab('Locators');
@@ -3082,15 +3100,18 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     route: '/settings/notifications',
-    viewport: { width: 1280, height: 800 },
+    viewport: { width: 1280, height: 1250 },
+    prepare: prepareTeamSlackChannel,
   },
   {
-    name: 'mcp-page',
-    description: 'MCP page: the server URL, the client setup for each agent and the tools it exposes',
+    name: 'mcp-client-setup',
+    description: 'MCP page: the client setup card, one tab per agent with the command or config that connects it',
     tags: ['docs'],
     out: 'docs',
     route: '/mcp',
     viewport: { width: 1280, height: 800 },
+    of: '[data-shot="mcp-client-setup"]',
+    pad: 12,
   },
 
   // ── README tour ───────────────────────────────────────────────────────────
@@ -5106,25 +5127,7 @@ const SCENES = [
     route: '/settings/notifications',
     viewport: { width: 1280, height: 1250 },
     outputs: ['notifications-settings.png', 'notifications-settings-bell.png'],
-    async prepare({ base, request }) {
-      // One channel + subscription so neither section captures empty. Reruns
-      // reuse the rows from the previous run instead of duplicating them.
-      const list = await (await request.get(`${base}/api/channels`)).json();
-      if (!list.items.some((c) => c.name === 'Team Slack')) {
-        const ch = await (
-          await request.post(`${base}/api/channels`, {
-            data: {
-              name: 'Team Slack',
-              type: 'slack',
-              config: { webhookUrl: 'https://hooks.slack.com/services/T/B/x' },
-            },
-          })
-        ).json();
-        await request.post(`${base}/api/subscriptions`, {
-          data: { channelId: ch.channel.id, projectId: 1, events: ['run.failed', 'cluster.new'] },
-        });
-      }
-    },
+    prepare: prepareTeamSlackChannel,
     async run({ page, shoot, goto, settle }) {
       await shoot();
       await goto('/projects/1');
