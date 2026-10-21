@@ -47,7 +47,7 @@ const USER_INPUT_EVENTS = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as c
  * Content can still be arriving then (a list fetched in the browser, a lazy
  * card), so the position is applied again each time the content changes, with
  * the browser's scroll anchoring off, until the user scrolls, clicks or types,
- * or `RESTORE_WINDOW_MS` has passed.
+ * the page scrolls the element itself, or `RESTORE_WINDOW_MS` has passed.
  */
 export function useViewScroll(target: () => HTMLElement | null | undefined, key: MaybeRefOrGetter<string> = 'page') {
   const positions = useViewState<Record<string, number>>('scroll', () => ({}));
@@ -65,8 +65,21 @@ export function useViewScroll(target: () => HTMLElement | null | undefined, key:
     restoring = true;
     const anchoring = element.style.overflowAnchor;
     element.style.overflowAnchor = 'none';
+    // Where the restore last left the element; -1 before the first apply.
+    let applied = -1;
+    // The page scrolled the element itself (a guided tour, a jump to a row):
+    // it is away from where the restore left it, and not merely clamped by
+    // content that got shorter.
+    const movedByPage = () => {
+      const now = element.scrollTop;
+      const clamped = now < applied && now >= element.scrollHeight - element.clientHeight - 1;
+      return applied >= 0 && Math.abs(now - applied) > 1 && !clamped;
+    };
     const apply = () => {
-      if (restoring) element.scrollTop = top;
+      if (!restoring) return;
+      if (movedByPage()) return stopRestore();
+      element.scrollTop = top;
+      applied = element.scrollTop;
     };
     const observer = new MutationObserver(() => requestAnimationFrame(apply));
     const timer = setTimeout(() => stopRestore(), RESTORE_WINDOW_MS);
