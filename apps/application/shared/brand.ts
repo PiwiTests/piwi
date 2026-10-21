@@ -6,7 +6,7 @@
  * network, so a document stays self-contained.
  */
 import { PDFString, rgb, type PDFDocument, type PDFFont, type PDFPage } from 'pdf-lib';
-import mark from './brand-mark.json';
+import mark from './brand-mark.json' with { type: 'json' };
 
 /** The mark's view box: x, y, width, height. */
 const VIEW = mark.viewBox as [number, number, number, number];
