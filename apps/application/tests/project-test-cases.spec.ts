@@ -187,6 +187,29 @@ test.describe.serial('Project test-cases catalog', () => {
     await expect(searchBox(page)).toHaveValue('file:tests/auth/login.spec.ts ');
   });
 
+  test('coming back to the project brings the search back, in the URL too', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=tests`);
+    await waitForHydration(page);
+    await searchBox(page).fill('checkout');
+    await searchBox(page).press('Escape');
+    await expect(titles(page)).toHaveText(['checkout works', 'checkout tax']);
+
+    await titles(page).first().click();
+    await expect(page).toHaveURL(/\/test-cases\/\d+/);
+    // The breadcrumb opens the project on its Runs tab, with no search in the URL.
+    await page.getByRole('navigation', { name: 'breadcrumb' }).locator(`a[href="/projects/${projectId}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}(\\?tab=runs)?$`));
+    await page
+      .getByRole('button', { name: /^Tests/ })
+      .first()
+      .click();
+
+    await expect(searchBox(page)).toHaveValue('checkout');
+    await expect(titles(page)).toHaveText(['checkout works', 'checkout tax']);
+    await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe('checkout');
+    expect(new URL(page.url()).searchParams.get('tab')).toBe('tests');
+  });
+
   test('links filtering by tag or owner open with the matching search', async ({ page }) => {
     await page.goto(`/projects/${projectId}/test-cases?tags=smoke`);
     await waitForHydration(page);

@@ -6,6 +6,7 @@
  * timings without leaving the project's Performance tab.
  */
 import type { TableColumn } from '@nuxt/ui';
+import type { SortingState } from '@tanstack/vue-table';
 import type { EndpointSummary, TestRunSummary } from '~~/types/api';
 
 const props = defineProps<{
@@ -53,6 +54,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
   { accessorKey: 'maxDuration', header: createSortHeader<EndpointSummary>('Max') },
   { accessorKey: 'errorRate', header: createSortHeader<EndpointSummary>('Errors') },
 ];
+const sorting = useViewState<SortingState>('performance:endpoints-sorting', () => []);
 </script>
 
 <template>
@@ -85,6 +87,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 
     <TableScroller v-else-if="endpoints && endpoints.length > 0" min-width="44rem" :bleed="false">
       <UTable
+        v-model:sorting="sorting"
         :data="endpoints"
         :columns="endpointColumns"
         aria-label="Slow endpoints"

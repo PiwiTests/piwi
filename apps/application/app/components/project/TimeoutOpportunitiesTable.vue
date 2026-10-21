@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
+import type { SortingState } from '@tanstack/vue-table';
 import type { TimeoutOpportunity } from '#shared/analytics/timeout-hygiene';
 import { projectRunScopeQuery, type ProjectRunScope } from '#shared/project-run-scope';
 
@@ -36,6 +37,7 @@ const columns: TableColumn<TimeoutOpportunity>[] = [
   { accessorKey: 'estimatedSavingMs', header: createSortHeader<TimeoutOpportunity>('Est. saving / failure') },
   { accessorKey: 'runCount', header: createSortHeader<TimeoutOpportunity>('Runs') },
 ];
+const sorting = useViewState<SortingState>('performance:timeouts-sorting', () => []);
 </script>
 
 <template>
@@ -57,7 +59,7 @@ const columns: TableColumn<TimeoutOpportunity>[] = [
     />
 
     <TableScroller v-else min-width="52rem" :bleed="false">
-      <UTable :data="opportunities" :columns="columns" sticky class="max-h-[32rem]">
+      <UTable v-model:sorting="sorting" :data="opportunities" :columns="columns" sticky class="max-h-[32rem]">
         <template #title-cell="{ row }">
           <div class="min-w-0">
             <NuxtLink

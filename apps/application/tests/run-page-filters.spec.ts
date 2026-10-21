@@ -273,6 +273,46 @@ test.describe.serial('Run page Tests tab', () => {
       .toEqual([true, false]);
   });
 
+  test('Back from an execution shows the list with its sort and open groups', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    // Open the collapsed Passed group and sort by title.
+    await page.locator('[data-index]').getByText('Passed', { exact: true }).click();
+    await selectSort(page, 'Title');
+    const titles = ['login via header', 'login via modal', 'cart shows items', 'homepage loads'];
+    await expect(visibleTitles(page)).toHaveText(titles);
+
+    await visibleTitles(page).first().click();
+    await expect(page).toHaveURL(/\/test-run-cases\/\d+/);
+    await page.goBack();
+
+    await expect(page.getByRole('combobox', { name: 'Sort tests by' })).toContainText('Title');
+    await expect(visibleTitles(page)).toHaveText(titles);
+  });
+
+  test('the breadcrumb back to the run shows the list with its search and status filter', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Failed', exact: true }).click();
+    await searchBox(page).fill('cart');
+    await searchBox(page).press('Escape');
+    await expect(visibleTitles(page)).toHaveText(['cart shows items']);
+
+    await visibleTitles(page).first().click();
+    await expect(page).toHaveURL(/\/test-run-cases\/\d+/);
+    await page
+      .getByRole('navigation', { name: 'breadcrumb' })
+      .getByRole('link', { name: `Run #${runId}` })
+      .click();
+
+    await expect(page).toHaveURL(new RegExp(`/test-runs/${runId}`));
+    await expect(searchBox(page)).toHaveValue('cart');
+    await expect(page.getByRole('button', { name: 'Failed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(visibleTitles(page)).toHaveText(['cart shows items']);
+  });
+
   test('?tab=failure-groups redirects to the Tests tab with the cluster grouping', async ({ page }) => {
     await page.goto(`/test-runs/${runId}?tab=failure-groups`);
     await waitForHydration(page);

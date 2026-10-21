@@ -633,6 +633,9 @@ function exitTvMode() {
   const { tv: _tv, cycle: _cycle, every: _every, ...rest } = route.query;
   void navigateTo({ path: route.path, query: rest });
 }
+
+// Coming back to the dashboard (from a test a widget links to) scrolls it to where the user left it.
+useViewScroll(() => dashboardPanelBody('analytics'));
 </script>
 
 <template>

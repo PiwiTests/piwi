@@ -127,7 +127,7 @@ const counts = computed(() => countQueues(liveClusters.value, queueCtx.value));
 
 const rows = computed(() => liveClusters.value.filter((c) => clusterInQueue(c, queue.value, queueCtx.value)));
 
-const expanded = ref(false);
+const expanded = useViewState('open-failures-expanded', () => false);
 const visibleRows = computed(() => (expanded.value ? rows.value : rows.value.slice(0, PREVIEW_LIMIT)));
 const hasMore = computed(() => rows.value.length > PREVIEW_LIMIT);
 

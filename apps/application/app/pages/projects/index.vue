@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { z } from 'zod';
 import type { TableColumn } from '@nuxt/ui';
+import type { SortingState } from '@tanstack/vue-table';
 import type { ProjectWithStats, TagInfo, TagsResponse } from '~~/types/api';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 import { foldText } from '#shared/utils/fold-text';
@@ -32,9 +33,12 @@ const allTags = computed(() => tagsData.value?.items || []);
 // Show a skeleton (not the "No projects yet" empty state) while the first load resolves.
 const isInitialLoad = computed(() => projectsStatus.value === 'pending' && !projects.value?.length);
 
-// Search and filter state
-const searchQuery = ref('');
-const selectedTagIds = ref<number[]>([]);
+// Search, filter and sort state, kept for the page so it is still there when
+// the user comes back from a project.
+const searchQuery = useViewState('search', () => '');
+const selectedTagIds = useViewState<number[]>('tags', () => []);
+const sorting = useViewState<SortingState>('sorting', () => []);
+useViewScroll(() => dashboardPanelBody('projects'));
 
 const filteredProjects = computed(() => {
   let result = projects.value || [];
@@ -283,6 +287,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
 
       <TableScroller v-if="filteredProjects.length > 0" min-width="60rem" :bleed="false">
         <UTable
+          v-model:sorting="sorting"
           :data="filteredProjects"
           :columns="columns"
           :ui="{

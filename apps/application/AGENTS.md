@@ -347,6 +347,15 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   button.
 - **A list's own controls stay with the list**: a search box, status chips, a sort or a window that only one list
   reads go in that list's card or toolbar (`FilterToolbar`), not in the Filters block.
+- **A page shows its lists as the user left them** when they come back to it (Back, a breadcrumb, a link): the search,
+  the filters, the sort, the open or collapsed groups, the page of a paged list, a _Show all_ and the scroll position.
+  Hold that state with `useViewState(key, init)` (`app/composables/useViewState.ts`), never a plain `ref`: it is kept
+  per route path until a reload. A `UTable` sort is `v-model:sorting` on a `useViewState` value, and a page whose list
+  scrolls calls `useViewScroll` on its scrolling element (`dashboardPanelBody(id)` for a `UDashboardPanel` body),
+  keyed by tab when its tabs share it. A value the URL carries stays in the URL and wins over the kept one; a
+  preference shared by every page of a kind stays a cookie (`useGroupByCookie`); a row selection or an open dialog
+  stays a plain `ref`. Two components that write the query in the same tick go through `replaceQuery`
+  (`app/utils/route-query.ts`).
 - **The project page's filters are a run scope every tab that reads run history follows** (`#shared/project-run-scope`:
   environments, branches, the branch policy, full runs only). The page passes `projectRunScopeQuery(scope)`, the
   endpoint reads it with `parseProjectRunScope` and its handler adds `projectRunScopeConditions`

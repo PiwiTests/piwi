@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
+import type { SortingState } from '@tanstack/vue-table';
 import type {
   ProjectWithTestRuns,
   TestRunSummary,
@@ -197,7 +198,7 @@ const filtersActive = computed(
 // === RUNS TAB: kept runs ===
 // Kept runs are mostly old, past the recent window the project loads, so the
 // "Kept runs only" view reads them from their own endpoint.
-const keptOnly = ref(false);
+const keptOnly = useViewState('runs:kept-only', () => false);
 const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestRunSummary[]; total: number }>(
   `/api/projects/${projectId}/kept-runs`,
   { lazy: true, server: false, default: () => ({ items: [], total: 0 }) },
@@ -211,7 +212,8 @@ const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filt
 // hydration stay the same size however many runs are loaded; the chart above it
 // draws them all.
 const RUNS_PAGE_SIZE = 25;
-const runsPage = ref(1);
+const runsPage = useViewState('runs:page', () => 1);
+const runsSorting = useViewState<SortingState>('runs:sorting', () => []);
 const pagedRuns = computed(() =>
   tableRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
 );
@@ -384,7 +386,7 @@ const ALIAS_SEGMENT: Record<string, FailureSegment> = {
 };
 
 const activeTab = ref<TabValue>('runs');
-const failureSegment = ref<FailureSegment>('clusters');
+const failureSegment = useViewState<FailureSegment>('failures:segment', () => 'clusters');
 
 // The Quarantine segment follows the `quarantine` capability: a project that
 // declined it loses the segment button, and a stale `?tab=quarantine` link falls
@@ -442,9 +444,16 @@ if (initialTab && !tabHidden(initialTab)) {
 // The Settings section belongs to the Settings tab, so it leaves with it.
 watch(activeTab, (tab) => {
   if (route.query.tab === tab) return;
-  const { section: _section, ...query } = route.query;
-  router.replace({ query: tab === 'settings' ? { ...route.query, tab } : { ...query, tab } });
+  void replaceQuery(router, tab === 'settings' ? { tab } : { tab, section: undefined });
 });
+
+// The page scrolls inside its own body; each tab keeps its position for when
+// the user comes back to the project.
+const scrollEl = ref<HTMLElement | null>(null);
+useViewScroll(
+  () => scrollEl.value,
+  () => activeTab.value,
+);
 
 // Rewrite an old ?tab= alias to its canonical value once the page is interactive;
 // `members` names a section of the Settings tab, so it keeps that section.
@@ -690,7 +699,7 @@ const RUNS_WINDOW_OPTIONS = [
   { label: 'Last 100 runs', value: 100 },
   { label: 'Last 200 runs', value: 200 },
 ];
-const perfRunsWindow = ref(50);
+const perfRunsWindow = useViewState('performance:runs-window', () => 50);
 
 const performanceData = ref<PerformanceTrendPoint[] | null>(null);
 const performanceLoading = ref(false);
@@ -769,6 +778,7 @@ const slowTestsColumns: TableColumn<SlowTest>[] = [
   { accessorKey: 'trend', header: createSortHeader<SlowTest>('Trend') },
   { accessorKey: 'runCount', header: createSortHeader<SlowTest>('Runs') },
 ];
+const slowTestsSorting = useViewState<SortingState>('performance:slow-tests-sorting', () => []);
 
 // Latest run seeds the slow-endpoints selector.
 const slowEndpointsRunId = ref<number | null>(null);
@@ -893,7 +903,7 @@ const moreMenuItems = computed(() => {
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-y-auto gap-4">
+      <div ref="scrollEl" class="flex flex-col h-full overflow-y-auto gap-4">
         <ProjectHeader
           :title="project?.label || project?.name || 'Project'"
           :description="project?.description"
@@ -1044,6 +1054,7 @@ const moreMenuItems = computed(() => {
             <div class="hidden md:block">
               <UTable
                 v-if="tableRuns.length > 0"
+                v-model:sorting="runsSorting"
                 :data="pagedRuns"
                 :columns="runsColumns"
                 :ui="{
@@ -1338,6 +1349,7 @@ const moreMenuItems = computed(() => {
 
             <TableScroller v-else-if="slowTests && slowTests.length > 0" min-width="52rem" :bleed="false">
               <UTable
+                v-model:sorting="slowTestsSorting"
                 :data="slowTests"
                 :columns="slowTestsColumns"
                 :ui="{

@@ -48,11 +48,10 @@ const STATUS_OPTIONS = [
   { label: 'All', value: 'all' },
 ];
 const STATUS_VALUES = new Set(STATUS_OPTIONS.map((o) => o.value));
-const initialStatus =
-  typeof route.query.gapStatus === 'string' && STATUS_VALUES.has(route.query.gapStatus)
-    ? route.query.gapStatus
-    : 'open';
-const statusFilter = ref<string>(initialStatus);
+// A `?gapStatus=` link wins over the status kept for the page.
+const statusFilter = useViewState<string>('gaps:status', () => 'open');
+if (typeof route.query.gapStatus === 'string' && STATUS_VALUES.has(route.query.gapStatus))
+  statusFilter.value = route.query.gapStatus;
 
 /** The most gaps one request returns; the server caps here, so a full page is truncated. */
 const PAGE_LIMIT = 200;
