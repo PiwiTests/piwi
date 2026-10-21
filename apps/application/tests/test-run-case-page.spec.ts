@@ -38,6 +38,7 @@ test.describe('Test-run-case page', () => {
             status: 'failed',
             duration: 8000,
             location: 'tests/checkout.spec.ts:42:18',
+            suitePath: ['Checkout'],
             error:
               "TimeoutError: locator.click: Timeout 30000ms exceeded.\n  - waiting for getByRole('button', { name: 'Pay' })",
             retries: 1,
@@ -104,7 +105,8 @@ test.describe('Test-run-case page', () => {
             title: 'homepage loads',
             status: 'passed',
             duration: 1500,
-            location: 'tests/home.spec.ts:3:1',
+            location: 'apps/web/e2e/specs/home/landing/home.spec.ts:3:1',
+            suitePath: ['Home', 'Landing page', 'Hero', 'when signed out'],
             retries: 0,
             workerIndex: 0,
             startedAt: startTime,
@@ -207,6 +209,41 @@ test.describe('Test-run-case page', () => {
     await expect(page.getByRole('button', { name: 'Around the failure' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /^Steps/ })).toHaveCount(0);
     await expect(page.locator('table').first()).toBeVisible();
+  });
+
+  test('the identity line names the test by its title path, folding a deep one', async ({ page }) => {
+    await page.goto(`/test-run-cases/${failedCaseId}`);
+    await waitForHydration(page);
+
+    // The spec file and line (open in IDE), the describe blocks, then the title.
+    let path = page.locator('[data-shot="test-title-path"]');
+    await expect(path.getByRole('button', { name: 'Open tests/checkout.spec.ts:42 in IDE' })).toBeVisible();
+    await expect(path).toContainText('Checkout');
+    await expect(path).toContainText('checkout completes');
+    await expect(path.getByRole('button', { name: 'Show the full path' })).toHaveCount(0);
+    // The test's own file and line are not repeated on the facts line.
+    await expect(
+      page.locator('[data-shot="situation-block"]').getByRole('button', { name: /^Open tests\/checkout\.spec\.ts/ }),
+    ).toHaveCount(1);
+
+    // A deep path keeps its first folders, its last folder and its outermost and
+    // innermost describe blocks, and one click unfolds the rest.
+    await page.goto(`/test-run-cases/${passedCaseId}`);
+    await waitForHydration(page);
+    path = page.locator('[data-shot="test-title-path"]');
+    const unfold = path.getByRole('button', { name: 'Show the full path' });
+    await expect(unfold).toHaveCount(2);
+    await expect(path).toContainText('apps/web/');
+    await expect(path).toContainText('/landing/');
+    await expect(path).not.toContainText('e2e/specs');
+    await expect(path).toContainText('Home');
+    await expect(path).toContainText('when signed out');
+    await expect(path).not.toContainText('Landing page');
+    await unfold.first().click();
+    await expect(unfold).toHaveCount(0);
+    await expect(path).toContainText('apps/web/e2e/specs/home/landing/');
+    await expect(path).toContainText('Landing page');
+    await expect(path).toContainText('Hero');
   });
 
   test('the retry command is in the More menu, not an always-on header button', async ({ page }) => {

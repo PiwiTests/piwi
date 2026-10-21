@@ -14,6 +14,7 @@ import { eq, and, or, desc, gt, gte, ne, sql, inArray, isNull, isNotNull, notInA
 import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
+import { splitSuitePath } from '../utils/suites';
 import { inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
@@ -736,6 +737,7 @@ export async function getTestRunCase(
     testCaseId: trc.testCaseId,
     title: testCase?.title,
     filePath: testCase?.filePath ?? null,
+    suitePath: splitSuitePath(testCase?.suitePath),
     line: trc.line ?? null,
     location: trc.line && trc.column ? `${testCase?.filePath}:${trc.line}:${trc.column}` : testCase?.filePath,
     status: trc.status,

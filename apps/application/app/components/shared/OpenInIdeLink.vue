@@ -4,7 +4,9 @@
  * "open in IDE" link: a dashed-underlined label runs the configured default
  * (Auto by default) and reveals an external-link icon on hover; a caret, shown
  * on hover or keyboard focus, opens a chooser to pick a specific method or copy
- * the path. Phones and touch screens get no caret — the label alone. The chooser
+ * the path. Phones and touch screens get no caret — the label alone. Inside a
+ * line of text (`inline`) the label wraps, shows no icon, and the caret floats
+ * over the text that follows instead of taking room. The chooser
  * popover is mounted lazily on first use so lists of these stay cheap to render. All
  * launching/preferences live in `useOpenInIde`; this is a thin, client-only
  * trigger safe to drop in anywhere a path is shown today.
@@ -25,8 +27,14 @@ const props = withDefaults(
     projectName?: string | null;
     /** Render the label in a monospace font (default true). */
     mono?: boolean;
+    /**
+     * The link sits inside a line of text: a long label wraps instead of ending
+     * in an ellipsis, and the caret takes no room, showing over the text after
+     * the label on hover, so the text runs on right after the path.
+     */
+    inline?: boolean;
   }>(),
-  { mono: true, line: null, column: null },
+  { mono: true, line: null, column: null, inline: false },
 );
 
 defineSlots<{
@@ -70,9 +78,14 @@ function mountMenu() {
 }
 
 // The caret appears on hover or keyboard focus, and only where a pointer can
-// hover: below `sm` or on a touch screen it is not rendered at all.
-const caretClass =
-  'hidden sm:pointer-fine:inline-flex shrink-0 items-center rounded p-0.5 text-muted cursor-pointer transition-opacity hover:bg-elevated/60 hover:text-default opacity-0 group-hover/ide:opacity-100 focus-visible:opacity-100';
+// hover: below `sm` or on a touch screen it is not rendered at all. Inline, it
+// floats over the text after the label and catches no click while hidden.
+const caretClass = computed(() => [
+  'hidden sm:pointer-fine:inline-flex shrink-0 items-center rounded p-0.5 text-muted cursor-pointer transition-opacity hover:bg-elevated/60 hover:text-default opacity-0 group-hover/ide:opacity-100 focus-visible:opacity-100',
+  props.inline
+    ? 'absolute left-full top-1/2 -translate-y-1/2 bg-default shadow-sm pointer-events-none group-hover/ide:pointer-events-auto focus-visible:pointer-events-auto'
+    : '',
+]);
 
 function run(action: () => void) {
   open.value = false;
@@ -81,7 +94,10 @@ function run(action: () => void) {
 </script>
 
 <template>
-  <span class="group/ide inline-flex items-center gap-1 min-w-0 max-w-full align-middle">
+  <span
+    class="group/ide inline-flex items-center gap-1 min-w-0 max-w-full align-middle"
+    :class="inline ? 'relative' : ''"
+  >
     <template v-if="resolvedPath">
       <button
         type="button"
@@ -93,12 +109,14 @@ function run(action: () => void) {
         <span
           :class="[
             mono ? 'font-mono' : '',
-            'truncate underline decoration-dashed decoration-1 underline-offset-2 decoration-gray-400/70 dark:decoration-gray-500/70 transition-colors group-hover/ide:decoration-current',
+            inline ? 'wrap-anywhere' : 'truncate',
+            'underline decoration-dashed decoration-1 underline-offset-2 decoration-gray-400/70 dark:decoration-gray-500/70 transition-colors group-hover/ide:decoration-current',
           ]"
         >
           <slot :label="label">{{ label }}</slot>
         </span>
         <UIcon
+          v-if="!inline"
           name="i-lucide-external-link"
           class="size-3 shrink-0 opacity-0 transition-opacity group-hover/ide:opacity-100"
         />
@@ -118,7 +136,7 @@ function run(action: () => void) {
       <UPopover v-else v-model:open="open">
         <button
           type="button"
-          :class="[caretClass, open ? 'opacity-100' : '']"
+          :class="[caretClass, open ? 'opacity-100 pointer-events-auto' : '']"
           aria-label="Choose how to open in IDE"
           title="Choose how to open"
         >

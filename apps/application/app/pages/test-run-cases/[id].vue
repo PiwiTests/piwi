@@ -818,13 +818,22 @@ const { handle: handleNextStepAction } = useNextStepActions({
       <div class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
         <!-- ── One block: what broke, what is going on, what to do next ── -->
         <SituationBlock help="case.situation" :edge="statusEdge">
-          <!-- Line 1: identity kicker — status, title, marks, quarantine -->
+          <!-- Line 1: identity kicker — status, the test's title path (file › describe › title), marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <StatusChip :status="testCase?.status ?? ''" :retries="testCase?.retries" class="shrink-0" />
-              <span class="text-highlighted min-w-0 break-words">
-                {{ testCase?.title || `Execution #${testCaseId}` }}
-              </span>
+              <!-- The path in the meta style, the title in the body style -->
+              <TestTitlePath
+                data-shot="test-title-path"
+                class="text-xs"
+                :file-path="testCase?.filePath"
+                :line="testCase?.line"
+                :suite-path="testCase?.suitePath"
+                :project-key="testCase?.testRun?.project?.id"
+                :project-name="testCase?.testRun?.project?.name"
+              >
+                <span class="text-sm text-highlighted">{{ testCase?.title || `Execution #${testCaseId}` }}</span>
+              </TestTitlePath>
               <span
                 v-for="badge in headerBadges"
                 :key="badge.label"

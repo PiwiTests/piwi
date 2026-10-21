@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
- * The facts line under an execution's situation block: the source path (open in
- * IDE), the run facts that collapse to Details on mobile (browser, duration,
- * attempts, branch, build, age), the Details popover with everything else, and
- * the shared "Raw error ▸" disclosure with its Copy failure action. Its Links
- * section lists the links pinned to this execution, to its test and to its run,
- * each group named by its owner and editable by a viewer who may write links,
- * then its cluster's links, read-only, with a link that opens the cluster page's
- * Details, where they are edited. From `md` up the popover lays its groups out in
- * two columns, the links across both.
+ * The facts line under an execution's situation block: the failing line's source
+ * path (open in IDE) when it is not the test's own line, the run facts that
+ * collapse to Details on mobile (browser, duration, attempts, branch, build,
+ * age), the Details popover with everything else, and the shared "Raw error ▸"
+ * disclosure with its Copy failure action. Its Links section lists the links
+ * pinned to this execution, to its test and to its run, each group named by its
+ * owner and editable by a viewer who may write links, then its cluster's links,
+ * read-only, with a link that opens the cluster page's Details, where they are
+ * edited. From `md` up the popover lays its groups out in two columns, the links
+ * across both.
  *
  * The secondary facts render once and are hidden below `sm`; the Details popover
  * repeats the mobile-critical ones so the phone layout keeps them reachable.
@@ -128,13 +129,18 @@ const environment = computed(() => props.testCase?.testRun?.environment);
 const browser = computed(() => props.testCase?.browser ?? null);
 const stepsCount = computed(() => (props.testCase?.steps as unknown[] | null)?.length ?? 0);
 
-// The first captured source frame — the failing line — beats the test()
-// declaration for the "open in IDE" link.
+// The first captured source frame — the failing line — for the "open in IDE"
+// link. The test's own file and line are on the identity line above, so a
+// frame that points at them, or no frame, shows no link here.
 const ideTarget = computed(() => {
-  const frames = (props.testCase as { testSourceFrames?: Array<{ filePath?: string; line?: number }> | null } | null)
-    ?.testSourceFrames;
-  const frame = frames?.[0];
+  const tc = props.testCase as {
+    filePath?: string | null;
+    line?: number | null;
+    testSourceFrames?: Array<{ filePath?: string; line?: number }> | null;
+  } | null;
+  const frame = tc?.testSourceFrames?.[0];
   if (!frame?.filePath) return null;
+  if (frame.filePath === tc?.filePath && frame.line === tc?.line) return null;
   return { filePath: frame.filePath, line: frame.line };
 });
 
@@ -183,10 +189,9 @@ defineExpose({ revealRawError });
 <template>
   <div class="flex items-center gap-x-2 gap-y-1 flex-wrap text-xs text-muted">
     <OpenInIdeLink
-      v-if="ideTarget?.filePath || testCase?.location"
-      :file-path="ideTarget?.filePath"
-      :line="ideTarget?.line"
-      :location="ideTarget ? undefined : (testCase?.location ?? undefined)"
+      v-if="ideTarget"
+      :file-path="ideTarget.filePath"
+      :line="ideTarget.line"
       :project-key="testCase?.testRun?.project?.id"
       :project-name="testCase?.testRun?.project?.name"
     />

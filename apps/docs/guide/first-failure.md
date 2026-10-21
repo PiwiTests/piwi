@@ -15,7 +15,7 @@ Open the failing test from the run page (click its row) to reach its **execution
   <figcaption>One failing execution, read top to bottom: the situation block that says what broke, what is most likely and what to do, then the evidence.</figcaption>
 </figure>
 
-The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test title, Playwright marks such as `@fixme` or `@slow`, and whether the test is quarantined. The lines below it are the rest of this page, in order.
+The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test (`checkout.spec.ts:9 › Checkout › pays`), marks such as `@fixme` or `@slow`, and whether it is quarantined. The lines below it are the rest of this page, in order.
 
 ## 1. The headline: what broke
 

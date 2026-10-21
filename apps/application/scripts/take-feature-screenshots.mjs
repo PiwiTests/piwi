@@ -1893,6 +1893,26 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'test-title-path', width: 1280 },
+    { name: 'test-title-path-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Where the failing test lives: the execution's identity line, then a cluster's affected tests and evidence, name it by its title path (folders, file and line, describe blocks, title), at ${width} px`,
+    outputs: [`${name}-execution.png`, `${name}-cluster-affected.png`, `${name}-cluster-evidence.png`],
+    route: '/test-run-cases/37',
+    viewport: { width, height: 900 },
+    async run({ page, goto, shoot, settle }) {
+      await page.locator('[data-shot="test-title-path"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('execution', { of: '[data-shot="situation-block"]', pad: 8 });
+      await goto('/failure-clusters/5');
+      await page.locator('[data-shot="evidence-subject"]').waitFor({ timeout: 60000 });
+      await shoot('cluster-affected', { of: '[data-shot="cluster-affected-tests"]', pad: 8 });
+      await page.locator('[data-shot="evidence-subject"]').scrollIntoViewIfNeeded();
+      await shoot('cluster-evidence', { of: '[data-shot="evidence-subject"]', pad: 8 });
+    },
+  })),
+  ...[
     { name: 'dashboard-editor', width: 1280, height: 1200, docs: true },
     { name: 'dashboard-editor-mobile', width: 375, height: 1400, docs: false },
   ].map(({ name, width, height, docs }) => ({
