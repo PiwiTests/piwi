@@ -9,6 +9,11 @@ lang: en-US
 The [editor extensions](./editors) run your tests where you edit them, then show what the run changed: its progress
 in the status bar while it executes, and its results over the latest CI run's failures within a second of its end.
 
+<figure>
+  <img src="/screenshots/vscode-failures.png" alt="VS Code: the failing tests marked in a spec, and the Failures view below">
+  <figcaption>The failing tests in the spec, and the Failures view with the run you made since.</figcaption>
+</figure>
+
 ## Run tests
 
 - The lines above a locator line, an application file or a page file (CodeLens in VS Code, Code Vision in a JetBrains
@@ -16,12 +21,11 @@ in the status bar while it executes, and its results over the latest CI run's fa
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
   [code reach](/features/code-reach); also in the editor's context menu.
-- **Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
+- **Piwi: Run selection…** runs a saved [selection](/features/test-selection).
 
-The command, `npx playwright test` with the arguments `piwi run` would pass, is built by the editor and runs from the
-Playwright config's folder: in a terminal in VS Code, in the Run tool window in a JetBrains IDE, whose **Rerun** starts
-it again, or in the IDE's Playwright runner (test tree, Debug, **Rerun Failed Tests**), a choice of **Settings → Tools →
-Piwi**. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF` ([run origin](/reference/test-metadata#run-origin)),
+The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
+folder: in a terminal in VS Code, in the Run tool window in a JetBrains IDE (**Rerun** starts it again), or in the
+IDE's Playwright runner (test tree, Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF` ([run origin](/reference/test-metadata#run-origin)),
 by which the editor finds its run. Breakpoints pause it in the browser, with Piwi's picker one click away:
 [Breakpoints in the browser](./editor-breakpoints).
 
@@ -58,8 +62,8 @@ While the run executes, the gutter shows each test as running, then its result.
 A run reports the line a test failed at in the files it ran. The editor reads those files as the run saw them and
 follows each failing line through your changes, saved or not:
 
-- Add or remove lines above a failing line, and its error moves with it: in the Problems panel, in the lines above the
-  test, in the Piwi tool window of a JetBrains IDE.
+- Add or remove lines above a failing line, and its error moves with it, in the Problems panel, the lines above the
+  test and the Piwi tool window.
 - Rewrite the failing line, and the error turns into an information marker, *Edited since run #120: …*: the run said
   nothing about the new line. **Run this test** comes first among its quick fixes, and the reason above the line reads
   *✎ edited since run #120*. The test keeps its failing mark until a run says otherwise.
@@ -67,9 +71,8 @@ follows each failing line through your changes, saved or not:
 
 The next run that covers the test says what is true: a failure there is an error again, and a pass takes it away.
 
-For a CI run, the files as the run saw them are those of the run's commit (`git show`). For a run on your machine, which
-ran your files as saved, a run that recorded no commit, or a commit your clone does not have, they are the files as
-saved when the editor first showed the failure.
+For a CI run, the files as the run saw them are those of its commit (`git show`); for a local run, a run without a
+commit, or a commit your clone lacks, the files as saved when the editor first showed the failure.
 
 ## The failures view
 

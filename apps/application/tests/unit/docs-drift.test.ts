@@ -602,6 +602,8 @@ describe('docs site structure', () => {
     ...readdirSync(join(repoRoot, 'integrations')).map((dir) => `integrations/${dir}/README.md`),
     'apps/extension/README.md',
     'apps/desktop/README.md',
+    'apps/vscode/README.md',
+    'apps/jetbrains/README.md',
   ].filter((surface) => existsSync(join(repoRoot, surface)));
   const surfaceLinks = [
     ...new Set(

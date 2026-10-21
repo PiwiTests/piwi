@@ -306,5 +306,12 @@ A gallery image with no marketing-specific treatment (no diagonal split) belongs
 pipeline: the harness renders icons from the bundled collection and can be re-run offline, so the image stays
 reproducible as the UI moves.
 
-The live-demo captures and the video poster are **not** produced by the harness; they are listed in its
-`EXTERNAL_DOCS_IMAGES` set so the check knows to leave them alone.
+Three illustrations come from other pipelines, and the harness's `--check` leaves them alone (`EXTERNAL_DOCS_IMAGES`
+and the `picker-`, `vscode-` and `jetbrains-` prefixes): the video poster above; the browser extension's
+(`picker-*.png`, `tested-elements-overlay.png`), written at 1280 × 800, the size the stores take, by
+`PIWI_DOCS_SHOTS=1 npm run extension:test:e2e -- docs-screenshots` from `apps/extension/`; and the editor extensions'
+(`vscode-*.png`, and `jetbrains-*.png` once an activated IDE captures them), written by
+`apps/vscode/scripts/take-screenshots.mjs` and `apps/jetbrains/scripts/take-screenshots.mjs`, which open one fixture
+project (`apps/vscode/scripts/lib/editor-fixture.mjs`) against a stub instance in the real editor, under Xvfb. Each
+script's header says how to run it and what it needs. The README's
+*In your browser and your editor* row and the Marketplace READMEs show the same images.
