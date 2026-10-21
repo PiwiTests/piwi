@@ -38,6 +38,10 @@ export interface QuarantineEntry {
   id: number;
   testCaseId: number;
   title: string;
+  /** The ID the test has in the team's test management tool. */
+  externalId: string | null;
+  /** The title without its external ID, when the reporter removed it. */
+  displayTitle: string | null;
   filePath: string;
   reason: string | null;
   source: string;
@@ -233,6 +237,8 @@ export async function listQuarantine(
       quarantinedAtRunId: quarantinedTests.quarantinedAtRunId,
       createdAt: quarantinedTests.createdAt,
       title: testCases.title,
+      externalId: testCases.externalId,
+      displayTitle: testCases.displayTitle,
       filePath: testCases.filePath,
       owner: testCases.owner,
       tags: testCases.tags,
@@ -252,6 +258,8 @@ export async function listQuarantine(
       id: row.id,
       testCaseId: row.testCaseId,
       title: row.title,
+      externalId: row.externalId ?? null,
+      displayTitle: row.displayTitle ?? null,
       filePath: row.filePath,
       reason: row.reason,
       source: row.source,

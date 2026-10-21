@@ -97,6 +97,7 @@ function searchSubject(tc: TestCaseResult): TestSearchSubject {
       owner: tc.testMeta?.owner ?? null,
       priority: tc.testMeta?.priority ?? null,
       feature: tc.testMeta?.feature ?? null,
+      externalId: tc.externalId ?? null,
     };
     subjectCache.set(tc, subject);
   }

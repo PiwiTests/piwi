@@ -44,6 +44,24 @@ export function demoTestMeta(filePath, index) {
   return meta;
 }
 
+/** The checkout specs' numbers in the demo's test management tool, for their external IDs. */
+const DEMO_EXTERNAL_ID_FILES = new Map([
+  ['address.spec.ts', 1],
+  ['cart.spec.ts', 2],
+  ['checkout.spec.ts', 3],
+]);
+
+/**
+ * The external ID (`piwi:id`) a demo test has in the demo's test management tool, so the ID chip and the `id:` search
+ * have something to show: the checkout specs' tests only, `CHK-<spec><case>` (`CHK-301`), unique per project.
+ * Deterministic and path-derived, like `demoTags`, so a simulated run declares the IDs the seed stored.
+ */
+export function demoExternalId(filePath, index) {
+  const match = /\/checkout\/([^/]+)$/.exec(`/${filePath}`);
+  const spec = match ? DEMO_EXTERNAL_ID_FILES.get(match[1]) : undefined;
+  return spec === undefined ? null : `CHK-${spec}${String(index + 1).padStart(2, '0')}`;
+}
+
 export function demoTags(filePath, index) {
   const tags = [];
   if (index === 0) tags.push('smoke');

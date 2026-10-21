@@ -235,6 +235,8 @@ function flakyBadges(test: FlakyTest) {
         :href="`/test-cases/${test.testCaseId}`"
         data-tour="flaky-test-row"
         :title="test.title"
+        :display-title="test.displayTitle"
+        :external-id="test.externalId"
         status="flaky"
         :file-path="test.filePath"
         :badges="flakyBadges(test)"

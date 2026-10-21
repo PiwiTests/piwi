@@ -147,6 +147,33 @@ export interface PiwiDashboardOptions {
     server?: 'off' | 'files' | 'functions' | 'lines';
   };
   /**
+   * Match each test to its history on the dashboard by an external ID, the ID the test has in your own test
+   * management tool, so a test keeps its history when it is renamed or moved. A test declares its ID with a
+   * `piwi:id` annotation (`{ type: 'piwi:id', description: '12526' }`), which wins, or the ID is read from its title
+   * with `pattern`. Two tests declaring the same ID are reported before the first test runs, and matched by file,
+   * describe path and title instead.
+   */
+  externalId?: {
+    /**
+     * Where the ID sits in a test's own title (not its describe path): `/^(\d+), /` reads `12526` from
+     * `'12526, Log in with Email'`. The ID is the first capture group, or the whole match without a group. A string
+     * is compiled with `new RegExp(value)`; one that does not compile turns external IDs off for the run, with an
+     * error, but never fails it. Can also be set with `PIWI_EXTERNAL_ID_PATTERN`.
+     */
+    pattern?: RegExp | string;
+    /**
+     * Show the title without its ID on the dashboard, next to the ID. The whole match of `pattern` is removed from
+     * the title shown; the title stored and matched on stays whole. Defaults to `false`.
+     */
+    stripFromTitle?: boolean;
+    /**
+     * What two tests declaring the same ID do: `'report'` lists them in the console and on the run page; `'fail'`
+     * also fails the run once its tests have run. Either way the run matches them by file, describe path and title.
+     * Defaults to `'report'`. Can also be set with `PIWI_EXTERNAL_ID_ON_DUPLICATE`.
+     */
+    onDuplicate?: 'report' | 'fail';
+  };
+  /**
    * Capture server-side spans for each API/document request the test makes,
    * read from the `X-Piwi-Trace` response header emitted by a Piwi
    * instrumentation plugin (e.g. `@piwitests/instrumentation-nitro`). The spans show

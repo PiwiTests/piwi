@@ -6,6 +6,7 @@
  * RegExp patterns – the same routes the Nuxt server exposes.
  */
 
+import { mergeTestCases } from '#shared/handlers/test-case-merge';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ZodType } from 'zod';
 import {
@@ -1672,6 +1673,24 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
       return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-cases\/(\d+)\/merge$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const sourceId = Number((body as { sourceId?: unknown } | null)?.sourceId);
+      if (!Number.isInteger(sourceId) || sourceId <= 0) throw demoHttpError(400, 'sourceId must be a test case id');
+      const outcome = await mergeTestCases(await getDemoDb(), +m[1]!, sourceId);
+      if (!outcome.ok) {
+        throw demoHttpError(
+          { 'not-found': 404, 'same-case': 400, 'other-project': 400, 'ran-together': 409 }[outcome.error],
+          outcome.message,
+        );
+      }
+      return outcome;
     },
   },
   {

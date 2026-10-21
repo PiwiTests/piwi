@@ -14,6 +14,8 @@ import { errorMessage } from '~/utils';
 interface AffectedCase {
   testCaseId: number;
   title: string;
+  externalId?: string | null;
+  displayTitle?: string | null;
   filePath: string;
   suitePath?: string[];
   runCount: number;
@@ -54,6 +56,8 @@ function toRow(c: AffectedCase): TestCaseResult {
   return {
     executionId: c.recentTestRunsCaseId,
     title: c.title,
+    externalId: c.externalId ?? null,
+    displayTitle: c.displayTitle ?? null,
     status: 'failed',
     location: c.filePath,
     failureClusterId: null,

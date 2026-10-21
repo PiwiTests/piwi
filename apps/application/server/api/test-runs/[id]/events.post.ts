@@ -1,3 +1,4 @@
+import { displayTitleOf, externalIdOf } from '../../../utils/test-case-match';
 import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { eq, sql } from 'drizzle-orm';
@@ -168,6 +169,8 @@ export default eventHandler(async (event) => {
       type: 'test-completed',
       data: {
         title: tc.title,
+        externalId: externalIdOf(cases[index]!) ?? null,
+        displayTitle: displayTitleOf(cases[index]!, externalIdOf(cases[index]!)),
         filePath: cases[index]!.filePath,
         suitePath: tc.suitePath ?? null,
         status: tc.status,

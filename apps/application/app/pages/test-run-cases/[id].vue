@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { testLabel } from '#shared/utils/test-label';
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
@@ -41,6 +42,7 @@ const {
   `/api/test-run-cases/${testCaseId}`,
 );
 if (testCaseError.value) showPageLoadError(testCaseError.value, 'execution');
+provideExternalIdUrl(() => testCase.value?.testRun?.project?.externalIdUrl);
 
 // Server-rendered fetches carry the viewer's session.
 const requestFetch = useRequestFetch();
@@ -769,7 +771,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               ...(testCase?.testRun?.id
                 ? [{ label: `Run #${testCase.testRun.id}`, to: `/test-runs/${testCase.testRun.id}` }]
                 : [{ label: 'Test run' }]),
-              { label: testCase?.title || `Execution #${testCaseId}` },
+              { label: (testCase ? testLabel(testCase) : '') || `Execution #${testCaseId}` },
             ]"
           />
         </template>
@@ -832,7 +834,10 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 :project-key="testCase?.testRun?.project?.id"
                 :project-name="testCase?.testRun?.project?.name"
               >
-                <span class="text-sm text-highlighted">{{ testCase?.title || `Execution #${testCaseId}` }}</span>
+                <TestIdChip v-if="testCase?.externalId" :external-id="testCase.externalId" class="mr-1.5" />
+                <span class="text-sm text-highlighted" :title="testCase?.displayTitle ? testCase.title : undefined">{{
+                  (testCase ? testLabel(testCase) : '') || `Execution #${testCaseId}`
+                }}</span>
               </TestTitlePath>
               <span
                 v-for="badge in headerBadges"

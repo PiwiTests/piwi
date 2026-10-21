@@ -4,6 +4,7 @@ import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
+import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
@@ -132,7 +133,13 @@ export default eventHandler(async (event) => {
   // The reporter's final metadata, when it sends one, replaces the stored one
   // and keeps the incident flag and the ingest health the server recorded.
   const reportedMetadata = body.metadata
-    ? keepIncidentMetadata(testRun.metadata, carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata))
+    ? keepIncidentMetadata(
+        testRun.metadata,
+        carryExternalIdDuplicates(
+          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+          testRun.metadata,
+        ),
+      )
     : null;
 
   if (hasPendingUploads) {

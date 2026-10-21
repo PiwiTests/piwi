@@ -177,6 +177,8 @@ export async function getFailureCluster(
     .select({
       testCaseId: testCases.id,
       title: testCases.title,
+      externalId: testCases.externalId,
+      displayTitle: testCases.displayTitle,
       filePath: testCases.filePath,
       suitePath: testCases.suitePath,
       owner: testCases.owner,
@@ -186,7 +188,15 @@ export async function getFailureCluster(
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.failureClusterId, clusterId))
-    .groupBy(testCases.id, testCases.title, testCases.filePath, testCases.suitePath, testCases.owner)
+    .groupBy(
+      testCases.id,
+      testCases.title,
+      testCases.externalId,
+      testCases.displayTitle,
+      testCases.filePath,
+      testCases.suitePath,
+      testCases.owner,
+    )
     .orderBy(desc(sql`count(${testRunsCases.id})`))
     .$dynamic();
 
@@ -210,7 +220,7 @@ export async function getFailureCluster(
         .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster'))),
 
       db
-        .select({ id: projects.id, name: projects.name, label: projects.label })
+        .select({ id: projects.id, name: projects.name, label: projects.label, externalIdUrl: projects.externalIdUrl })
         .from(projects)
         .where(eq(projects.id, cluster.projectId)),
 

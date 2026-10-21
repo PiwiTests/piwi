@@ -85,6 +85,7 @@ export const PROJECT = {
   EXECUTION_STATES: 'execution-states-test',
   EXPECTED_FAILURE: 'expected-failure-test',
   EXPORT_OFFLINE: 'export-offline-test',
+  EXTERNAL_IDS: 'external-ids-test',
   AI_DIAGNOSIS: 'ai-diagnosis-test',
   AI_IMAGE_FALLBACK: 'ai-image-fallback-test',
   AI_LIVE_DIAGNOSIS: 'ai-live-diagnosis-test',

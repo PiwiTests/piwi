@@ -504,6 +504,8 @@ defineExpose({ refresh });
                 v-else
                 :href="`/test-cases/${row.test.id}`"
                 :title="row.test.title"
+                :display-title="row.test.displayTitle"
+                :external-id="row.test.externalId"
                 :status="row.test.status"
                 :location="catalogLocation(row.test)"
                 :file-path="catalogLocation(row.test) ? null : row.test.filePath"
@@ -528,6 +530,8 @@ defineExpose({ refresh });
               :key="tc.id"
               :href="`/test-cases/${tc.id}`"
               :title="tc.title"
+              :display-title="tc.displayTitle"
+              :external-id="tc.externalId"
               :status="tc.status"
               :location="catalogLocation(tc)"
               :file-path="catalogLocation(tc) ? null : tc.filePath"

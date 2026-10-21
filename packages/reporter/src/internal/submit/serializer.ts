@@ -79,6 +79,9 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     tags: rest.tags ?? null,
     locks: rest.locks ?? null,
     testMeta: rest.testMeta ?? null,
+    // Kept `undefined` when unset (a `begin` event): `null` would tell the dashboard the test has no ID.
+    externalId: rest.externalId,
+    displayTitle: rest.displayTitle ?? null,
     locatorSnapshots: rest.locatorSnapshots || null,
     locatorPages: rest.locatorPages || null,
     codeReach: rest.codeReach || null,

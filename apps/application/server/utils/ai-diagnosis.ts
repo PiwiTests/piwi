@@ -1,4 +1,5 @@
 import { eq, and, desc, inArray, isNotNull } from 'drizzle-orm';
+import { isUniqueViolation } from './db-errors';
 import {
   failureDiagnoses,
   failureDiagnosisVersions,
@@ -212,14 +213,6 @@ function clusterSubject(cluster: FailureCluster, opts: DiagnosisRunOpts): Diagno
   return opts.testRunsCaseId != null
     ? { scope: 'execution', projectId: cluster.projectId, cluster, executionId: opts.testRunsCaseId }
     : { scope: 'cluster', projectId: cluster.projectId, cluster };
-}
-
-/** Whether an error is a unique-constraint violation (SQLite or PostgreSQL). */
-export function isUniqueViolation(err: unknown): boolean {
-  const e = err as { code?: string; cause?: { code?: string }; message?: string };
-  const code = e?.code ?? e?.cause?.code;
-  if (code === '23505' || code === 'SQLITE_CONSTRAINT_UNIQUE' || code === 'SQLITE_CONSTRAINT') return true;
-  return /unique constraint|duplicate key/i.test(String(e?.message ?? ''));
 }
 
 /** The WHERE clause identifying this diagnosis row (execution vs cluster scope). */

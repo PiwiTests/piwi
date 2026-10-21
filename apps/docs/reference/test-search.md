@@ -32,6 +32,7 @@ term: `"guest checkout"`.
 | `owner:` | | The `piwi:owner` [annotation](/reference/test-metadata#ownership-metadata-piwi-annotations) | Run and project |
 | `priority:` | | The `piwi:priority` annotation | Run and project |
 | `feature:` | | The `piwi:feature` annotation | Run and project |
+| `id:` | | The test's [external ID](/reference/test-metadata#external-test-ids) | Run and project |
 
 How the terms combine:
 
@@ -39,7 +40,7 @@ How the terms combine:
   `file:checkout/*.spec.ts`. The other qualifiers match a whole value.
 - Case and accents never matter: `resume` finds `Résumé`, and `CAFÉ` finds `cafe`.
 - Every term must match. The exception is a qualifier of which a test has only one value (`file:`, `browser:`, `owner:`,
-  `priority:`, `feature:`): repeated, it matches any of the values, so `file:cart file:checkout` lists both files.
+  `priority:`, `feature:`, `id:`): repeated, it matches any of the values, so `file:cart file:checkout` lists both files.
 - A leading `-` excludes: `-tag:slow`, `-describe:legacy`, `-flaky`.
 - A qualifier the tab does not have, such as `error:` on a project, is read as a word.
 

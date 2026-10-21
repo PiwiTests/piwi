@@ -45,6 +45,8 @@ const wireCase = {
   tags: ['payments'],
   locks: ['stripe-sandbox'],
   testMeta: { owner: 'payments-team' },
+  externalId: 'SHOP-7',
+  displayTitle: 'saved card payment',
   locatorSnapshots: [{ locator: "getByRole('button', { name: 'Pay' })" }] as unknown as LocatorSnapshot[],
   testSource: '> 42 | await pay();',
   testSourceFrames: [{ file: 'tests/checkout.spec.ts', line: 42, snippet: '> 42 | await pay();' }],
@@ -64,6 +66,8 @@ const expected = {
   tags: wireCase.tags,
   locks: wireCase.locks,
   testMeta: wireCase.testMeta,
+  externalId: wireCase.externalId,
+  displayTitle: wireCase.displayTitle,
   title: wireCase.title,
   status: wireCase.status,
   duration: wireCase.duration,
@@ -115,6 +119,11 @@ describe('mapWireCaseToRunCase', () => {
   test('a streamed complete event maps as the same case submitted in a batch', () => {
     const event: StreamEventPayload = { ...wireCase, type: 'complete', stepCategory: null, parentTitle: null };
     expect(mapWireCaseToRunCase(event)).toEqual(mapWireCaseToRunCase(wireCase));
+  });
+
+  test('an older reporter sends no external ID: the field stays absent, so the server reads piwi:id itself', () => {
+    expect(mapWireCaseToRunCase({ title: 'bare', status: 'passed' }).externalId).toBeUndefined();
+    expect(mapWireCaseToRunCase({ title: 'bare', status: 'passed', externalId: null }).externalId).toBeNull();
   });
 
   test('a case with no location goes to the unknown file, and missing optional fields become null', () => {
