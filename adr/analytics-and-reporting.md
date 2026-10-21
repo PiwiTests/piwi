@@ -69,7 +69,7 @@ Every surface that carries numbers is shaped for an engineer with a session:
   time-triggered delivery to plug a selection into. Every "send this every week" feature meets the same wall.
 
 Users answer the question by hand today: screenshots of widgets pasted into a slide or a Confluence page, numbers
-retyped into a weekly mail. The [issue-tracker proposal](issue-tracker-integrations.md#confluence) already names the
+retyped into a weekly mail. The [issue-tracker proposal](../proposals/issue-tracker-integrations.md#confluence) already names the
 missing object, "a per-project *Quality digest* page updated in place on a schedule", and defers it.
 
 ### 2. "Over time" stops where the raw data stops, and misses the questions people ask
@@ -170,7 +170,7 @@ registry that exists.
 | Access control for anything cross-project | `getProjectScope`, `resolveAllowedProjects`, subscriptions re-check access at delivery | `server/utils/project-access.ts`, `shared/handlers/analytics/common.ts`, `server/utils/notifications/match.ts` |
 | A CLI that talks to the dashboard with an API key | `piwi gate` (exit codes 0 / 1 / 2) | `packages/reporter/src/cli/gate.ts` |
 | MCP tools over the same handlers | `get_performance_trend`, `get_test_stability_trend`, `get_instance_stats`, `list_flaky_tests` | `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts` |
-| The Confluence page that updates in place | designed, not built: "A living page" | [issue-tracker-integrations.md](issue-tracker-integrations.md#confluence) |
+| The Confluence page that updates in place | designed, not built: "A living page" | [issue-tracker-integrations.md](../proposals/issue-tracker-integrations.md#confluence) |
 
 ## Vocabulary
 
@@ -974,7 +974,7 @@ Once a snapshot or a saved dashboard exists, several routes become one file each
 - **Confluence, updated in place.** The tracker proposal's "living page" is exactly a schedule whose channel is a
   Confluence connection: `update-page` on a fixed page id, the Markdown renderer's tree through the Confluence-storage
   renderer. This proposal builds the schedule and the bundle; the wiki connection and renderer stay in
-  [issue-tracker-integrations.md](issue-tracker-integrations.md#confluence) step 5. When both exist, the channel type
+  [issue-tracker-integrations.md](../proposals/issue-tracker-integrations.md#confluence) step 5. When both exist, the channel type
   `confluence` is one more branch in `dispatch.ts`.
 - **CLI.** `npx @piwitests/reporter report --project checkout --period 7d --format md` (also `json` and `html`, and
   `--dashboard <id>` for a saved dashboard) calls `GET /api/reports/preview` with the API key and prints the result,
@@ -1359,7 +1359,7 @@ Grouped by milestone. Paths are under `apps/application/` unless noted.
 
 - [x] `share_links.entity_kind` `'report'` and `'dashboard'`, and `share_links.project_id` nullable, since a snapshot or a dashboard can span several projects (both schemas, generated migrations); `server/utils/share-links.ts`, `server/utils/share-view.ts` (the view checks, the minter's access, a 60-second bundle cache per live link); `server/api/reports/snapshots/[id]/share-links.get.ts` and `.post.ts`, `server/api/dashboards/[id]/share-links.get.ts` and `.post.ts` (saved dashboards only; a built-in is duplicated first); `server/routes/share/[token].get.ts`, `[token]/chart.png.get.ts`, `[token]/badge.svg.get.ts` (`shared/reports/badge.ts`, reading the pass-rate tile, which now names its metric); `include_share_link` in the schedule form, its token sealed with `PIWI_SECRET_KEY` in the outbox payload, carried by email, Slack (with the `chart.png` image block) and webhook; `ShareLinksModal.vue` on the snapshot page and in the dashboard menu; `tests/unit/report-badge.test.ts`, `tests/report-share-links.spec.ts`; `apps/docs/features/share-links.md`
 - [x] `server/api/rollups.get.ts` (`format=json|csv`, streamed in chunks of 31 days by `shared/handlers/analytics/rollup-export.ts`, with its demo mirror); `server/api/metrics.get.ts` behind `PIWI_METRICS_ENABLED` (`shared/handlers/analytics/open-metrics.ts`: one gauge per evaluated catalog metric and project over the last 7 days, cached 60 seconds; with authentication on it takes an API key only, and its user's project access; no demo handler, since the demo has no server to scrape); `apps/docs/operate/metrics.md`
-- [ ] Confluence channel branch in `dispatch.ts` (after the wiki connection ships): left open by milestone 6, since the code has no Confluence client yet (only Jira is a tracker provider; Confluence appears as a link unfurl and a binding field), and D16 keeps that client in [issue-tracker-integrations.md](issue-tracker-integrations.md#confluence)
+- [ ] Confluence channel branch in `dispatch.ts` (after the wiki connection ships): left open by milestone 6, since the code has no Confluence client yet (only Jira is a tracker provider; Confluence appears as a link unfurl and a binding field), and D16 keeps that client in [issue-tracker-integrations.md](../proposals/issue-tracker-integrations.md#confluence)
 - [x] Teams channel type: `dispatch.ts` over `server/utils/notifications/teams.ts` (an Adaptive Card per event, per digest and per quality report, the trend through the share link's `chart.png` when there is one), the `teams` type in the channel form and its test button, `tests/unit/teams-cards.test.ts`, `tests/teams-channel.spec.ts`, `apps/docs/features/notifications.md`
 - [x] `shared/reports/narrative.ts` + `server/utils/reports/ai-narrative.ts` (the optional `narrative` widget): the prompt over the bundle without its links, and a grounding check that refuses an answer citing a number the bundle does not hold; `report_schedules.include_narrative` (both schemas, generated migrations) turns it on per schedule and puts the widget at the top of each report when the dashboard has none; on a page, and whenever the model fails or none is configured, the widget shows the rule-based verdict; `tests/unit/report-narrative.test.ts`; documented in `apps/docs/features/analytics-widgets.md`, the widget catalog, since `quality-reports.md` is at its word budget
 

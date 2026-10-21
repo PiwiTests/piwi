@@ -92,7 +92,7 @@ Each page becomes **one column, read top to bottom, in the same order everywhere
 
 ## 3. One vocabulary
 
-Terms used by this plan and, after it ships, by the UI. Each is defined once here and reused as is; the docs' [core concepts](../apps/docs/concepts.md) already define the first four.
+Terms used by this plan and, after it ships, by the UI. Each is defined once here and reused as is; the docs' [core concepts](../apps/docs/guide/concepts.md) already define the first four.
 
 | Term | Meaning | Replaces on screen |
 |---|---|---|

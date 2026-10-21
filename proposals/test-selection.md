@@ -11,7 +11,7 @@ summary line, five MCP tools (`list_selections`, `resolve_selection`, `preview_s
 `analyze_selections`) with the `run-the-right-tests` skill, suggested tags and budgeted smoke mining, impact-from-diff
 over captured source frames, and selection health and drift analytics. Not shipped: applying tag suggestions back to
 the spec files as a pull request, suggestion digests through notifications, and route-level impact mapping behind a
-per-project config. The user guide is [Test selections](../apps/docs/test-selection.md) on the docs site; the design
+per-project config. The user guide is [Test selections](../apps/docs/features/test-selection.md) on the docs site; the design
 below is the original text.
 
 **Summary.** Piwi already knows which tests are fast, stable, flaky, slow, quarantined, recently broken, owned by
@@ -106,7 +106,7 @@ Three layers, each useful without the ones above it:
 ```
 
 One vocabulary note up front: **"suite" is taken** — in Piwi's concepts a suite is a `describe` block
-(`test_suites`, [`concepts.md`](../apps/docs/concepts.md)). The feature is called a **selection** everywhere: in the
+(`test_suites`, [`concepts.md`](../apps/docs/guide/concepts.md)). The feature is called a **selection** everywhere: in the
 schema, the API, the CLI and the docs.
 
 ## Layer 1 — the selection model

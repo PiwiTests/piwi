@@ -10,3 +10,5 @@ Instructions are split by area — read the guide for the directory you are edit
 - [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md) — the JetBrains plugin
 - [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md) — the VitePress documentation site
 - [`.github/AGENTS.md`](.github/AGENTS.md) — the CI workflows and the action they share
+- [`proposals/AGENTS.md`](proposals/AGENTS.md) — design records for work proposed or being built
+- [`adr/AGENTS.md`](adr/AGENTS.md) — architecture decision records for shipped work, and how a proposal moves there

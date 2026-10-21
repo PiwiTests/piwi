@@ -1,8 +1,7 @@
 # CI workflows: agent instructions
 
-Area guide for `.github/`: the GitHub Actions workflows, the composite action they share, and Dependabot. The plan
-these follow, with its measurements and the phases still open, is
-[`proposals/ci-workflows.md`](../proposals/ci-workflows.md).
+Area guide for `.github/`: the GitHub Actions workflows, the composite action they share, and Dependabot. The design
+record these follow, with its measurements, is [`adr/ci-workflows.md`](../adr/ci-workflows.md).
 
 ## Layout
 

@@ -57,8 +57,8 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   situation block (what most likely happened, and the next step), tabbed evidence and a folded fix toolbox; a
   page-structure diff compares the failing ARIA snapshot with the last green run; and a failure inbox on Home lets you
   filter, assign, snooze, quarantine and bulk-triage open clusters across projects, also through MCP.
-  [proposals/failure-experience-audit.md](proposals/failure-experience-audit.md) and
-  [proposals/ui-simplification.md](proposals/ui-simplification.md); see
+  [adr/failure-experience-audit.md](adr/failure-experience-audit.md) and
+  [adr/ui-simplification.md](adr/ui-simplification.md); see
   [the UI overview](https://piwitests.dev/features/ui-overview).
 - **Environment-aware baselines** — every run-level comparison (the Changes tab, regression signals, the CI gate, PR
   feedback, the bisect window, AI diagnosis) picks its baseline through one ladder: the same environment first, then
@@ -94,7 +94,7 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 - **Public share links (opt-in)** — a read-only URL for one execution or one failure cluster that anyone can open
   without an account: the offline-export report rendered live at view time, bounded by the same size budgets,
   revocable, and off unless `PIWI_SHARE_LINKS_ENABLED` is set. Design record in
-  [proposals/public-share-links.md](proposals/public-share-links.md).
+  [adr/public-share-links.md](adr/public-share-links.md).
 - **First-admin setup from the browser** — with authentication enabled on a fresh instance, the login page walks you
   through creating the administrator account and signs you in; `POST /api/auth/setup` stays for scripted provisioning.
 - **Auth rate limiting** — login, initial setup and password-reset endpoints are throttled per client address (failed
