@@ -80,7 +80,7 @@ with a real API key. The **MCP server** page of the dashboard shows both forms. 
 writes their entry in one click instead.
 
 <figure>
-  <img src="/screenshots/mcp-client-setup.png" alt="The MCP server page's client setup card: one tab per agent, here Claude Code with its claude mcp add command">
+  <img src="/screenshots/mcp-client-setup.png" alt="The MCP server page's client setup card: the agents listed on the left, Claude Desktop picked, its config entry on the right">
   <figcaption>The <strong>MCP server</strong> page writes the setup for each client with this dashboard's URL already filled in.</figcaption>
 </figure>
 
