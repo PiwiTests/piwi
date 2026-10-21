@@ -41,6 +41,7 @@ import { getProjectFlakyTests } from '#shared/handlers/projects';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import {
   buildChangeCoverageStatus,
+  hasChangeCoverage,
   buildCommitStatus,
   buildPrComment,
   DEFAULT_PR_FEEDBACK,
@@ -401,13 +402,16 @@ export async function postRunPrFeedback(
   const summary = await buildRunPrSummary(db, runId, siteUrl, fixedClusters);
   if (!summary) return none('could not build the run summary');
 
-  // The Test Map surfaces (the "Uncovered changes" section and its commit
-  // status) are dropped when the project declined `test-map`. The graph and its
-  // `changes` edges are still written on ingest — a declined capability that
-  // receives data reads active — this only withholds the PR surfaces.
+  // The Test Map's surfaces (the files no test reached in the "Uncovered
+  // changes" section, and the locators the change breaks) are dropped when the
+  // project declined `test-map`; the changed lines are coverage's and stay. The
+  // graph and its `changes` edges are still written on ingest — a declined
+  // capability that receives data reads active — this only withholds the PR
+  // surfaces.
   const states = await resolveProjectStates(db, run.projectId);
   const testMapDeclined = states['test-map'] === 'declined';
-  const effectiveChangeCoverage = testMapDeclined ? null : changeCoverage;
+  const effectiveChangeCoverage =
+    changeCoverage && testMapDeclined ? { ...changeCoverage, fileReach: false } : changeCoverage;
   summary.changeCoverage = effectiveChangeCoverage;
   summary.locatorBreaks = testMapDeclined ? null : locatorBreaks;
   summary.newLeaks = states.resources === 'declined' ? null : await readNewLeaks(db, runId);
@@ -442,7 +446,7 @@ export async function postRunPrFeedback(
     statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
     if (statusPosted) statuses.push(settings.statusContext);
     // A second, informational status for change coverage — warn-only.
-    if (effectiveChangeCoverage) {
+    if (effectiveChangeCoverage && hasChangeCoverage(effectiveChangeCoverage)) {
       const coverageContext = `${settings.statusContext}/change-coverage`;
       const coveragePosted = await provider
         .postCommitStatus(commit, buildChangeCoverageStatus(effectiveChangeCoverage, summary.runUrl, coverageContext))

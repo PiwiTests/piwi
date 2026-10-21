@@ -47,17 +47,13 @@ import {
   collectOwnOrigins,
   controlNodeKey,
   createDeclaredMatcher,
-  fileRouteTarget,
   isOwnOriginRequest,
   originsFromDocumentRequests,
   parseRouteNodeKey,
   projectRouteOrigins,
   routeNodeKey,
   runBaseUrls,
-  filePageTarget,
   linkNodeKey,
-  routeKeyMatchesTarget,
-  pageKeyMatchesTarget,
   templateAccessibleName,
 } from '../graph';
 import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
@@ -78,6 +74,8 @@ import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { DrizzleDB } from './db';
+import { computeChangeCoverage, type ChangeReach } from '#shared/handlers/change-coverage';
+import { unreachedLinesText, type ChangedLines } from '#shared/patch-coverage';
 import { recordOutcome } from '../../server/utils/outcomes';
 import { suggestionHash, type HandbackActor } from '../handback-outcomes';
 
@@ -489,31 +487,23 @@ export function detectSurfaceDrift(
   return gaps;
 }
 
-/** One changed file and whether any test reached it, in this run and history. */
+/** One changed file and whether a test reached it, by the rule of change coverage. */
 export interface ChangedFileReach {
   filePath: string;
   additions: number;
   deletions: number;
-  reachedInRun: boolean;
-  reachedCountHistory: number;
-  /**
-   * Whether reach is observable for this file. `no-evidence` means no route or
-   * page convention maps it and no test source touches it, so its unreached
-   * state is not a confident gap. Absent is treated as observable.
-   */
-  reachBasis?: 'reached' | 'observable-unreached' | 'no-evidence';
-  /** The suites of the head commit's coverage that ran one of its changed lines. */
-  suites?: string[];
+  reach: ChangeReach;
+  /** The changed lines the head commit's coverage counts, when it counts some. */
+  lines?: Pick<ChangedLines, 'changed' | 'undetermined'> | null;
   ticket?: string | null;
 }
 
 /**
- * Changed, unreached — a changed source file no test reached in this run and no
- * suite of the head commit's coverage ran a changed line of, paired with its
- * history count so a selection-narrowed run is never mistaken for a
- * gap. Blind spot, reported per ticket at change time. A file the graph cannot
- * observe (no route or page maps it, no test source touches it) is reported at
- * low confidence and says so, rather than as a strong blind spot.
+ * Changed, unreached — a changed file Piwi can observe that no test reached, in
+ * this run or the recent window, and no suite of the head commit's coverage
+ * ran a changed line of: an uncovered change. Blind spot, reported per ticket
+ * at change time. A file reached only in the window is a narrowed run, and one
+ * nothing can observe says nothing; neither opens a gap.
  */
 export function detectChangedUnreached(
   files: ChangedFileReach[],
@@ -522,24 +512,57 @@ export function detectChangedUnreached(
 ): DetectedGap[] {
   const gaps: DetectedGap[] = [];
   for (const file of files) {
-    if (file.reachedInRun || file.suites?.length) continue;
-    const noEvidence = file.reachBasis === 'no-evidence';
-    const base = `+${file.additions} −${file.deletions} · no test in run #${runId} · ${file.reachedCountHistory} in ${windowRuns} runs — observed reach.`;
+    if (file.reach !== 'unreached') continue;
+    const evidence = [
+      `+${file.additions} −${file.deletions} · no test in run #${runId} or in the last ${windowRuns} runs — observed reach.`,
+    ];
+    if (file.lines) evidence.push(`In the head commit's coverage, ${unreachedLinesText(file.lines)}.`);
     gaps.push({
       detector: 'changed-unreached',
       kind: 'gap',
       class: 'blind-spot',
       key: file.filePath,
       title: `${file.filePath} changed but not reached`,
-      evidence: noEvidence
-        ? [base, 'No route or page maps this file and no test source touches it — no observed-reach evidence.']
-        : [base],
-      confidence: noEvidence ? 0.3 : file.reachedCountHistory === 0 ? 0.9 : 0.5,
+      evidence,
+      confidence: 0.9,
       files: [file.filePath],
       ticket: file.ticket ?? null,
     });
   }
   return gaps;
+}
+
+/**
+ * Close the open and snoozed *changed, unreached* gaps of `filePaths`: files a
+ * diff no longer reads as uncovered changes, by the rule of change coverage
+ * (reached, outside the coverage scope, deleted, or nothing observes them).
+ * Returns how many closed.
+ */
+export async function closeChangedUnreachedGaps(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number | null,
+  filePaths: string[],
+): Promise<number> {
+  if (filePaths.length === 0) return 0;
+  const now = new Date();
+  let closed = 0;
+  for (let i = 0; i < filePaths.length; i += 100) {
+    const rows = await db
+      .update(scenarioGaps)
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .where(
+        and(
+          eq(scenarioGaps.projectId, projectId),
+          eq(scenarioGaps.detector, 'changed-unreached'),
+          inArray(scenarioGaps.status, ['open', 'snoozed']),
+          inArray(scenarioGaps.key, filePaths.slice(i, i + 100)),
+        ),
+      )
+      .returning({ id: scenarioGaps.id });
+    closed += rows.length;
+  }
+  return closed;
 }
 
 // ── Graph and outcome detectors (pure) ───────────────────────────────────────
@@ -2378,7 +2401,7 @@ export async function computeScenarioGaps(
     latestRunId,
     closeStatuses,
   );
-  const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, reachByNode, closeStatuses);
+  const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, closeStatuses);
   const closedRetired = await closeRetiredDetectorGaps(db, projectId);
   return { upserted, closed: closed + closedChanged + closedRetired };
 }
@@ -3307,16 +3330,16 @@ async function syncFeatureNodes(
 }
 
 /**
- * Close a changed-unreached gap once a test reaches the file's route or page
- * node — the same self-closing the project-wide detectors get, so a changed file
- * that later gains a test stops being reported. The file is resolved to its node
- * through the file-routing convention and checked against this run's reach edges.
+ * Close the open and snoozed *changed, unreached* gaps whose file the rule of
+ * change coverage now reads as reached, in the recent window, or outside the
+ * coverage scope. Without the diff, a file Piwi observed only through the
+ * head commit's coverage cannot be read again, so a file nothing else
+ * observes keeps its gap until a later diff settles it.
  */
 async function closeReachedChangedUnreached(
   db: DrizzleDB,
   projectId: number,
   runId: number | null,
-  reachByNode: Map<string, Set<number>>,
   statuses: GapStatus[] = ['open', 'snoozed'],
 ): Promise<number> {
   const closable = statuses.filter((s) => s === 'open' || s === 'snoozed');
@@ -3333,27 +3356,12 @@ async function closeReachedChangedUnreached(
     );
   if (open.length === 0) return 0;
 
-  // Route and page node keys a test reaches in this scope.
-  const reachedRoutes: string[] = [];
-  const reachedPages: string[] = [];
-  for (const [nodeKey, ids] of reachByNode) {
-    if (ids.size === 0) continue;
-    const sep = nodeKey.indexOf('\x00');
-    const kind = nodeKey.slice(0, sep);
-    const key = nodeKey.slice(sep + 1);
-    if (kind === 'route') reachedRoutes.push(key);
-    else if (kind === 'page') reachedPages.push(key);
-  }
-
-  const toClose: number[] = [];
-  for (const gap of open) {
-    const routeTarget = fileRouteTarget(gap.key);
-    const pageTarget = filePageTarget(gap.key);
-    const reached =
-      (routeTarget != null && reachedRoutes.some((k) => routeKeyMatchesTarget(routeTarget, k))) ||
-      (pageTarget != null && reachedPages.some((k) => pageKeyMatchesTarget(pageTarget, k)));
-    if (reached) toClose.push(gap.id);
-  }
+  const read = await computeChangeCoverage(db, projectId, {
+    changedFiles: open.map((g) => ({ filePath: g.key, additions: 0, deletions: 0 })),
+  });
+  const reachOf = new Map(read.files.map((f) => [f.filePath, f.reach]));
+  const settled = new Set<ChangeReach>(['reached', 'reached-earlier', 'out-of-scope']);
+  const toClose = open.filter((g) => settled.has(reachOf.get(g.key) ?? 'unreached')).map((g) => g.id);
   if (toClose.length === 0) return 0;
 
   const now = new Date();
@@ -3604,10 +3612,31 @@ export async function listScenarioGaps(
     .limit(limit);
 
   const mapped = rows.map(mapGapRow);
+  const ownerOf = await featureOwnersOf(
+    db,
+    projectId,
+    mapped.map((g) => g.subject),
+  );
+  for (const gap of mapped) {
+    const owner = ownerOf(gap.subject);
+    if (!owner) continue;
+    if (owner.hub) gap.hub = true;
+    else gap.feature = owner.feature;
+  }
 
-  // Resolve each gap's feature from the `groups` edges (feature → node), canonical:
-  // the feature reaching the node, else the one inferring it with the most
-  // confidence, ties by name. A hub belongs to no one feature.
+  return mapped;
+}
+
+/**
+ * The feature each subject belongs to, from the canonical `groups` edges
+ * (feature → node): the feature reaching the node, else the one inferring it
+ * with the most confidence, ties by name. A hub belongs to no one feature.
+ */
+export async function featureOwnersOf(
+  db: DrizzleDB,
+  projectId: number,
+  subjects: GapSubject[],
+): Promise<(subject: GapSubject) => GapFeatureOwner | undefined> {
   const groupRows = await db
     .select({
       feature: graphEdges.fromKey,
@@ -3618,22 +3647,8 @@ export async function listScenarioGaps(
     })
     .from(graphEdges)
     .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'groups'), isNull(graphEdges.branch)));
-  if (groupRows.length > 0) {
-    const ownerOf = await loadGapFeatureOwners(
-      db,
-      projectId,
-      groupRows,
-      mapped.map((g) => g.subject),
-    );
-    for (const gap of mapped) {
-      const owner = ownerOf(gap.subject);
-      if (!owner) continue;
-      if (owner.hub) gap.hub = true;
-      else gap.feature = owner.feature;
-    }
-  }
-
-  return mapped;
+  if (groupRows.length === 0) return () => undefined;
+  return loadGapFeatureOwners(db, projectId, groupRows, subjects);
 }
 
 // ── Triage ───────────────────────────────────────────────────────────────────

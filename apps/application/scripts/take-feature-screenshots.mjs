@@ -4249,11 +4249,11 @@ const SCENES = [
   },
   // The same commit's file view of the users endpoints, marked by suite: line
   // 40, which the back end's unit tests and the Playwright suite both ran, is
-  // selected, and the gaps no suite ran are one click away.
+  // selected, and the lines no suite ran are one click away.
   {
     name: 'combined-coverage-file',
     description:
-      'A file’s view marked by suite at the covered commit: each line by the kinds of suite that ran it, the gap controls, and the suites of the selected line',
+      'A file’s view marked by suite at the covered commit: each line by the kinds of suite that ran it, the controls that step through the lines not run, and the suites of the selected line',
     tags: ['docs'],
     out: 'docs',
     route: '/',
@@ -4263,7 +4263,7 @@ const SCENES = [
       await goto(`/projects/${COVERAGE_SCENE_PROJECT}/coverage?file=api/Users/UsersEndpoints.cs&marks=suites&line=40`);
       const view = page.locator('[data-shot="coverage-file"]');
       await view.locator('[data-coverage-source] [data-line="40"][data-selected]').waitFor({ timeout: 60_000 });
-      await view.getByTestId('coverage-gap-next').waitFor({ timeout: 30_000 });
+      await view.getByTestId('coverage-unrun-next').waitFor({ timeout: 30_000 });
       await view.locator('[data-coverage-test]').first().waitFor({ timeout: 30_000 });
       // The source scrolls inside its own box: show ListUsers and UpdateUser, lines 28–65, and end the image there.
       const scroller = view.getByLabel('Source of api/Users/UsersEndpoints.cs');
@@ -4286,7 +4286,7 @@ const SCENES = [
   {
     name: 'uncovered-changes',
     description:
-      'The pull-request comment’s Uncovered changes section: the patch coverage line, then the changed files no test reaches, by ticket',
+      'The pull-request comment’s Uncovered changes section: the patch coverage line, the changed files no test reaches by ticket, the changed lines no suite ran, and the files not counted',
     tags: ['docs'],
     out: 'docs',
     route: '/',
@@ -5687,12 +5687,13 @@ async function openQuarantineLossScene(page, goto, settle, reach) {
 async function uncoveredChangesMarkdown() {
   const { renderChangeCoverage } = await import('../shared/pr-feedback.ts');
   return renderChangeCoverage({
+    fileReach: true,
     totalFiles: 7,
     uncoveredFiles: 3,
     reachedFiles: 4,
+    notCounted: { notObservable: 1, outOfScope: 2, deleted: 0 },
     ticketCount: 2,
     windowRuns: 30,
-    baseBranch: 'main',
     patchCoverage: {
       commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
       changedLines: 41,
@@ -5719,25 +5720,38 @@ async function uncoveredChangesMarkdown() {
             filePath: 'server/api/orders/[id].patch.ts',
             additions: 41,
             deletions: 3,
-            reachedInRun: false,
-            reachedCountHistory: 0,
+            reach: 'unreached',
             draftTitle: 'a scenario that exercises [id].patch.ts',
           },
           {
             filePath: 'server/utils/order-status.ts',
             additions: 12,
             deletions: 4,
-            reachedInRun: false,
-            reachedCountHistory: 0,
+            reach: 'unreached',
+            lines: { changed: 5, ran: 0, undetermined: 0, notRun: [[14, 18]] },
             draftTitle: 'a scenario that moves an order to shipped',
           },
           {
             filePath: 'app/pages/orders/[id].vue',
             additions: 9,
             deletions: 2,
-            reachedInRun: true,
-            reachedCountHistory: 30,
-            suites: ['unit-front', 'e2e'],
+            reach: 'reached',
+            lines: { changed: 9, ran: 7, undetermined: 0, notRun: [[31, 32]] },
+          },
+          {
+            filePath: 'server/api/orders/index.get.ts',
+            additions: 6,
+            deletions: 1,
+            reach: 'reached',
+            lines: {
+              changed: 6,
+              ran: 4,
+              undetermined: 0,
+              notRun: [
+                [18, 18],
+                [24, 24],
+              ],
+            },
           },
         ],
       },
@@ -5748,8 +5762,7 @@ async function uncoveredChangesMarkdown() {
             filePath: 'app/components/RefundDialog.vue',
             additions: 28,
             deletions: 0,
-            reachedInRun: false,
-            reachedCountHistory: 0,
+            reach: 'unreached',
             draftTitle: 'a scenario that opens the refund dialog',
           },
         ],

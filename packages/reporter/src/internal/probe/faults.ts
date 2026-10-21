@@ -81,7 +81,7 @@ export interface FaultOutput {
    * body, or a real delay. A no-op (a `stale-value` with no prior body, a
    * `drop-field` on a non-JSON body, an already-empty `empty-body`) is `false`,
    * so the interception records it as not applied (inconclusive) rather than a
-   * false coverage gap.
+   * false scenario gap.
    */
   changed: boolean;
 }

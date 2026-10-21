@@ -693,7 +693,7 @@ export const HELP_TOPICS = {
   },
   'coverage.least-covered': {
     title: 'Files to cover next',
-    text: 'The files of this folder with the most executable lines no suite ran, unit or end to end, the most first, then the lowest share run. Undetermined lines (in a function the browser ran) are not counted. A file opens with each line marked by the suites that ran it, and the next gap one click away.',
+    text: 'The files of this folder with the most executable lines no suite ran, unit or end to end, the most first, then the lowest share run. Undetermined lines (in a function the browser ran) are not counted. A file opens with each line marked by the suites that ran it, and the next lines no suite ran one click away.',
     doc: 'features/combined-coverage#find-what-is-not-covered',
   },
   'coverage.combined-marks': {
@@ -761,6 +761,16 @@ export const HELP_TOPICS = {
       '- **Precision** — a file recorded by function marks its functions, and one recorded by file lists its tests only.',
     ].join('\n'),
     doc: 'features/code-reach#which-tests-run-a-file',
+  },
+  'coverage.test-map': {
+    title: 'In the Test Map',
+    text: [
+      'Coverage says which lines of the file ran; the Test Map says which user paths reach it, and which tests are still to write on them.',
+      '',
+      '- **Nodes** — the file’s route handler and the routes it serves, the page or route its file name gives it, and the file itself when a test ran it or it changed unreached.',
+      '- **Gaps** — each node’s open scenario gaps, the highest exposure first: tests that do not exist yet. Open a node to see its graph on the Gaps tab.',
+    ].join('\n'),
+    doc: 'guide/concepts#coverage-and-the-test-map',
   },
   'coverage.combined': {
     title: 'Combined coverage',

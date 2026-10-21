@@ -6,12 +6,14 @@
  * covered-by. A status filter switches between the open queue and the accepted
  * (or every) gap, so the Home inbox can link straight to the accepted ones.
  * Above the list sits the feature map — the project graph folded per feature —
- * and any feature or gap node opens in the feature-graph view under it. Under
+ * and any feature or gap node opens in the feature-graph view under it; the
+ * node it is open on is the address's `?node=kind:key`, so a link from another
+ * page (a file's coverage, for one) opens the tab on that node. Under
  * the list, map health counts the inputs the map has and the steps it lacks.
  * Self-contained: fetches its own data with watch + $fetch so it fires only when
  * the tab mounts.
  */
-import { errorMessage } from '~/utils';
+import { errorMessage, SENTENCE_LINK_CLASS } from '~/utils';
 
 interface GapFactors {
   churn: number;
@@ -36,8 +38,10 @@ interface Gap {
 }
 
 const props = defineProps<{ projectId: number }>();
+const { isHidden } = await useProjectCapabilities(props.projectId);
 const toast = useToast();
 const route = useRoute();
+const router = useRouter();
 
 /** The statuses the filter offers; the tab opens on the open queue. */
 const STATUS_OPTIONS = [
@@ -64,11 +68,29 @@ const gaps = ref<Gap[]>([]);
 const loading = ref(false);
 const loadError = ref<string | null>(null);
 const recomputing = ref(false);
-const graphSeed = ref<string | null>(null);
+const graphSeed = ref<string | null>(
+  typeof route.query.node === 'string' && route.query.node ? route.query.node : null,
+);
+const graphCard = ref<HTMLElement | null>(null);
+// The graph's node is the address's `?node=`: an open graph can be shared, and a link can open one,
+// also while the tab is open.
+watch(graphSeed, (node) => {
+  if ((route.query.node ?? null) === node) return;
+  router.replace({ query: { ...route.query, node: node ?? undefined } });
+});
+watch(
+  () => route.query.node,
+  (node) => {
+    const seed = typeof node === 'string' && node ? node : null;
+    if (seed !== graphSeed.value) graphSeed.value = seed;
+  },
+);
+onMounted(() => {
+  if (graphSeed.value) nextTick(() => graphCard.value?.scrollIntoView?.({ block: 'start' }));
+});
 const mutedDetectors = ref<string[]>([]);
 const mapView = ref<{ reload: () => Promise<void> } | null>(null);
 const healthView = ref<{ reload: () => Promise<void> } | null>(null);
-const graphCard = ref<HTMLElement | null>(null);
 
 /** Open a node in the graph view and bring the view into sight. */
 function openInGraph(node: { kind: string; key: string }) {
@@ -270,9 +292,12 @@ const emptyText = computed(() =>
 <template>
   <div class="space-y-4" data-shot="gaps-panel">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p class="text-sm text-highlighted leading-relaxed">
-        Proposed tests that do not exist yet, ranked by exposure. Every line is observed reach, never instrumented
-        coverage.
+      <p class="text-sm text-highlighted leading-relaxed" data-testid="gaps-lead">
+        Proposed tests that do not exist yet, ranked by exposure, from observed reach: what tests visit, call and click.
+        <template v-if="!isHidden('coverage')">
+          Which lines they ran is on
+          <NuxtLink :to="`/projects/${projectId}/coverage`" :class="SENTENCE_LINK_CLASS">the coverage page</NuxtLink>.
+        </template>
         <HelpHint topic="project.gaps" />
       </p>
       <div class="flex items-center gap-2 shrink-0">

@@ -9,7 +9,8 @@
 
 import type { WireResourceFinding } from '#shared/types';
 import { findingView } from '#shared/resource-copy';
-import type { PatchCoverage } from '#shared/patch-coverage';
+import { lineRangesText, unreachedLinesText, type ChangedLines, type PatchCoverage } from '#shared/patch-coverage';
+import type { ChangeReach, NotCountedChanges } from '#shared/handlers/change-coverage';
 import { coveragePercent } from '#shared/coverage-combine';
 
 /** `app_settings` key holding the resolved `PrFeedbackSettings`. */
@@ -187,10 +188,10 @@ export interface PrChangeCoverageFile {
   filePath: string;
   additions: number;
   deletions: number;
-  reachedInRun: boolean;
-  reachedCountHistory: number;
-  /** The suites of the head commit's coverage that ran one of its changed lines. */
-  suites?: string[];
+  /** Whether a test reached the file, by the rule of change coverage. */
+  reach: ChangeReach;
+  /** The file's changed lines as the head commit's coverage counts them, when it counts some. */
+  lines?: ChangedLines | null;
   /** A one-line suggestion for the scenario to write, when there is one. */
   draftTitle?: string | null;
 }
@@ -202,12 +203,19 @@ export interface PrChangeCoverageTicket {
 
 /** The pre-shaped uncovered-changes data the comment renders. */
 export interface PrChangeCoverage {
+  /**
+   * Whether the files no test reached are shown: the Test Map's part of the
+   * section, off when the project declined it or its detector is muted. The
+   * changed lines are coverage's part and show either way.
+   */
+  fileReach: boolean;
+  /** Counted files: reached and uncovered. */
   totalFiles: number;
   uncoveredFiles: number;
   reachedFiles: number;
+  notCounted: NotCountedChanges;
   ticketCount: number;
   windowRuns: number;
-  baseBranch: string | null;
   tickets: PrChangeCoverageTicket[];
   /** True when the diff had more changed files than the provider cap returned. */
   filesTruncated?: boolean;
@@ -240,76 +248,107 @@ export function renderPatchCoverage(pc: PatchCoverage): string {
   return text;
 }
 
-/** Max uncovered files listed in the pull-request comment. */
+/** Max files listed per list of the uncovered-changes section. */
 const MAX_UNCOVERED_LISTED = 10;
+/** Max ranges named per file in the changed lines no suite ran. */
+const MAX_RANGES_NAMED = 6;
+
+/** "3 files", "1 file". */
+function files(n: number): string {
+  return `${n} ${n === 1 ? 'file' : 'files'}`;
+}
+
+/** "57 to 59, 64", the first few ranges and how many more. */
+function notRunRanges(lines: ChangedLines): string {
+  const shown = lineRangesText(lines.notRun.slice(0, MAX_RANGES_NAMED));
+  const more = lines.notRun.length - MAX_RANGES_NAMED;
+  return more > 0 ? `${shown} and ${more} more` : shown;
+}
+
+/** The *Not counted* line: changed files no test could run, by reason; null when there are none. */
+function notCountedLine(cc: PrChangeCoverage): string | null {
+  const parts = [
+    ...(cc.notCounted.notObservable > 0 ? [`${files(cc.notCounted.notObservable)} Piwi cannot observe`] : []),
+    ...(cc.notCounted.outOfScope > 0 ? [`${files(cc.notCounted.outOfScope)} outside the coverage scope`] : []),
+    ...(cc.notCounted.deleted > 0 ? [`${files(cc.notCounted.deleted)} deleted`] : []),
+  ];
+  return parts.length > 0 ? `Not counted: ${parts.join(', ')}.` : null;
+}
+
+/** Whether the section has something to say: counted files to show, or changed lines the coverage counts. */
+export function hasChangeCoverage(cc: PrChangeCoverage): boolean {
+  return (cc.fileReach && cc.totalFiles > 0) || cc.patchCoverage != null;
+}
 
 /**
- * Render the uncovered-changes section: the files this change touched that no
- * test reaches, grouped by ticket, each with a draft suggestion. Returns null
- * when there is nothing worth a section (no diff, or every file is reached).
+ * Render the uncovered-changes section: the changed files no test reached,
+ * grouped by ticket, each with a draft suggestion, then the changed lines no
+ * suite ran of the files the coverage counts. The files are the Test Map's
+ * part (`fileReach`), the lines coverage's; returns null when neither has
+ * anything to say.
  */
 export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
-  if (cc.totalFiles === 0) return null;
-  const base = cc.baseBranch ? codeSpan(cc.baseBranch) : 'the default branch';
-  const bySuites = cc.patchCoverage != null || cc.tickets.some((g) => g.files.some((f) => f.suites?.length));
-  const preface = bySuites
-    ? `Observed reach, and the lines the head commit's coverage suites ran. Numbers from this run and the last ${cc.windowRuns} on ${base}.`
-    : `Observed reach, not instrumented coverage. Numbers from this run and the last ${cc.windowRuns} on ${base}.`;
-  const patch = cc.patchCoverage ? renderPatchCoverage(cc.patchCoverage) : null;
+  if (!hasChangeCoverage(cc)) return null;
+  const patch = cc.patchCoverage ?? null;
+  const all = cc.tickets.flatMap((group) => group.files);
 
-  if (cc.uncoveredFiles === 0) {
-    const one = cc.totalFiles === 1;
-    const reached = bySuites
-      ? `All ${cc.totalFiles} changed ${one ? 'file is' : 'files are'} reached.`
-      : `All ${cc.totalFiles} changed ${one ? 'file has' : 'files have'} observed reach.`;
-    return [`#### 🟣 Uncovered changes · 0 of ${cc.totalFiles} files\n${preface}`, patch, reached]
-      .filter(Boolean)
-      .join('\n\n');
-  }
+  const header = !cc.fileReach
+    ? `#### 🟣 Uncovered changes · patch coverage ${coveragePercent(patch!.executedLines, patch!.changedLines)}%`
+    : cc.uncoveredFiles > 0
+      ? `#### 🟣 Uncovered changes · ${cc.uncoveredFiles} of ${cc.totalFiles} files · ${cc.ticketCount} ${cc.ticketCount === 1 ? 'ticket' : 'tickets'}`
+      : `#### 🟣 Uncovered changes · 0 of ${cc.totalFiles} files`;
+  const preface = !cc.fileReach
+    ? "Changed lines no suite ran, in the head commit's coverage."
+    : patch
+      ? `Changed files no test reached, in this run or the last ${cc.windowRuns} runs, and changed lines no suite ran, in the head commit's coverage.`
+      : `Changed files no test reached, in this run or the last ${cc.windowRuns} runs. Observed reach, not instrumented coverage.`;
+  const blocks: string[] = [`${header}\n${preface}`];
+  if (patch) blocks.push(renderPatchCoverage(patch));
 
-  const header = `#### 🟣 Uncovered changes · ${cc.uncoveredFiles} of ${cc.totalFiles} files · ${cc.ticketCount} ${cc.ticketCount === 1 ? 'ticket' : 'tickets'}`;
-  const blocks: string[] = [header, preface];
-  if (patch) blocks.push(patch);
-
-  // One definition of "uncovered" everywhere: no reach in this run and none in
-  // the recent window. A file reached only in history is a separate, lower line.
+  // The files no test reached, by ticket: the uncovered changes.
   let listed = 0;
-  let historyOnly = 0;
-  for (const group of cc.tickets) {
-    const lines: string[] = [];
-    for (const file of group.files) {
-      if (file.reachedInRun || file.suites?.length) continue;
-      if (file.reachedCountHistory > 0) {
-        historyOnly++;
-        continue;
+  if (cc.fileReach) {
+    for (const group of cc.tickets) {
+      const lines: string[] = [];
+      for (const file of group.files) {
+        if (file.reach !== 'unreached' || listed >= MAX_UNCOVERED_LISTED) continue;
+        listed++;
+        let line = `- ${codeSpan(file.filePath)} · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
+        if (file.lines) line += ` · ${unreachedLinesText(file.lines)}`;
+        if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
+        lines.push(line);
       }
-      if (listed >= MAX_UNCOVERED_LISTED) continue;
-      listed++;
-      let line = `- ${codeSpan(file.filePath)} · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
-      if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
-      lines.push(line);
+      if (lines.length === 0) continue;
+      const label = group.ticket ? `**${escapeCell(group.ticket)}**` : '**No ticket**';
+      blocks.push([label, ...lines].join('\n'));
     }
-    if (lines.length === 0) continue;
-    const label = group.ticket ? `**${escapeCell(group.ticket)}**` : '**No ticket**';
-    blocks.push([label, ...lines].join('\n'));
+    const hidden = cc.uncoveredFiles - listed;
+    if (hidden > 0) blocks.push(`…and ${hidden} more`);
   }
 
-  const hidden = cc.uncoveredFiles - listed;
-  if (hidden > 0) blocks.push(`…and ${hidden} more`);
-  if (cc.filesTruncated) {
-    blocks.push('The diff was capped, so more files changed than are counted here.');
+  // The changed lines no suite ran, of the files a test reached or, without the file list, of every file.
+  const partly = all.filter((file) => file.lines?.notRun.length && (!cc.fileReach || file.reach !== 'unreached'));
+  if (partly.length > 0) {
+    const lines = partly
+      .slice(0, MAX_UNCOVERED_LISTED)
+      .map(
+        (file) =>
+          `- ${codeSpan(file.filePath)} · ${file.lines!.ran} of ${file.lines!.changed} ran · not run: ${notRunRanges(file.lines!)}`,
+      );
+    if (partly.length > MAX_UNCOVERED_LISTED) lines.push(`…and ${partly.length - MAX_UNCOVERED_LISTED} more`);
+    blocks.push(['**Changed lines no suite ran**', ...lines].join('\n'));
   }
-  if (historyOnly > 0) {
-    blocks.push(
-      `${historyOnly} ${historyOnly === 1 ? 'file' : 'files'} reached only in the last ${cc.windowRuns} runs, not this run.`,
-    );
+
+  if (cc.fileReach && cc.uncoveredFiles === 0 && partly.length === 0 && cc.totalFiles > 0) {
+    blocks.push(`All ${cc.totalFiles} changed ${cc.totalFiles === 1 ? 'file is' : 'files are'} reached.`);
   }
-  if (cc.reachedFiles > 0) {
-    blocks.push(
-      `${cc.reachedFiles} ${cc.reachedFiles === 1 ? 'file' : 'files'} reached. Gate \`maxUncoveredChanges\`: warn.`,
-    );
-  } else {
-    blocks.push('Gate `maxUncoveredChanges`: warn.');
+  if (cc.filesTruncated) blocks.push('The diff was capped, so more files changed than are counted here.');
+  if (cc.fileReach) {
+    const earlier = all.filter((file) => file.reach === 'reached-earlier').length;
+    if (earlier > 0) blocks.push(`${files(earlier)} reached only in the last ${cc.windowRuns} runs, not this run.`);
+    if (cc.uncoveredFiles > 0 && cc.reachedFiles > 0) blocks.push(`${files(cc.reachedFiles)} reached.`);
+    const notCounted = notCountedLine(cc);
+    if (notCounted) blocks.push(notCounted);
   }
   return blocks.join('\n\n');
 }
@@ -677,14 +716,18 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
  * release, so the state is always `success` — it reports, it never blocks.
  */
 export function buildChangeCoverageStatus(cc: PrChangeCoverage, targetUrl: string, context: string): CommitStatusInput {
-  const reach =
-    cc.uncoveredFiles > 0
-      ? `${cc.uncoveredFiles} of ${cc.totalFiles} changed files have no observed reach`
-      : `all ${cc.totalFiles} changed files have observed reach`;
-  const patch = cc.patchCoverage
-    ? `, patch coverage ${coveragePercent(cc.patchCoverage.executedLines, cc.patchCoverage.changedLines)}%`
-    : '';
-  const description = reach + patch;
+  const parts: string[] = [];
+  if (cc.fileReach && cc.totalFiles > 0) {
+    parts.push(
+      cc.uncoveredFiles > 0
+        ? `${cc.uncoveredFiles} of ${cc.totalFiles} changed files no test reached`
+        : `all ${cc.totalFiles} changed files reached`,
+    );
+  }
+  if (cc.patchCoverage) {
+    parts.push(`patch coverage ${coveragePercent(cc.patchCoverage.executedLines, cc.patchCoverage.changedLines)}%`);
+  }
+  const description = parts.join(', ');
   return {
     state: 'success',
     description: description.slice(0, 140),

@@ -46,14 +46,13 @@ how old it is, whether it was part of an earlier escaped failure, and the priori
 and its factors show on every gap. Counts are per class, never a coverage percentage: a percentage over an observed
 surface looks complete exactly when that surface is sparse.
 
-A changed file no test reaches is a gap too, raised at pull-request time: see
-[Uncovered changes in pull requests](/features/uncovered-changes). So is a page with open
-[bug reports](/features/bug-reports): a defect that escaped the suite there.
+An [uncovered change](/features/uncovered-changes) is a gap too, raised at pull-request time, and so is a page with
+open [bug reports](/features/bug-reports).
 
 ## The Gaps tab
 
-The project page has a **Gaps** tab: gaps and findings grouped by feature and ranked, each with its class, its score
-factors and its evidence lines.
+The project's **Gaps** tab lists gaps and findings by feature, ranked, each with its class, score factors and
+evidence.
 
 The tab opens on the **feature map**: one circle per feature (from the
 [`piwi:feature` tag](/reference/test-metadata)), sized by the routes, pages and controls it groups, colored by its
@@ -68,7 +67,8 @@ such as the controls on its pages, and a **hub** most tests reach links no featu
 
 A feature, or a gap's node, opens in the **feature graph**: the node in the middle, what leads into it on the left,
 what it leads to on the right, nodes colored by class and edges by kind. The **neighbors** list under it has every
-neighbor; click a node to recenter on it. Agents walk the same graph with the
+neighbor; click a node to recenter on it. A file's coverage page opens it on the file's nodes, and a file or handler
+links back to [its coverage](/guide/concepts#coverage-and-the-test-map). Agents walk the same graph with the
 [`get_feature_graph`](/reference/mcp-tools#get_feature_graph) MCP tool.
 
 <figure>
@@ -153,7 +153,7 @@ an input that is short shows the step that fills it, so a quiet tab is not mista
 ## What this is not
 
 - **Not a test generator.** A gap proposes a scenario; the assertion is yours.
-- **Not a gate.** Uncovered changes can only warn; see [the gate flag](/features/uncovered-changes#the-gate-flag).
+- **Not a gate.** Uncovered changes can only warn; see [the gate flags](/features/uncovered-changes#the-gate-flags).
 
 The Test Map and its server probes are optional: [decline](/operate/capabilities#declining-a-capability) either per
 project or for the instance, and these surfaces disappear.

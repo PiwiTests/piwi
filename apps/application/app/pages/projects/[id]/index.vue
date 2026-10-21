@@ -441,10 +441,15 @@ if (initialTab && !tabHidden(initialTab)) {
 }
 
 // Reflect the active tab in the URL (replace, so tab switches don't stack history).
-// The Settings section belongs to the Settings tab, so it leaves with it.
+// A tab's own keys leave with it: the Settings section, the Gaps tab's graph node.
+const TAB_QUERY_KEYS: Partial<Record<TabValue, string[]>> = { settings: ['section'], gaps: ['node'] };
 watch(activeTab, (tab) => {
   if (route.query.tab === tab) return;
-  void replaceQuery(router, tab === 'settings' ? { tab } : { tab, section: undefined });
+  const patch: Record<string, string | undefined> = { tab };
+  for (const [owner, keys] of Object.entries(TAB_QUERY_KEYS)) {
+    if (owner !== tab) for (const key of keys) patch[key] = undefined;
+  }
+  void replaceQuery(router, patch);
 });
 
 // The page scrolls inside its own body; each tab keeps its position for when

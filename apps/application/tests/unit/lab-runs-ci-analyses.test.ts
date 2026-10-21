@@ -319,6 +319,14 @@ describe("the AI's baseline comparison", () => {
   });
 });
 
+/** Count the project's spec files in the change: a scope with no exclude. */
+async function scopeEveryFile(db: Awaited<ReturnType<typeof freshDb>>) {
+  await db
+    .update(schema.projects)
+    .set({ coverageScope: { include: [], exclude: [] } })
+    .where(eq(schema.projects.id, PROJECT_ID));
+}
+
 describe('change coverage and partial runs', () => {
   test('counts complete runs only: a filtered run that skipped a file says nothing about it', async () => {
     const db = await freshDb();
@@ -331,10 +339,15 @@ describe('change coverage and partial runs', () => {
       await persistRunCases(db as never, PROJECT_ID, id, [pays('passed')] as never);
     }
 
+    await scopeEveryFile(db);
     const coverage = await computeChangeCoverage(db as never, PROJECT_ID, {
       changedFiles: [{ filePath: 'tests/browse.spec.ts', additions: 3, deletions: 1 }],
     });
-    expect(coverage.files[0]).toMatchObject({ filePath: 'tests/browse.spec.ts', reachedCountHistory: 1 });
+    expect(coverage.files[0]).toMatchObject({
+      filePath: 'tests/browse.spec.ts',
+      reach: 'reached',
+      reachedCountHistory: 1,
+    });
     expect(coverage.uncoveredFiles).toBe(0);
   });
 });
@@ -355,10 +368,15 @@ describe('change coverage after a Flake Lab session', () => {
       await persistRunCases(db as never, PROJECT_ID, 10 + arm, [pays('passed')] as never);
     }
 
+    await scopeEveryFile(db);
     const coverage = await computeChangeCoverage(db as never, PROJECT_ID, {
       changedFiles: [{ filePath: 'tests/browse.spec.ts', additions: 3, deletions: 1 }],
     });
-    expect(coverage.files[0]).toMatchObject({ filePath: 'tests/browse.spec.ts', reachedCountHistory: 1 });
+    expect(coverage.files[0]).toMatchObject({
+      filePath: 'tests/browse.spec.ts',
+      reach: 'reached',
+      reachedCountHistory: 1,
+    });
     expect(coverage.uncoveredFiles).toBe(0);
   });
 });

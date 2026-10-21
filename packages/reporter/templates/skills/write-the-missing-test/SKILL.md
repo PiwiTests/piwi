@@ -21,8 +21,9 @@ view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
 ## Steps
 
 1. **Find the gaps.** On a change, call `get_change_coverage` for the current
-   branch first — the uncovered changed files are the gaps that matter now.
-   Otherwise call `list_scenario_gaps` for the project. Filter to what you are
+   branch first — the files whose `reach` is `unreached` (the uncovered
+   changes) and the `lines.notRun` of the files it did reach are what the
+   change left untested. Otherwise call `list_scenario_gaps` for the project. Filter to what you are
    working on with `class`, `feature`, `minScore` or `pr`. Read the classes:
    - **blind-spot** — no trusted test reaches it (a route, a page, a control, a
      new error path).
