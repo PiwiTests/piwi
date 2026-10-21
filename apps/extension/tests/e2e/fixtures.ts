@@ -46,7 +46,14 @@ function languageLaunchOptions(language: string): {
  */
 export async function launchWithExtension(
   extensionPath = EXTENSION_PATH,
-  opts: { developerMode?: boolean; language?: string; args?: string[]; userDataDir?: string } = {},
+  opts: {
+    developerMode?: boolean;
+    language?: string;
+    args?: string[];
+    userDataDir?: string;
+    /** Renders at this scale, for an illustration captured crisp. */
+    deviceScaleFactor?: number;
+  } = {},
 ): Promise<BrowserContext> {
   const userDataDir = opts.userDataDir ?? mkdtempSync(path.join(tmpdir(), 'piwi-picker-e2e-'));
   if (opts.developerMode) {
@@ -62,6 +69,7 @@ export async function launchWithExtension(
     ...(opts.args ?? []),
   ];
   const language = opts.language ? languageLaunchOptions(opts.language) : { options: {}, args: [] };
+  const scale = opts.deviceScaleFactor ? { deviceScaleFactor: opts.deviceScaleFactor } : {};
   // Playwright's own docs example for extensions uses `channel: 'chromium'`
   // with no `headless` option and no manual `--headless=new`: with
   // `headless: true` + `--headless=new`, CI hangs waiting for the extension's
@@ -72,8 +80,13 @@ export async function launchWithExtension(
   return chromium.launchPersistentContext(
     userDataDir,
     chromiumExecutable
-      ? { ...language.options, executablePath: chromiumExecutable, args: [...args, ...language.args, '--headless=new'] }
-      : { ...language.options, channel: 'chromium', args: [...args, ...language.args] },
+      ? {
+          ...language.options,
+          ...scale,
+          executablePath: chromiumExecutable,
+          args: [...args, ...language.args, '--headless=new'],
+        }
+      : { ...language.options, ...scale, channel: 'chromium', args: [...args, ...language.args] },
   );
 }
 

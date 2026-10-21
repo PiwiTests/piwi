@@ -17,7 +17,8 @@ const config: KnipConfig = {
   ignoreBinaries: ['tauri', 'playwright'],
   workspaces: {
     '.': {
-      entry: ['scripts/*.mjs'],
+      // The JetBrains plugin is not a workspace: its screenshot script is read from the root.
+      entry: ['scripts/*.mjs', 'apps/jetbrains/scripts/*.mjs'],
       // Not workspaces: built on their own toolchains (Tauri, VitePress) or resolved from the npm registry.
       ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**'],
     },
@@ -65,7 +66,8 @@ const config: KnipConfig = {
       ],
     },
     'apps/vscode': {
-      entry: ['src/extension.ts', 'tests/integration/*.cjs'],
+      // The screenshot script, and the fixture it shares with the JetBrains plugin's.
+      entry: ['src/extension.ts', 'tests/integration/*.cjs', 'scripts/*.mjs', 'scripts/lib/*.mjs'],
     },
     'packages/reporter': {
       entry: ['tests/bench/*.ts', 'tests/integration/**/*.{ts,mjs}'],

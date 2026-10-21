@@ -25,6 +25,11 @@ getByTestId('apply-coupon')                        ✓ unique · stable
 locator('.btn').nth(2)                             ⚠ unique by position · brittle: position, CSS class
 ```
 
+<figure>
+  <img src="/screenshots/picker-devtools.png" alt="The Piwi pane in the Elements sidebar: the selected button's three locators, ranked, the test id first">
+  <figcaption>The pane for a selected button: each locator checked against the page, copied as a locator, an action or an assertion.</figcaption>
+</figure>
+
 A locator that finds the node among others says how many it finds. Under each one, **Locator**, **Action** and
 **Assertion** copy it as `page.…`, as a `click()` or as an `expect(…).toBeVisible()`, and **Add to session** puts it
 in the session under a name (the panel's Session tab, below). The pane ranks again when the selection changes and after

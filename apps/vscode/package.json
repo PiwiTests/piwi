@@ -547,8 +547,8 @@
     "vscode:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
     "vscode:lint": "oxlint --config oxlint.config.mts .",
     "vscode:lint:fix": "oxlint --config oxlint.config.mts . --fix",
-    "vscode:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\" build.mjs",
-    "vscode:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" build.mjs",
+    "vscode:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\" \"scripts/\" build.mjs",
+    "vscode:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" \"scripts/\" build.mjs",
     "vscode:test": "vitest run",
     "vscode:test:integration": "npm run vscode:build && node tests/integration/run.mjs",
     "vscode:package": "npm run vscode:build && vsce package --no-dependencies --out dist/piwi.vsix",
@@ -562,6 +562,8 @@
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.1",
     "ovsx": "^1.2.0",
+    "playwright": "^1.63.0",
+    "sharp": "^0.35.5",
     "vscode-languageclient": "^10.1.2"
   }
 }

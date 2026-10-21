@@ -19,7 +19,7 @@ export const POSITIONING = {
   name: 'Piwi',
   tagline: 'Your Playwright results, kept and explained.',
   summary:
-    'CI throws away every report it makes. Piwi keeps them — then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
+    'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
 } as const;
 
 const REPOSITORY = 'https://github.com/piwitests/platform';
