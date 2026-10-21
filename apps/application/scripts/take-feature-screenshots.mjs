@@ -685,10 +685,16 @@ function sceneMode(scene) {
  *
  *   - `demo-live-run-poster.png` is written by `record-demo-video.mjs`, with
  *     the video it stands in for;
- *   - `tested-elements-overlay.png` is the browser extension's overlay, written
- *     by its `tests/e2e/docs-screenshots.spec.ts` with `PIWI_DOCS_SHOTS=1`.
+ *   - `tested-elements-overlay.png` and the `picker-*.png` images are the
+ *     browser extension's, written by its `tests/e2e/docs-screenshots.spec.ts`
+ *     with `PIWI_DOCS_SHOTS=1`;
+ *   - the `vscode-*.png` images are the VS Code extension's, written by
+ *     `apps/vscode/scripts/take-screenshots.mjs`;
+ *   - the `jetbrains-*.png` images are the JetBrains plugin's, written by
+ *     `apps/jetbrains/scripts/take-screenshots.mjs`.
  */
 const EXTERNAL_DOCS_IMAGES = new Set(['demo-live-run-poster.png', 'tested-elements-overlay.png']);
+const EXTERNAL_DOCS_IMAGE_PREFIXES = ['picker-', 'vscode-', 'jetbrains-'];
 
 /** The steps of the coupon report the repro-request scene shows. */
 const REPRO_SCENE_STEPS = (() => {
@@ -6020,8 +6026,10 @@ function checkDocsImages() {
 
   const onDisk = existsSync(DOCS_SHOTS_DIR) ? readdirSync(DOCS_SHOTS_DIR).filter((f) => f.endsWith('.png')) : [];
 
+  const external = (file) =>
+    EXTERNAL_DOCS_IMAGES.has(file) || EXTERNAL_DOCS_IMAGE_PREFIXES.some((prefix) => file.startsWith(prefix));
   const missing = [...produced.entries()].filter(([file]) => !onDisk.includes(file));
-  const orphans = onDisk.filter((f) => !produced.has(f) && !EXTERNAL_DOCS_IMAGES.has(f));
+  const orphans = onDisk.filter((f) => !produced.has(f) && !external(f));
   const staleAllowlist = [...EXTERNAL_DOCS_IMAGES].filter((f) => !onDisk.includes(f));
 
   for (const [file, scene] of missing) {
@@ -6038,7 +6046,7 @@ function checkDocsImages() {
   if (problems === 0) {
     console.log(
       `All good: ${produced.size} image(s) from ${docsScenes.length} scene(s), ` +
-        `${EXTERNAL_DOCS_IMAGES.size} from the marketing pipeline.`,
+        `${onDisk.filter(external).length} from the other pipelines.`,
     );
     return true;
   }

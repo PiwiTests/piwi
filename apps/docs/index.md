@@ -7,7 +7,7 @@ titleTemplate: false
 hero:
   name: "Piwi Dashboard"
   text: "Your Playwright results, kept and explained"
-  tagline: "CI throws away every report it makes. Piwi keeps them — then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry."
+  tagline: "CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry."
 
   actions:
     - theme: brand
@@ -71,6 +71,40 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 
 </div>
 
+<div class="screenshots">
+
+## See it in action
+
+<div class="demo-video">
+  <video src="/demo-live-run.mp4" autoplay loop muted playsinline controls poster="/screenshots/demo-live-run-poster.png"></video>
+  <p class="screenshot-caption">A run streaming in: each test lands as it finishes, failures first.</p>
+</div>
+
+<div class="screenshot-grid">
+  <div class="screenshot-item screenshot-featured">
+    <img src="/screenshots/home.png" alt="Dashboard overview, light and dark: portfolio stats, per-project health and recent activity" />
+    <p class="screenshot-caption">Home: every project's pass rate and latest runs, the failing ones first, and the live activity across them.</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/screenshots/failure-clusters-tab.png" alt="Failure clusters: one row per group of tests that failed for the same reason" />
+    <p class="screenshot-caption">Failure clusters: forty red tests become the three causes behind them, each triaged once.</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/screenshots/flaky-tests.png" alt="Flaky tests: each intermittent test scored and ranked by the CI time it wastes" />
+    <p class="screenshot-caption">Flaky tests: a score, a root-cause class and the CI minutes each one wastes, the expensive ones first.</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/screenshots/picker-pick.png" alt="Piwi Picker ranking the locators of a button on a live shop page, the unique one first" />
+    <p class="screenshot-caption"><a href="/features/extension">Piwi Picker</a>, in your browser: ranked, stable locators picked from the live page, standalone.</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/screenshots/vscode-heal.png" alt="VS Code with a CI failure at its line and the heal offered as a quick fix" />
+    <p class="screenshot-caption"><a href="/features/editors">VS Code and the JetBrains IDEs</a>: the latest CI failures at their lines, the heal one quick fix away.</p>
+  </div>
+</div>
+
+</div>
+
 <div class="next-steps">
 
 ## Where to go next
@@ -81,6 +115,7 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 - [Core concepts](/guide/concepts): run, test case, execution, failure cluster, baseline
 - [Capture fixtures](/guide/capture-fixtures): the one file behind locator healing, network timing and console capture
 - [CI & sharding](/guide/ci): two environment variables, and every shard merged into one run
+- [Browser extension](/features/extension) and [Editor extensions](/features/editors): Piwi where you write the tests
 
 ### Something is red right now
 
@@ -112,31 +147,5 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 - [API docs](https://piwitests.dev/demo/docs): every endpoint, rendered from the dashboard's own OpenAPI spec
 
 Everything Piwi does, with what each feature needs, is on [All features](/reference/features).
-
-</div>
-
-<div class="screenshots">
-
-## See it in action
-
-<div class="demo-video">
-  <video src="/demo-live-run.mp4" autoplay loop muted playsinline controls poster="/screenshots/demo-live-run-poster.png"></video>
-  <p class="screenshot-caption">Live streaming: a run updating in real time as tests complete.</p>
-</div>
-
-<div class="screenshot-grid">
-  <div class="screenshot-item screenshot-featured">
-    <img src="/screenshots/home.png" alt="Dashboard overview: portfolio stats, per-project health and recent activity" />
-    <p class="screenshot-caption">Dashboard overview: stats, each project's recent runs and pass rate, and live activity across all projects</p>
-  </div>
-  <div class="screenshot-item">
-    <img src="/screenshots/failure-clusters-tab.png" alt="Failure clusters" />
-    <p class="screenshot-caption">Failure clusters: tests that failed for the same reason, grouped by error fingerprint</p>
-  </div>
-  <div class="screenshot-item">
-    <img src="/screenshots/flaky-tests.png" alt="Flaky tests" />
-    <p class="screenshot-caption">Flaky tests: a composite flakiness score from retry passes and status alternation</p>
-  </div>
-</div>
 
 </div>

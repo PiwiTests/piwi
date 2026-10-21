@@ -148,6 +148,17 @@ xvfb-run -a npm run vscode:test:integration   # VS Code (downloaded to .vscode-t
 npm run vscode:package            # dist/piwi.vsix
 ```
 
+**Screenshots.** `scripts/take-screenshots.mjs` writes the extension's illustrations (`apps/docs/public/screenshots/vscode-*.png`,
+shown by the docs, the README and the Marketplace README): it opens the fixture project of
+`scripts/lib/editor-fixture.mjs`, a small shop's suite with one brittle locator, two CI failures and a local run since,
+against the stub instance the same module serves, in the downloaded VS Code, and drives the window with Playwright's
+Electron support. On Linux, run it under Xvfb at twice the window size for 2× images:
+`xvfb-run -a -s "-screen 0 2880x1800x24" node scripts/take-screenshots.mjs`. A scene is a function of `SCENES`; one
+that fails leaves `vscode-<scene>-failed.png` with the window as it stood. The JetBrains plugin's script reuses the
+fixture, so a change to it recaptures both sets. What was found about driving VS Code this way, and what a test
+suite over the same launcher would assert, is recorded in
+[`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
+
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
 API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's

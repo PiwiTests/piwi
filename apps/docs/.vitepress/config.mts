@@ -23,7 +23,7 @@ const websiteJsonLd: HeadConfig = [
 export default defineConfig({
   title: 'Piwi Dashboard',
   description:
-    'CI throws away every report it makes. Piwi keeps them — then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
+    'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
   base: '/',
   // AGENTS.md is the agent guide for this directory, not a page of the site:
   // it links to sibling guides outside the docs root, so building it as a page
@@ -79,7 +79,7 @@ export default defineConfig({
       {
         property: 'og:description',
         content:
-          'CI throws away every report it makes. Piwi keeps them — then groups failures by root cause, scores flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
+          'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
       },
     ],
     ['meta', { property: 'og:image', content: ogImage }],
