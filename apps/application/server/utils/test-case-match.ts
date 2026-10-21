@@ -153,7 +153,7 @@ async function hasExecutionInRun(db: DrizzleDB, runId: number, testCaseId: numbe
 }
 
 /** How {@link resolveTestCases} may change the stored test cases. */
-export interface ResolveOptions {
+export interface ResolveTestCasesOptions {
   /**
    * Match without renaming, moving or giving an ID to a stored test case: the batch comes from a run that must not
    * change the tests' stored state (an import of an older run, a lab run). New test cases are still created.
@@ -185,7 +185,7 @@ export async function resolveTestCases(
   runId: number,
   index: TestCaseIndex,
   claims: TestCaseClaim[],
-  options: ResolveOptions = {},
+  options: ResolveTestCasesOptions = {},
 ): Promise<ResolvedTestCases> {
   const caseIds: Array<number | undefined> = Array.from({ length: claims.length });
   const displayTitles: Array<string | null> = Array.from({ length: claims.length }, () => null);

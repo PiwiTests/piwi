@@ -3,7 +3,7 @@ import { createKeyedLock } from './keyed-lock';
 import {
   loadTestCaseIndex,
   resolveTestCases,
-  type ResolveOptions,
+  type ResolveTestCasesOptions,
   type ResolvedTestCases,
   type TestCaseClaim,
   type TestCaseIndex,
@@ -57,7 +57,7 @@ class TestCaseCache {
     projectId: number,
     runId: number,
     claims: TestCaseClaim[],
-    options: ResolveOptions = {},
+    options: ResolveTestCasesOptions = {},
   ): Promise<ResolvedTestCases> {
     return this.matching(projectId, async () =>
       resolveTestCases(db, projectId, runId, await this.getProjectCache(db, projectId), claims, options),
