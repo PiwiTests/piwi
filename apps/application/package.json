@@ -10,6 +10,7 @@
     "app:generate": "nuxt generate",
     "app:generate:demo": "cross-env PIWI_DEMO_MODE=true nuxt generate",
     "app:generate:deploy": "node scripts/generate-deploy-manifests.mjs",
+    "app:generate:brand": "node scripts/generate-brand-assets.mjs",
     "app:seed:demo": "node scripts/generate-demo-seed.mjs",
     "app:seed:dev": "node scripts/seed-dev-from-demo.mjs",
     "app:build": "nuxt build",

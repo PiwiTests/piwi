@@ -132,8 +132,8 @@ Manage it from the **Quarantine** view of the project's **Failures** tab, or ove
 Individual test cases in a run carry at-a-glance badges:
 
 - **New regression** (red) — failing here but passing in the baseline (the last passing run)
-- **Newly flaky** (purple) — the first run in which the test was flaky
-- **Passed on retry** (purple) — failed at least once in this run, then passed
+- **Newly flaky** (fuchsia) — the first run in which the test was flaky
+- **Passed on retry** (fuchsia) — failed at least once in this run, then passed
 
 Filters on the run's test-case list show only new regressions or new flaky tests.
 

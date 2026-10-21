@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="./apps/docs/public/logo-wide.svg" alt="Piwi Dashboard" height="64">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./apps/docs/public/logo-wide-dark.svg">
+    <img src="./apps/docs/public/logo-wide.svg" alt="Piwi Dashboard" height="64">
+  </picture>
 </p>
 
 <p align="center">

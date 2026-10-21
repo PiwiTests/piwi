@@ -43,9 +43,9 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     color: 'var(--color-status-flaky)',
     bg: 'bg-status-flaky',
     ring: 'ring-status-flaky',
-    text: 'text-purple-700 dark:text-purple-400',
-    chip: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    tint: 'bg-purple-50 dark:bg-purple-950/30',
+    text: 'text-fuchsia-700 dark:text-fuchsia-400',
+    chip: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400',
+    tint: 'bg-fuchsia-50 dark:bg-fuchsia-950/30',
   },
   skipped: {
     color: 'var(--color-status-skipped)',

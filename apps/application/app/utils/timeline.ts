@@ -69,7 +69,7 @@ export const TIMELINE_WAIT_COLORS = {
 
 /**
  * Distinct colors for lock lanes/brackets, chosen to sit apart from the test
- * outcome palette (emerald/rose/purple/zinc/amber/blue) and the amber of wasted
+ * outcome palette (emerald/rose/fuchsia/zinc/amber/blue) and the amber of wasted
  * waits, so a lock never reads as a result.
  * Assigned by index in the run's sorted lock order and reused past the end.
  */

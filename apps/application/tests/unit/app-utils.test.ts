@@ -219,7 +219,7 @@ describe('status icon helpers', () => {
   test('gives each outcome its own colour, and one colour to the in-flight three', () => {
     expect(getStatusTextClass('passed')).toContain('emerald');
     expect(getStatusTextClass('failed')).toContain('rose');
-    expect(getStatusTextClass('flaky')).toContain('purple');
+    expect(getStatusTextClass('flaky')).toContain('fuchsia');
     expect(getStatusTextClass('didnotrun')).toContain('amber');
     expect(getStatusTextClass('running')).toContain('blue');
     expect(getStatusTextClass('initializing')).toBe(getStatusTextClass('running'));

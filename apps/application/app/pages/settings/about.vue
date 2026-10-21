@@ -37,10 +37,6 @@ const authEnabled = config.public.authEnabled as boolean;
 
 const shortSha = computed(() => (buildSha ? buildSha.slice(0, 7) : null));
 
-// The wordmark carries its own dark background, so it reads on either theme.
-// Prefixing the base URL keeps it resolvable when the demo is served from /demo/.
-const logoSrc = `${(config.app?.baseURL ?? '/').replace(/\/$/, '')}/logo-wide.svg`;
-
 const dbBackendLabel = computed(() => {
   const backend = versionInfo.value?.dbBackend;
   if (backend === 'postgresql') return 'PostgreSQL';
@@ -56,7 +52,7 @@ const dbBackendLabel = computed(() => {
     <div
       class="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left"
     >
-      <img :src="logoSrc" alt="Piwi Dashboard" class="h-14 sm:h-16 rounded-xl shrink-0" />
+      <BrandLogo class="h-14 sm:h-16" />
       <div class="text-sm text-muted">
         <p>
           <span class="font-mono text-highlighted">v{{ appVersion }}</span>

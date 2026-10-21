@@ -1,18 +1,19 @@
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: 'green',
+      primary: 'violet',
       neutral: 'zinc',
-      // Statuses use calmer hues than the raw defaults: the brand green scale
-      // (see main.css) is too neon for a "passed" chip, and pure red/yellow
-      // read harsh next to it. Emerald/rose/amber keep the same meaning with
-      // a softer, more even palette.
+      // The brand violet: the accent of the logo, the browser extension and
+      // the editor plugins. Statuses use calmer hues than the raw defaults:
+      // emerald (the mint of the logo's check), rose and amber keep the usual
+      // meaning with a softer, more even palette than green/red/yellow.
       success: 'emerald',
       error: 'rose',
       warning: 'amber',
       // Test outcome palette (see `--color-status-*` in main.css): flaky is
-      // purple, apart from the amber of "didn't run" and warnings.
-      flaky: 'purple',
+      // fuchsia, apart from the violet accent and the amber of "didn't run"
+      // and warnings.
+      flaky: 'fuchsia',
     },
     card: {
       slots: {

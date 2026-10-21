@@ -28,7 +28,7 @@
    */
   --color-status-passed: var(--color-emerald-500);
   --color-status-failed: var(--color-rose-500);
-  --color-status-flaky: var(--color-purple-500);
+  --color-status-flaky: var(--color-fuchsia-500);
   --color-status-skipped: var(--color-zinc-400);
   --color-status-fixme: var(--color-zinc-600);
   --color-status-didnotrun: var(--color-amber-500);
@@ -48,7 +48,7 @@
    * not-run color), or undetermined (in a function the browser ran).
    */
   --color-coverage-unit: #2563eb;
-  --color-coverage-e2e: #7c3aed;
+  --color-coverage-e2e: #ea580c;
   --color-coverage-undetermined: #ca8a04;
 }
 
@@ -81,7 +81,7 @@
   --color-coverage-run: #14b8a6;
   --color-coverage-not-run: #64748b;
   --color-coverage-unit: #60a5fa;
-  --color-coverage-e2e: #a78bfa;
+  --color-coverage-e2e: #fb923c;
   --color-coverage-undetermined: #eab308;
 }
 
