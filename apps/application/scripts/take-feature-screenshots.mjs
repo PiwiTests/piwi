@@ -1024,8 +1024,8 @@ async function prepareReportSchedule({ base, request }) {
 
 /**
  * A Bug type's create screen as the fields endpoint returns it: Severity and a
- * Team are required, Components and Fix versions are optional, Priority has a
- * Jira default.
+ * Team are required, Found in is required with a Jira default, Components and
+ * Fix versions are optional, Priority has a Jira default.
  */
 const JIRA_SCREEN_FIELDS = [
   {
@@ -1058,6 +1058,18 @@ const JIRA_SCREEN_FIELDS = [
     kind: 'raw',
     options: null,
     typeName: 'atlassian-team',
+  },
+  {
+    id: 'customfield_10080',
+    name: 'Found in',
+    required: true,
+    hasDefault: true,
+    kind: 'option',
+    options: [
+      { id: '10400', label: 'Production' },
+      { id: '10401', label: 'Staging' },
+    ],
+    typeName: 'select',
   },
   {
     id: 'components',

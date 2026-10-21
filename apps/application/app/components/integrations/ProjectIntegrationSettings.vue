@@ -23,7 +23,7 @@ import {
 } from '~/utils/tracker-binding-form';
 import { SUPPORTED_LOCALES } from '#shared/integrations/messages';
 import { JIRA_NO_PROJECTS_HINT, jiraProjectUrl } from '#shared/integrations/jira-setup';
-import { requiredFieldsToFill, type FieldValues } from '#shared/integrations/fields';
+import { requiredFieldsToAsk, type FieldValues } from '#shared/integrations/fields';
 import type { TrackerSummary, TrackerProjectOption, TrackerIssueTypeOption } from '#shared/integrations/types';
 
 const props = defineProps<{ projectId: number }>();
@@ -258,8 +258,8 @@ const {
   () => form.projectKey || null,
   () => form.issueType || null,
 );
-/** The required fields to give a default: required, not filled by Jira, not managed by Piwi. */
-const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
+/** The required fields to give a default: required and not managed by Piwi. */
+const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
 </script>
 
 <template>

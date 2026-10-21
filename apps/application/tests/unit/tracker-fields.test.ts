@@ -12,7 +12,7 @@ import {
   missingTransitionFieldsMessage,
   normalizeFieldValues,
   parseRawFieldValue,
-  requiredFieldsToFill,
+  requiredFieldsToAsk,
   settableFields,
   textToDocument,
   TRANSITION_SKIPPED_FIELDS,
@@ -185,9 +185,17 @@ describe('Jira create metadata → tracker fields', () => {
 });
 
 describe('which fields to ask for', () => {
-  test('the required fields to fill leave out what Jira defaults and what Piwi fills', () => {
-    expect(requiredFieldsToFill(SCREEN).map((f) => f.id)).toEqual(['customfield_10042', 'customfield_10050']);
+  test('the required fields to ask for leave out what Piwi fills, and keep what Jira defaults', () => {
+    expect(requiredFieldsToAsk(SCREEN).map((f) => f.id)).toEqual([
+      'priority',
+      'customfield_10042',
+      'customfield_10050',
+    ]);
     expect(settableFields(SCREEN).map((f) => f.id)).not.toContain('summary');
+  });
+
+  test('a required field Jira defaults is asked for but never missing', () => {
+    expect(missingRequiredFields(SCREEN, {}).map((f) => f.id)).toEqual(['customfield_10042', 'customfield_10050']);
   });
 
   test('a value fills a required field; an empty one does not', () => {
@@ -364,7 +372,7 @@ describe('on a transition screen', () => {
       'assignee',
     ]);
     expect(missingRequiredFields(RESOLVE, values, {}, TRANSITION_SKIPPED_FIELDS)).toEqual([]);
-    expect(requiredFieldsToFill(RESOLVE, TRANSITION_SKIPPED_FIELDS).map((f) => f.id)).toEqual([
+    expect(requiredFieldsToAsk(RESOLVE, TRANSITION_SKIPPED_FIELDS).map((f) => f.id)).toEqual([
       'resolution',
       'assignee',
     ]);

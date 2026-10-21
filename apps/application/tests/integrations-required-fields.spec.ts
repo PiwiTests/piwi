@@ -1,11 +1,12 @@
 /**
  * The fields Jira requires, against a mock Jira Cloud whose Bug type requires a
- * Severity and a Team, and whose Resolve transition requires a Resolution: the
- * fields endpoint reads the create screen, a create that leaves one empty is
- * refused before Jira is called, the project settings keep a default, the create
- * dialog asks for the rest and for a field Jira refused, takes typed tags and
- * labels, and files the issue with them, a refusal Jira names
- * is final and creating again replaces it, and the MCP tool names what is
+ * Severity and a Team, and a Found in Jira fills by default, and whose Resolve
+ * transition requires a Resolution: the fields endpoint reads the create screen,
+ * a create that leaves one empty is refused before Jira is called, the project
+ * settings keep a default, the create dialog asks for the rest, shows the one
+ * Jira defaults without holding the create back, asks for a field Jira refused,
+ * takes typed tags and labels, and files the issue with them, a refusal Jira
+ * names is final and creating again replaces it, and the MCP tool names what is
  * missing and takes loosely typed values. Then the fix transition: the settings
  * check it against an open issue and keep its resolution, a verified fix moves
  * the issue with it, and a move with no resolution fails for good without
@@ -44,8 +45,12 @@ const SEVERITY = 'customfield_10050';
 const TEAM = 'customfield_10001';
 const SQUAD = 'customfield_10060';
 const TAGS = 'customfield_10070';
+const FOUND_IN = 'customfield_10080';
 
-/** The Bug type's create screen: Severity and Team are required, Parent, Components, Squad and Tags are not. */
+/**
+ * The Bug type's create screen: Severity and Team are required, Found in is
+ * required with a Jira default, Parent, Components, Squad and Tags are optional.
+ */
 const BUG_SCREEN = [
   { fieldId: 'project', name: 'Project', required: true, schema: { type: 'project', system: 'project' } },
   { fieldId: 'issuetype', name: 'Issue type', required: true, schema: { type: 'issuetype', system: 'issuetype' } },
@@ -66,6 +71,17 @@ const BUG_SCREEN = [
     name: 'Team',
     required: true,
     schema: { type: 'team', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team' },
+  },
+  {
+    fieldId: FOUND_IN,
+    name: 'Found in',
+    required: true,
+    hasDefaultValue: true,
+    schema: { type: 'option', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:select' },
+    allowedValues: [
+      { id: '10400', value: 'Production' },
+      { id: '10401', value: 'Staging' },
+    ],
   },
   { fieldId: 'parent', name: 'Parent', required: false, schema: { type: 'issuelink', system: 'parent' } },
   {
@@ -508,8 +524,10 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       const asked = dialog.locator('[data-shot="create-issue-fields"]');
       await expect(asked).toBeVisible({ timeout: 15_000 });
 
-      // Severity comes from the project default; Team is still empty.
+      // Severity comes from the project default; Team is still empty. Found in
+      // is asked for too, but Jira's default fills it, so it is not missing.
       await expect(asked.locator(`[data-field-id="${SEVERITY}"]`)).toContainText('Major');
+      await expect(asked.locator(`[data-field-id="${FOUND_IN}"]`)).toContainText("Jira's default");
       await expect(dialog.getByTestId('create-issue-missing')).toHaveText('Jira still needs Team.');
       const create = dialog.getByRole('button', { name: 'Create', exact: true });
       await expect(create).toBeDisabled();
@@ -531,6 +549,9 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       await tags.locator('input').fill('smoke');
       await page.getByRole('option', { name: 'Create "smoke"' }).click();
       await expect(chip(tags, 'smoke')).toBeVisible();
+      // Tags takes the full row, so its open menu covers the footer until closed.
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('listbox')).toBeHidden();
 
       await create.click();
       await expect(page.getByText(/PROJ-\d+ created/).first()).toBeVisible();
@@ -541,6 +562,7 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
         [TAGS]: ['smoke'],
         labels: expect.arrayContaining(['checkout-flow']),
       });
+      expect(mock.creates.at(-1)).not.toHaveProperty(FOUND_IN);
     } finally {
       mock.requireTags = false;
     }

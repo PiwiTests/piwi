@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
  * The values a project keeps for one tracker screen's fields — its issue type's
- * create screen, or a workflow transition's screen: the required fields Jira
- * does not fill, then each optional field a value is set for (removable), a menu
+ * create screen, or a workflow transition's screen: the required fields, then
+ * each optional field a value is set for (removable), a menu
  * to set one for another field, and a note for each value whose field this
  * screen does not have (kept, but not sent).
  */
 import {
   hasFieldValue,
   MANAGED_FIELDS,
-  requiredFieldsToFill,
+  requiredFieldsToAsk,
   settableFields,
   type FieldValues,
   type TrackerField,
@@ -30,8 +30,8 @@ const props = withDefaults(
 
 const values = defineModel<FieldValues>({ required: true });
 
-/** The required fields to give a value: required, not filled by Jira, not skipped. */
-const required = computed(() => requiredFieldsToFill(props.fields, props.skipped));
+/** The required fields to give a value: required and not skipped. */
+const required = computed(() => requiredFieldsToAsk(props.fields, props.skipped));
 /** Optional fields a value is set for, on this screen. */
 const optionalWithValue = computed(() =>
   settableFields(props.fields, props.skipped).filter(
