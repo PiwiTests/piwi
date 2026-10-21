@@ -28,7 +28,7 @@ export interface StatusColor {
 export const STATUS_COLORS: Record<StatusColorKey, StatusColor> = {
   passed: { token: 'emerald-500', fill: '#10b981', text: '#047857', textDark: '#34d399', print: '#065f46' },
   failed: { token: 'rose-500', fill: '#f43f5e', text: '#be123c', textDark: '#fb7185', print: '#9f1239' },
-  flaky: { token: 'purple-500', fill: '#a855f7', text: '#7e22ce', textDark: '#c084fc', print: '#6b21a8' },
+  flaky: { token: 'fuchsia-500', fill: '#d946ef', text: '#a21caf', textDark: '#e879f9', print: '#86198f' },
   skipped: { token: 'zinc-400', fill: '#a1a1aa', text: '#71717a', textDark: '#a1a1aa', print: '#52525b' },
   fixme: { token: 'zinc-600', fill: '#52525b', text: '#3f3f46', textDark: '#d4d4d8', print: '#27272a' },
   didnotrun: { token: 'amber-500', fill: '#f59e0b', text: '#b45309', textDark: '#fbbf24', print: '#92400e' },

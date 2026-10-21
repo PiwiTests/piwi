@@ -249,6 +249,7 @@ export const EN_SENTENCES: ReportSentences = {
     markers: 'Markers',
     narrative: 'Narrative',
     automatedMessage: 'This is an automated message from',
+    sentBy: 'Sent by Piwi',
   },
   verdict,
   progress,

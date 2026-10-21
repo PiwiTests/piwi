@@ -35,6 +35,11 @@ Failed executions sharing an **error fingerprint** join one cluster, so twenty s
 With an embedding model configured, near-duplicate clusters that the fingerprint keeps apart are merged too: see
 [semantic merging](./ai-diagnosis#semantic-merging-optional).
 
+<figure>
+  <img src="/screenshots/failure-clusters-tab.png" alt="A project's Failures tab: its open clusters with type, triage, tests and occurrences">
+  <figcaption>A project's open clusters, one row per root cause.</figcaption>
+</figure>
+
 ## The failure inbox
 
 The **Failure inbox** on Home lists up to 50 open failure clusters across the projects you can see, most
@@ -65,13 +70,13 @@ tracker is connected). `x` selects rows for a **bulk bar** that applies the same
 one row can be undone for a few seconds. [Keyboard shortcuts](/reference/keyboard-shortcuts#failure-inbox) lists every key.
 
 Linking a known issue (`l`) pins a URL; with an [issue tracker connected](/operate/integrations), Jira links unfurl
-and stay in sync, and you can **[file the issue from the failure](/features/issue-tracking)** (`c`).
+and stay in sync (see [issue tracking](/features/issue-tracking)).
 
 ## Owners and assignees
 
 A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
-cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. **Assigning** the cluster to a person overrides it:
-an assignee takes precedence over the derived owner, and the **Mine** queue matches either one against the
+cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. **Assigning** the cluster to a person overrides it,
+and the **Mine** queue matches either one against the
 signed-in user (by name or email).
 
 ## The cluster page
@@ -115,7 +120,7 @@ the sparkline opens it.
 ## Did the fix work?
 
 When a run executes every test a cluster covers and they all pass, Piwi records the fix: the run, the commit, and how
-long the cluster was open. Three verdicts, each a different claim:
+long the cluster was open. Three verdicts:
 
 | Verdict | Means |
 |---|---|
@@ -123,8 +128,8 @@ long the cluster was open. Three verdicts, each a different claim:
 | **Diagnosis verified** | The commits since the last failing run touched a file the [suggested patch](./ai-diagnosis#what-a-diagnosis-contains) named. |
 | **Regressed** | A fix was recorded, and the cluster is failing again. |
 
-**Every affected test must pass**: a test that did not run counts against the fix. A filtered run can close a cluster
-if it covered all of it, so `--grep` over exactly the affected tests is enough.
+**Every affected test must pass**: a test that did not run counts against the fix. A filtered run covering all of it can close
+the cluster, so `--grep` over exactly the affected tests is enough.
 
 **The commit must have changed.** A run at the commit the cluster last failed at (a CI retry, or **Re-run in CI**)
 proves nothing was fixed: Piwi records it as flake evidence and the state line says *passed again at the same commit,
@@ -140,8 +145,8 @@ changes nothing, and an *ignored* cluster is never touched. The [notifications](
 
 ## Snoozing
 
-**Snoozing** hides a cluster from every inbox queue without touching its status: it is still *open*. **1 day** and
-**1 week** return it when the deadline passes; **Until it recurs** returns it to the **New** queue, with a **snoozed,
+**Snoozing** hides a cluster from every inbox queue without touching its status. **1 day** and
+**1 week** return it then; **Until it recurs** returns it to the **New** queue, with a **snoozed,
 back** badge, when a new run fails it again.
 
 ## From an AI agent

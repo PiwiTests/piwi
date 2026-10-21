@@ -18,7 +18,8 @@ import type {
 } from '#shared/notification-events';
 import type { ReportBundle } from '#shared/reports/types';
 import { renderReportEmail } from '#shared/reports/render-email';
-import { emailLayout as layoutEmail, escapeHtml } from '#shared/email-layout';
+import { emailButton, emailLayout as layoutEmail, escapeHtml } from '#shared/email-layout';
+import { BRAND_MARK_CID, piwiMarkPng } from '#shared/brand';
 
 export interface SmtpConfig {
   host: string;
@@ -104,13 +105,23 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   }
   const transport = await getTransport();
   const from = cfg.fromName ? `"${cfg.fromName}" <${cfg.from}>` : cfg.from;
+  // The footer's Piwi mark travels with the message, so no image is fetched when it is read.
+  const attachments = [...(opts.attachments ?? [])];
+  if (opts.html.includes(`cid:${BRAND_MARK_CID}`) && !attachments.some((a) => a.cid === BRAND_MARK_CID)) {
+    attachments.push({
+      filename: 'piwi.png',
+      content: Buffer.from(piwiMarkPng()),
+      contentType: 'image/png',
+      cid: BRAND_MARK_CID,
+    });
+  }
   await transport.sendMail({
     from,
     to: opts.to,
     subject: opts.subject,
     html: opts.html,
     text: opts.text,
-    ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
+    ...(attachments.length ? { attachments } : {}),
   });
   console.info('[email] Sent "%s" to %s', opts.subject, opts.to);
 }
@@ -119,12 +130,31 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 
 const siteUrl = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 
-/** Passed and failed text colors: the dashboard's outcome colors, as in the HTML export. */
-const PASSED_COLOR = STATUS_COLORS.passed.text;
+/** The failed text color: the dashboard's outcome color, as in the HTML export. */
 const FAILED_COLOR = STATUS_COLORS.failed.text;
 
-function emailLayout(title: string, body: string): { html: string; text: string } {
-  return { html: layoutEmail(escapeHtml(title), body, siteUrl()), text: title };
+/** The colors an email marks an outcome with: the stripe atop its card, and a status pill's text on its tint. */
+const TONES = {
+  failed: { accent: STATUS_COLORS.failed.fill, text: STATUS_COLORS.failed.text, tint: '#fff1f2' },
+  passed: { accent: STATUS_COLORS.passed.fill, text: STATUS_COLORS.passed.text, tint: '#ecfdf5' },
+  warning: { accent: STATUS_COLORS.didnotrun.fill, text: STATUS_COLORS.didnotrun.text, tint: '#fffbeb' },
+} as const;
+type Tone = keyof typeof TONES;
+
+function emailLayout(title: string, body: string, tone?: Tone): { html: string; text: string } {
+  const frame = {
+    lang: 'en',
+    automatedMessage: 'This is an automated message from',
+    sentBy: 'Sent by Piwi',
+    accent: tone ? TONES[tone].accent : undefined,
+  };
+  return { html: layoutEmail(escapeHtml(title), body, siteUrl(), frame), text: title };
+}
+
+/** A status pill: `label` in the tone's color on its tint. */
+function statusPill(label: string, tone: Tone): string {
+  const t = TONES[tone];
+  return `<span style="display:inline-block;padding:2px 10px;border-radius:999px;background:${t.tint};color:${t.text};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">${escapeHtml(label)}</span>`;
 }
 
 export function renderPasswordResetEmail(token: string): { html: string; text: string } {
@@ -132,7 +162,7 @@ export function renderPasswordResetEmail(token: string): { html: string; text: s
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Reset your password</h2>
     <p style="margin:0 0 24px;color:#52525b;">Click the button below to reset your password. This link expires in 1 hour.</p>
-    <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Reset password</a>
+    ${emailButton(url, 'Reset password')}
     <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">If you didn't request this, ignore this email — your account is safe.</p>
     <p style="margin:8px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
   const { html } = emailLayout('Reset your password', body);
@@ -148,7 +178,7 @@ export function renderInviteEmail(token: string, invitedBy?: string): { html: st
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">You've been invited to Piwi Dashboard</h2>
     ${byLine}
-    <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Set password &amp; activate</a>
+    ${emailButton(url, 'Set password &amp; activate')}
     <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
   const { html } = emailLayout("You've been invited to Piwi Dashboard", body);
   const text = `You've been invited to Piwi Dashboard\n\nClick the link below to set your password and activate your account. This link expires in 72 hours.\n\n${url}`;
@@ -160,7 +190,7 @@ export function renderVerifyEmail(token: string): { html: string; text: string }
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Verify your email</h2>
     <p style="margin:0 0 24px;color:#52525b;">Click the button below to verify your email address.</p>
-    <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Verify email</a>
+    ${emailButton(url, 'Verify email')}
     <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
   const { html } = emailLayout('Verify your email', body);
   const text = `Verify your email\n\nClick the link below to verify your email address.\n\n${url}`;
@@ -193,7 +223,7 @@ export function renderRunNotificationEmail(opts: {
   topFailures?: TopFailure[];
 }): { html: string; text: string } {
   const url = `${siteUrl()}/test-runs/${opts.runId}`;
-  const statusColor = opts.status === 'passed' ? PASSED_COLOR : FAILED_COLOR;
+  const tone: Tone = opts.status === 'passed' ? 'passed' : 'failed';
 
   const failures = opts.topFailures ?? [];
   let failuresHtml = '';
@@ -203,18 +233,21 @@ export function renderRunNotificationEmail(opts: {
       .map((f) => {
         const caseUrl = failureUrl(f, url);
         const title = escapeHtml(f.title);
-        const titleHtml = `<a href="${caseUrl}" style="color:#18181b;font-weight:600;text-decoration:none;">${title}</a>`;
-        const loc = f.filePath ? `<div style="color:#a1a1aa;font-size:12px;">${escapeHtml(f.filePath)}</div>` : '';
+        const titleHtml = `<a href="${caseUrl}" style="color:#18181b;font-size:14px;font-weight:600;text-decoration:none;">${title}</a>`;
+        const loc = f.filePath
+          ? `<div style="margin-top:2px;color:#71717a;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;">${escapeHtml(f.filePath)}</div>`
+          : '';
         const headline = f.headline
-          ? `<div style="margin-top:4px;color:#18181b;font-size:14px;">${escapeHtml(f.headline)}</div>`
+          ? `<div style="margin-top:6px;color:#3f3f46;font-size:13px;">${escapeHtml(f.headline)}</div>`
           : '';
         const excerpt = f.errorExcerpt
-          ? `<pre style="margin:6px 0 0;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#52525b;background:#fafafa;padding:8px;border-radius:4px;">${escapeHtml(f.errorExcerpt)}</pre>`
+          ? `<pre style="margin:8px 0 0;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#52525b;background:#f4f4f5;padding:8px 10px;border-radius:4px;">${escapeHtml(f.errorExcerpt)}</pre>`
           : '';
-        return `<li style="margin-bottom:12px;list-style:none;">${titleHtml}${loc}${headline}${excerpt}</li>`;
+        return `<tr><td style="padding:10px 0 10px 12px;border-left:3px solid ${FAILED_COLOR};">${titleHtml}${loc}${headline}${excerpt}</td></tr><tr><td height="10" style="height:10px;line-height:10px;font-size:1px;">&nbsp;</td></tr>`;
       })
       .join('');
-    failuresHtml = `<ul style="margin:0 0 24px;padding:0;">${rows}</ul>`;
+    failuresHtml = `<p style="margin:0 0 10px;font-size:12px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.04em;">Failures</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">${rows}</table>`;
     failuresText = failures
       .map((f) => {
         const caseUrl = failureUrl(f, url);
@@ -227,20 +260,15 @@ export function renderRunNotificationEmail(opts: {
   }
 
   const body = `
-    <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">Test run ${escapeHtml(opts.status)}</h2>
-    <p style="margin:0 0 24px;color:#52525b;font-size:14px;">${escapeHtml(opts.projectName)}${opts.branch ? ` · ${escapeHtml(opts.branch)}` : ''}</p>
-    <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-      <tr>
-        <td style="padding:8px 16px;background:#f4f4f5;border-radius:6px;font-size:14px;">
-          Status: <strong style="color:${statusColor};">${escapeHtml(opts.status)}</strong>
-          &nbsp;·&nbsp; ${opts.totalTests} tests
-          ${opts.failedTests > 0 ? `&nbsp;·&nbsp; <strong style="color:${FAILED_COLOR};">${opts.failedTests} failed</strong>` : ''}
-        </td>
-      </tr>
-    </table>
+    <p style="margin:0 0 10px;">${statusPill(opts.status, tone)}</p>
+    <h2 style="margin:0 0 4px;font-size:20px;color:#18181b;">${escapeHtml(opts.projectName)}</h2>
+    <p style="margin:0 0 20px;color:#71717a;font-size:13px;">Run #${opts.runId}${opts.branch ? ` on <span style="font-family:ui-monospace,Menlo,Consolas,monospace;">${escapeHtml(opts.branch)}</span>` : ''}</p>
+    <p style="margin:0 0 22px;font-size:14px;color:#3f3f46;">
+      <strong style="color:#18181b;">${opts.totalTests}</strong> tests${opts.failedTests > 0 ? ` &nbsp;·&nbsp; <strong style="color:${FAILED_COLOR};">${opts.failedTests} failed</strong>` : ''}
+    </p>
     ${failuresHtml}
-    <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">View run</a>`;
-  const { html } = emailLayout(`Test run ${opts.status} — ${opts.projectName}`, body);
+    ${emailButton(url, 'View run')}`;
+  const { html } = emailLayout(`Test run ${opts.status} — ${opts.projectName}`, body, tone);
   const text = `Test run ${opts.status}: ${opts.projectName}${opts.branch ? ` (${opts.branch})` : ''}\n${opts.totalTests} tests${opts.failedTests > 0 ? `, ${opts.failedTests} failed` : ''}${failuresText ? `\n\n${failuresText}` : ''}\n\nView run: ${url}`;
   return { html, text };
 }
@@ -270,7 +298,7 @@ function trackedInText(knownIssue?: { key: string; url: string }): string {
 }
 
 function viewClusterButton(url: string): string {
-  return `<a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">View cluster</a>`;
+  return emailButton(url, 'View cluster');
 }
 
 export function renderNewClusterEmail(opts: {
@@ -296,14 +324,14 @@ export function renderNewClusterEmail(opts: {
     ? `<pre style="margin:0 0 24px;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#52525b;background:#fafafa;padding:12px;border-radius:6px;">${escapeHtml(opts.sampleErrorExcerpt)}</pre>`
     : '';
   const body = `
-    <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">New failure cluster</h2>
-    <p style="margin:0 0 24px;color:#52525b;font-size:14px;">${escapeHtml(opts.projectName)}</p>
+    <p style="margin:0 0 10px;">${statusPill('New failure cluster', 'failed')}</p>
+    <h2 style="margin:0 0 20px;font-size:20px;color:#18181b;">${escapeHtml(opts.projectName)}</h2>
     ${clusterIdentityHtml(opts.signature, opts.title)}
     ${affected}
     ${excerpt}
     ${trackedInHtml(opts.knownIssue)}
     ${viewClusterButton(url)}`;
-  const { html } = emailLayout(`New failure cluster — ${opts.projectName}`, body);
+  const { html } = emailLayout(`New failure cluster — ${opts.projectName}`, body, 'failed');
   const text = `New failure cluster in ${opts.projectName}${opts.affectedCases ? ` (${opts.affectedCases} affected)` : ''}\n\n${clusterIdentityText(opts.signature, opts.title)}${opts.sampleErrorExcerpt ? `\n\n${opts.sampleErrorExcerpt}` : ''}${trackedInText(opts.knownIssue)}\n\nView: ${url}`;
   return { html, text };
 }
@@ -319,19 +347,23 @@ export function renderClusterOutcomeEmail(opts: {
   /** The triage change the verdict made, named when set. */
   triageNote?: string | null;
   knownIssue?: { key: string; url: string };
+  /** `fixed` for a fix, `regressed` for a fix that did not hold. */
+  verdict: 'fixed' | 'regressed';
 }): { html: string; text: string } {
+  const tone: Tone = opts.verdict === 'fixed' ? 'passed' : 'failed';
   const url = `${siteUrl()}/failure-clusters/${opts.clusterId}`;
   const triage = opts.triageNote
     ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">${escapeHtml(opts.triageNote)}</p>`
     : '';
   const body = `
-    <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">${escapeHtml(opts.headline)}</h2>
-    <p style="margin:0 0 24px;color:#52525b;font-size:14px;">${escapeHtml(opts.projectName)}</p>
+    <p style="margin:0 0 10px;">${statusPill(opts.verdict === 'fixed' ? 'Fixed' : 'Regressed', tone)}</p>
+    <h2 style="margin:0 0 4px;font-size:20px;color:#18181b;">${escapeHtml(opts.headline)}</h2>
+    <p style="margin:0 0 20px;color:#71717a;font-size:13px;">${escapeHtml(opts.projectName)}</p>
     ${clusterIdentityHtml(opts.signature, opts.title)}
     ${triage}
     ${trackedInHtml(opts.knownIssue)}
     ${viewClusterButton(url)}`;
-  const { html } = emailLayout(`${opts.headline} — ${opts.projectName}`, body);
+  const { html } = emailLayout(`${opts.headline} — ${opts.projectName}`, body, tone);
   const text = `${opts.headline} in ${opts.projectName}\n\n${clusterIdentityText(opts.signature, opts.title)}${opts.triageNote ? `\n\n${opts.triageNote}` : ''}${trackedInText(opts.knownIssue)}\n\nView: ${url}`;
   return { html, text };
 }
@@ -376,6 +408,7 @@ export function renderNotificationEmail(
       title: p.title,
       triageNote,
       knownIssue: p.knownIssue,
+      verdict: event === 'cluster.fixed' ? 'fixed' : 'regressed',
     });
   }
   const subject = renderEventSubject(event, payload);
@@ -384,11 +417,12 @@ export function renderNotificationEmail(
     const url = `${siteUrl()}/test-runs/${p.runId}`;
     const note = 'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).';
     const body = `
+    <p style="margin:0 0 10px;">${statusPill('Environment incident', 'warning')}</p>
     <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">${escapeHtml(subject)}</h2>
     <p style="margin:0 0 16px;color:#18181b;font-size:14px;">${escapeHtml(p.reason)}</p>
     <p style="margin:0 0 24px;color:#52525b;font-size:13px;">${escapeHtml(note)}</p>
-    <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">View run</a>`;
-    const { html } = emailLayout(subject, body);
+    ${emailButton(url, 'View run')}`;
+    const { html } = emailLayout(subject, body, 'warning');
     return { html, text: `${subject}\n\n${p.reason}\n${note}\n\nView: ${url}` };
   }
   return { html: `<p>${escapeHtml(subject)}</p>`, text: subject };

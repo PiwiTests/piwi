@@ -16,7 +16,7 @@ reproduces. A reproduced condition proves the cause, and the same condition late
 
 ## Run an experiment
 
-From the project root, name the test by its test case id (the number in its dashboard URL) or by its spec file and
+From the project root, name the test by its test case id (the number in its dashboard URL) or its spec file and
 line:
 
 ```bash
@@ -37,7 +37,7 @@ It runs, one after the other:
    same error as in CI. Suspects no experiment tested run first, most likely first; one that did not reproduce runs
    last, never dropped.
 
-Every run has retries off and runs the checkout you are in. Before it starts, it prints an estimate from the test's
+Every run has retries off, on your current checkout. Before it starts, it prints an estimate from the test's
 median duration; `--budget` (15 minutes by default) stops it from starting another arm once spent.
 
 ```text
@@ -98,8 +98,8 @@ still fails, or too few runs passed to say) · `2` error.
 
 ## Where results show
 
-- The project's **Flake Lab** tab lists every flaky or tested test with where it stands (not tested, reproduced, fix
-  verified) and the command it needs next, then the project's newest experiments.
+- The project's **Flake Lab** tab lists every flaky or tested test with where it stands and the
+  command it needs next, then the project's newest experiments.
 - The test's **Flakiness** tab lists its experiments and each suspect's latest result, with buttons that copy both
   commands.
 - The **flaky list** marks a test whose latest experiment reproduced it.
@@ -107,8 +107,13 @@ still fails, or too few runs passed to say) · `2` error.
 - Over [MCP](/features/mcp), `get_flake_profile` and `plan_flake_experiment` give an agent the experiments and the
   arms to run; the `stabilize-flaky-tests` [agent skill](/features/agent-skills) follows this loop.
 
-The lab's own runs are stamped as flake-lab runs, kept out of the flaky score, clusters, notifications, quarantine,
-the suspects, the editor's CI failures and every other comparison between runs.
+<figure>
+  <img src="/screenshots/flake-lab.png" alt="The Flake Lab tab: counts by stage over each test and its next command">
+  <figcaption>The Flake Lab tab.</figcaption>
+</figure>
+
+The lab's own runs are stamped as flake-lab runs, kept out of the flaky score, clusters, notifications, quarantine
+and every other comparison between runs.
 
 ## From the editor and the failure pages
 
@@ -123,8 +128,8 @@ the suspects, the editor's CI failures and every other comparison between runs.
 
 ## Run it in CI
 
-A local machine is not CI: a delay reproduces a race anywhere, but load and interference depend on the machine. To
-run the lab where the flake lives, add a manual workflow and start it with the test case id:
+A local machine is not CI: a delay reproduces a race anywhere, but load and interference depend on the machine. Run it
+where the flake lives with a manual workflow, started with the test case id:
 
 ```yaml
 # .github/workflows/flake-lab.yml
@@ -167,7 +172,7 @@ reached, pass a plan saved earlier with `--plan <file>`: the response of the pla
 
 ## Limits
 
-- `cpu` needs Chromium; on another browser the arm reports the condition as skipped.
+- `cpu` needs Chromium; on another browser the arm is skipped.
 - A failure that depends on another team's run on a shared environment has no condition; it stays context on the
   Flakiness tab.
 - Order across whole files is not controlled: an `after` arm counts only the rounds Playwright happened to run in
@@ -175,7 +180,7 @@ reached, pass a plan saved earlier with `--plan <file>`: the response of the pla
 
 ## Try it in the demo
 
-The [live demo](https://piwitests.dev/demo/) cannot run the lab, but it holds experiments:
+The [live demo](https://piwitests.dev/demo/) cannot run the lab but holds experiments:
 
 <DemoExamples />
 

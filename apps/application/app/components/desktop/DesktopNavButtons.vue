@@ -3,9 +3,9 @@
  * Desktop shell only: back/forward history buttons, joined as one control the
  * way a native toolbar pairs them. The webview has no browser chrome, so this
  * is the visible counterpart of the mouse-button and trackpad-swipe navigation
- * the webview already supports. Sits beside the project switcher at the top of
- * the sidebar; in the collapsed rail it stacks vertically like every other
- * rail control. Renders nothing in a plain browser, which has its own chrome.
+ * the webview already supports. Sits beside the logo at the top of the
+ * sidebar; in the collapsed rail it stacks vertically like every other rail
+ * control. Renders nothing in a plain browser, which has its own chrome.
  */
 defineProps<{ collapsed?: boolean }>();
 

@@ -171,7 +171,7 @@ definePageMeta({
 
 <template>
   <div class="min-h-screen flex flex-col items-center justify-center bg-elevated/50 gap-6 px-4">
-    <img src="/logo-wide.svg" alt="Piwi Dashboard" class="h-16 rounded-xl" />
+    <BrandLogo class="h-16" />
 
     <UCard v-if="needsSetup === null" class="w-full max-w-md">
       <LoadingState text="Loading…" />

@@ -58,7 +58,7 @@ function lineOf(source: string, offset: number): number {
   return source.slice(0, offset).split('\n').length;
 }
 
-describe('the evidence card and the affected tests keep green to the primary action', () => {
+describe('the evidence card and the affected tests keep the accent to the primary action', () => {
   test.each(FILES)('%s uses no raw red, orange or green shade', (file) => {
     const source = read(file);
     const hits = [...source.matchAll(RAW_SHADE_RE)].map((m) => `${file}:${lineOf(source, m.index!)} ${m[0]}`);

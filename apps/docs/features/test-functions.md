@@ -14,6 +14,11 @@ The test functions catalog is a **per-project registry of your own page-object m
 
 A project's **Test functions** page in the dashboard (**Project → Test functions**). Every entry is scoped to that project, and the [browser extension](./extension#connecting-to-a-piwi-instance) caches a mapped project's catalog locally so it can match against it while you record.
 
+<figure>
+  <img src="/screenshots/test-functions.png" alt="The test function catalog: page-object methods and helpers, each with its module, the steps it performs and the URL it applies to">
+  <figcaption>A project's <strong>Test functions</strong> page: each function with the steps it performs and the pages it applies to.</figcaption>
+</figure>
+
 ## Registering a function
 
 Four ways in, all producing the same kind of entry. The paste paths stop at a review form; the MCP tool saves directly, and its entries show an `ai-extracted` badge by default.

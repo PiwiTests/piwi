@@ -355,10 +355,27 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   (`projectDefaultBranch`) and the runs that report none, as Analytics does. A new tab or endpoint that reads runs
   takes the scope; a request without its keys keeps its unscoped reading for API callers.
 
+### Brand assets (MUST follow)
+
+Every logo, favicon and app icon in the repository — the dashboard's and the docs site's SVG logos, favicons, touch
+icon and social card, the browser extension's icons, the VS Code extension's icons and the JetBrains plugin's icons —
+is written by `scripts/generate-brand-assets.mjs` (`npm run app:generate:brand`) from the drawing and the brand colors
+in that file: navy ink, violet `#7c3aed` and the mint of the check. Never edit one of those files by hand; change the
+script and regenerate them all. The desktop app's bundle icons are generated from `public/logo.svg` by `tauri icon`.
+Show the wide lockup with `<BrandLogo>`, which swaps in the reversed drawing on a dark page. The dashboard's accent
+(`primary` in `app/app.config.ts`) is the same violet.
+
+Every document Piwi writes for use outside the dashboard (the offline exports, the quality reports, the emails) ends
+with the Piwi credit from `shared/brand.ts`: the small mark and a link to piwitests.dev (`piwiCreditHtml`,
+`drawPiwiCredit` for a PDF, `piwiCreditMarkdown`; `emailLayout` draws it in every email). The mark is drawn from
+`shared/brand-mark.json`, which the same generator writes. It never loads over the network: inline SVG in HTML, vector
+paths in a PDF, and an attachment in an email (`sendEmail` attaches it whenever the message shows it). A new document
+format ends with the same credit. Data files (CSV, XLSX, JSON) carry none.
+
 ### Test outcome colors (MUST follow)
 
 Passed, failed, flaky, skipped, didn't run and running each have **one** color, everywhere: the `--color-status-*`
-tokens in `app/assets/css/main.css` (emerald, rose, purple, zinc, amber, blue). Timed-out and interrupted count as
+tokens in `app/assets/css/main.css` (emerald, rose, fuchsia, zinc, amber, blue; violet is the accent, never an outcome). Timed-out and interrupted count as
 failed; a pass that needed a retry counts as flaky. Skipped has a second grey, `fixme`, for a `test.fixme()` skip
 (`isFixmeSkip` / `fixmeSkipPredicate` in `shared/utils/skip-kind.ts`): a subset of skipped, carved out of the skipped
 segment the way flaky is carved out of passed. Never hardcode a status color in a bar, chart, legend, dot, history

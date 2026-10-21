@@ -1,3 +1,18 @@
+/* The brand violet of the logo, the dashboard and the browser extension. */
+:root {
+  --vp-c-brand-1: #6d28d9;
+  --vp-c-brand-2: #7c3aed;
+  --vp-c-brand-3: #7c3aed;
+  --vp-c-brand-soft: rgb(124 58 237 / 0.14);
+}
+
+.dark {
+  --vp-c-brand-1: #a78bfa;
+  --vp-c-brand-2: #8b5cf6;
+  --vp-c-brand-3: #7c3aed;
+  --vp-c-brand-soft: rgb(167 139 250 / 0.16);
+}
+
 /* Screenshot figures embedded in documentation content pages.
    Scoped to <figure> so the home page's own screenshot grid is untouched. */
 .vp-doc figure {

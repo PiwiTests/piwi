@@ -683,20 +683,12 @@ function sceneMode(scene) {
  * so `--check` does not report them as orphans. Everything else in there must
  * have a scene.
  *
- *   - the remaining gallery images come from the live-demo capture described in
- *     `apps/docs/AGENTS.md` ("Marketing screenshots");
  *   - `demo-live-run-poster.png` is written by `record-demo-video.mjs`, with
  *     the video it stands in for;
  *   - `tested-elements-overlay.png` is the browser extension's overlay, written
  *     by its `tests/e2e/docs-screenshots.spec.ts` with `PIWI_DOCS_SHOTS=1`.
  */
-const EXTERNAL_DOCS_IMAGES = new Set([
-  'demo-live-run-poster.png',
-  'failure-clusters-tab.png',
-  'flaky-tests.png',
-  'projects.png',
-  'tested-elements-overlay.png',
-]);
+const EXTERNAL_DOCS_IMAGES = new Set(['demo-live-run-poster.png', 'tested-elements-overlay.png']);
 
 /** The steps of the coupon report the repro-request scene shows. */
 const REPRO_SCENE_STEPS = (() => {
@@ -1152,6 +1144,24 @@ const JIRA_FIELD_DEFAULTS = {
   customfield_10050: { value: { id: '10101' }, label: 'Major' },
   components: { value: [{ id: '10200' }], label: 'Checkout' },
 };
+
+/**
+ * One Slack channel subscribed to project 1, so the notifications settings
+ * capture neither section empty. Reruns reuse the rows from the previous run
+ * instead of duplicating them.
+ */
+async function prepareTeamSlackChannel({ base, request }) {
+  const list = await (await request.get(`${base}/api/channels`)).json();
+  if (list.items.some((c) => c.name === 'Team Slack')) return;
+  const ch = await (
+    await request.post(`${base}/api/channels`, {
+      data: { name: 'Team Slack', type: 'slack', config: { webhookUrl: 'https://hooks.slack.com/services/T/B/x' } },
+    })
+  ).json();
+  await request.post(`${base}/api/subscriptions`, {
+    data: { channelId: ch.channel.id, projectId: 1, events: ['run.failed', 'cluster.new'] },
+  });
+}
 
 /** The db-managed connection the required-fields scenes bind; its dead port means no Jira is contacted. */
 let jiraSceneConnectionId = 0;
@@ -2434,7 +2444,7 @@ const SCENES = [
     description: 'Execution Locators tab: every locator the test used, in order, with how many tests share each chain',
     tags: ['docs'],
     out: 'docs',
-    route: '/test-run-cases/711',
+    route: '/test-run-cases/229',
     viewport: { width: 1280, height: 1400 },
     async run({ page, shoot, settle, openTab }) {
       await openTab('Locators');
@@ -3162,6 +3172,85 @@ const SCENES = [
     route: '/projects/1?tab=performance',
     viewport: { width: 1280, height: 720 },
     charts: true,
+  },
+  {
+    name: 'projects',
+    description: 'Projects list: every project with its latest run, status bar and tags (docs gallery)',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects',
+    viewport: { width: 1280, height: 720 },
+  },
+  {
+    name: 'failure-clusters-tab',
+    description:
+      'Failures tab: the failure inbox, one row per cluster of tests that failed for the same reason (docs gallery)',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1?tab=failures',
+    viewport: { width: 1280, height: 720 },
+  },
+  {
+    name: 'flaky-tests',
+    description:
+      'Failures tab, Flaky view: each intermittent test scored and ranked by the CI time it wastes (docs gallery)',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1?tab=flaky-tests',
+    viewport: { width: 1280, height: 720 },
+    prepare: classifyFlakyTests,
+  },
+  {
+    name: 'flake-lab',
+    description: "Flake Lab tab: the project's experiments, each with its test, conditions and verdict",
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1?tab=flake-lab',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'bug-report',
+    description: "A bug report's page: the recorded steps, the evidence and why the suite missed it",
+    tags: ['docs'],
+    out: 'docs',
+    route: '/bug-reports/1',
+    viewport: { width: 1280, height: 900 },
+  },
+  {
+    name: 'test-selections',
+    description: 'Project selections: the built-in and defined selections, each with its tests and health',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1/selections',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'test-functions',
+    description:
+      'Test functions catalog: the page-object methods and helpers extracted from the suite, with their parameters',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/5/test-functions',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'notifications',
+    description: 'Settings → Notifications: email status, the channels and what each one is subscribed to',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/notifications',
+    viewport: { width: 1280, height: 1250 },
+    prepare: prepareTeamSlackChannel,
+  },
+  {
+    name: 'mcp-client-setup',
+    description: 'MCP page: the client setup card, one tab per agent with the command or config that connects it',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/mcp',
+    viewport: { width: 1280, height: 800 },
+    of: '[data-shot="mcp-client-setup"]',
+    pad: 12,
   },
 
   // ── README tour ───────────────────────────────────────────────────────────
@@ -5211,25 +5300,7 @@ const SCENES = [
     route: '/settings/notifications',
     viewport: { width: 1280, height: 1250 },
     outputs: ['notifications-settings.png', 'notifications-settings-bell.png'],
-    async prepare({ base, request }) {
-      // One channel + subscription so neither section captures empty. Reruns
-      // reuse the rows from the previous run instead of duplicating them.
-      const list = await (await request.get(`${base}/api/channels`)).json();
-      if (!list.items.some((c) => c.name === 'Team Slack')) {
-        const ch = await (
-          await request.post(`${base}/api/channels`, {
-            data: {
-              name: 'Team Slack',
-              type: 'slack',
-              config: { webhookUrl: 'https://hooks.slack.com/services/T/B/x' },
-            },
-          })
-        ).json();
-        await request.post(`${base}/api/subscriptions`, {
-          data: { channelId: ch.channel.id, projectId: 1, events: ['run.failed', 'cluster.new'] },
-        });
-      }
-    },
+    prepare: prepareTeamSlackChannel,
     async run({ page, shoot, goto, settle }) {
       await shoot();
       await goto('/projects/1');

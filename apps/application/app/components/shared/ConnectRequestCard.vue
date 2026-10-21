@@ -20,7 +20,7 @@ defineProps<{
 
 <template>
   <div class="min-h-screen flex flex-col items-center justify-center bg-elevated/50 gap-6 px-4 py-8">
-    <img src="/logo-wide.svg" alt="Piwi Dashboard" class="h-16 rounded-xl" />
+    <BrandLogo class="h-16" />
 
     <UCard class="w-full max-w-md" :data-shot="shot">
       <template #header>

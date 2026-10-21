@@ -60,6 +60,10 @@ try {
   const recordingStart = Date.now();
   const elapsed = () => (Date.now() - recordingStart) / 1000;
 
+  // The guided tour's first-visit prompt would cover the run; this browser has already declined it.
+  await context.addInitScript(() =>
+    localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+  );
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   // The launcher is disabled until the in-browser database has loaded.
   const launcher = page.getByRole('button', { name: 'Simulate a test run' });
@@ -89,7 +93,9 @@ try {
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
     const status = (await header.innerText()).trim().split(/\s/)[0];
-    if (status === 'Running') poster = await page.screenshot();
+    // The run's result toast can open a moment before the header leaves Running; it is not part of the poster.
+    const toast = await page.locator('[role="region"] li[role="status"]').count();
+    if (status === 'Running' && !toast) poster = await page.screenshot();
     else if (status !== 'Initializing') break;
     await page.waitForTimeout(1000);
   }

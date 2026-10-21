@@ -264,10 +264,8 @@ npm run app:screens -- home
 Pair it with `deviceScaleFactor: 2` and `outputWidth` to write a crisp image at the width the page actually gives it:
 the docs gallery's featured tile spans the content column (~1152px), and anything wider is bytes the reader never sees.
 
-The gallery images that are still live-demo captures (`projects.png`, `flaky-tests.png`, `failure-clusters-tab.png`)
-are **1280×720**, taken against `https://piwitests.dev/demo/` with the `playwright-cli`
-skill and the demo banner hidden via `.demo-banner{display:none!important}`. Give them a scene when you next touch one:
-the harness renders icons offline and pins the clock, which the live demo cannot.
+The other gallery images (`projects.png`, `flaky-tests.png`, `failure-clusters-tab.png`) are whole screens at
+**1280×720**, each with a scene of its name.
 
 **The README's quick tour** is six scenes tagged `readme` (`tour-*.png`): whole screens at one size and in one theme,
 so the two-column grid lines up. Recapture them together, with the server started with an AI provider so the diagnosis

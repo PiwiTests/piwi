@@ -89,6 +89,7 @@ export default defineConfig({
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
   ],
   themeConfig: {
+    logo: '/logo.svg',
     outline: 'deep',
     search: {
       provider: 'local',

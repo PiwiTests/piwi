@@ -27,7 +27,7 @@ definition to check nothing was silently dropped.
 If the dashboard is unreachable, `piwi run` falls back to the full suite with a warning (and reuses the last good
 resolution from `.piwi/selection-cache.json` when it has one): a reporting problem never breaks the test run. Pass
 `--strict` to invert that for CI, where an unresolvable selection should stop the pipeline. Resolving a named selection to
-**zero** tests is always an error: a smoke job that silently runs nothing is worse than one that fails loudly.
+**zero** tests is always an error.
 
 ### Print, shard and reorder
 
@@ -87,8 +87,7 @@ absent `include` starts from the whole suite. The predicates, all optional:
 | `lastStatus` | the latest execution's status is one of these |
 | `failedInLastRuns` | the test failed within its last _N_ executions (N ≤ 25) |
 
-An unknown predicate is a validation error, not a silent no-op — a typo fails loudly rather than resolving to a wider
-set than you meant.
+An unknown predicate is a validation error, so a typo never widens the set.
 
 ### Budgets and pins
 
@@ -132,6 +131,11 @@ The project's **Selections** tab lists the built-ins and your saved selections, 
 definition resolves to (the matching tests, the estimated duration, any warnings and the exact command) before you save
 it. Agents use the selection tools of the [MCP server](/reference/mcp-tools#workflow) and the `run-the-right-tests`
 skill.
+
+<figure>
+  <img src="/screenshots/test-selections.png" alt="The Selections page: built-in and saved selections with their commands, over the suggestions">
+  <figcaption>A project's selections.</figcaption>
+</figure>
 
 ## Health and drift
 

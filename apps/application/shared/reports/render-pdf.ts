@@ -9,6 +9,7 @@
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { winAnsiSafe } from '#shared/export/render-pdf';
+import { drawPiwiCredit, PDF_CREDIT_HEIGHT } from '#shared/brand';
 import { STATUS_COLORS, PASS_RATE_COLORS, hexToRgb } from '#shared/status-colors';
 import { chartLabelAnchor, chartTickLabel, seriesGeometry } from './chart';
 import { makeFormatter, type ValueFormatter } from './format';
@@ -360,9 +361,13 @@ export async function renderReportPdf(bundle: ReportBundle): Promise<Uint8Array>
     for (const limit of bundle.limits) l.paragraph(limit, { size: 8.5, color: MUTED });
   }
   l.paragraph(
-    `${L.generatedBy} · ${f.date(bundle.generatedAt, bundle.timeZone)}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · ${bundle.sourceUrl}` : ''}`,
+    `${f.date(bundle.generatedAt, bundle.timeZone)}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · ${bundle.sourceUrl}` : ''}`,
     { size: 8, color: MUTED },
   );
+  l.y -= 14;
+  l.ensure(PDF_CREDIT_HEIGHT);
+  drawPiwiCredit(doc, l.page, { x: MARGIN, top: l.y, width: WIDTH, label: L.generatedBy, font });
+  l.y -= PDF_CREDIT_HEIGHT;
 
   const pages = doc.getPages();
   pages.forEach((page, i) => {

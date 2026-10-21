@@ -30,6 +30,11 @@ once its owner verified it. Notifications need no authentication: with it off, t
 channel and subscription is **global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
 their own, and administrators can add global ones shared by everyone.
 
+<figure>
+  <img src="/screenshots/notifications.png" alt="Settings, Notifications: the SMTP status with the environment variables to set, a Slack channel, and its subscription to project 1's failed runs and new clusters">
+  <figcaption><strong>Settings → Notifications</strong>: email delivery, the channels, and what each one is subscribed to.</figcaption>
+</figure>
+
 ## Events
 
 Run events fire when a run finishes or fails, cluster events when a failure cluster appears, is fixed or regresses,
