@@ -206,7 +206,7 @@ unit-tested in `packages/core`) match the live recording against whichever proje
 applies — ranked live in the HUD, substituted into the generated spec on export. The matcher
 never invents a function; it only scores and selects among what the catalog already has.
 
-**Connect** is a device authorization (`proposals/extension-connect.md`): the settings page
+**Connect** is a device authorization (`adr/extension-connect.md`): the settings page
 requests the instance origin inside the click, `startConnect` gets a user code and a verification
 page, the page opens in a tab, and `waitForApproval` (`src/shared/connect-flow.ts`, pure) polls
 `pollConnect` until the user allows or denies it there. The approved answer carries the API key,

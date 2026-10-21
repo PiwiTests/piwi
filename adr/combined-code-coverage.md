@@ -1,7 +1,10 @@
 # Combined code coverage: end-to-end and unit tests, per commit
 
+- Status: accepted
+- Date: 2026-10-17
+
 A study of how to compute one code coverage ratio that counts every test a team runs: the Playwright suite Piwi
-already records ([`unified-code-coverage.md`](unified-code-coverage.md), browser and server), and the unit tests of the
+already records ([`unified-code-coverage.md`](../proposals/unified-code-coverage.md), browser and server), and the unit tests of the
 front end and the back end, whose coverage reports Piwi would import. It answers three questions: how to combine
 reports from tools that do not agree on which lines can run, where the denominator comes from, and what Piwi shows on
 top that a coverage service does not. The numbers below were measured on Piwi's own Vitest suite and on the .NET
@@ -14,7 +17,10 @@ suite counts by functions first and by lines later. The unit tools to support fi
 coverage and Vitest. The plan builds on browser function coverage (`coverage.browser: 'functions'`) and coverage on
 every page and document a test opens, both on main since 2026-10-16. How .NET lines are counted on a large solution,
 and what it costs, is [Part 6](#part-6-net-lines-on-a-large-solution). New wire fields, options and
-endpoints freeze at 1.0 and need an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
+endpoints freeze at 1.0 and need an entry in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md).
+
+**Built** 2026-10-17 in #819: delivery PRs 1 to 9, with the 1.0 entry (D56). Left for later, as the plan says: PR 10
+(browser lines through `ast-v8-to-istanbul`) and the suite behind a line on hover in the editors.
 
 **Summary.** The arithmetic is a union of line ranges; the work is in agreeing on which lines count. On the same 71
 .NET tests, Microsoft code coverage counts **1,058 executable lines** in 14 files where Piwi's compiler instrumentation
@@ -110,7 +116,7 @@ instrumentation built with the .NET 10.0.402 SDK:
 | D4 | Lines combine only within one file version, the git blob, as everywhere in coverage. | A line number means nothing across versions. |
 | D5 | **Reference lines per file version**: the span table's executable lines when any run recorded them for that blob; otherwise the unit report's; the union when two unit tools report the same version. A suite's executed lines count on the reference lines only. | Measured: the union of a span table and Microsoft code coverage understates end-to-end-only code by 16 points; the span table as reference stays within 1.3 points (Appendix A). |
 | D6 | The browser end-to-end suite counts in the **function ratio** now, with the functions V8 reports as not run as its denominator, and in the line ratio as **undetermined lines** until it records lines. | Decided with the author. Counting every line of a function that ran would overstate; ignoring them would hide what the Playwright suite runs. |
-| D7 | Files in scope that no report names count as **files without coverage data**, from the file inventory, never in the percentage. | The Test Map's rule: a percentage only over a known denominator ([`test-map-accuracy.md`](test-map-accuracy.md), D3). It also exposes code a tool left out. |
+| D7 | Files in scope that no report names count as **files without coverage data**, from the file inventory, never in the percentage. | The Test Map's rule: a percentage only over a known denominator ([`test-map-accuracy.md`](../proposals/test-map-accuracy.md), D3). It also exposes code a tool left out. |
 | D8 | A suite missing at a commit is **carried forward** from the newest earlier commit with that suite, on the same branch then on the default branch, file by file where the blob id matches the inventory, and labeled with that commit. | Not every pipeline runs every suite on every commit; a blob match keeps line numbers valid. |
 | D9 | One scope per project (include and exclude patterns), applied when totals are computed; a change recomputes the totals of the reports still kept. Default excludes: test files (`*.test.*`, `*.spec.*`, `tests/`, projects named `*Tests`), `obj/`, `bin/`, generated sources. | Each tool has its own excludes; one scope keeps the suites comparable. |
 | D10 | No gate fails a build on coverage. `--min-patch-coverage` warns only, like `--max-uncovered-changes`. | The study's rule, unchanged: the number informs, it is not a target. |
