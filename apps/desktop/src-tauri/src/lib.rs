@@ -404,6 +404,11 @@ fn pick_port() -> u16 {
 /// The response header the sidecar's `/api/health` echoes the launch nonce in.
 const LAUNCH_NONCE_HEADER: &str = "x-piwi-desktop-nonce";
 
+/// How long one readiness probe waits to connect. Windows retries a connect to a
+/// loopback port nobody listens on for seconds before refusing it; this bound
+/// keeps each probe made while the server is still starting short.
+const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
+
 /// Dependency-free readiness probe. `/api/health` returns 200 only after the
 /// database has migrated, so a 200 means the app is ready to load — when it
 /// also carries this launch's nonce, which only the sidecar this app spawned
@@ -411,7 +416,8 @@ const LAUNCH_NONCE_HEADER: &str = "x-piwi-desktop-nonce";
 /// bootstrap and its token.
 fn health_ok(port: u16, nonce: &str) -> bool {
     use std::io::{Read, Write};
-    let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) else {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, PROBE_CONNECT_TIMEOUT) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
@@ -1846,7 +1852,7 @@ pub fn run() {
 mod tests {
     use super::{
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
-        health_response_proves, ide_launcher_args, is_known_launcher, is_sidecar_url,
+        health_ok, health_response_proves, ide_launcher_args, is_known_launcher, is_sidecar_url,
         is_truthy_flag, main_window_may_navigate, progress_bar_status, remote_capability,
         render_status_dot, splash_status_script, status_dot_color, write_new_download,
     };
@@ -2075,6 +2081,22 @@ mod tests {
         let unavailable = ok.replace(" 200 OK", " 503 Service Unavailable");
         assert!(!health_response_proves(&unavailable, "abc123"));
         assert!(!health_response_proves(ok, ""));
+    }
+
+    #[test]
+    fn a_probe_of_a_port_nobody_listens_on_gives_up_quickly() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let started = std::time::Instant::now();
+        assert!(!health_ok(port, "abc123"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
