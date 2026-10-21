@@ -1,4 +1,4 @@
-import { context, propagation, SpanKind, SpanStatusCode, trace, type Tracer } from '@opentelemetry/api';
+import type { Tracer } from '@opentelemetry/api';
 import { appendResponseHeader } from 'h3';
 import { isOtelTracingEnabled, startOtelTracing, stopOtelTracing } from '../utils/otel';
 
@@ -15,10 +15,10 @@ import { isOtelTracingEnabled, startOtelTracing, stopOtelTracing } from '../util
 export default defineNitroPlugin((nitroApp) => {
   if (!isOtelTracingEnabled()) return;
 
-  let tracer: Tracer | null = null;
-  startOtelTracing(String(useRuntimeConfig().public.appVersion ?? ''))
-    .then((started) => {
-      tracer = started;
+  let otel: { api: typeof import('@opentelemetry/api'); tracer: Tracer } | null = null;
+  Promise.all([import('@opentelemetry/api'), startOtelTracing(String(useRuntimeConfig().public.appVersion ?? ''))])
+    .then(([api, tracer]) => {
+      otel = { api, tracer };
     })
     .catch((error) => {
       console.error('[OpenTelemetry] Tracing could not start:', error);
@@ -29,12 +29,13 @@ export default defineNitroPlugin((nitroApp) => {
 
   nitroApp.h3App.handler = (event) => {
     const path = event.path.split('?')[0] ?? event.path;
-    if (!tracer || path.includes('/_nuxt/')) return handle(event);
+    if (!otel || path.includes('/_nuxt/')) return handle(event);
+    const { context, propagation, SpanKind, SpanStatusCode, trace } = otel.api;
 
     const active = context.active();
     const nested = trace.getSpan(active) !== undefined;
     const parent = nested ? active : propagation.extract(active, event.node.req.headers);
-    const span = tracer.startSpan(
+    const span = otel.tracer.startSpan(
       `${event.method} ${path}`,
       {
         kind: nested ? SpanKind.INTERNAL : SpanKind.SERVER,
