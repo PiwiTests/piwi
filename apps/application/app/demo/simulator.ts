@@ -27,7 +27,7 @@ import {
   storyEvidenceTimes,
   FAILURE_TEARDOWN_MS,
 } from '#shared/demo/failure-stories.mjs';
-import { demoLocks, demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
+import { demoExternalId, demoLocks, demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
 import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-resources.mjs';
 
 export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
@@ -95,6 +95,7 @@ interface SimTest {
   tags?: string[];
   locks?: string[];
   testMeta?: { owner?: string | null; priority?: string | null; feature?: string | null } | null;
+  externalId?: string | null;
   suitePath?: string[];
   suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;
   /**
@@ -765,6 +766,7 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       tags: demoTags(t.file, i),
       locks: demoLocks(t.file, i),
       testMeta: demoTestMeta(t.file, i),
+      externalId: demoExternalId(t.file, i),
       suitePath: suite?.suitePath,
       suiteConfig: suite?.suiteConfig,
     };

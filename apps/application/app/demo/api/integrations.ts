@@ -7,8 +7,10 @@ import type {
   ConnectionTestResult,
   ExistingIssueCandidate,
   IssueDraft,
+  TrackerIssueOption,
   TrackerSummary,
 } from '#shared/integrations/types';
+import { foldText } from '#shared/utils/fold-text';
 import { nonSecretCredentials } from '#shared/integrations/registry';
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
 import {
@@ -342,6 +344,15 @@ const DEMO_BUG_FIELDS: TrackerField[] = [
     typeName: 'select',
   },
   {
+    id: 'parent',
+    name: 'Parent',
+    required: false,
+    hasDefault: false,
+    kind: 'issue',
+    options: null,
+    typeName: 'parent',
+  },
+  {
     id: 'components',
     name: 'Components',
     required: false,
@@ -417,6 +428,21 @@ export function demoTransitionSample(from: 'open' | 'done'): TransitionSample {
 
 export function demoAssignable(): { users: { id: string; displayName: string }[] } {
   return { users: [{ id: 'demo-account', displayName: 'Demo User' }] };
+}
+
+/** The demo's Jira issues a field can point at: an epic or two to parent a bug under. */
+const DEMO_PICKER_ISSUES: TrackerIssueOption[] = [
+  { key: 'PIWI-10', summary: 'Checkout reliability' },
+  { key: 'PIWI-11', summary: 'Payments hardening' },
+  { key: 'PIWI-12', summary: 'Flaky test cleanup' },
+];
+
+/** The demo issues matching a key or words of a summary, like the server's issue picker. */
+export function demoIssuePicker(query: string): { issues: TrackerIssueOption[] } {
+  const q = foldText(query.trim());
+  return {
+    issues: DEMO_PICKER_ISSUES.filter((i) => !q || foldText(`${i.key} ${i.summary}`).includes(q)),
+  };
 }
 
 /** The project binding the demo shows — a canned Jira binding on the demo connection. */

@@ -1,7 +1,7 @@
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
 import { lookup } from 'node:dns/promises';
 import { isIP, type LookupFunction } from 'node:net';
-import { Agent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from 'undici';
+import type { Agent, RequestInit as UndiciRequestInit } from 'undici';
 
 /**
  * SSRF guards for outbound requests to user-supplied URLs (webhooks, link
@@ -130,11 +130,12 @@ export async function safeFetch(
   maxRedirects = 3,
   timeoutMs = 5000,
 ): Promise<Response> {
-  publicOnlyAgent ??= new Agent({ connect: { lookup: publicOnlyLookup } });
+  const undici = await import('undici');
+  publicOnlyAgent ??= new undici.Agent({ connect: { lookup: publicOnlyLookup } });
   let current = rawUrl;
   for (let hop = 0; hop <= maxRedirects; hop++) {
     await assertPublicHttpUrl(current);
-    const res = (await undiciFetch(current, {
+    const res = (await undici.fetch(current, {
       ...(init as UndiciRequestInit),
       redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),

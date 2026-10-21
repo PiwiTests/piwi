@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
 import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
@@ -266,8 +266,12 @@ export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions
   }
 }
 
-function anthropicClient(config: ResolvedAiRole): Anthropic {
-  return new Anthropic({
+/** The Anthropic SDK, loaded by the first Anthropic call. */
+let anthropicSdk: typeof import('@anthropic-ai/sdk') | null = null;
+
+async function anthropicClient(config: ResolvedAiRole): Promise<Anthropic> {
+  anthropicSdk ??= await import('@anthropic-ai/sdk');
+  return new anthropicSdk.default({
     apiKey: config.apiKey,
     baseURL: config.baseUrl || undefined,
     timeout: 120_000,
@@ -312,7 +316,7 @@ function wantsTuning(opts: AiCallOptions): boolean {
 
 /** 400 from a model that doesn't support the thinking/effort params — retry untuned. */
 function isTuningRejection(err: unknown): boolean {
-  return err instanceof Anthropic.BadRequestError && /thinking|effort/i.test(err.message);
+  return !!anthropicSdk && err instanceof anthropicSdk.default.BadRequestError && /thinking|effort/i.test(err.message);
 }
 
 /** Throw a clear error for terminal stop reasons shared by the sync and streaming paths. */
@@ -326,7 +330,7 @@ function checkAnthropicStopReason(msg: Anthropic.Message, opts: AiCallOptions): 
 }
 
 async function callAnthropic(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
-  const client = anthropicClient(config);
+  const client = await anthropicClient(config);
 
   let res: Anthropic.Message;
   try {
@@ -555,7 +559,7 @@ async function* anthropicTextDeltas(stream: ReturnType<Anthropic['messages']['st
 }
 
 async function* streamAnthropic(config: ResolvedAiRole, opts: AiCallOptions): AsyncGenerator<StreamChunk> {
-  const client = anthropicClient(config);
+  const client = await anthropicClient(config);
 
   // Same params/caching layout as callAnthropic. A tuning rejection surfaces
   // on the first iteration, before any delta arrives, so the untuned retry

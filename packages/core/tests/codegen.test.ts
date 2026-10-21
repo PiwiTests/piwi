@@ -66,6 +66,43 @@ describe('renderSpec — raw mode (no catalog)', () => {
     ]);
   });
 
+  test('writes a manual step as a comment, never as code, and warns about it', () => {
+    const session = buildSession(
+      [
+        step({ action: 'click' }),
+        step({
+          action: 'manual',
+          target: null,
+          pageUrl: '',
+          manual: {
+            description: "Accept the banner'); process.exit(1); //\nand go on",
+            location: 'tests/login.spec.ts:12',
+            call: 'Click',
+          },
+        }),
+        step({
+          action: 'assert',
+          pageUrl: '',
+          assertion: { matcher: 'toHaveCount', expected: '3', actual: '1', negated: false, note: null },
+        }),
+      ],
+      0,
+    );
+    const { code, warnings, stepLines } = renderSpec(session, { urlChecks: true });
+    expect(code).toContain(
+      "  // Manual step: Accept the banner'); process.exit(1); // and go on\n  //   Click at tests/login.spec.ts:12\n",
+    );
+    expect(code).toContain(
+      "  await expect(page.getByRole('button', { name: 'Log in' })).toHaveCount(3); // recorded: '1'",
+    );
+    expect(code.split('\n')[stepLines[1]! - 1]).toBe(
+      "  // Manual step: Accept the banner'); process.exit(1); // and go on",
+    );
+    expect(warnings.map((w) => w.code)).toEqual(['manual-step']);
+    const output = ts.transpileModule(code, { reportDiagnostics: true });
+    expect(output.diagnostics).toEqual([]);
+  });
+
   test('writes a hover step as a hover on its locator', () => {
     const row = target({ role: 'row', accessibleName: 'Invoice 42' });
     const session = buildSession([step({ action: 'hover', target: row }), step({ action: 'click' })], 0);

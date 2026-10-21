@@ -25,6 +25,9 @@
  * - `lab`: the test's Flake Lab state (`#shared/flake-lab`'s `FlakeLabTestState`).
  * - `resources: 'leaky'`: the run's resource report names at least one leak.
  * - `incident: true`: the run is flagged as an environment incident.
+ * - `coverageGap: 'restarted' | 'unreachable'`: part of the run's server
+ *   coverage is missing, for that reason: a backend restarted during the run,
+ *   or was unreachable at its end.
  * - `gaps: { detectors }`: the project has an open scenario gap (or finding)
  *   from each named detector.
  * - `suspects: { path, granularity? }`: the cluster's suspect lines start
@@ -120,6 +123,15 @@ export const DEMO_EXAMPLES = [
       project: { id: 5, name: 'web-dashboard' },
       fileCoverage: { path: 'api/Users/UsersEndpoints.cs', tests: 3, executable: true },
     },
+  },
+  {
+    id: 'run-coverage-incomplete',
+    doc: 'features/server-coverage',
+    title: 'Web Dashboard › a run whose backend restarted',
+    shows:
+      'The ASP.NET Core API restarted halfway through the run: its header says the coverage is incomplete, and the commit’s combined coverage notes that its e2e suite may read low.',
+    route: '/test-runs/63',
+    expect: { run: { id: 63, project: 'web-dashboard' }, coverageGap: 'restarted' },
   },
   {
     id: 'combined-coverage',

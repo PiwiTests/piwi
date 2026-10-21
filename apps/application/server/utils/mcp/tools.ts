@@ -658,6 +658,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         executionId: testRunsCases.id,
         testCaseId: testRunsCases.testCaseId,
         title: testCases.title,
+        externalId: testCases.externalId,
         filePath: testCases.filePath,
         status: testRunsCases.status,
         duration: testRunsCases.duration,
@@ -679,6 +680,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         executionId: c.executionId,
         testCaseId: c.testCaseId,
         title: c.title,
+        externalId: c.externalId,
         filePath: c.filePath,
         status: c.status,
         duration: c.duration,
@@ -735,6 +737,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         caseId: testRunsCases.id,
         testCaseId: testRunsCases.testCaseId,
         title: testCases.title,
+        externalId: testCases.externalId,
         filePath: testCases.filePath,
         status: testRunsCases.status,
         duration: testRunsCases.duration,
@@ -759,6 +762,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         executionId: r.caseId,
         testCaseId: r.testCaseId,
         title: r.title,
+        externalId: r.externalId,
         filePath: r.filePath,
         status: r.status,
         duration: r.duration,
@@ -798,6 +802,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         dropNulls({
           testCaseId: t.testCaseId,
           title: t.title,
+          externalId: t.externalId,
           filePath: t.filePath,
           flakyScore: t.score,
           failureRate: t.failureRate ?? null,
@@ -864,6 +869,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     return dropNulls({
       id: tc.id,
       title: tc.title,
+      externalId: tc.externalId,
       filePath: tc.filePath,
       tags: tc.tags?.length ? tc.tags : null,
       locks: tc.locks?.length ? tc.locks : null,
@@ -1242,13 +1248,16 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
     const conditions = [eq(testCases.projectId, projectId)];
-    conditions.push(or(foldedContains(testCases.title, q), foldedContains(testCases.filePath, q))!);
+    conditions.push(
+      or(foldedContains(testCases.title, q), foldedContains(testCases.filePath, q), eq(testCases.externalId, q))!,
+    );
     if (cursor) conditions.push(lt(testCases.id, cursor));
 
     const rows = await db
       .select({
         id: testCases.id,
         title: testCases.title,
+        externalId: testCases.externalId,
         filePath: testCases.filePath,
         tags: testCases.tags,
         locks: testCases.locks,
@@ -1262,6 +1271,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       dropNulls({
         id: r.id,
         title: r.title,
+        externalId: r.externalId,
         filePath: r.filePath,
         tags: Array.isArray(r.tags) && r.tags.length ? (r.tags as string[]) : null,
         locks: Array.isArray(r.locks) && r.locks.length ? (r.locks as string[]) : null,
@@ -2050,6 +2060,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         dropNulls({
           testCaseId: t.id,
           title: t.title,
+          externalId: t.externalId,
           filePath: t.filePath,
           totalRuns: t.totalRuns,
           passed: t.passedRuns || null,

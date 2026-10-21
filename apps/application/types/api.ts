@@ -402,6 +402,8 @@ export interface ProjectWithTestRuns {
   /** The project's setting, else its most common run branch, else `main`: what a run scope reads with no branch picked. */
   effectiveDefaultBranch?: string;
   openApiUrl?: string | null;
+  /** Link to a test in the team's test management tool, `{id}` replaced by the test's external ID. */
+  externalIdUrl?: string | null;
   serverProbes?: import('#shared/server-probes').ServerProbeSettings | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
@@ -530,6 +532,8 @@ export interface TestRunDetails {
   /** Who asked for the keep: a person, the reporter at ingest, or a release marker. */
   keepSource?: KeepSource | null;
   keepReason?: string | null;
+  /** Why part of the run's server coverage is missing, per backend origin (`readRunCoverageGaps` reads it); null when whole. */
+  serverCoverageGaps?: unknown;
   /** Display name of the person who kept the run, when one did and still exists. */
   keptByName?: string | null;
   createdAt: Date;
@@ -539,6 +543,8 @@ export interface TestRunDetails {
     label?: string | null;
     latestRunId?: number | null;
     latestRunStatus?: string | null;
+    /** Link to a test in the team's test management tool, `{id}` replaced by the test's external ID. */
+    externalIdUrl?: string | null;
   };
   reports?: ReportInfo[];
   testCases?: TestCaseResult[];
@@ -936,6 +942,10 @@ export interface TestCaseResult {
   /** The stable test-case identity, shared across every run of this test. */
   testCaseId: number;
   title: string;
+  /** The ID the test has in the team's test management tool (`piwi:id`, or read from its title). */
+  externalId?: string | null;
+  /** The title without its external ID, when the reporter removed it; `title` stays whole. */
+  displayTitle?: string | null;
   filePath?: string;
   suitePath?: string[];
   testAnnotations?: Array<{ type: string; description?: string }> | null;
@@ -1105,11 +1115,15 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   /** The latest occurrence's headline, the page's heading when it says more than the cluster's name. */
   latestHeadline: ClusterLatestHeadline | null;
   diagnosis: DiagnosisCompact | null;
-  project: { id: number; name: string; label: string | null } | null;
+  project: { id: number; name: string; label: string | null; externalIdUrl?: string | null } | null;
   affectedTestCases: Array<{
     testCaseId: number;
     title: string;
+    externalId?: string | null;
+    displayTitle?: string | null;
     filePath: string;
+    /** The describe blocks around the test, outermost first. */
+    suitePath: string[];
     /** The test's `piwi:owner` annotation, when it declares one. */
     owner?: string | null;
     runCount: number;
@@ -1183,6 +1197,10 @@ export interface TestCaseWithStats {
   filePath: string;
   suitePath: string;
   title: string;
+  /** The ID the test has in the team's test management tool. */
+  externalId?: string | null;
+  /** The title without its external ID, when the reporter removed it. */
+  displayTitle?: string | null;
   /** Latest-known tags and `piwi:` metadata declared on the test. */
   tags: string[] | null;
   /** Latest-known lock names declared on the test (best effort). */
@@ -1916,6 +1934,10 @@ export interface FlakyTest {
   testCaseId: number;
   latestRunsCaseId: number;
   title: string;
+  /** The ID the test has in the team's test management tool. */
+  externalId?: string | null;
+  /** The title without its external ID, when the reporter removed it. */
+  displayTitle?: string | null;
   filePath: string;
   totalRuns: number;
   failedRuns: number;

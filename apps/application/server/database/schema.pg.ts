@@ -56,6 +56,7 @@ export const projects = pgTable(
     repositoryUrl: text('repository_url'), // The repository every SCM call of the project reads (normalized https URL); pinned by the first run that names one, changed by a project admin
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
     openApiUrl: text('openapi_url'), // Declared-surface OpenAPI document URL; fetched server-side into graph route nodes with origin 'openapi'
+    externalIdUrl: text('external_id_url'), // link to a test in the team's test management tool, `{id}` replaced by its external ID; null = no link
     serverProbes: jsonb('server_probes'), // ServerProbeSettings — the level-two probe gate (enabled, allow-listed faults/routes); off by default
     routeOrigins: jsonb('route_origins'), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
@@ -121,6 +122,7 @@ export const testRuns = pgTable(
     keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
     keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
     keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
+    serverCoverageGaps: jsonb('server_coverage_gaps'), // Array<{ origin, reason: 'restarted' | 'unreachable', at? }>: why part of the run's server coverage is missing; null when whole
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -178,6 +180,11 @@ export const testCases = pgTable(
     suitePath: text('suite_path').notNull().default(''), // \x1f-delimited describe block path, e.g. 'Auth\x1fLogin'
     suiteId: integer('suite_id').references(() => testSuites.id), // FK to immediate parent describe block (null for root-level tests)
     title: text('title').notNull(),
+    // The ID the team gives this test in its own test management tool (`piwi:id`, or read from the title with the
+    // reporter's `externalId.pattern`). Matched before file + describe path + title, so a test keeps its history
+    // when it is renamed or moved.
+    externalId: text('external_id'),
+    displayTitle: text('display_title'), // the title without its external ID, when the reporter is asked to remove it
     flakyRootCause: text('flaky_root_cause'), // 'timing' | 'network' | 'assertion' | 'environment' | 'order' | 'other'
     // Latest-known test-level tags and `piwi:` metadata, refreshed on every run
     // that reports this test. Per-execution truth lives on test_runs_cases;
@@ -205,6 +212,9 @@ export const testCases = pgTable(
     ),
     suiteIdIdx: index('idx_test_cases_suite').on(table.suiteId),
     ownerIdx: index('idx_test_cases_owner').on(table.projectId, table.owner),
+    externalIdUnique: uniqueIndex('idx_test_cases_external_id')
+      .on(table.projectId, table.externalId)
+      .where(sql`external_id IS NOT NULL`),
   }),
 );
 

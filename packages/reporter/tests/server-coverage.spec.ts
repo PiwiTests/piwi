@@ -298,8 +298,9 @@ describe('ServerCoverageCollector', () => {
   it('fetches the run-level coverage at the granularity it collects, cleaning its paths', async () => {
     const server = await backend({ base: '/shop' });
     const c = collector([`${server.url}/shop`], {}, 'functions');
-    const files = await c.fetchRun(server.url);
+    const { files, gap } = await c.fetchRun(server.url);
     expect(server.requests[server.requests.length - 1]!.url).toBe('/shop/__piwi/coverage/run?granularity=functions');
+    expect(gap).toBeNull();
     expect(files).toEqual([
       {
         path: 'src/Web/Program.cs',
@@ -365,7 +366,7 @@ describe('ServerCoverageCollector', () => {
         ],
         incomplete: true,
       });
-      expect(await c.fetchRun(server.url)).toEqual([
+      expect((await c.fetchRun(server.url)).files).toEqual([
         { path: 'src/Web/Program.cs', runtime: 'server', lines: [[1, 2]] },
         { path: 'src/Web/Basket.cs', runtime: 'server' },
       ]);
@@ -376,15 +377,151 @@ describe('ServerCoverageCollector', () => {
     }
   });
 
-  it('answers null for the run-level coverage of an origin without it', async () => {
+  it('marks the run-level coverage of an origin that answers none unreachable, warning', async () => {
     const server = await backend({
       respond: (_req, res) => {
         textRes(res, 404, 'nope');
         return true;
       },
     });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await collector([server.url]).fetchRun(server.url)).toEqual({
+      files: [],
+      gap: { origin: server.url, reason: 'unreachable' },
+    });
+    expect(warn.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+      "the run's server coverage is marked incomplete",
+    );
+  });
+});
+
+describe('ServerCoverageCollector restart detection', () => {
+  const FIRST = { id: 'aaaaaaaaaaaa', startedAt: '2026-10-17T09:00:00.000Z' };
+  const SECOND = { id: 'bbbbbbbbbbbb', startedAt: '2026-10-17T09:12:30.000Z' };
+  /** Each process's coverage per request id, and the run-level coverage it holds: what ran since it started. */
+  const HELD_BY: Record<string, Record<string, CoverageFile[]>> = {
+    [FIRST.id]: {
+      [`${FIRST.id}.1`]: [{ path: 'src/Web/Basket.cs', runtime: 'server', functions: [[3, 9]], lines: [[4, 6]] }],
+    },
+    [SECOND.id]: {
+      [`${SECOND.id}.1`]: [{ path: 'src/Web/Orders.cs', runtime: 'server', functions: [[2, 8]], lines: [[3, 5]] }],
+    },
+  };
+  const RUN_BY: Record<string, unknown[]> = {
+    [FIRST.id]: [
+      { path: 'src/Web/Basket.cs', runtime: 'server', functions: [[3, 9]], lines: [[4, 6]], executable: [[4, 20]] },
+    ],
+    [SECOND.id]: [
+      { path: 'src/Web/Basket.cs', runtime: 'server', executable: [[4, 20]], allFunctions: [[3, 9]] },
+      { path: 'src/Web/Orders.cs', runtime: 'server', functions: [[2, 8]], lines: [[3, 5]], executable: [[3, 12]] },
+    ],
+  };
+
+  /** A backend whose process is `current.instance`, swapped to restart it; `named: false` answers no instance. */
+  async function restartable(current: { instance: { id: string; startedAt: string }; named?: boolean }) {
+    return backend({
+      respond: (req, res) => {
+        const instance = current.named === false ? {} : { instance: current.instance };
+        const held = HELD_BY[current.instance.id]!;
+        if (req.method === 'POST') {
+          const body = JSON.parse(req.body) as CollectBody;
+          jsonRes(res, 200, {
+            v: 1,
+            ...instance,
+            groups: body.groups.map((g) => ({
+              key: g.key,
+              files: g.requests.flatMap((id) => held[id] ?? []),
+              missing: g.requests.filter((id) => !held[id]),
+            })),
+          });
+        } else {
+          jsonRes(res, 200, { v: 1, ...instance, files: RUN_BY[current.instance.id] });
+        }
+        return true;
+      },
+    });
+  }
+
+  it('marks the run incomplete when another process answers the run-level coverage, keeping the lines the tests ran', async () => {
+    const current = { instance: FIRST };
+    const server = await restartable(current);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = collector([server.url]);
+    await c.collect({ [server.url]: [`${FIRST.id}.1`] });
+    current.instance = SECOND;
+    await c.collect({ [server.url]: [`${SECOND.id}.1`] });
+
+    const run = await c.fetchRun(server.url);
+
+    expect(run.gap).toEqual({ origin: server.url, reason: 'restarted', at: SECOND.startedAt });
+    expect(run.files).toEqual([
+      // The second process never ran Basket.cs: the first test's lines come from its own coverage.
+      {
+        path: 'src/Web/Basket.cs',
+        runtime: 'server',
+        functions: [[3, 9]],
+        lines: [[4, 6]],
+        executable: [[4, 20]],
+        allFunctions: [[3, 9]],
+      },
+      { path: 'src/Web/Orders.cs', runtime: 'server', functions: [[2, 8]], lines: [[3, 5]], executable: [[3, 12]] },
+    ]);
+    expect(String(warn.mock.calls[0]![0])).toContain(`restarted during the run at about ${SECOND.startedAt}`);
+  });
+
+  it('tells a restart from the request ids when the first collection already reached the new process', async () => {
+    const current = { instance: SECOND };
+    const server = await restartable(current);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(await collector([server.url]).fetchRun(server.url)).toBeNull();
+    const c = collector([server.url]);
+    // Given out by the first process, collected from the second: missing.
+    expect((await c.collect({ [server.url]: [`${FIRST.id}.1`] })).incomplete).toBe(true);
+
+    expect((await c.fetchRun(server.url)).gap).toEqual({
+      origin: server.url,
+      reason: 'restarted',
+      at: SECOND.startedAt,
+    });
+  });
+
+  it('names no gap when one process answered every call', async () => {
+    const server = await restartable({ instance: FIRST });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = collector([server.url]);
+    await c.collect({ [server.url]: [`${FIRST.id}.1`] });
+
+    const run = await c.fetchRun(server.url);
+
+    expect(run.gap).toBeNull();
+    expect(run.files).toEqual(RUN_BY[FIRST.id]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('names no restart for a backend that names no instance', async () => {
+    const current = { instance: FIRST, named: false };
+    const server = await restartable(current);
+    const c = collector([server.url]);
+    await c.collect({ [server.url]: [`${FIRST.id}.1`] });
+    current.instance = SECOND;
+
+    expect((await c.fetchRun(server.url)).gap).toBeNull();
+  });
+
+  it('keeps the lines the tests ran when the backend is down at the end of the run', async () => {
+    const server = await restartable({ instance: FIRST });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = collector([server.url]);
+    await c.collect({ [server.url]: [`${FIRST.id}.1`] });
+    await server.close();
+    servers = servers.filter((s) => s !== server);
+
+    const run = await c.fetchRun(server.url);
+
+    expect(run.gap).toEqual({ origin: server.url, reason: 'unreachable' });
+    expect(run.files).toEqual(HELD_BY[FIRST.id]![`${FIRST.id}.1`]);
+    expect(warn.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+      `Could not fetch the run's server coverage from ${server.url}`,
+    );
   });
 });
 

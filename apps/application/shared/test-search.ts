@@ -10,10 +10,10 @@
  *
  * Text fields (title, describe, file, error) match anywhere inside the value,
  * and `*` stands for any characters; the others (tag, lock, browser, owner,
- * priority, feature) match a whole value. Case and accents never matter
+ * priority, feature, id) match a whole value. Case and accents never matter
  * (`foldText`). Every term must
  * match, except that repeating a qualifier of a field a test has one value of
- * (file, browser, owner, priority, feature) matches any of the values. A
+ * (file, browser, owner, priority, feature, id) matches any of the values. A
  * qualifier the list does not know is read as a free word.
  *
  * One parser serves the browser (the run list filters in memory, both lists
@@ -33,7 +33,8 @@ export type TestSearchField =
   | 'lock'
   | 'owner'
   | 'priority'
-  | 'feature';
+  | 'feature'
+  | 'id';
 
 export interface TestSearchFieldDef {
   field: TestSearchField;
@@ -81,6 +82,7 @@ export const TEST_SEARCH_FIELD_DEFS: readonly TestSearchFieldDef[] = [
   { field: 'owner', key: 'owner', aliases: [], description: 'Owner', match: 'exact', single: true },
   { field: 'priority', key: 'priority', aliases: [], description: 'Priority', match: 'exact', single: true },
   { field: 'feature', key: 'feature', aliases: [], description: 'Feature', match: 'exact', single: true },
+  { field: 'id', key: 'id', aliases: [], description: 'External test ID', match: 'exact', single: true },
 ];
 
 const DEF_BY_FIELD = new Map(TEST_SEARCH_FIELD_DEFS.map((def) => [def.field, def]));
@@ -101,6 +103,7 @@ export const RUN_SEARCH_FIELDS: readonly TestSearchField[] = [
   'owner',
   'priority',
   'feature',
+  'id',
 ];
 
 /** The qualifiers of a project's Tests catalog. */
@@ -113,6 +116,7 @@ export const CATALOG_SEARCH_FIELDS: readonly TestSearchField[] = [
   'owner',
   'priority',
   'feature',
+  'id',
 ];
 
 /** The fields a free word or phrase is looked for in, when the list has them. */
@@ -274,6 +278,8 @@ export interface TestSearchSubject {
   owner?: string | null;
   priority?: string | null;
   feature?: string | null;
+  /** The test's external ID (`piwi:id`, or read from its title). */
+  externalId?: string | null;
 }
 
 /** The describe path as one string, blocks joined the way the database stores them. */
@@ -336,6 +342,8 @@ function subjectTexts(subject: TestSearchSubject, field: TestSearchField): strin
       return subject.priority ? [subject.priority] : [];
     case 'feature':
       return subject.feature ? [subject.feature] : [];
+    case 'id':
+      return subject.externalId ? [subject.externalId] : [];
   }
 }
 

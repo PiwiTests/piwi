@@ -200,3 +200,142 @@ export function isPiwiAnnotation(type: unknown): boolean {
   const lower = type.trim().toLowerCase();
   return lower.startsWith(PIWI_ANNOTATION_PREFIX) || lower.startsWith('piwi-');
 }
+
+/**
+ * The longest external ID kept. A longer value is dropped rather than cut, since two IDs cut to the same prefix
+ * would name the same test.
+ */
+export const MAX_EXTERNAL_ID_CHARS = 120;
+
+/**
+ * Normalize an external ID, the ID a team gives a test in its own test management tool: a string, trimmed, at most
+ * {@link MAX_EXTERNAL_ID_CHARS} characters, without control characters. Anything else is no ID. Case is kept, so
+ * `ab-1` and `AB-1` are two IDs.
+ */
+export function normalizeExternalId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_EXTERNAL_ID_CHARS) return undefined;
+  for (let i = 0; i < trimmed.length; i++) {
+    const code = trimmed.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return undefined;
+  }
+  return trimmed;
+}
+
+/**
+ * The external ID declared with a `piwi:id` annotation, or `undefined` when there is none. The type is matched
+ * case-insensitively, like the other `piwi:` annotations, and a later `piwi:id` wins.
+ */
+export function parseExternalId(annotations: unknown): string | undefined {
+  if (!Array.isArray(annotations)) return undefined;
+  let id: string | undefined;
+  for (const entry of annotations) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { type, description } = entry as { type?: unknown; description?: unknown };
+    if (typeof type !== 'string' || type.trim().toLowerCase() !== `${PIWI_ANNOTATION_PREFIX}id`) continue;
+    const value = normalizeExternalId(description);
+    if (value) id = value;
+  }
+  return id;
+}
+
+/**
+ * Compile the pattern an external ID is read from in a test's title. A string is compiled with `new RegExp(value)`;
+ * the `g` and `y` flags are dropped from a `RegExp`, so a match never depends on the previous one. Throws on a string
+ * that is not a valid regular expression.
+ */
+export function compileExternalIdPattern(pattern: RegExp | string): RegExp {
+  if (typeof pattern === 'string') return new RegExp(pattern);
+  return new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, ''));
+}
+
+/** An external ID read from a test's title, with the title left once the match is removed. */
+export interface TitleExternalId {
+  externalId: string;
+  /** The title without the whole match, trimmed; absent when nothing is left. */
+  displayTitle?: string;
+}
+
+/**
+ * Read an external ID from a test's title with a pattern from {@link compileExternalIdPattern}. The ID is the first
+ * capture group, or the whole match when the pattern has no group. Returns `null` when the pattern does not match or
+ * the ID it captures is not a valid one.
+ */
+export function readExternalIdFromTitle(title: string, pattern: RegExp): TitleExternalId | null {
+  const match = pattern.exec(title);
+  if (!match) return null;
+  const externalId = normalizeExternalId(match.length > 1 ? match[1] : match[0]);
+  if (!externalId) return null;
+  const rest = (title.slice(0, match.index) + title.slice(match.index + match[0].length)).trim();
+  return rest ? { externalId, displayTitle: rest } : { externalId };
+}
+
+/** One test that declares an external ID another test of the same run also declares. */
+export interface ExternalIdDuplicateTest {
+  filePath: string;
+  /** Describe-block titles, outermost first. */
+  suitePath?: string[];
+  title: string;
+  line?: number | null;
+}
+
+/**
+ * An external ID declared by tests with different file, describe path or title in one run. The run matches each of
+ * them by file, describe path and title instead, and records the list in its `metadata.externalIdDuplicates`.
+ */
+export interface ExternalIdDuplicate {
+  externalId: string;
+  tests: ExternalIdDuplicateTest[];
+}
+
+/** The most duplicate IDs a run records, and the most tests recorded per ID. */
+export const MAX_EXTERNAL_ID_DUPLICATES = 50;
+export const MAX_EXTERNAL_ID_DUPLICATE_TESTS = 10;
+
+function duplicateTestKey(test: ExternalIdDuplicateTest): string {
+  return `${test.filePath}\u0000${(test.suitePath ?? []).join('\u001f')}\u0000${test.title}`;
+}
+
+function readDuplicateTest(raw: unknown): ExternalIdDuplicateTest | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { filePath, suitePath, title, line } = raw as Record<string, unknown>;
+  if (typeof filePath !== 'string' || typeof title !== 'string') return null;
+  const test: ExternalIdDuplicateTest = { filePath, title };
+  if (Array.isArray(suitePath) && suitePath.every((s) => typeof s === 'string') && suitePath.length > 0)
+    test.suitePath = suitePath as string[];
+  if (typeof line === 'number' && Number.isFinite(line)) test.line = line;
+  return test;
+}
+
+/**
+ * Merge lists of duplicate external IDs (a run's stored list, a shard's, the server's own findings) into one: an ID
+ * appears once, with every distinct test that declared it, both capped. Takes `unknown` lists, since a stored or sent
+ * one is read back unchecked; malformed entries are dropped.
+ */
+export function mergeExternalIdDuplicates(...lists: unknown[]): ExternalIdDuplicate[] {
+  const byId = new Map<string, Map<string, ExternalIdDuplicateTest>>();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const entry of list) {
+      if (!entry || typeof entry !== 'object') continue;
+      const externalId = normalizeExternalId((entry as { externalId?: unknown }).externalId);
+      const tests = (entry as { tests?: unknown }).tests;
+      if (!externalId || !Array.isArray(tests)) continue;
+      const read = tests.map(readDuplicateTest).filter((test): test is ExternalIdDuplicateTest => test !== null);
+      if (read.length === 0) continue;
+      let known = byId.get(externalId);
+      if (!known) {
+        if (byId.size >= MAX_EXTERNAL_ID_DUPLICATES) continue;
+        known = new Map();
+        byId.set(externalId, known);
+      }
+      for (const test of read) {
+        if (known.size >= MAX_EXTERNAL_ID_DUPLICATE_TESTS) break;
+        const key = duplicateTestKey(test);
+        if (!known.has(key)) known.set(key, test);
+      }
+    }
+  }
+  return [...byId].map(([externalId, tests]) => ({ externalId, tests: [...tests.values()] }));
+}

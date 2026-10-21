@@ -30,7 +30,7 @@ describe('testCaseCache', () => {
     await expect(testCaseCache.getProjectCache(db, 101)).rejects.toThrow('SQLITE_BUSY');
     const cache = await testCaseCache.getProjectCache(db, 101);
 
-    expect(cache.get('a.spec.ts\x00\x00works')).toBe(7);
+    expect(cache.byKey.get('a.spec.ts\x00\x00works')).toBe(7);
     expect(queries()).toBe(2);
   });
 
@@ -43,7 +43,7 @@ describe('testCaseCache', () => {
     await expect(second).rejects.toThrow('SQLITE_BUSY');
     expect(queries()).toBe(1);
 
-    await expect(testCaseCache.getProjectCache(db, 102)).resolves.toBeInstanceOf(Map);
+    await expect(testCaseCache.getProjectCache(db, 102)).resolves.toMatchObject({ byKey: expect.any(Map) });
     expect(queries()).toBe(2);
   });
 });

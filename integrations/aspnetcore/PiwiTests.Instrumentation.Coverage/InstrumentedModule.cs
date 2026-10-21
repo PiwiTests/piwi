@@ -72,6 +72,7 @@ internal sealed class InstrumentedModule
     /// <item>a statement span that encloses other spans of its own method (the statements of a lambda it
     /// declares) stands for its first line and the lines those spans do not cover.</item>
     /// </list>
+    /// A method the span table marks excluded (<see cref="SpanTable.IsExcluded"/>) has no entries.
     /// </summary>
     internal SpanLines[][] Lines => LazyInitializer.EnsureInitialized(ref _lines, () => BuildLines(Spans));
 
@@ -96,7 +97,7 @@ internal sealed class InstrumentedModule
         lines[0] = [];
         for (var row = 1; row <= table.MethodRows; row++)
         {
-            var spans = table.Spans(row);
+            var spans = table.IsExcluded(row) ? [] : table.Spans(row);
             var methodLines = new SpanLines[spans.Length];
             for (var i = 0; i < spans.Length; i++)
                 methodLines[i] = new SpanLines(spans[i].Document, StatementLines(spans, i, row, methodSpans[spans[i].Document]));

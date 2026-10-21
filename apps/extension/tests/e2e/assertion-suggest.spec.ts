@@ -10,6 +10,7 @@ const DIST = path.join(here, '..', '..', 'dist');
 interface ExposedCandidate {
   method: 'toHaveValue' | 'toHaveValues' | 'toHaveText' | 'toHaveAccessibleName' | 'toBeVisible';
   detail: string | null;
+  values?: string[];
   expectLine: string;
 }
 
@@ -174,7 +175,8 @@ test.describe('suggestAssertions (via the real built assertion-panel.js)', () =>
     const tags = await suggestFor(page, 'select');
     expect(tags.candidates[0]).toEqual({
       method: 'toHaveValues',
-      detail: "a, it's",
+      detail: null,
+      values: ['a', "it's"],
       expectLine: "await expect(page.getByTestId('tags')).toHaveValues(['a', 'it\\'s']);",
     });
     await expect(playwrightLocator(page, tags.locator!)).toHaveValues(['a', "it's"]);

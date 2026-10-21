@@ -562,7 +562,7 @@
     "message": "Los sitios se asignan a los proyectos de tu instancia: conéctate primero."
   },
   "options_addMapping": {
-    "message": "+ Añadir una línea"
+    "message": "Añadir una línea"
   },
   "options_noMappings": {
     "message": "Todavía no hay líneas: añade una abajo."
@@ -1229,7 +1229,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Encontrado por su posición (nth): falla si cambia el orden de la lista"
+    "message": "Encontrado por su posición (nth): falla si cambia el orden de la lista"
   },
   "lint_dialog": {
     "message": "Revisión: elementos difíciles de localizar"
@@ -2785,6 +2785,12 @@
   "replay_foundDisabled": {
     "message": "deshabilitado"
   },
+  "replay_foundChecked": {
+    "message": "marcado"
+  },
+  "replay_foundUnchecked": {
+    "message": "sin marcar"
+  },
   "replay_verdictReproduced": {
     "message": "Reproducido: el bug aparece aquí"
   },
@@ -2854,6 +2860,15 @@
   "replay_verdictNotReproducedDetail": {
     "message": "Todos los resultados esperados se cumplen en esta página."
   },
+  "replay_verdictNotReproducedRun": {
+    "message": "El paso $step$, donde el test falló al ejecutarse, se reprodujo aquí.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "replay_verdictDiverged": {
     "message": "No se pudo llegar al bug: se detuvo en el paso $step$",
     "placeholders": {
@@ -2869,6 +2884,24 @@
       "reason": {
         "content": "$1",
         "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
+  "replay_verdictFailedAsInRun": {
+    "message": "Falló en el paso $step$, como en la ejecución del test",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictFailedAsInRunDetail": {
+    "message": "$reason$ El test falló en este mismo paso cuando se ejecutó.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByRole('button', { name: 'Pay' })."
       }
     }
   },
@@ -2979,6 +3012,18 @@
   },
   "replay_reasonActionFailed": {
     "message": "La página no reaccionó a la acción como cuando se grabó."
+  },
+  "replay_reasonManual": {
+    "message": "El test lo hace de una forma que Replay no puede reproducir."
+  },
+  "replay_reasonManualAt": {
+    "message": "El test lo hace en $location$ de una forma que Replay no puede reproducir.",
+    "placeholders": {
+      "location": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      }
+    }
   },
   "replay_reasonCovered": {
     "message": "$other$ cubre $element$ justo donde llegaría el puntero.",
@@ -3201,6 +3246,24 @@
   },
   "replay_chooseFile": {
     "message": "O elige el .piwibug del informe, o su steps.json, guardado por Piwi Picker:"
+  },
+  "replay_pasteSteps": {
+    "message": "O pega el texto de un steps.json, como los pasos copiados de Piwi"
+  },
+  "replay_pasteLabel": {
+    "message": "Pasos para pegar"
+  },
+  "replay_pasteUse": {
+    "message": "Usar estos pasos"
+  },
+  "replay_pasteNotSteps": {
+    "message": "El texto pegado no es un archivo de pasos: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "steps[2].action: is not a known action"
+      }
+    }
   },
   "replay_fromPiwi": {
     "message": "O un informe de bug de $project$ en Piwi:",
@@ -5564,6 +5627,19 @@
       "files": {
         "content": "$1",
         "example": "invoice.pdf"
+      }
+    }
+  },
+  "codegen_manualStep": {
+    "message": "El paso $step$ se hace a mano: $description$",
+    "placeholders": {
+      "description": {
+        "content": "$1",
+        "example": "Open the page the test writes itself"
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
       }
     }
   },

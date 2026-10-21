@@ -1,6 +1,7 @@
 import { requireAuth } from '../../utils/auth';
 import { getProjectScope } from '../../utils/project-access';
 import { getDatabase } from '../../database';
+import { cachedFlakeProfileSummaries } from '../../utils/flake-profile-cache';
 import { FLAKE_LAB_INBOX_MAX, listFlakeLabInbox } from '#shared/handlers/flake-lab';
 
 defineRouteMeta({
@@ -17,5 +18,9 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
-  return { items: await listFlakeLabInbox(db, scope === 'all' ? 'all' : [...scope]) };
+  return {
+    items: await listFlakeLabInbox(db, scope === 'all' ? 'all' : [...scope], {
+      profiles: (projectId, testCaseIds) => cachedFlakeProfileSummaries(db, projectId, testCaseIds),
+    }),
+  };
 });

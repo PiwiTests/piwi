@@ -25,6 +25,9 @@ import {
 import { testCaseUrl } from '../shared/instance-links.js';
 import { formatNumber, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
+import { makeButton } from '../shared/buttons.js';
+import { icon, withIcon, type IconName } from '../shared/icons.js';
+import { urlView } from '../shared/step-view.js';
 
 export type PanelStatus = 'loading' | 'not-connected' | 'no-project' | 'error' | 'ready';
 
@@ -114,13 +117,36 @@ function progressTransform({ done, total }: { done: number; total: number }): st
 }
 
 /** The page in the subtitle, saying which of the URL mapping's path prefixes were removed or added to key it. */
-function subtitlePage(context: CoverageContext): string | null {
-  const { pageKey: page, prefixRemoved: removed, prefixAdded: added } = context;
-  if (!page) return null;
-  if (removed && added) return t('coverage_subtitleSwappedPrefix', { page, removed, added });
-  if (removed) return t('coverage_subtitleWithoutPrefix', { page, prefix: removed });
-  if (added) return t('coverage_subtitleWithPrefix', { page, prefix: added });
-  return page;
+function subtitlePage(context: CoverageContext): Array<Node | string> | null {
+  const { pageKey, prefixRemoved: removed, prefixAdded: added } = context;
+  if (!pageKey) return null;
+  const page = urlView(pageKey);
+  if (removed && added) return tNodes('coverage_subtitleSwappedPrefix', { page, removed, added });
+  if (removed) return tNodes('coverage_subtitleWithoutPrefix', { page, prefix: removed });
+  if (added) return tNodes('coverage_subtitleWithPrefix', { page, prefix: added });
+  return [page];
+}
+
+/** The first call site, in code, and how many more there are. */
+function callSites(sites: readonly string[]): HTMLElement {
+  return el('span', 'site', `${sites[0]}${sites.length > 1 ? ` +${sites.length - 1}` : ''}`);
+}
+
+/** `parts` with ` · ` between them. */
+function joined(parts: Array<Node | string>): Array<Node | string> {
+  return parts.flatMap((part, i) => (i === 0 ? [part] : [' · ', part]));
+}
+
+/** A count set apart as a badge, for a tab or a section heading. */
+function countBadge(count: number, tone?: string): HTMLElement {
+  return el('span', tone ? `count-badge ${tone}` : 'count-badge', formatNumber(count));
+}
+
+/** A section heading of At risk: its icon, and its words with the count as a badge. */
+function sectionHead(name: IconName, words: Array<Node | string>): HTMLElement {
+  const head = el('h3', 'section-head');
+  head.append(icon(name), ...words);
+  return head;
 }
 
 export class CoveragePanel {
@@ -135,6 +161,7 @@ export class CoveragePanel {
   private readonly foot: HTMLElement;
   private readonly search: HTMLInputElement;
   private readonly toggles = new Map<string, HTMLInputElement>();
+  private readonly dock: HTMLButtonElement;
   /** Whether the notes were open in the last render, so a render keeps them as the reader left them. */
   private notesOpen = false;
   /** The fill of the progress bar the last render drew, while the page is checked. */
@@ -155,10 +182,10 @@ export class CoveragePanel {
     this.subEl = el('div', 'sub');
     titles.append(this.titleEl, this.subEl);
     const icons = el('div', 'icons');
-    const dock = this.iconButton('⇆', t('coverage_dock'), () => callbacks.onDock());
-    const collapse = this.iconButton('–', t('coverage_collapse'), () => callbacks.onCollapse(true));
-    const close = this.iconButton('×', t('coverage_closeEsc'), () => callbacks.onClose());
-    icons.append(dock, collapse, close);
+    this.dock = this.iconButton('arrow-left', t('coverage_dock'), () => callbacks.onDock());
+    const collapse = this.iconButton('minus', t('coverage_collapse'), () => callbacks.onCollapse(true));
+    const close = this.iconButton('close', t('coverage_closeEsc'), () => callbacks.onClose());
+    icons.append(this.dock, collapse, close);
     head.append(titles, icons);
 
     this.body = el('div', 'body');
@@ -214,13 +241,8 @@ export class CoveragePanel {
     parent.appendChild(this.pill);
   }
 
-  private iconButton(text: string, title: string, onClick: () => void): HTMLButtonElement {
-    const button = el('button', 'icon', text);
-    button.type = 'button';
-    button.title = title;
-    button.setAttribute('aria-label', title);
-    button.addEventListener('click', onClick);
-    return button;
+  private iconButton(name: IconName, title: string, onClick: () => void): HTMLButtonElement {
+    return makeButton(title, onClick, { icon: name, iconOnly: true, tone: 'ghost', small: true });
   }
 
   destroy(): void {
@@ -272,13 +294,17 @@ export class CoveragePanel {
     this.progressFill = null;
     this.panel.classList.toggle('left', state.dock === 'left');
     this.pill.classList.toggle('left', state.dock === 'left');
+    const dockIcon: IconName = state.dock === 'left' ? 'arrow-right' : 'arrow-left';
+    if (this.dock.querySelector('svg')?.dataset.icon !== dockIcon) withIcon(this.dock, dockIcon);
     this.panel.style.display = state.collapsed ? 'none' : '';
     this.pill.style.display = state.collapsed ? '' : 'none';
     for (const [key, input] of this.toggles) input.checked = state[key as keyof ViewState] === true;
 
     const page = model.context ? subtitlePage(model.context) : null;
-    const where = [model.projectLabel, page].filter(Boolean).join(' · ');
-    this.subEl.replaceChildren(where ? `${where} · ${t('common_escToClose')}` : t('common_escToClose'));
+    const sub: Array<Node | string> = [];
+    if (model.projectLabel) sub.push(el('span', 'project', model.projectLabel), ' · ');
+    if (page) sub.push(...page, ' · ');
+    this.subEl.replaceChildren(...sub, t('common_escToClose'));
     this.renderPill(model);
 
     // The page rescans while the reader works in the panel: a render keeps the
@@ -342,16 +368,18 @@ export class CoveragePanel {
     const message = el('p', model.status === 'error' ? 'message error' : 'message', model.message ?? '');
     out.push(message);
     if (model.status === 'not-connected' || model.status === 'no-project') {
-      const button = el('button', 'primary', t('coverage_openSettings'));
-      button.type = 'button';
+      const button = makeButton(t('coverage_openSettings'), () => this.callbacks.onOpenSettings(), {
+        icon: 'settings',
+        tone: 'primary',
+      });
       button.dataset.key = 'settings';
-      button.addEventListener('click', () => this.callbacks.onOpenSettings());
       out.push(button);
     } else if (model.status === 'error') {
-      const button = el('button', 'primary', t('coverage_tryAgain'));
-      button.type = 'button';
+      const button = makeButton(t('coverage_tryAgain'), () => this.callbacks.onRefresh(), {
+        icon: 'refresh',
+        tone: 'primary',
+      });
       button.dataset.key = 'retry';
-      button.addEventListener('click', () => this.callbacks.onRefresh());
       out.push(button);
     }
     return out;
@@ -361,18 +389,20 @@ export class CoveragePanel {
     const { scan, index } = context;
     const out: Node[] = [];
     const status = el('div', 'status-line');
-    status.append(this.renderBranchSelect(model, context));
-    status.append(
-      tn('coverage_indexSize', index.locators.length, { tests: tn('coverage_testCount', index.tests.length) }),
+    const refresh = makeButton(
+      model.refreshing ? t('common_refreshing') : t('common_refresh'),
+      () => this.callbacks.onRefresh(),
+      { icon: 'refresh', small: true, tone: 'ghost', title: t('coverage_refreshTitle'), className: 'refresh' },
     );
-    if (model.fetchedAt) status.append(` · ${t('coverage_updated', { age: ageLabel(model.fetchedAt) })}`);
-    const refresh = el('button', 'link-button', model.refreshing ? t('common_refreshing') : t('common_refresh'));
-    refresh.type = 'button';
     refresh.dataset.key = 'refresh';
     refresh.disabled = model.refreshing;
-    refresh.title = t('coverage_refreshTitle');
-    refresh.addEventListener('click', () => this.callbacks.onRefresh());
-    status.append(' · ', refresh);
+    const size = el(
+      'span',
+      'index-size',
+      tn('coverage_indexSize', index.locators.length, { tests: tn('coverage_testCount', index.tests.length) }),
+    );
+    if (model.fetchedAt) size.append(` · ${t('coverage_updated', { age: ageLabel(model.fetchedAt) })}`);
+    status.append(this.renderBranchSelect(model, context), refresh, size);
     out.push(status);
     if (model.refreshError)
       out.push(el('p', 'message error', t('coverage_refreshFailed', { error: model.refreshError })));
@@ -453,11 +483,11 @@ export class CoveragePanel {
     const bar = el('div', 'page-switch');
     bar.setAttribute('role', 'group');
     bar.setAttribute('aria-label', t('coverage_pageSwitch'));
-    for (const [scope, label, title] of [
-      ['page', t('coverage_thisPage'), t('coverage_thisPageTitle')],
-      ['all', t('coverage_allPages'), t('coverage_allPagesTitle')],
+    for (const [scope, label, title, glyph] of [
+      ['page', t('coverage_thisPage'), t('coverage_thisPageTitle'), 'file'],
+      ['all', t('coverage_allPages'), t('coverage_allPagesTitle'), 'layers'],
     ] as const) {
-      const button = el('button', 'tab', label);
+      const button = withIcon(el('button', 'tab', label), glyph);
       button.type = 'button';
       button.dataset.key = `page-${scope}`;
       button.title = title;
@@ -496,13 +526,17 @@ export class CoveragePanel {
 
   private renderScopeBar(model: PanelModel): HTMLElement {
     const bar = el('div', 'scope-bar');
-    const button = (key: string, text: string, title: string, onClick: () => void, disabled = false) => {
-      const b = el('button', undefined, text);
-      b.type = 'button';
+    const button = (
+      key: string,
+      glyph: IconName,
+      text: string,
+      title: string,
+      onClick: () => void,
+      disabled = false,
+    ) => {
+      const b = makeButton(text, onClick, { icon: glyph, small: true, title });
       b.dataset.key = key;
-      b.title = title;
       b.disabled = disabled;
-      b.addEventListener('click', onClick);
       return b;
     };
     if (model.state.choosingScope) {
@@ -516,25 +550,27 @@ export class CoveragePanel {
       );
       bar.append(
         el('span', 'what', t('coverage_clickPart')),
-        button('scope-cancel', t('common_cancel'), t('coverage_cancelChoosingTitle'), () =>
+        button('scope-cancel', 'close', t('common_cancel'), t('coverage_cancelChoosingTitle'), () =>
           this.callbacks.onCancelChoosing(),
         ),
         keys,
       );
       bar.dataset.mode = 'choosing';
     } else if (model.scopeLabel) {
-      const what = el('span', 'what', t('coverage_inside', { element: model.scopeLabel }));
+      const what = el('span', 'what');
+      what.append(...tNodes('coverage_inside', { element: el('span', 'scope-name', model.scopeLabel) }));
       what.title = model.scopeLabel;
       bar.append(
         what,
         button(
           'scope-widen',
+          'viewport',
           t('coverage_widen'),
           t('coverage_widenTitle'),
           () => this.callbacks.onWidenScope(),
           !model.canWiden,
         ),
-        button('scope-whole', t('coverage_wholePage'), t('coverage_wholePageTitle'), () =>
+        button('scope-whole', 'file', t('coverage_wholePage'), t('coverage_wholePageTitle'), () =>
           this.callbacks.onClearScope(),
         ),
       );
@@ -542,7 +578,9 @@ export class CoveragePanel {
     } else {
       bar.append(
         el('span', 'what', t('coverage_wholePage')),
-        button('scope-limit', t('coverage_limit'), t('coverage_limitTitle'), () => this.callbacks.onChooseScope()),
+        button('scope-limit', 'pick', t('coverage_limit'), t('coverage_limitTitle'), () =>
+          this.callbacks.onChooseScope(),
+        ),
       );
       bar.dataset.mode = 'page';
     }
@@ -583,13 +621,15 @@ export class CoveragePanel {
     tabs.setAttribute('role', 'group');
     tabs.setAttribute('aria-label', t('coverage_tabs'));
     const { scan } = context;
+    const risk = riskCount(context);
     for (const [id, label] of [
-      ['elements', t('coverage_tabElements', { count: formatNumber(scan.covered.length) })],
-      ['tests', t('coverage_tabTests', { count: formatNumber(scan.tests.length) })],
-      ['untested', t('coverage_tabUntested', { count: formatNumber(scan.uncoveredCount) })],
-      ['risk', t('coverage_tabRisk', { count: formatNumber(riskCount(context)) })],
+      ['elements', tNodes('coverage_tabElements', { count: countBadge(scan.covered.length, 'operated') })],
+      ['tests', tNodes('coverage_tabTests', { count: countBadge(scan.tests.length) })],
+      ['untested', tNodes('coverage_tabUntested', { count: countBadge(scan.uncoveredCount, 'uncovered') })],
+      ['risk', tNodes('coverage_tabRisk', { count: countBadge(risk, risk ? 'risk' : undefined) })],
     ] as const) {
-      const button = el('button', 'tab', label);
+      const button = el('button', 'tab');
+      button.append(...label);
       button.type = 'button';
       button.dataset.key = `tab-${id}`;
       button.setAttribute('aria-pressed', String(tab === id));
@@ -756,7 +796,20 @@ export class CoveragePanel {
       row.appendChild(el('span', 'swatch uncovered'));
       label.title = u.description;
       row.appendChild(label);
-      row.appendChild(el('span', 'count'));
+      const suggestion = i < MAX_SUGGESTIONS ? this.callbacks.suggestLocator(u.element) : null;
+      if (suggestion) {
+        const copy = makeButton(
+          t('coverage_copyLocator'),
+          (e) => {
+            e.stopPropagation();
+            void copyWithFeedback(suggestion, copy);
+          },
+          { icon: 'copy', small: true, title: t('coverage_copyLocatorTitle'), className: 'row-copy' },
+        );
+        row.appendChild(copy);
+      } else {
+        row.appendChild(el('span', 'count'));
+      }
       // This page: a locator tests use on other pages finds it. Perhaps the same component, perhaps a lookalike.
       const elsewhere = context.elsewhere.get(u.element);
       if (elsewhere?.length) {
@@ -774,21 +827,10 @@ export class CoveragePanel {
         hint.title = elsewhere.map((e) => context.index.locators[e]!.locator).join('\n');
         row.appendChild(hint);
       }
-      const suggestion = i < MAX_SUGGESTIONS ? this.callbacks.suggestLocator(u.element) : null;
       if (suggestion) {
         const code = el('code', 'piwi-loc');
         code.innerHTML = highlightLocator(suggestion);
         row.appendChild(code);
-        const actions = el('div', 'row-actions');
-        const copy = el('button', undefined, t('coverage_copyLocator'));
-        copy.type = 'button';
-        copy.title = t('coverage_copyLocatorTitle');
-        copy.addEventListener('click', (e) => {
-          e.stopPropagation();
-          void copyWithFeedback(suggestion, copy);
-        });
-        actions.appendChild(copy);
-        row.appendChild(actions);
       }
       return row;
     });
@@ -827,7 +869,7 @@ export class CoveragePanel {
   private renderMissing(context: CoverageContext, query: string): HTMLElement {
     const section = el('section', 'risk-section');
     section.appendChild(
-      el('h3', 'section-head', t('coverage_missingHead', { count: formatNumber(context.missing.length) })),
+      sectionHead('missing', tNodes('coverage_missingHead', { count: countBadge(context.missing.length, 'missing') })),
     );
     section.appendChild(el('p', 'section-hint', t('coverage_missingHint')));
     const shown = context.missing.filter(this.pageRiskMatches(context, query));
@@ -846,7 +888,7 @@ export class CoveragePanel {
   private renderSeveral(context: CoverageContext, query: string): HTMLElement {
     const section = el('section', 'risk-section');
     section.appendChild(
-      el('h3', 'section-head', t('coverage_severalHead', { count: formatNumber(context.several.length) })),
+      sectionHead('layers', tNodes('coverage_severalHead', { count: countBadge(context.several.length, 'risk') })),
     );
     section.appendChild(el('p', 'section-hint', t('coverage_severalHint')));
     const shown = context.several.filter(this.pageRiskMatches(context, query));
@@ -884,14 +926,14 @@ export class CoveragePanel {
     const chain = el('code', 'piwi-loc');
     chain.innerHTML = highlightLocator(locator);
     item.appendChild(chain);
-    const parts = [row.actions.slice(0, 3).map(actionLabel).join(', ')];
-    if (row.callSites.length)
-      parts.push(`${row.callSites[0]}${row.callSites.length > 1 ? ` +${row.callSites.length - 1}` : ''}`);
+    const parts: Array<Node | string> = [row.actions.slice(0, 3).map(actionLabel).join(', ')];
+    if (row.callSites.length) parts.push(callSites(row.callSites));
     if (row.projects.length) parts.push(row.projects.join(', '));
     const stability = context.stabilities[row.entry];
     if (stability?.level === 'brittle')
       parts.push(t('coverage_brittleRules', { rules: stabilityText(stability, ', ') }));
-    const detail = el('span', 'detail', parts.filter(Boolean).join(' · '));
+    const detail = el('span', 'detail');
+    detail.append(...joined(parts.filter(Boolean)));
     detail.title = row.tests.map((test) => testTitle(index.tests[test]!)).join('\n');
     item.appendChild(detail);
     return item;
@@ -901,7 +943,7 @@ export class CoveragePanel {
     const { index, scan } = context;
     const section = el('section', 'risk-section');
     section.appendChild(
-      el('h3', 'section-head', t('coverage_brittleHead', { count: formatNumber(context.brittle.length) })),
+      sectionHead('alert', tNodes('coverage_brittleHead', { count: countBadge(context.brittle.length, 'risk') })),
     );
     section.appendChild(el('p', 'section-hint', t('coverage_brittleHint')));
     const matches = (row: BrittleRow) =>
@@ -953,8 +995,7 @@ export class CoveragePanel {
     item.appendChild(chain);
     const why = el('span', 'detail', stabilityText(row.stability));
     why.title = row.stability.findings.map((f) => f.detail).join('\n');
-    if (row.callSites.length)
-      why.append(` · ${row.callSites[0]}${row.callSites.length > 1 ? ` +${row.callSites.length - 1}` : ''}`);
+    if (row.callSites.length) why.append(' · ', callSites(row.callSites));
     item.appendChild(why);
 
     if (row.count > 1) {
@@ -977,20 +1018,22 @@ export class CoveragePanel {
         item.appendChild(durable);
       }
       const actions = el('div', 'row-actions');
-      const copy = el('button', undefined, t('coverage_copyLocator'));
-      copy.type = 'button';
-      copy.title = t('coverage_copyReplacementTitle');
-      copy.addEventListener('click', (e) => {
-        e.stopPropagation();
-        void copyWithFeedback(next, copy);
-      });
-      const edit = el('button', undefined, t('coverage_copyEdit'));
-      edit.type = 'button';
-      edit.title = t('coverage_copyEditTitle');
-      edit.addEventListener('click', (e) => {
-        e.stopPropagation();
-        void copyWithFeedback(editText(row.callSites, locator, next), edit);
-      });
+      const copy = makeButton(
+        t('coverage_copyLocator'),
+        (e) => {
+          e.stopPropagation();
+          void copyWithFeedback(next, copy);
+        },
+        { icon: 'copy', small: true, title: t('coverage_copyReplacementTitle') },
+      );
+      const edit = makeButton(
+        t('coverage_copyEdit'),
+        (e) => {
+          e.stopPropagation();
+          void copyWithFeedback(editText(row.callSites, locator, next), edit);
+        },
+        { icon: 'edit', small: true, title: t('coverage_copyEditTitle') },
+      );
       actions.append(copy, edit);
       item.appendChild(actions);
     }

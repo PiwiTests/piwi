@@ -1016,10 +1016,19 @@ async function prepareReportSchedule({ base, request }) {
 
 /**
  * A Bug type's create screen as the fields endpoint returns it: Severity and a
- * Team are required, Components and Fix versions are optional, Priority has a
- * Jira default.
+ * Team are required, Found in is required with a Jira default, Components and
+ * Fix versions are optional, Priority has a Jira default.
  */
 const JIRA_SCREEN_FIELDS = [
+  {
+    id: 'parent',
+    name: 'Parent',
+    required: false,
+    hasDefault: false,
+    kind: 'issue',
+    options: null,
+    typeName: 'parent',
+  },
   {
     id: 'customfield_10050',
     name: 'Severity',
@@ -1041,6 +1050,18 @@ const JIRA_SCREEN_FIELDS = [
     kind: 'raw',
     options: null,
     typeName: 'atlassian-team',
+  },
+  {
+    id: 'customfield_10080',
+    name: 'Found in',
+    required: true,
+    hasDefault: true,
+    kind: 'option',
+    options: [
+      { id: '10400', label: 'Production' },
+      { id: '10401', label: 'Staging' },
+    ],
+    typeName: 'select',
   },
   {
     id: 'components',
@@ -1182,16 +1203,39 @@ async function prepareClusterOneTracked({ base, request }) {
  * Answers the Jira pickers and the create screen in the page, so a scene shows
  * the required-fields UI for project CHK and its Bug type without a Jira.
  */
+/** Jira-like icons for the scenes' fake site, by the path the pickers name them with. */
+const JIRA_SCENE_ICONS = {
+  '/icons/bug': '<rect width="16" height="16" rx="3" fill="#e5493a"/><circle cx="8" cy="8" r="3.5" fill="#fff"/>',
+  '/icons/task':
+    '<rect width="16" height="16" rx="3" fill="#4bade8"/><path d="M4.5 8.2l2.3 2.3 4.7-5" stroke="#fff" stroke-width="2" fill="none"/>',
+  '/icons/epic':
+    '<rect width="16" height="16" rx="3" fill="#904ee2"/><path d="M9.5 3L5 9h3l-1.5 4L11 7H8z" fill="#fff"/>',
+  '/icons/person':
+    '<circle cx="8" cy="8" r="8" fill="#ff8b00"/><circle cx="8" cy="6.2" r="2.6" fill="#fff"/><path d="M3.5 13.5a4.5 4.5 0 019 0z" fill="#fff"/>',
+  '/icons/project':
+    '<rect width="16" height="16" rx="3" fill="#36b37e"/><path d="M4 11l3-6 2 4 1.5-2L12 11z" fill="#fff"/>',
+};
+const jiraSceneIcon = (name) => `/rest/api/3/universal_avatar/view/type/scene/avatar/${name}`;
+
 async function routeJiraScreen(page) {
+  await page.route('**/api/integrations/connections/*/icon*', (route) => {
+    const path = new URL(route.request().url()).searchParams.get('path') ?? '';
+    const name = Object.keys(JIRA_SCENE_ICONS).find((key) => path.endsWith(key.slice('/icons/'.length)));
+    if (!name) return route.fulfill({ status: 404 });
+    return route.fulfill({
+      contentType: 'image/svg+xml',
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">${JIRA_SCENE_ICONS[name]}</svg>`,
+    });
+  });
   await page.route('**/api/integrations/connections/*/projects', (route) =>
-    route.fulfill({ json: { projects: [{ id: '1', key: 'CHK', name: 'Checkout' }] } }),
+    route.fulfill({ json: { projects: [{ id: '1', key: 'CHK', name: 'Checkout', icon: jiraSceneIcon('project') }] } }),
   );
   await page.route('**/api/integrations/connections/*/projects/*/issue-types', (route) =>
     route.fulfill({
       json: {
         issueTypes: [
-          { id: '10004', name: 'Bug' },
-          { id: '10006', name: 'Task' },
+          { id: '10004', name: 'Bug', icon: jiraSceneIcon('bug') },
+          { id: '10006', name: 'Task', icon: jiraSceneIcon('task') },
         ],
       },
     }),
@@ -1199,7 +1243,19 @@ async function routeJiraScreen(page) {
   await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
     route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS } }),
   );
-  await page.route('**/api/integrations/connections/*/assignable*', (route) => route.fulfill({ json: { users: [] } }));
+  await page.route('**/api/integrations/connections/*/assignable*', (route) =>
+    route.fulfill({ json: { users: [{ id: 'acct-1', displayName: 'Dana Reyes', icon: jiraSceneIcon('person') }] } }),
+  );
+  await page.route('**/api/integrations/connections/*/issue-picker*', (route) =>
+    route.fulfill({
+      json: {
+        issues: [
+          { key: 'CHK-12', summary: 'Checkout reliability', icon: jiraSceneIcon('epic') },
+          { key: 'CHK-31', summary: 'Checkout payment providers', icon: jiraSceneIcon('epic') },
+        ],
+      },
+    }),
+  );
 }
 
 // The evidence-footer scene seeds its own fixtures-free project; `prepare`
@@ -1829,6 +1885,53 @@ const SCENES = [
       await card.getByTestId('chart-export').click();
       await page.getByRole('menuitem', { name: 'Download Excel' }).waitFor();
       await shoot();
+    },
+  })),
+  ...[
+    { name: 'execution-replay-export', width: 1280 },
+    { name: 'execution-replay-export-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `A failed execution's Export menu: the .piwibug bug report for Piwi Picker's Replay, with how many steps are done by hand and not replayed, and Copy steps, at ${width} px`,
+    route: '/test-run-cases/37',
+    viewport: { width, height: 900 },
+    async run({ page, shoot, settle }) {
+      const summary = page.getByTestId('export-piwibug-summary');
+      await settle();
+      // Hydration can lag the first paint on a dev server; retry the click until the menu opens.
+      for (let attempt = 0; attempt < 20 && !(await summary.isVisible()); attempt++) {
+        await page.getByRole('button', { name: 'Export' }).first().click();
+        await summary.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await page.waitForFunction(
+        () =>
+          !/Reading the steps/.test(
+            document.querySelector('[data-testid="export-piwibug-summary"]')?.textContent ?? 'Reading the steps',
+          ),
+        undefined,
+        { timeout: 60000 },
+      );
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'test-title-path', width: 1280 },
+    { name: 'test-title-path-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Where the failing test lives: the execution's identity line, then a cluster's affected tests and evidence, name it by its title path (folders, file and line, describe blocks, title), at ${width} px`,
+    outputs: [`${name}-execution.png`, `${name}-cluster-affected.png`, `${name}-cluster-evidence.png`],
+    route: '/test-run-cases/37',
+    viewport: { width, height: 900 },
+    async run({ page, goto, shoot, settle }) {
+      await page.locator('[data-shot="test-title-path"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('execution', { of: '[data-shot="situation-block"]', pad: 8 });
+      await goto('/failure-clusters/5');
+      await page.locator('[data-shot="evidence-subject"]').waitFor({ timeout: 60000 });
+      await shoot('cluster-affected', { of: '[data-shot="cluster-affected-tests"]', pad: 8 });
+      await page.locator('[data-shot="evidence-subject"]').scrollIntoViewIfNeeded();
+      await shoot('cluster-evidence', { of: '[data-shot="evidence-subject"]', pad: 8 });
     },
   })),
   ...[
@@ -2641,6 +2744,42 @@ const SCENES = [
     },
   },
   {
+    name: 'create-issue-added-field',
+    description: 'Create issue modal with a Parent added on demand, its issue search open',
+    tags: ['desktop'],
+    prepare: prepareJiraSceneConnection,
+    route: '/failure-clusters/7',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/issue-draft*', async (route) => {
+        const draft = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...draft,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            fieldValues: JIRA_FIELD_DEFAULTS,
+          },
+        });
+      });
+      await page.locator('[data-shot="issue-line-create"]').first().click();
+      const dialog = page.getByRole('dialog');
+      await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
+      await dialog.getByText('Unassigned').click();
+      await page.getByRole('option', { name: 'Dana Reyes' }).click();
+      await dialog.getByText('Add a field').click();
+      await page.getByRole('option', { name: 'Parent', exact: true }).click();
+      const parent = dialog.locator('[data-shot="create-issue-added-fields"] [data-field-id="parent"]');
+      await parent.getByText('Search an issue').click();
+      await page.keyboard.type('checkout');
+      await page.getByRole('option', { name: 'CHK-12 — Checkout reliability' }).waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
     name: 'binding-jira-fields',
     description:
       "Project → Settings → Issue tracker: the Jira fields the issue type requires, with the project's defaults",
@@ -3222,6 +3361,40 @@ const SCENES = [
       await shoot('details');
     },
   },
+  // Seeded run #63's backend restarted halfway through: the run header flags its
+  // coverage, Details says what the backend lost, and its commit's combined
+  // coverage notes the run.
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 900 } },
+    { suffix: '-mobile', viewport: { width: 390, height: 1800 } },
+  ].flatMap(({ suffix, viewport }) => [
+    {
+      name: `run-coverage-incomplete${suffix}`,
+      description: `Run page at ${viewport.width} px of a run whose backend restarted: the Coverage incomplete flag on the facts line, and the Coverage row in Details`,
+      route: '/test-runs/63',
+      viewport,
+      async run({ page, shoot, settle }) {
+        await page.locator('[data-shot="run-coverage-incomplete"]').waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+        await page.getByRole('button', { name: 'Details' }).click();
+        await page.locator('[data-shot="run-coverage-gaps"]').waitFor();
+        await settle();
+        await shoot('details');
+      },
+    },
+    {
+      name: `coverage-restart-note${suffix}`,
+      description: `A commit’s combined coverage at ${viewport.width} px whose only run’s backend restarted: the note naming the run`,
+      route: '/projects/5/coverage',
+      viewport,
+      async run({ page, settle, shoot }) {
+        await page.locator('[data-testid="coverage-notes"] [data-note="runs-incomplete"]').waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot(undefined, { of: '[data-shot="coverage-headline"]', pad: 8 });
+      },
+    },
+  ]),
   {
     name: 'run-keep-modal',
     description: 'Run page menu: Keep forever… asks for an optional reason',

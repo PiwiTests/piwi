@@ -11,12 +11,15 @@ import type {
   TrackerUserOption,
 } from '#shared/integrations/types';
 import {
+  fieldForProblem,
   hasFieldValue,
   joinFieldNames,
+  MANAGED_FIELDS,
   missingRequiredFields,
-  requiredFieldsToFill,
+  requiredFieldsToAsk,
   settableFields,
   type FieldValues,
+  type TrackerField,
 } from '#shared/integrations/fields';
 import { withTypedValue } from '~/utils/text-format';
 
@@ -106,18 +109,54 @@ const {
   () => projectKey.value,
   () => issueType.value,
 );
-/** The fields to ask for: the required ones Piwi does not fill, plus any Jira refused. */
+/**
+ * The fields to ask for: the required ones Piwi does not fill, those Jira
+ * fills by default included, plus any Jira refused — even one its screen does
+ * not list, which a workflow validator can require (a parent).
+ */
 const askedFields = computed(() => {
-  const required = requiredFieldsToFill(screenFields.value);
-  const refused = new Set(fieldProblems.value.map((p) => p.id));
-  const extra = settableFields(screenFields.value).filter((f) => refused.has(f.id) && !required.includes(f));
+  const required = requiredFieldsToAsk(screenFields.value);
+  const settable = settableFields(screenFields.value);
+  const extra: TrackerField[] = [];
+  for (const problem of fieldProblems.value) {
+    if (MANAGED_FIELDS.has(problem.id) || [...required, ...extra].some((f) => f.id === problem.id)) continue;
+    extra.push(settable.find((f) => f.id === problem.id) ?? fieldForProblem(problem));
+  }
   return [...required, ...extra];
 });
+/** Optional fields added on demand for this issue, each shown with its input until removed. */
+const addedFields = ref<TrackerField[]>([]);
+/** The optional fields of the screen that can still be added. */
+const addableFields = computed(() =>
+  settableFields(screenFields.value).filter(
+    (f) => !askedFields.value.some((a) => a.id === f.id) && !addedFields.value.some((a) => a.id === f.id),
+  ),
+);
+function addField(field: TrackerField) {
+  addedFields.value = [...addedFields.value, field];
+}
+/**
+ * Removing added fields drops the values set for this issue: the project's
+ * default, if any, applies again, and nothing else is sent for them.
+ */
+function removeFields(ids: string[]) {
+  addedFields.value = addedFields.value.filter((f) => !ids.includes(f.id));
+  const next = { ...fieldValues.value };
+  for (const id of ids) {
+    const fallback = draft.value?.fieldValues?.[id];
+    if (fallback) next[id] = fallback;
+    else delete next[id];
+  }
+  fieldValues.value = next;
+}
+const removeField = (id: string) => removeFields([id]);
+// Another project or issue type has another screen: the fields added for this one go, with their values.
+watch([connectionId, projectKey, issueType], () => removeFields(addedFields.value.map((f) => f.id)));
 /** Optional project defaults that ride along without being asked for: "Components to Checkout". */
 const projectDefaultsLine = computed(() =>
   joinFieldNames(
-    settableFields(screenFields.value)
-      .filter((f) => !askedFields.value.includes(f) && hasFieldValue(fieldValues.value[f.id]?.value))
+    addableFields.value
+      .filter((f) => hasFieldValue(fieldValues.value[f.id]?.value))
       .map((f) => `${f.name} to ${fieldValues.value[f.id]!.label}`),
   ),
 );
@@ -180,6 +219,7 @@ function applyDraft(d: IssueDraft) {
   include.value = { ...d.include };
   fieldValues.value = { ...(d.fieldValues ?? {}) };
   fieldProblems.value = [];
+  addedFields.value = [];
 }
 
 async function loadDraft() {
@@ -195,7 +235,13 @@ async function loadDraft() {
     params.set('includeShareLink', String(include.value.includeShareLink));
     const d = await $fetch<IssueDraft>(`/api/integrations/issue-draft?${params.toString()}`);
     applyDraft(d);
-    if (projectKey.value) void loadIssueTypes();
+    // The pickers name the project and the type, with their icons, rather than a bare key and id.
+    void loadProjects();
+    if (projectKey.value) {
+      void loadIssueTypes();
+      // The prefilled assignee shows with its name and avatar rather than an account id.
+      if (assignee.value) void searchAssignable();
+    }
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -254,6 +300,7 @@ async function searchAssignable() {
       `/api/integrations/connections/${connectionId.value}/assignable?${params.toString()}`,
     );
     assignableUsers.value = users;
+    for (const u of users) seenUsers.set(u.id, u);
   } catch {
     /* the modal falls back to the prefilled assignee */
   }
@@ -263,7 +310,34 @@ function addLabel(text: string) {
   labels.value = withTypedValue(labels.value, text);
 }
 
-const assigneeItems = computed(() => assignableUsers.value.map((u) => ({ label: u.displayName || u.id, value: u.id })));
+// Jira's own icons beside the project and the issue type, as Jira shows them.
+const trackerIcon = useTrackerIcon();
+const projectItems = computed(() =>
+  projects.value.map((p) => ({
+    label: `${p.key} — ${p.name}`,
+    value: p.key,
+    avatar: trackerIcon(connectionId.value, p.icon),
+  })),
+);
+const issueTypeItems = computed(() =>
+  issueTypes.value.map((t) => ({ label: t.name, value: t.id, avatar: trackerIcon(connectionId.value, t.icon) })),
+);
+const projectAvatar = computed(() => projectItems.value.find((p) => p.value === projectKey.value)?.avatar);
+const issueTypeAvatar = computed(() => issueTypeItems.value.find((t) => t.value === issueType.value)?.avatar);
+
+/** Every person a search listed, so the chosen assignee keeps its name and avatar after another search. */
+const seenUsers = reactive(new Map<string, TrackerUserOption>());
+const userItem = (u: TrackerUserOption) => ({
+  label: u.displayName || u.id,
+  value: u.id,
+  avatar: trackerIcon(connectionId.value, u.icon, 'round'),
+});
+const assigneeItems = computed(() => {
+  const items = assignableUsers.value.map(userItem);
+  const chosen = assignee.value ? seenUsers.get(assignee.value) : undefined;
+  return chosen && !items.some((i) => i.value === chosen.id) ? [userItem(chosen), ...items] : items;
+});
+const assigneeAvatar = computed(() => assigneeItems.value.find((i) => i.value === assignee.value)?.avatar);
 
 watch(open, (isOpen) => {
   if (isOpen) {
@@ -432,7 +506,8 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <UFormField label="Jira project">
               <USelectMenu
                 v-model="projectKey"
-                :items="projects.map((p) => ({ label: `${p.key} — ${p.name}`, value: p.key }))"
+                :items="projectItems"
+                :avatar="projectAvatar"
                 value-key="value"
                 :placeholder="projectKey || 'Select a project'"
                 class="w-full"
@@ -442,7 +517,8 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <UFormField label="Issue type">
               <USelectMenu
                 v-model="issueType"
-                :items="issueTypes.map((t) => ({ label: t.name, value: t.id }))"
+                :items="issueTypeItems"
+                :avatar="issueTypeAvatar"
                 value-key="value"
                 :placeholder="issueType || 'Select a type'"
                 class="w-full"
@@ -470,15 +546,33 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
                 :project-key="projectKey"
               />
             </div>
+            <div v-if="addedFields.length" class="space-y-2" data-shot="create-issue-added-fields">
+              <p class="text-xs font-medium text-gray-500">Other fields</p>
+              <TrackerFieldsList
+                v-model="fieldValues"
+                :fields="addedFields"
+                :connection-id="connectionId"
+                :project-key="projectKey"
+                removable
+                @remove="removeField"
+              />
+            </div>
             <p v-if="projectDefaultsLine" class="text-xs text-muted">
               The project settings also set {{ projectDefaultsLine }}.
             </p>
+            <TrackerFieldPicker
+              v-if="!fieldsLoading && addableFields.length"
+              :fields="addableFields"
+              label="Add a field"
+              @pick="addField"
+            />
           </template>
 
           <UFormField label="Assignee">
             <USelectMenu
               v-model="assignee"
               :items="assigneeItems"
+              :avatar="assigneeAvatar"
               value-key="value"
               searchable
               :placeholder="assignee || 'Unassigned'"

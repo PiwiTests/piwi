@@ -11,9 +11,23 @@ import { projectCatalogUrl } from '../shared/instance-links.js';
 import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
 import { attachPanelShadow } from './panel-root.js';
 import { holdFocus } from './modal-panel.js';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { icon, iconText, setLabel, type IconName } from '../shared/icons.js';
 
 const HOST_ID = 'piwi-test-function-host';
 const MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
+
+/** A function's verdict, and a step's, by icon. */
+const VERDICT_ICONS: Record<FunctionTestResult['verdict'], IconName> = {
+  ready: 'check-circle',
+  partial: 'alert',
+  'not-found': 'missing',
+};
+const STEP_ICONS: Record<FunctionTestResult['steps'][number]['verdict'], IconName> = {
+  unique: 'check',
+  ambiguous: 'alert',
+  missing: 'close',
+};
 
 function verdictLabel(verdict: FunctionTestResult['verdict']): string {
   if (verdict === 'ready') return t('functions_ready');
@@ -38,7 +52,9 @@ function renderResult(result: FunctionTestResult): HTMLElement {
   name.textContent = result.entry.name;
   const badge = document.createElement('span');
   badge.className = `badge ${result.verdict}`;
-  badge.textContent = verdictLabel(result.verdict);
+  const verdict = document.createElement('span');
+  verdict.textContent = verdictLabel(result.verdict);
+  badge.append(icon(VERDICT_ICONS[result.verdict]), verdict);
   top.append(name, badge);
   row.appendChild(top);
 
@@ -47,7 +63,7 @@ function renderResult(result: FunctionTestResult): HTMLElement {
   for (const step of result.steps) {
     const line = document.createElement('div');
     line.className = `step ${step.verdict}`;
-    line.textContent = stepLabel(step);
+    iconText(line, STEP_ICONS[step.verdict], stepLabel(step));
     steps.appendChild(line);
   }
   row.appendChild(steps);
@@ -101,44 +117,52 @@ async function renderPanel(): Promise<void> {
 
   const style = document.createElement('style');
   style.textContent = `
+    ${BUTTON_CSS}
     :host { all: initial; }
     * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }
     .panel { background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px; width: min(560px, 92vw); max-height: 78vh;
       overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
     @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
     .header > div:first-child { min-width: 0; }
     .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; }
     .manage-link { color: #a78bfa; text-decoration: none; overflow-wrap: anywhere; }
     .manage-link:hover, .manage-link:focus-visible { text-decoration: underline; }
-    .close { background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px; }
-    .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
     .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-    .refresh { background: none; border: 1px solid rgba(128,128,128,.35); color: inherit; font: inherit; font-size: 11.5px;
-      opacity: .85; cursor: pointer; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
-    .refresh:hover:not(:disabled), .refresh:focus-visible:not(:disabled) { opacity: 1; border-color: #7c3aed; }
-    .refresh:disabled { opacity: .45; cursor: default; }
+    .refresh { white-space: nowrap; }
     .refresh-error { color: #eab308; font-size: 11.5px; padding: 4px 0 8px; overflow-wrap: anywhere; }
     .empty { color: #9ca3af; font-size: 12.5px; padding: 8px 0; overflow-wrap: anywhere; hyphens: auto; }
-    .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+    .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px; }
+    .row.ready { border-color: rgba(34,197,94,.4); }
     .row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-    .badge { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; max-width: 55%; text-align: center; }
-    .badge.ready { background: rgba(34,197,94,.2); color: #22c55e; }
-    .badge.partial { background: rgba(234,179,8,.2); color: #eab308; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; line-height: 16px;
+      padding: 2px 8px 2px 6px; border-radius: 999px; flex-shrink: 0; max-width: 55%;
+    }
+    .badge .piwi-icon { width: 12px; height: 12px; flex-shrink: 0; }
+    .step .piwi-icon { width: 14px; height: 14px; flex-shrink: 0; }
+    .badge.ready { background: rgba(34,197,94,.2); color: #4ade80; }
+    .badge.partial { background: rgba(234,179,8,.2); color: #facc15; }
     .badge.not-found { background: rgba(128,128,128,.2); color: #9ca3af; }
-    .steps { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
-    .step { font-size: 11.5px; color: #9ca3af; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .step.unique { color: #22c55e; }
-    .step.ambiguous { color: #eab308; }
-    .step { overflow-wrap: anywhere; }
+    .steps { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; }
+    .step {
+      display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; line-height: 16px; color: #9ca3af;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere;
+    }
+    .step .piwi-icon { margin-top: 1px; }
+    .step.unique { color: #4ade80; }
+    .step.ambiguous { color: #facc15; }
+    .step.missing { color: #fca5a5; }
     @media (prefers-color-scheme: light) {
       .sub, .empty, .step, .badge.not-found { color: #6b7280; }
       .manage-link { color: #6d28d9; }
       .refresh-error, .step.ambiguous, .badge.partial { color: #a16207; }
       .step.unique, .badge.ready { color: #15803d; }
+      .step.missing { color: #b91c1c; }
+      .row.ready { border-color: rgba(21,128,61,.35); }
     }
   `;
   root.appendChild(style);
@@ -177,15 +201,19 @@ async function renderPanel(): Promise<void> {
 
   const actions = document.createElement('div');
   actions.className = 'header-actions';
-  const refreshBtn = document.createElement('button');
-  refreshBtn.className = 'refresh';
-  refreshBtn.textContent = t('common_refresh');
-  refreshBtn.title = t('functions_refreshHint');
+  const refreshBtn = makeButton(t('common_refresh'), () => void revalidate(true), {
+    icon: 'refresh',
+    small: true,
+    title: t('functions_refreshHint'),
+    className: 'refresh',
+  });
   if (projectId == null) refreshBtn.disabled = true;
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', t('common_close'));
-  closeBtn.textContent = '×';
+  const closeBtn = makeButton(t('common_close'), finish, {
+    icon: 'close',
+    iconOnly: true,
+    tone: 'ghost',
+    className: 'close',
+  });
   actions.append(refreshBtn, closeBtn);
   header.append(titleWrap, actions);
   panel.appendChild(header);
@@ -216,7 +244,6 @@ async function renderPanel(): Promise<void> {
     for (const result of results) resultsEl.appendChild(renderResult(result));
   }
 
-  closeBtn.addEventListener('click', finish);
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) finish();
   });
@@ -249,8 +276,7 @@ async function renderPanel(): Promise<void> {
   async function revalidate(force: boolean): Promise<void> {
     if (projectId == null) return;
     refreshBtn.disabled = true;
-    const previousLabel = refreshBtn.textContent;
-    if (force) refreshBtn.textContent = t('common_refreshing');
+    if (force) setLabel(refreshBtn, t('common_refreshing'));
     const result = await requestCatalogRefresh(projectId, { force });
     if (!live()) return;
     if (result.ok && result.refreshed) {
@@ -258,7 +284,7 @@ async function renderPanel(): Promise<void> {
       if (!live()) return;
       if (refreshed) renderResults(refreshed);
     }
-    refreshBtn.textContent = previousLabel;
+    setLabel(refreshBtn, t('common_refresh'));
     refreshBtn.disabled = false;
     if (!result.ok && force) {
       const failed = document.createElement('div');
@@ -268,7 +294,6 @@ async function renderPanel(): Promise<void> {
     }
   }
 
-  refreshBtn.addEventListener('click', () => void revalidate(true));
   // Opening the panel is itself a "show me the current catalog" request —
   // TTL-guarded so repeated opens don't hit the instance every time.
   void revalidate(false);

@@ -5,6 +5,7 @@
  * Pure data — no storage reads. Asset bytes are fetched later by whichever side
  * is generating the file (see `ExportAssetReader`).
  */
+import { testTextLabel } from '#shared/utils/test-label';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { getTestRunCase, getTestRunCaseTraces } from '#shared/handlers/test-cases';
 import { getFailureCluster, getClusterDiagnosis, getExecutionDiagnosis } from '#shared/handlers/failure-clusters';
@@ -83,7 +84,14 @@ async function collectCase(db: DrizzleDB, executionId: number): Promise<ExportCa
     getExecutionDiagnosis(db, executionId).catch(() => null),
   ]);
 
-  const title = String(detail.title ?? `Execution ${executionId}`);
+  const title =
+    typeof detail.title === 'string'
+      ? testTextLabel({
+          title: detail.title,
+          displayTitle: detail.displayTitle as string | null | undefined,
+          externalId: detail.externalId as string | null | undefined,
+        })
+      : `Execution ${executionId}`;
   const slug = caseSlug(title, executionId);
   const { assets } = assetsForCase(detail, traces, slug);
 

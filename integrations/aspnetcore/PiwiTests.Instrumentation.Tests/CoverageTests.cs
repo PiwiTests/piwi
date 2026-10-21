@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -224,7 +225,7 @@ public class CoverageTests
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = json.RootElement;
-        Assert.Equal(["groups", "v"], TestApp.SortedKeys(root));
+        Assert.Equal(["groups", "instance", "v"], TestApp.SortedKeys(root));
         Assert.Equal(1, root.GetProperty("v").GetInt32());
         var group = Assert.Single(root.GetProperty("groups").EnumerateArray().ToList());
         Assert.Equal(["files", "key", "missing"], TestApp.SortedKeys(group));
@@ -244,9 +245,32 @@ public class CoverageTests
 
         using var json = await app.RunJsonAsync(granularity);
 
-        Assert.Equal(["files", "v"], TestApp.SortedKeys(json.RootElement));
+        Assert.Equal(["files", "instance", "v"], TestApp.SortedKeys(json.RootElement));
         var check = Assert.Single(json.RootElement.GetProperty("files").EnumerateArray(), f => f.GetProperty("path").GetString() == Path("Checks.cs"));
         Assert.Equal(keys, TestApp.SortedKeys(check));
+    }
+
+    [Fact]
+    public async Task Names_the_same_process_instance_in_every_answer_and_in_its_request_ids()
+    {
+        await using var app = await CoverageTestApp.StartAsync();
+        var id = await app.RequestIdAsync("/check?value=5");
+
+        var response = await app.Client.PostAsJsonAsync("/__piwi/coverage/collect", new { granularity = "files", groups = new[] { new { key = "k", requests = new[] { id } } } });
+        using var collect = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        using var run = await app.RunJsonAsync("files");
+
+        var instance = collect.RootElement.GetProperty("instance");
+        var instanceId = instance.GetProperty("id").GetString();
+        Assert.Matches(new Regex("^[0-9a-f]{12}$"), instanceId);
+        Assert.Equal(PiwiCoverageRecorder.InstanceId, instanceId);
+        Assert.StartsWith($"{instanceId}.", id);
+        Assert.Equal(instanceId, run.RootElement.GetProperty("instance").GetProperty("id").GetString());
+
+        var startedAt = instance.GetProperty("startedAt").GetDateTimeOffset();
+        Assert.Equal(PiwiCoverageRecorder.StartedAt, startedAt);
+        Assert.InRange(startedAt, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow);
+        Assert.Equal(startedAt, run.RootElement.GetProperty("instance").GetProperty("startedAt").GetDateTimeOffset());
     }
 
     [Fact]
@@ -422,11 +446,34 @@ public class CoverageTests
     }
 
     [Fact]
+    public async Task Refuses_to_start_a_coverage_build_in_production()
+    {
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => TestApp.StartAsync(
+            "Production",
+            (a, _) => a.UsePiwiTestLogs(),
+            services: s => s.AddPiwiTestLogs(o => o.Coverage = new PiwiCoverageSettings { IsInstrumented = () => true })));
+
+        Assert.Contains("-p:PiwiCoverage=true", error.Message);
+        Assert.Contains("Production", error.Message);
+    }
+
+    [Fact]
+    public async Task Starts_a_build_without_coverage_in_production()
+    {
+        await using var app = await TestApp.StartAsync(
+            "Production",
+            (a, _) => a.UsePiwiTestLogs(),
+            services: s => s.AddPiwiTestLogs(o => o.Coverage = new PiwiCoverageSettings { IsInstrumented = () => false }));
+
+        Assert.Null(CoverageTestApp.RequestId(await app.Client.GetAsync("/json")));
+    }
+
+    [Fact]
     public async Task Warns_when_a_coverage_build_runs_where_the_middleware_is_not_active()
     {
         var logs = new ListLoggerProvider();
         await using var app = await TestApp.StartAsync(
-            "Production",
+            "Staging",
             (a, _) => a.UsePiwiTestLogs(),
             services: s =>
             {
@@ -435,7 +482,7 @@ public class CoverageTests
             });
 
         var warning = Assert.Single(logs.Messages, m => m.Contains("-p:PiwiCoverage=true", StringComparison.Ordinal));
-        Assert.Contains("Production", warning);
+        Assert.Contains("Staging", warning);
         Assert.Null(CoverageTestApp.RequestId(await app.Client.GetAsync("/json")));
     }
 

@@ -6,6 +6,7 @@
  */
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
 import type { CoverageDataNote, CoverageRatios, CoverageSummary } from '~~/server/utils/coverage-summary';
+import type { RunCoverageGap } from '#shared/run-coverage-gaps';
 
 /** A count with thousands separators, the same in every locale so the server and the browser agree. */
 export function formatCount(n: number): string {
@@ -58,8 +59,13 @@ export function carriedSentence(suite: { carriedFrom: string | null; carriedFile
   return `${plural(suite.carriedFiles, 'file')} carried from ${suite.carriedFrom.slice(0, 7)}`;
 }
 
-/** A note's sentence, in parts: text, and the commits it names, each shown as a link to its coverage. */
-export type NoteSentence = Array<string | { commit: string }>;
+/** A note's sentence, in parts: text, the commits it names, each a link to its coverage, and the runs, each a link to its page. */
+export type NoteSentence = Array<string | { commit: string } | { run: number }>;
+
+/** Runs as sentence parts, `#12, #14`. */
+function runParts(ids: number[]): NoteSentence {
+  return ids.flatMap((id, i) => (i === 0 ? [{ run: id }] : [', ', { run: id }]));
+}
 
 /** One note on a commit's numbers as one plain sentence; `branch` is the commit's, null for the default branch. */
 export function dataNoteSentence(note: CoverageDataNote, branch: string | null): NoteSentence {
@@ -79,9 +85,35 @@ export function dataNoteSentence(note: CoverageDataNote, branch: string | null):
         ', an earlier commit.',
       ];
     case 'incomplete':
+      if (note.suite === 'e2e') {
+        return ['e2e: incomplete: a backend restarted or was unreachable during every run it counts.'];
+      }
       return [
         `${note.suite}: the report is incomplete, cut at a size limit or with files that disagreed with the checkout.`,
       ];
+    case 'runs-incomplete': {
+      const one = note.runs.length === 1;
+      const restarted = note.runs.every((r) => r.reasons.includes('restarted'));
+      const unreachable = note.runs.every((r) => !r.reasons.includes('restarted'));
+      const runs = runParts(note.runs.map((r) => r.id));
+      const lead = restarted
+        ? `the backend restarted during ${one ? 'run' : 'runs'} `
+        : unreachable
+          ? `the backend was unreachable at the end of ${one ? 'run' : 'runs'} `
+          : `a backend restarted or was unreachable in ${one ? 'run' : 'runs'} `;
+      if (note.completeRuns > 0) {
+        return [
+          `e2e: ${lead}`,
+          ...runs,
+          `. ${one ? 'Its' : 'Their'} lines still count; ${plural(note.completeRuns, 'complete run')} ${note.completeRuns === 1 ? 'keeps' : 'keep'} the suite whole.`,
+        ];
+      }
+      return [
+        `e2e: incomplete: ${lead}`,
+        ...runs,
+        `. The lines the tests ran are kept; what the backend ran outside a request${restarted ? ' before the restart' : ''} is missing, so e2e may read low.`,
+      ];
+    }
     case 'missing-suite':
       return [`${note.suite}: no coverage for this commit or an earlier one.`];
     case 'no-inventory':
@@ -99,6 +131,24 @@ export function dataNoteSentence(note: CoverageDataNote, branch: string | null):
       ];
     }
   }
+}
+
+/** A run's flag when part of its server coverage is missing: `Coverage incomplete: the backend restarted during the run`. */
+export function coverageGapHeadline(gaps: RunCoverageGap[]): string | null {
+  if (gaps.length === 0) return null;
+  if (gaps.every((g) => g.reason === 'restarted')) return 'Coverage incomplete: the backend restarted during the run';
+  if (gaps.every((g) => g.reason === 'unreachable'))
+    return 'Coverage incomplete: the backend was unreachable at the end of the run';
+  return 'Coverage incomplete: a backend restarted or was unreachable';
+}
+
+/** What one origin's gap loses, one sentence; `formatTime` writes the restart's time. */
+export function coverageGapDetail(gap: RunCoverageGap, formatTime: (iso: string) => string): string {
+  if (gap.reason === 'unreachable') {
+    return `${gap.origin} was unreachable at the end of the run: only the lines the tests ran are kept, not what it ran outside a request.`;
+  }
+  const when = gap.at ? ` at about ${formatTime(gap.at)}` : '';
+  return `${gap.origin} restarted${when}: the lines the tests ran are kept; what it ran outside a request before the restart is missing.`;
 }
 
 /** The notes a file's view shows: those about its marks, not about the commit's totals. */

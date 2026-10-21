@@ -1,4 +1,3 @@
-import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { STATUS_COLORS } from '#shared/status-colors';
 import {
@@ -74,11 +73,12 @@ export function isEmailConfigured(): boolean {
   return getSmtpConfig().configured;
 }
 
-function getTransport(): Transporter {
+async function getTransport(): Promise<Transporter> {
   if (_transport) return _transport;
   const cfg = getSmtpConfig();
   const pass = process.env.PIWI_SMTP_PASS || '';
-  _transport = nodemailer.createTransport({
+  const { default: nodemailer } = await import('nodemailer');
+  _transport ??= nodemailer.createTransport({
     host: cfg.host,
     port: cfg.port,
     secure: cfg.secure,
@@ -102,7 +102,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
         'Set PIWI_SITE_URL to the public URL of this dashboard.',
     );
   }
-  const transport = getTransport();
+  const transport = await getTransport();
   const from = cfg.fromName ? `"${cfg.fromName}" <${cfg.from}>` : cfg.from;
   await transport.sendMail({
     from,

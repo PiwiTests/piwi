@@ -1,7 +1,9 @@
 import { describe, test, expect } from 'vitest';
 import {
   MAX_FIELD_VALUES,
+  cascadeValue,
   coerceFieldValue,
+  fieldForProblem,
   fieldPayload,
   fieldValueHint,
   joinFieldNames,
@@ -10,7 +12,7 @@ import {
   missingTransitionFieldsMessage,
   normalizeFieldValues,
   parseRawFieldValue,
-  requiredFieldsToFill,
+  requiredFieldsToAsk,
   settableFields,
   textToDocument,
   TRANSITION_SKIPPED_FIELDS,
@@ -59,7 +61,12 @@ describe('Jira create metadata → tracker fields', () => {
     [{ type: 'array', items: 'string', system: 'labels' }, 'string-array'],
     [{ type: 'issuelink', system: 'parent' }, 'issue'],
     [{ type: 'team', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team' }, 'raw'],
-    [{ type: 'option-with-child' }, 'raw'],
+    [{ type: 'option-with-child' }, 'option-cascade'],
+    [{ type: 'project', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:project' }, 'option'],
+    [{ type: 'group', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:grouppicker' }, 'group'],
+    [{ type: 'array', items: 'group' }, 'group-array'],
+    [{ type: 'any', custom: 'com.pyxis.greenhopper.jira:gh-epic-link' }, 'issue-key'],
+    [{ type: 'array', items: 'json', custom: 'com.pyxis.greenhopper.jira:gh-sprint' }, 'raw'],
   ] as const)('%j is a %s field', (schema, kind) => {
     expect(jiraFieldKind(schema)).toBe(kind);
   });
@@ -116,6 +123,54 @@ describe('Jira create metadata → tracker fields', () => {
     ).toMatchObject({ kind: 'issue', required: true });
   });
 
+  test('any other custom field can be set on demand, unless its operations leave out setting it', () => {
+    const parentLink = {
+      fieldId: 'customfield_10100',
+      name: 'Parent Link',
+      schema: { type: 'any', custom: 'com.atlassian.jpo:jpo-custom-field-parent' },
+    };
+    expect(jiraFieldToTrackerField(parentLink)).toMatchObject({ kind: 'raw', typeName: 'jpo-custom-field-parent' });
+    expect(jiraFieldToTrackerField({ ...parentLink, operations: [] })).toBeNull();
+    expect(jiraFieldToTrackerField({ ...parentLink, operations: ['set'] })).not.toBeNull();
+    expect(
+      jiraFieldToTrackerField({
+        fieldId: 'customfield_10000',
+        name: 'Development',
+        schema: { type: 'any', custom: 'com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf' },
+      }),
+    ).toBeNull();
+    expect(jiraFieldToTrackerField({ fieldId: 'thing', schema: { type: 'any', system: 'thing' } })).toBeNull();
+    // A parent Jira leaves optional on the screen is still offered.
+    expect(
+      jiraFieldToTrackerField({ fieldId: 'parent', name: 'Parent', schema: { type: 'issuelink', system: 'parent' } }),
+    ).toMatchObject({ kind: 'issue', required: false });
+  });
+
+  test('a cascading select lists each value, then the ones under it', () => {
+    const f = jiraFieldToTrackerField({
+      fieldId: 'customfield_10300',
+      name: 'Area',
+      schema: {
+        type: 'option-with-child',
+        custom: 'com.atlassian.jira.plugin.system.customfieldtypes:cascadingselect',
+      },
+      allowedValues: [
+        { id: '1', value: 'Hardware', children: [{ id: '11', value: 'Laptop' }] },
+        { id: '2', value: 'Software' },
+      ],
+    });
+    expect(f?.kind).toBe('option-cascade');
+    expect(f?.options).toEqual([
+      { id: '1', label: 'Hardware' },
+      { id: '11', label: 'Hardware › Laptop', parentId: '1' },
+      { id: '2', label: 'Software' },
+    ]);
+    expect(cascadeValue(f!.options![1]!)).toEqual({ id: '1', child: { id: '11' } });
+    expect(cascadeValue(f!.options![2]!)).toEqual({ id: '2' });
+    expect(coerceFieldValue(f!, 'hardware › laptop')).toEqual({ id: '1', child: { id: '11' } });
+    expect(coerceFieldValue(f!, 'Software')).toEqual({ id: '2' });
+  });
+
   test('a pick-list without listed values is typed by hand, and a field without an id is skipped', () => {
     expect(jiraFieldToTrackerField({ fieldId: 'x', schema: { type: 'option' } })?.kind).toBe('raw');
     expect(jiraFieldToTrackerField({ name: 'No id' })).toBeNull();
@@ -130,9 +185,17 @@ describe('Jira create metadata → tracker fields', () => {
 });
 
 describe('which fields to ask for', () => {
-  test('the required fields to fill leave out what Jira defaults and what Piwi fills', () => {
-    expect(requiredFieldsToFill(SCREEN).map((f) => f.id)).toEqual(['customfield_10042', 'customfield_10050']);
+  test('the required fields to ask for leave out what Piwi fills, and keep what Jira defaults', () => {
+    expect(requiredFieldsToAsk(SCREEN).map((f) => f.id)).toEqual([
+      'priority',
+      'customfield_10042',
+      'customfield_10050',
+    ]);
     expect(settableFields(SCREEN).map((f) => f.id)).not.toContain('summary');
+  });
+
+  test('a required field Jira defaults is asked for but never missing', () => {
+    expect(missingRequiredFields(SCREEN, {}).map((f) => f.id)).toEqual(['customfield_10042', 'customfield_10050']);
   });
 
   test('a value fills a required field; an empty one does not', () => {
@@ -263,6 +326,21 @@ describe('values given without the form', () => {
     expect(coerceFieldValue(field({ id: 'a', kind: 'issue' }), 'proj-12')).toEqual({ key: 'PROJ-12' });
     expect(coerceFieldValue(field({ id: 'a', kind: 'string-array' }), 'one')).toEqual(['one']);
     expect(coerceFieldValue(field({ id: 'a', kind: 'raw' }), 'team-uuid')).toBe('team-uuid');
+    expect(coerceFieldValue(field({ id: 'a', kind: 'issue-key' }), ' proj-7 ')).toBe('PROJ-7');
+    expect(coerceFieldValue(field({ id: 'a', kind: 'group' }), 'developers')).toEqual({ name: 'developers' });
+    expect(coerceFieldValue(field({ id: 'a', kind: 'group-array' }), ['a', 'b'])).toEqual([
+      { name: 'a' },
+      { name: 'b' },
+    ]);
+  });
+
+  test('a field Jira refused that its screen does not list is still asked for', () => {
+    expect(fieldForProblem({ id: 'parent', name: 'parent' })).toMatchObject({
+      name: 'Parent',
+      kind: 'issue',
+      required: true,
+    });
+    expect(fieldForProblem({ id: 'customfield_1', name: 'customfield_1' })).toMatchObject({ kind: 'raw' });
   });
 
   test('a hint says what a field takes', () => {
@@ -294,7 +372,7 @@ describe('on a transition screen', () => {
       'assignee',
     ]);
     expect(missingRequiredFields(RESOLVE, values, {}, TRANSITION_SKIPPED_FIELDS)).toEqual([]);
-    expect(requiredFieldsToFill(RESOLVE, TRANSITION_SKIPPED_FIELDS).map((f) => f.id)).toEqual([
+    expect(requiredFieldsToAsk(RESOLVE, TRANSITION_SKIPPED_FIELDS).map((f) => f.id)).toEqual([
       'resolution',
       'assignee',
     ]);

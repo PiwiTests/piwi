@@ -1,5 +1,7 @@
+import { copyWithFeedback } from '../shared/clipboard.js';
 import { downloadBlob } from '../shared/download.js';
-import { formatNumber, t, tn } from '../shared/i18n.js';
+import { formatNumber, t, tn, tNodes } from '../shared/i18n.js';
+import { urlView } from '../shared/step-view.js';
 import {
   mockCode,
   type MockKind,
@@ -9,9 +11,9 @@ import {
   type ResponseBody,
 } from '../shared/mock-code.js';
 import { webOrigin } from '../shared/web-origin.js';
-import { copyText, inspectedOrigin } from './inspected.js';
+import { inspectedOrigin } from './inspected.js';
 import { conditionActions, pageConditions, renderConditions } from './panel-conditions.js';
-import { button, el, emptyState, flash } from './ui.js';
+import { button, el, emptyState, iconLine, methodView } from './ui.js';
 
 /**
  * The Network tab: the page's `fetch` and XHR requests (and, with **Every
@@ -86,13 +88,11 @@ export function startNetworkLog(onChange: () => void): void {
   chrome.devtools.network.onRequestFinished.addListener((request) => add(request as HarEntry));
 }
 
-function pathOf(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.pathname}${parsed.search}`;
-  } catch {
-    return url;
-  }
+/** How a status code reads in the list: red for a failure or no answer, muted for a redirect. */
+function statusTone(status: number): string {
+  if (status >= 400 || status === 0) return 'bad';
+  if (status >= 300) return 'muted';
+  return '';
 }
 
 interface NetworkView {
@@ -148,7 +148,8 @@ async function renderMock(pane: HTMLElement, entry: NetworkEntry): Promise<void>
 
   const mock = el('section', 'mock');
   mock.setAttribute('aria-label', t('devtools_mockTitle'));
-  const title = el('h3', 'request-title', `${entry.method} ${entry.url}`);
+  const title = el('h3', 'request-title');
+  title.append(methodView(entry.method), ' ', urlView(entry.url));
 
   const patternInput = el('input');
   patternInput.type = 'text';
@@ -169,15 +170,11 @@ async function renderMock(pane: HTMLElement, entry: NetworkEntry): Promise<void>
 
   const notes = el('div', 'notes');
   const code = el('pre', 'code');
-  const copy = button(
-    t('devtools_mockCopy'),
-    () => {
-      void copyText(code.textContent ?? '').then((copied) => {
-        if (copied) flash(copy, t('common_copied'));
-      });
-    },
-    'primary copy-code',
-  );
+  const copy = button(t('devtools_mockCopy'), () => void copyWithFeedback(code.textContent ?? '', copy), {
+    icon: 'copy',
+    tone: 'primary',
+    className: 'copy-code',
+  });
   const codeBox = el('div', 'code-box');
   codeBox.append(code, copy);
   const fileActions = el('div', 'controls');
@@ -188,8 +185,10 @@ async function renderMock(pane: HTMLElement, entry: NetworkEntry): Promise<void>
     code.textContent = result.code;
     notes.replaceChildren();
     fileActions.replaceChildren();
-    if (view.kind === 'response' && text === null) notes.appendChild(el('p', 'warn-text', t('devtools_mockNoBody')));
-    if (result.hidden > 0) notes.appendChild(el('p', '', tn('devtools_mockHidden', result.hidden)));
+    if (view.kind === 'response' && text === null) {
+      notes.appendChild(iconLine('alert', 'warn-text', t('devtools_mockNoBody')));
+    }
+    if (result.hidden > 0) notes.appendChild(iconLine('eye-off', '', tn('devtools_mockHidden', result.hidden)));
     if (result.hidden > 0 || view.reveal) {
       const reveal = el('label', 'check');
       const box = el('input');
@@ -205,9 +204,12 @@ async function renderMock(pane: HTMLElement, entry: NetworkEntry): Promise<void>
     if (result.file) {
       const file = result.file;
       const name = file.path.split('/').pop()!;
-      notes.appendChild(el('p', '', t('devtools_mockFileHint', { path: file.path })));
+      const path = el('code', '', file.path);
+      notes.appendChild(iconLine('file', '', ...tNodes('devtools_mockFileHint', { path })));
       fileActions.appendChild(
-        button(t('devtools_mockDownload', { file: name }), () => download(file.content, name, file.base64)),
+        button(t('devtools_mockDownload', { file: name }), () => download(file.content, name, file.base64), {
+          icon: 'download',
+        }),
       );
     }
   };
@@ -249,10 +251,12 @@ export function refreshNetworkList(): void {
       row.type = 'button';
       row.title = `${entry.method} ${entry.url}`;
       row.setAttribute('aria-pressed', String(entry.id === view.selected));
+      const path = el('span', 'path');
+      path.appendChild(urlView(entry.url, { origin: view.allOrigins }));
       row.append(
-        el('span', 'method', entry.method),
-        el('span', 'path', view.allOrigins ? entry.url : pathOf(entry.url)),
-        el('span', entry.status >= 400 || entry.status === 0 ? 'status-code bad' : 'status-code', String(entry.status)),
+        methodView(entry.method),
+        path,
+        el('span', `status-code ${statusTone(entry.status)}`.trim(), String(entry.status)),
         el('span', 'time', t('devtools_requestTime', { ms: formatNumber(entry.time) })),
       );
       row.addEventListener('click', () => {
@@ -304,12 +308,16 @@ export async function renderNetworkTab(container: HTMLElement, pageUrl?: string)
     refreshNetworkList();
   });
   allLabel.append(all, t('devtools_networkAllOrigins'));
-  const clear = button(t('devtools_networkClear'), () => {
-    entries.length = 0;
-    view.selected = null;
-    refreshNetworkList();
-    void showSelected();
-  });
+  const clear = button(
+    t('devtools_networkClear'),
+    () => {
+      entries.length = 0;
+      view.selected = null;
+      refreshNetworkList();
+      void showSelected();
+    },
+    { icon: 'trash', tone: 'remove' },
+  );
   const toolbar = el('div', 'pane-toolbar');
   const pageStatus = el('span', 'warn-text');
   pageStatus.setAttribute('role', 'status');

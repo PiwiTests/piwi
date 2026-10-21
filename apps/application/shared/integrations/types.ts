@@ -116,12 +116,16 @@ export interface TrackerProjectOption {
   id: string;
   key: string;
   name: string;
+  /** The project's avatar, as a path on the tracker's site: shown through the connection's icon route. */
+  icon?: string | null;
 }
 
 /** An issue-type option for the create modal's picker. */
 export interface TrackerIssueTypeOption {
   id: string;
   name: string;
+  /** The issue type's icon, as a path on the tracker's site: shown through the connection's icon route. */
+  icon?: string | null;
 }
 
 /** An assignable-user option for the create modal's picker. */
@@ -129,6 +133,16 @@ export interface TrackerUserOption {
   id: string;
   displayName: string;
   email?: string | null;
+  /** The person's avatar, shown through the connection's icon route. */
+  icon?: string | null;
+}
+
+/** An issue a field can point at (a parent, an epic), for the create modal's issue picker. */
+export interface TrackerIssueOption {
+  key: string;
+  summary: string;
+  /** The issue's type icon, as a path on the tracker's site: shown through the connection's icon route. */
+  icon?: string | null;
 }
 
 /** An issue that may already track the failure — leads the modal so a person links it. */

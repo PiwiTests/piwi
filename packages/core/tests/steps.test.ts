@@ -159,6 +159,58 @@ describe('parseSteps', () => {
     expect(parseSteps(bare)).toEqual({ ok: false, errors: ['steps[4].dropTarget: is required on a dragTo step'] });
   });
 
+  test('reads a manual step, which needs a description and keeps no value', () => {
+    const doc = valid();
+    doc.steps.push({
+      ...doc.steps[0]!,
+      action: 'manual',
+      target: null,
+      value: 'x',
+      manual: { description: 'Accept the cookie banner', location: 'tests/cart.spec.ts:12', call: 'Click' },
+    });
+    const result = parseSteps(JSON.stringify(doc));
+    expect(result.ok && result.steps.steps[4]).toMatchObject({
+      action: 'manual',
+      value: null,
+      manual: { description: 'Accept the cookie banner', location: 'tests/cart.spec.ts:12', call: 'Click' },
+    });
+    const bare = valid();
+    bare.steps.push({ ...bare.steps[0]!, action: 'manual' });
+    expect(parseSteps(bare)).toEqual({ ok: false, errors: ['steps[4].manual: is required on a manual step'] });
+    const blank = valid();
+    blank.steps.push({
+      ...blank.steps[0]!,
+      action: 'manual',
+      manual: { description: ' ', location: null, call: null },
+    });
+    expect(parseSteps(blank)).toEqual({ ok: false, errors: ['steps[4].manual.description: must not be empty'] });
+  });
+
+  test('reads the newer matchers, a count being a whole number', () => {
+    const doc = valid();
+    const check = (matcher: string, expected: string | null) => ({
+      ...doc.steps[3]!,
+      assertion: { matcher, expected, actual: null, negated: false, note: null },
+    });
+    doc.steps.push(
+      check('toContainText', 'Saved') as never,
+      check('toHaveCount', '3') as never,
+      check('toBeChecked', 'ignored') as never,
+    );
+    const result = parseSteps(JSON.stringify(doc));
+    expect(result.ok && result.steps.steps.slice(4).map((s) => [s.assertion!.matcher, s.assertion!.expected])).toEqual([
+      ['toContainText', 'Saved'],
+      ['toHaveCount', '3'],
+      ['toBeChecked', null],
+    ]);
+    const notCount = valid();
+    notCount.steps.push(check('toHaveCount', 'three') as never);
+    expect(parseSteps(notCount)).toEqual({
+      ok: false,
+      errors: ['steps[4].assertion.expected: must be a whole number of elements on a toHaveCount assertion'],
+    });
+  });
+
   test('never keeps a redacted value', () => {
     const doc = valid();
     doc.steps[1] = { ...doc.steps[1]!, redacted: true, value: 'hunter2' };
@@ -177,10 +229,34 @@ describe('parseSteps', () => {
     });
   });
 
+  test('writes version 2 only for a document that uses a manual step or a matcher version 2 added', () => {
+    const doc = valid();
+    expect(parseSteps(doc)).toMatchObject({ ok: true, steps: { v: 1 } });
+    const manual = {
+      action: 'manual',
+      target: null,
+      value: null,
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 3,
+      manual: { description: 'Accept the cookie banner', location: null, call: null },
+    };
+    expect(parseSteps({ ...doc, v: 2, steps: [...doc.steps, manual] })).toMatchObject({ ok: true, steps: { v: 2 } });
+    const counted = {
+      ...manual,
+      action: 'assert',
+      manual: undefined,
+      target: doc.steps[2]!.target,
+      assertion: { matcher: 'toHaveCount', expected: '3', actual: null, negated: false, note: null },
+    };
+    expect(parseSteps({ ...doc, steps: [...doc.steps, counted] })).toMatchObject({ ok: true, steps: { v: 2 } });
+    expect(parseSteps({ ...doc, v: 2 })).toMatchObject({ ok: true, steps: { v: 1 } });
+  });
+
   test('refuses what is not a steps document', () => {
     expect(parseSteps('{')).toEqual({ ok: false, errors: ['not valid JSON'] });
     expect(parseSteps([])).toEqual({ ok: false, errors: ['a steps document must be a JSON object'] });
-    expect(parseSteps({ v: 2, steps: [] })).toEqual({ ok: false, errors: ['v: this reads version 1, not 2'] });
+    expect(parseSteps({ v: 3, steps: [] })).toEqual({ ok: false, errors: ['v: this reads versions 1 to 2, not 3'] });
     expect(parseSteps({ v: 1, steps: 'x' })).toEqual({ ok: false, errors: ['steps: must be a list'] });
   });
 

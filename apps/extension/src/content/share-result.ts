@@ -38,17 +38,21 @@ export function shareResultRow(shared: SharedVerdict): HTMLElement {
 
   const start = () =>
     row.replaceChildren(
-      button(t('replay_share'), () => {
-        void askWorker<{ instance: string | null }>({ type: 'piwi-share-target' }, { instance: null }).then(
-          ({ instance }) => {
-            if (!instance) return row.replaceChildren(say(t('common_notConnected'), 'alert'));
-            const preview = shared.origin
-              ? t('replay_sharePreview', { instance, origin: shared.origin })
-              : t('replay_sharePreviewDesktop', { instance });
-            row.replaceChildren(say(preview), send(), button(t('common_cancel'), start));
-          },
-        );
-      }),
+      button(
+        t('replay_share'),
+        () => {
+          void askWorker<{ instance: string | null }>({ type: 'piwi-share-target' }, { instance: null }).then(
+            ({ instance }) => {
+              if (!instance) return row.replaceChildren(say(t('common_notConnected'), 'alert'));
+              const preview = shared.origin
+                ? t('replay_sharePreview', { instance, origin: shared.origin })
+                : t('replay_sharePreviewDesktop', { instance });
+              row.replaceChildren(say(preview), send(), button(t('common_cancel'), start, { icon: 'close' }));
+            },
+          );
+        },
+        { icon: 'share' },
+      ),
     );
   const send = () => {
     const b = button(
@@ -64,7 +68,7 @@ export function shareResultRow(shared: SharedVerdict): HTMLElement {
           );
         });
       },
-      'primary',
+      { icon: 'send', tone: 'primary' },
     );
     return b;
   };

@@ -14,7 +14,15 @@ import {
   DEFAULT_EXPORT_MAX_INLINE_BYTES,
 } from '#shared/export/limits';
 import { EXPORT_FORMATS, type ExportAssetReader, type ExportFormat } from '#shared/export/types';
+import { BUG_REPORT_MEDIA_TYPE } from '@piwitests/core/bug-report';
+import {
+  executionBugReportArchive,
+  executionReplaySummary,
+  getExecutionBugReport,
+  type ExecutionReplaySummary,
+} from '#shared/handlers/execution-bug-report';
 import { getDemoDb, getDemoDbBaseUrl, getDemoImportedFile } from '../db.client';
+import { demoHttpError } from './http-error';
 
 /**
  * Demo evidence is served from the built static assets (and, for runs this
@@ -85,4 +93,27 @@ export async function apiExportFailureCluster(id: number, query?: URLSearchParam
 
   const bundle = await collectClusterBundle(db, id, { maxCases, piwiVersion: 'demo' });
   return respond(bundle, parseFormat(query), id);
+}
+
+/** An execution as a Piwi Picker bug report, the archive the server's route writes. */
+export async function apiExecutionBugReport(id: number): Promise<Response> {
+  const built = await getExecutionBugReport(await getDemoDb(), id);
+  if (!built) throw demoHttpError(404, 'Test run case not found');
+  const bytes = await executionBugReportArchive(built, demoAssetReader);
+  return new Response(bytes as BufferSource, {
+    status: 200,
+    headers: {
+      'Content-Type': BUG_REPORT_MEDIA_TYPE,
+      'Content-Disposition': `attachment; filename="${built.fileName}"`,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+/** An execution's steps as Piwi Picker replays them, with what it leaves out. */
+export async function apiExecutionReplaySteps(id: number): Promise<ExecutionReplaySummary> {
+  const built = await getExecutionBugReport(await getDemoDb(), id);
+  if (!built) throw demoHttpError(404, 'Test run case not found');
+  return executionReplaySummary(built);
 }

@@ -148,7 +148,7 @@ which the cross-shard clue points out.
 
 ### Ownership metadata (`piwi:` annotations)
 
-Five `piwi:`-prefixed annotations attach ownership to a test. They are ordinary Playwright annotations, so no new API is
+Five `piwi:`-prefixed annotations attach ownership to a test, and a sixth, `piwi:id`, its [external ID](#external-test-ids). They are ordinary Playwright annotations, so no new API is
 involved:
 
 ```typescript
@@ -176,6 +176,7 @@ test(
 | `piwi:feature` | Any text — the product area, for grouping across spec files |
 | `piwi:link` | An absolute `http(s)` URL; other schemes are dropped rather than stored |
 | `piwi:bug` | The id of the Piwi bug report the test reproduces (`37` or `#37`); written by the spec a [bug report](/features/report-a-bug) generates |
+| `piwi:id` | The test's ID in your test management tool, see [External test IDs](#external-test-ids) |
 
 Metadata shows as badges next to the test wherever it is listed, is searchable with `owner:`, `priority:` and `feature:`
 on the Tests tabs ([test search](/reference/test-search)), and is carried into [pull-request feedback](/features/pr-feedback) so a failure comment names the team
@@ -183,6 +184,59 @@ that owns it. Unknown `piwi:` fields and unparseable values are ignored — a ty
 
 The values are also re-validated server-side, because a payload can reach the ingest API without passing through the
 reporter.
+
+### External test IDs
+
+Piwi recognizes a test by its file, its describe blocks and its title. Renaming a test, or moving it to another file or
+describe block, would otherwise start a new test with no history: no flakiness stats, failure clusters, quarantine or
+trends. When your tests already have an ID in a test management tool, give it to Piwi: a test with an **external ID**
+is matched on that ID first, and a renamed or moved test keeps its history, under its new title and place.
+
+Declare it with a `piwi:id` annotation:
+
+```typescript
+test('Log in with Email', { annotation: { type: 'piwi:id', description: '12526' } }, async ({ page }) => {
+  /* … */
+})
+```
+
+Or, when the ID is already in every title, read it from there with the reporter's `externalId.pattern`:
+
+```typescript
+reporter: [
+  ['@piwitests/reporter', { externalId: { pattern: /^(\d+),\s*/, stripFromTitle: true } }],
+],
+```
+
+| Option | Default | Does |
+|---|---|---|
+| `pattern` | none | A regular expression (or its source as a string) applied to the test's own title. The ID is its first capture group, or the whole match without a group. Also `PIWI_EXTERNAL_ID_PATTERN`. |
+| `stripFromTitle` | `false` | Show the title without the ID in the dashboard, next to the ID. The title stored and matched on stays whole, so commands that select tests by title keep working. |
+| `onDuplicate` | `'report'` | Two tests declaring the same ID are listed in the console before the first test runs, and on the run page. `'fail'` also fails the run. Also `PIWI_EXTERNAL_ID_ON_DUPLICATE`. |
+
+- A `piwi:id` annotation wins over the pattern. Put it on the test, not on a `describe` block, where every test inside
+  would declare the same ID.
+- The ID is read from the annotations declared on the test, never from one added at run time with
+  `testInfo.annotations.push()`.
+- An ID is up to 120 characters, case-sensitive.
+- The first run that declares an ID gives it to the existing test it matches by file, describe blocks and title, so
+  turning the option on keeps every history. A test that already has an ID never takes another one: a test whose ID
+  changed in your test management tool starts a new history, which you can join to the old one by merging them.
+- Imports of older runs and Flake Lab runs match tests by their ID but never rename, move or give an ID to a test.
+- **Duplicates:** an ID names one test. Tests declaring the same ID are matched by file, describe blocks and title, as
+  if they had none, until each has its own. The same test in several Playwright projects is one test, not a duplicate.
+  With `--shard`, each shard only sees its own tests: the dashboard also checks across shards and lists what it finds
+  on the run page.
+- The ID shows before the title in the test lists, on the test's page and on the execution page; click it to copy
+  it. Search for it with `id:` ([test search](/reference/test-search)).
+- **Test ID link:** in the project's settings (General), give the address of a test in your test management tool,
+  with `{id}` where the ID goes (`https://tcm.example.com/case/{id}`). The ID chip then opens the test there.
+- Pull-request comments, notifications and exports name a test by its ID and title: `12526 · Log in with Email`.
+- **Merging two tests:** a rename or a move that was not matched (before the test had an ID, for example) leaves the
+  history in two halves. On the test's page, project managers can use **Merge…** to pick the other half: its
+  executions, quarantine, failure clusters, locators, coverage, bug reports and links move to this test, and the
+  other test is deleted. Two tests that ran in the same run are two tests, and are never merged. This cannot be
+  undone.
 
 ### Expected failures (`test.fail()`)
 

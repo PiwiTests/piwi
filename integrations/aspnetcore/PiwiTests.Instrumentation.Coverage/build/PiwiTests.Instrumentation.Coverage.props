@@ -5,6 +5,16 @@
     <Instrument>TestCoverage</Instrument>
   </PropertyGroup>
 
+  <!-- PiwiCoverageForbidden=true marks a build no coverage instrumentation may reach, e.g. a Directory.Build.props's
+       <PiwiCoverageForbidden Condition="'$(Configuration)' == 'Release'">true</PiwiCoverageForbidden> when the test
+       environment is built in another configuration: a coverage build of it fails. Read when the target runs, after the
+       project file. -->
+  <Target Name="PiwiForbidCoverageBuild" BeforeTargets="CoreCompile"
+          Condition="'$(PiwiCoverageForbidden)' == 'true' and ('$(PiwiCoverage)' == 'true' or '$(Instrument)' == 'TestCoverage')">
+    <Error Code="PIWI001"
+           Text="$(MSBuildProjectName) is built with coverage instrumentation (-p:PiwiCoverage=true), but PiwiCoverageForbidden is true for this build ($(Configuration)): a coverage build runs slower code and must not ship. Build the test environment in a configuration that does not set PiwiCoverageForbidden." />
+  </Target>
+
   <!-- A relative PIWI_COVERAGE_OUTPUT names a path in the directory dotnet test runs in: the VSTest host, which runs in
        the test project's output directory, gets it as a full path through the run settings. Inline run settings on the
        dotnet test command line replace these, and the host then resolves the path against its own directory. -->
@@ -21,5 +31,52 @@
   <Target Name="PiwiWriteInstrumentMarker" BeforeTargets="CoreCompile">
     <WriteLinesToFile File="$(IntermediateOutputPath)piwi-instrument.txt" Lines="Instrument=$(Instrument)"
                       Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+
+  <!-- A coverage build leaves out what coverlet leaves out: the recorder reads, beside the span table, the exclusions
+       this target embeds as a resource. They come from where coverlet reads them: coverlet.msbuild's ExcludeByAttribute,
+       ExcludeByFile, Exclude and Include properties, and the Configuration of the coverlet collector ("XPlat code
+       coverage") in the run settings file dotnet test -settings (VSTestSetting) or else RunSettingsFilePath names. A
+       deterministic build's source roots go with them, so ExcludeByFile matches the paths the compiler mapped. Read
+       when the target runs, after the project file. -->
+  <Target Name="PiwiEmbedCoverageExclusions" BeforeTargets="CoreCompile" DependsOnTargets="InitializeSourceRootMappedPaths"
+          Condition="'$(Instrument)' == 'TestCoverage'">
+    <PropertyGroup>
+      <_PiwiCoverletConfiguration>/RunSettings/DataCollectionRunSettings/DataCollectors/DataCollector[translate(@friendlyName, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = 'xplat code coverage' or @uri = 'datacollector://Microsoft/CoverletCodeCoverage/1.0']/Configuration</_PiwiCoverletConfiguration>
+      <_PiwiRunSettings>$(VSTestSetting)</_PiwiRunSettings>
+      <_PiwiRunSettings Condition="'$(_PiwiRunSettings)' == ''">$(RunSettingsFilePath)</_PiwiRunSettings>
+      <_PiwiRunSettings Condition="'$(_PiwiRunSettings)' != '' and !Exists('$(_PiwiRunSettings)')"></_PiwiRunSettings>
+    </PropertyGroup>
+    <XmlPeek Condition="'$(_PiwiRunSettings)' != ''" XmlInputPath="$(_PiwiRunSettings)" Query="$(_PiwiCoverletConfiguration)/ExcludeByAttribute/text()">
+      <Output TaskParameter="Result" ItemName="_PiwiRunSettingsExcludeByAttribute" />
+    </XmlPeek>
+    <XmlPeek Condition="'$(_PiwiRunSettings)' != ''" XmlInputPath="$(_PiwiRunSettings)" Query="$(_PiwiCoverletConfiguration)/ExcludeByFile/text()">
+      <Output TaskParameter="Result" ItemName="_PiwiRunSettingsExcludeByFile" />
+    </XmlPeek>
+    <XmlPeek Condition="'$(_PiwiRunSettings)' != ''" XmlInputPath="$(_PiwiRunSettings)" Query="$(_PiwiCoverletConfiguration)/Exclude/text()">
+      <Output TaskParameter="Result" ItemName="_PiwiRunSettingsExclude" />
+    </XmlPeek>
+    <XmlPeek Condition="'$(_PiwiRunSettings)' != ''" XmlInputPath="$(_PiwiRunSettings)" Query="$(_PiwiCoverletConfiguration)/Include/text()">
+      <Output TaskParameter="Result" ItemName="_PiwiRunSettingsInclude" />
+    </XmlPeek>
+    <ItemGroup>
+      <_PiwiCoverageExclusions Include="ExcludeByAttribute=$([MSBuild]::Escape('$(ExcludeByAttribute)'))" Condition="'$(ExcludeByAttribute)' != ''" />
+      <_PiwiCoverageExclusions Include="ExcludeByFile=$([MSBuild]::Escape('$(ExcludeByFile)'))" Condition="'$(ExcludeByFile)' != ''" />
+      <_PiwiCoverageExclusions Include="Exclude=$([MSBuild]::Escape('$(Exclude)'))" Condition="'$(Exclude)' != ''" />
+      <_PiwiCoverageExclusions Include="Include=$([MSBuild]::Escape('$(Include)'))" Condition="'$(Include)' != ''" />
+      <_PiwiCoverageExclusions Include="@(_PiwiRunSettingsExcludeByAttribute->'ExcludeByAttribute=%(Identity)')" />
+      <_PiwiCoverageExclusions Include="@(_PiwiRunSettingsExcludeByFile->'ExcludeByFile=%(Identity)')" />
+      <_PiwiCoverageExclusions Include="@(_PiwiRunSettingsExclude->'Exclude=%(Identity)')" />
+      <_PiwiCoverageExclusions Include="@(_PiwiRunSettingsInclude->'Include=%(Identity)')" />
+      <_PiwiCoverageExclusions Include="@(SourceRoot->'SourceRoot=%(MappedPath)|%(Identity)')"
+                               Condition="'$(DeterministicSourcePaths)' == 'true' and '%(SourceRoot.MappedPath)' != ''" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)piwi-coverage-exclusions.txt" Lines="@(_PiwiCoverageExclusions)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <FileWrites Include="$(IntermediateOutputPath)piwi-coverage-exclusions.txt" />
+      <_CoreCompileResourceInputs Include="$(IntermediateOutputPath)piwi-coverage-exclusions.txt"
+                                  LogicalName="PiwiTests.Instrumentation.Coverage.Exclusions" WithCulture="false" Type="Non-Resx" />
+    </ItemGroup>
   </Target>
 </Project>

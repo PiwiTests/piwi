@@ -53,6 +53,8 @@ export interface ReplayState {
   conditions?: RequestCondition[];
   /** The connected instance's bug report the steps came from, when they did. */
   bugReportId?: number | null;
+  /** In a report made from a test run, the step the test failed at in that run (its `export` block's `failedStep`). */
+  runFailedStep?: number | null;
   /** Announced to the main-world evidence script, whose entries carry it back (see `shared/bug-relay.ts`). */
   evidenceToken?: string;
   /**
@@ -116,13 +118,19 @@ const REPLAY_TAB_KEY = 'piwiReplayTab';
 export interface ReplayTab {
   replayId: string;
   tabId: number;
+  /**
+   * The tabs the replay's tab opened while the replay ran (a link to a new
+   * tab, `window.open`): the first of them whose page plays the replay takes
+   * it on, as the recording went on there.
+   */
+  opened?: number[];
 }
 
 export async function getReplayTab(): Promise<ReplayTab | null> {
   const value = (await sessionArea().get(REPLAY_TAB_KEY))[REPLAY_TAB_KEY] as Partial<ReplayTab> | undefined;
-  return typeof value?.replayId === 'string' && typeof value.tabId === 'number'
-    ? { replayId: value.replayId, tabId: value.tabId }
-    : null;
+  if (typeof value?.replayId !== 'string' || typeof value.tabId !== 'number') return null;
+  const opened = Array.isArray(value.opened) ? value.opened.filter((id) => typeof id === 'number') : [];
+  return { replayId: value.replayId, tabId: value.tabId, ...(opened.length ? { opened } : {}) };
 }
 
 export async function setReplayTab(tab: ReplayTab): Promise<void> {
@@ -137,6 +145,7 @@ export function newReplayState(
   now = Date.now(),
   startPage: ReplayState['startPage'] = null,
   bugReportId: number | null = null,
+  runFailedStep: number | null = null,
 ): ReplayState {
   return {
     id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -150,6 +159,7 @@ export function newReplayState(
     startedAt: now,
     startPage,
     bugReportId,
+    ...(runFailedStep != null ? { runFailedStep } : {}),
     evidenceToken: `${now.toString(36)}${Math.random().toString(36).slice(2, 12)}`,
   };
 }

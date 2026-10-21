@@ -33,6 +33,7 @@ internal sealed class SpanTable
     private static readonly Guid Sha256 = new("8829d00f-11b8-4213-878b-770e8597ac16");
 
     private readonly SourceSpan[][] _methods;
+    private bool[]? _excluded;
 
     private SpanTable(string[] documents, string?[] checksums, SourceSpan[][] methods)
     {
@@ -57,25 +58,36 @@ internal sealed class SpanTable
     internal SourceSpan[] Spans(int row) => row > 0 && row < _methods.Length ? _methods[row] : [];
 
     /// <summary>
+    /// True when the method at definition row <paramref name="row"/> is excluded from coverage, as coverlet excludes
+    /// it (<see cref="CoverageExclusions"/>): its spans give no executable lines and no coverage.
+    /// </summary>
+    internal bool IsExcluded(int row) => _excluded is { } excluded && row > 0 && row < excluded.Length && excluded[row];
+
+    /// <summary>
     /// Reads the span table of <paramref name="assembly"/>, or null when it has none (it was not built with
-    /// coverage instrumentation).
+    /// coverage instrumentation), with the methods its exclusions leave out.
     /// </summary>
     /// <exception cref="NotSupportedException">The span table has a format version other than 0.1 or 0.2.</exception>
     /// <exception cref="BadImageFormatException">The span table is malformed.</exception>
-    internal static SpanTable? Read(Assembly assembly)
+    internal static unsafe SpanTable? Read(Assembly assembly)
     {
-        using var stream = assembly.GetManifestResourceStream(ResourceName);
-        if (stream is null)
+        var data = Resource(assembly, ResourceName);
+        if (data is null)
             return null;
 
-        var data = new byte[stream.Length];
-        stream.ReadExactly(data);
-        return Parse(data);
+        var table = Parse(data);
+        if (assembly.TryGetRawMetadata(out var blob, out var length))
+        {
+            var name = string.IsNullOrEmpty(assembly.Location) ? assembly.GetName().Name ?? "" : Path.GetFileNameWithoutExtension(assembly.Location);
+            table.Exclude(new MetadataReader(blob, length), name, Resource(assembly, CoverageExclusions.ResourceName));
+        }
+
+        return table;
     }
 
     /// <summary>
-    /// Reads the span table of the assembly file at <paramref name="path"/> without loading it, and its module
-    /// version id. Null when the file is no .NET assembly or has no span table.
+    /// Reads the span table of the assembly file at <paramref name="path"/> without loading it, with the methods its
+    /// exclusions leave out, and its module version id. Null when the file is no .NET assembly or has no span table.
     /// </summary>
     /// <exception cref="NotSupportedException">The span table has a format version other than 0.1 or 0.2.</exception>
     /// <exception cref="BadImageFormatException">The assembly or its span table is malformed.</exception>
@@ -93,27 +105,13 @@ internal sealed class SpanTable
             return null;
 
         mvid = metadata.GetGuid(metadata.GetModuleDefinition().Mvid);
-        foreach (var handle in metadata.ManifestResources)
-        {
-            var resource = metadata.GetManifestResource(handle);
-            if (!resource.Implementation.IsNil || !metadata.StringComparer.Equals(resource.Name, ResourceName))
-                continue;
+        var data = Resource(pe, metadata, ResourceName);
+        if (data is null)
+            return null;
 
-            // An embedded resource: its length then its bytes, at its offset in the resources directory.
-            var directory = pe.PEHeaders.CorHeader?.ResourcesDirectory ?? default;
-            if (resource.Offset < 0 || resource.Offset > directory.Size - sizeof(int))
-                throw new BadImageFormatException("Resource offset out of range.");
-
-            var reader = pe.GetSectionData(directory.RelativeVirtualAddress)
-                .GetReader((int)resource.Offset, directory.Size - (int)resource.Offset);
-            var length = reader.ReadInt32();
-            if (length < 0 || length > reader.RemainingBytes)
-                throw new BadImageFormatException("Resource length out of range.");
-
-            return Parse(reader.ReadBytes(length));
-        }
-
-        return null;
+        var table = Parse(data);
+        table.Exclude(metadata, Path.GetFileNameWithoutExtension(path), Resource(pe, metadata, CoverageExclusions.ResourceName));
+        return table;
     }
 
     /// <summary>Parses the content of a <c>&lt;DynamicAnalysisData&gt;</c> resource.</summary>
@@ -179,6 +177,47 @@ internal sealed class SpanTable
 
             return new SpanTable(documents, checksums, methods);
         }
+    }
+
+    /// <summary>Marks the methods the exclusions of <paramref name="exclusions"/> (the resource's bytes, null for coverlet's defaults) leave out.</summary>
+    private void Exclude(MetadataReader metadata, string module, byte[]? exclusions) =>
+        _excluded = CoverageExclusions.Parse(exclusions is null ? null : Encoding.UTF8.GetString(exclusions)).ExcludedRows(metadata, module, this);
+
+    private static byte[]? Resource(Assembly assembly, string name)
+    {
+        using var stream = assembly.GetManifestResourceStream(name);
+        if (stream is null)
+            return null;
+
+        var data = new byte[stream.Length];
+        stream.ReadExactly(data);
+        return data;
+    }
+
+    /// <summary>The bytes of the resource <paramref name="name"/> embedded in the assembly file, or null.</summary>
+    private static byte[]? Resource(PEReader pe, MetadataReader metadata, string name)
+    {
+        foreach (var handle in metadata.ManifestResources)
+        {
+            var resource = metadata.GetManifestResource(handle);
+            if (!resource.Implementation.IsNil || !metadata.StringComparer.Equals(resource.Name, name))
+                continue;
+
+            // An embedded resource: its length then its bytes, at its offset in the resources directory.
+            var directory = pe.PEHeaders.CorHeader?.ResourcesDirectory ?? default;
+            if (resource.Offset < 0 || resource.Offset > directory.Size - sizeof(int))
+                throw new BadImageFormatException("Resource offset out of range.");
+
+            var reader = pe.GetSectionData(directory.RelativeVirtualAddress)
+                .GetReader((int)resource.Offset, directory.Size - (int)resource.Offset);
+            var length = reader.ReadInt32();
+            if (length < 0 || length > reader.RemainingBytes)
+                throw new BadImageFormatException("Resource length out of range.");
+
+            return reader.ReadBytes(length);
+        }
+
+        return null;
     }
 
     /// <summary>A document's checksum as <see cref="Checksums"/> names it, or null.</summary>

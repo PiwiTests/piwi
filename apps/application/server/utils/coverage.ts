@@ -13,7 +13,8 @@
  *   latest run with coverage there, replaced like `code_reach`, whose rows are
  *   the files of the same coverage.
  * - `run_coverage`: a run's coverage per file, attributed to no test, merged
- *   across the requests that send it (one per shard).
+ *   across the requests that send it (one per shard); the run's
+ *   `server_coverage_gaps` names the backends whose part of it is missing.
  * - `coverage_executable`: per file version (path and blob), its executable
  *   lines and every function known in it, which depend on its content alone,
  *   stored once per version, the union of what run coverages named.
@@ -58,6 +59,7 @@ import {
   testRunsCases,
 } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { mergeRunCoverageGaps, readRunCoverageGaps, type RunCoverageGap } from '#shared/run-coverage-gaps';
 import { isGitObjectId, sha256Hex } from '#shared/utils/hash';
 import { resolveCasePayloadContents } from './case-payloads';
 import {
@@ -781,6 +783,8 @@ export interface RunCoverage {
   fileCounts: Record<CoverageRuntime, number>;
   /** The run's coverage per file, sorted by path then runtime: those matching `file`, at most `limit`. */
   files: RunCoverageFile[];
+  /** The backend origins whose part of the run's server coverage is missing, and why; empty when none is. */
+  incomplete: RunCoverageGap[];
 }
 
 /**
@@ -876,7 +880,7 @@ export async function getRunCoverage(
   opts: { file?: string | null; limit?: number } = {},
 ): Promise<RunCoverage | null> {
   const [run] = await db
-    .select({ id: testRuns.id, projectId: testRuns.projectId })
+    .select({ id: testRuns.id, projectId: testRuns.projectId, gaps: testRuns.serverCoverageGaps })
     .from(testRuns)
     .where(eq(testRuns.id, runId));
   if (!run) return null;
@@ -920,6 +924,7 @@ export async function getRunCoverage(
     executionsWithCoverage: Number(withCoverage[0]?.n ?? 0),
     fileCounts,
     files: await withFileVersions(db, run.projectId, kept),
+    incomplete: readRunCoverageGaps(run.gaps),
   };
 }
 
@@ -1044,6 +1049,24 @@ export async function storeRunCoverage(
     ),
   );
   return written;
+}
+
+/**
+ * Add gaps to a run's server coverage gaps (`test_runs.server_coverage_gaps`),
+ * each once, as every shard of a run sends its own. Returns the run's gaps.
+ */
+export async function storeRunCoverageGaps(
+  db: DrizzleDB,
+  runId: number,
+  gaps: RunCoverageGap[],
+): Promise<RunCoverageGap[]> {
+  if (gaps.length === 0) return [];
+  return withCoverageLock(runLocks, runId, async () => {
+    const [run] = await db.select({ gaps: testRuns.serverCoverageGaps }).from(testRuns).where(eq(testRuns.id, runId));
+    const merged = mergeRunCoverageGaps(run?.gaps ?? null, gaps);
+    await db.update(testRuns).set({ serverCoverageGaps: merged }).where(eq(testRuns.id, runId));
+    return merged;
+  });
 }
 
 /**

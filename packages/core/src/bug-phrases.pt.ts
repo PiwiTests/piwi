@@ -145,6 +145,7 @@ const STATES: Record<BugState, [masculine: string, feminine: string]> = {
   hidden: ['oculto', 'oculta'],
   enabled: ['habilitado', 'habilitada'],
   disabled: ['desabilitado', 'desabilitada'],
+  checked: ['marcado', 'marcada'],
 };
 
 const number = (n: number): string => new Intl.NumberFormat('pt-BR').format(n);
@@ -160,6 +161,7 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
   roles: ROLES,
   quote,
   code: markdownCode,
+  key,
   capitalize: (text) => `${text.charAt(0).toLocaleUpperCase('pt-BR')}${text.slice(1)}`,
   steps: {
     goto: (url) => `Abrir ${markdownCode(url)}`,
@@ -176,6 +178,7 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
         ? `Esvaziar ${bare(subject(s))}`
         : `Escolher ${files.length === 1 ? 'o arquivo' : 'os arquivos'} ${files.map(quote).join(', ')} ${inside(subject(s))}`,
     dragTo: (s, target) => `Arrastar ${bare(subject(s))} até ${bare(subject(target))}`,
+    manual: (description) => `Manualmente: ${description}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'não deveria' : 'deveria';
@@ -190,6 +193,10 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
         return `${text} ${should} se chamar ${quote(e.expected)}`;
       case 'url':
         return `a página ${should} ser ${markdownCode(e.expected)}`;
+      case 'contains':
+        return `${text} ${should} conter ${quote(e.expected)}`;
+      case 'count':
+        return `${text} ${should} corresponder a ${plural(e.count, 'elemento', 'elementos')}`;
       case 'state':
         return `${text} ${should} estar ${STATES[e.state][feminine(p) ? 1 : 0]}`;
     }
@@ -214,6 +221,7 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
     note: (text) => `Observação: ${text}`,
     viewport: (size, zoom) =>
       `Janela a partir deste passo: ${size}${zoom != null ? `, com zoom de ${percent(zoom)}` : ''}`,
+    failedInRun: 'O teste falhou aqui na execução da qual este relatório foi gerado',
     expectedHeading: 'Esperado e obtido',
     nothingMarked: 'Nada foi marcado como errado.',
     expectedLine: (step, expectation, actual) =>
@@ -241,5 +249,9 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
     outlineHeading: 'Estrutura da página',
     outlineNote:
       'Gerada pelo Piwi Picker a partir da página; a forma YAML de um snapshot ARIA, não a do próprio Playwright.',
+    notReplayedHeading: 'Não reproduzido',
+    notReplayedNote:
+      'Chamadas do teste que estes passos deixam de fora, então nem o Replay nem o teste gerado as executam:',
+    notReplayedLine: (e) => `${e.call}${e.location ? ` em ${e.location}` : ''}: ${e.reason}`,
   },
 };

@@ -92,6 +92,10 @@ export interface CollectedTestCase {
   locks?: string[] | null;
   /** Ownership metadata parsed from `piwi:` annotations. */
   testMeta?: TestMetadata | null;
+  /** The test's external ID, `null` when it has none to match on (see `externalId` in the options). */
+  externalId?: string | null;
+  /** The title without its external ID, with `externalId.stripFromTitle`. */
+  displayTitle?: string | null;
   /** Source snippet around the failing line (failed/timedOut only). */
   testSource?: string;
   /** In-project call-stack frames (innermost first): the failing line + its callers. */

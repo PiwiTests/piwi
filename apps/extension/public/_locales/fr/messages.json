@@ -562,7 +562,7 @@
     "message": "Les sites renvoient aux projets de votre instance : connectez-vous d’abord."
   },
   "options_addMapping": {
-    "message": "+ Ajouter une ligne"
+    "message": "Ajouter une ligne"
   },
   "options_noMappings": {
     "message": "Aucune ligne pour l’instant : ajoutez-en une ci-dessous."
@@ -1229,7 +1229,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Repéré par sa position (nth) : il casse si l’ordre de la liste change"
+    "message": "Repéré par sa position (nth) : il casse si l’ordre de la liste change"
   },
   "lint_dialog": {
     "message": "Contrôle : éléments difficiles à cibler"
@@ -2785,6 +2785,12 @@
   "replay_foundDisabled": {
     "message": "désactivé"
   },
+  "replay_foundChecked": {
+    "message": "coché"
+  },
+  "replay_foundUnchecked": {
+    "message": "non coché"
+  },
   "replay_verdictReproduced": {
     "message": "Reproduit : le bug est visible ici"
   },
@@ -2854,6 +2860,15 @@
   "replay_verdictNotReproducedDetail": {
     "message": "Tous les résultats attendus sont vérifiés sur cette page."
   },
+  "replay_verdictNotReproducedRun": {
+    "message": "L’étape $step$, où le test a échoué lors de son exécution, a été rejouée ici.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "replay_verdictDiverged": {
     "message": "Impossible d’atteindre le bug : arrêt à l’étape $step$",
     "placeholders": {
@@ -2869,6 +2884,24 @@
       "reason": {
         "content": "$1",
         "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
+  "replay_verdictFailedAsInRun": {
+    "message": "Échec à l’étape $step$, comme lors de l’exécution du test",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictFailedAsInRunDetail": {
+    "message": "$reason$ Le test a échoué à cette même étape lors de son exécution.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByRole('button', { name: 'Pay' })."
       }
     }
   },
@@ -2979,6 +3012,18 @@
   },
   "replay_reasonActionFailed": {
     "message": "La page n’a pas réagi à l’action comme lors de l’enregistrement."
+  },
+  "replay_reasonManual": {
+    "message": "Le test fait cela d’une façon que Replay ne peut pas rejouer."
+  },
+  "replay_reasonManualAt": {
+    "message": "Le test fait cela en $location$, d’une façon que Replay ne peut pas rejouer.",
+    "placeholders": {
+      "location": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      }
+    }
   },
   "replay_reasonCovered": {
     "message": "$other$ recouvre $element$ là où le pointeur arriverait.",
@@ -3201,6 +3246,24 @@
   },
   "replay_chooseFile": {
     "message": "Ou choisissez le .piwibug du rapport, ou son steps.json, enregistré par Piwi Picker :"
+  },
+  "replay_pasteSteps": {
+    "message": "Ou collez le texte d’un steps.json, comme les étapes copiées depuis Piwi"
+  },
+  "replay_pasteLabel": {
+    "message": "Étapes à coller"
+  },
+  "replay_pasteUse": {
+    "message": "Utiliser ces étapes"
+  },
+  "replay_pasteNotSteps": {
+    "message": "Le texte collé n’est pas un fichier d’étapes : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "steps[2].action: is not a known action"
+      }
+    }
   },
   "replay_fromPiwi": {
     "message": "Ou un rapport de bug de $project$ sur Piwi :",
@@ -5564,6 +5627,19 @@
       "files": {
         "content": "$1",
         "example": "invoice.pdf"
+      }
+    }
+  },
+  "codegen_manualStep": {
+    "message": "L’étape $step$ se fait à la main : $description$",
+    "placeholders": {
+      "description": {
+        "content": "$1",
+        "example": "Open the page the test writes itself"
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
       }
     }
   },

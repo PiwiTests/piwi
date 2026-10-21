@@ -177,7 +177,9 @@ export function observe(step: RecordedStep, engine = pageEngine()): Observation 
   const locator = step.assertion?.matcher === 'toHaveURL' ? null : locatorFor(step);
   const found = locator ? findAll(locator, engine) : [];
   const first = found[0];
-  if (!first) return { count: 0, text: null, value: null, name: null, visible: false, enabled: false, url };
+  if (!first) {
+    return { count: 0, text: null, value: null, name: null, visible: false, enabled: false, checked: false, url };
+  }
   const model = engine.model;
   const value =
     'value' in first && typeof (first as HTMLInputElement).value === 'string'
@@ -190,6 +192,7 @@ export function observe(step: RecordedStep, engine = pageEngine()): Observation 
     name: model.accessibleName(first, false),
     visible: model.isVisible(first),
     enabled: !model.disabled(first),
+    checked: model.checked(first) === true,
     url,
   };
 }

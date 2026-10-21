@@ -3,6 +3,7 @@ import { startTool, endTool, installEscapeToCancel } from '../shared/tool-sessio
 import { attachPanelShadow } from './panel-root.js';
 import { LOCATOR_ATTRIBUTES } from './observed-attributes.js';
 import { scanPlaywrightView, type ViewLabel } from './playwright-view-scan.js';
+import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 
 const HOST_ID = 'piwi-playwright-view-host';
 
@@ -75,9 +76,10 @@ function togglePlaywrightView(): void {
     .tag.unreachable .role { background: #b91c1c; color: #fff; }
     .tag.ambiguous .role { background: #b45309; color: #fff; }
     .tag .testid { background: #0f766e; color: #f0fdfa; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    ${BUTTON_CSS}
     .panel {
       position: fixed; bottom: 12px; right: 12px; pointer-events: auto; width: min(320px, 88vw);
-      background: #111827; color: #f9fafb; border-radius: 10px; padding: 10px 12px; font-size: 12.5px;
+      background: #111827; color: #f9fafb; border-radius: 12px; padding: 10px 12px; font-size: 12.5px;
       box-shadow: 0 8px 30px rgba(0,0,0,.45);
     }
     @media (prefers-color-scheme: light) {
@@ -85,12 +87,11 @@ function togglePlaywrightView(): void {
     }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     .title { font-weight: 600; }
-    .close {
-      background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 17px; line-height: 1;
-      padding: 2px 7px; border-radius: 6px;
-    }
-    .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
-    .counts { margin: 6px 0; display: grid; gap: 2px; }
+    .counts { margin: 8px 0 10px; display: grid; gap: 4px; }
+    .counts > div { display: flex; align-items: flex-start; gap: 8px; line-height: 18px; }
+    .swatch { width: 12px; height: 10px; border-radius: 3px; flex-shrink: 0; margin-top: 4px; border: 1px solid rgba(124,58,237,.9); }
+    .swatch.red { border: 2px solid #dc2626; background: rgba(220,38,38,.18); }
+    .swatch.amber { border: 2px solid #d97706; background: rgba(217,119,6,.18); }
     .counts .red { color: #f87171; }
     .counts .amber { color: #fbbf24; }
     @media (prefers-color-scheme: light) {
@@ -100,7 +101,7 @@ function togglePlaywrightView(): void {
     label { display: flex; gap: 6px; align-items: center; }
     select {
       flex: 1; font: inherit; color: inherit; background: rgba(128,128,128,.12); border-radius: 6px;
-      border: 1px solid rgba(128,128,128,.35); padding: 2px 4px;
+      border: 1px solid rgba(128,128,128,.35); padding: 3px 6px;
     }
   `;
   root.appendChild(style);
@@ -118,11 +119,13 @@ function togglePlaywrightView(): void {
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = t('view_title');
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'close';
-  closeBtn.type = 'button';
-  closeBtn.setAttribute('aria-label', t('common_close'));
-  closeBtn.textContent = '×';
+  const closeBtn = makeButton(t('common_close'), () => off(), {
+    icon: 'close',
+    iconOnly: true,
+    tone: 'ghost',
+    small: true,
+    className: 'close',
+  });
   header.append(title, closeBtn);
   const counts = document.createElement('div');
   counts.className = 'counts';
@@ -143,7 +146,11 @@ function togglePlaywrightView(): void {
     const line = (text: string, className = '') => {
       const el = document.createElement('div');
       el.className = className;
-      el.textContent = text;
+      const swatch = document.createElement('span');
+      swatch.className = `swatch ${className}`;
+      const words = document.createElement('span');
+      words.textContent = text;
+      el.append(swatch, words);
       return el;
     };
     counts.replaceChildren(
@@ -269,7 +276,6 @@ function togglePlaywrightView(): void {
     endTool(toolEpoch);
   };
   g.__piwiPlaywrightViewOff = off;
-  closeBtn.addEventListener('click', off);
   document.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('scroll', redraw, true);
   window.addEventListener('resize', redraw, true);

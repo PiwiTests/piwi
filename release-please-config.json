@@ -19,6 +19,13 @@
         { "type": "json", "path": "apps/desktop/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/desktop/src-tauri/tauri.conf.json", "jsonpath": "$.version" },
         { "type": "generic", "path": "apps/desktop/src-tauri/Cargo.toml" },
+        {
+          "type": "toml",
+          "path": "apps/desktop/src-tauri/Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value == 'piwi-desktop')].version"
+        },
+        { "type": "json", "path": "apps/desktop/package-lock.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/desktop/package-lock.json", "jsonpath": "$.packages[''].version" },
         { "type": "json", "path": "apps/extension/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/extension/manifest.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/vscode/package.json", "jsonpath": "$.version" },

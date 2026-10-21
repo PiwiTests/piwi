@@ -17,7 +17,9 @@ channel, so a per-user install pulls a per-user update.
 1. On launch the Rust shell picks a free loopback port, resolves a per-user data
    dir (`app_data_dir()/.data`), and spawns the bundled server as a **Node
    sidecar** (`src-tauri/binaries/node-<triple>` running
-   `src-tauri/resources/app-server/.output/server/index.mjs`).
+   `src-tauri/resources/app-server/.output/server/index.mjs`), with Node's
+   compile cache in `app_cache_dir()/node-compile-cache/<app version>` (the
+   other versions' folders are deleted in the background).
 2. It polls `GET /api/health` (200 = database migrated) until the answer
    carries the random nonce the shell gave this launch's sidecar
    (`PIWI_DESKTOP_LAUNCH_NONCE`, echoed in `X-Piwi-Desktop-Nonce`), so another

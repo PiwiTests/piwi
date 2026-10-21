@@ -24,6 +24,7 @@ interface CaseSeed {
   owner?: string;
   priority?: string;
   feature?: string;
+  externalId?: string;
   /** Where the latest execution reported the test; null = no execution. */
   at?: { line: number; column: number; daysAgo?: number } | null;
 }
@@ -41,6 +42,7 @@ async function seedCase(seed: CaseSeed): Promise<void> {
       owner: seed.owner ?? null,
       priority: seed.priority ?? null,
       feature: seed.feature ?? null,
+      externalId: seed.externalId ?? null,
     })
     .returning({ id: schema.testCases.id });
   if (seed.at === null) return;
@@ -83,6 +85,7 @@ beforeAll(async () => {
     owner: '@team/identity',
     priority: 'high',
     feature: 'sign-in',
+    externalId: 'TC-12',
     at: { line: 12, column: 5 },
   });
   await seedCase({
@@ -150,6 +153,11 @@ describe('catalog search', () => {
       'signs in',
     ]);
     expect(await titles('owner:@team/identity owner:@TEAM/SHOP')).toEqual(['adds 100% of items', 'signs in']);
+  });
+
+  test('id matches a whole external ID', async () => {
+    expect(await titles('id:tc-12')).toEqual(['signs in']);
+    expect(await titles('id:TC-1')).toEqual([]);
   });
 
   test('tags and locks match a whole value in any case, every one required', async () => {

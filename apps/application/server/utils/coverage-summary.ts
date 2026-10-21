@@ -27,6 +27,7 @@ import {
   type FolderEntry,
 } from '#shared/coverage-combine';
 import { RUN_USES, eligibleRunSql, runOriginIn } from '#shared/run-eligibility';
+import { readRunCoverageGaps, type RunCoverageGap } from '#shared/run-coverage-gaps';
 import {
   finalCommitTotals,
   latestCoverageCommit,
@@ -73,7 +74,12 @@ export interface CoverageRatios extends CoverageCounts {
  * - `scope-changed`: the totals were computed under an earlier coverage scope
  *   or areas than the project's;
  * - `runs-not-counted`: end-to-end runs of the commit with run coverage that
- *   do not count: partial or unfinished ones, and lab or probe runs.
+ *   do not count: partial or unfinished ones, and lab or probe runs;
+ * - `runs-incomplete`: counted runs of the commit whose server coverage is
+ *   incomplete, each with why (a backend restarted during the run, or was
+ *   unreachable at its end), and how many counted runs are complete. They
+ *   join the `e2e` union, adding only lines that ran; with no complete run
+ *   beside them the `e2e` suite is incomplete.
  */
 export type CoverageDataNote =
   | { kind: 'detail-removed'; supersededBy: string | null }
@@ -82,7 +88,12 @@ export type CoverageDataNote =
   | { kind: 'missing-suite'; suite: string }
   | { kind: 'no-inventory' }
   | { kind: 'scope-changed' }
-  | { kind: 'runs-not-counted'; partial: number; lab: number };
+  | { kind: 'runs-not-counted'; partial: number; lab: number }
+  | {
+      kind: 'runs-incomplete';
+      runs: Array<{ id: number; reasons: Array<RunCoverageGap['reason']>; restartedAt: string | null }>;
+      completeRuns: number;
+    };
 
 /** A project's combined coverage at one commit. */
 export interface CoverageSummary {
@@ -427,6 +438,46 @@ async function uncountedRuns(
   return { partial: rows.length - lab, lab };
 }
 
+/** The counted runs of a commit with run coverage: those whose server coverage is incomplete, and the others' count. */
+async function incompleteRuns(
+  db: DrizzleDB,
+  projectId: number,
+  commit: string,
+): Promise<Extract<CoverageDataNote, { kind: 'runs-incomplete' }> | null> {
+  const rows = await db
+    .select({ id: testRuns.id, gaps: testRuns.serverCoverageGaps })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, projectId),
+        eq(testRuns.commit, commit),
+        eligibleRunSql('change-coverage'),
+        sql`${testRuns.serverCoverageGaps} IS NOT NULL`,
+        sql`EXISTS (SELECT 1 FROM ${runCoverage} WHERE ${runCoverage.runId} = ${testRuns.id})`,
+      ),
+    )
+    .orderBy(testRuns.id);
+  const runs = rows.flatMap((r) => {
+    const gaps = readRunCoverageGaps(r.gaps);
+    if (gaps.length === 0) return [];
+    const restarts = gaps.flatMap((g) => (g.at ? [g.at] : [])).sort();
+    return [{ id: r.id, reasons: [...new Set(gaps.map((g) => g.reason))].sort(), restartedAt: restarts[0] ?? null }];
+  });
+  if (runs.length === 0) return null;
+  const [counted] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, projectId),
+        eq(testRuns.commit, commit),
+        eligibleRunSql('change-coverage'),
+        sql`EXISTS (SELECT 1 FROM ${runCoverage} WHERE ${runCoverage.runId} = ${testRuns.id})`,
+      ),
+    );
+  return { kind: 'runs-incomplete', runs, completeRuns: Number(counted?.n ?? 0) - runs.length };
+}
+
 /**
  * The notes of a commit's numbers ({@link CoverageDataNote}), from its suites
  * and whether an inventory named its files.
@@ -445,14 +496,20 @@ async function dataNotes(
   for (const s of at.suites) {
     if (s.carriedFrom) notes.push({ kind: 'carried', suite: s.name, from: s.carriedFrom, files: s.carriedFiles });
   }
-  for (const s of at.suites) if (s.incomplete) notes.push({ kind: 'incomplete', suite: s.name });
+  const runs = await incompleteRuns(db, projectId, at.commit);
+  for (const s of at.suites) {
+    // The commit's own runs say why its e2e suite is incomplete.
+    if (s.incomplete && !(runs && s.name === E2E_SUITE && !s.carriedFrom))
+      notes.push({ kind: 'incomplete', suite: s.name });
+  }
+  if (runs) notes.push(runs);
   const have = new Set(at.suites.map((s) => s.name));
   for (const suite of [...new Set(await knownSuites(db, projectId, at.branch))].sort()) {
     if (!have.has(suite)) notes.push({ kind: 'missing-suite', suite });
   }
   if (!at.inventory) notes.push({ kind: 'no-inventory' });
-  const runs = await uncountedRuns(db, projectId, at.commit);
-  if (runs.partial + runs.lab > 0) notes.push({ kind: 'runs-not-counted', ...runs });
+  const uncounted = await uncountedRuns(db, projectId, at.commit);
+  if (uncounted.partial + uncounted.lab > 0) notes.push({ kind: 'runs-not-counted', ...uncounted });
   return notes;
 }
 
@@ -543,6 +600,7 @@ const NOTE_ORDER: Array<CoverageDataNote['kind']> = [
   'detail-removed',
   'carried',
   'incomplete',
+  'runs-incomplete',
   'missing-suite',
   'no-inventory',
   'scope-changed',

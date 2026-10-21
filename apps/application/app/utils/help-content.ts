@@ -49,7 +49,7 @@ export const HELP_TOPICS = {
   },
   'integrations.required-fields': {
     title: 'Required Jira fields',
-    text: 'Fields the Jira project requires for this issue type, beyond what Piwi fills (summary, description, labels, assignee). A value set in the project settings fills every issue filed from the project; the create modal asks for any still empty, and a create that would leave one empty is refused before Jira is called. You can also set optional fields, such as components. The fix and reopen transitions can require fields too, such as a resolution: set them under each transition.',
+    text: 'Fields the Jira project requires for this issue type, beyond what Piwi fills (summary, description, labels, assignee). A value set in the project settings fills every issue filed from the project; the create modal shows each one, and a create that would leave one empty is refused before Jira is called. A field Jira fills by default reads “Jira’s default” while empty and never holds the create back. You can also set any optional field, such as components or a parent, in the settings for every issue or in the create modal with Add a field for one. The fix and reopen transitions can require fields too, such as a resolution: set them under each transition.',
     doc: 'features/issue-tracking#required-jira-fields',
   },
   'integrations.known-issue': {
@@ -557,6 +557,16 @@ export const HELP_TOPICS = {
     doc: 'features/ui-overview#test-run-detail',
     envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
   },
+  'run.externalIdDuplicates': {
+    title: 'Duplicate external IDs',
+    text: "Each of these IDs is declared by more than one test (with `piwi:id`, or in the title read by the reporter’s `externalId.pattern`). An ID names one test, so this run matched those tests by file, describe path and title instead, as if they had no ID: a renamed or moved one starts a new history. Give each test its own ID; set `externalId.onDuplicate: 'fail'` to fail the run while two tests share one.",
+    doc: 'reference/test-metadata#external-test-ids',
+  },
+  'run.coverageIncomplete': {
+    title: 'Incomplete server coverage',
+    text: 'Part of this run’s server coverage is missing. A backend that **restarted** during the run starts its coverage empty: the lines each test ran are kept, but what the earlier process ran outside a request (startup, background work) is lost. One **unreachable** at the end of the run sent no run-level coverage: only the lines the tests ran are kept. The commit’s combined coverage says so in its notes.',
+    doc: 'features/server-coverage#limits',
+  },
   'run.shuffle': {
     title: 'Shuffled run',
     text: 'Playwright ran this run’s tests in a random order (`--shuffle`). Click the seed to copy `--shuffle <seed>`: a run with the same tests, workers and seed runs them in the same order again, to reproduce a failure that depends on which test ran before.',
@@ -772,6 +782,7 @@ export const HELP_TOPICS = {
       '- **Totals only** — on a branch, each suite keeps only the report of the commit whose coverage arrived last. An earlier commit keeps its totals, as computed, and no files.',
       '- **Carried** — a suite this commit lacks counts from an earlier commit, for the files whose version is unchanged.',
       '- **Incomplete** — the report was cut at a size limit, or its files disagreed with the checkout.',
+      '- **A backend restarted** — a run’s backend restarted or was unreachable: the run still counts, with the lines its tests ran, and e2e is incomplete when no complete run is beside it.',
       '- **No coverage** — a suite the project uploads that neither this commit nor an earlier one has.',
       '- **No inventory** — files no suite names are not counted; upload with the checkout.',
       '- **Earlier scope** — totals kept from before the coverage scope or areas changed are not counted again.',
@@ -791,6 +802,11 @@ export const HELP_TOPICS = {
     text: 'Takes this investigation out of the dashboard as a file that needs no network and no Piwi server. HTML is one self-contained page with screenshots and video embedded; ZIP adds the raw artifacts — trace archives, full-size video, logs — plus a machine-readable data.json; PDF is a formatted document with screenshots embedded, generated directly with no browser print. Evidence past the size budget is listed in the report as omitted rather than dropped quietly.',
     doc: 'features/offline-export',
     envVars: ['PIWI_EXPORT_MAX_INLINE_BYTES', 'PIWI_EXPORT_MAX_BYTES', 'PIWI_EXPORT_MAX_CASES'],
+  },
+  'export.replay': {
+    title: 'Replaying this failure',
+    text: 'A `.piwibug` is the bug report Piwi Picker writes, made from this run: the test’s steps up to the failure, the failing check with what it expected and received, and the failure screenshot. Open it in Piwi Picker’s **Replay** to play the steps in your own browser. What Replay cannot play becomes a step you do by hand; requests, scripts and mocks are listed as not replayed. **Steps (steps.json)** copies the steps alone, to paste into Replay.',
+    doc: 'features/offline-export#replay-the-failure-in-a-browser',
   },
   'case.timeline': {
     title: 'Failure timeline',

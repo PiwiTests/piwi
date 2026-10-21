@@ -406,6 +406,47 @@ test.describe('replay-panel.js', () => {
     });
   });
 
+  test('hands a manual step to the person, and says a stop there is where the test failed in its run', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'fixed');
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: [
+        ...REPORT.steps.slice(0, 3),
+        {
+          action: 'manual',
+          target: null,
+          value: null,
+          redacted: false,
+          pageUrl: '',
+          timestamp: 3,
+          manual: { description: 'Apply the coupon the test applied', location: 'tests/cart.spec.ts:12', call: null },
+        },
+      ],
+    };
+    const state = running(false, null, steps);
+    await stubChrome(context, { piwiReplay: { ...(state.piwiReplay as object), runFailedStep: 3 } });
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud).toContainText(
+      'Step 4 could not be played here. The test does this at tests/cart.spec.ts:12, in a way Replay cannot play.',
+      { timeout: 20_000 },
+    );
+    await expect(hud).toContainText('By hand: Apply the coupon the test applied');
+    await hud.getByRole('button', { name: 'Stop here' }).click();
+    expect(await verdict(page)).toEqual({
+      kind: 'diverged',
+      step: 3,
+      reason: 'The test does this at tests/cart.spec.ts:12, in a way Replay cannot play.',
+      asInRun: true,
+    });
+    await expect(hud).toContainText('Failed at step 4, as in the test run');
+  });
+
   test('goes on once the person did the step, showing them the page as it began', async ({ context }) => {
     await openShadowRoots(context);
     await routePages(context, 'broken');
@@ -950,7 +991,7 @@ test.describe('Run with Playwright', () => {
 
     const desktop = await chooseReport(page);
     await expect(desktop).toContainText('Sends to the desktop app at http://127.0.0.1:4318');
-    await expect(desktop).toContainText('5. ');
+    await expect(desktop).toContainText('The element with test id cart-total should read "Total: 42"');
     const sentTypes = () => page.evaluate(() => ((globalThis as any).__piwiSent as any[]).map((m) => m.type));
     expect(await sentTypes()).not.toContain('piwi-desktop-repro');
 
@@ -1210,6 +1251,30 @@ test.describe('the replay dialog', () => {
     expect((await sentOf(page, 'piwi-start-replay'))[0]!.bugReportId).toBeNull();
   });
 
+  test('replays steps pasted as text, and says what is wrong with text that is not steps', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, {});
+    await stubWorker(context, {});
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+    await dialog.getByText('Or paste the text of a steps.json').click();
+    const field = dialog.getByRole('textbox', { name: 'Steps to paste' });
+    await field.fill('{"v":1,"steps":[{"action":"eval"}]}');
+    await dialog.getByRole('button', { name: 'Use these steps' }).click();
+    await expect(dialog.getByRole('alert')).toHaveText(
+      'The pasted text is not a steps file: steps[0].action: is not a known action',
+    );
+    await field.fill(JSON.stringify(REPORT));
+    await dialog.getByRole('button', { name: 'Use these steps' }).click();
+    await expect(dialog).toContainText('Coupon not applied · 5 steps');
+    await dialog.getByRole('button', { name: 'Replay', exact: true }).click();
+    await expect.poll(() => sentOf(page, 'piwi-start-replay')).toHaveLength(1);
+    expect((await sentOf(page, 'piwi-start-replay'))[0]!.steps).toEqual(REPORT);
+  });
+
   test('takes the focus as it opens, and closes on Escape', async ({ context }) => {
     await openShadowRoots(context);
     await routePages(context, 'buggy');
@@ -1260,11 +1325,9 @@ test.describe('replay-panel.js in French', () => {
     await expect(done).toContainText('Terminé : Coupon not applied');
     await expect(done).toContainText('Résultat : «\u202fTotal: 40\u202f».');
     // The steps in French words, the page's texts as they are.
-    await expect(done).toContainText('2. Saisir «\u202falice\u202f» dans le champ de texte «\u202fUsername\u202f»');
-    await expect(done).toContainText('4. Cliquer sur le bouton «\u202fApply coupon\u202f»');
-    await expect(done).toContainText(
-      '5. L’élément avec le test id cart-total devrait afficher «\u202fTotal: 42\u202f»',
-    );
+    await expect(done).toContainText('Saisir «\u202falice\u202f» dans le champ de texte «\u202fUsername\u202f»');
+    await expect(done).toContainText('Cliquer sur le bouton «\u202fApply coupon\u202f»');
+    await expect(done).toContainText('L’élément avec le test id cart-total devrait afficher «\u202fTotal: 42\u202f»');
     await expect(done.getByRole('button', { name: 'Rejouer' })).toBeVisible();
     await expect(done.getByRole('button', { name: 'Fermer' })).toBeVisible();
     expect(await clippedInShadows(page)).toEqual([]);

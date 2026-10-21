@@ -1290,12 +1290,13 @@ export const FLAKE_LAB_INBOX_MAX = 10;
  * run {@link FLAKE_LAB_INBOX_PROJECTS}, those that did not decline the Flake
  * Lab): each reproduced test waiting for a verify, then each test whose top
  * suspect the lab has not tested, in each project's lab order; at most
- * {@link FLAKE_LAB_INBOX_MAX}.
+ * {@link FLAKE_LAB_INBOX_MAX}. `profiles` reads a project's tests' summary
+ * profiles, as {@link getProjectFlakeLab}'s option of that name.
  */
 export async function listFlakeLabInbox(
   db: DrizzleDB,
   projectIds: number[] | 'all',
-  opts: { now?: Date } = {},
+  opts: { now?: Date; profiles?: (projectId: number, testCaseIds: number[]) => Promise<FlakeProfile[]> } = {},
 ): Promise<FlakeLabInboxItem[]> {
   if (projectIds !== 'all' && projectIds.length === 0) return [];
   const recent = await db
@@ -1307,6 +1308,7 @@ export async function listFlakeLabInbox(
     .orderBy(desc(sql`MAX(${testRuns.id})`))
     .limit(FLAKE_LAB_INBOX_PROJECTS);
 
+  const { profiles } = opts;
   const items: FlakeLabInboxItem[] = [];
   for (const project of recent) {
     if (await isPassiveCapabilityDeclined(db, project.projectId, 'flake-lab')) continue;
@@ -1314,6 +1316,7 @@ export async function listFlakeLabInbox(
       limit: 1,
       suspects: true,
       suspectLimit: FLAKE_LAB_INBOX_SUSPECTS,
+      profiles: profiles && ((testCaseIds) => profiles(project.projectId, testCaseIds)),
       now: opts.now,
     });
     items.push(...flakeLabInboxItems({ id: project.projectId, name: project.label || project.name }, lab.tests));

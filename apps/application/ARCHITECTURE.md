@@ -85,7 +85,9 @@ Non-obvious ones:
   `case_payloads` row); `test_coverage` holds, per test case, branch and runtime, the fragments of its latest run with
   coverage, and `code_reach` their files (or the reporter's `codeReach` list for a test without coverage), replaced the
   same way. `branch` is `''` for the default branch, and a view of another branch reads, per runtime, the branch's rows
-  of the tests that have some. `run_coverage` holds a run's coverage per file, merged across shards. Branch rows go with
+  of the tests that have some. `run_coverage` holds a run's coverage per file, merged across shards, and
+  `test_runs.server_coverage_gaps` the backends whose part of it is missing (one restarted during the run, or was
+  unreachable at its end; `#shared/run-coverage-gaps`). Branch rows go with
   the Test Map's branch rows (`graph:sweep`, 30 days); fragments nothing references go in the orphan sweep.
 - **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
   at query time.
@@ -170,6 +172,12 @@ Markdown, and writes the ZIP (fflate, so it runs in the demo's service worker to
 `ExportAssetReader` that fetches evidence bytes. `server/utils/trace-zip.ts` is unrelated — it stores rather than
 deflates and exists for trace-blob reconstruction.
 
+A failed execution's `.piwibug` (Piwi Picker's bug report file) is the same split again:
+`shared/handlers/execution-bug-report.ts` reads the execution and writes the archive, every entry stored, through the
+same `ExportAssetReader`; the conversion of the stored steps into a steps document is `bugReportFromExecution` in
+`@piwitests/core/execution-steps`, and the archive's text files come from `bugReportTextFiles`
+(`@piwitests/core/bug-report`), which Piwi Picker writes its own archives with.
+
 ## Front end
 
 ### Pages (`app/pages/`)
@@ -232,7 +240,7 @@ Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: f
 | `integrations/`                                                         | Issue trackers: the Issue line both failure pages share, the create and link dialogs, the Jira connection, the project binding and its field defaults, the integration activity                                                 |
 | `project/`                                                              | Project detail charts, flaky list, cluster list, SCM changes, subscribe bell, the tests panel of a file's coverage page                                                                                                         |
 | `analytics/`                                                            | Cross-project widgets (component map in `app/utils/analytics-widgets.ts`), and the dashboard page: `DashboardPage`, `DashboardBody` (view, editor, TV mode), `DashboardSwitcher`, `AddWidgetSlideover`, `WidgetConfigSlideover` |
-| `bug-reports/`                                                          | Bug report detail (Piwi Picker): the reported steps, the evidence, the generated spec                                                                                                                                           |
+| `bug-reports/`                                                          | Bug report detail (Piwi Picker): the reported steps (`BugStepText`, from core's step parts), the evidence, the generated spec                                                                                                   |
 | `gaps/`                                                                 | Test Map: the feature graph and map views, the node inspector, the scenario gaps panel                                                                                                                                          |
 | `notifications/`, `reports/`                                            | Notification channels and subscription scope; quality reports: the schedule form and list, previews, snapshots                                                                                                                  |
 | `home/`, `layout/`, `settings/`, `apps/desktop/`, `apps/docs/`, `demo/` | Home filters; app shell/nav; settings surfaces; desktop-only cards; in-app API reference; demo-only banner, simulator and guided tour                                                                                           |

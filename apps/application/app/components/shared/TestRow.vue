@@ -25,6 +25,7 @@ import type { TestRowBadge } from '~/utils/test-row-badges';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { TestSearchHighlights } from '#shared/test-search';
 import { badgesFromTestCase } from '~/utils/test-row-badges';
+import { testLabel } from '#shared/utils/test-label';
 
 const props = withDefaults(
   defineProps<{
@@ -32,8 +33,12 @@ const props = withDefaults(
     testCase?: TestCaseResult | null;
     /** Link the row opens; defaults to the execution page for an execution. */
     href?: string | null;
-    /** Title override, when the row is not built from an execution. */
+    /** Title override, when the row is not built from an execution. Pass the test's whole title. */
     title?: string | null;
+    /** The title without the external ID, when the row is not built from an execution. */
+    displayTitle?: string | null;
+    /** The test's external ID, shown before the title, when the row is not built from an execution. */
+    externalId?: string | null;
     /** Status override that drives the left icon (defaults to the execution's). */
     status?: string | null;
     /** Left-icon override; defaults to the status glyph. */
@@ -82,6 +87,8 @@ const props = withDefaults(
     testCase: null,
     href: null,
     title: null,
+    displayTitle: null,
+    externalId: null,
     status: null,
     icon: null,
     iconClass: null,
@@ -114,6 +121,11 @@ const emit = defineEmits<{ toggle: []; select: [] }>();
 const tc = computed(() => props.testCase);
 
 const title = computed(() => props.title ?? tc.value?.title ?? '');
+/** What the row shows: the title without its external ID when the reporter removed it; `title` stays the tooltip. */
+const label = computed(() =>
+  testLabel({ title: title.value, displayTitle: props.title != null ? props.displayTitle : tc.value?.displayTitle }),
+);
+const externalId = computed(() => (props.title != null ? props.externalId : tc.value?.externalId) ?? null);
 const status = computed(() => props.status ?? tc.value?.status ?? 'unknown');
 const failed = computed(() => isFailedStatus(status.value));
 const href = computed(() => props.href ?? (tc.value ? `/test-run-cases/${tc.value.executionId}` : '#'));
@@ -199,6 +211,8 @@ const clusterLabel = computed(() =>
       <div class="flex-1 min-w-0 space-y-1">
         <!-- Line 1: title, badges, then the right-side metrics -->
         <div class="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
+          <!-- The external ID leads the line, so IDs line up down the list. -->
+          <TestIdChip v-if="externalId" :external-id="externalId" />
           <!-- The describe blocks and the title read as one line of text, wrapping together. -->
           <span class="min-w-0 break-words">
             <span v-if="suiteSegments.length" class="text-muted">
@@ -215,13 +229,13 @@ const clusterLabel = computed(() =>
               class="text-highlighted hover:text-primary hover:underline font-medium"
               :title="title"
               @click="onTitleClick"
-              ><SearchHighlight v-if="titleMarks.length" :text="title" :patterns="titleMarks" /><template v-else>{{
-                title
+              ><SearchHighlight v-if="titleMarks.length" :text="label" :patterns="titleMarks" /><template v-else>{{
+                label
               }}</template></a
             >
             <span v-else class="text-highlighted font-medium" :title="title"
-              ><SearchHighlight v-if="titleMarks.length" :text="title" :patterns="titleMarks" /><template v-else>{{
-                title
+              ><SearchHighlight v-if="titleMarks.length" :text="label" :patterns="titleMarks" /><template v-else>{{
+                label
               }}</template></span
             >
           </span>

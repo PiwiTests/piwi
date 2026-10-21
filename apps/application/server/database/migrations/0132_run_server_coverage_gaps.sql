@@ -1,0 +1,1 @@
+ALTER TABLE `test_runs` ADD `server_coverage_gaps` text;

@@ -273,7 +273,7 @@ public class ManifestTests
     [Fact]
     public async Task Is_not_served_outside_the_active_environments()
     {
-        await using var app = await ManifestTestApp.StartAsync(e => e.MapGet("/api/items", () => "list"), environment: "Production");
+        await using var app = await ManifestTestApp.StartAsync(e => e.MapGet("/api/items", () => "list"), environment: "Staging");
 
         var response = await app.Client.GetAsync("/__piwi/manifest");
 

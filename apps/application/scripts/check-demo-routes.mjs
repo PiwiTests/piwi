@@ -32,6 +32,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/test-runs/:id/case-files', // file upload during live run (server only)
   'DELETE /api/tests/cleanup', // test-suite cleanup hook (server only)
   'POST /api/traces/check', // trace dedup check (server only)
+  'GET /api/integrations/connections/:id/icon', // a tracker icon fetched with the connection's credentials; the demo's pickers carry no icons
   'POST /api/test-runs/:id/gate', // CI gate policy — there is no pipeline to gate in a browser demo
   'POST /api/projects/:id/selections/impact', // impact-from-diff — needs a local git diff the browser demo cannot produce
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo

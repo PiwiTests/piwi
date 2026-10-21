@@ -189,6 +189,14 @@ test.describe.serial('Bug reports', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Coupon not applied to the total' })).toBeVisible();
     await expect(page.locator('[data-shot="bug-report-claim"]')).toContainText('the page showed "Total: 40"');
     await expect(page.getByText('Expected:')).toBeVisible();
+    // A step's address and the value typed stand apart from its words.
+    await expect(
+      page
+        .getByRole('code')
+        .filter({ hasText: /\/cart$/ })
+        .first(),
+    ).toBeVisible();
+    await expect(page.getByText('"SPRING10"', { exact: true }).first()).toBeVisible();
 
     await page.getByRole('button', { name: 'Evidence' }).click();
     await expect(page.getByText('POST /api/cart/coupon')).toBeVisible();
