@@ -285,11 +285,8 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
                     ${bundle.limits.map((l) => html`<li>${l}</li>`)}
                   </ul>`
               : ''}
-            <p>
-              ${raw(piwiCreditHtml(L.generatedBy, 'inherit'))}${bundle.sourceUrl
-                ? html` · <a href="${bundle.sourceUrl}">${L.openInPiwi}</a>`
-                : ''}
-            </p>
+            ${bundle.sourceUrl ? html`<p><a href="${bundle.sourceUrl}">${L.openInPiwi}</a></p>` : ''}
+            ${raw(piwiCreditHtml(L.generatedBy))}
           </footer>
         </div>
       </body>

@@ -70,9 +70,11 @@ export function emailLayout(title: string, body: string, siteUrl: string, frame:
         <tr><td style="padding:28px 32px;">${body}</td></tr>
         <tr><td style="padding:16px 32px;background:#f4f4f5;font-size:12px;color:#71717a;text-align:center;">
           ${escapeHtml(frame.automatedMessage)} <a href="${site}" style="color:#18181b;">${site}</a>
-          <br><a href="${BRAND_SITE_URL}" style="display:inline-block;margin-top:8px;color:#71717a;text-decoration:none;">
-            <img src="${markSrc}" width="12" height="14" alt="" style="vertical-align:-2px;border:0;">
-            ${escapeHtml(frame.sentBy)} · ${BRAND_SITE_LABEL}</a>
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e4e4e7;font-size:11px;">
+            <a href="${BRAND_SITE_URL}" style="color:#a1a1aa;text-decoration:none;">
+              <img src="${markSrc}" width="10" height="12" alt="" style="vertical-align:-2px;border:0;opacity:.7;">
+              ${escapeHtml(frame.sentBy)} · ${BRAND_SITE_LABEL}</a>
+          </div>
         </td></tr>
       </table>
     </td></tr>

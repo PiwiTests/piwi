@@ -124,7 +124,11 @@ export function renderReportMarkdown(bundle: ReportBundle): string {
     out.push('');
   }
   out.push(
-    `${piwiCreditMarkdown(L.generatedBy)} · ${f.date(bundle.generatedAt, bundle.timeZone)}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · [${L.openInPiwi}](${bundle.sourceUrl})` : ''}`,
+    `${f.date(bundle.generatedAt, bundle.timeZone)}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · [${L.openInPiwi}](${bundle.sourceUrl})` : ''}`,
+    '',
+    '---',
+    '',
+    `_${piwiCreditMarkdown(L.generatedBy)}_`,
     '',
   );
   return out.join('\n');
