@@ -44,6 +44,8 @@ export interface ReportEmailOptions {
   shareUrl?: string | null;
   /** The instance the footer names. */
   siteUrl: string;
+  /** The Piwi mark in the footer: its attachment's `cid:…` by default, a data address in a preview. */
+  markSrc?: string;
 }
 
 /**
@@ -190,6 +192,8 @@ export function renderReportEmail(
     html: emailLayout(escapeHtml(subject), parts.join('\n'), opts.siteUrl, {
       lang: bundle.language,
       automatedMessage: s.labels.automatedMessage,
+      sentBy: s.labels.sentBy,
+      markSrc: opts.markSrc,
     }),
     text: textParts.join('\n'),
   };

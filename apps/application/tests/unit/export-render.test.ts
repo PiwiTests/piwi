@@ -2,6 +2,7 @@ import zlib from 'node:zlib';
 import { describe, it, expect } from 'vitest';
 import { buildExport } from '../../shared/export/build';
 import { renderExportHtml } from '../../shared/export/render-html';
+import { BRAND_SITE_URL } from '../../shared/brand';
 import { parseZipSync } from '../utils/zip';
 import type { ExportAsset, ExportBundle, ExportCase } from '../../shared/export/types';
 
@@ -103,8 +104,10 @@ describe('renderExportHtml', () => {
 
   it('references nothing outside the document', () => {
     const html = renderExportHtml(bundle({ sourceUrl: 'https://piwi.example.com/test-run-cases/1' }), noAssets);
-    // The source URL is recorded as text, never as a fetchable reference.
-    expect(html).not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
+    // The source URL is recorded as text, never as a fetchable reference. The closing credit's link to the project's
+    // site is the one address, and a link loads nothing until it is followed.
+    expect(html).toContain(`<a href="${BRAND_SITE_URL}"`);
+    expect(html.replace(`<a href="${BRAND_SITE_URL}"`, '<a')).not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
     expect(html).not.toMatch(/(?:src|href)\s*=\s*["']\/\//);
     expect(html).toContain('https://piwi.example.com/test-run-cases/1');
   });

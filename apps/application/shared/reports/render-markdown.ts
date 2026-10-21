@@ -4,6 +4,7 @@
  * Run-derived text is escaped (pipes, backticks, a leading `#`, link and
  * emphasis characters) so a test title can never change the document's shape.
  */
+import { piwiCreditMarkdown } from '#shared/brand';
 import { sparkline } from './chart';
 import { makeFormatter, type ValueFormatter } from './format';
 import { sentencesFor, type ReportSentences } from './sentences';
@@ -123,7 +124,7 @@ export function renderReportMarkdown(bundle: ReportBundle): string {
     out.push('');
   }
   out.push(
-    `${L.generatedBy} · ${f.date(bundle.generatedAt, bundle.timeZone)}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · [${L.openInPiwi}](${bundle.sourceUrl})` : ''}`,
+    `${piwiCreditMarkdown(L.generatedBy)} · ${f.date(bundle.generatedAt, bundle.timeZone)}${bundle.piwiVersion ? ` · ${bundle.piwiVersion}` : ''}${bundle.sourceUrl ? ` · [${L.openInPiwi}](${bundle.sourceUrl})` : ''}`,
     '',
   );
   return out.join('\n');

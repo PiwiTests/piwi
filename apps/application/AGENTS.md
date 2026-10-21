@@ -365,6 +365,13 @@ script and regenerate them all. The desktop app's bundle icons are generated fro
 Show the wide lockup with `<BrandLogo>`, which swaps in the reversed drawing on a dark page. The dashboard's accent
 (`primary` in `app/app.config.ts`) is the same violet.
 
+Every document Piwi writes for use outside the dashboard (the offline exports, the quality reports, the emails) ends
+with the Piwi credit from `shared/brand.ts`: the small mark and a link to piwitests.dev (`piwiCreditHtml`,
+`drawPiwiCredit` for a PDF, `piwiCreditMarkdown`; `emailLayout` draws it in every email). The mark is drawn from
+`shared/brand-mark.json`, which the same generator writes. It never loads over the network: inline SVG in HTML, vector
+paths in a PDF, and an attachment in an email (`sendEmail` attaches it whenever the message shows it). A new document
+format ends with the same credit. Data files (CSV, XLSX, JSON) carry none.
+
 ### Test outcome colors (MUST follow)
 
 Passed, failed, flaky, skipped, didn't run and running each have **one** color, everywhere: the `--color-status-*`

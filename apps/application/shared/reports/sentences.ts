@@ -69,6 +69,8 @@ export interface ReportLabels {
   narrative: string;
   /** The email footer, before the instance's address. */
   automatedMessage: string;
+  /** The email footer's credit, beside the Piwi mark. */
+  sentBy: string;
 }
 
 /** How a language writes numbers, units and dates; `makeFormatter` applies it. */

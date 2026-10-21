@@ -815,6 +815,7 @@ export const FR_SENTENCES: ReportSentences = {
     markers: 'Repères',
     narrative: 'Récit',
     automatedMessage: 'Message automatique envoyé par',
+    sentBy: 'Envoyé par Piwi',
   },
   verdict,
   progress,

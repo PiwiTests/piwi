@@ -5,6 +5,7 @@
  * title or a branch name is always text.
  */
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from '#shared/export/html';
+import { piwiCreditHtml } from '#shared/brand';
 import { STATUS_COLORS as C, PASS_RATE_COLORS } from '#shared/status-colors';
 import { chartLabelAnchor, chartTickLabel, REPORT_ACCENT, REPORT_GRID, REPORT_MARKER, seriesGeometry } from './chart';
 import { makeFormatter, type ValueFormatter } from './format';
@@ -284,7 +285,11 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
                     ${bundle.limits.map((l) => html`<li>${l}</li>`)}
                   </ul>`
               : ''}
-            <p>${L.generatedBy}${bundle.sourceUrl ? html` · <a href="${bundle.sourceUrl}">${L.openInPiwi}</a>` : ''}</p>
+            <p>
+              ${raw(piwiCreditHtml(L.generatedBy, 'inherit'))}${bundle.sourceUrl
+                ? html` · <a href="${bundle.sourceUrl}">${L.openInPiwi}</a>`
+                : ''}
+            </p>
           </footer>
         </div>
       </body>

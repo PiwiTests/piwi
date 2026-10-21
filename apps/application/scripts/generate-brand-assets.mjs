@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Writes every logo, favicon and app icon in the repository from the drawing in this file: the dashboard's and the
-// docs site's SVG logos, favicons and touch icon, the browser extension's icons, the VS Code extension's icons and the
-// JetBrains plugin's icons. PNG and ICO files are rendered with Playwright's Chromium. The desktop app's bundle icons
+// docs site's SVG logos, favicons and touch icon, the browser extension's icons, the VS Code extension's icons, the
+// JetBrains plugin's icons, and `shared/brand-mark.json`, the small mark the exported documents and emails carry. PNG and ICO files are rendered with Playwright's Chromium. The desktop app's bundle icons
 // are generated from `public/logo.svg` by `tauri icon` (see apps/desktop/AGENTS.md).
 //
 //   npm run app:generate:brand
@@ -229,6 +229,28 @@ const ICO_FILES = ['apps/application/public/favicon.ico', 'apps/docs/public/favi
 
 for (const [path, content] of Object.entries(SVG_FILES)) write(path, content);
 
+/**
+ * The small mark as data, for the documents Piwi writes outside the dashboard (`shared/brand.ts` draws it): the outline
+ * with the lens and the eye as holes, the check and the perch as strokes, the two dots, and a PNG of it in violet for
+ * emails, which strip inline SVG.
+ */
+function markData(png) {
+  return {
+    viewBox: [VIEW.markSmall.x, VIEW.markSmall.y, VIEW.markSmall.w, VIEW.markSmall.h],
+    outline: OUTLINE,
+    lens: LENS,
+    eye: EYE_SMALL,
+    check: { d: CHECK, strokeWidth: 22 },
+    perch: { d: 'M28.2 276.73 L83.43 241.904 L154.16 276.68', strokeWidth: 28 },
+    dots: [
+      { cx: 28.2, cy: 276.73, r: 32 },
+      { cx: 154.16, cy: 276.68, r: 32 },
+    ],
+    color: VIOLET,
+    png: png.toString('base64'),
+  };
+}
+
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage();
@@ -244,6 +266,9 @@ try {
   for (const size of [16, 32, 48]) images.push({ size, png: await render(tile, size) });
   const favicon = ico(images);
   for (const path of ICO_FILES) write(path, favicon);
+  // Shown at 16 px in emails, rendered at twice that for sharp screens.
+  const markPng = await render(monoMark(VIOLET, 32), 32);
+  write('apps/application/shared/brand-mark.json', `${JSON.stringify(markData(markPng), null, 2)}\n`);
 
   // Outfit comes from Google Fonts; offline, the card falls back to the system sans-serif.
   const card = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 2 });
