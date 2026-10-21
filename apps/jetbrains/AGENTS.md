@@ -248,7 +248,9 @@ one, the IDE shows its licence dialog, and `--start-trial` answers its Start tri
 30-day trial with no account (an internet connection suffices; a version's trial is claimed once per machine);
 `--config` copies an activated IDE's config directory in instead. An EAP build asks for a JetBrains account, so it
 cannot serve. `--ide` names another installed release, `--probe` captures the IDE as it stands without driving it,
-and `--keep` leaves the run's directory with the IDE's logs.
+and `--keep` leaves the run's directory with the IDE's logs. What was found about the IDE on the way (the licence,
+the launcher, the properties that keep it quiet, what a check in the real IDE would need) is recorded in
+[`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
 
 **The JDK.** Gradle runs on the JDK 21 that `gradle/gradle-daemon-jvm.properties` names, whatever `JAVA_HOME` points to
 (the wrapper starts on JDK 11 or later), and the build compiles with a JDK 21 toolchain (`jvmToolchain(21)`). When the
