@@ -397,6 +397,13 @@ export default defineNuxtConfig({
     // platform binaries in that folder and install the target platform's beside
     // it. Nitro's top-level `noExternals` does not fit that: it bundles every
     // dependency and refuses any external, native modules included.
+    // date-fns and drizzle-orm are bundled all the same: Node parses a package's
+    // whole `exports` map again for every file it loads from it, theirs list
+    // hundreds of entries, and the server loads hundreds of their files, which
+    // adds seconds to every server start.
+    externals: {
+      inline: ['date-fns', 'drizzle-orm'],
+    },
     experimental: {
       openAPI: true,
       // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
