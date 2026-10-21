@@ -284,7 +284,8 @@ async function main() {
     await closeSecondarySideBar(page);
     await settle(page, 1500);
     const unknown = only.filter((name) => !(name in SCENES));
-    if (unknown.length) throw new Error(`Unknown scene: ${unknown.join(', ')} (the scenes: ${Object.keys(SCENES).join(', ')})`);
+    if (unknown.length)
+      throw new Error(`Unknown scene: ${unknown.join(', ')} (the scenes: ${Object.keys(SCENES).join(', ')})`);
     const names = Object.keys(SCENES).filter((name) => only.length === 0 || only.includes(name));
     for (const name of names) {
       try {
