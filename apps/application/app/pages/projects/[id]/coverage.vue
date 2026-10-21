@@ -645,7 +645,7 @@ const nearestSentence = computed(() => {
                   }}
                 </p>
               </SectionCard>
-              <FileTestMapCard :project-id="projectId" :path="shownPath ?? file" class="mt-4" />
+              <FileTestMapCard :project-id="projectId" :path="file" class="mt-4" />
             </div>
           </div>
         </template>

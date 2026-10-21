@@ -69,11 +69,19 @@ const graphSeed = ref<string | null>(
   typeof route.query.node === 'string' && route.query.node ? route.query.node : null,
 );
 const graphCard = ref<HTMLElement | null>(null);
-// The graph's node is the address's `?node=`: an open graph can be shared, and a link can open one.
+// The graph's node is the address's `?node=`: an open graph can be shared, and a link can open one,
+// also while the tab is open.
 watch(graphSeed, (node) => {
   if ((route.query.node ?? null) === node) return;
   router.replace({ query: { ...route.query, node: node ?? undefined } });
 });
+watch(
+  () => route.query.node,
+  (node) => {
+    const seed = typeof node === 'string' && node ? node : null;
+    if (seed !== graphSeed.value) graphSeed.value = seed;
+  },
+);
 onMounted(() => {
   if (graphSeed.value) nextTick(() => graphCard.value?.scrollIntoView?.({ block: 'start' }));
 });

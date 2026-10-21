@@ -559,6 +559,9 @@ describe('computeScenarioGaps', () => {
     });
 
     // A later run's test reaches the route the handler serves.
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
     await seedReach(1, 'route', 'GET /api/orders/:id', 1);
     await gaps.computeScenarioGaps(db, 1);
 
@@ -568,7 +571,41 @@ describe('computeScenarioGaps', () => {
     expect(row!.key).toBe('server/api/orders/[id].get.ts');
   });
 
-  test('closes the open and snoozed changed-unreached gaps of files a test now reaches', async () => {
+  test('the recompute closes a changed-unreached gap whose file a test executed, or that left the scope', async () => {
+    await seedRun(1);
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
+    const gap = (key: string) => ({
+      projectId: 1,
+      detector: 'changed-unreached',
+      class: 'blind-spot',
+      key,
+      title: `${key} changed but not reached`,
+      status: 'open',
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([gap('src/lib/cart.ts'), gap('src/lib/tax.ts'), gap('src/Client.g.cs')]);
+    // The test executed cart.ts (code reach); nothing reaches tax.ts; Client.g.cs is generated, outside the scope.
+    await db
+      .insert(schema.codeReach)
+      .values({ projectId: 1, testCaseId: 1, file: 'src/lib/cart.ts', runtime: 'browser', lastSeenAt: new Date() });
+
+    await gaps.computeScenarioGaps(db, 1);
+
+    const rows = await db
+      .select({ key: schema.scenarioGaps.key, status: schema.scenarioGaps.status })
+      .from(schema.scenarioGaps)
+      .where(eq(schema.scenarioGaps.detector, 'changed-unreached'));
+    expect(Object.fromEntries(rows.map((r) => [r.key, r.status]))).toEqual({
+      'src/lib/cart.ts': 'closed',
+      'src/lib/tax.ts': 'open',
+      'src/Client.g.cs': 'closed',
+    });
+  });
+
+  test('closes the open and snoozed changed-unreached gaps of files a diff no longer reads as uncovered', async () => {
     await seedRun(1);
     const gap = (key: string, status: string) => ({
       projectId: 1,
@@ -587,7 +624,7 @@ describe('computeScenarioGaps', () => {
         gap('src/d.ts', 'open'),
       ]);
 
-    expect(await gaps.closeReachedChangedFiles(db, 1, 1, ['src/a.ts', 'src/b.ts', 'src/c.ts'])).toBe(2);
+    expect(await gaps.closeChangedUnreachedGaps(db, 1, 1, ['src/a.ts', 'src/b.ts', 'src/c.ts'])).toBe(2);
 
     const rows = await db
       .select({ key: schema.scenarioGaps.key, status: schema.scenarioGaps.status })

@@ -9,7 +9,7 @@
 
 import type { WireResourceFinding } from '#shared/types';
 import { findingView } from '#shared/resource-copy';
-import { lineRangesText, type ChangedLines, type PatchCoverage } from '#shared/patch-coverage';
+import { lineRangesText, unreachedLinesText, type ChangedLines, type PatchCoverage } from '#shared/patch-coverage';
 import type { ChangeReach, NotCountedChanges } from '#shared/handlers/change-coverage';
 import { coveragePercent } from '#shared/coverage-combine';
 
@@ -314,8 +314,7 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
         if (file.reach !== 'unreached' || listed >= MAX_UNCOVERED_LISTED) continue;
         listed++;
         let line = `- ${codeSpan(file.filePath)} · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
-        if (file.lines)
-          line += ` · none of its ${file.lines.changed} changed ${file.lines.changed === 1 ? 'line' : 'lines'} ran`;
+        if (file.lines) line += ` · ${unreachedLinesText(file.lines)}`;
         if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
         lines.push(line);
       }

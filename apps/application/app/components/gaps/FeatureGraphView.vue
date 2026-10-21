@@ -44,7 +44,7 @@ interface FeatureGraph {
 const props = defineProps<{ projectId: number; seedNode: string }>();
 const emit = defineEmits<{ (e: 'select', node: { kind: string; key: string }): void }>();
 
-const { isHidden } = await useProjectCapabilities(props.projectId);
+const { isHidden, state: capabilityState } = await useProjectCapabilities(props.projectId);
 
 const graph = ref<FeatureGraph | null>(null);
 const loading = ref(false);
@@ -108,19 +108,22 @@ const neighbors = computed(() => graph.value?.nodes.filter((n) => n.depth > 0) ?
  */
 const coveredFile = ref<{ path: string; query: Record<string, string> } | null>(null);
 watch(
-  () => [seed.value?.kind, seed.value?.key, isHidden('coverage')] as const,
-  async ([kind, key, hidden], _old, onCleanup) => {
+  () => [seed.value?.kind, seed.value?.key, isHidden('coverage'), capabilityState('coverage')] as const,
+  async ([kind, key, hidden, coverage], _old, onCleanup) => {
     let stale = false;
     onCleanup(() => (stale = true));
     coveredFile.value = null;
     if ((kind !== 'file' && kind !== 'handler') || !key || hidden) return;
-    const read = await $fetch<FileCoverage>(`/api/projects/${props.projectId}/coverage`, {
-      query: { file: key },
-    }).catch(() => null);
-    if (stale) return;
-    if (read?.fragments.some((f) => sameFilePath(f.path, key))) {
-      coveredFile.value = coverageFileRoute(props.projectId, key);
-      return;
+    // Tests record coverage only where the capability is active; a suite's report can exist without it.
+    if (coverage === 'active') {
+      const read = await $fetch<FileCoverage>(`/api/projects/${props.projectId}/coverage`, {
+        query: { file: key },
+      }).catch(() => null);
+      if (stale) return;
+      if (read?.fragments.some((f) => sameFilePath(f.path, key))) {
+        coveredFile.value = coverageFileRoute(props.projectId, key);
+        return;
+      }
     }
     const summary = await $fetch<CoverageSummary>(`/api/projects/${props.projectId}/coverage-summary`, {
       query: { file: key },

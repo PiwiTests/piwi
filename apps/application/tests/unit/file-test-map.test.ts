@@ -94,6 +94,25 @@ describe('getFileTestMap', () => {
     expect(map.nodes).toMatchObject([{ kind: 'file', key: 'src/lib/cart.ts', via: 'node', openGaps: 1 }]);
   });
 
+  test('prefers the file’s own path to another file ending with it, and counts each handler’s own routes', async () => {
+    await node('handler', 'Api/Users/UsersEndpoints.cs');
+    await node('handler', 'Admin/Api/Users/UsersEndpoints.cs');
+    await node('route', 'GET /api/users');
+    await node('route', 'GET /admin/api/users');
+    await edge('handled-by', ['route', 'GET /api/users'], ['handler', 'Api/Users/UsersEndpoints.cs']);
+    await edge('handled-by', ['route', 'GET /admin/api/users'], ['handler', 'Admin/Api/Users/UsersEndpoints.cs']);
+    await edge('reaches', ['test', '1'], ['route', 'GET /api/users']);
+    await edge('reaches', ['test', '2'], ['route', 'GET /admin/api/users']);
+    await edge('reaches', ['test', '3'], ['route', 'GET /admin/api/users']);
+
+    const map = await getFileTestMap(db, 1, 'Admin/Api/Users/UsersEndpoints.cs');
+
+    expect(map.nodes.map((n) => [n.kind, n.key, n.tests])).toEqual([
+      ['route', 'GET /admin/api/users', 2],
+      ['handler', 'Admin/Api/Users/UsersEndpoints.cs', 2],
+    ]);
+  });
+
   test('is empty for a file the Test Map does not hold', async () => {
     await node('route', 'GET /api/users');
     expect(await getFileTestMap(db, 1, 'src/utils/format.ts')).toEqual({ path: 'src/utils/format.ts', nodes: [] });

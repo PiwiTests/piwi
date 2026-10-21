@@ -50,6 +50,7 @@ function changeCoverage(over: Partial<ChangeCoverage> = {}): ChangeCoverage {
     windowRuns: 30,
     files: [],
     tickets: [],
+    countedFiles: 7,
     reachedFiles: 4,
     uncoveredFiles: 3,
     notCounted: { notObservable: 2, outOfScope: 1, deleted: 0 },
@@ -103,7 +104,7 @@ describe('the gate’s warn-only uncovered changes', () => {
     const result = await gate({ params: { id: '1' }, body: { maxUncoveredChanges: 0 } });
     expect(result.verdict).toBe('passed');
     expect(result.warnings).toEqual([
-      'Uncovered changes could not be counted: no source control diff for this run (a token, a baseline) — warn-only.',
+      'Uncovered changes could not be counted: this run has no source control diff — warn-only.',
     ]);
   });
 });

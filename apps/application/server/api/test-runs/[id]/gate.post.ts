@@ -277,11 +277,14 @@ export default eventHandler(async (event) => {
   // pass/fail verdict.
   const warnings: string[] = [];
   if (maxUncoveredChanges != null || minPatchCoverage != null) {
-    const coverage = await readChangeCoverage(db, run.projectId, { runId: id }).catch(() => null);
-    if (!coverage?.scmAvailable) {
-      warnings.push(
-        'Uncovered changes could not be counted: no source control diff for this run (a token, a baseline) — warn-only.',
-      );
+    const coverage = await readChangeCoverage(db, run.projectId, { runId: id }).catch((e) => {
+      console.error(`[gate] could not read the change coverage of run #${id}`, e);
+      return null;
+    });
+    if (!coverage) {
+      warnings.push('Uncovered changes could not be counted: reading the change failed — warn-only.');
+    } else if (!coverage.scmAvailable) {
+      warnings.push('Uncovered changes could not be counted: this run has no source control diff — warn-only.');
     } else {
       if (maxUncoveredChanges != null && coverage.uncoveredFiles > maxUncoveredChanges) {
         const n = coverage.uncoveredFiles;

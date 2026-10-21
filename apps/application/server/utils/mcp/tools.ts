@@ -2907,7 +2907,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       baseBranch: coverage.baseBranch,
       windowRuns: coverage.windowRuns,
       scmAvailable: coverage.scmAvailable,
-      totalFiles: coverage.reachedFiles + coverage.uncoveredFiles,
+      totalFiles: coverage.countedFiles,
       reachedFiles: coverage.reachedFiles,
       uncoveredFiles: coverage.uncoveredFiles,
       notCounted: coverage.notCounted,

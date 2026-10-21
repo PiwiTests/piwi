@@ -47,6 +47,19 @@ export interface ChangedLines {
   notRun: LineRange[];
 }
 
+/**
+ * What a changed file's coverage says of its lines when no test reached it:
+ * "none of its 4 changed lines ran", or, when some sit in functions the
+ * browser ran without recording lines, "3 of its 4 changed lines ran in no
+ * suite, 1 undetermined".
+ */
+export function unreachedLinesText(lines: Pick<ChangedLines, 'changed' | 'undetermined'>): string {
+  const noun = lines.changed === 1 ? 'line' : 'lines';
+  if (lines.undetermined === 0) return `none of its ${lines.changed} changed ${noun} ran`;
+  const notRun = lines.changed - lines.undetermined;
+  return `${notRun} of its ${lines.changed} changed ${noun} ran in no suite, ${lines.undetermined} undetermined`;
+}
+
 /** Line ranges in words, each range kept on one line: "57 to 59, 64". */
 export function lineRangesText(ranges: LineRange[]): string {
   return ranges.map(([start, end]) => (start === end ? String(start) : `${start}\u00a0to\u00a0${end}`)).join(', ');

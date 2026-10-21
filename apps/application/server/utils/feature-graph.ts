@@ -14,7 +14,7 @@
  */
 
 import { and, eq, inArray, isNull, like, or } from 'drizzle-orm';
-import { sameFilePath } from '@piwitests/core/locator-break';
+import { itemsOfFile } from '@piwitests/core/locator-break';
 import { graphEdges, graphNodes, scenarioGaps, testCases } from '../database/schema';
 import {
   featureOwnersOf,
@@ -450,7 +450,7 @@ export async function getFileTestMap(db: DrizzleDB, projectId: number, filePath:
   if (!path) return { path, nodes: [] };
   const base = path.split('/').pop()!;
 
-  // The file's own nodes, matched by path suffix as coverage matches files.
+  // The file's own nodes, by path suffix as coverage matches files, its own path first.
   const own = await db
     .select({ kind: graphNodes.kind, key: graphNodes.key })
     .from(graphNodes)
@@ -463,13 +463,19 @@ export async function getFileTestMap(db: DrizzleDB, projectId: number, filePath:
         like(graphNodes.key, `%${base}`),
       ),
     );
-  for (const n of own) if (sameFilePath(n.key, path)) add(n.kind as 'handler' | 'file', n.key, 'node');
+  for (const n of itemsOfFile(
+    own.map((o) => ({ ...o, path: o.key })),
+    path,
+  )) {
+    add(n.kind as 'handler' | 'file', n.key, 'node');
+  }
 
-  // The routes its handler serves.
+  // The routes each of its handlers serves.
+  const routesOf = new Map<string, string[]>();
   const handlers = [...nodes.values()].filter((n) => n.kind === 'handler').map((n) => n.key);
   if (handlers.length > 0) {
     const served = await db
-      .select({ fromKey: graphEdges.fromKey })
+      .select({ fromKey: graphEdges.fromKey, toKey: graphEdges.toKey })
       .from(graphEdges)
       .where(
         and(
@@ -481,7 +487,10 @@ export async function getFileTestMap(db: DrizzleDB, projectId: number, filePath:
           isNull(graphEdges.branch),
         ),
       );
-    for (const e of served) add('route', e.fromKey, 'handled-by');
+    for (const e of served) {
+      add('route', e.fromKey, 'handled-by');
+      routesOf.set(e.toKey, [...(routesOf.get(e.toKey) ?? []), e.fromKey]);
+    }
   }
 
   // The route or page the framework's file naming gives it.
@@ -527,7 +536,14 @@ export async function getFileTestMap(db: DrizzleDB, projectId: number, filePath:
       if (!pageOf.has(id(e.toKind, e.toKey))) pageOf.set(id(e.toKind, e.toKey), id('page', e.fromKey));
   }
 
-  // Open gaps on those nodes; a gap on the file itself (changed, unreached) puts its file node in the list.
+  // The open gaps on those nodes, read by the keys a detector gives them (typed, or a bare route
+  // key or file path); a gap on the file itself (changed, unreached) puts its file node in the list.
+  const gapKeys = new Set<string>();
+  for (const n of nodes.values()) {
+    gapKeys.add(`${n.kind}:${n.key}`);
+    gapKeys.add(n.key);
+  }
+  for (const nid of pageOf.keys()) gapKeys.add(nid.replace('\x00', ':'));
   const gapRows = await db
     .select({
       id: scenarioGaps.id,
@@ -538,11 +554,21 @@ export async function getFileTestMap(db: DrizzleDB, projectId: number, filePath:
       score: scenarioGaps.score,
     })
     .from(scenarioGaps)
-    .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')));
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.status, 'open'),
+        or(inArray(scenarioGaps.key, [...gapKeys]), like(scenarioGaps.key, `%${base}`)),
+      ),
+    );
+  const fileSubjects = itemsOfFile(
+    gapRows.map((g) => subjectFromGapKey(g.key)).flatMap((s) => (s.kind === 'file' ? [{ ...s, path: s.key }] : [])),
+    path,
+  );
+  for (const s of fileSubjects) add('file', s.key, 'node');
   const gapsByNode = new Map<string, FileTestMapGap[]>();
   for (const g of gapRows) {
     const subject = subjectFromGapKey(g.key);
-    if (subject.kind === 'file' && sameFilePath(subject.key, path)) add('file', subject.key, 'node');
     const own = id(subject.kind, subject.key);
     const nid = nodes.has(own) ? own : pageOf.get(own);
     if (!nid) continue;
@@ -574,14 +600,11 @@ export async function getFileTestMap(db: DrizzleDB, projectId: number, filePath:
     }
   }
   // A handler is reached through the routes it serves.
-  const handlerNode = [...nodes.values()].find((n) => n.kind === 'handler');
-  if (handlerNode) {
-    const viaRoutes = new Set<string>();
-    for (const n of nodes.values()) {
-      if (n.via === 'handled-by') for (const t of testsByNode.get(id(n.kind, n.key)) ?? []) viaRoutes.add(t);
-    }
-    const nid = id(handlerNode.kind, handlerNode.key);
-    testsByNode.set(nid, new Set([...(testsByNode.get(nid) ?? []), ...viaRoutes]));
+  for (const [handler, routes] of routesOf) {
+    const nid = id('handler', handler);
+    const tests = new Set(testsByNode.get(nid) ?? []);
+    for (const route of routes) for (const t of testsByNode.get(id('route', route)) ?? []) tests.add(t);
+    testsByNode.set(nid, tests);
   }
 
   const ownerOf = await featureOwnersOf(db, projectId, all);

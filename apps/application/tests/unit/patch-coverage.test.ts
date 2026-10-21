@@ -5,6 +5,7 @@ import {
   computePatchCoverage,
   lineRangesText,
   patchChangedLines,
+  unreachedLinesText,
   patchCoverageWarning,
   suitesOnChangedLines,
 } from '#shared/patch-coverage';
@@ -53,6 +54,13 @@ describe('changedLinesOf', () => {
 
   test('is null when no changed line is a reference line', () => {
     expect(changedLinesOf(combined.files[0]!, [12, 40])).toBeNull();
+  });
+
+  test('says what an unreached file’s lines did, the undetermined ones apart', () => {
+    expect(unreachedLinesText({ changed: 4, undetermined: 0 })).toBe('none of its 4 changed lines ran');
+    expect(unreachedLinesText({ changed: 4, undetermined: 1 })).toBe(
+      '3 of its 4 changed lines ran in no suite, 1 undetermined',
+    );
   });
 
   test('words the ranges as the dashboard does', () => {
@@ -199,7 +207,13 @@ describe('detectChangedUnreached', () => {
     const gaps = detectChangedUnreached(
       [
         { filePath: 'src/cart.ts', additions: 3, deletions: 0, reach: 'reached' },
-        { filePath: 'src/pay.ts', additions: 1, deletions: 0, reach: 'unreached', lines: { changed: 4 } },
+        {
+          filePath: 'src/pay.ts',
+          additions: 1,
+          deletions: 0,
+          reach: 'unreached',
+          lines: { changed: 4, undetermined: 0 },
+        },
         { filePath: 'src/narrowed.ts', additions: 1, deletions: 0, reach: 'reached-earlier' },
         { filePath: 'README.md', additions: 9, deletions: 0, reach: 'not-observable' },
         { filePath: 'src/cart.test.ts', additions: 2, deletions: 0, reach: 'out-of-scope' },
@@ -209,7 +223,7 @@ describe('detectChangedUnreached', () => {
     expect(gaps.map((g) => g.key)).toEqual(['src/pay.ts']);
     expect(gaps[0]!.evidence).toEqual([
       '+1 −0 · no test in run #7 or in the last 30 runs — observed reach.',
-      "None of its 4 changed lines ran in the head commit's coverage.",
+      "In the head commit's coverage, none of its 4 changed lines ran.",
     ]);
   });
 });

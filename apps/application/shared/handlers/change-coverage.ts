@@ -17,16 +17,16 @@
  */
 
 import { and, desc, eq, inArray, notInArray } from 'drizzle-orm';
-import { compileCoverageScope, DEFAULT_COVERAGE_SCOPE, parseCoverageScope } from '@piwitests/core/coverage-scope';
+import { compileCoverageScope } from '@piwitests/core/coverage-scope';
 import {
   codeReach,
   graphEdges,
   locatorSnapshots,
-  projects,
   testCases,
   testRuns,
   testRunsCases,
 } from '../../server/database/schema';
+import { projectScope } from '../../server/utils/coverage-totals';
 import type { DrizzleDB } from './db';
 import { parseCallsiteLocation } from '../callsite-location';
 import {
@@ -46,7 +46,7 @@ import {
   type ChangedLines,
   type PatchAreas,
   type PatchCoverage,
-} from '../patch-coverage';
+} from '#shared/patch-coverage';
 
 /** A repo-relative path normalized for suffix matching. */
 function normalizePath(p: string): string {
@@ -213,6 +213,8 @@ export interface ChangeCoverage {
   windowRuns: number;
   files: ChangeCoverageFile[];
   tickets: ChangeCoverageTicket[];
+  /** Changed files counted: reached or uncovered. */
+  countedFiles: number;
   /** Counted files a test reached, in this run or the recent window. */
   reachedFiles: number;
   /** Counted files no test reached: the uncovered changes. */
@@ -336,12 +338,6 @@ async function loadCodeReach(db: DrizzleDB, projectId: number): Promise<Map<stri
   return byFile;
 }
 
-/** The project's coverage scope, compiled: the default excludes unless the project sets its own. */
-async function loadCoverageScope(db: DrizzleDB, projectId: number): Promise<(path: string) => boolean> {
-  const [row] = await db.select({ scope: projects.coverageScope }).from(projects).where(eq(projects.id, projectId));
-  return compileCoverageScope((row?.scope ? parseCoverageScope(row.scope) : null) ?? DEFAULT_COVERAGE_SCOPE);
-}
-
 /** Union into `reaching` the tests reaching any node a file's convention target matches. */
 function addNodeReach(
   target: ConventionTarget | null,
@@ -386,7 +382,7 @@ export async function computeChangeCoverage(
   const { byFile, caseFiles } = await loadFileReach(db, projectId);
   const { byRoute, byPage } = await loadGraphNodeReach(db, projectId);
   const byCode = await loadCodeReach(db, projectId);
-  const inScope = await loadCoverageScope(db, projectId);
+  const inScope = compileCoverageScope((await projectScope(db, projectId)).scope);
 
   // Which test cases ran in the inspected run, and in each recent run. A case
   // that was skipped or did-not-run is present in the rows but never executed, so
@@ -483,12 +479,22 @@ export async function computeChangeCoverage(
   });
 
   const countOf = (reach: ChangeReach) => covered.filter((f) => f.reach === reach).length;
+  const reachedFiles = covered.filter((f) => isReachedChange(f.reach)).length;
+  const uncoveredFiles = countOf('unreached');
+  // The lines of the counted files only, so patch coverage and the file counts speak of the same files.
+  const counted = new Set(
+    covered.filter((f) => isReachedChange(f.reach) || f.reach === 'unreached').map((f) => f.filePath),
+  );
   const patchCoverage = commitCoverage
     ? computePatchCoverage(
         commitCoverage.commit,
         commitCoverage.files,
         commitCoverage.suites,
-        new Map(files.filter((f) => f.changedLines?.length).map((f) => [f.filePath, f.changedLines!])),
+        new Map(
+          files
+            .filter((f) => f.changedLines?.length && counted.has(f.filePath))
+            .map((f) => [f.filePath, f.changedLines!]),
+        ),
         commitCoverage.areas ?? null,
       )
     : null;
@@ -513,8 +519,9 @@ export async function computeChangeCoverage(
     windowRuns,
     files: covered,
     tickets: ticketGroups,
-    reachedFiles: covered.filter((f) => isReachedChange(f.reach)).length,
-    uncoveredFiles: countOf('unreached'),
+    countedFiles: reachedFiles + uncoveredFiles,
+    reachedFiles,
+    uncoveredFiles,
     notCounted: {
       notObservable: countOf('not-observable'),
       outOfScope: countOf('out-of-scope'),

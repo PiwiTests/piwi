@@ -77,13 +77,15 @@ Each term is used with this meaning only, in the dashboard, the pull-request com
 ## Consequences
 
 - **The *changed, unreached* detector opens fewer gaps.** A file reached only in the window, or one Piwi cannot
-  observe, no longer opens one; such gaps opened earlier close when their file reaches by any route of the rule. This
-  amends the detector row of [`scenario-gaps.md`](scenario-gaps.md) (*no `reaches` edge from any test in this run*)
-  and its low-confidence variant for files without evidence.
+  observe, no longer opens one. A gap closes when a later diff reads its file as anything but `unreached`, or when the
+  Test Map's recompute reads it, by the same rule without a diff, as reached or out of scope; without the diff a file
+  observed only through the head commit's coverage cannot be read again, so it waits for the next diff. This amends
+  the detector row of [`scenario-gaps.md`](scenario-gaps.md) (*no `reaches` edge from any test in this run*) and its
+  low-confidence variant for files without evidence.
 - **`--max-uncovered-changes` warns on fewer files**: counted, unreached ones. A project that relied on it to flag
   changes Piwi cannot observe sees them in the comment's *Not counted* line instead.
 - **Wire changes, before 1.0**: `ChangeCoverageFile.reachBasis` is replaced by `reach`, files gain `lines`,
-  `ChangeCoverage` gains `notCounted`, `get_change_coverage` returns both, and `GET /api/projects/:id/gaps/file`
+  `ChangeCoverage` gains `countedFiles` and `notCounted`, `get_change_coverage` returns both, and `GET /api/projects/:id/gaps/file`
   is new. Registered in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md) (D57).
 - **Left as they are**: the internal names of incomplete coverage (`serverCoverageGaps`, `run-coverage-gaps.ts`, the
   `server_coverage_gaps` column) say "gap" while every word a person reads says *incomplete*. Renaming them is a

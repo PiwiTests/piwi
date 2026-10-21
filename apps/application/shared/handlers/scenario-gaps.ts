@@ -47,17 +47,13 @@ import {
   collectOwnOrigins,
   controlNodeKey,
   createDeclaredMatcher,
-  fileRouteTarget,
   isOwnOriginRequest,
   originsFromDocumentRequests,
   parseRouteNodeKey,
   projectRouteOrigins,
   routeNodeKey,
   runBaseUrls,
-  filePageTarget,
   linkNodeKey,
-  routeKeyMatchesTarget,
-  pageKeyMatchesTarget,
   templateAccessibleName,
 } from '../graph';
 import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
@@ -78,7 +74,8 @@ import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { DrizzleDB } from './db';
-import type { ChangeReach } from './change-coverage';
+import { computeChangeCoverage, type ChangeReach } from '#shared/handlers/change-coverage';
+import { unreachedLinesText, type ChangedLines } from '#shared/patch-coverage';
 import { recordOutcome } from '../../server/utils/outcomes';
 import { suggestionHash, type HandbackActor } from '../handback-outcomes';
 
@@ -496,8 +493,8 @@ export interface ChangedFileReach {
   additions: number;
   deletions: number;
   reach: ChangeReach;
-  /** How many changed lines the head commit's coverage counts, when it counts some. */
-  lines?: { changed: number } | null;
+  /** The changed lines the head commit's coverage counts, when it counts some. */
+  lines?: Pick<ChangedLines, 'changed' | 'undetermined'> | null;
   ticket?: string | null;
 }
 
@@ -519,10 +516,7 @@ export function detectChangedUnreached(
     const evidence = [
       `+${file.additions} −${file.deletions} · no test in run #${runId} or in the last ${windowRuns} runs — observed reach.`,
     ];
-    if (file.lines) {
-      const n = file.lines.changed;
-      evidence.push(`None of its ${n} changed ${n === 1 ? 'line' : 'lines'} ran in the head commit's coverage.`);
-    }
+    if (file.lines) evidence.push(`In the head commit's coverage, ${unreachedLinesText(file.lines)}.`);
     gaps.push({
       detector: 'changed-unreached',
       kind: 'gap',
@@ -540,9 +534,11 @@ export function detectChangedUnreached(
 
 /**
  * Close the open and snoozed *changed, unreached* gaps of `filePaths`: files a
- * test now reaches by the rule of change coverage. Returns how many closed.
+ * diff no longer reads as uncovered changes, by the rule of change coverage
+ * (reached, outside the coverage scope, deleted, or nothing observes them).
+ * Returns how many closed.
  */
-export async function closeReachedChangedFiles(
+export async function closeChangedUnreachedGaps(
   db: DrizzleDB,
   projectId: number,
   runId: number | null,
@@ -2405,7 +2401,7 @@ export async function computeScenarioGaps(
     latestRunId,
     closeStatuses,
   );
-  const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, reachByNode, closeStatuses);
+  const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, closeStatuses);
   const closedRetired = await closeRetiredDetectorGaps(db, projectId);
   return { upserted, closed: closed + closedChanged + closedRetired };
 }
@@ -3334,16 +3330,16 @@ async function syncFeatureNodes(
 }
 
 /**
- * Close a changed-unreached gap once a test reaches the file's route or page
- * node — the same self-closing the project-wide detectors get, so a changed file
- * that later gains a test stops being reported. The file is resolved to its node
- * through the file-routing convention and checked against this run's reach edges.
+ * Close the open and snoozed *changed, unreached* gaps whose file the rule of
+ * change coverage now reads as reached, in the recent window, or outside the
+ * coverage scope. Without the diff, a file Piwi observed only through the
+ * head commit's coverage cannot be read again, so a file nothing else
+ * observes keeps its gap until a later diff settles it.
  */
 async function closeReachedChangedUnreached(
   db: DrizzleDB,
   projectId: number,
   runId: number | null,
-  reachByNode: Map<string, Set<number>>,
   statuses: GapStatus[] = ['open', 'snoozed'],
 ): Promise<number> {
   const closable = statuses.filter((s) => s === 'open' || s === 'snoozed');
@@ -3360,27 +3356,12 @@ async function closeReachedChangedUnreached(
     );
   if (open.length === 0) return 0;
 
-  // Route and page node keys a test reaches in this scope.
-  const reachedRoutes: string[] = [];
-  const reachedPages: string[] = [];
-  for (const [nodeKey, ids] of reachByNode) {
-    if (ids.size === 0) continue;
-    const sep = nodeKey.indexOf('\x00');
-    const kind = nodeKey.slice(0, sep);
-    const key = nodeKey.slice(sep + 1);
-    if (kind === 'route') reachedRoutes.push(key);
-    else if (kind === 'page') reachedPages.push(key);
-  }
-
-  const toClose: number[] = [];
-  for (const gap of open) {
-    const routeTarget = fileRouteTarget(gap.key);
-    const pageTarget = filePageTarget(gap.key);
-    const reached =
-      (routeTarget != null && reachedRoutes.some((k) => routeKeyMatchesTarget(routeTarget, k))) ||
-      (pageTarget != null && reachedPages.some((k) => pageKeyMatchesTarget(pageTarget, k)));
-    if (reached) toClose.push(gap.id);
-  }
+  const read = await computeChangeCoverage(db, projectId, {
+    changedFiles: open.map((g) => ({ filePath: g.key, additions: 0, deletions: 0 })),
+  });
+  const reachOf = new Map(read.files.map((f) => [f.filePath, f.reach]));
+  const settled = new Set<ChangeReach>(['reached', 'reached-earlier', 'out-of-scope']);
+  const toClose = open.filter((g) => settled.has(reachOf.get(g.key) ?? 'unreached')).map((g) => g.id);
   if (toClose.length === 0) return 0;
 
   const now = new Date();

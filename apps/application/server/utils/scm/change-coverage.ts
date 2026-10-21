@@ -23,7 +23,6 @@ import type { ScmChanges, ScmProvider } from './ScmProvider';
 import {
   computeChangeCoverage,
   extractTicketIds,
-  isReachedChange,
   ticketPrefix,
   type ChangeCoverage,
   type ChangedFileInput,
@@ -32,7 +31,7 @@ import { patchChangedLines } from '#shared/patch-coverage';
 import { changeCommitCoverage } from '../coverage-summary';
 import { readProjectIntegration } from '../integrations/binding';
 import {
-  closeReachedChangedFiles,
+  closeChangedUnreachedGaps,
   detectChangedUnreached,
   rankGap,
   upsertScenarioGaps,
@@ -411,8 +410,9 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   const muted = await loadMutedDetectors(db, run.projectId).catch(() => new Set<string>());
   const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
-  const reachedNow = coverage.files.filter((f) => isReachedChange(f.reach)).map((f) => f.filePath);
-  await closeReachedChangedFiles(db, run.projectId, runId, reachedNow).catch(() => 0);
+  // A file this diff no longer reads as an uncovered change closes its gap.
+  const settled = coverage.files.filter((f) => f.reach !== 'unreached').map((f) => f.filePath);
+  await closeChangedUnreachedGaps(db, run.projectId, runId, settled).catch(() => 0);
 
   // Import edges for the changed files no test reached, from a shallow scan at the
   // run's ref — so an unreached file still connects to the files that import it.
@@ -454,6 +454,7 @@ export async function readChangeCoverage(
     windowRuns: 30,
     files: [],
     tickets: [],
+    countedFiles: 0,
     reachedFiles: 0,
     uncoveredFiles: 0,
     notCounted: { notObservable: 0, outOfScope: 0, deleted: 0 },
@@ -542,7 +543,7 @@ export async function readChangeCoverage(
 export function toPrChangeCoverage(coverage: ChangeCoverage, fileReach = true): PrChangeCoverage {
   return {
     fileReach,
-    totalFiles: coverage.reachedFiles + coverage.uncoveredFiles,
+    totalFiles: coverage.countedFiles,
     uncoveredFiles: coverage.uncoveredFiles,
     reachedFiles: coverage.reachedFiles,
     notCounted: coverage.notCounted,
