@@ -234,6 +234,18 @@ npm run editor:build -w packages/editor   # from the repository root: the bundle
 ./gradlew runIde                   # a sandboxed WebStorm with the plugin
 ```
 
+**Screenshots.** `scripts/take-screenshots.mjs` writes the plugin's illustrations
+(`apps/docs/public/screenshots/jetbrains-*.png`, shown by the docs and the README; the Marketplace listing's are
+uploaded by hand from them): it starts an Xvfb display, opens the fixture project of
+`apps/vscode/scripts/lib/editor-fixture.mjs` against its stub instance in a WebStorm (the one the Gradle build
+downloaded, or `--ide <directory>`; a licence-free EAP build is the one to use), with the built plugin unpacked from
+`build/distributions/`, the IDE's state pre-written (the page object open at its failing line, the Piwi tool window
+below), sends the keys a scene needs through `scripts/xinput.py` (XTEST) and captures the screen with ImageMagick's
+`import`. `--probe` captures the IDE as it stands without driving it. The IDE must be activated first: a release
+asks for a licence and an EAP build for a JetBrains account before the project shows, so run the script where an
+activated IDE's config directory can be passed with `--config`; the scenes still await a first run through one, and
+until then the plugin's pages show the VS Code captures of the same editor service.
+
 **The JDK.** Gradle runs on the JDK 21 that `gradle/gradle-daemon-jvm.properties` names, whatever `JAVA_HOME` points to
 (the wrapper starts on JDK 11 or later), and the build compiles with a JDK 21 toolchain (`jvmToolchain(21)`). When the
 machine has no JDK 21, the foojay resolver in `settings.gradle.kts` downloads one into `~/.gradle/jdks`. Moving to
