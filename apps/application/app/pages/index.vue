@@ -56,8 +56,11 @@ const { data: inboxGaps } = useFetch('/api/gaps/inbox', {
 });
 
 // Flaky tests waiting in the Flake Lab — hidden when the instance declined it.
+// Fetched by the browser only: reading the suspects of each project's flaky
+// tests takes seconds on a large instance, and the server render would wait.
 const flakeLabHidden = computed(() => instCapHidden('flake-lab'));
 const { data: flakeLabInbox } = useFetch('/api/flake-lab/inbox', {
+  server: false,
   lazy: true,
   immediate: !flakeLabHidden.value,
   default: () => [] as FlakeLabInboxItem[],

@@ -122,7 +122,7 @@ async function openDatabase(): Promise<DB> {
 
       const client = postgres(databaseUrl);
       const pgDb = drizzle(client);
-      if (isOtelTracingEnabled()) traceSqlStatements('postgres', pgDb, client);
+      if (isOtelTracingEnabled()) await traceSqlStatements('postgres', pgDb, client);
       // Cast to the canonical SQLite DB type so callers retain typed query results
       db = pgDb as unknown as DB;
 
@@ -163,8 +163,9 @@ async function openDatabase(): Promise<DB> {
       const dbUrl = pathToFileURL(absolutePath).href;
       const isFreshDatabase = !existsSync(absolutePath);
 
-      // Create client with WAL mode for better concurrent read/write performance
-      const { createClient } = await import('@libsql/client');
+      // Create client with WAL mode for better concurrent read/write performance.
+      // The local-file entry: the package's main one also loads its remote clients.
+      const { createClient } = await import('@libsql/client/sqlite3');
       const client = createClient({ url: dbUrl });
       if (isFreshDatabase) {
         // Must be set before the first table is created (a no-op on existing
@@ -174,8 +175,9 @@ async function openDatabase(): Promise<DB> {
       }
       await client.execute('PRAGMA journal_mode=WAL');
       await configureSqliteConnections(client);
-      db = sqliteDrizzle(client, { schema: sqliteSchema });
-      if (isOtelTracingEnabled()) traceSqlStatements('sqlite', db, client);
+      const sqliteDb = sqliteDrizzle(client, { schema: sqliteSchema });
+      if (isOtelTracingEnabled()) await traceSqlStatements('sqlite', sqliteDb, client);
+      db = sqliteDb;
 
       migrationPromise = (async () => {
         try {

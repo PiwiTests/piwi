@@ -223,6 +223,20 @@ describe('the project’s lab', () => {
     expect(await listFlakeLabInbox(db as never, 'all')).toEqual([]);
   });
 
+  test('Home reads the profiles through the given reader, per project', async () => {
+    const { getFlakeProfileSummaries } = await import('../../shared/handlers/flake-profile');
+    const asked: Array<[number, number[]]> = [];
+    const items = await listFlakeLabInbox(db as never, 'all', {
+      profiles: (projectId, testCaseIds) => {
+        asked.push([projectId, testCaseIds]);
+        return getFlakeProfileSummaries(db as never, testCaseIds);
+      },
+    });
+    expect(items).toEqual(await listFlakeLabInbox(db as never, 'all'));
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every(([projectId]) => projectId === 1)).toBe(true);
+  });
+
   test('keeps the newest experiments to the limit, and counts them all', async () => {
     const lab = await getProjectFlakeLab(db as never, 1, { limit: 1 });
     expect(lab.experiments.map((e) => e.testCaseId)).toEqual([1]);

@@ -7,8 +7,6 @@
  * that endpoint only. The exporter, the batch processor and the sampler read the
  * other standard `OTEL_*` variables themselves.
  */
-import { instrumentDrizzle, instrumentDrizzleClient } from '@kubiks/otel-drizzle';
-
 import type { Tracer } from '@opentelemetry/api';
 import type { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 
@@ -62,7 +60,8 @@ export async function stopOtelTracing(): Promise<void> {
  * transactions included; SQLite at the libSQL client's `execute`, which every
  * statement outside a transaction goes through.
  */
-export function traceSqlStatements(dialect: 'sqlite' | 'postgres', db: object, client: object): void {
+export async function traceSqlStatements(dialect: 'sqlite' | 'postgres', db: object, client: object): Promise<void> {
+  const { instrumentDrizzle, instrumentDrizzleClient } = await import('@kubiks/otel-drizzle');
   if (dialect === 'postgres') {
     instrumentDrizzleClient(db as Parameters<typeof instrumentDrizzleClient>[0], {
       dbSystem: 'postgresql',
