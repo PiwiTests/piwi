@@ -134,6 +134,8 @@ const LIGHT = { ink: NAVY, word: NAVY, check: MINT, node: VIOLET, tests: VIOLET 
 const DARK = { ink: INK_ON_DARK, word: INK_ON_DARK, check: MINT_ON_DARK, node: VIOLET_ON_DARK, tests: VIOLET_ON_DARK };
 
 const lockup = (colors) => svg(VIEW.lockup, mark(colors) + wordmark(colors), { title: 'Piwi tests' });
+/** The sidebar lockup: the mark and "piwi" without the hairline "tests", which is unreadable at nav heights. */
+const navLockup = (colors) => svg(VIEW.nav, mark(colors) + wordmark({ word: colors.word }));
 /** The square logo: the small mark on its violet tile, also the favicon, the notification icon and the desktop icon. */
 const squareLogo = appIcon({ small: true, size: 64 });
 
@@ -197,6 +199,11 @@ const SVG_FILES = {
   'apps/docs/public/logo-wide.svg': lockup(LIGHT),
   'apps/application/public/logo-wide-dark.svg': lockup(DARK),
   'apps/docs/public/logo-wide-dark.svg': lockup(DARK),
+  'apps/application/public/logo-nav.svg': navLockup(LIGHT),
+  'apps/application/public/logo-nav-dark.svg': navLockup(DARK),
+  // The collapsed sidebar rail: the small mark in one color.
+  'apps/application/public/logo-mark.svg': monoMark(VIOLET, 24),
+  'apps/application/public/logo-mark-dark.svg': monoMark(VIOLET_ON_DARK, 24),
   // A 40 × 40 plugin icon with the 2 px margin JetBrains asks for.
   'apps/jetbrains/src/main/resources/META-INF/pluginIcon.svg': appIcon({ small: true, inset: 26, size: 40 }),
   // Tool window and status widget icons, in the IntelliJ New UI icon greys.

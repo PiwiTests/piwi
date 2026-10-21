@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
-import ProjectsMenu from '~/components/layout/ProjectsMenu.vue';
 import { DOCS_BASE_URL } from '#shared/docs';
 
 const route = useRoute();
@@ -499,14 +498,20 @@ onMounted(async () => {
       :ui="{ root: 'min-h-full', footer: 'lg:border-t lg:border-default' }"
     >
       <template #header="{ collapsed }">
-        <!-- Desktop shell only: visible back/forward for the chrome-less webview,
-             paired at the top-left corner the way native apps place them. The
-             collapsed rail has no room in the header row, so the pair moves into
-             the rail stack below instead. -->
-        <DesktopNavButtons v-if="!collapsed" />
-        <div class="flex-1 min-w-0">
-          <ProjectsMenu :collapsed="collapsed" />
-        </div>
+        <!-- The logo leads home; projects are switched from the list below or the search. -->
+        <ULink
+          to="/"
+          aria-label="Piwi"
+          class="flex items-center rounded-md focus-visible:outline-2 focus-visible:outline-primary"
+          :class="collapsed ? 'mx-auto h-6' : 'h-8 px-1.5'"
+          @click="open = false"
+        >
+          <BrandLogo :variant="collapsed ? 'mark' : 'nav'" class="h-full" />
+        </ULink>
+        <!-- Desktop shell only: visible back/forward for the chrome-less webview.
+             The collapsed rail has no room in the header row, so the pair moves
+             into the rail stack below instead. -->
+        <DesktopNavButtons v-if="!collapsed" class="ml-auto" />
       </template>
 
       <template #default="{ collapsed }">

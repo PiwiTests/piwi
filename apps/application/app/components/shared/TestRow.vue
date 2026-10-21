@@ -208,7 +208,7 @@ const clusterLabel = computed(() =>
                 ><span v-if="i < suiteSegments.length - 1" class="sr-only">, </span></template
               ><span class="sr-only">: </span>
             </span>
-            <!-- Neutral title: a primary-green title reads as "passed" on a failed row. -->
+            <!-- Neutral title: a primary-colored link title would compete with the row's status. -->
             <a
               v-if="linkable"
               :href="linkHref"

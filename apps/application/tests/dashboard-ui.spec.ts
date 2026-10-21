@@ -67,8 +67,8 @@ test.describe('Dashboard UI Tests', () => {
     // Wait for main content to confirm page loaded
     await expect(page.getByRole('heading', { name: 'Run trend' })).toBeVisible({ timeout: 30000 });
 
-    // Project name should be visible in the breadcrumb/pill
-    await expect(page.getByRole('button', { name: PROJECT.UI_TEST })).toBeVisible({ timeout: 15000 });
+    // Project name should be visible in the breadcrumb
+    await expect(page.locator('#main-content').getByText(PROJECT.UI_TEST).first()).toBeVisible({ timeout: 15000 });
   });
 
   test('should navigate to test run details page', async ({ page }) => {
@@ -127,18 +127,13 @@ test.describe('Dashboard UI Tests', () => {
     });
   });
 
-  test('should show project switcher dropdown', async ({ page }) => {
-    await page.goto('/');
+  test('the sidebar logo leads home', async ({ page }) => {
+    await page.goto('/settings/about');
+    await waitForHydration(page);
 
-    // Find and click the project switcher - use first() to get the header one, not sidebar
-    const projectSwitcher = page.getByRole('button', { name: /All projects|ui-test-project/ }).first();
-    await expect(projectSwitcher).toBeVisible();
+    await page.locator('#dashboard-sidebar-default').getByRole('link', { name: 'Piwi', exact: true }).click();
 
-    // Click to open dropdown
-    await projectSwitcher.click();
-
-    // Check dropdown options
-    await expect(page.getByText('All projects').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('should navigate using sidebar', async ({ page }) => {
