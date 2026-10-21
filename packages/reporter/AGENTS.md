@@ -1,7 +1,7 @@
 # Reporter — agent guide
 
 Rules for working inside `packages/reporter/` (the published `@piwitests/reporter` package). Read
-[`../AGENTS.md`](../AGENTS.md) first for repo-wide conventions, and **[`ARCHITECTURE.md`](ARCHITECTURE.md)** for the
+[`../../AGENTS.md`](../../AGENTS.md) first for repo-wide conventions, and **[`ARCHITECTURE.md`](ARCHITECTURE.md)** for the
 full map: public/internal split, the two-process collect-and-submit data flow, the submit fallback ladder, and the
 per-directory responsibilities.
 
@@ -66,4 +66,4 @@ Source is TypeScript in `src/`; `dist/` is generated — never edit it. To try t
 `npm link` here and in the target project.
 
 Adding a field that flows from Playwright to the dashboard touches both repos' halves — follow the ordered checklist in
-[`../application/AGENTS.md`](../application/AGENTS.md#adding-a-field-to-test-run-data).
+[`apps/application/AGENTS.md`](../../apps/application/AGENTS.md#adding-a-field-to-test-run-data).

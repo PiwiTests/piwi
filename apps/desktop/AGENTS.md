@@ -1,7 +1,7 @@
 # Desktop app — agent guide
 
 Rules for working inside `apps/desktop/` (the Tauri shell that bundles and runs the dashboard locally). Read
-[`../AGENTS.md`](../AGENTS.md) first for repo-wide conventions, and [`README.md`](README.md) for how the shell works,
+[`../../AGENTS.md`](../../AGENTS.md) first for repo-wide conventions, and [`README.md`](README.md) for how the shell works,
 build prerequisites and the release flow.
 
 ## What it is

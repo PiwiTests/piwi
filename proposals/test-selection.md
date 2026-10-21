@@ -9,9 +9,12 @@ built-ins, `piwi select` / `piwi run` with duration-balanced `--shard` and `--fa
 `--require-selection` gate policy, the project's Selections tab with builder and live preview, the PR-feedback
 summary line, five MCP tools (`list_selections`, `resolve_selection`, `preview_selection`, `suggest_selections`,
 `analyze_selections`) with the `run-the-right-tests` skill, suggested tags and budgeted smoke mining, impact-from-diff
-over captured source frames, and selection health and drift analytics. Not shipped: applying tag suggestions back to
-the spec files as a pull request, suggestion digests through notifications, and route-level impact mapping behind a
-per-project config. The user guide is [Test selections](../apps/docs/features/test-selection.md) on the docs site; the design
+over captured source frames, and selection health and drift analytics. Impact also reaches the handler file of each
+route a test called, through [code reach](../apps/docs/features/code-reach.md) with an instrumented backend (Nitro or
+ASP.NET Core). Not shipped: applying tag suggestions back to the spec files as a pull request, suggestion digests
+through notifications, the per-project route mapping for a backend without that instrumentation, and **Save as
+selection** from the test catalog, the flaky leaderboard and the cluster page (it exists on Analytics and on the
+Selections tab). The user guide is [Test selections](../apps/docs/features/test-selection.md) on the docs site; the design
 below is the original text.
 
 **Summary.** Piwi already knows which tests are fast, stable, flaky, slow, quarantined, recently broken, owned by

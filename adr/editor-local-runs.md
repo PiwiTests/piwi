@@ -449,7 +449,7 @@ depends on none of them beyond the entry points that run tests, and can land in 
       **The failures view**, the commands table, the JetBrains section.
 - [ ] `guide/capture-fixtures.md` and `features/locator-healing.md` — `PIWI_PAUSE_AT` beside the two failure-time aids.
 - [ ] `reference/test-metadata.md` — the editor origin and `PIWI_ORIGIN_REF` as the editor sets them.
-- [ ] `ROADMAP.md` — a *Recently shipped* entry once the last PR lands; `plans/` mirrors through `/plan-management`.
+- [x] `ROADMAP.md` — a *Recently shipped* entry once the last PR lands; `plans/` mirrors through `/plan-management`.
 
 ## Verification
 

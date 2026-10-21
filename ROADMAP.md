@@ -15,6 +15,13 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Recently shipped
 
+- **Local runs in the editor**: a test run started from VS Code or a JetBrains IDE shows its progress in the status
+  bar and reports back within a second of its end; its results, a partial run's included, overlay the latest CI run's
+  failures, which follow the edits made to the file since; the failures view is a tree, one click runs the failing
+  tests again, and a breakpoint pauses the browser with Piwi's picker open, to replace the locator on that line.
+  [adr/editor-local-runs.md](adr/editor-local-runs.md); see
+  [runs from the editor](https://piwitests.dev/features/editor-runs) and
+  [breakpoints in the browser](https://piwitests.dev/features/editor-breakpoints).
 - **Project roles and groups**: five project roles (Viewer, Contributor, Maintainer, Project admin, Uploader), granted
   to users or groups per project or on all projects, replace the three global roles, so a product owner can file an
   issue without triage or upload rights. [proposals/roles-and-groups.md](proposals/roles-and-groups.md); see

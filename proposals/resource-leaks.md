@@ -45,7 +45,7 @@ and a `resources` rung in the bench. What changed while building PR 2:
 - The sampler scans `/proc` every second (about 2 ms of CPU with a browser running) and reads PSS, the container
   and the disk every five (about 30 ms): under 1% of one core. A worker reads its process tree once per test, at its
   end (about 2 ms), and that read starts the next test's window; a worker that never started a browser skips it. macOS reads the tree through `ps` every five seconds and counts RSS. Windows measures the machine and the
-  disk; the process tree is not measured there yet.
+  disk, and reads the tree through a PowerShell CIM query every fifteen seconds (built 2026-10-03).
 - The web server is whatever the runner starts that is not a worker, a browser or ffmpeg: the runner does not expose
   the pid of `webServer`'s command, and a `globalSetup` server counts the same way.
 - A leaked page's cost is its main thread's task time over CDP (`TaskDuration` in thread ticks), not its renderer's
@@ -108,6 +108,10 @@ tools, and each finding's history on the Resources tab. What changed while build
 - Not built: the daily rollups for analytics, and per-finding notifications.
 - The bench's `resources` rung measured +15 ms and +0 ms per test over `full` in two runs of four rounds (1.3% and
   0%), inside the 3% the Verification section sets.
+
+**Part of PR 7 built 2026-10-02 and 03** (optional): each worker row of the run's timeline draws its sampled CPU,
+memory and open pages, and the Resources tab's open pages point at it. Not built: the leak tails, the pressure strip
+and the failure timeline's `resources` lane. PRs 5 and 6 are not started.
 
 ## What the reader gets
 

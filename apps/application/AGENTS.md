@@ -1,7 +1,7 @@
 # Dashboard app — agent guide
 
 Rules for working inside `apps/application/` (the Nuxt 4 app, its Nitro server, the demo SPA and the MCP server).
-Read [`../AGENTS.md`](../AGENTS.md) first for repo-wide conventions, and [`ARCHITECTURE.md`](ARCHITECTURE.md) when you
+Read [`../../AGENTS.md`](../../AGENTS.md) first for repo-wide conventions, and [`ARCHITECTURE.md`](ARCHITECTURE.md) when you
 need the map of what lives where.
 
 Everything below is a **rule or an invariant** — something you cannot infer by reading the code you happen to open.
@@ -482,7 +482,7 @@ enum, default, min/max, `secret`, `relevantWhen`/`requiredWhen`, `since`/`until`
 post-0.14.0 var lacks `since`, or if a recorded `default`/`min`/`max` drifts from the code constants.
 
 Do not enumerate env vars in prose anywhere — link to the registry or the generated
-[configuration reference](../apps/docs/AGENTS.md) instead. Two facts worth knowing without opening it: the app runs with **no
+[configuration reference](https://piwitests.dev/reference/configuration) instead. Two facts worth knowing without opening it: the app runs with **no
 env vars set**, and `PIWI_SECRET_KEY` is the master key for AES-256-GCM encryption of DB-stored secrets (AI keys, SCM
 tokens) — recommended in production even without auth, falling back to an insecure development default.
 

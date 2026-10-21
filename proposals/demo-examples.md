@@ -22,6 +22,12 @@ decisions wait for PR 2 and PR 3. What changed while building PR 1:
 - `llms-full.txt` expands `<DemoExamples />` into the page's links, with absolute URLs, so language models read the
   same examples.
 
+**Since PR 1**, feature pages added their own examples as they shipped: the registry holds 20, on 12 pages
+(2026-10-17). PR 3's coverage is not done: most "seeded" and "audit" pages of [Coverage](#coverage) still have none
+(failure clusters, evidence, locator healing, flaky tests, analytics, dashboards, quality reports, run changes, slow
+tests…). PR 2 is not started: the screenshot scenes, the demo runtime check and the `run-app` skill do not read the
+registry. The optional PR 4 is not built; the demo's guided tour reuses only the `expect` type.
+
 ## Why
 
 - **The docs describe, the demo shows, and nothing connects them.** Of the 42 feature pages, one links to concrete

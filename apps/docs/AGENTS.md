@@ -1,6 +1,6 @@
 # Documentation site — agent guide
 
-Rules for working inside `apps/docs/` (the VitePress site published to GitHub Pages). Read [`../AGENTS.md`](../AGENTS.md)
+Rules for working inside `apps/docs/` (the VitePress site published to GitHub Pages). Read [`../../AGENTS.md`](../../AGENTS.md)
 first — in particular the **cross-platform shell commands** rule, which applies to every snippet on this site.
 
 ```bash
@@ -239,7 +239,8 @@ when you move a section, keep its heading text or update every link the test nam
 ### Voice
 
 Informative, specific, honest — never promotional. Piwi is not a product being sold. The canonical positioning line
-and the seven surfaces that must carry it are in the [root guide](../AGENTS.md#documentation).
+and the eight surfaces that must carry it are in the
+[root guide](../../AGENTS.md#one-canonical-positioning-line-must-follow).
 
 - **Banned**: conversion CTA blocks ("Stop losing your…" + buttons), `for-the-badge` call-to-action badges, "try it
   now" / pointing-hand CTAs, competitor feature tables with a **Price** row in the README (honest prose comparison
