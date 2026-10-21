@@ -9,7 +9,7 @@ lang: en-US
 <Needs extension />
 
 A tester who [reports a bug](./report-a-bug) in Piwi Picker can send it to your Piwi instance. Piwi keeps it with its
-steps, the value the page showed, and the evidence the tester chose to send; writes it as a failing Playwright test for
+steps and the evidence the tester chose to send; writes it as a failing Playwright test for
 your project; and follows that test's runs: from the test being committed, to the bug looking fixed, to the report
 closing when the fix holds.
 
@@ -24,8 +24,7 @@ With the extension [connected to the instance](./extension-connection), the fini
 - **Leave out the values I typed**, which removes them from the steps and from the evidence that repeats them; the
   failing test then reads them from environment variables.
 
-Nothing is sent before **Send**, and only to the instance the extension is connected to. The first time, the preview
-explains this. Anyone who can read a project can send a report to it, so a tester's own key is enough.
+Nothing is sent before **Send**, and only to the connected instance. Anyone who can read a project can send a report to it, so a tester's own key is enough.
 
 The report keeps the language it was written in; the test Piwi writes from it is the same in every language.
 
@@ -42,6 +41,11 @@ tester expected and what the page showed instead, where the report stands, and w
 - **Spec**: the failing test.
 
 **Dismiss** sets a report aside: runs no longer move it. **Reopen** brings it back.
+
+<figure>
+  <img src="/screenshots/bug-report.png" alt="A bug report's page: situation, state, next step and why the suite missed it, over its steps">
+  <figcaption>A report's page.</figcaption>
+</figure>
 
 ### Why the suite missed it
 
@@ -81,8 +85,7 @@ Two project settings shape it, under **Generated specs** in the **Source control
 tab: the folder bug specs go to (`tests/bugs` by default) and the module `test` and `expect` are imported from, such as
 `../fixtures` when your tests use fixtures of their own.
 
-From a terminal, [`piwi bug 37 --write`](/reference/cli#bug) writes the spec into that folder and runs it once, so you
-see the bug before you fix it.
+From a terminal, [`piwi bug 37 --write`](/reference/cli#bug) writes the spec into that folder and runs it once.
 
 ## From report to fix
 
@@ -126,7 +129,7 @@ reopens as its ticket moves into and out of Done.
 For the exact verdict and a trace, the [desktop app](./desktop) runs a report's steps with Playwright in your project.
 Pair it once: in the extension's settings, under **Desktop app**, click **Pair**, then **Allow** in the app's window,
 which shows the same code. The address is on the app's **Setup** page, under **Connect Piwi Picker**
-(`http://127.0.0.1:3000` unless another program holds that port); **Pair by hand** takes the token shown there.
+(`http://127.0.0.1:3000` by default); **Pair by hand** takes the token shown there.
 The token goes only to an app that proves it holds it.
 
 **Run with Playwright…**, in Replay's chooser or on a finished replay, shows what it sends (the title and the steps,

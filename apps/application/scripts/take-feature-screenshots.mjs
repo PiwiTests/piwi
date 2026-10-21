@@ -3062,6 +3062,30 @@ const SCENES = [
     prepare: classifyFlakyTests,
   },
   {
+    name: 'flake-lab',
+    description: "Flake Lab tab: the project's experiments, each with its test, conditions and verdict",
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1?tab=flake-lab',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'bug-report',
+    description: "A bug report's page: the recorded steps, the evidence and why the suite missed it",
+    tags: ['docs'],
+    out: 'docs',
+    route: '/bug-reports/1',
+    viewport: { width: 1280, height: 900 },
+  },
+  {
+    name: 'test-selections',
+    description: 'Project selections: the built-in and defined selections, each with its tests and health',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/1/selections',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
     name: 'test-functions',
     description:
       'Test functions catalog: the page-object methods and helpers extracted from the suite, with their parameters',

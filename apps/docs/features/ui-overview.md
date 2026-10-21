@@ -17,6 +17,11 @@ and a **Learn more** link into these docs, and every source path [opens in your 
 beside the recent activity, then the **failure inbox** of open clusters, triaged from the row or the keyboard
 ([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)).
 
+<figure>
+  <img src="/screenshots/home.png" alt="Home in the light and dark themes: filters, stat strip, project health and recent activity">
+  <figcaption>Home.</figcaption>
+</figure>
+
 ## Analytics
 
 `/analytics`: trends across projects and over time, where Home shows what is happening now. The filters at the top
@@ -92,8 +97,8 @@ evidence rebuilt from a trace, and the fallback the reporter took to send the ru
     reported. Runs sent by an older reporter show the sections without their hook list.
   - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test, so a lane can hold
     several processes one after another: **↻** marks where a new one took over, and the stretch before it is the old
-    process shutting down and the new one starting. A dashed line is time the worker ran no test — before its first test, between two tests,
-    or after its last one while the others finished. Hover either to see which it was.
+    process shutting down and the new one starting. A dashed line is time the worker ran no test; hover either for
+    the details.
   - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
     them with arrows.
   - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
@@ -147,7 +152,7 @@ run** replays a reporter's stream, so you can watch a run arrive. **Acting as** 
 show how [roles](/operate/project-access) change what each one sees and can do, including changes made on
 the [permission grid](/operate/project-access#permission-grid). **Guided tour** asks what you do (**Developer**,
 **QA engineer**, **Product owner** or **DevOps / platform**) and walks you through the screens that role uses most,
-pointing at one element on each with a link to the page of these docs that explains it. The tour is in English,
+pointing at one element on each, linked to its docs page. The tour is in English,
 French, Spanish and German; the dashboard stays in English.
 
 ## Related
