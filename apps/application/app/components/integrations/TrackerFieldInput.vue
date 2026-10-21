@@ -5,7 +5,8 @@
  * issue search for a parent or an epic, text, a number, a date, group names, or
  * a raw API value for the types Jira gives no list for (a team, a sprint). It
  * edits a {@link FieldValue} — the value as Jira's API takes it plus a label to
- * show it back — and emits null when cleared.
+ * show it back — and emits null when cleared. A picker shows its chosen value in
+ * full on hover, and a field Jira fills when left empty says so while empty.
  */
 import {
   cascadeValue,
@@ -31,6 +32,11 @@ const trackerIcon = useTrackerIcon();
 function set(value: unknown, label: string) {
   model.value = value == null || label === '' ? null : { value, label };
 }
+
+/** The chosen value in full, as the picker's title: a narrow picker cuts a long label. */
+const fullLabel = computed(() => model.value?.label || undefined);
+/** An empty field Jira fills by default reads "Jira's default" rather than its usual prompt. */
+const placeholderFor = (prompt: string) => (props.field.hasDefault ? "Jira's default" : prompt);
 
 const optionItems = computed(() => (props.field.options ?? []).map((o) => ({ label: o.label, value: o.id })));
 const labelOf = (id: string) => props.field.options?.find((o) => o.id === id)?.label ?? id;
@@ -225,7 +231,8 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     v-model="optionId"
     :items="optionItems"
     value-key="value"
-    placeholder="Choose a value"
+    :placeholder="placeholderFor('Choose a value')"
+    :title="fullLabel"
     class="w-full"
   />
   <USelectMenu
@@ -234,7 +241,8 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     :items="optionItems"
     value-key="value"
     multiple
-    placeholder="Choose values"
+    :placeholder="placeholderFor('Choose values')"
+    :title="fullLabel"
     class="w-full"
   />
   <USelectMenu
@@ -242,7 +250,8 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     v-model="cascadeId"
     :items="optionItems"
     value-key="value"
-    placeholder="Choose a value"
+    :placeholder="placeholderFor('Choose a value')"
+    :title="fullLabel"
     class="w-full"
   />
   <USelectMenu
@@ -254,12 +263,16 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     :loading="issuesLoading"
     ignore-filter
     create-item
-    placeholder="Search an issue"
+    :placeholder="placeholderFor('Search an issue')"
+    :title="fullLabel"
     class="w-full"
     @update:open="(isOpen: boolean) => isOpen && searchIssues()"
     @update:search-term="(q: string) => searchIssuesSoon(q)"
     @create="(key: string) => (issueKey = key)"
   >
+    <template #item-label="{ item }">
+      <span :title="item.label">{{ item.label }}</span>
+    </template>
     <template #create-item-label="{ item }">Use {{ item.trim().toUpperCase() }}</template>
   </USelectMenu>
   <USelectMenu
@@ -269,7 +282,8 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     :avatar="personAvatar"
     value-key="value"
     searchable
-    placeholder="Search a person"
+    :placeholder="placeholderFor('Search a person')"
+    :title="fullLabel"
     class="w-full"
     @update:open="(isOpen: boolean) => isOpen && searchPeople()"
     @update:search-term="(q: string) => searchPeople(q)"
@@ -281,7 +295,8 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     value-key="value"
     multiple
     searchable
-    placeholder="Search people"
+    :placeholder="placeholderFor('Search people')"
+    :title="fullLabel"
     class="w-full"
     @update:open="(isOpen: boolean) => isOpen && searchPeople()"
     @update:search-term="(q: string) => searchPeople(q)"
@@ -292,19 +307,37 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     :items="tags"
     multiple
     create-item
-    :placeholder="field.kind === 'group-array' ? 'Add group names' : 'Add values'"
+    :placeholder="placeholderFor(field.kind === 'group-array' ? 'Add group names' : 'Add values')"
     class="w-full"
     @create="addTag"
   />
-  <UTextarea v-else-if="field.kind === 'text'" v-model="text" :rows="2" autoresize class="w-full" />
-  <UInput v-else-if="field.kind === 'number'" v-model="text" type="number" class="w-full" />
+  <UTextarea
+    v-else-if="field.kind === 'text'"
+    v-model="text"
+    :rows="2"
+    autoresize
+    :placeholder="placeholderFor('')"
+    class="w-full"
+  />
+  <UInput
+    v-else-if="field.kind === 'number'"
+    v-model="text"
+    type="number"
+    :placeholder="placeholderFor('')"
+    class="w-full"
+  />
   <UInput v-else-if="field.kind === 'date'" v-model="text" type="date" class="w-full" />
   <UInput v-else-if="field.kind === 'datetime'" v-model="text" type="datetime-local" class="w-full" />
-  <UInput v-else-if="field.kind === 'group'" v-model="text" placeholder="Group name" class="w-full" />
+  <UInput
+    v-else-if="field.kind === 'group'"
+    v-model="text"
+    :placeholder="placeholderFor('Group name')"
+    class="w-full"
+  />
   <UInput
     v-else
     v-model="text"
-    :placeholder="field.kind === 'raw' ? rawPlaceholder : ''"
+    :placeholder="placeholderFor(field.kind === 'raw' ? rawPlaceholder : '')"
     :class="field.kind === 'raw' ? 'w-full font-mono' : 'w-full'"
   />
 </template>

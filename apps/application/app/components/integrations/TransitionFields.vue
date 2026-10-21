@@ -9,7 +9,7 @@
  */
 import {
   joinFieldNames,
-  requiredFieldsToFill,
+  requiredFieldsToAsk,
   settableFields,
   TRANSITION_SKIPPED_FIELDS,
   type FieldValues,
@@ -76,7 +76,7 @@ watch(
 
 const matched = computed(() => (sample.value ? matchTransition(sample.value.transitions, props.transition) : null));
 const required = computed(() =>
-  matched.value ? requiredFieldsToFill(matched.value.fields, TRANSITION_SKIPPED_FIELDS) : [],
+  matched.value ? requiredFieldsToAsk(matched.value.fields, TRANSITION_SKIPPED_FIELDS) : [],
 );
 /** The fields of the matched transition's screen a value can be set for. */
 const settable = computed(() => (matched.value ? settableFields(matched.value.fields, TRANSITION_SKIPPED_FIELDS) : []));

@@ -132,12 +132,16 @@ export function settableFields(
   return fields.filter((f) => !skipped.has(f.id));
 }
 
-/** The required fields the tracker does not fill and Piwi does not skip: the ones to ask for. */
-export function requiredFieldsToFill(
+/**
+ * The required fields Piwi does not skip: the ones to ask for. A field the
+ * tracker fills by default is asked for too, so its value can be chosen, but
+ * leaving it empty never blocks a create ({@link missingRequiredFields}).
+ */
+export function requiredFieldsToAsk(
   fields: readonly TrackerField[],
   skipped: ReadonlySet<string> = MANAGED_FIELDS,
 ): TrackerField[] {
-  return settableFields(fields, skipped).filter((f) => f.required && !f.hasDefault);
+  return settableFields(fields, skipped).filter((f) => f.required);
 }
 
 /** What the create request itself provides, beyond the field values. */

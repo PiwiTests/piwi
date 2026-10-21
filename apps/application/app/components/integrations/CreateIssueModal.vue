@@ -16,7 +16,7 @@ import {
   joinFieldNames,
   MANAGED_FIELDS,
   missingRequiredFields,
-  requiredFieldsToFill,
+  requiredFieldsToAsk,
   settableFields,
   type FieldValues,
   type TrackerField,
@@ -110,12 +110,12 @@ const {
   () => issueType.value,
 );
 /**
- * The fields to ask for: the required ones Piwi does not fill, plus any Jira
- * refused — even one its screen does not list, which a workflow validator can
- * require (a parent).
+ * The fields to ask for: the required ones Piwi does not fill, those Jira
+ * fills by default included, plus any Jira refused — even one its screen does
+ * not list, which a workflow validator can require (a parent).
  */
 const askedFields = computed(() => {
-  const required = requiredFieldsToFill(screenFields.value);
+  const required = requiredFieldsToAsk(screenFields.value);
   const settable = settableFields(screenFields.value);
   const extra: TrackerField[] = [];
   for (const problem of fieldProblems.value) {
