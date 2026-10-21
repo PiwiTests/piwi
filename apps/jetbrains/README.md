@@ -3,7 +3,7 @@
 Your Playwright suite's history at the line you are editing, from a [Piwi](https://piwitests.dev) instance, in
 WebStorm, IntelliJ IDEA Ultimate and Rider. Piwi keeps every run CI throws away, groups the failures by root cause and
 finds the locator you should have used; this plugin brings that into the IDE. It runs the same editor service as the
-[VS Code extension](../vscode/README.md), so both show the same things.
+[VS Code extension](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi), so both show the same things.
 
 ![WebStorm: a CI failure at its line, the replacement locator offered on Alt+Enter with the edit's preview](https://piwitests.dev/screenshots/jetbrains-heal.png)
 
