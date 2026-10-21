@@ -5,6 +5,7 @@
  * execution page and the What changed card word them one way.
  */
 import { normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
+import { lineRangesText } from '#shared/patch-coverage';
 import type { SuspectLine, SuspectLinesAnswer } from '#shared/suspect-lines';
 import type { PatchLine } from '~/utils';
 
@@ -39,7 +40,7 @@ export function suspectGranularityLabel(granularity: SuspectLine['granularity'])
   return 'file reached';
 }
 
-export { lineRangesText } from '#shared/patch-coverage';
+export { lineRangesText };
 
 /** "3 failing tests", "1 passing test". */
 export function testCountText(n: number, kind: 'failing' | 'passing'): string {

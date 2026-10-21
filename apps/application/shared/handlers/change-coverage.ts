@@ -174,11 +174,6 @@ export function isReachedChange(reach: ChangeReach): boolean {
   return reach === 'reached' || reach === 'reached-earlier';
 }
 
-/** The file counts in the change's totals: a test could run it. */
-export function isCountedChange(reach: ChangeReach): boolean {
-  return isReachedChange(reach) || reach === 'unreached';
-}
-
 export interface ChangeCoverageFile {
   filePath: string;
   additions: number;
