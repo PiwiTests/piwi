@@ -37,8 +37,8 @@ internal sealed class PiwiCoverageSettings
 /// the client that received an id can collect its coverage) when it recorded something, and kept until the reporter
 /// collects it. Serves
 /// <c>POST /__piwi/coverage/collect</c> (the coverage of the request ids a test received, merged per group) and
-/// <c>GET /__piwi/coverage/run</c> (the run-level coverage). Everything here is inactive until code built with
-/// coverage instrumentation runs in the process.
+/// <c>GET /__piwi/coverage/run</c> (the run-level coverage), both naming the process's <c>instance</c>. Everything
+/// here is inactive until code built with coverage instrumentation runs in the process.
 /// </summary>
 internal sealed class PiwiServerCoverage
 {
@@ -52,8 +52,8 @@ internal sealed class PiwiServerCoverage
     /// <summary>The most request ids one collect request may name.</summary>
     internal const int MaxRequestIds = 10_000;
 
-    /// <summary>Names this process in request ids, so an id from an earlier process reads as missing.</summary>
-    internal static readonly string ProcessKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
+    /// <summary>Names this process in request ids, so an id from an earlier process reads as missing: its instance id.</summary>
+    internal static string ProcessKey => PiwiCoverageRecorder.InstanceId;
 
     private static long s_sequence;
 
@@ -168,6 +168,7 @@ internal sealed class PiwiServerCoverage
         {
             writer.WriteStartObject();
             writer.WriteNumber("v", 1);
+            WriteInstance(writer);
             writer.WriteStartArray("groups");
             foreach (var group in collect.Groups)
             {
@@ -230,12 +231,26 @@ internal sealed class PiwiServerCoverage
         {
             writer.WriteStartObject();
             writer.WriteNumber("v", 1);
+            WriteInstance(writer);
             writer.WritePropertyName("files");
             report.WriteFiles(writer);
             writer.WriteEndObject();
         }
 
         await WriteJsonAsync(context, output);
+    }
+
+    /// <summary>
+    /// Writes <c>instance</c>: the process's instance id and when instrumented code first ran in it, so a
+    /// reporter tells an answer of a restarted backend from one of the process it began with.
+    /// </summary>
+    private static void WriteInstance(Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject("instance");
+        writer.WriteString("id", PiwiCoverageRecorder.InstanceId);
+        if (PiwiCoverageRecorder.StartedAt is { } startedAt)
+            writer.WriteString("startedAt", startedAt);
+        writer.WriteEndObject();
     }
 
     /// <summary>The sequence and the secret of a request id this process gave out, or null.</summary>

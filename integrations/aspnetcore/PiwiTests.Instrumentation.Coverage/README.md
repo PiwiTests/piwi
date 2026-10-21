@@ -17,6 +17,26 @@ The compiler also embeds a **span table** in the assembly (the `<DynamicAnalysis
 - A statement that declares a lambda counts its own lines, and the lambda's lines only once the lambda ran.
 - Files under an `obj/` directory (the Razor generator's own output, for example) are left out. Razor views are covered at their `.cshtml` lines; a view's method is in the generated source, so a `.cshtml` file has lines but no functions.
 
+## What it leaves out
+
+A coverage build leaves out what coverlet leaves out, so its executable lines are the ones `dotnet test --collect "XPlat Code Coverage"` counts: an excluded method has no executable lines and no coverage, and a method's lambdas, local functions and `async` or iterator body go with it.
+
+- **Attributes:** `ExcludeFromCodeCoverage` and `ExcludeFromCoverage`, in any namespace, and the attributes `ExcludeByAttribute` names (`GeneratedCode`, `GeneratedCodeAttribute` or `System.CodeDom.Compiler.GeneratedCodeAttribute`), on the assembly, a type and the types nested in it, a method or constructor, or a property. As in coverlet, an attribute on an event is not read; the compiler itself leaves out an event marked `[ExcludeFromCodeCoverage]`.
+- **Files:** the `ExcludeByFile` globs (`**/Migrations/*.cs`, `**/Generated/`), matched against each method's source path without its root and ignoring case, as coverlet matches them; in a deterministic build, against the local path its `/_/` stands for.
+- **Filters:** `Exclude` and `Include`, `[Assembly]Namespace.Type` with `*` and `?` (the character before it is optional), applied to a type and, for `Exclude`, to the types it is nested in.
+
+The build reads them where coverlet does, when it compiles: the MSBuild properties of coverlet.msbuild (`ExcludeByAttribute`, `ExcludeByFile`, `Exclude`, `Include`, comma-separated), and the `Configuration` of the coverlet collector (`XPlat code coverage`) in the run settings file `dotnet test --settings` or else `RunSettingsFilePath` names, both when both are set:
+
+```xml
+<PropertyGroup>
+  <ExcludeByAttribute>GeneratedCode</ExcludeByAttribute>
+  <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
+  <RunSettingsFilePath>$(MSBuildThisFileDirectory)coverlet.runsettings</RunSettingsFilePath>
+</PropertyGroup>
+```
+
+A build made apart from `dotnet test`, such as the end-to-end environment's, sees only a project file's or `Directory.Build.props`'s: set them there. Not read: `SkipAutoProps`, and Microsoft code coverage's run settings (`ModulePaths`, `Functions`, `Attributes`, `Sources`). Two differences from coverlet remain: with `CompilerGeneratedAttribute` in `ExcludeByAttribute`, coverlet also drops the bodies of lambdas, local functions, `async` and iterator methods, which the span table holds as their method's statements, so they count; and coverlet keeps, in a Release build, a local function an excluded method declares after its last statement.
+
 ## Enabling it
 
 1. **Add the package to every project whose code you want covered.** A web project that references `PiwiTests.Instrumentation.AspNetCore` already has it; class libraries need it too:
@@ -46,7 +66,20 @@ The compiler also embeds a **span table** in the assembly (the `<DynamicAnalysis
 
    Set the property on the command line or in `Directory.Build.props`, not in a project file: the package's props read it before the project file.
 
-**Never ship a coverage build to production.** It runs slower code than the production build (every method call asks the recorder for its payload, property getters are no longer inlined), and the coverage endpoints expose source paths and line numbers. In a coverage build, `UsePiwiTestLogs()` logs a warning when the environment is one the middleware is not active in.
+**Never ship a coverage build to production.** It runs slower code than the production build (every method call asks the recorder for its payload, property getters are no longer inlined), and the coverage endpoints expose source paths and line numbers. Two guards stop one that slips through:
+
+- **At startup:** in a coverage build, `UsePiwiTestLogs()` throws in the Production environment, unless the middleware is active there (`PIWI_TEST_LOGS_ENVIRONMENTS` names it). In another environment it is not active in, it logs a warning. A test host writing its report to `PIWI_COVERAGE_OUTPUT` is not stopped.
+- **At build time:** set `PiwiCoverageForbidden` to `true` for a build no instrumentation may reach, and a coverage build of it fails with `PIWI001`. With the test environment built in another configuration, a `Directory.Build.props` forbids Release:
+
+  ```xml
+  <Project>
+    <PropertyGroup>
+      <PiwiCoverageForbidden Condition="'$(Configuration)' == 'Release'">true</PiwiCoverageForbidden>
+    </PropertyGroup>
+  </Project>
+  ```
+
+Without `-p:PiwiCoverage=true`, the package does nothing to a build: its code is not instrumented, and the middleware serves no coverage.
 
 ## Modes
 
@@ -104,7 +137,7 @@ In `test` mode, a response whose request ran instrumented code before the respon
 X-Piwi-Coverage: 3f9a1c0b7e21.42.9c4e1f0a7b3d52e86f1a0c9d4b7e2a31
 ```
 
-The id is `<process key>.<sequence>.<secret>`; the process key is random per process, so an id from an earlier process reads as missing, and the secret is random per request, so only a client that received an id can collect its coverage. The Piwi reporter records the ids each test's pages receive and collects them once the test ends. Static files and requests that ran no instrumented code get no id.
+The id is `<process key>.<sequence>.<secret>`; the process key is the process's instance id, random per process, so an id from an earlier process reads as missing, and the secret is random per request, so only a client that received an id can collect its coverage. The Piwi reporter records the ids each test's pages receive and collects them once the test ends. Static files and requests that ran no instrumented code get no id.
 
 **`POST /__piwi/coverage/collect`** returns, per group, the coverage of its requests merged, and forgets them:
 
@@ -115,6 +148,7 @@ The id is `<process key>.<sequence>.<secret>`; the process key is random per pro
 ```json
 {
   "v": 1,
+  "instance": { "id": "3f9a1c0b7e21", "startedAt": "2026-10-17T09:00:00.1234567+00:00" },
   "groups": [
     {
       "key": "test-1",
@@ -136,12 +170,13 @@ The id is `<process key>.<sequence>.<secret>`; the process key is random per pro
 - `granularity` is `files` (`path` and `runtime` only), `functions` (with `functions`) or `lines` (with `functions` and `lines`, the default).
 - `checksums`, at `functions` and `lines`, lists the checksum of the source the compiler read for the file, from the span table, one per version compiled into the process. The Piwi reporter compares it with the file in its checkout and drops the line numbers of a file built from another version, marking the test's coverage incomplete.
 - `missing` lists the ids the backend does not hold: from another process, already collected, or evicted.
+- `instance` names the process that answered: its instance id (`PiwiCoverageRecorder.InstanceId`, the process key of its request ids) and when instrumented code first ran in it (`StartedAt`). Both endpoints name it, so the Piwi reporter tells a backend that restarted during the run: it marks the run's server coverage incomplete, and keeps the lines its tests' coverage named.
 - The body is limited to 1 MB and 10,000 request ids.
 
 **`GET /__piwi/coverage/run?granularity=lines`** returns the run-level coverage: the code that ran outside any request, every request collected, evicted or still kept, and, at `lines` granularity, each file's `executable` lines (the lines of every statement, run or not) and `allFunctions` (the line range of every method, run or not). Executable lines cover every assembly built with coverage instrumentation, including those whose code never ran: the loaded ones, and those in the application's base directory, whose span tables are read from disk without loading them:
 
 ```json
-{ "v": 1, "files": [{ "path": "src/Web/Services/BasketViewModelService.cs", "runtime": "server", "functions": [[20, 26]], "lines": [[22, 25]], "executable": [[22, 25], [30, 50]], "allFunctions": [[20, 26], [28, 51]], "checksums": ["sha256:41d0…"] }] }
+{ "v": 1, "instance": { "id": "3f9a1c0b7e21", "startedAt": "2026-10-17T09:00:00.1234567+00:00" }, "files": [{ "path": "src/Web/Services/BasketViewModelService.cs", "runtime": "server", "functions": [[20, 26]], "lines": [[22, 25]], "executable": [[22, 25], [30, 50]], "allFunctions": [[20, 26], [28, 51]], "checksums": ["sha256:41d0…"] }] }
 ```
 
 Both endpoints answer under the request's path base, beside `/__piwi/manifest`, and only once instrumented code runs in the process; otherwise the paths reach the application.
@@ -174,7 +209,7 @@ report.AddRequest(request);
 report.WriteFiles(jsonWriter);
 ```
 
-`PiwiCoverageRecorder.HasInstrumentedModules` tells whether code from a coverage build ran, `AddToRunLevel` adds a request to the run-level coverage once it is no longer kept, and `PiwiCoverageReport.AddRunLevel` and `AddExecutableLines` build the run-level report.
+`PiwiCoverageRecorder.HasInstrumentedModules` tells whether code from a coverage build ran, `InstanceId` and `StartedAt` name the process, `AddToRunLevel` adds a request to the run-level coverage once it is no longer kept, and `PiwiCoverageReport.AddRunLevel` and `AddExecutableLines` build the run-level report.
 
 ## Requirements
 

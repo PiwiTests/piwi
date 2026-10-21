@@ -1,4 +1,4 @@
-import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInWords } from '@piwitests/core/bug-report';
+import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInParts } from '@piwitests/core/bug-report';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
@@ -11,8 +11,11 @@ import {
   type StepView,
   type StepViewport,
 } from '@piwitests/core/recording';
-import { sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
-import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
+import { parseSteps, sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
+import { formatNumber, initI18n, t, tn, tNodes, tnNodes, uiLanguage } from '../shared/i18n.js';
+import { BUTTON_CSS } from '../shared/buttons.js';
+import { icon } from '../shared/icons.js';
+import { richText, STEP_CSS, stepView, urlView } from '../shared/step-view.js';
 import { getRecordingState, recordingMode } from '../shared/recording-storage.js';
 import {
   appendReplayEvidence,
@@ -46,7 +49,8 @@ import {
   evidenceLines,
   quoted,
   replayVerdict,
-  stepGlyph,
+  stepStatus,
+  VERDICT_ICONS,
   verdictText,
   wait,
   type ReplayVerdict,
@@ -103,6 +107,8 @@ interface ReplayGlobals {
 const STYLE = `
   ${SHARED_STYLE}
   ${LOCATOR_SYNTAX_CSS}
+  ${BUTTON_CSS}
+  ${STEP_CSS}
   .box { background: #111827; color: #f9fafb; color-scheme: dark; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
     font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; hyphens: auto; }
   @media (prefers-color-scheme: light) {
@@ -110,54 +116,74 @@ const STYLE = `
   }
   .title { font-weight: 600; font-size: 13px; }
   .sub { color: #9ca3af; font-size: 11.5px; }
-  .steps { display: flex; flex-direction: column; gap: 1px; max-height: 220px; overflow: auto; margin: 8px 0; font-size: 11.5px; }
-  .step { display: flex; gap: 6px; padding: 2px 4px; border-radius: 4px; }
-  .step.current { background: rgba(124,58,237,.18); }
-  .icon { width: 14px; flex-shrink: 0; text-align: center; }
-  .done .icon, .passed .icon { color: #34d399; }
-  .failed .icon, .diverged .icon { color: #f87171; }
-  .pending { opacity: .6; }
-  .detail { color: #fca5a5; font-size: 11px; padding-left: 20px; }
-  .note { color: #9ca3af; font-size: 11px; padding-left: 20px; }
-  .tag { color: #9ca3af; font-size: 10.5px; margin-left: auto; padding-left: 6px; white-space: nowrap; }
-  .ask { border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: rgba(124,58,237,.16); }
-  .ask .what { font-weight: 600; margin: 4px 0; overflow-wrap: anywhere; }
+  .steps { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow: auto; margin: 8px 0; font-size: 11.5px; }
+  .step { display: flex; align-items: flex-start; gap: 6px; padding: 3px 4px; border-radius: 6px; }
+  .step.current { background: rgba(124,58,237,.18); box-shadow: inset 2px 0 0 #a78bfa; }
+  .step .num { color: #9ca3af; min-width: 16px; text-align: end; flex-shrink: 0; padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .step .piwi-step { flex: 1; gap: 6px; }
+  .step .piwi-step-badge { width: 18px; height: 18px; }
+  .step .piwi-step-badge .piwi-icon { width: 12px; height: 12px; }
+  .status { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 18px; flex-shrink: 0; color: #9ca3af; }
+  .status .piwi-icon { width: 14px; height: 14px; }
+  .status[data-state="pending"] .piwi-icon { width: 8px; height: 8px; opacity: .6; }
+  .status[data-state="current"] { color: #a78bfa; }
+  .status[data-state="ok"] { color: #34d399; }
+  .status[data-state="failed"] { color: #f87171; }
+  .status[data-state="diverged"] { color: #fbbf24; }
+  .pending .piwi-step { opacity: .62; }
+  .detail { color: #fca5a5; font-size: 11px; padding-left: 44px; }
+  .note { color: #9ca3af; font-size: 11px; padding-left: 44px; }
+  .tag { color: #9ca3af; font-size: 10px; margin-left: auto; padding: 0 5px; white-space: nowrap; border: 1px solid rgba(148,163,184,.3); border-radius: 999px; align-self: center; }
+  .ask { border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: rgba(124,58,237,.14); border: 1px solid rgba(167,139,250,.35); }
+  .ask .what { font-weight: 500; margin: 6px 0; overflow-wrap: anywhere; font-size: 13px; }
+  .ask .row { margin-top: 8px; }
   .shot { position: relative; display: inline-block; max-width: 100%; margin: 4px 0; line-height: 0; }
   .shot img { display: block; max-width: 100%; max-height: 220px; border-radius: 4px; border: 1px solid rgba(128,128,128,.4); }
   .shot .mark { position: absolute; border: 2px solid #f59e0b; border-radius: 3px; box-shadow: 0 0 0 2px rgba(245,158,11,.35); }
-  .locs { margin: 2px 0 4px; padding-left: 16px; font-size: 11px; }
-  .locs li { overflow-wrap: anywhere; }
+  .locs { margin: 4px 0; padding: 0; list-style: none; font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
+  .locs li { overflow-wrap: anywhere; padding: 3px 6px; border-radius: 5px; background: rgba(148,163,184,.12); }
   .found { color: #fbbf24; }
   @media (prefers-color-scheme: light) { .found { color: #b45309; } }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
-    border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
-  button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
-  button.primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
-  button.stop { margin-left: auto; }
+  .row .end { margin-inline-start: auto; }
   label.check { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; }
-  .verdict { border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
-  .verdict.reproduced { background: rgba(239,68,68,.16); }
-  .verdict.not-reproduced { background: rgba(16,185,129,.16); }
-  .verdict.diverged, .verdict.stopped { background: rgba(245,158,11,.16); }
-  .verdict.completed { background: rgba(128,128,128,.14); }
-  .verdict .title { margin-bottom: 2px; }
+  .verdict { --verdict: #94a3b8; border-radius: 8px; padding: 8px 10px; margin-top: 8px;
+    background: color-mix(in srgb, var(--verdict) 15%, transparent); border-inline-start: 3px solid var(--verdict); }
+  .verdict.reproduced { --verdict: #f87171; }
+  .verdict.not-reproduced { --verdict: #34d399; }
+  .verdict.diverged, .verdict.stopped { --verdict: #fbbf24; }
+  .verdict .title { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; line-height: 20px; }
+  .verdict .title .piwi-icon { color: var(--verdict); }
+  .box > .head { display: flex; align-items: center; gap: 6px; line-height: 20px; }
+  .box > .head .piwi-icon { color: #a78bfa; }
   .seen, .share { margin-top: 8px; }
   .share { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .message { color: #fca5a5; font-size: 12px; margin-top: 6px; }
   .message:empty { display: none; }
   input[type=file] { font: inherit; font-size: 12px; margin: 8px 0; color: inherit; }
   @media (prefers-color-scheme: light) {
-    .sub, .note, .tag { color: #6b7280; }
+    .sub, .note, .tag, .step .num, .status { color: #6b7280; }
     .detail, .message { color: #b91c1c; }
-    .done .icon, .passed .icon { color: #059669; }
-    .failed .icon, .diverged .icon { color: #dc2626; }
+    .status[data-state="current"] { color: #6d28d9; }
+    .status[data-state="ok"] { color: #059669; }
+    .status[data-state="failed"] { color: #dc2626; }
+    .status[data-state="diverged"] { color: #b45309; }
+    .step.current { background: rgba(124,58,237,.1); box-shadow: inset 2px 0 0 #7c3aed; }
+    .ask { background: rgba(124,58,237,.07); border-color: rgba(124,58,237,.3); }
+    .verdict.reproduced { --verdict: #dc2626; }
+    .verdict.not-reproduced { --verdict: #059669; }
+    .verdict.diverged, .verdict.stopped { --verdict: #d97706; }
+    .verdict.completed { --verdict: #64748b; }
+    .box > .head .piwi-icon { color: #6d28d9; }
+    .locs li { background: rgba(100,116,139,.09); }
   }
 `;
 
-/** A step in plain words, without the Markdown code marks the report uses. */
-function stepWords(step: RecordedStep): string {
-  return describeStepInWords(step, interfacePhrases()).replace(/`+/g, '');
+/** A step in plain words, without the Markdown code marks the report uses: for the cursor's caption. */
+function plainStepWords(step: RecordedStep): string {
+  return describeStepInParts(step, interfacePhrases())
+    .map((part) => part.text)
+    .join('');
 }
 
 function pathOf(url: string): string {
@@ -186,19 +212,26 @@ function followedUrl(value: string): URL | null {
 /**
  * Whether the page is the one a step happened on, by page key (ids and tokens
  * aside). A replay started on the tab's own page takes that page for the first
- * recorded one, whatever their addresses.
+ * recorded one, whatever their addresses; a step whose page is not known
+ * (empty) happens on any.
  */
 function onPageOf(url: string, startPage: ReplayState['startPage']): boolean {
+  if (!url) return true;
   const here = pageKey(location.href);
   const there = pageKey(url);
   if (startPage && there === pageKey(startPage.recorded) && here === pageKey(startPage.actual)) return true;
   return here === null || there === null || here === there;
 }
 
-async function waitForPage(url: string, timeout: number, startPage: ReplayState['startPage']): Promise<boolean> {
+async function waitForPage(
+  url: string,
+  timeout: number,
+  startPage: ReplayState['startPage'],
+  replayId: string,
+): Promise<boolean> {
   const deadline = Date.now() + timeout;
   while (!onPageOf(url, startPage)) {
-    if (Date.now() >= deadline) return false;
+    if (Date.now() >= deadline || movedAway === replayId) return false;
     await wait(100);
   }
   return true;
@@ -224,6 +257,7 @@ async function startReplay(
   startOn: string | null,
   bugReportId: number | null = null,
   views: ReplayViews | null = null,
+  runFailedStep: number | null = null,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = (await chrome.runtime.sendMessage({
@@ -234,6 +268,7 @@ async function startReplay(
       inject: false,
       startOn,
       bugReportId,
+      runFailedStep,
       ...views,
     })) as { ok: boolean; error?: string } | undefined;
     return response ?? { ok: false, error: t('common_workerNoAnswer') };
@@ -298,6 +333,8 @@ async function replayHere(state: ReplayState): Promise<boolean> {
 
 let cursor: FakeCursor | null = null;
 let loopActive = false;
+/** The replay a step took on to a tab this one opened (`piwi-replay-moved`): this page lets go of it. */
+let movedAway: string | null = null;
 /** Resolves the wait for Next in step mode, or for Continue after a pause. */
 const waker = createWaker();
 
@@ -412,16 +449,21 @@ function renderHud(
     done ? 'replay_statusDone' : state.status === 'paused' ? 'replay_statusPaused' : 'replay_statusRunning',
   );
   title.textContent = state.steps.title ? t('replay_statusWithTitle', { status, title: state.steps.title }) : status;
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.append(icon(done ? 'check-circle' : state.status === 'paused' ? 'pause' : 'replay'), title);
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.textContent = done
-    ? tn('replay_progressDone', steps.length, { origin: state.origin })
-    : t('replay_progress', {
-        origin: state.origin,
-        step: formatNumber(Math.min(state.position + 1, steps.length)),
-        total: formatNumber(steps.length),
-      });
-  box.append(title, sub);
+  sub.append(
+    ...(done
+      ? tnNodes('replay_progressDone', steps.length, { origin: urlView(state.origin) })
+      : tNodes('replay_progress', {
+          origin: urlView(state.origin),
+          step: formatNumber(Math.min(state.position + 1, steps.length)),
+          total: formatNumber(steps.length),
+        })),
+  );
+  box.append(head, sub);
   if (state.driver) {
     const how = document.createElement('div');
     how.className = 'sub';
@@ -451,12 +493,15 @@ function renderHud(
     const current = !done && i === state.position;
     const row = document.createElement('div');
     row.className = `step ${current ? 'current' : (result?.status ?? 'pending')}`;
-    const icon = document.createElement('span');
-    icon.className = 'icon';
-    icon.textContent = stepGlyph(result, current);
-    const text = document.createElement('span');
-    text.textContent = `${formatNumber(i + 1)}. ${stepWords(step)}`;
-    row.append(icon, text);
+    const status = stepStatus(result, current);
+    const mark = document.createElement('span');
+    mark.className = 'status';
+    mark.dataset.state = status.state;
+    mark.append(icon(status.icon));
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = formatNumber(i + 1);
+    row.append(mark, num, stepView(step));
     if (result?.driver) {
       const tag = document.createElement('span');
       tag.className = 'tag';
@@ -467,7 +512,7 @@ function renderHud(
     if (result?.detail && (result.status === 'failed' || result.status === 'diverged')) {
       const detail = document.createElement('div');
       detail.className = 'detail';
-      detail.textContent = result.detail;
+      detail.append(...richText(result.detail));
       list.appendChild(detail);
     } else if (
       result?.detail &&
@@ -492,16 +537,22 @@ function renderHud(
     const paused = state.status === 'paused';
     controls.appendChild(
       keyed(
-        button(paused ? t('replay_continue') : t('replay_pause'), () => {
-          void updateReplayState((s) => ({ ...s, status: paused ? 'running' : 'paused' }), state.id).then((s) => {
-            if (s) renderHud(s);
-            waker.wakeWaiting();
-          });
-        }),
+        button(
+          paused ? t('replay_continue') : t('replay_pause'),
+          () => {
+            void updateReplayState((s) => ({ ...s, status: paused ? 'running' : 'paused' }), state.id).then((s) => {
+              if (s) renderHud(s);
+              waker.wakeWaiting();
+            });
+          },
+          { icon: paused ? 'play' : 'pause' },
+        ),
         'pause',
       ),
     );
-    if (state.stepMode) controls.appendChild(keyed(button(t('replay_nextStep'), wakeLoop, 'primary'), 'next'));
+    if (state.stepMode) {
+      controls.appendChild(keyed(button(t('replay_nextStep'), wakeLoop, { icon: 'next', tone: 'primary' }), 'next'));
+    }
     const stepLabel = document.createElement('label');
     stepLabel.className = 'check';
     const stepBox = keyed(document.createElement('input'), 'step-mode');
@@ -522,7 +573,7 @@ function renderHud(
           () => {
             void updateReplayState((s) => ({ ...s, status: 'stopped' }), state.id).then(() => wakeLoop());
           },
-          'stop',
+          { icon: 'stop', tone: 'danger', className: 'end' },
         ),
         'stop',
       ),
@@ -535,9 +586,9 @@ function renderHud(
       box2.setAttribute('role', 'status');
       const titleEl = document.createElement('div');
       titleEl.className = 'title';
-      titleEl.textContent = verdictTitle;
+      titleEl.append(icon(VERDICT_ICONS[verdict.kind]), verdictTitle);
       const d = document.createElement('div');
-      d.textContent = detail;
+      d.append(...richText(detail));
       box2.append(titleEl, d);
       if (state.driver) {
         const how = document.createElement('div');
@@ -611,18 +662,23 @@ function renderHud(
           againError.textContent = response.error ?? t('common_replayStartFailed');
         })();
       },
-      'primary',
+      { icon: 'replay', tone: 'primary' },
     );
     controls.appendChild(keyed(again, 'again'));
     controls.appendChild(
       keyed(
-        button(t('replay_runWithPlaywright'), () => openDesktopRun(state.steps, state.bugReportId ?? null, STYLE)),
+        button(t('replay_runWithPlaywright'), () => openDesktopRun(state.steps, state.bugReportId ?? null, STYLE), {
+          icon: 'terminal',
+        }),
         'playwright',
       ),
     );
     controls.appendChild(
       keyed(
-        button(t('common_close'), () => document.getElementById(REPLAY_HUD_HOST_ID)?.remove(), 'stop'),
+        button(t('common_close'), () => document.getElementById(REPLAY_HUD_HOST_ID)?.remove(), {
+          icon: 'close',
+          className: 'end',
+        }),
         'close',
       ),
     );
@@ -668,7 +724,7 @@ async function finish(state: ReplayState, stopped: boolean): Promise<void> {
   );
   if (!final) return leaveReplay();
   const steps = sessionFromSteps(final.steps, final.origin).steps;
-  const verdict = replayVerdict(steps, final.results, stopped);
+  const verdict = replayVerdict(steps, final.results, stopped, final.runFailedStep ?? null);
   notifyFinished();
   renderHud(final, verdict, evidence);
   (globalThis as ReplayGlobals).__piwiReplayVerdict = verdict;
@@ -680,7 +736,7 @@ async function finish(state: ReplayState, stopped: boolean): Promise<void> {
 /** A step's action with the page's own events: false when it could not be done here. */
 async function actWithEvents(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<boolean> {
   const c = cursor!;
-  const words = stepWords(step);
+  const words = plainStepWords(step);
   if (!element) {
     await performPress(null, step.value ?? 'Enter', c, words);
     return true;
@@ -718,7 +774,7 @@ async function actWithEvents(step: RecordedStep, element: Element | null, dropOn
 /** A step's action as trusted input, through the background worker. */
 async function actTrusted(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<boolean> {
   const c = cursor!;
-  const words = stepWords(step);
+  const words = plainStepWords(step);
   if (!element) {
     await trustedPress(null, step.value ?? 'Enter', c, words);
     return true;
@@ -858,7 +914,7 @@ function filePromptBox(prompt: FilePrompt): HTMLElement {
   row.className = 'row';
   row.appendChild(
     keyed(
-      button(t('replay_fileSkip'), () => prompt.answer(null)),
+      button(t('replay_fileSkip'), () => prompt.answer(null), { icon: 'skip' }),
       'file-skip',
     ),
   );
@@ -915,7 +971,7 @@ async function checkAssertion(state: ReplayState, step: RecordedStep): Promise<R
         await cursor?.moveTo(
           r.left + r.width / 2,
           r.top + r.height / 2,
-          t('replay_cursorCheck', { step: stepWords(step) }),
+          t('replay_cursorCheck', { step: plainStepWords(step) }),
         );
       }
     }
@@ -1026,10 +1082,10 @@ function handOverBox(handed: HandOver, step: RecordedStep): HTMLElement {
   box.setAttribute('role', 'group');
   box.setAttribute('data-piwi-replay-hand-over', '');
   const why = document.createElement('div');
-  why.textContent = t('replay_handOverWhy', { step: formatNumber(handed.step + 1), reason: handed.reason });
+  why.append(...richText(t('replay_handOverWhy', { step: formatNumber(handed.step + 1), reason: handed.reason })));
   const what = document.createElement('div');
   what.className = 'what';
-  what.textContent = stepWords(step);
+  what.append(stepView(step));
   box.append(why, what);
   if (handed.view) box.appendChild(shotFigure(handed.view, handed.step));
   // Which element it is, as the recording found it, and where it is on this page now.
@@ -1061,15 +1117,15 @@ function handOverBox(handed: HandOver, step: RecordedStep): HTMLElement {
   row.className = 'row';
   row.append(
     keyed(
-      button(t('replay_handOverDone'), () => handed.answer('done'), 'primary'),
+      button(t('replay_handOverDone'), () => handed.answer('done'), { icon: 'check', tone: 'success' }),
       'hand-over-done',
     ),
     keyed(
-      button(t('replay_handOverSkip'), () => handed.answer('skip')),
+      button(t('replay_handOverSkip'), () => handed.answer('skip'), { icon: 'skip' }),
       'hand-over-skip',
     ),
     keyed(
-      button(t('replay_handOverStop'), () => handed.answer('stop')),
+      button(t('replay_handOverStop'), () => handed.answer('stop'), { icon: 'stop', tone: 'danger' }),
       'hand-over-stop',
     ),
   );
@@ -1117,7 +1173,7 @@ async function handOverStep(
     for (;;) {
       const answer = await waker.until(chosen);
       const latest = await getReplayState();
-      if (!latest || latest.id !== state.id || latest.status === 'stopped') return null;
+      if (!latest || latest.id !== state.id || latest.status === 'stopped' || movedAway === state.id) return null;
       if (!answer.woken) return { answer: answer.value, state: latest };
       renderHud(latest);
     }
@@ -1190,7 +1246,13 @@ async function applyViewport(state: ReplayState, viewport: StepViewport): Promis
 /** The stored replay while it still runs at step `index`; null once it was paused, stopped or replaced. */
 async function runningAt(replayId: string, index: number): Promise<ReplayState | null> {
   const latest = await getReplayState();
-  return latest && latest.id === replayId && latest.status === 'running' && latest.position === index ? latest : null;
+  return latest &&
+    latest.id === replayId &&
+    latest.status === 'running' &&
+    latest.position === index &&
+    movedAway !== replayId
+    ? latest
+    : null;
 }
 
 /**
@@ -1224,7 +1286,7 @@ async function waitForUnload(replayId: string): Promise<'stayed' | 'ended'> {
   for (let left = UNLOAD_TIMEOUT_MS; left > 0; left = deadline - Date.now()) {
     if (!(await waker.until(wait(left))).woken) break;
     const latest = await getReplayState();
-    if (!latest || latest.id !== replayId || latest.status === 'stopped') {
+    if (!latest || latest.id !== replayId || latest.status === 'stopped' || movedAway === replayId) {
       outcome = 'ended';
       break;
     }
@@ -1307,6 +1369,8 @@ async function runReplay(): Promise<void> {
     renderHud(state);
     await waitForPageReady();
     for (;;) {
+      // A step opened its page in a new tab, which plays the rest.
+      if (movedAway === replayId) return leaveReplay();
       const latest = await getReplayState();
       if (!latest || latest.id !== replayId || latest.origin !== location.origin) {
         replaced = !!latest;
@@ -1375,7 +1439,8 @@ async function runReplay(): Promise<void> {
         continue;
       }
 
-      if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage))) {
+      if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage, replayId))) {
+        if (movedAway === replayId) continue;
         const reason = t('replay_reasonOtherPage', { expected: pathOf(step.pageUrl), actual: pathOf(location.href) });
         if (!(await playByHand(state, index, reason))) return;
         continue;
@@ -1387,6 +1452,14 @@ async function runReplay(): Promise<void> {
       // `/items/1` to `/items/2`): the step plays there.
       if (leaving) {
         await waitForUnload(replayId);
+        continue;
+      }
+
+      // A manual step of a report made from a test run: nothing plays it, the person does.
+      if (step.action === 'manual') {
+        const location = step.manual?.location;
+        const reason = location ? t('replay_reasonManualAt', { location }) : t('replay_reasonManual');
+        if (!(await playByHand(state, index, reason))) return;
         continue;
       }
 
@@ -1420,7 +1493,7 @@ async function runReplay(): Promise<void> {
           await cursor?.moveTo(
             r.left + r.width / 2,
             r.top + r.height / 2,
-            t('replay_cursorNext', { step: stepWords(step) }),
+            t('replay_cursorNext', { step: plainStepWords(step) }),
           );
         }
         const latest = await waitForNext(replayId, index);
@@ -1527,16 +1600,21 @@ function openChooser(lastReport: ChosenReport | null): void {
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = t('replay_dialogTitle');
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.append(icon('replay'), title);
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.textContent = t('replay_dialogIntro', { origin: location.origin });
-  panel.append(title, sub);
+  sub.append(...tNodes('replay_dialogIntro', { origin: urlView(location.origin) }));
+  panel.append(head, sub);
 
   let chosen: PiwiSteps | null = null;
   /** The instance's report the steps came from, when they did. */
   let chosenReportId: number | null = null;
   /** Where the chosen report's step screenshots come from. */
   let chosenViews: ReplayViews | null = null;
+  /** In a report made from a test run, the step the test failed at there. */
+  let chosenRunFailedStep: number | null = null;
   /** Counts the reports asked for: an answer that comes after a later choice is left out. */
   let asked = 0;
   const summary = document.createElement('div');
@@ -1553,26 +1631,39 @@ function openChooser(lastReport: ChosenReport | null): void {
   startBox.type = 'checkbox';
   const startText = document.createElement('span');
   startLabel.append(startBox, startText);
-  const describe = (steps: PiwiSteps, reportId: number | null = null, views: ReplayViews | null = null) => {
+  const describe = (
+    steps: PiwiSteps,
+    reportId: number | null = null,
+    views: ReplayViews | null = null,
+    runFailedStep: number | null = null,
+  ) => {
     chosen = steps;
     chosenReportId = reportId;
     chosenViews = views;
+    chosenRunFailedStep = runFailedStep;
     const first = steps.steps[0];
     startLabel.hidden = first?.action !== 'goto';
     startBox.checked = false;
-    if (first?.action === 'goto') startText.textContent = t('replay_startHere', { path: first.value ?? first.pageUrl });
-    const parts = [tn('replay_summary', steps.steps.length, { title: steps.title ?? t('replay_untitled') })];
-    if (steps.origin && steps.origin !== location.origin) parts.push(t('replay_recordedOn', { origin: steps.origin }));
-    summary.textContent = parts.join(' · ');
+    if (first?.action === 'goto') {
+      startText.replaceChildren(...tNodes('replay_startHere', { path: urlView(first.value ?? first.pageUrl) }));
+    }
+    summary.replaceChildren(tn('replay_summary', steps.steps.length, { title: steps.title ?? t('replay_untitled') }));
+    if (steps.origin && steps.origin !== location.origin) {
+      summary.append(' · ', ...tNodes('replay_recordedOn', { origin: urlView(steps.origin) }));
+    }
     message.textContent = '';
   };
 
   if (lastReport) {
-    const use = button(t('replay_useRecorded'), () => {
-      asked++;
-      reports.value = '';
-      describe(lastReport.steps, null, lastReport.views);
-    });
+    const use = button(
+      t('replay_useRecorded'),
+      () => {
+        asked++;
+        reports.value = '';
+        describe(lastReport.steps, null, lastReport.views);
+      },
+      { icon: 'bug' },
+    );
     use.style.marginTop = '10px';
     panel.appendChild(use);
   }
@@ -1590,8 +1681,8 @@ function openChooser(lastReport: ChosenReport | null): void {
       .arrayBuffer()
       .then((buffer) => readReportFile(picked.name, new Uint8Array(buffer)))
       .then(
-        ({ steps, views }) => {
-          if (ask === asked) describe(steps, null, { views });
+        ({ steps, views, runFailedStep }) => {
+          if (ask === asked) describe(steps, null, { views }, runFailedStep);
         },
         (e: unknown) => {
           if (ask !== asked) return;
@@ -1606,6 +1697,35 @@ function openChooser(lastReport: ChosenReport | null): void {
   fileLabel.style.marginTop = '10px';
   fileLabel.textContent = t('replay_chooseFile');
   panel.append(fileLabel, file);
+
+  // Steps copied as text, such as the steps of an execution copied from the dashboard.
+  const paste = document.createElement('details');
+  const pasteSummary = document.createElement('summary');
+  pasteSummary.className = 'sub';
+  pasteSummary.textContent = t('replay_pasteSteps');
+  const pasted = document.createElement('textarea');
+  pasted.rows = 4;
+  pasted.spellcheck = false;
+  pasted.setAttribute('aria-label', t('replay_pasteLabel'));
+  pasted.style.cssText =
+    'display:block;width:100%;box-sizing:border-box;margin:6px 0;font:11px ui-monospace,monospace;';
+  const usePasted = button(
+    t('replay_pasteUse'),
+    () => {
+      asked++;
+      reports.value = '';
+      file.value = '';
+      const parsed = parseSteps(pasted.value);
+      if (parsed.ok) return describe(parsed.steps);
+      chosen = null;
+      summary.textContent = '';
+      message.textContent = t('replay_pasteNotSteps', { error: parsed.errors[0] ?? '' });
+    },
+    { icon: 'paste' },
+  );
+  paste.append(pasteSummary, pasted, usePasted);
+  paste.style.marginTop = '10px';
+  panel.appendChild(paste);
 
   // Connected, the bug reports of the project this tab maps to, read by the worker.
   const fromPiwi = document.createElement('div');
@@ -1681,31 +1801,37 @@ function openChooser(lastReport: ChosenReport | null): void {
       const steps = chosen;
       const startOn = !startLabel.hidden && startBox.checked ? location.href : null;
       start.disabled = true;
-      void startReplay(steps, stepBox.checked, startOn, chosenReportId, chosenViews).then((response) => {
-        if (!response.ok) {
-          start.disabled = false;
-          message.textContent = response.error ?? t('common_replayStartFailed');
-          return;
-        }
-        close();
-        void runReplay();
-      });
+      void startReplay(steps, stepBox.checked, startOn, chosenReportId, chosenViews, chosenRunFailedStep).then(
+        (response) => {
+          if (!response.ok) {
+            start.disabled = false;
+            message.textContent = response.error ?? t('common_replayStartFailed');
+            return;
+          }
+          close();
+          void runReplay();
+        },
+      );
     },
-    'primary',
+    { icon: 'play', tone: 'primary' },
   );
   row.appendChild(start);
   row.appendChild(
-    button(t('replay_runWithPlaywright'), () => {
-      if (!chosen) {
-        message.textContent = t('replay_chooseFirst');
-        return;
-      }
-      const steps = chosen;
-      close();
-      openDesktopRun(steps, chosenReportId, STYLE);
-    }),
+    button(
+      t('replay_runWithPlaywright'),
+      () => {
+        if (!chosen) {
+          message.textContent = t('replay_chooseFirst');
+          return;
+        }
+        const steps = chosen;
+        close();
+        openDesktopRun(steps, chosenReportId, STYLE);
+      },
+      { icon: 'terminal' },
+    ),
   );
-  row.appendChild(button(t('common_cancel'), close));
+  row.appendChild(button(t('common_cancel'), close, { icon: 'close', className: 'end' }));
   panel.append(row, message);
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) close();
@@ -1751,6 +1877,12 @@ if (globals.__piwiReplayEntry) {
     leaving = true;
   });
   chrome.runtime.onMessage.addListener((message) => {
+    // A step opened its page in a new tab, and the replay goes on there: this page stops where it waits.
+    if (message?.type === 'piwi-replay-moved') {
+      if (typeof message.replayId === 'string') movedAway = message.replayId;
+      waker.wakeWaiting();
+      return undefined;
+    }
     // The worker lost the replay's debugging session: the replay goes on with the page's own events.
     if (message?.type === 'piwi-replay-driver-lost') {
       void getReplayState().then((state) => {

@@ -80,9 +80,41 @@ with a real API key. The **MCP server** page of the dashboard shows both forms. 
 writes their entry in one click instead.
 
 <figure>
-  <img src="/screenshots/mcp-client-setup.png" alt="The MCP server page's client setup card: one tab per agent, here Claude Code with its claude mcp add command">
+  <img src="/screenshots/mcp-client-setup.png" alt="The MCP server page's client setup card: the agents listed on the left, Claude Desktop picked, its config entry on the right">
   <figcaption>The <strong>MCP server</strong> page writes the setup for each client with this dashboard's URL already filled in.</figcaption>
 </figure>
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json` (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on
+Windows), then restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "piwi": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "<your-piwi-url>/mcp",
+        "--transport",
+        "http-only",
+        "--header",
+        "Authorization:${AUTH_HEADER}"
+      ],
+      "env": {
+        "AUTH_HEADER": "Bearer pd_YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Claude Desktop only starts local commands from this file and ignores an entry with a `url`, so
+[`mcp-remote`](https://www.npmjs.com/package/mcp-remote), a small Node bridge, carries the HTTP connection; `npx`
+needs Node on your PATH. The header goes through `env` because Claude Desktop mishandles arguments with spaces. Plans
+that offer **Settings → Connectors → Add custom connector** take the `/mcp` URL directly.
 
 ### Claude Code (CLI)
 
@@ -129,38 +161,6 @@ Add to `.vscode/mcp.json` in your workspace (VS Code 1.99+):
   }
 }
 ```
-
-### Claude Desktop
-
-Add to `claude_desktop_config.json` (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on
-Windows), then restart Claude Desktop:
-
-```json
-{
-  "mcpServers": {
-    "piwi": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "<your-piwi-url>/mcp",
-        "--transport",
-        "http-only",
-        "--header",
-        "Authorization:${AUTH_HEADER}"
-      ],
-      "env": {
-        "AUTH_HEADER": "Bearer pd_YOUR_API_KEY"
-      }
-    }
-  }
-}
-```
-
-Claude Desktop only starts local commands from this file and ignores an entry with a `url`, so
-[`mcp-remote`](https://www.npmjs.com/package/mcp-remote), a small Node bridge, carries the HTTP connection; `npx`
-needs Node on your PATH. The header goes through `env` because Claude Desktop mishandles arguments with spaces. Plans
-that offer **Settings → Connectors → Add custom connector** take the `/mcp` URL directly.
 
 ### Gemini CLI
 

@@ -95,6 +95,7 @@ const STATES: Record<BugState, string> = {
   hidden: 'hidden',
   enabled: 'enabled',
   disabled: 'disabled',
+  checked: 'checked',
 };
 
 /** A zoom factor as a percentage, such as `125%`. */
@@ -108,6 +109,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
   roles: ROLES,
   quote,
   code: markdownCode,
+  key,
   capitalize: (text) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`,
   steps: {
     goto: (url) => `Go to ${markdownCode(url)}`,
@@ -124,6 +126,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
         ? `Clear the files of ${subject(s)}`
         : `Choose the ${files.length === 1 ? 'file' : 'files'} ${files.map(quote).join(', ')} in ${subject(s)}`,
     dragTo: (s, target) => `Drag ${subject(s)} onto ${subject(target)}`,
+    manual: (description) => `By hand: ${description}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'should not' : 'should';
@@ -136,6 +139,10 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
         return `${subject(s)} ${should} be named ${quote(e.expected)}`;
       case 'url':
         return `the page ${should} be ${markdownCode(e.expected)}`;
+      case 'contains':
+        return `${subject(s)} ${should} contain ${quote(e.expected)}`;
+      case 'count':
+        return `${subject(s)} ${should} match ${plural(e.count, 'element')}`;
       case 'state':
         return `${subject(s)} ${should} be ${STATES[e.state]}`;
     }
@@ -159,6 +166,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
     actual: (v) => `Actual: ${v}`,
     note: (text) => `Note: ${text}`,
     viewport: (size, zoom) => `Viewport from this step: ${size}${zoom != null ? `, at ${percent(zoom)} zoom` : ''}`,
+    failedInRun: 'The test failed at this step in the test run',
     expectedHeading: 'Expected and actual',
     nothingMarked: 'Nothing was marked as wrong.',
     expectedLine: (step, expectation, actual) =>
@@ -178,5 +186,8 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
     requestLine: (r) => `${r.request} → ${r.status > 0 ? String(r.status) : 'no answer'}, on ${r.page} at ${r.time}`,
     outlineHeading: 'Page outline',
     outlineNote: 'Built by Piwi Picker from the page; the YAML form of an ARIA snapshot, not Playwright’s own.',
+    notReplayedHeading: 'Not replayed',
+    notReplayedNote: 'Calls of the test that these steps leave out, so neither Replay nor the spec performs them:',
+    notReplayedLine: (e) => `${e.call}${e.location ? ` at ${e.location}` : ''}: ${e.reason}`,
   },
 };

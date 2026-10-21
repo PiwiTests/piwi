@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Xml.Linq;
 using PiwiTests.Instrumentation.Coverage;
 using Xunit;
 
@@ -36,6 +37,27 @@ public class CoverageOutputTests
     public void Names_the_host_after_the_test_project_a_VSTest_host_runs()
     {
         Assert.Equal("PiwiTests.Instrumentation.Tests", PiwiCoverageOutput.HostName());
+    }
+
+    [Fact]
+    public void A_coverage_build_fails_where_PiwiCoverageForbidden_is_set()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"piwi-coverage-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var build = new[] { "build", FixtureSource.RepositoryFile(UnitFixture), "-c", "Release", "-p:PiwiCoverageForbidden=true" };
+
+            var (exitCode, output) = RunDotnet(root, [.. build, "-p:PiwiCoverage=true", "--artifacts-path", Path.Combine(root, "coverage")]);
+            Assert.NotEqual(0, exitCode);
+            Assert.Contains("PIWI001", output);
+
+            DotnetTest(root, [.. build, "--artifacts-path", Path.Combine(root, "plain")]);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
@@ -72,13 +94,77 @@ public class CoverageOutputTests
         }
     }
 
+    [Fact]
+    public void Counts_the_methods_and_lines_coverlet_counts_with_the_same_run_settings_exclusions()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"piwi-coverage-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            // The configuration dotnet test builds by default; both read the fixture's coverlet.runsettings.
+            var project = FixtureSource.RepositoryFile(UnitFixture);
+            DotnetTest(root, ["test", project, "-p:PiwiCoverage=true", "--artifacts-path", Path.Combine(root, "piwi")]);
+            DotnetTest(root, ["test", project, "--collect", "XPlat Code Coverage", "--results-directory", Path.Combine(root, "coverlet"), "--artifacts-path", Path.Combine(root, "plain")]);
+
+            var directory = Path.GetFullPath(project) + Path.DirectorySeparatorChar;
+            using var json = JsonDocument.Parse(File.ReadAllText(Assert.Single(Directory.GetFiles(Path.Combine(root, "coverage")))));
+            var piwi = json.RootElement.GetProperty("files").Deserialize<List<WireCoverageFile>>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!
+                .Where(f => Path.GetFullPath(f.Path).StartsWith(directory, StringComparison.Ordinal))
+                .ToDictionary(f => Path.GetFullPath(f.Path));
+            var coverlet = CoberturaMethods(Assert.Single(Directory.GetFiles(Path.Combine(root, "coverlet"), "coverage.cobertura.xml", SearchOption.AllDirectories)));
+
+            Assert.Equal(coverlet.Keys.Order(), piwi.Keys.Order());
+            Assert.DoesNotContain(Path.Combine(directory, "Generated", "Codes.cs"), piwi.Keys);
+            var exclusions = piwi[Path.Combine(directory, "Exclusions.cs")];
+            var kept = Array.FindIndex(File.ReadAllLines(exclusions.Path), l => l.Contains("return name.ToUpperInvariant();", StringComparison.Ordinal)) + 1;
+            Assert.Equal([kept], Expand(exclusions.Executable!));
+            foreach (var (path, methods) in coverlet)
+            {
+                // coverlet names a lambda or state machine apart from its method, within the method's lines; its
+                // lines add the braces and declarations the compiler's statements leave out.
+                var functions = piwi[path].AllFunctions!;
+                Assert.All(methods, m => Assert.Contains(functions, f => f[0] <= m.Min() && m.Max() <= f[1]));
+                Assert.All(functions, f => Assert.Contains(methods, m => f[0] <= m.Min() && m.Max() <= f[1]));
+                Assert.Subset(methods.SelectMany(m => m).ToHashSet(), Expand(piwi[path].Executable!).ToHashSet());
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static IEnumerable<int> Expand(int[][] ranges) => ranges.SelectMany(r => Enumerable.Range(r[0], r[1] - r[0] + 1));
+
+    /// <summary>The line numbers of each method of a coverlet Cobertura report, by the file's full path.</summary>
+    private static Dictionary<string, List<int[]>> CoberturaMethods(string report)
+    {
+        var document = XDocument.Load(report);
+        var source = Assert.Single(document.Descendants("source")).Value;
+        var methods = new Dictionary<string, List<int[]>>();
+        foreach (var type in document.Descendants("class"))
+        {
+            var path = Path.GetFullPath(Path.Combine(source, type.Attribute("filename")!.Value));
+            if (!methods.TryGetValue(path, out var list))
+                methods[path] = list = [];
+            list.AddRange(type.Descendants("method").Select(m => m.Descendants("line").Select(l => int.Parse(l.Attribute("number")!.Value)).ToArray()));
+        }
+
+        return methods;
+    }
 
     /// <summary>
     /// Runs <c>dotnet</c> with <paramref name="arguments"/> in <paramref name="directory"/>, as a run started from a
     /// shell: the build and test-host variables of this test host left out, the VSTest shutdown timeout its default.
     /// </summary>
     private static void DotnetTest(string directory, string[] arguments)
+    {
+        var (exitCode, output) = RunDotnet(directory, arguments);
+        Assert.True(exitCode == 0, $"dotnet {arguments[0]} exited with {exitCode}:\n{output}");
+    }
+
+    /// <summary>Runs <c>dotnet</c> as <see cref="DotnetTest"/> does: its exit code, and its output and errors.</summary>
+    private static (int ExitCode, string Output) RunDotnet(string directory, string[] arguments)
     {
         var start = new ProcessStartInfo(Dotnet())
         {
@@ -101,8 +187,8 @@ public class CoverageOutputTests
         using var process = Process.Start(start)!;
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();
-        Assert.True(process.WaitForExit(TimeSpan.FromMinutes(5)), "dotnet test did not finish in 5 minutes");
-        Assert.True(process.ExitCode == 0, $"dotnet test exited with {process.ExitCode}:\n{output.Result}\n{error.Result}");
+        Assert.True(process.WaitForExit(TimeSpan.FromMinutes(5)), $"dotnet {arguments[0]} did not finish in 5 minutes");
+        return (process.ExitCode, $"{output.Result}\n{error.Result}");
     }
 
     /// <summary>The <c>dotnet</c> executable running this test host, else the one on the path.</summary>

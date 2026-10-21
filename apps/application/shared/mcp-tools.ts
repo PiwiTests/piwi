@@ -329,7 +329,7 @@ export const MCP_TOOL_DEFS = [
     name: 'search_test_cases',
     module: 'core',
     description:
-      "Search test cases by title or file path within a project. Accepts a free-text query and returns matching test cases with basic stats. Use this to find a test case when you don't know its ID.",
+      "Search test cases by title or file path within a project, or by the external ID they have in the team's test management tool (whole value). Accepts a free-text query and returns matching test cases with basic stats. Use this to find a test case when you don't know its ID.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1428,7 +1428,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     capability: 'coverage',
     description:
-      'Combined coverage of a commit: every suite that ran the code (the unit-test reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs), counted on one set of executable lines per file version. Gives the totals and each suite’s lines (`executedLines` of `executableLines`, with `linePercent`), functions, `undeterminedLines` (unrun lines inside functions the browser suite ran, never counted as run), the lines only unit tests or only end-to-end tests run, the files without coverage data, each named area of the code (`areas`, e.g. front and back, with each suite’s share), one `folder`’s breakdown (kept to one `area` when given), its least-covered files (`leastCovered`, the most lines no suite ran first: where a test is most missing), and with `file` which suites ran each of its lines. `notes` says what the numbers leave out or take from elsewhere: a suite `carried` from an earlier commit, an `incomplete` report, a `missing-suite`, `no-inventory`, totals under an earlier scope (`scope-changed`), `runs-not-counted`; on a branch, a commit a newer one superseded keeps only its totals (`detailRemoved`, `supersededBy`), with no folder breakdown or file lines. Without `commit`, the newest commit with coverage on `branch` (default branch when absent).',
+      'Combined coverage of a commit: every suite that ran the code (the unit-test reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs), counted on one set of executable lines per file version. Gives the totals and each suite’s lines (`executedLines` of `executableLines`, with `linePercent`), functions, `undeterminedLines` (unrun lines inside functions the browser suite ran, never counted as run), the lines only unit tests or only end-to-end tests run, the files without coverage data, each named area of the code (`areas`, e.g. front and back, with each suite’s share), one `folder`’s breakdown (kept to one `area` when given), its least-covered files (`leastCovered`, the most lines no suite ran first: where a test is most missing), and with `file` which suites ran each of its lines. `notes` says what the numbers leave out or take from elsewhere: a suite `carried` from an earlier commit, an `incomplete` report, a `missing-suite`, `no-inventory`, totals under an earlier scope (`scope-changed`), `runs-not-counted`, `runs-incomplete` (counted runs whose backend restarted or was unreachable: their server coverage misses what the backend ran outside a request); on a branch, a commit a newer one superseded keeps only its totals (`detailRemoved`, `supersededBy`), with no folder breakdown or file lines. Without `commit`, the newest commit with coverage on `branch` (default branch when absent).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1757,6 +1757,8 @@ export type DesktopMcpToolName = (typeof DESKTOP_MCP_TOOL_DEFS)[number]['name'];
 export interface McpFlakyTestItem {
   testCaseId: number;
   title: string;
+  /** The ID the test has in the team's test management tool, when it declares one. */
+  externalId?: string;
   filePath: string;
   /** Tags declared on the test, `@` stripped. */
   tags?: string[];

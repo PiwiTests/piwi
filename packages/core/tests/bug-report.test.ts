@@ -521,3 +521,79 @@ describe('specRunVerdict', () => {
     expect([...body].sort((a, b) => a - b)).toEqual(body);
   });
 });
+
+describe('a report made from a test run', () => {
+  const made = (): Record<string, unknown> => ({
+    v: BUG_REPORT_VERSION,
+    steps: toStepsDocument(
+      buildSession(
+        [
+          {
+            action: 'manual',
+            target: null,
+            value: null,
+            redacted: false,
+            pageUrl: '',
+            timestamp: 1,
+            manual: {
+              description: 'Open the page the test writes itself',
+              location: 'tests/a.spec.ts:4',
+              call: 'Set content',
+            },
+          },
+        ],
+        1,
+      ),
+    ),
+    evidence: emptyBugEvidence(),
+    context: {},
+    export: {
+      source: 'execution',
+      executionId: 42,
+      testTitle: 'checkout',
+      failedStep: 0,
+      notes: [{ title: 'POST /api/seed', location: 'tests/a.spec.ts:5', reason: 'An API request' }],
+      notesDropped: 0,
+    },
+  });
+
+  test('keeps its export block, and drops one that is not one', () => {
+    const read = parseBugReport(made());
+    expect(read.ok && read.report.export).toEqual({
+      source: 'execution',
+      executionId: 42,
+      testTitle: 'checkout',
+      failedStep: 0,
+      notes: [{ title: 'POST /api/seed', location: 'tests/a.spec.ts:5', reason: 'An API request' }],
+      notesDropped: 0,
+    });
+    const odd = { ...made(), export: { source: 'browser', failedStep: 0 } };
+    const dropped = parseBugReport(odd);
+    expect(dropped.ok && 'export' in dropped.report).toBe(false);
+    const wrong = {
+      ...made(),
+      export: { source: 'execution', executionId: -1, failedStep: 9, notes: [{ title: 1 }, 'x'], notesDropped: 'x' },
+    };
+    const capped = parseBugReport(wrong);
+    expect(capped.ok && capped.report.export).toEqual({
+      source: 'execution',
+      executionId: null,
+      testTitle: null,
+      failedStep: null,
+      notes: [],
+      notesDropped: 0,
+    });
+  });
+
+  test('writes a manual step in words, with the call it stands for, and the notes as Not replayed', () => {
+    const read = parseBugReport(made());
+    const report = read.ok ? read.report : null;
+    expect(describeStepInWords(report!.steps.steps[0]!)).toBe('By hand: Open the page the test writes itself');
+    const markdown = renderBugMarkdown(report!);
+    expect(markdown).toContain(
+      '1. By hand: Open the page the test writes itself\n   - `Set content` · `tests/a.spec.ts:4`\n   - The test failed at this step in the test run',
+    );
+    expect(markdown).toContain('## Not replayed');
+    expect(markdown).toContain('- `POST /api/seed` at `tests/a.spec.ts:5`: An API request');
+  });
+});

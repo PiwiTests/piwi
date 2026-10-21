@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { testLabel } from '#shared/utils/test-label';
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
@@ -41,6 +42,7 @@ const {
   `/api/test-run-cases/${testCaseId}`,
 );
 if (testCaseError.value) showPageLoadError(testCaseError.value, 'execution');
+provideExternalIdUrl(() => testCase.value?.testRun?.project?.externalIdUrl);
 
 // Server-rendered fetches carry the viewer's session.
 const requestFetch = useRequestFetch();
@@ -769,7 +771,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               ...(testCase?.testRun?.id
                 ? [{ label: `Run #${testCase.testRun.id}`, to: `/test-runs/${testCase.testRun.id}` }]
                 : [{ label: 'Test run' }]),
-              { label: testCase?.title || `Execution #${testCaseId}` },
+              { label: (testCase ? testLabel(testCase) : '') || `Execution #${testCaseId}` },
             ]"
           />
         </template>
@@ -794,6 +796,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               v-if="testCase"
               :endpoint="`/api/test-run-cases/${testCase.id}/export`"
               :perfetto-endpoint="`/api/test-run-cases/${testCase.id}/perfetto`"
+              :replay-endpoint="isFailedExecution ? `/api/test-run-cases/${testCase.id}` : undefined"
               :base-name="`piwi-execution-${testCase.id}`"
               class="mr-1"
             />
@@ -817,13 +820,25 @@ const { handle: handleNextStepAction } = useNextStepActions({
       <div class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
         <!-- ── One block: what broke, what is going on, what to do next ── -->
         <SituationBlock help="case.situation" :edge="statusEdge">
-          <!-- Line 1: identity kicker — status, title, marks, quarantine -->
+          <!-- Line 1: identity kicker — status, the test's title path (file › describe › title), marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <StatusChip :status="testCase?.status ?? ''" :retries="testCase?.retries" class="shrink-0" />
-              <span class="text-highlighted min-w-0 break-words">
-                {{ testCase?.title || `Execution #${testCaseId}` }}
-              </span>
+              <!-- The path in the meta style, the title in the body style -->
+              <TestTitlePath
+                data-shot="test-title-path"
+                class="text-xs"
+                :file-path="testCase?.filePath"
+                :line="testCase?.line"
+                :suite-path="testCase?.suitePath"
+                :project-key="testCase?.testRun?.project?.id"
+                :project-name="testCase?.testRun?.project?.name"
+              >
+                <TestIdChip v-if="testCase?.externalId" :external-id="testCase.externalId" class="mr-1.5" />
+                <span class="text-sm text-highlighted" :title="testCase?.displayTitle ? testCase.title : undefined">{{
+                  (testCase ? testLabel(testCase) : '') || `Execution #${testCaseId}`
+                }}</span>
+              </TestTitlePath>
               <span
                 v-for="badge in headerBadges"
                 :key="badge.label"

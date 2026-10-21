@@ -17,6 +17,8 @@ export type TrackerFieldKind =
   | 'option'
   /** Several listed values — `[{ id }]`. Multi selects, checkboxes, components, versions. */
   | 'option-array'
+  /** A listed value and, under it, one of its own: `{ id, child: { id } }`. A cascading select. */
+  | 'option-cascade'
   /** One line of text. */
   | 'string'
   /** Rich text: entered as plain text, sent as a document. */
@@ -32,14 +34,22 @@ export type TrackerFieldKind =
   | 'user-array'
   /** Free-form tags — `["a", "b"]`. */
   | 'string-array'
-  /** Another issue, by key — `{ key }`. A parent or epic. */
+  /** Another issue, by key — `{ key }`. The parent. */
   | 'issue'
+  /** Another issue, as its bare key — `"PROJ-12"`. An epic link. */
+  | 'issue-key'
+  /** A group, by name — `{ name }`. */
+  | 'group'
+  /** Several groups — `[{ name }]`. */
+  | 'group-array'
   /** Anything else (a team, a sprint, a cascading select): the API value, typed by hand. */
   | 'raw';
 
 export interface TrackerFieldOption {
   id: string;
   label: string;
+  /** For a cascading select's second level: the listed value it sits under. */
+  parentId?: string;
 }
 
 export interface TrackerField {
@@ -122,12 +132,16 @@ export function settableFields(
   return fields.filter((f) => !skipped.has(f.id));
 }
 
-/** The required fields the tracker does not fill and Piwi does not skip: the ones to ask for. */
-export function requiredFieldsToFill(
+/**
+ * The required fields Piwi does not skip: the ones to ask for. A field the
+ * tracker fills by default is asked for too, so its value can be chosen, but
+ * leaving it empty never blocks a create ({@link missingRequiredFields}).
+ */
+export function requiredFieldsToAsk(
   fields: readonly TrackerField[],
   skipped: ReadonlySet<string> = MANAGED_FIELDS,
 ): TrackerField[] {
-  return settableFields(fields, skipped).filter((f) => f.required && !f.hasDefault);
+  return settableFields(fields, skipped).filter((f) => f.required);
 }
 
 /** What the create request itself provides, beyond the field values. */
@@ -216,6 +230,8 @@ export function fieldValueHint(field: Pick<TrackerField, 'kind' | 'options' | 't
       return listed.length ? `one of ${names}` : 'one listed value';
     case 'option-array':
       return listed.length ? `any of ${names}` : 'listed values';
+    case 'option-cascade':
+      return listed.length ? `one of ${names}` : 'one listed value';
     case 'user':
       return "a person's account id";
     case 'user-array':
@@ -229,7 +245,12 @@ export function fieldValueHint(field: Pick<TrackerField, 'kind' | 'options' | 't
     case 'datetime':
       return 'an ISO date and time';
     case 'issue':
+    case 'issue-key':
       return 'an issue key';
+    case 'group':
+      return 'a group name';
+    case 'group-array':
+      return 'group names';
     case 'raw':
       return `Jira's API value (type ${field.typeName})`;
     default:
@@ -240,8 +261,8 @@ export function fieldValueHint(field: Pick<TrackerField, 'kind' | 'options' | 't
 /**
  * A value given loosely — an agent's `fields` argument — in the shape the
  * tracker API takes for the field: a listed value by its name or id, people by
- * account id, plain text as a document, an issue by key, a number from its
- * digits. A value already in the API's shape passes through.
+ * account id, groups by name, plain text as a document, an issue by key, a
+ * number from its digits. A value already in the API's shape passes through.
  */
 export function coerceFieldValue(field: Pick<TrackerField, 'kind' | 'options'>, raw: unknown): unknown {
   const option = (v: unknown) => {
@@ -251,11 +272,22 @@ export function coerceFieldValue(field: Pick<TrackerField, 'kind' | 'options'>, 
     return hit ? { id: hit.id } : v;
   };
   const list = (v: unknown) => (Array.isArray(v) ? v : [v]);
+  const name = (v: unknown) => (typeof v === 'string' ? { name: v.trim() } : v);
   switch (field.kind) {
     case 'option':
       return option(raw);
     case 'option-array':
       return list(raw).map(option);
+    case 'option-cascade': {
+      if (typeof raw !== 'string' && typeof raw !== 'number') return raw;
+      const wanted = String(raw).trim().toLowerCase();
+      const hit = field.options?.find((o) => o.id === String(raw).trim() || o.label.toLowerCase() === wanted);
+      return hit ? cascadeValue(hit) : raw;
+    }
+    case 'group':
+      return name(raw);
+    case 'group-array':
+      return list(raw).map(name);
     case 'user':
       return typeof raw === 'string' ? { accountId: raw.trim() } : raw;
     case 'user-array':
@@ -270,9 +302,35 @@ export function coerceFieldValue(field: Pick<TrackerField, 'kind' | 'options'>, 
     }
     case 'issue':
       return typeof raw === 'string' ? { key: raw.trim().toUpperCase() } : raw;
+    case 'issue-key':
+      return typeof raw === 'string' ? raw.trim().toUpperCase() : raw;
     default:
       return raw;
   }
+}
+
+/** The API value of a cascading select's listed value: `{ id }` at the first level, `{ id, child: { id } }` under it. */
+export function cascadeValue(option: TrackerFieldOption): Record<string, unknown> {
+  return option.parentId ? { id: option.parentId, child: { id: option.id } } : { id: option.id };
+}
+
+/**
+ * A field Jira refused a create over that its create screen does not list (a
+ * workflow validator can require one): the parent is an issue, anything else is
+ * typed as the API value, so the dialog can still ask for it.
+ */
+export function fieldForProblem(problem: { id: string; name: string }): TrackerField {
+  const isParent = problem.id === 'parent';
+  return {
+    id: problem.id,
+    // A field off the screen is named by its id: the parent at least reads as Jira shows it.
+    name: isParent && problem.name === problem.id ? 'Parent' : problem.name,
+    required: true,
+    hasDefault: false,
+    kind: isParent ? 'issue' : 'raw',
+    options: null,
+    typeName: isParent ? 'parent' : 'unknown',
+  };
 }
 
 /**

@@ -8,6 +8,7 @@
  */
 
 import { test, expect, type APIRequestContext } from './fixtures';
+import { BRAND_SITE_URL } from '#shared/brand';
 import { PROJECT } from '#shared/test-project-names';
 import { parseZipSync } from './utils/zip';
 
@@ -103,8 +104,10 @@ test.describe('offline export', () => {
     const html = await res.text();
     expect(html).toContain('checkout shows the total');
     expect(html).toContain('Timeout 30000ms exceeded');
-    // Nothing may be fetched from the network for the file to render.
-    expect(html).not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
+    // Nothing may be fetched from the network for the file to render. The closing credit's link to the project's site
+    // is the one address, and a link loads nothing until it is followed.
+    expect(html).toContain(`<a href="${BRAND_SITE_URL}"`);
+    expect(html.replace(`<a href="${BRAND_SITE_URL}"`, '<a')).not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
   });
 
   test('exports one execution as a real PDF file', async ({ request }) => {

@@ -135,6 +135,11 @@ per file, the functions any test ran and every function V8 listed, run or not
 attachments, as many per test as the capture caps need.
 A backend's files whose source checksums (`checksums`) differ from the checkout's
 lose their line numbers (`internal/collect/source-checksums.ts`).
+Each backend answer names its process (`instance`, also the prefix of its request
+ids); the run-level coverage of an origin gets the lines and functions its tests'
+coverage named added, and is sent with an `incomplete` entry when another process
+answers it than the one that gave out the run's first ids (a restart), or when no
+run-level answer comes (unreachable).
 
 ## Directory layout
 

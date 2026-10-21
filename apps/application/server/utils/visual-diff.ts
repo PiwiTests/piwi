@@ -7,7 +7,6 @@
  */
 import { and, desc, eq } from 'drizzle-orm';
 import pixelmatch from 'pixelmatch';
-import sharp from 'sharp';
 import { files, testRuns, testRunsCases } from '../database/schema';
 import { getStorage } from '../storage';
 import { selectCaseScreenshots, type ScreenshotFileRow } from './case-screenshots';
@@ -108,6 +107,7 @@ async function loadRawImage(path: string): Promise<RawImage | null> {
   try {
     const storage = getStorage();
     const buf = await storage.readFile(path);
+    const { default: sharp } = await import('sharp');
     const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     return { data: new Uint8Array(data), width: info.width, height: info.height };
   } catch {
@@ -202,6 +202,7 @@ export async function getOrComputeVisualDiff(db: DrizzleDB, testRunsCaseId: numb
   try {
     const { changedPixels, width, height, dimensionMismatch, overlay } = diffRawImages(failingImg, baselineImg);
 
+    const { default: sharp } = await import('sharp');
     const overlayPng = await sharp(Buffer.from(overlay), { raw: { width, height, channels: 4 } })
       .png()
       .toBuffer();

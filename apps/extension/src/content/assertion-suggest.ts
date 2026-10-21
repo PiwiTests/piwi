@@ -5,8 +5,10 @@ import { isSensitiveField } from './sensitive-fields.js';
 interface AssertionCandidate {
   /** Which Playwright assertion this suggests. */
   method: 'toHaveValue' | 'toHaveValues' | 'toHaveText' | 'toHaveAccessibleName' | 'toBeVisible';
-  /** The literal value being asserted, for display next to the method name (a multiple select's values joined by commas) — null for `toBeVisible`, which takes no argument. */
+  /** The literal value being asserted, for display next to the method name — null for `toBeVisible`, which takes no argument, and for `toHaveValues`, which lists `values`. */
   detail: string | null;
+  /** A multiple select's selected values, for `toHaveValues`. */
+  values?: string[];
   /** The full copy-pastable assertion line, built against the element's top-ranked locator. */
   expectLine: string;
 }
@@ -60,7 +62,8 @@ export function suggestAssertions(el: Element): AssertionSuggestion {
   if (selected && selected.length > 0) {
     candidates.push({
       method: 'toHaveValues',
-      detail: selected.join(', '),
+      detail: null,
+      values: selected,
       expectLine: `await expect(page.${locator}).toHaveValues([${selected.map((v) => quoteJsString(v)).join(', ')}]);`,
     });
   } else if (value != null && value.trim() !== '') {

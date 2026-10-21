@@ -72,6 +72,8 @@ export const PIWI_ENV_KEYS = {
   codeReachRoots: 'PIWI_CODE_REACH_ROOTS',
   coverageBrowser: 'PIWI_COVERAGE_BROWSER',
   coverageServer: 'PIWI_COVERAGE_SERVER',
+  externalIdPattern: 'PIWI_EXTERNAL_ID_PATTERN',
+  externalIdOnDuplicate: 'PIWI_EXTERNAL_ID_ON_DUPLICATE',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
   captureResources: 'PIWI_CAPTURE_RESOURCES',
   leakCheck: 'PIWI_LEAK_CHECK',
@@ -331,6 +333,16 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
     coverage.browser = coverageBrowser as CoverageOptions['browser'];
   if (coverage.server === undefined && coverageServer) coverage.server = coverageServer as CoverageOptions['server'];
   if (coverage.browser !== undefined || coverage.server !== undefined) mergedRaw.coverage = coverage;
+
+  // So are external IDs.
+  type ExternalIdOptions = NonNullable<PiwiDashboardOptions['externalId']>;
+  const externalId: ExternalIdOptions = { ...mergedRaw.externalId };
+  const externalIdPattern = env[PIWI_ENV_KEYS.externalIdPattern];
+  const externalIdOnDuplicate = env[PIWI_ENV_KEYS.externalIdOnDuplicate];
+  if (externalId.pattern === undefined && externalIdPattern) externalId.pattern = externalIdPattern;
+  if (externalId.onDuplicate === undefined && externalIdOnDuplicate)
+    externalId.onDuplicate = externalIdOnDuplicate as ExternalIdOptions['onDuplicate'];
+  if (Object.keys(externalId).length > 0) mergedRaw.externalId = externalId;
 
   const opts: PiwiDashboardOptions = { ...DEFAULTS, ...mergedRaw };
 

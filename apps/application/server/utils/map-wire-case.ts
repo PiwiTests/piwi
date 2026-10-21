@@ -29,6 +29,9 @@ export function mapWireCaseToRunCase(tc: WireCase): RunCaseInput {
     tags: tc.tags ?? null,
     locks: tc.locks ?? null,
     testMeta: tc.testMeta ?? null,
+    // Kept `undefined` when absent: an older reporter sends no field, and the server then reads `piwi:id` itself.
+    externalId: tc.externalId,
+    displayTitle: tc.displayTitle ?? null,
     title: tc.title as string,
     status: tc.status as string,
     duration: tc.duration,

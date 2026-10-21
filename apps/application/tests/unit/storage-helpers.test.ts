@@ -2,12 +2,44 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { uploadDirectory } from '../../server/utils/storage-helpers';
+import { forEachLimited, uploadDirectory } from '../../server/utils/storage-helpers';
 import type { StorageAdapter } from '../../server/storage/types';
 
 let dir: string;
 
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(() => {
+  if (dir) rmSync(dir, { recursive: true, force: true });
+});
+
+describe('forEachLimited', () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  test('rejects with the first failure only once the tasks in flight have settled', async () => {
+    const finished: string[] = [];
+    const run = forEachLimited(['slow', 'fails'], 2, async (item) => {
+      if (item === 'fails') throw new Error('write failed');
+      await sleep(20);
+      finished.push(item);
+    });
+
+    await expect(run).rejects.toThrow('write failed');
+    expect(finished).toEqual(['slow']);
+  });
+
+  test('starts no new task after one fails', async () => {
+    const started: number[] = [];
+    const run = forEachLimited([0, 1, 2, 3, 4, 5], 2, async (item) => {
+      started.push(item);
+      if (item === 1) throw new Error('write failed');
+      await sleep(5);
+    });
+
+    await expect(run).rejects.toThrow('write failed');
+    // Long enough for a worker still running to pick up the next item.
+    await sleep(30);
+    expect(started).toEqual([0, 1]);
+  });
+});
 
 describe('uploadDirectory', () => {
   test('copies a whole tree under the prefix, a few files at a time', async () => {

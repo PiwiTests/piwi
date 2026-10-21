@@ -1,4 +1,5 @@
 import { t, type MessageKey } from './i18n.js';
+import type { IconName } from './icons.js';
 
 export const COPY_MODES = ['bare', 'action', 'expect'] as const;
 export type CopyMode = (typeof COPY_MODES)[number];
@@ -8,6 +9,9 @@ const COPY_MODE_KEYS = {
   action: 'common_copyModeAction',
   expect: 'common_copyModeExpect',
 } as const satisfies Record<CopyMode, MessageKey>;
+
+/** The icon of a copy mode's button. */
+export const COPY_MODE_ICONS: Record<CopyMode, IconName> = { bare: 'code', action: 'pointer', expect: 'check-circle' };
 
 /** The label of a copy mode's button, in the interface language. */
 export function copyModeLabel(mode: CopyMode): string {

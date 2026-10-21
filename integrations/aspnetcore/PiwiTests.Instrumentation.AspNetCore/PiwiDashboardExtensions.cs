@@ -130,6 +130,13 @@ public static class PiwiDashboardExtensions
         }
         else if (coverage.IsInstrumented())
         {
+            // A test host writing its report to a file (PIWI_COVERAGE_OUTPUT) needs no middleware, whatever its environment.
+            if (environment.IsProduction() && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PIWI_COVERAGE_OUTPUT")))
+            {
+                throw new InvalidOperationException(
+                    "This build records code coverage (built with -p:PiwiCoverage=true) and does not start in the Production environment: its code runs slower than a production build's. Deploy a build made without -p:PiwiCoverage=true, or run the test environment as Development, Test or an environment PIWI_TEST_LOGS_ENVIRONMENTS names.");
+            }
+
             app.ApplicationServices.GetService<ILoggerFactory>()?.CreateLogger("PiwiTests.Instrumentation")
                 .LogWarning(
                     "This build records code coverage (built with -p:PiwiCoverage=true), but the Piwi middleware is not active in the {Environment} environment, so nothing serves it. Never deploy a coverage build to production.",

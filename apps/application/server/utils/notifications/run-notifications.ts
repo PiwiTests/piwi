@@ -1,3 +1,4 @@
+import { testTextLabel } from '#shared/utils/test-label';
 import { eq, and, lt, desc, inArray } from 'drizzle-orm';
 
 /** Failures scanned for ownership; well past what any comment or digest lists. */
@@ -36,6 +37,8 @@ export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<
   const rows = await db
     .select({
       title: testCases.title,
+      externalId: testCases.externalId,
+      displayTitle: testCases.displayTitle,
       filePath: testCases.filePath,
       executionId: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
@@ -62,7 +65,7 @@ export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<
   return looksFixedTests(rows).map((row) => {
     const meta = (row.testMeta ?? null) as TestMetadata | null;
     return {
-      title: row.title,
+      title: testTextLabel(row),
       filePath: row.filePath,
       executionId: row.executionId,
       testCaseId: row.testCaseId,
@@ -123,20 +126,25 @@ async function loadRunPayload(db: DbClient, runId: number) {
   // A few failing tests (title + error excerpt + deep-link ids) so a
   // notification carries enough context to start debugging without opening
   // the dashboard first.
-  const failedRows = await db
-    .select({
-      title: testCases.title,
-      filePath: testCases.filePath,
-      error: testRunsCases.error,
-      testCaseId: testRunsCases.testCaseId,
-      executionId: testRunsCases.id,
-      owner: testCases.owner,
-      clusterId: testRunsCases.failureClusterId,
-    })
-    .from(testRunsCases)
-    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(and(eq(testRunsCases.testRunId, runId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])))
-    .limit(OWNER_LOOKUP_LIMIT);
+  // Each failure is named by its external ID and label, the way the team knows it.
+  const failedRows = (
+    await db
+      .select({
+        title: testCases.title,
+        externalId: testCases.externalId,
+        displayTitle: testCases.displayTitle,
+        filePath: testCases.filePath,
+        error: testRunsCases.error,
+        testCaseId: testRunsCases.testCaseId,
+        executionId: testRunsCases.id,
+        owner: testCases.owner,
+        clusterId: testRunsCases.failureClusterId,
+      })
+      .from(testRunsCases)
+      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+      .where(and(eq(testRunsCases.testRunId, runId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])))
+      .limit(OWNER_LOOKUP_LIMIT)
+  ).map((row) => ({ ...row, title: testTextLabel(row) }));
 
   // The notification still names only the first few failures, but ownership
   // is resolved across all of them — a subscription scoped to one team must

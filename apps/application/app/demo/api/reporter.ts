@@ -9,7 +9,7 @@
  * (see app/demo/run-events.ts).
  */
 
-import { eq, and, or, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import {
@@ -32,7 +32,17 @@ import { matchInsertedRunCases } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
+import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
+import {
+  displayTitleOf,
+  externalIdOf,
+  loadTestCaseIndex,
+  recordExternalIdDuplicates,
+  resolveTestCases,
+  type TestCaseClaim,
+} from '~~/server/utils/test-case-match';
+import { syncTestCaseMetadata, type CaseMetaSnapshot } from '~~/server/utils/test-case-metadata-sync';
 import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
 import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
@@ -80,7 +90,6 @@ import {
   normalizeTestTags,
   parseTestMetadata,
   sanitizeTestMetadata,
-  type TestMetadata,
 } from '@piwitests/core/test-meta';
 import {
   cancelInstanceRuns as sharedCancelInstanceRuns,
@@ -403,8 +412,11 @@ export async function apiBeginTestRun(
 
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
-    const metadata = carryIngestHealth(
-      sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+    const metadata = carryExternalIdDuplicates(
+      carryIngestHealth(
+        sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+        testRun.metadata,
+      ),
       testRun.metadata,
     );
     await db
@@ -565,78 +577,6 @@ async function resolveSuites(db: DemoDb, projectId: number, cases: RunCaseInput[
   return suiteIdMap;
 }
 
-/** Latest-known tags, locks + `piwi:` metadata for one test case, as stored. */
-interface CaseMetaSnapshot {
-  tags: string[];
-  locks: string[];
-  meta: TestMetadata | null;
-}
-
-function sameStringList(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((value, i) => value === b[i]);
-}
-
-function sameSnapshot(stored: CaseMetaSnapshot, incoming: CaseMetaSnapshot): boolean {
-  if (!sameStringList(stored.tags, incoming.tags)) return false;
-  if (!sameStringList(stored.locks, incoming.locks)) return false;
-  const a = stored.meta ?? {};
-  const b = incoming.meta ?? {};
-  return a.owner === b.owner && a.priority === b.priority && a.feature === b.feature && a.link === b.link;
-}
-
-/** Mirror each reported test's tags/`piwi:` metadata onto its `test_cases` row. */
-async function syncTestCaseMetadata(db: DemoDb, incoming: Map<number, CaseMetaSnapshot>): Promise<void> {
-  if (incoming.size === 0) return;
-
-  const ids = [...incoming.keys()];
-  const stored = await db
-    .select({
-      id: testCases.id,
-      tags: testCases.tags,
-      locks: testCases.locks,
-      owner: testCases.owner,
-      priority: testCases.priority,
-      feature: testCases.feature,
-      link: testCases.link,
-    })
-    .from(testCases)
-    .where(inArray(testCases.id, ids));
-
-  const storedById = new Map<number, CaseMetaSnapshot>(
-    stored.map((row) => [
-      row.id,
-      {
-        tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
-        locks: Array.isArray(row.locks) ? (row.locks as string[]) : [],
-        meta: sanitizeTestMetadata({
-          owner: row.owner,
-          priority: row.priority,
-          feature: row.feature,
-          link: row.link,
-        }),
-      },
-    ]),
-  );
-
-  for (const [caseId, next] of incoming) {
-    const current = storedById.get(caseId);
-    if (current && sameSnapshot(current, next)) continue;
-
-    await db
-      .update(testCases)
-      .set({
-        tags: next.tags.length ? next.tags : null,
-        locks: next.locks.length ? next.locks : null,
-        owner: next.meta?.owner ?? null,
-        priority: next.meta?.priority ?? null,
-        feature: next.meta?.feature ?? null,
-        link: next.meta?.link ?? null,
-        updatedAt: new Date(),
-      })
-      .where(eq(testCases.id, caseId));
-  }
-}
-
 export async function persistRunCases(
   db: DemoDb,
   projectId: number,
@@ -649,16 +589,22 @@ export async function persistRunCases(
 
   const suiteIdMap = await resolveSuites(db, projectId, cases);
 
-  const uniqueFilePaths = [...new Set(cases.map((c) => c.filePath))];
-  const existingCaseRows = await db
-    .select()
-    .from(testCases)
-    .where(and(eq(testCases.projectId, projectId), inArray(testCases.filePath, uniqueFilePaths)));
-
-  const existingCaseMap = new Map<string, (typeof existingCaseRows)[0]>();
-  for (const tc of existingCaseRows) {
-    existingCaseMap.set(`${tc.filePath}::${tc.suitePath ?? ''}::${tc.title}`, tc);
-  }
+  const claims: TestCaseClaim[] = cases.map((c) => {
+    const suitePath = joinSuitePath(c.suitePath);
+    const externalId = externalIdOf(c);
+    return {
+      filePath: c.filePath,
+      suitePath,
+      suiteId: suitePath ? (suiteIdMap.get(`${c.filePath}\x00${suitePath}`) ?? null) : null,
+      title: c.title,
+      externalId,
+      displayTitle: displayTitleOf(c, externalId),
+      line: c.line,
+    };
+  });
+  const resolved = await resolveTestCases(db, projectId, testRunId, await loadTestCaseIndex(db, projectId), claims, {
+    readOnly: options.keepTestState,
+  });
 
   let existingRunCaseSet: Set<string> | null = null;
   if (deduplicate) {
@@ -698,38 +644,19 @@ export async function persistRunCases(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
-    const suitePath = joinSuitePath(c.suitePath);
-    const cacheKey = `${c.filePath}::${suitePath}::${c.title}`;
-    let shared = existingCaseMap.get(cacheKey);
-
-    if (!shared) {
-      const result = await db
-        .insert(testCases)
-        .values({
-          projectId,
-          filePath: c.filePath,
-          suitePath,
-          suiteId: suitePath ? (suiteIdMap.get(`${c.filePath}\x00${suitePath}`) ?? null) : null,
-          title: c.title,
-        })
-        .returning();
-      shared = result[0];
-      if (shared) existingCaseMap.set(cacheKey, shared);
-    } else {
-      await db.update(testCases).set({ updatedAt: new Date() }).where(eq(testCases.id, shared.id));
-    }
-
-    if (!shared) continue;
+    const caseId = resolved.caseIds[i];
+    if (caseId === undefined) continue;
+    await db.update(testCases).set({ updatedAt: new Date() }).where(eq(testCases.id, caseId));
 
     // Re-normalize on arrival, like the server — annotations win over a
     // supplied `testMeta` because they are the declared source.
     const tags = normalizeTestTags(c.tags);
     const locks = normalizeTestLocks(c.locks).slice(0, DEFAULT_INGEST_LIMITS.locks);
     const testMeta = parseTestMetadata(c.testAnnotations) ?? sanitizeTestMetadata(c.testMeta);
-    caseMetaSnapshots.set(shared.id, { tags, locks, meta: testMeta });
+    caseMetaSnapshots.set(caseId, { tags, locks, meta: testMeta, displayTitle: resolved.displayTitles[i] ?? null });
 
     if (deduplicate && existingRunCaseSet) {
-      const rowKey = `${shared.id}::${c.retries ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
+      const rowKey = `${caseId}::${c.retries ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
       if (existingRunCaseSet.has(rowKey)) continue;
     }
 
@@ -767,10 +694,10 @@ export async function persistRunCases(
     rowCoverage.push(coverage);
     const reached = sanitizeCodeReach(c.codeReach);
     rowCodeReach.push(reached ? JSON.stringify(reached) : null);
-    if (coverage) perCaseReach.push(...codeReachOfCoverage(shared.id, testRunId, coverage));
-    else if (reached) perCaseReach.push({ testCaseId: shared.id, runId: testRunId, files: reached });
+    if (coverage) perCaseReach.push(...codeReachOfCoverage(caseId, testRunId, coverage));
+    else if (reached) perCaseReach.push({ testCaseId: caseId, runId: testRunId, files: reached });
     perCaseUsages.push({
-      caseId: shared.id,
+      caseId: caseId,
       browserName: resolveBrowserName(c.browser),
       steps: cappedSteps,
       locatorPages,
@@ -781,14 +708,14 @@ export async function persistRunCases(
 
     if (Array.isArray(c.locatorSnapshots) && c.locatorSnapshots.length)
       perCaseLocators.push({
-        caseId: shared.id,
+        caseId: caseId,
         snapshots: c.locatorSnapshots as LocatorSnapshot[],
         purge: c.status === 'passed',
       });
 
     runCasesRows.push({
       testRunId,
-      testCaseId: shared.id,
+      testCaseId: caseId,
       status: c.status,
       duration: c.duration ?? null,
       error: capErrorText(c.error, DEFAULT_INGEST_LIMITS.errorChars),
@@ -896,6 +823,7 @@ export async function persistRunCases(
   await upsertCodeReach(db, projectId, perCaseReach).catch(() => {});
   await upsertTestCoverage(db, projectId, perCaseCoverage).catch(() => {});
   if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
+  await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
   await recordIngestHealth(
     db,
     testRunId,
@@ -1010,6 +938,8 @@ export async function apiPostRunEvents(
       type: 'test-completed',
       data: {
         title: tc.title,
+        externalId: externalIdOf(cases[index]!) ?? null,
+        displayTitle: displayTitleOf(cases[index]!, externalIdOf(cases[index]!)),
         filePath: cases[index]!.filePath,
         suitePath: tc.suitePath ?? null,
         status: tc.status,
@@ -1245,7 +1175,9 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     ? sumFailedAndTimedOut(body.failedTests, body.timedOutTests)
     : testRun.failedTests;
 
-  const reportedMetadata = body.metadata ? carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata) : null;
+  const reportedMetadata = body.metadata
+    ? carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata), testRun.metadata)
+    : null;
 
   await db
     .update(testRuns)

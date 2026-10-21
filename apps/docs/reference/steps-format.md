@@ -43,7 +43,7 @@ holds steps and not code, the same file can be rendered for different projects (
 
 | Field | Type | Meaning |
 |---|---|---|
-| `v` | `1` | The format version. |
+| `v` | `1` or `2` | The format version: `2` when the file uses a `manual` step or the `toContainText`, `toHaveCount` or `toBeChecked` matcher, `1` otherwise. |
 | `title` | string or null | The test's title when rendered. |
 | `origin` | string or null | The origin the steps were recorded on, such as `https://staging.acme.test`. |
 | `recordedAt` | number | When the recording started, in milliseconds since 1970. |
@@ -58,14 +58,15 @@ URLs on `origin` are stored as paths (`/cart?from=mail`), so a spec rendered fro
 
 | Field | Type | Meaning |
 |---|---|---|
-| `action` | string | `goto`, `click`, `dblclick`, `hover`, `fill`, `check`, `uncheck`, `selectOption`, `press`, `setInputFiles`, `dragTo` or `assert`. |
+| `action` | string | `goto`, `click`, `dblclick`, `hover`, `fill`, `check`, `uncheck`, `selectOption`, `press`, `setInputFiles`, `dragTo`, `assert` or `manual`. |
 | `target` | object or null | The element the step acted on; null for `goto`, a key press on the page, or an `assert` on the URL. |
 | `value` | string or null | The URL for `goto`, the typed text for `fill`, the option for `selectOption`, the key for `press`, the chosen files' names for `setInputFiles`, one per line. |
 | `redacted` | boolean | The value was typed in a password field and was not kept; the spec reads it from an environment variable named after the field, such as `E2E_PASSWORD`. |
-| `pageUrl` | string | The page the step happened on. |
+| `pageUrl` | string | The page the step happened on; empty when it is not known, as in steps made from a test run after an action that may have left the page. Replay then waits for no particular page. |
 | `timestamp` | number | When it happened. |
 | `assertion` | object | On `assert` steps only; see below. |
 | `dropTarget` | object | On `dragTo` steps only: the element the target is dropped on, a target like the other. |
+| `manual` | object | On `manual` steps only; see [Manual steps](#manual-steps). |
 
 A `hover` step moves the pointer over its target and is written as `await <locator>.hover();`. Piwi Picker records
 one before a click on an element that shows only while another is hovered (a row's actions, a menu that opens on
@@ -83,11 +84,40 @@ An assertion states what the page should show:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `matcher` | string | `toHaveText`, `toHaveValue`, `toHaveAccessibleName`, `toHaveURL`, `toBeVisible`, `toBeHidden`, `toBeEnabled` or `toBeDisabled`. |
-| `expected` | string or null | The expected value, required for the first four. A `toHaveURL` value is a path or a URL. |
+| `matcher` | string | `toHaveText`, `toContainText`, `toHaveValue`, `toHaveAccessibleName`, `toHaveCount`, `toHaveURL`, `toBeVisible`, `toBeHidden`, `toBeEnabled`, `toBeDisabled` or `toBeChecked`. |
+| `expected` | string or null | The expected value, required for the first six. A `toHaveURL` value is a path or a URL; a `toHaveCount` value is a whole number, such as `"3"`, written as a number in the spec. |
 | `actual` | string or null | What the page showed when it was recorded, kept when it differs; the spec writes it in a comment. |
 | `negated` | boolean | Written as `expect(…).not.…`. |
 | `note` | string or null | Written as a comment above the assertion. |
+
+`toContainText` finds its value inside the element's text, `toHaveCount` counts every element the target's first
+locator finds, and `toBeChecked` checks a checkbox, a radio or an element with `aria-checked`.
+
+## Manual steps
+
+A `manual` step is one nothing can play: a person does it by hand. Piwi writes one when it makes steps from a test run
+and the run did not keep enough to play a call, such as a click at a point of the page, a value it kept only in part,
+or a check with a regular expression.
+
+```json
+{
+  "action": "manual",
+  "target": null,
+  "value": null,
+  "redacted": false,
+  "pageUrl": "",
+  "timestamp": 1790467201000,
+  "manual": {
+    "description": "Choose in `getByLabel('Invoice')` the file the test chose; the run does not keep its name",
+    "location": "tests/billing.spec.ts:31",
+    "call": "Set input files getByLabel('Invoice')"
+  }
+}
+```
+
+`description` says what to do and is required; `location` (the test's `file:line`) and `call` (the Playwright call it
+stands for) are optional. The spec writes a manual step as a comment, `// Manual step: …`, never as code, and the
+converter warns about it. [Replay](/features/replay-a-bug-report#when-a-step-cannot-be-played) hands it to you.
 
 ## Viewports
 
@@ -121,11 +151,16 @@ A file is checked in full before anything uses it, and every problem found is re
 - `origin` must be an `http` or `https` origin.
 - A redacted step never keeps a value.
 - A `hover` or `dblclick` step needs a target and never keeps a value; a `setInputFiles` step needs a target; a
-  `dragTo` step needs a target and a `dropTarget`, and never keeps a value.
+  `dragTo` step needs a target and a `dropTarget`, and never keeps a value; a `manual` step needs a `manual` object
+  with a description that is not empty, and never keeps a value.
+- A `toHaveCount` assertion's `expected` is a whole number.
 - A viewport names a step the file has, after the one before it, with a whole width and height from 1 to 10,000, and
   a `zoom` from 0.25 to 5 when it has one.
 - Limits: 200 steps, 50 viewports, 10 alternatives per target, 2,000 characters for values, expected values, URLs and notes, 500 for
   titles, names, texts and locators, and 5 MB for the file.
 
 A recording saved before the format existed (`{ "steps", "startedAt", "startUrl" }`) is read too, and the old
-`assertVisible` action is read as an `assert` step with `toBeVisible`.
+`assertVisible` action is read as an `assert` step with `toBeVisible`. A file is written with the oldest version that
+holds its steps, so a reader that only knows version 1 refuses a file using the `manual` action or the
+`toContainText`, `toHaveCount` and `toBeChecked` matchers with a message naming the version, and reads every other
+file as it did.

@@ -25,9 +25,9 @@ dotnet test --collect "XPlat Code Coverage"
 npx @piwitests/reporter coverage upload "**/TestResults/*/coverage.cobertura.xml" --suite unit-back
 ```
 
-The command reads the project, the dashboard URL and the API key as the reporter does (`PIWI_PROJECT_NAME`,
-`PIWI_DASHBOARD_URL`, `PIWI_API_KEY`), the commit from git and the branch from the CI or `PIWI_BRANCH`. The API key
-needs the Uploader role, as a reporter's does. A path naming no file of the checkout is dropped and
+The command reads the project, the dashboard URL and the API key (Uploader role) as the reporter does
+(`PIWI_PROJECT_NAME`, `PIWI_DASHBOARD_URL`, `PIWI_API_KEY`), the commit from git and the branch from the CI or
+`PIWI_BRANCH`. A path naming no file of the checkout is dropped and
 counted (`--root` sets where paths start). Every flag is on the
 [CLI reference](/reference/cli#coverage).
 
@@ -38,8 +38,8 @@ counted (`--root` sets where paths start). Every flag is on the
 | Microsoft code coverage | Cobertura | `dotnet test --collect "Code Coverage;Format=cobertura"` |
 | Piwi's .NET recorder | Piwi | `PIWI_COVERAGE_OUTPUT=TestResults/piwi/ dotnet test -p:PiwiCoverage=true` |
 
-On .NET, run the unit tests on the [server coverage](./server-coverage) build: each test host writes a report at exit
-with the span table's lines, at a fraction of coverlet's cost. Upload `"TestResults/piwi/*.json"` and set
+On .NET, run the unit tests on the [server coverage](./server-coverage) build: each test host writes a report with
+the span table's lines, at a fraction of coverlet's cost. Upload `"TestResults/piwi/*.json"` and set
 `VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=30000`: VSTest otherwise stops a host 100 ms after its tests.
 
 Upload from the full unit-test run: Vitest lists the files nothing ran only when every test ran and `coverage.include`
@@ -47,8 +47,8 @@ names them.
 
 ## In CI
 
-The unit tests and the Playwright suite usually run in separate jobs, tied by the commit: each uploads its own report,
-and a suite uploaded in parts (shards, portals) is merged on the dashboard.
+The unit tests and the Playwright suite usually run in separate jobs, tied by the commit: each uploads its own
+report; a suite uploaded in parts (shards, portals) is merged.
 
 ::: code-group
 
@@ -79,7 +79,7 @@ and a suite uploaded in parts (shards, portals) is merged on the dashboard.
 
 :::
 
-On Bitbucket and Azure DevOps, set the three `PIWI_` variables as repository or pipeline variables. The first
+On Bitbucket and Azure DevOps, set the `PIWI_` variables as pipeline variables. The first
 Playwright run creates the project.
 
 ## One ratio per commit
@@ -92,14 +92,15 @@ totals are recomputed seconds after each upload or run; read them with the
 - **One set of executable lines per file version.** Tools disagree on which lines can run, so every suite counts on
   the same lines: the span table's, from [server coverage](./server-coverage), when a run recorded them for that
   version of the file; otherwise the reports' own. A line a tool marks outside them is ignored.
-- **Undetermined lines.** The browser suite records functions, not lines. An unrun line inside a function it ran,
-  outside a function nested in it that did not run, is undetermined: shown beside the ratio, never counted as run.
+- **Undetermined lines.** The browser suite records functions, not lines: an unrun line whose innermost function it
+  ran is undetermined, shown beside the ratio, never counted as run.
 - **Functions** count across suites by start line: one ran when any suite ran a function starting there.
-- **Classes of lines.** Each executable line is unit only, end to end only, both, none, or undetermined. "End to end
-  only" is what the Playwright suite alone protects; "unit only" is code no user path reaches in the tests.
+- **Classes of lines.** Each executable line is unit only, end to end only (what the Playwright suite alone
+  protects), both, none, or undetermined.
 - **Files without coverage data** are tracked files in scope no suite names, counted apart from the percentage.
 - **Carried forward.** A suite the commit lacks comes from the newest commit whose coverage arrived before it, on
   the commit's branch then on the default branch, file by file where the file's version is unchanged.
+- **A run whose backend restarted** still joins `e2e`, adding only lines that ran; alone, it marks `e2e` incomplete.
 
 The project's **Coverage** page shows the commit whose coverage arrived last, and a run's header links its commit's.
 
@@ -113,8 +114,8 @@ The project's **Coverage** page shows the commit whose coverage arrived last, an
 On a branch, each suite keeps only the report of the commit whose coverage arrived last; an earlier push keeps only
 its totals, never recounted ("totals only" on its run). The default branch keeps its newest commit and each day's last
 for 90 days, and totals for a year. Notes above the numbers say when a commit has only totals, a suite is
-carried, a report was cut, a known suite is missing, no inventory was sent, the scope changed since, or runs did not
-count.
+carried, a report was cut, a known suite is missing, no inventory was sent, a run's backend restarted, the scope changed since, or runs did
+not count.
 
 <figure>
   <img src="/screenshots/coverage-notes.png" alt="A note above a branch's coverage">
@@ -123,10 +124,9 @@ count.
 
 ## Find what is not covered
 
-Every bar on the coverage page splits lines as a file's marks do: both kinds of suite, unit only, end to end only,
-undetermined, and the empty track for none. **Files** is a foldable tree of the repository, each folder and file with
-its bar, sorted by name or lines not run, files without data greyed. Beside it, the selected
-folder's suites and least-covered files. A file opens on its source, through the
+Every bar on the coverage page splits lines by class, as a file's marks do. **Files** is a foldable tree, each
+folder and file with its bar, sortable by lines not run; beside it, the selected folder's suites and least-covered
+files. A file opens on its source, through the
 [source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next gap** jumps to
 the next lines none ran.
 
@@ -138,16 +138,17 @@ the next lines none ran.
 ## In pull requests
 
 The [Uncovered changes](./uncovered-changes) section of the pull-request comment opens with the change's patch
-coverage, the share of its changed lines any suite ran; a changed file any suite ran a changed line of counts as
-reached. `piwi gate --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
+coverage, the share of its changed lines any suite ran; a file counts as reached when any suite ran a changed line.
+`piwi gate --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
 
 ## Over time
 
-The **Coverage trend** [Analytics widget](./analytics) charts the combined line coverage per day, summed over the
-projects in scope, with each suite's share as a dashed line and the change against the comparison period; the engineering
+The **Coverage trend** [Analytics widget](./analytics) charts the combined line coverage per day over the projects in
+scope, each suite dashed, with the change against the comparison period; the
 [quality report](./quality-reports) gives it as one line. Each project counts
 once a day, at its last commit with coverage, on the default branch or the scope's first branch with one.
-Kept per day, it outlives the reports; a day without new coverage names the day it carries.
+Kept per day, it outlives the reports; a day without coverage names the day it carries, and
+one counting an incomplete `e2e` says so.
 
 <figure>
   <img src="/screenshots/combined-coverage-trend.png" alt="The Coverage trend widget">
@@ -172,9 +173,8 @@ inventory: its tracked files in scope and their blob ids.
 
 Name the parts of the code in the same settings (`coverageAreas` in the API): `front: apps/web/`, `back: src/Api/`. A
 file belongs to the first area whose patterns match it, and every suite splits the same way: the coverage page gives
-each area its totals and each suite's share; the coverage trend
-draws one line per area (its *Lines beside every suite* option); the pull-request comment counts the changed lines per
-area. A change recounts the commits that keep their reports; a removed area
+each area its totals and each suite's share, the coverage trend a line per area, and the pull-request comment the
+changed lines per area. A change recounts the commits that keep their reports; a removed area
 leaves the trend.
 
 ## What is sent
@@ -185,9 +185,14 @@ function the tool knows. No source code, no test names, no hit counts.
 ## Limits
 
 - **Formats:** Cobertura, LCOV and Piwi's own. Istanbul JSON, OpenCover and JaCoCo are not read.
-- **A tool can leave code out without failing.** coverlet does not instrument an assembly whose dependencies it
-  cannot resolve, and says so only in its diagnostic log.
-- **One commit, one checkout.** Upload from the checkout the tests ran in: the blob ids and the inventory come from it.
+- **coverlet can skip an assembly** whose dependencies it cannot resolve, saying so only in its diagnostic log.
+- **Exclusions.** A .NET file counts the span table's lines, so code only a unit tool excludes still counts: the
+  coverage build reads coverlet's exclusions from the project or its `RunSettingsFilePath`
+  ([details](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#what-it-leaves-out)),
+  never Microsoft code coverage's. Exclude a whole file in the scope too.
+- **EF Core migrations count**, in both tools: add `**/Migrations/` to the scope. `Program.cs` counts too, its inline
+  minimal API handlers at run level only.
+- **One commit, one checkout:** upload from the checkout the tests ran in.
 - **Functions match by start line.** coverlet starts a method at its opening brace, the compiler's span table at its
   declaration, so a .NET function both report can count twice.
 

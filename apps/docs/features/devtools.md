@@ -22,7 +22,7 @@ shows:
 ```
 getByRole('button', { name: 'Apply coupon' })     ✓ unique · stable
 getByTestId('apply-coupon')                        ✓ unique · stable
-locator('.btn').nth(2)                             ✓ unique by position · brittle: position, CSS class
+locator('.btn').nth(2)                             ⚠ unique by position · brittle: position, CSS class
 ```
 
 <figure>

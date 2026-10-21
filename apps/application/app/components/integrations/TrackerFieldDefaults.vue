@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
  * The values a project keeps for one tracker screen's fields — its issue type's
- * create screen, or a workflow transition's screen: the required fields Jira
- * does not fill, then each optional field a value is set for (removable), a menu
+ * create screen, or a workflow transition's screen: the required fields, then
+ * each optional field a value is set for (removable), a menu
  * to set one for another field, and a note for each value whose field this
  * screen does not have (kept, but not sent).
  */
 import {
   hasFieldValue,
   MANAGED_FIELDS,
-  requiredFieldsToFill,
+  requiredFieldsToAsk,
   settableFields,
   type FieldValues,
   type TrackerField,
@@ -30,8 +30,8 @@ const props = withDefaults(
 
 const values = defineModel<FieldValues>({ required: true });
 
-/** The required fields to give a value: required, not filled by Jira, not skipped. */
-const required = computed(() => requiredFieldsToFill(props.fields, props.skipped));
+/** The required fields to give a value: required and not skipped. */
+const required = computed(() => requiredFieldsToAsk(props.fields, props.skipped));
 /** Optional fields a value is set for, on this screen. */
 const optionalWithValue = computed(() =>
   settableFields(props.fields, props.skipped).filter(
@@ -45,10 +45,10 @@ const shownOptional = computed(() => [
   ...added.value.filter((f) => !optionalWithValue.value.includes(f)),
 ]);
 /** Optional fields that could take a value, for the "Set a default for another field" menu. */
-const addableItems = computed(() =>
-  settableFields(props.fields, props.skipped)
-    .filter((f) => !required.value.includes(f) && !added.value.includes(f) && !hasFieldValue(values.value[f.id]?.value))
-    .map((f) => ({ label: f.name, onSelect: () => void added.value.push(f) })),
+const addable = computed(() =>
+  settableFields(props.fields, props.skipped).filter(
+    (f) => !required.value.includes(f) && !added.value.includes(f) && !hasFieldValue(values.value[f.id]?.value),
+  ),
 );
 /** Values for fields this screen does not have: kept, but not sent. */
 const offScreen = computed(() => {
@@ -86,17 +86,12 @@ function remove(id: string) {
       :project-key="projectKey"
       removable
     />
-    <UDropdownMenu v-if="addableItems.length" :items="addableItems">
-      <UButton
-        type="button"
-        color="neutral"
-        variant="outline"
-        size="xs"
-        icon="i-lucide-plus"
-        trailing-icon="i-lucide-chevron-down"
-        label="Set a default for another field"
-      />
-    </UDropdownMenu>
+    <TrackerFieldPicker
+      v-if="addable.length"
+      :fields="addable"
+      label="Set a default for another field"
+      @pick="(f) => added.push(f)"
+    />
     <p v-for="[id, entry] in offScreen" :key="id" class="text-xs text-muted">
       {{ id }} = {{ entry.label }} is not on {{ screenLabel }}, so it is not sent.
       <button type="button" :class="SENTENCE_LINK_CLASS" @click="remove(id)">Remove it</button>

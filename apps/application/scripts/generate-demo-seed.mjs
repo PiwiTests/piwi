@@ -49,7 +49,7 @@ import {
   storyEvidenceTimes,
   storyCoverageFiles,
 } from '../shared/demo/failure-stories.mjs';
-import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
+import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
@@ -168,6 +168,8 @@ const PROJECTS = [
     updated_at: ts('2025-04-25T08:30:00'),
     // Targets the checkout suite misses, so the demo report has missed targets in its risks.
     targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
+    // The checkout tests' IDs (`demoExternalId`) open in the demo's test management tool.
+    external_id_url: 'https://tcm.example.com/case/{id}',
   },
   {
     id: 2,
@@ -541,6 +543,8 @@ for (const proj of DEMO_PROJECTS) {
       suite_path: proj.suites[c.file]?.suitePath.join('\x1f') ?? '',
       suite_id: suiteLookup[proj.id][c.file] ?? null,
       title: c.title,
+      external_id: demoExternalId(c.file, proj.cases.indexOf(c)),
+      display_title: null,
       flaky_root_cause: flaky?.rootCause ?? null,
       tags: JSON.stringify(demoTags(c.file, proj.cases.indexOf(c))),
       locks: JSON.stringify(demoLocks(c.file, proj.cases.indexOf(c))),
@@ -4304,6 +4308,15 @@ function seedCoverageReports(story, run, fragmentIdOf) {
       }
     }
     if (story.runCoverage?.length) {
+      // Its backend restarted halfway through: the run's server coverage is incomplete, and the
+      // commit's e2e suite with it (the run is its only one).
+      run.server_coverage_gaps = JSON.stringify([
+        {
+          origin: 'http://localhost:5080',
+          reason: 'restarted',
+          at: new Date((run.start_time + Math.round((run.duration ?? 0) / 2000)) * 1000).toISOString(),
+        },
+      ]);
       seedCoverageReports(story, run, fragmentIdOfReportFile);
       seedCoverageDaily(story, run);
     }
@@ -4984,6 +4997,9 @@ const REBASE_SQL = [
   `UPDATE test_runs SET metadata = json_set(metadata, '$.incident.decidedAt', ` +
     `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(metadata, '$.incident.decidedAt'), '+' || ${D} || ' seconds')) ` +
     `WHERE json_valid(metadata) AND json_extract(metadata, '$.incident.decidedAt') IS NOT NULL;`,
+  `UPDATE test_runs SET server_coverage_gaps = json_set(server_coverage_gaps, '$[0].at', ` +
+    `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(server_coverage_gaps, '$[0].at'), '+' || ${D} || ' seconds')) ` +
+    `WHERE json_valid(server_coverage_gaps) AND json_extract(server_coverage_gaps, '$[0].at') IS NOT NULL;`,
   '',
   '-- Millisecond timestamps embedded in JSON columns',
   shiftJsonMs('test_runs_cases', 'steps', 'startTime'),

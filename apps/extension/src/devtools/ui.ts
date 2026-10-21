@@ -1,40 +1,18 @@
 /** Small pieces the DevTools pages share: buttons, empty states and their icons. */
 
-import { flashLabel } from '../shared/clipboard.js';
+import { makeButton, type ButtonOptions } from '../shared/buttons.js';
+import { tNodes } from '../shared/i18n.js';
+import { icon, iconText, type IconName } from '../shared/icons.js';
+import { patternView } from '../shared/pattern-view.js';
 
-const SVG = 'http://www.w3.org/2000/svg';
+export type { IconName };
 
-/** Outline icons, 24 × 24, drawn with the page's stroke. */
-const ICONS = {
-  select: ['M5 3l14 7-6 2-2 6z', 'M13 13l6 6'],
-  lock: ['M6 11h12v9H6z', 'M8.5 11V8a3.5 3.5 0 017 0v3'],
-  record: ['M12 4a8 8 0 100 16 8 8 0 000-16z', 'M12 9a3 3 0 100 6 3 3 0 000-6z'],
-  replay: ['M8 5.5v13l10-6.5z'],
-  network: ['M7 4v16', 'M4 7l3-3 3 3', 'M17 20V4', 'M14 17l3 3 3-3'],
-  blocked: ['M12 4a8 8 0 100 16 8 8 0 000-16z', 'M6.5 6.5l11 11'],
-} as const;
-
-export type IconName = keyof typeof ICONS;
-
-export function icon(name: IconName): SVGSVGElement {
-  const svg = document.createElementNS(SVG, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('aria-hidden', 'true');
-  for (const d of ICONS[name]) {
-    const path = document.createElementNS(SVG, 'path');
-    path.setAttribute('d', d);
-    svg.appendChild(path);
-  }
-  return svg;
-}
-
-export function button(label: string, onClick: () => void, className = ''): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  if (className) b.className = className;
-  b.textContent = label;
-  b.addEventListener('click', onClick);
-  return b;
+/**
+ * A button of the DevTools pages: the shared button, with its icon and its
+ * tone (`ButtonTone`), drawn in DevTools' compact look by `devtools.css`.
+ */
+export function button(label: string, onClick: () => void, options: ButtonOptions = {}): HTMLButtonElement {
+  return makeButton(label, onClick, options);
 }
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
@@ -45,13 +23,31 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ''
 }
 
 /** A centered message for an area with nothing to show yet, with an icon and, when given, what to do. */
-export function emptyState(name: IconName, text: string, ...actions: HTMLElement[]): HTMLElement {
+export function emptyState(
+  name: IconName,
+  text: string | Array<Node | string>,
+  ...actions: HTMLElement[]
+): HTMLElement {
   const box = el('div', 'empty');
-  box.append(icon(name), el('p', '', text), ...actions);
+  const message = el('p');
+  message.append(...(typeof text === 'string' ? [text] : text));
+  box.append(icon(name), message, ...actions);
   return box;
 }
 
-/** Shows `done` on a button for a moment, then its label again. */
-export function flash(btn: HTMLButtonElement, done: string): void {
-  flashLabel(btn, done);
+/** Piwi Picker needs access to this site, the site on its chip: the text of an empty state with Allow on this site. */
+export function noAccessText(origin: string): Array<Node | string> {
+  return tNodes('devtools_noAccess', { site: patternView(origin) });
+}
+
+/** A request's method, muted for a read and in the accent color for one that changes something. */
+export function methodView(method: string): HTMLElement {
+  const view = el('span', 'method', method);
+  view.dataset.method = method.toUpperCase();
+  return view;
+}
+
+/** A line of text after an icon: a note, a warning, what a view says it waits for. */
+export function iconLine(name: IconName, className: string, ...text: Array<Node | string>): HTMLElement {
+  return iconText(el('p', `icon-line ${className}`.trim()), name, ...text);
 }

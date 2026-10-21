@@ -6,7 +6,6 @@
  * rasterizer; the axis values, the dates and the legend are HTML text beside
  * the image.
  */
-import sharp from 'sharp';
 import { chartMarksSvg } from '#shared/reports/chart';
 import type { ReportBlock } from '#shared/reports/types';
 
@@ -23,5 +22,6 @@ export async function chartPng(
   height = SHARE_CHART_HEIGHT,
 ): Promise<Buffer> {
   const svg = chartMarksSvg(block, width, height);
+  const { default: sharp } = await import('sharp');
   return sharp(Buffer.from(svg), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
 }

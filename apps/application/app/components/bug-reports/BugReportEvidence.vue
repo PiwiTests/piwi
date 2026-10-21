@@ -5,7 +5,7 @@
  * outline of the page (built by the extension in the YAML form of an ARIA
  * snapshot; not Playwright's snapshot).
  */
-import { describeStepInWords, type BugScreenshot } from '@piwitests/core/bug-report';
+import { describeStepInParts, type BugScreenshot, type StepPart } from '@piwitests/core/bug-report';
 import type { ViewportBox } from '@piwitests/core/recording';
 import type { BugReportDetail } from '#shared/handlers/bug-reports';
 import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
@@ -17,10 +17,15 @@ const evidence = computed(() => props.report.evidence);
 const screenshotUrl = (index: number) => `${baseURL}api/bug-reports/${props.report.id}/screenshots/${index}`;
 const stepShots = computed(() => evidence.value.stepShots ?? []);
 const stepShotUrl = (step: number) => `${baseURL}api/bug-reports/${props.report.id}/step-shots/${step}`;
-const stepWords = (step: number) => {
+const stepParts = (step: number): StepPart[] => {
   const recorded = props.report.steps.steps[step];
-  return recorded ? describeStepInWords(recorded) : '';
+  return recorded ? describeStepInParts(recorded) : [];
 };
+/** A step in plain words, for a frame's name in the lightbox. */
+const stepWords = (step: number) =>
+  stepParts(step)
+    .map((part) => part.text)
+    .join('');
 function momentLabel(moment: BugScreenshot['moment']): string {
   if (moment === 'marked') return 'When a step was marked';
   if (moment === 'finish') return 'At the end';
@@ -120,7 +125,8 @@ const nothing = computed(
             />
           </ZoomableImage>
           <figcaption class="text-xs text-muted">
-            <span class="text-highlighted">Step {{ shot.step + 1 }}</span> · {{ stepWords(shot.step) }}
+            <span class="text-highlighted">Step {{ shot.step + 1 }}</span> ·
+            <BugStepText :parts="stepParts(shot.step)" />
           </figcaption>
         </figure>
       </div>

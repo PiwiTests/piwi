@@ -26,6 +26,7 @@ const login: TestSearchSubject = {
   owner: '@team/identity',
   priority: 'high',
   feature: 'sign-in',
+  externalId: 'TC-12',
 };
 const cart: TestSearchSubject = {
   title: 'cart shows items',
@@ -38,6 +39,7 @@ const cart: TestSearchSubject = {
   owner: null,
   priority: null,
   feature: 'checkout',
+  externalId: 'TC-7',
 };
 const home: TestSearchSubject = {
   title: 'homepage loads',
@@ -134,6 +136,13 @@ describe('compileTestSearch', () => {
     expect(titles('owner:@team/identity')).toEqual(['login via header']);
     expect(titles('priority:high')).toEqual(['login via header']);
     expect(titles('feature:checkout')).toEqual(['cart shows items']);
+  });
+
+  test('id matches a whole external ID, and repeated it matches any of them', () => {
+    expect(titles('id:tc-12')).toEqual(['login via header']);
+    expect(titles('id:TC-1')).toEqual([]);
+    expect(titles('id:TC-12 id:TC-7')).toEqual(['login via header', 'cart shows items']);
+    expect(titles('-id:TC-12')).toEqual(['cart shows items', 'homepage loads']);
   });
 
   test('a repeated single-value qualifier widens, a repeated multi-value one narrows', () => {
@@ -270,6 +279,7 @@ describe('completion', () => {
       'owner',
       'priority',
       'feature',
+      'id',
     ]);
   });
 

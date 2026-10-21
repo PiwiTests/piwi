@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Built with coverage instrumentation and marked [assembly: ExcludeFromCodeCoverage]: an assembly whose span
+       table the recorder reads and leaves out whole, as coverlet does. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <IsPackable>false</IsPackable>
+    <Instrument>TestCoverage</Instrument>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PiwiTests.Instrumentation.Coverage/PiwiTests.Instrumentation.Coverage.csproj" />
+  </ItemGroup>
+</Project>

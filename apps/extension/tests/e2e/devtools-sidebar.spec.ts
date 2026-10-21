@@ -43,7 +43,7 @@ test.describe('the Elements sidebar', () => {
     await expect(sidebar.getByRole('heading', { name: 'button · Apply coupon' })).toBeVisible();
     const first = sidebar.getByRole('listitem').first();
     await expect(first.locator('code')).toHaveText("getByRole('button', { name: 'Apply coupon' })");
-    await expect(first).toContainText('✓ unique · stable');
+    await expect(first).toContainText('unique · stable');
     // Every locator listed finds the selection with real Playwright.
     const locators = await sidebar.locator('li.locator code').allTextContents();
     expect(locators.length).toBeGreaterThan(1);

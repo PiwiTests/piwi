@@ -4,8 +4,9 @@
  * together over the executable lines of the projects in scope with coverage
  * on, with the change against the comparison period, and as dashed lines each
  * suite's share of the same lines, or each named area's (`split: 'areas'`).
- * A bucket with no new coverage says in its tooltip which day it carries, and
- * the subtitle notes carried buckets and totals under an earlier scope.
+ * A bucket with no new coverage says in its tooltip which day it carries, a
+ * bucket counting an incomplete e2e suite says so, and the subtitle notes
+ * carried buckets and totals under an earlier scope.
  */
 import type { AnalyticsCoverageTrend } from '#shared/analytics/types';
 import { GROUP_SERIES_COLORS, type TrendLine } from '~/utils/chart';
@@ -39,7 +40,13 @@ const lines = computed<TrendLine[]>(() => [
     points: (trend.value?.points ?? []).map((p) => ({
       date: p.date,
       value: p.linePercent,
-      note: p.carriedFrom ? `carried from ${f.value.date(p.carriedFrom)}` : null,
+      note:
+        [
+          p.carriedFrom ? `carried from ${f.value.date(p.carriedFrom)}` : null,
+          p.e2eIncomplete ? 'e2e incomplete: a backend restarted or was unreachable in the runs it counts' : null,
+        ]
+          .filter(Boolean)
+          .join(' · ') || null,
     })),
   },
   ...(trend.value?.series ?? []).map((suite, i) => ({

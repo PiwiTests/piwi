@@ -5,7 +5,7 @@ import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsCoverageTrend } from '../../analytics/types';
 import type { CoverageTrendOptions } from '../../analytics/registry';
 import { parseCoverageAreas } from '@piwitests/core/coverage-scope';
-import { COMBINED_SUITE, coveragePercent } from '../../coverage-combine';
+import { COMBINED_SUITE, E2E_SUITE, coveragePercent } from '../../coverage-combine';
 import { resolveProjectStates } from '../capabilities';
 import { dayKey, firstNonEmptyIndex, getAnalyticsContext, type AnalyticsContext, type ProjectAccess } from './common';
 
@@ -48,7 +48,9 @@ function asOf(series: Series, day: string): Series[number] | null {
  * `coverage_daily`, which keeps the totals after the reports they came from
  * are pruned. A bucket no project has a new day in carries the newest earlier
  * day (`carriedFrom`); `earlierScope` says a point counts a commit whose
- * totals were computed under an earlier coverage scope or areas.
+ * totals were computed under an earlier coverage scope or areas, and
+ * `e2eIncomplete` that a point counts a commit whose `e2e` suite is
+ * incomplete: every run it counts lost part of its server coverage.
  */
 export async function getAnalyticsCoverageTrend(
   db: DrizzleDB,
@@ -181,9 +183,11 @@ export async function getAnalyticsCoverageTrend(
     return next ? dayKey(Date.parse(`${next}T00:00:00Z`) - 1) : toDay;
   });
   const counted: Series = [];
-  const points = keys.map((date, i) => {
+  const countedOf: Series[] = [];
+  const bucketPoints = keys.map((date, i) => {
     const total = totalAsOf(ends[i]!);
     counted.push(...total.values);
+    countedOf.push(total.values);
     const days = total.values.map((v) => v.day).sort();
     return {
       date,
@@ -194,6 +198,11 @@ export async function getAnalyticsCoverageTrend(
       carriedFrom: days.length > 0 && days.at(-1)! < date ? days.at(-1)! : null,
     };
   });
+  const incomplete = await incompleteE2eCommits(db, counted);
+  const points = bucketPoints.map((point, i) => ({
+    ...point,
+    e2eIncomplete: countedOf[i]!.some((v) => incomplete.has(`${v.projectId}\0${v.commit}`)),
+  }));
 
   const first = firstNonEmptyIndex(points, (p) => p.linePercent === null);
   const shown = points.slice(first);
@@ -242,6 +251,32 @@ export async function getAnalyticsCoverageTrend(
 
 /** Commits a query reads at most at once. */
 const COMMIT_CHUNK = 200;
+
+/** The counted commits whose `e2e` suite is incomplete (every run it counts lost part of its server coverage), as `projectId\0commit`. */
+async function incompleteE2eCommits(db: DrizzleDB, counted: Series): Promise<Set<string>> {
+  const out = new Set<string>();
+  const byProject = new Map<number, Set<string>>();
+  for (const v of counted) byProject.set(v.projectId, (byProject.get(v.projectId) ?? new Set()).add(v.commit));
+  for (const [projectId, commits] of byProject) {
+    const list = [...commits];
+    for (let i = 0; i < list.length; i += COMMIT_CHUNK) {
+      const rows = await db
+        .select({ commit: coverageTotals.commit })
+        .from(coverageTotals)
+        .where(
+          and(
+            eq(coverageTotals.projectId, projectId),
+            inArray(coverageTotals.commit, list.slice(i, i + COMMIT_CHUNK)),
+            eq(coverageTotals.suite, E2E_SUITE),
+            eq(coverageTotals.area, ''),
+            eq(coverageTotals.incomplete, true),
+          ),
+        );
+      for (const r of rows) out.add(`${projectId}\0${r.commit}`);
+    }
+  }
+  return out;
+}
 
 /** Whether any counted commit's totals were computed under another scope version than its project's. */
 async function countsEarlierScope(db: DrizzleDB, counted: Series, versions: Map<number, number>): Promise<boolean> {

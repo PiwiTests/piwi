@@ -404,6 +404,11 @@ fn pick_port() -> u16 {
 /// The response header the sidecar's `/api/health` echoes the launch nonce in.
 const LAUNCH_NONCE_HEADER: &str = "x-piwi-desktop-nonce";
 
+/// How long one readiness probe waits to connect. Windows retries a connect to a
+/// loopback port nobody listens on for seconds before refusing it; this bound
+/// keeps each probe made while the server is still starting short.
+const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
+
 /// Dependency-free readiness probe. `/api/health` returns 200 only after the
 /// database has migrated, so a 200 means the app is ready to load — when it
 /// also carries this launch's nonce, which only the sidecar this app spawned
@@ -411,7 +416,8 @@ const LAUNCH_NONCE_HEADER: &str = "x-piwi-desktop-nonce";
 /// bootstrap and its token.
 fn health_ok(port: u16, nonce: &str) -> bool {
     use std::io::{Read, Write};
-    let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) else {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, PROBE_CONNECT_TIMEOUT) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
@@ -649,6 +655,33 @@ struct ServerConfig {
     launch_nonce: String,
     port: u16,
     log_path: PathBuf,
+    /// Where Node keeps the compiled code of the server's modules between launches
+    /// (`NODE_COMPILE_CACHE`); `None` when the folder could not be created.
+    compile_cache_dir: Option<PathBuf>,
+}
+
+/// The folder for Node's compile cache of this app version, under `root`, created
+/// if needed. Other versions' folders are deleted on another thread, off the
+/// startup path: the server's files change with every version, so their cached
+/// code never loads again.
+fn prepare_compile_cache(root: &Path, version: &str) -> Option<PathBuf> {
+    let dir = root.join(version);
+    std::fs::create_dir_all(&dir).ok()?;
+    let (root, version) = (root.to_path_buf(), version.to_string());
+    std::thread::spawn(move || remove_other_versions(&root, &version));
+    Some(dir)
+}
+
+/// Delete every entry of `root` but the `version` folder.
+fn remove_other_versions(root: &Path, version: &str) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry.file_name() != version {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 /// Spawn the bundled Node sidecar running the Nitro server. Returns its event
@@ -662,7 +695,7 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
             return None;
         }
     };
-    let cmd = cmd
+    let mut cmd = cmd
         .args([node_path(&cfg.server_entry)])
         .env("NODE_ENV", "production")
         .env("NITRO_HOST", "127.0.0.1")
@@ -676,6 +709,9 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
         // account/user management (single-user, auth off) and surfaces the local
         // connection details (data location, reporter token, MCP endpoint).
         .env("NUXT_PUBLIC_DESKTOP", "true");
+    if let Some(dir) = &cfg.compile_cache_dir {
+        cmd = cmd.env("NODE_COMPILE_CACHE", node_path(dir));
+    }
 
     match cmd.spawn() {
         Ok(pair) => Some(pair),
@@ -1611,6 +1647,12 @@ pub fn run() {
                 launch_nonce: launch_nonce.clone(),
                 port,
                 log_path: log_path.clone(),
+                compile_cache_dir: app.path().app_cache_dir().ok().and_then(|dir| {
+                    prepare_compile_cache(
+                        &dir.join("node-compile-cache"),
+                        &app.package_info().version.to_string(),
+                    )
+                }),
             };
             if let Some(initial) = spawn_server_process(app.handle(), &server_config) {
                 supervise_server(app.handle().clone(), server_config, initial, shutting_down.clone());
@@ -1846,9 +1888,10 @@ pub fn run() {
 mod tests {
     use super::{
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
-        health_response_proves, ide_launcher_args, is_known_launcher, is_sidecar_url,
-        is_truthy_flag, main_window_may_navigate, progress_bar_status, remote_capability,
-        render_status_dot, splash_status_script, status_dot_color, write_new_download,
+        health_ok, health_response_proves, ide_launcher_args, is_known_launcher, is_sidecar_url,
+        is_truthy_flag, main_window_may_navigate, prepare_compile_cache, progress_bar_status,
+        remote_capability, remove_other_versions, render_status_dot, splash_status_script,
+        status_dot_color, write_new_download,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
@@ -2078,6 +2121,22 @@ mod tests {
     }
 
     #[test]
+    fn a_probe_of_a_port_nobody_listens_on_gives_up_quickly() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let started = std::time::Instant::now();
+        assert!(!health_ok(port, "abc123"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
     fn the_sidecar_origin_is_matched_exactly() {
         let url = |s: &str| tauri::Url::parse(s).unwrap();
         assert!(is_sidecar_url(&url("http://127.0.0.1:3000/projects/1?x=1"), 3000));
@@ -2126,6 +2185,25 @@ mod tests {
         assert!(remote_capability(41234)
             .parse::<tauri::utils::acl::capability::CapabilityFile>()
             .is_ok());
+    }
+
+    #[test]
+    fn the_compile_cache_keeps_only_the_folder_of_this_version() {
+        let root = std::env::temp_dir().join(format!("piwi-compile-cache-{}", std::process::id()));
+        fs::create_dir_all(root.join("0.56.0/v24")).unwrap();
+        fs::create_dir_all(root.join("0.57.0")).unwrap();
+        fs::write(root.join("0.57.0/entry"), b"cached").unwrap();
+        remove_other_versions(&root, "0.57.0");
+        assert_eq!(fs::read(root.join("0.57.0/entry")).unwrap(), b"cached");
+        assert!(!root.join("0.56.0").exists());
+        // A first launch creates the folder.
+        let fresh = root.join("fresh");
+        assert_eq!(
+            prepare_compile_cache(&fresh, "1.0.0"),
+            Some(fresh.join("1.0.0"))
+        );
+        assert!(fresh.join("1.0.0").is_dir());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

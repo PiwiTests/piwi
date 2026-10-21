@@ -25,6 +25,7 @@ const {
   refresh,
 } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
 if (projectError.value) showPageLoadError(projectError.value, 'project');
+provideExternalIdUrl(() => project.value?.externalIdUrl);
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
 

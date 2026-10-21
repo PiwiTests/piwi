@@ -169,7 +169,7 @@ describe('JiraClient write methods', () => {
       .mockResolvedValueOnce(page(100, 20, true));
     const projects = await client.listProjects();
     expect(projects).toHaveLength(120);
-    expect(projects.at(-1)).toEqual({ id: '119', key: 'P119', name: 'P' });
+    expect(projects.at(-1)).toEqual({ id: '119', key: 'P119', name: 'P', icon: null });
     const urls = fetchMock.mock.calls.map((c) => String(c[0]));
     expect(urls).toEqual([
       'https://acme.atlassian.net/rest/api/3/project/search?startAt=0&maxResults=100',
@@ -179,8 +179,23 @@ describe('JiraClient write methods', () => {
   });
 
   test('listProjects stops after one page when the response has no paging fields', async () => {
-    fetchMock.mockResolvedValueOnce(response({ values: [{ id: '1', key: 'ABC', name: 'Abc' }] }));
-    expect(await client.listProjects()).toEqual([{ id: '1', key: 'ABC', name: 'Abc' }]);
+    fetchMock.mockResolvedValueOnce(
+      response({
+        values: [
+          {
+            id: '1',
+            key: 'ABC',
+            name: 'Abc',
+            avatarUrls: {
+              '24x24': 'https://acme.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/1',
+            },
+          },
+        ],
+      }),
+    );
+    expect(await client.listProjects()).toEqual([
+      { id: '1', key: 'ABC', name: 'Abc', icon: '/rest/api/3/universal_avatar/view/type/project/avatar/1' },
+    ]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

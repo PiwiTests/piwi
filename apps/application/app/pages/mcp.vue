@@ -102,13 +102,13 @@ const notListedTools = computed(() => [
 ]);
 
 const clientItems = [
-  { label: 'Claude Code', slot: 'claude-code' },
-  { label: 'Opencode', slot: 'opencode' },
-  { label: 'Cursor', slot: 'cursor' },
-  { label: 'VS Code', slot: 'vscode' },
-  { label: 'Claude Desktop', slot: 'claude-desktop' },
-  { label: 'Gemini CLI', slot: 'gemini' },
-  { label: 'Windsurf / Continue', slot: 'windsurf' },
+  { label: 'Claude Desktop', icon: 'i-simple-icons-claude', slot: 'claude-desktop' },
+  { label: 'Claude Code', icon: 'i-simple-icons-claude', slot: 'claude-code' },
+  { label: 'Opencode', icon: 'i-simple-icons-opencode', slot: 'opencode' },
+  { label: 'Cursor', icon: 'i-simple-icons-cursor', slot: 'cursor' },
+  { label: 'VS Code', icon: 'i-simple-icons-visualstudiocode', slot: 'vscode' },
+  { label: 'Gemini CLI', icon: 'i-simple-icons-googlegemini', slot: 'gemini' },
+  { label: 'Windsurf / Continue', icon: 'i-simple-icons-windsurf', slot: 'windsurf' },
 ];
 
 // The desktop app's one-click connect writes the entry under `piwi-desktop` so it
@@ -221,7 +221,7 @@ const windsurfSnippet = computed(() =>
 
     <template #body>
       <CapabilityDeclinedGuard capability="mcp" label="MCP server">
-        <div class="w-full max-w-3xl mx-auto p-6 space-y-6">
+        <div class="w-full max-w-4xl mx-auto p-6 space-y-6">
           <UAlert
             v-if="isDemo"
             color="info"
@@ -313,7 +313,22 @@ const windsurfSnippet = computed(() =>
               >
             </p>
 
-            <UTabs :items="clientItems" :ui="{ list: 'mb-4' }">
+            <!-- One client per row beside its snippet; below `sm` the list wraps into two
+                 columns above it, the active client marked by its own background. -->
+            <UTabs
+              :items="clientItems"
+              orientation="vertical"
+              variant="link"
+              :ui="{
+                root: 'items-start gap-5 max-sm:flex-col max-sm:items-stretch',
+                list: 'w-48 shrink-0 border-l max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:gap-1 max-sm:border-l-0 max-sm:p-0',
+                indicator: '-left-px w-px max-sm:hidden',
+                trigger:
+                  'justify-start max-sm:rounded-md max-sm:data-[state=active]:bg-elevated max-sm:data-[state=active]:text-highlighted',
+                label: 'whitespace-normal text-left',
+                content: 'min-w-0 flex-1',
+              }"
+            >
               <!-- Claude Code -->
               <template #claude-code>
                 <div class="space-y-3">
@@ -379,11 +394,11 @@ const windsurfSnippet = computed(() =>
                   <p class="text-sm text-gray-600 dark:text-gray-400">Add to your Claude Desktop config file:</p>
                   <ul class="text-xs text-gray-400 space-y-0.5 mb-2">
                     <li>
-                      <strong>macOS:</strong>
+                      <strong>macOS:</strong>{{ ' ' }}
                       <code class="font-mono">~/Library/Application Support/Claude/claude_desktop_config.json</code>
                     </li>
                     <li>
-                      <strong>Windows:</strong>
+                      <strong>Windows:</strong>{{ ' ' }}
                       <code class="font-mono">%APPDATA%\Claude\claude_desktop_config.json</code>
                     </li>
                   </ul>

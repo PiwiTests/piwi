@@ -1,4 +1,5 @@
 import type { IssueDocument } from '#shared/integrations/document';
+import type { TrackerIssueOption } from '#shared/integrations/types';
 import type { TrackerField } from '#shared/integrations/fields';
 
 /** Tracker providers that have a server-side client. */
@@ -11,17 +12,23 @@ export interface TrackerUser {
   id: string;
   displayName: string;
   email?: string | null;
+  /** The person's avatar: a URL on a public avatar host, or a path on the tracker's site. */
+  icon?: string | null;
 }
 
 export interface TrackerProject {
   id: string;
   key: string;
   name: string;
+  /** The project's avatar, as a path on the tracker's site served through the connection. */
+  icon?: string | null;
 }
 
 export interface TrackerIssueType {
   id: string;
   name: string;
+  /** The issue type's icon, as a path on the tracker's site served through the connection. */
+  icon?: string | null;
 }
 
 export interface TrackerTransition {
@@ -95,6 +102,13 @@ export interface IssueTracker {
   /** The fields of the create screen for a project and issue type (id or name). */
   listCreateFields?(projectKey: string, issueType: string): Promise<TrackerField[]>;
   searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]>;
+  /** Issues matching a key or words of a summary, the project's first, for a field that points at an issue. */
+  pickIssues?(query: string, projectKey?: string | null): Promise<TrackerIssueOption[]>;
+  /**
+   * An icon the tracker serves behind its sign-in (an issue type's, a project's), by its path on the site.
+   * Null when there is no such image; throws when the tracker cannot answer for now.
+   */
+  fetchIcon?(path: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;
   addComment(key: string, body: IssueDocument): Promise<void>;

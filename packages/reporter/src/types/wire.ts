@@ -89,6 +89,14 @@ export interface WireTestCase {
   locks?: string[] | null;
   /** Ownership metadata parsed from `piwi:` annotations. */
   testMeta?: TestMetadata | null;
+  /**
+   * The test's external ID (`piwi:id`, or read from the title with the reporter's `externalId.pattern`). `null` when
+   * the reporter found none or set it aside as a duplicate; absent from older reporters, in which case the server reads
+   * `piwi:id` from `testAnnotations`.
+   */
+  externalId?: string | null;
+  /** The title without its external ID, when the reporter's `externalId.stripFromTitle` is on. `title` stays whole. */
+  displayTitle?: string | null;
   /** Step-event discriminant (only for `step-begin`/`step-end` events). */
   stepCategory?: string | null;
   parentTitle?: string | null;
@@ -148,6 +156,8 @@ export interface CompleteStreamEvent {
   tags?: string[] | null;
   locks?: string[] | null;
   testMeta?: TestMetadata | null;
+  externalId?: string | null;
+  displayTitle?: string | null;
   steps?: unknown;
   stepEvents?: TestStepEvent[] | null;
   slowestStep?: string | null;

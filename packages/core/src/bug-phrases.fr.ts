@@ -139,6 +139,7 @@ const STATES: Record<BugState, [masculine: string, feminine: string]> = {
   hidden: ['masqué', 'masquée'],
   enabled: ['activé', 'activée'],
   disabled: ['désactivé', 'désactivée'],
+  checked: ['coché', 'cochée'],
 };
 
 const number = (n: number): string => new Intl.NumberFormat('fr-FR').format(n);
@@ -154,6 +155,7 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
   roles: ROLES,
   quote,
   code: markdownCode,
+  key,
   capitalize: (text) => `${text.charAt(0).toLocaleUpperCase('fr')}${text.slice(1)}`,
   steps: {
     goto: (url) => `Ouvrir ${markdownCode(url)}`,
@@ -170,6 +172,7 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
         ? `Vider ${phrase(s)}`
         : `Choisir ${files.length === 1 ? 'le fichier' : 'les fichiers'} ${files.map(quote).join(', ')} dans ${phrase(s)}`,
     dragTo: (s, target) => `Glisser ${phrase(s)} sur ${phrase(target)}`,
+    manual: (description) => `À la main${NBSP}: ${description}`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'ne devrait pas' : 'devrait';
@@ -183,6 +186,10 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
         return `${text} ${should} s’appeler ${quote(e.expected)}`;
       case 'url':
         return `la page ${should} être ${markdownCode(e.expected)}`;
+      case 'contains':
+        return `${text} ${should} contenir ${quote(e.expected)}`;
+      case 'count':
+        return `${text} ${should} correspondre à ${plural(e.count, 'élément', 'éléments')}`;
       case 'state':
         return `${text} ${should} être ${STATES[e.state][n.gender === 'feminine' ? 1 : 0]}`;
     }
@@ -209,6 +216,7 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
     note: (text) => `Note${NBSP}: ${text}`,
     viewport: (size, zoom) =>
       `Fenêtre à partir de cette étape${NBSP}: ${size}${zoom != null ? `, zoom à ${percent(zoom)}` : ''}`,
+    failedInRun: 'Le test a échoué ici dans l’exécution dont ce rapport est tiré',
     expectedHeading: 'Attendu et constaté',
     nothingMarked: 'Rien n’a été marqué comme incorrect.',
     expectedLine: (step, expectation, actual) =>
@@ -236,5 +244,8 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
       `${r.request} → ${r.status > 0 ? String(r.status) : 'pas de réponse'}, sur ${r.page} à ${r.time}`,
     outlineHeading: 'Plan de la page',
     outlineNote: `Construit par Piwi Picker à partir de la page${NNBSP}; la forme YAML d’un instantané ARIA, pas celui de Playwright.`,
+    notReplayedHeading: 'Non rejoué',
+    notReplayedNote: `Appels du test que ces étapes laissent de côté${NBSP}: ni Replay ni le test généré ne les exécutent.`,
+    notReplayedLine: (e) => `${e.call}${e.location ? ` à ${e.location}` : ''}${NBSP}: ${e.reason}`,
   },
 };

@@ -5,13 +5,28 @@ import type { StorageAdapter } from '../storage/types';
 /** How many files a directory upload reads and writes at once. */
 const UPLOAD_CONCURRENCY = 8;
 
-/** Run `task` over `items`, at most `limit` at a time. */
+/**
+ * Run `task` over `items`, at most `limit` at a time. After a task fails no
+ * new one starts, and the first failure is rethrown only once every task in
+ * flight has settled, so a caller cleaning up after it never races a write
+ * still landing.
+ */
 export async function forEachLimited<T>(items: T[], limit: number, task: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
+  let failed = false;
   const worker = async () => {
-    while (next < items.length) await task(items[next++]!);
+    while (!failed && next < items.length) {
+      try {
+        await task(items[next++]!);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  const results = await Promise.allSettled(Array.from({ length: Math.min(limit, items.length) }, worker));
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure) throw failure.reason;
 }
 
 /**

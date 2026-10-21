@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { isUniqueViolation } from '~~/server/utils/ai-diagnosis';
+import { isUniqueViolation } from '~~/server/utils/db-errors';
 
 // The DB-level diagnosis claim converts a unique-index violation (a concurrent
 // instance won the race) into a 409, so this detector must recognise the shape

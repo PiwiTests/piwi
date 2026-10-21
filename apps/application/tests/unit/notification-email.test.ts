@@ -125,7 +125,7 @@ describe('notification email escaping', () => {
       signature: `${hostile} sig`,
       knownIssue: { key: hostile, url: 'https://tracker.example.com/?a=1&b="2"' },
     });
-    expect(html).not.toContain('<img');
+    expect(html).not.toContain('<img src=x');
     expect(html).toContain(escaped);
     expect(html).toContain('href="https://tracker.example.com/?a=1&amp;b=&quot;2&quot;"');
     expect(html).toContain(`<title>Cluster stopped failing — ${escaped}</title>`);
@@ -137,7 +137,7 @@ describe('notification email escaping', () => {
       projectName: hostile,
       title: hostile,
     });
-    expect(html).not.toContain('<img');
+    expect(html).not.toContain('<img src=x');
     expect(html).toContain(escaped);
   });
 
@@ -152,7 +152,7 @@ describe('notification email escaping', () => {
       knownIssue: { key: 'K-1', url: 'https://tracker.example.com/?a=1&b="2"' },
     };
     const { html } = renderNotificationEmail('cluster.new', payload);
-    expect(html).not.toContain('<img');
+    expect(html).not.toContain('<img src=x');
     expect(html).toContain('href="https://tracker.example.com/?a=1&amp;b=&quot;2&quot;"');
     expect(html).toContain(`<title>New failure cluster — ${escaped}</title>`);
   });

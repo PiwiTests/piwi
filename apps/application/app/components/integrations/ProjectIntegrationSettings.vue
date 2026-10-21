@@ -23,7 +23,7 @@ import {
 } from '~/utils/tracker-binding-form';
 import { SUPPORTED_LOCALES } from '#shared/integrations/messages';
 import { JIRA_NO_PROJECTS_HINT, jiraProjectUrl } from '#shared/integrations/jira-setup';
-import { requiredFieldsToFill, type FieldValues } from '#shared/integrations/fields';
+import { requiredFieldsToAsk, type FieldValues } from '#shared/integrations/fields';
 import type { TrackerSummary, TrackerProjectOption, TrackerIssueTypeOption } from '#shared/integrations/types';
 
 const props = defineProps<{ projectId: number }>();
@@ -78,10 +78,19 @@ const connectionItems = computed(() => [
   { label: 'None — unbound', value: 0 },
   ...connections.value.map((c) => ({ label: c.name, value: c.id })),
 ]);
+const trackerIcon = useTrackerIcon();
 const projectKeyItems = computed(() =>
-  jiraProjects.value.map((p) => ({ label: `${p.key} — ${p.name}`, value: p.key })),
+  jiraProjects.value.map((p) => ({
+    label: `${p.key} — ${p.name}`,
+    value: p.key,
+    avatar: trackerIcon(form.connectionId, p.icon),
+  })),
 );
-const issueTypeItems = computed(() => issueTypes.value.map((t) => ({ label: t.name, value: t.id })));
+const issueTypeItems = computed(() =>
+  issueTypes.value.map((t) => ({ label: t.name, value: t.id, avatar: trackerIcon(form.connectionId, t.icon) })),
+);
+const projectAvatar = computed(() => projectKeyItems.value.find((p) => p.value === form.projectKey)?.avatar);
+const issueTypeAvatar = computed(() => issueTypeItems.value.find((t) => t.value === form.issueType)?.avatar);
 
 /** The connection the project list was last loaded for, so an empty list is not shown while loading. */
 const projectsLoadedFor = ref(0);
@@ -249,8 +258,8 @@ const {
   () => form.projectKey || null,
   () => form.issueType || null,
 );
-/** The required fields to give a default: required, not filled by Jira, not managed by Piwi. */
-const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
+/** The required fields to give a default: required and not managed by Piwi. */
+const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
 </script>
 
 <template>
@@ -285,6 +294,7 @@ const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
             <USelectMenu
               v-model="form.projectKey"
               :items="projectKeyItems"
+              :avatar="projectAvatar"
               value-key="value"
               searchable
               create-item
@@ -296,6 +306,7 @@ const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
             <USelectMenu
               v-model="form.issueType"
               :items="issueTypeItems"
+              :avatar="issueTypeAvatar"
               value-key="value"
               placeholder="Issue type"
               class="w-full"

@@ -38,6 +38,8 @@ export const BUG_EVIDENCE_LIMITS = {
   outlineLines: 400,
   /** Characters kept of one console message. */
   messageLength: 500,
+  /** Calls of a test run a report made from it leaves out, listed in its `export` block. */
+  notes: 100,
 } as const;
 
 export interface BugConsoleEntry {
@@ -121,11 +123,38 @@ export interface BugContext {
   extensionVersion: string | null;
 }
 
+/** A call of a test run that a report made from the run leaves out, and why. */
+export interface BugReportNote {
+  /** The call as Playwright titles it, such as `POST /api/seed`. */
+  title: string;
+  /** Where it is in the test's source, `file:line`, when known. */
+  location: string | null;
+  reason: string;
+}
+
+/**
+ * Where a report made from a test run came from: the execution, the test, the
+ * step the test failed at in that run (an index into the steps, null when it
+ * failed elsewhere), and the calls of the test its steps leave out. Absent
+ * from a report recorded in a browser.
+ */
+export interface BugReportExport {
+  source: 'execution';
+  executionId: number | null;
+  testTitle: string | null;
+  failedStep: number | null;
+  notes: BugReportNote[];
+  /** Notes past the limit, counted but not kept. */
+  notesDropped: number;
+}
+
 export interface BugReport {
   v: typeof BUG_REPORT_VERSION;
   steps: PiwiSteps;
   evidence: BugEvidence;
   context: BugContext;
+  /** Set on a report made from a test run; see {@link BugReportExport}. */
+  export?: BugReportExport;
 }
 
 export function emptyBugEvidence(): BugEvidence {
@@ -273,41 +302,75 @@ function line(s: string): string {
   return s.replace(/\s+/g, ' ').replace(/</g, '&lt;').trim();
 }
 
+/** What kind of code a step names: an address, a locator, or other code (a test id). */
+export type StepCodeKind = 'url' | 'locator' | 'code';
+
+/**
+ * What a step's sentence takes from the step besides the phrasebook's own
+ * words: the page's names and texts, the values typed or expected, the files
+ * chosen, code, the key pressed and what a person wrote. {@link WORDS} writes
+ * them as the sentence shows them; {@link describeStepInParts} writes a
+ * stand-in for each, to find where the phrasebook put it.
+ */
+interface StepWriter {
+  /** A name or a text of the page, or a value typed or expected, on one line; a file's name as it is. */
+  text(kind: 'name' | 'value' | 'file', text: string): string;
+  /** A URL, a locator or a test id, as it is. */
+  code(kind: StepCodeKind, text: string): string;
+  /** A key's name, such as `ControlOrMeta+a`, which the phrasebook writes as keyboards print it. */
+  key(name: string): string;
+  /** What a person wrote, such as a manual step's description, on one line. */
+  words(text: string): string;
+}
+
+const WORDS: StepWriter = {
+  text: (kind, text) => (kind === 'file' ? text : line(text)),
+  code: (_kind, text) => text,
+  key: (name) => name,
+  words: line,
+};
+
 /**
  * How a report names an element: its role and name, its test id, its text, or
  * its tag. `byText: false` leaves out the names that come from its text, for an
  * assertion about that text: "Total: 50" should read "Total: 45" names the
  * element by the very value that is wrong.
  */
-function subjectOf(target: RecordedTarget | null, byText = true): BugSubject {
+function subjectOf(target: RecordedTarget | null, byText = true, w: StepWriter = WORDS): BugSubject {
   if (!target) return { kind: 'page' };
   const locator = target.alternatives[0]?.locator;
   if (!byText) {
-    if (target.testId) return { kind: 'testId', testId: target.testId };
-    if (locator) return { kind: 'locator', locator };
+    if (target.testId) return { kind: 'testId', testId: w.code('code', target.testId) };
+    if (locator) return { kind: 'locator', locator: w.code('locator', locator) };
     return { kind: 'element', role: target.role, tagName: target.tagName, definite: true };
   }
   if (target.role && target.accessibleName)
-    return { kind: 'named', role: target.role, name: line(target.accessibleName) };
-  if (target.accessibleName) return { kind: 'name', name: line(target.accessibleName) };
-  if (target.testId) return { kind: 'testId', testId: target.testId };
+    return { kind: 'named', role: target.role, name: w.text('name', target.accessibleName) };
+  if (target.accessibleName) return { kind: 'name', name: w.text('name', target.accessibleName) };
+  if (target.testId) return { kind: 'testId', testId: w.code('code', target.testId) };
   if (target.text)
-    return { kind: 'text', role: target.role, tagName: target.tagName, text: line(target.text.slice(0, 80)) };
-  if (locator) return { kind: 'locator', locator };
+    return { kind: 'text', role: target.role, tagName: target.tagName, text: w.text('name', target.text.slice(0, 80)) };
+  if (locator) return { kind: 'locator', locator: w.code('locator', locator) };
   return { kind: 'element', role: target.role, tagName: target.tagName, definite: false };
 }
 
-function expectationOf(a: StepAssertion): BugExpectation {
+function expectationOf(a: StepAssertion, w: StepWriter = WORDS): BugExpectation {
   const expected = a.expected ?? '';
   switch (a.matcher) {
     case 'toHaveText':
-      return { matcher: 'text', expected: line(expected) };
+      return { matcher: 'text', expected: w.text('value', expected) };
     case 'toHaveValue':
-      return { matcher: 'value', expected: line(expected) };
+      return { matcher: 'value', expected: w.text('value', expected) };
     case 'toHaveAccessibleName':
-      return { matcher: 'name', expected: line(expected) };
+      return { matcher: 'name', expected: w.text('value', expected) };
     case 'toHaveURL':
-      return { matcher: 'url', expected };
+      return { matcher: 'url', expected: w.code('url', expected) };
+    case 'toContainText':
+      return { matcher: 'contains', expected: w.text('value', expected) };
+    case 'toHaveCount':
+      return { matcher: 'count', count: Number.parseInt(expected, 10) || 0 };
+    case 'toBeChecked':
+      return { matcher: 'state', state: 'checked' };
     case 'toBeHidden':
       return { matcher: 'state', state: 'hidden' };
     case 'toBeEnabled':
@@ -319,21 +382,26 @@ function expectationOf(a: StepAssertion): BugExpectation {
   }
 }
 
-/** An expectation in plain words, such as `button "Apply" should read "Total: 42"`, in the phrasebook's language. */
-export function describeExpectation(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
+function expectationSentence(step: RecordedStep, phrases: BugPhrases, w: StepWriter): string {
   const a = step.assertion;
-  if (!a) return phrases.expectation(subjectOf(step.target), { matcher: 'state', state: 'visible' }, false);
-  const byText = a.matcher !== 'toHaveText' && a.matcher !== 'toHaveAccessibleName';
-  return phrases.expectation(subjectOf(step.target, byText), expectationOf(a), !!a.negated);
+  if (!a) return phrases.expectation(subjectOf(step.target, true, w), { matcher: 'state', state: 'visible' }, false);
+  const byText = a.matcher !== 'toHaveText' && a.matcher !== 'toHaveAccessibleName' && a.matcher !== 'toContainText';
+  return phrases.expectation(subjectOf(step.target, byText, w), expectationOf(a, w), !!a.negated);
 }
 
-/** A step in plain words, for a person reproducing it by hand, in the phrasebook's language. */
-export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
-  const target = subjectOf(step.target);
-  const value: BugStepValue = step.redacted ? { kind: 'password' } : { kind: 'text', text: line(step.value ?? '') };
+/** An expectation in plain words, such as `button "Apply" should read "Total: 42"`, in the phrasebook's language. */
+export function describeExpectation(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
+  return expectationSentence(step, phrases, WORDS);
+}
+
+function stepSentence(step: RecordedStep, phrases: BugPhrases, w: StepWriter): string {
+  const target = subjectOf(step.target, true, w);
+  const value: BugStepValue = step.redacted
+    ? { kind: 'password' }
+    : { kind: 'text', text: w.text('value', step.value ?? '') };
   switch (step.action) {
     case 'goto':
-      return phrases.steps.goto(step.value ?? step.pageUrl);
+      return phrases.steps.goto(w.code('url', step.value ?? step.pageUrl));
     case 'click':
       return phrases.steps.click(target);
     case 'hover':
@@ -347,17 +415,106 @@ export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = EN
     case 'selectOption':
       return phrases.steps.selectOption(target, value);
     case 'press':
-      return phrases.steps.press(step.value ?? 'Enter', step.target ? target : null);
+      return phrases.steps.press(w.key(step.value ?? 'Enter'), step.target ? target : null);
     case 'dblclick':
       return phrases.steps.dblclick(target);
     case 'setInputFiles':
-      return phrases.steps.setInputFiles(target, fileNames(step.value));
+      return phrases.steps.setInputFiles(
+        target,
+        fileNames(step.value).map((file) => w.text('file', file)),
+      );
     case 'dragTo':
-      return phrases.steps.dragTo(target, subjectOf(step.dropTarget ?? null));
+      return phrases.steps.dragTo(target, subjectOf(step.dropTarget ?? null, true, w));
     case 'assertVisible':
     case 'assert':
-      return phrases.capitalize(describeExpectation(step, phrases));
+      return phrases.capitalize(expectationSentence(step, phrases, w));
+    case 'manual':
+      return phrases.steps.manual(w.words(step.manual?.description ?? ''));
   }
+}
+
+/** A step in plain words, for a person reproducing it by hand, in the phrasebook's language. */
+export function describeStepInWords(step: RecordedStep, phrases: BugPhrases = ENGLISH): string {
+  return stepSentence(step, phrases, WORDS);
+}
+
+/**
+ * A part of a step's sentence: the phrasebook's words (`text`), a name of the
+ * page, a value typed, expected or chosen (a file), each in its quotation marks
+ * as the sentence has it, the key pressed, a URL, a locator or a test id
+ * (`code`), or what a person wrote (`words`).
+ */
+export interface StepPart {
+  kind: 'text' | 'name' | 'value' | 'key' | 'words' | StepCodeKind;
+  text: string;
+}
+
+/** The first of the characters that stand in for a step's parts: Unicode's private use area, which no phrasebook writes. */
+const STAND_IN = 0xe000;
+
+/**
+ * A sentence `write` builds with the phrasebook, in its parts: the phrasebook
+ * writes it around a stand-in for each part the writer is given, and the
+ * parts take their places, with the quotation marks the phrasebook put around
+ * a name or a value.
+ */
+function sentenceInParts(phrases: BugPhrases, write: (w: StepWriter) => string): StepPart[] {
+  const parts: StepPart[] = [];
+  const standIn = (part: StepPart): string => {
+    parts.push(part);
+    return String.fromCharCode(STAND_IN + parts.length - 1);
+  };
+  const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+  const sentence = write({
+    text: (kind, text) =>
+      standIn({ kind: kind === 'name' ? 'name' : 'value', text: kind === 'file' ? text : oneLine(text) }),
+    code: (kind, text) => standIn({ kind, text }),
+    key: (name) => standIn({ kind: 'key', text: phrases.key(name) }),
+    words: (text) => standIn({ kind: 'words', text: oneLine(text) }),
+  });
+
+  // Where each stand-in landed, with the quotation marks or the code marks the phrasebook put around it.
+  const placed: { start: number; end: number; part: StepPart }[] = [];
+  parts.forEach((part, i) => {
+    const mark = String.fromCharCode(STAND_IN + i);
+    const forms: [string, StepPart][] = [
+      [phrases.quote(mark), { ...part, text: phrases.quote(part.text) }],
+      [phrases.code(mark), part],
+      [mark, part],
+    ];
+    const form = forms.find(([written]) => sentence.includes(written));
+    if (!form) return;
+    for (let at = sentence.indexOf(form[0]); at !== -1; at = sentence.indexOf(form[0], at + form[0].length)) {
+      placed.push({ start: at, end: at + form[0].length, part: form[1] });
+    }
+  });
+  placed.sort((a, b) => a.start - b.start);
+
+  const out: StepPart[] = [];
+  let last = 0;
+  for (const { start, end, part } of placed) {
+    if (start > last) out.push({ kind: 'text', text: sentence.slice(last, start) });
+    out.push(part);
+    last = end;
+  }
+  if (last < sentence.length) out.push({ kind: 'text', text: sentence.slice(last) });
+  return out;
+}
+
+/**
+ * A step's sentence, as {@link describeStepInWords} writes it, in its parts,
+ * for a surface that sets the names, values, keys and code apart. Each part
+ * comes from the step itself, never from reading the sentence again. Joined,
+ * the parts read as the sentence without its Markdown code marks; a page's
+ * text keeps its `<`, which the sentence escapes for Markdown.
+ */
+export function describeStepInParts(step: RecordedStep, phrases: BugPhrases = ENGLISH): StepPart[] {
+  return sentenceInParts(phrases, (w) => stepSentence(step, phrases, w));
+}
+
+/** An expectation, as {@link describeExpectation} writes it, in its parts: see {@link describeStepInParts}. */
+export function describeExpectationInParts(step: RecordedStep, phrases: BugPhrases = ENGLISH): StepPart[] {
+  return sentenceInParts(phrases, (w) => expectationSentence(step, phrases, w));
 }
 
 function formatTime(time: number): string {
@@ -411,6 +568,7 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
   out.push(`## ${words.stepsHeading}`, '');
   if (doc.steps.length === 0) out.push(words.noSteps);
   const viewportAt = new Map((doc.viewports ?? []).map((v) => [v.step, v]));
+  const failedStep = report.export?.failedStep ?? null;
   doc.steps.forEach((step, i) => {
     out.push(`${i + 1}. ${describeStepInWords(step, phrases)}`);
     const viewport = viewportAt.get(i);
@@ -418,6 +576,13 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
     const a = step.action === 'assert' ? step.assertion : undefined;
     if (a?.actual != null && a.actual !== a.expected) out.push(`   - ${words.actual(phrases.quote(line(a.actual)))}`);
     if (a?.note?.trim()) out.push(`   - ${words.note(line(a.note))}`);
+    const manual = step.action === 'manual' ? step.manual : undefined;
+    if (manual?.call || manual?.location) {
+      out.push(
+        `   - ${[manual.call ? code(line(manual.call)) : null, manual.location ? code(manual.location) : null].filter(Boolean).join(' · ')}`,
+      );
+    }
+    if (i === failedStep) out.push(`   - ${words.failedInRun}`);
   });
   out.push('');
 
@@ -433,6 +598,16 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
     }
   }
   out.push('');
+
+  const notes = report.export?.notes ?? [];
+  if (notes.length > 0) {
+    out.push(`## ${words.notReplayedHeading}`, '', words.notReplayedNote, '');
+    for (const note of notes) {
+      const location = note.location ? code(note.location) : null;
+      out.push(`- ${words.notReplayedLine({ call: code(line(note.title)), location, reason: line(note.reason) })}`);
+    }
+    out.push('');
+  }
 
   out.push(`## ${words.evidenceHeading}`, '', summarizeEvidence(evidence, phrases), '');
   if (evidence.screenshots.length > 0) {
@@ -517,6 +692,35 @@ export function bugContextFrom(input: {
 }
 
 export type ParseBugReportResult = { ok: true; report: BugReport } | { ok: false; errors: string[] };
+
+function checkNote(v: unknown): BugReportNote | null {
+  if (!isRecord(v) || typeof v.title !== 'string' || typeof v.reason !== 'string') return null;
+  return {
+    title: v.title.slice(0, BUG_EVIDENCE_LIMITS.messageLength),
+    location: textOf(v.location, BUG_EVIDENCE_LIMITS.messageLength),
+    reason: v.reason.slice(0, BUG_EVIDENCE_LIMITS.messageLength),
+  };
+}
+
+/** A report's `export` block, field by field, its step a step the report has; none when it is not one. */
+function exportOf(v: unknown, stepCount: number): { export?: BugReportExport } {
+  if (!isRecord(v) || v.source !== 'execution') return {};
+  const id = v.executionId;
+  const step = v.failedStep;
+  const notes = Array.isArray(v.notes) ? v.notes : [];
+  const kept = listOf(notes, BUG_EVIDENCE_LIMITS.notes, checkNote);
+  return {
+    export: {
+      source: 'execution',
+      executionId: typeof id === 'number' && Number.isInteger(id) && id > 0 ? id : null,
+      testTitle: textOf(v.testTitle, BUG_EVIDENCE_LIMITS.messageLength),
+      failedStep: typeof step === 'number' && Number.isInteger(step) && step >= 0 && step < stepCount ? step : null,
+      notes: kept,
+      notesDropped:
+        Math.max(0, Math.floor(numberOf(v.notesDropped))) + Math.max(0, notes.length - BUG_EVIDENCE_LIMITS.notes),
+    },
+  };
+}
 
 const SCREENSHOT_FILE = /^screenshots\/[1-9]-(marked|finish|manual)\.png$/;
 
@@ -694,7 +898,7 @@ export function isBugReportArchive(bytes: Uint8Array): boolean {
 
 /**
  * Reads a bug report from the files of its archive: `steps.json`, and
- * `evidence.json` (`{ v, context, evidence }`), null when the archive has
+ * `evidence.json` (`{ v, context, evidence, export? }`), null when the archive has
  * none. Checked as {@link parseBugReport} checks a report.
  */
 export function bugReportFromFiles(files: { steps: string; evidence: string | null }): ParseBugReportResult {
@@ -718,6 +922,7 @@ export function bugReportFromFiles(files: { steps: string; evidence: string | nu
     steps,
     evidence: evidence.evidence,
     context: evidence.context,
+    export: evidence.export,
   });
 }
 
@@ -749,6 +954,7 @@ export function parseBugReport(input: unknown): ParseBugReportResult {
       steps: steps.steps,
       evidence: checkEvidence(value.evidence),
       context: checkContext(value.context),
+      ...exportOf(value.export, steps.steps.steps.length),
     },
   };
 }

@@ -1,3 +1,4 @@
+import { INVALID_EXTERNAL_ID_URL } from '#shared/external-id-link';
 import { generatedSpecSettingsSchema } from '#shared/handlers/bug-reports';
 import { getDatabase } from '../../database';
 import { z } from 'zod';
@@ -51,6 +52,8 @@ const updateProjectSchema = z.object({
   repositoryUrl: z.string().max(2000).optional().nullable(),
   defaultBranch: z.string().optional().nullable(),
   openApiUrl: z.string().url().max(2000).optional().nullable().or(z.literal('')),
+  /** Link to a test in the team's test management tool, holding `{id}`; null or '' removes it. */
+  externalIdUrl: z.string().max(500).optional().nullable(),
   serverProbes: z
     .object({
       enabled: z.boolean().optional(),
@@ -104,6 +107,7 @@ export default eventHandler(async (event) => {
     repositoryUrl,
     defaultBranch,
     openApiUrl,
+    externalIdUrl,
     serverProbes,
     ciRerun,
     quarantineFailsStatus,
@@ -137,6 +141,7 @@ export default eventHandler(async (event) => {
       repositoryUrl,
       defaultBranch: defaultBranch != null ? defaultBranch.trim() || null : defaultBranch,
       openApiUrl: openApiUrl != null ? openApiUrl.trim() || null : openApiUrl,
+      externalIdUrl,
       serverProbes:
         serverProbes === undefined
           ? undefined
@@ -168,7 +173,8 @@ export default eventHandler(async (event) => {
       e?.message === 'One or more tag IDs are invalid' ||
       e?.message === INVALID_COVERAGE_SCOPE ||
       e?.message === INVALID_COVERAGE_AREAS ||
-      e?.message === INVALID_REPOSITORY_URL
+      e?.message === INVALID_REPOSITORY_URL ||
+      e?.message === INVALID_EXTERNAL_ID_URL
     ) {
       throw apiError({ statusCode: 400, message: e.message });
     }

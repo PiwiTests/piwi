@@ -8,6 +8,7 @@
  */
 import { chartMarksSvg } from '#shared/reports/chart';
 import { makeFormatter } from '#shared/reports/format';
+import { BRAND_MARK_DATA_URL } from '#shared/brand';
 import { EMAIL_CHART, emailTrendBlock, renderReportEmail } from '#shared/reports/render-email';
 import type { ReportSchedulePreview } from '#shared/handlers/reports';
 
@@ -78,6 +79,7 @@ const email = computed(() => {
     chartSrc,
     shareUrl: props.includeShareLink ? `${siteUrl.value}/share` : null,
     siteUrl: siteUrl.value,
+    markSrc: BRAND_MARK_DATA_URL,
   });
   // A picture of the message: its links go nowhere from here.
   return {

@@ -6,6 +6,7 @@
  * RegExp patterns – the same routes the Nuxt server exposes.
  */
 
+import { mergeTestCases } from '#shared/handlers/test-case-merge';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ZodType } from 'zod';
 import {
@@ -78,6 +79,7 @@ import {
   parseRunCoverageQuery,
   parseSourceQuery,
   storeRunCoverage,
+  storeRunCoverageGaps,
 } from '~~/server/utils/coverage';
 import {
   PROJECT_NOT_FOUND,
@@ -123,7 +125,12 @@ import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
-import { apiExportTestRunCase, apiExportFailureCluster } from './export';
+import {
+  apiExecutionBugReport,
+  apiExecutionReplaySteps,
+  apiExportTestRunCase,
+  apiExportFailureCluster,
+} from './export';
 import {
   apiCreateReportSchedule,
   apiCreateReportSnapshot,
@@ -343,6 +350,7 @@ import {
   demoCreateFields,
   demoTransitionSample,
   demoAssignable,
+  demoIssuePicker,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
   demoAutoCreatePreview,
@@ -416,6 +424,7 @@ import {
 import { apiDeleteTestRun } from './test-runs';
 import { setRunIncident } from '#shared/handlers/run-health';
 import { parseSetRunIncident } from '#shared/run-incident';
+import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import {
   addBugReproduction,
   isReproductionRunAllowed,
@@ -1174,6 +1183,7 @@ const routes: RouteEntry[] = [
       const files = parseRunCoverage(body);
       if (typeof files === 'string') throw demoHttpError(400, files);
       const stored = await storeRunCoverage(db, +m[1]!, run.projectId, files);
+      await storeRunCoverageGaps(db, +m[1]!, readRunCoverageGaps((body as { incomplete?: unknown }).incomplete));
       if (run.commit) {
         invalidateCommitCoverage(run.projectId, run.commit);
         await settleCommitCoverage(getDemoDb, run.projectId, run.commit);
@@ -1667,6 +1677,24 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'POST',
+    pattern: /^\/api\/test-cases\/(\d+)\/merge$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const sourceId = Number((body as { sourceId?: unknown } | null)?.sourceId);
+      if (!Number.isInteger(sourceId) || sourceId <= 0) throw demoHttpError(400, 'sourceId must be a test case id');
+      const outcome = await mergeTestCases(await getDemoDb(), +m[1]!, sourceId);
+      if (!outcome.ok) {
+        throw demoHttpError(
+          { 'not-found': 404, 'same-case': 400, 'other-project': 400, 'ran-together': 409 }[outcome.error],
+          outcome.message,
+        );
+      }
+      return outcome;
+    },
+  },
+  {
+    method: 'POST',
     // No-op dispatch: the demo has no CI to run the lab in.
     pattern: /^\/api\/test-cases\/(\d+)\/flake-lab-ci$/,
     permission: 'run:control',
@@ -1890,6 +1918,22 @@ const routes: RouteEntry[] = [
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return apiExportTestRunCase(+m[1]!, q as URLSearchParams | undefined);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/piwibug$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiExecutionBugReport(+m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/replay-steps$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiExecutionReplaySteps(+m[1]!);
     },
   },
   {
@@ -3285,6 +3329,12 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
     permission: 'issue:create',
     handler: async () => demoAssignable(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/issue-picker$/,
+    permission: 'issue:create',
+    handler: async (_m, _body, query) => demoIssuePicker(query?.get('q') ?? ''),
   },
   {
     method: 'POST',

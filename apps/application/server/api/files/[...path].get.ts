@@ -10,7 +10,6 @@ import { resolveStoredTrace } from '../../utils/trace-reconstruct';
 import { prepareHtmlReport } from '../../utils/html-report';
 import { readReportArchiveIndex } from '../../utils/report-archive';
 import { getDatabase } from '../../database';
-import sharp from 'sharp';
 
 defineRouteMeta({
   openAPI: {
@@ -265,6 +264,7 @@ export default eventHandler(async (event) => {
     // Compress image on demand: resize to max 1280px, output as WebP
     if (wantCompressed && COMPRESSIBLE_IMAGE_TYPES.has(contentType)) {
       try {
+        const { default: sharp } = await import('sharp');
         const compressed = await sharp(fileContent)
           .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
           .webp({ quality: 90 })

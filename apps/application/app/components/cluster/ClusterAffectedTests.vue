@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
  * The tests a cluster affects — the evidence selector, shown when the cluster
- * has several. Rows sort by their latest failure; clicking a row selects it
- * (`selectedCaseId`, v-model), which switches the page's evidence and story to
- * that test's latest execution; the Evidence card names it. The checkboxes stay
- * for the bulk bar: *Move to a new cluster* (the extract endpoint) and
- * *Quarantine*.
+ * has several. Each row names the test after its describe blocks, with its
+ * spec file under it. Rows sort by their latest failure; clicking a row selects
+ * it (`selectedCaseId`, v-model), which switches the page's evidence and story
+ * to that test's latest execution; the Evidence card names it by its title
+ * path. The checkboxes stay for the bulk bar: *Move to a new cluster* (the
+ * extract endpoint) and *Quarantine*.
  */
 import type { TestCaseResult } from '~~/types/api';
 import { errorMessage } from '~/utils';
@@ -13,7 +14,10 @@ import { errorMessage } from '~/utils';
 interface AffectedCase {
   testCaseId: number;
   title: string;
+  externalId?: string | null;
+  displayTitle?: string | null;
   filePath: string;
+  suitePath?: string[];
   runCount: number;
   recentTestRunsCaseId: number;
   quarantined?: boolean;
@@ -52,6 +56,8 @@ function toRow(c: AffectedCase): TestCaseResult {
   return {
     executionId: c.recentTestRunsCaseId,
     title: c.title,
+    externalId: c.externalId ?? null,
+    displayTitle: c.displayTitle ?? null,
     status: 'failed',
     location: c.filePath,
     failureClusterId: null,
@@ -142,6 +148,7 @@ async function quarantineSelected() {
         v-for="c in sortedCases"
         :key="c.testCaseId"
         :test-case="toRow(c)"
+        :suite-path="c.suitePath"
         :show-cluster="false"
         :quarantined="c.quarantined"
         :selectable="canSelect"

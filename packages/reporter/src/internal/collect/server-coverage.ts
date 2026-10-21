@@ -38,6 +38,15 @@ import { checksumsOf, type SourceChecksums } from './source-checksums.js';
  * incomplete. A file whose source checksums (`checksums`) do not match the
  * checkout keeps its path without its line numbers, and marks the test
  * incomplete. Nothing here throws.
+ *
+ * A backend names its process in every answer (`instance: { id, startedAt }`,
+ * the id also the prefix of its request ids). The run-level coverage of an
+ * origin is whole only when the process that answers it is the one that gave
+ * out the run's first request ids: a backend that restarted, or that answers
+ * no run-level coverage at the end, marks the run's server coverage of the
+ * origin incomplete. The lines and functions the tests' coverage named are
+ * added to the run-level coverage either way, so what the requests ran before
+ * a restart is kept; what the earlier process ran outside a request is not.
  */
 
 /** The request ids a test's responses carried, by origin. */
@@ -56,6 +65,22 @@ export interface ServerCoverage {
 export interface RunCoverageFile extends CoverageFile {
   executable?: LineRange[];
   allFunctions?: LineRange[];
+}
+
+/** Why part of a run's server coverage of an origin is missing. */
+export interface RunCoverageGap {
+  origin: string;
+  /** `restarted`: another process answered than the one that began the run; `unreachable`: no run-level answer. */
+  reason: 'restarted' | 'unreachable';
+  /** About when the backend restarted: when the process that answered last started (ISO 8601); `restarted` only. */
+  at?: string;
+}
+
+/** The run-level server coverage of one origin, and what is known to be missing from it. */
+export interface RunServerCoverage {
+  files: RunCoverageFile[];
+  /** Null when the coverage is whole as far as the reporter can tell. */
+  gap: RunCoverageGap | null;
 }
 
 /** The bounds collection keeps to. */
@@ -187,6 +212,48 @@ function runFilesOf(answer: unknown): RunCoverageFile[] | null {
   return files;
 }
 
+/** A backend process as an answer names it (`instance: { id, startedAt }`); null for an answer without. */
+interface BackendInstance {
+  id: string;
+  startedAt: string | null;
+}
+
+function instanceOf(answer: unknown): BackendInstance | null {
+  const instance = isRecord(answer) ? answer.instance : null;
+  if (!isRecord(instance) || typeof instance.id !== 'string' || !REQUEST_ID.test(instance.id)) return null;
+  const startedAt =
+    typeof instance.startedAt === 'string' && !Number.isNaN(Date.parse(instance.startedAt))
+      ? new Date(instance.startedAt).toISOString()
+      : null;
+  return { id: instance.id, startedAt };
+}
+
+/** The process key of a request id, `<process key>.<sequence>`; null for an id of another shape. */
+function processKeyOf(id: string): string | null {
+  const dot = id.lastIndexOf('.');
+  return dot > 0 ? id.slice(0, dot) : null;
+}
+
+/**
+ * The run-level files with the functions and lines the tests' coverage named
+ * added, each file once per runtime and path; the executable lines and every
+ * method stay the run-level answer's.
+ */
+function withTestCoverage(files: RunCoverageFile[], tests: CoverageCapture | null): RunCoverageFile[] {
+  if (!tests || tests.files.length === 0) return files;
+  const byKey = new Map(files.map((file) => [`${file.runtime}\0${file.path}`, { ...file }]));
+  for (const ran of tests.files) {
+    const key = `${ran.runtime}\0${ran.path}`;
+    const file = byKey.get(key) ?? { path: ran.path, runtime: ran.runtime };
+    const functions = normalizeFunctionRanges([...(file.functions ?? []), ...(ran.functions ?? [])]);
+    const lines = normalizeLineRanges([...(file.lines ?? []), ...(ran.lines ?? [])]);
+    if (functions.length > 0) file.functions = functions;
+    if (lines.length > 0) file.lines = lines;
+    byKey.set(key, file);
+  }
+  return [...byKey.values()];
+}
+
 /** Whether a collection answer has the shape `{ v: 1, groups: [...] }`. */
 function isCollectAnswer(answer: unknown): answer is { v: 1; groups: unknown[] } {
   return isRecord(answer) && answer.v === 1 && Array.isArray(answer.groups);
@@ -225,6 +292,14 @@ interface OriginState {
   limit: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Whether a failure was already reported at warn level. */
   warned: boolean;
+  /** The process keys of the request ids sent, the first first. */
+  processKeys: Set<string>;
+  /** The processes the collection answers named, by id. */
+  instances: Map<string, BackendInstance>;
+  /** The tests' coverage merged, for the run-level coverage. */
+  testCoverage: CoverageCapture | null;
+  /** The source checksums the tests' answers named, by path. */
+  testChecksums: Map<string, string[]>;
 }
 
 type CallOutcome = { kind: 'answered'; ok: boolean; json: unknown } | { kind: 'failed'; reason: string };
@@ -298,11 +373,16 @@ export class ServerCoverageCollector {
 
   /**
    * The run-level coverage of an origin, with each server file's executable
-   * lines at `lines` granularity; null when the backend did not answer with it.
+   * lines at `lines` granularity, and the lines and functions the tests'
+   * coverage named added to it. The gap says why part of it is missing: the
+   * backend restarted during the run (its answer names another process than
+   * the run's first request ids), or it did not answer with run-level coverage.
    */
-  async fetchRun(origin: string): Promise<RunCoverageFile[] | null> {
+  async fetchRun(origin: string): Promise<RunServerCoverage> {
     const state = this.stateOf(origin);
     const query = `?granularity=${encodeURIComponent(this.options.granularity)}`;
+    let answer: { files: RunCoverageFile[]; json: Record<string, unknown> } | null = null;
+    let failure: string | null = null;
     for (const base of this.pathBases(origin)) {
       const outcome = await this.call(
         `${origin}${base}${RUN_PATH}${query}`,
@@ -310,21 +390,60 @@ export class ServerCoverageCollector {
         this.limits.runTimeoutMs,
       );
       if (outcome.kind === 'failed') {
-        this.reportFailure(state, `Could not fetch the run's server coverage from ${origin}: ${outcome.reason}.`);
-        return null;
+        failure = outcome.reason;
+        break;
       }
       const answered = outcome.ok ? runFilesOf(outcome.json) : null;
       if (answered) {
         state.base = base;
-        const files = await this.verifyChecksums(
-          answered,
-          fileChecksums(isRecord(outcome.json) ? outcome.json.files : null),
-        );
-        return this.options.blobs ? this.options.blobs.withBlobs(files.files) : files.files;
+        answer = { files: answered, json: outcome.json as Record<string, unknown> };
+        break;
       }
     }
-    this.reportFailure(state, `Could not fetch the run's server coverage: ${this.noEndpoint(origin, RUN_PATH)}.`);
-    return null;
+    const gap = answer
+      ? this.restartGap(origin, state, instanceOf(answer.json))
+      : ({ origin, reason: 'unreachable' } as const);
+    if (!answer) failure ??= this.noEndpoint(origin, RUN_PATH);
+    if (gap && !this.closer.signal.aborted) this.logger.warn(this.gapMessage(gap, failure));
+
+    const checksums = fileChecksums(answer?.json.files ?? null, new Map(state.testChecksums));
+    const files = await this.verifyChecksums(withTestCoverage(answer?.files ?? [], state.testCoverage), checksums);
+    let out = files.files;
+    try {
+      if (this.options.blobs) out = await this.options.blobs.withBlobs(out);
+    } catch {
+      // Blob ids are best-effort: the files keep their line numbers without.
+    }
+    return { files: out, gap };
+  }
+
+  /**
+   * The gap of an origin whose run-level coverage `instance` answered: a
+   * restart when it, or a collection answer, names another process than the
+   * run's first request ids; null when the backend names no process.
+   */
+  private restartGap(origin: string, state: OriginState, instance: BackendInstance | null): RunCoverageGap | null {
+    if (!instance) return null;
+    const keys = [...state.processKeys];
+    const others = [...state.instances.values()].filter((known) => known.id !== instance.id);
+    if (keys.every((key) => key === instance.id) && others.length === 0) return null;
+    // The process that answered last started after the one the run began with.
+    const at = keys[0] === instance.id ? (others[others.length - 1]?.startedAt ?? null) : instance.startedAt;
+    return { origin, reason: 'restarted', ...(at ? { at } : {}) };
+  }
+
+  private gapMessage(gap: RunCoverageGap, failure: string | null): string {
+    if (gap.reason === 'unreachable') {
+      return (
+        `Could not fetch the run's server coverage from ${gap.origin} (${failure}): ` +
+        `the run's server coverage is marked incomplete, and keeps the lines the tests' coverage named.`
+      );
+    }
+    const when = gap.at ? ` at about ${gap.at}` : '';
+    return (
+      `The backend at ${gap.origin} restarted during the run${when}: the run's server coverage is marked incomplete. ` +
+      `It keeps the lines the tests' coverage named; what the earlier process ran outside a request is lost.`
+    );
   }
 
   /** Abort every call in flight and fail every later one; the tests still waiting resolve incomplete. */
@@ -349,6 +468,10 @@ export class ServerCoverageCollector {
         base: null,
         limit: createLimiter(this.limits.concurrency),
         warned: false,
+        processKeys: new Set(),
+        instances: new Map(),
+        testCoverage: null,
+        testChecksums: new Map(),
       };
       this.originStates.set(origin, state);
     }
@@ -426,6 +549,13 @@ export class ServerCoverageCollector {
 
   /** Send one call and hand each group's answer to its test. */
   private async send(origin: string, groups: CallGroup[]): Promise<void> {
+    const state = this.stateOf(origin);
+    for (const group of groups) {
+      for (const id of group.ids) {
+        const key = processKeyOf(id);
+        if (key !== null) state.processKeys.add(key);
+      }
+    }
     let answer: { v: 1; groups: unknown[] } | null = null;
     try {
       const body = JSON.stringify({
@@ -436,6 +566,8 @@ export class ServerCoverageCollector {
     } catch (error) {
       this.logger.debug(`Server coverage collection from ${origin} failed: ${errorMessage(error)}`);
     }
+    const instance = instanceOf(answer);
+    if (instance && !state.instances.has(instance.id)) state.instances.set(instance.id, instance);
     const answered = new Map<string, Record<string, unknown>>();
     for (const group of answer?.groups ?? []) {
       if (isRecord(group) && typeof group.key === 'string') answered.set(group.key, group);
@@ -447,9 +579,11 @@ export class ServerCoverageCollector {
       } else {
         if (Array.isArray(result.missing) && result.missing.length > 0) group.entry.incomplete = true;
         fileChecksums(result.files, group.entry.checksums);
+        fileChecksums(result.files, state.testChecksums);
         const capture = sanitizeCoverage({ v: 1, files: result.files });
         if (capture) {
           group.entry.captures.push(capture);
+          state.testCoverage = mergeCoverage(state.testCoverage, capture);
           if (capture.incomplete) group.entry.incomplete = true;
         }
       }

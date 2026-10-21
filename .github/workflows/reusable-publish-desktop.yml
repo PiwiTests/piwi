@@ -129,19 +129,6 @@ jobs:
         working-directory: apps/desktop
         run: node scripts/fetch-node.mjs --target ${{ matrix.target }} --node ${{ env.PIWI_NODE_VERSION }}
 
-      # Shrink the bundled Node runtime with UPX (roughly halves it). Windows
-      # only: UPX self-decompresses at launch, which conflicts with macOS
-      # hardened runtime / notarization and is unreliable on arm64 Mach-O. Best
-      # effort — if UPX fails we still ship the uncompressed runtime.
-      - name: Compress Node sidecar (Windows)
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        working-directory: apps/desktop
-        shell: pwsh
-        run: |
-          choco install upx --version=5.2.1 -y --no-progress
-          upx --best --lzma "src-tauri/binaries/node-${{ matrix.target }}.exe"
-
       - name: Stage server (native modules for this OS)
         working-directory: apps/desktop
         run: node scripts/stage-server.mjs

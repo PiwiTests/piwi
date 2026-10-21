@@ -1,0 +1,146 @@
+import { scanLocatorChain } from '@piwitests/core/locator-chain';
+import type { BugPhrases } from '@piwitests/core/bug-phrases';
+
+/**
+ * A sentence that is no step (why a step failed, a verdict) cut into the parts
+ * a reader looks for: addresses, locators, other code, and the quoted texts.
+ * The pure half of `richText` in `step-view.ts`; a step's own parts come from
+ * core (`describeStepInParts`).
+ */
+
+export type SentenceToken = {
+  kind: 'text' | 'url' | 'locator' | 'code' | 'quote';
+  text: string;
+};
+
+/**
+ * `text` as tokens: its Markdown code spans and its locators as code, then
+ * its quoted texts, and outside the quotes its addresses.
+ */
+export function sentenceTokens(text: string, phrases: BugPhrases): SentenceToken[] {
+  const tokens: SentenceToken[] = [];
+  for (const part of splitCode(text)) {
+    if (part.code) {
+      tokens.push({ kind: codeKind(part.text), text: part.text });
+      continue;
+    }
+    for (const piece of splitLocators(part.text)) {
+      if (piece.code) tokens.push({ kind: 'locator', text: piece.text });
+      else tokens.push(...quotedTokens(piece.text, phrases));
+    }
+  }
+  return tokens;
+}
+
+const INLINE_LOCATOR = /\b(?:getBy(?:Role|Text|Label|Placeholder|AltText|Title|TestId)|locator|frameLocator)\(/g;
+const INLINE_URL = /\bhttps?:\/\/[^\s"'«»„“”<>]+/g;
+
+/** `text` cut at `spans`, in order: each span as code, the text between them as text. */
+function splitSpans(text: string, spans: { start: number; end: number }[]): { text: string; code: boolean }[] {
+  const parts: { text: string; code: boolean }[] = [];
+  let last = 0;
+  for (const { start, end } of spans) {
+    if (start > last) parts.push({ text: text.slice(last, start), code: false });
+    parts.push({ text: text.slice(start, end), code: true });
+    last = end;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), code: false });
+  return parts;
+}
+
+/** Splits the locator expressions written in plain text out of it, each as far as core's parser reads it. */
+function splitLocators(text: string): { text: string; code: boolean }[] {
+  const found: { start: number; end: number }[] = [];
+  for (const match of text.matchAll(INLINE_LOCATOR)) {
+    if (found.some((f) => match.index < f.end)) continue;
+    const scanned = scanLocatorChain(text.slice(match.index));
+    if (scanned && scanned.end > 0) found.push({ start: match.index, end: match.index + scanned.end });
+  }
+  return splitSpans(text, found);
+}
+
+/** Splits the http addresses written in plain text out of it, without the punctuation that ends a sentence. */
+function splitUrls(text: string): { text: string; code: boolean }[] {
+  const found = [...text.matchAll(INLINE_URL)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].replace(/[.,;:!?)]+$/, '').length,
+  }));
+  return splitSpans(text, found);
+}
+
+/** Splits Markdown inline code spans (any fence length) out of `text`. */
+function splitCode(text: string): { text: string; code: boolean }[] {
+  const parts: { text: string; code: boolean }[] = [];
+  let plain = '';
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] !== '`') {
+      plain += text[i++];
+      continue;
+    }
+    let fence = 0;
+    while (text[i + fence] === '`') fence++;
+    const marker = '`'.repeat(fence);
+    let close = text.indexOf(marker, i + fence);
+    while (close !== -1 && text[close + fence] === '`') {
+      let run = 0;
+      while (text[close + run] === '`') run++;
+      close = text.indexOf(marker, close + run);
+    }
+    if (close === -1) {
+      plain += text.slice(i, i + fence);
+      i += fence;
+      continue;
+    }
+    let inner = text.slice(i + fence, close);
+    if (inner.length > 2 && inner.startsWith(' ') && inner.endsWith(' ') && inner.trim()) inner = inner.slice(1, -1);
+    if (plain) parts.push({ text: plain, code: false });
+    plain = '';
+    parts.push({ text: inner, code: true });
+    i = close + fence;
+  }
+  if (plain) parts.push({ text: plain, code: false });
+  return parts;
+}
+
+const LOCATOR_START = /^(?:page\.|this\.page\.)?(?:getBy[A-Z]\w*|locator|frameLocator|internal:)\s*\(/;
+
+/** What a code span holds: an address, a locator, or other code (a test id, a file name). */
+function codeKind(text: string): 'url' | 'locator' | 'code' {
+  if (/^[a-z][\w+.-]*:\/\//i.test(text) || text.startsWith('/')) return 'url';
+  return LOCATOR_START.test(text) ? 'locator' : 'code';
+}
+
+/** The quotes the phrasebook puts around a name or a value: `"…"`, `«…»`, `„…“`, without the spaces inside. */
+function quoteMarks(phrases: BugPhrases): [string, string] {
+  const [open = '"', close = '"'] = phrases.quote('\u0000').split('\u0000');
+  return [open.trim() || '"', close.trim() || '"'];
+}
+
+function quotedTokens(text: string, phrases: BugPhrases): SentenceToken[] {
+  const [open, close] = quoteMarks(phrases);
+  const tokens: SentenceToken[] = [];
+  let rest = text;
+  while (rest) {
+    const start = rest.indexOf(open);
+    const end = start === -1 ? -1 : rest.indexOf(close, start + open.length);
+    if (start === -1 || end === -1) break;
+    tokens.push(...urlTokens(rest.slice(0, start)));
+    tokens.push({ kind: 'quote', text: rest.slice(start, end + close.length) });
+    rest = rest.slice(end + close.length);
+  }
+  tokens.push(...urlTokens(rest));
+  return tokens;
+}
+
+/** Text outside the quotes, its addresses set apart. */
+function urlTokens(text: string): SentenceToken[] {
+  return splitUrls(text).map((part) => ({ kind: part.code ? 'url' : 'text', text: part.text }));
+}
+
+/** An address split into its origin, its path, and its query and fragment; text that is no address is all path. */
+export function urlParts(address: string): { origin: string; path: string; rest: string } {
+  const match = /^([a-z][\w+.-]*:\/\/[^/?#]*)?([^?#]*)(.*)$/is.exec(address);
+  if (!match) return { origin: '', path: address, rest: '' };
+  return { origin: match[1] ?? '', path: match[2] ?? '', rest: match[3] ?? '' };
+}

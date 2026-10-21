@@ -11,15 +11,20 @@ function base64(bytes: Uint8Array): string {
 }
 
 /**
- * The screenshot of each step a bug report archive holds, as its evidence
- * names them; none when its evidence cannot be read, and none of an image
- * that cannot be.
+ * What a bug report archive's evidence adds to its steps: the screenshot of
+ * each step it names (none of an image that cannot be read), and, in a report
+ * made from a test run, the step the test failed at there. Nothing when its
+ * evidence cannot be read.
  */
-async function stepViewsOf(bytes: Uint8Array, steps: string, stepCount: number): Promise<ReplayStepView[]> {
+async function evidenceOf(
+  bytes: Uint8Array,
+  steps: string,
+  stepCount: number,
+): Promise<{ views: ReplayStepView[]; runFailedStep: number | null }> {
   const evidence = await readZipEntry(bytes, BUG_REPORT_FILES.evidence).catch(() => null);
-  if (!evidence) return [];
+  if (!evidence) return { views: [], runFailedStep: null };
   const report = bugReportFromFiles({ steps, evidence: new TextDecoder().decode(evidence) });
-  if (!report.ok) return [];
+  if (!report.ok) return { views: [], runFailedStep: null };
   const views: ReplayStepView[] = [];
   for (const shot of report.report.evidence.stepShots ?? []) {
     if (shot.step >= stepCount) continue;
@@ -32,18 +37,18 @@ async function stepViewsOf(bytes: Uint8Array, steps: string, stepCount: number):
       viewport: shot.viewport,
     });
   }
-  return views;
+  return { views, runFailedStep: report.report.export?.failedStep ?? null };
 }
 
 /**
  * The steps inside a file someone chose, a steps document or the bug report
- * archive that holds one as `steps.json`, and the screenshot of each step the
- * archive holds.
+ * archive that holds one as `steps.json`, the screenshot of each step the
+ * archive holds, and the step a report made from a test run failed at there.
  */
 export async function readReportFile(
   name: string,
   bytes: Uint8Array,
-): Promise<{ steps: PiwiSteps; views: ReplayStepView[] }> {
+): Promise<{ steps: PiwiSteps; views: ReplayStepView[]; runFailedStep: number | null }> {
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
   let text: string;
   if (isZip) {
@@ -60,8 +65,8 @@ export async function readReportFile(
   }
   const parsed = parseSteps(text);
   if (!parsed.ok) throw new Error(t('replay_fileNotSteps', { file: name, error: parsed.errors[0] ?? '' }));
-  const views = isZip ? await stepViewsOf(bytes, text, parsed.steps.steps.length) : [];
-  return { steps: parsed.steps, views };
+  const extras = isZip ? await evidenceOf(bytes, text, parsed.steps.steps.length) : { views: [], runFailedStep: null };
+  return { steps: parsed.steps, ...extras };
 }
 
 /** The steps inside a file someone chose; see {@link readReportFile}. */

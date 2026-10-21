@@ -14,6 +14,7 @@ import { eq, and, or, desc, gt, gte, ne, sql, inArray, isNull, isNotNull, notInA
 import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
+import { splitSuitePath } from '../utils/suites';
 import { inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
@@ -169,9 +170,13 @@ export async function getTestCase(db: DrizzleDB, id: number) {
     filePath: testCase.filePath,
     suitePath: testCase.suitePath,
     title: testCase.title,
+    externalId: testCase.externalId ?? null,
+    displayTitle: testCase.displayTitle ?? null,
     tags: (testCase.tags as string[] | null) ?? null,
     locks: (testCase.locks as string[] | null) ?? null,
-    project: project ? { id: project.id, name: project.name, label: project.label } : null,
+    project: project
+      ? { id: project.id, name: project.name, label: project.label, externalIdUrl: project.externalIdUrl ?? null }
+      : null,
     totalRuns,
     passedRuns: aggResult[0]?.passedRuns ?? 0,
     failedRuns: aggResult[0]?.failedRuns ?? 0,
@@ -735,7 +740,10 @@ export async function getTestRunCase(
     id: trc.id,
     testCaseId: trc.testCaseId,
     title: testCase?.title,
+    externalId: testCase?.externalId ?? null,
+    displayTitle: testCase?.displayTitle ?? null,
     filePath: testCase?.filePath ?? null,
+    suitePath: splitSuitePath(testCase?.suitePath),
     line: trc.line ?? null,
     location: trc.line && trc.column ? `${testCase?.filePath}:${trc.line}:${trc.column}` : testCase?.filePath,
     status: trc.status,

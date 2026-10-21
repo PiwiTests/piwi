@@ -322,6 +322,11 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 - **Code inside a heading or a sentence of the situation block sits in a chip**: a locator is syntax-highlighted in
   it (`<LocatorCode chip>`, `<FailureHeadline chip>`), a commit keeps the sentence's color (`CODE_CHIP_CLASS`).
   Elsewhere in prose a locator stays plain mono (`<LocatorCode plain>`).
+- **A recorded step is shown from core's parts, never from its sentence**: `<BugStepText>` renders
+  `describeStepInParts` (or `describeExpectationInParts`), which knows each name, value, key, address and locator as it
+  writes them in any language: names and values semibold in `text-highlighted` over words in `text-default`, a key as
+  `UKbd`, and its code (an address, a test id, a locator through `LocatorCode`) in a chip, in the steps list as in the
+  situation block, since a reader scans a step for them. Don't split the Markdown sentence at its backticks or quotes.
 - **Say a fact once, in one style.** When the same fact could be a chip and words, keep the words.
 - **Measure it.** `npm run app:measure -- --check` fails when a failure page breaks a budget at 1280×800: at most 15
   text styles in the execution page's situation block and 13 in the cluster page's (a code chip or a diff counts once,
@@ -359,6 +364,13 @@ in that file: navy ink, violet `#7c3aed` and the mint of the check. Never edit o
 script and regenerate them all. The desktop app's bundle icons are generated from `public/logo.svg` by `tauri icon`.
 Show the wide lockup with `<BrandLogo>`, which swaps in the reversed drawing on a dark page. The dashboard's accent
 (`primary` in `app/app.config.ts`) is the same violet.
+
+Every document Piwi writes for use outside the dashboard (the offline exports, the quality reports, the emails) ends
+with the Piwi credit from `shared/brand.ts`: the small mark and a link to piwitests.dev (`piwiCreditHtml`,
+`drawPiwiCredit` for a PDF, `piwiCreditMarkdown`; `emailLayout` draws it in every email). The mark is drawn from
+`shared/brand-mark.json`, which the same generator writes. It never loads over the network: inline SVG in HTML, vector
+paths in a PDF, and an attachment in an email (`sendEmail` attaches it whenever the message shows it). A new document
+format ends with the same credit. Data files (CSV, XLSX, JSON) carry none.
 
 ### Test outcome colors (MUST follow)
 

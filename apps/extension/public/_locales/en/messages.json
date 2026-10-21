@@ -698,7 +698,7 @@
     "description": "Settings page, Project mappings card: shown instead of the pattern lists before Piwi Picker is connected to an instance."
   },
   "options_addMapping": {
-    "message": "+ Add a line",
+    "message": "Add a line",
     "description": "Settings page: button adding a line to the project mappings."
   },
   "options_noMappings": {
@@ -1510,7 +1510,7 @@
     }
   },
   "multipick_byPosition": {
-    "message": "⚠ Found by its position (nth): it breaks if the order of the list changes",
+    "message": "Found by its position (nth): it breaks if the order of the list changes",
     "description": "Multi-pick: warning under a locator that finds its item only by its place in the list. “nth” is Playwright code, kept as it is."
   },
   "lint_dialog": {
@@ -3355,6 +3355,14 @@
     "message": "disabled",
     "description": "What the replay found: the element is disabled. Read after “found” (French: after “Résultat :”, about “l’élément”, masculine)."
   },
+  "replay_foundChecked": {
+    "message": "checked",
+    "description": "What the replay found: the checkbox or switch is checked. Read after “found” (French: after “Résultat :”, about “l’élément”, masculine)."
+  },
+  "replay_foundUnchecked": {
+    "message": "not checked",
+    "description": "What the replay found: the checkbox or switch is not checked. Read after “found” (French: after “Résultat :”, about “l’élément”, masculine)."
+  },
   "replay_verdictReproduced": {
     "message": "Reproduced: the bug shows here",
     "description": "Replay verdict title: an expected result of the bug report did not hold on this page, so the bug shows here."
@@ -3431,6 +3439,16 @@
     "message": "Every expected result holds on this page.",
     "description": "Replay verdict detail under “Not reproduced”."
   },
+  "replay_verdictNotReproducedRun": {
+    "message": "Step $step$, where the test failed when it ran, played here.",
+    "description": "Under the Not reproduced verdict of a report made from a test run: the step where the test failed played here.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "replay_verdictDiverged": {
     "message": "Could not reach the bug: stopped at step $step$",
     "description": "Replay verdict title when a step could not be done on this page.",
@@ -3448,6 +3466,26 @@
       "reason": {
         "content": "$1",
         "example": "Nothing on this page matches getByTestId('add-to-cart')."
+      }
+    }
+  },
+  "replay_verdictFailedAsInRun": {
+    "message": "Failed at step $step$, as in the test run",
+    "description": "Replay verdict title when a step could not be done, and it is the step where the test failed in the test run the report was made from.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_verdictFailedAsInRunDetail": {
+    "message": "$reason$ The test failed at this same step when it ran.",
+    "description": "Under replay_verdictFailedAsInRun. $reason$ is why the step could not be done, a sentence.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Nothing on this page matches getByRole('button', { name: 'Pay' })."
       }
     }
   },
@@ -3574,6 +3612,20 @@
   "replay_reasonActionFailed": {
     "message": "The page did not react to the action the way it did when it was recorded.",
     "description": "Why a replay step could not be done: the click, typing or choice did not have its effect."
+  },
+  "replay_reasonManual": {
+    "message": "The test does this in a way Replay cannot play.",
+    "description": "Why a step goes to the person: it is a manual step of a steps file made from a test run, which nothing can play."
+  },
+  "replay_reasonManualAt": {
+    "message": "The test does this at $location$, in a way Replay cannot play.",
+    "description": "Why a step goes to the person: a manual step of a steps file made from a test run, with where the test does it. $location$ is a file and line, such as tests/cart.spec.ts:12.",
+    "placeholders": {
+      "location": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      }
+    }
   },
   "replay_reasonCovered": {
     "message": "$other$ covers $element$ where the pointer would land.",
@@ -3832,6 +3884,28 @@
   "replay_chooseFile": {
     "message": "Or choose the report’s .piwibug, or its steps.json, saved by Piwi Picker:",
     "description": "Replay dialog, above the file field. “.piwibug” and “steps.json” are file names, kept as they are."
+  },
+  "replay_pasteSteps": {
+    "message": "Or paste the text of a steps.json, such as the steps copied from Piwi",
+    "description": "Replay dialog, the disclosure that opens a field to paste steps into. “steps.json” is a file name, kept as it is."
+  },
+  "replay_pasteLabel": {
+    "message": "Steps to paste",
+    "description": "Replay dialog, the accessible name of the field steps are pasted into."
+  },
+  "replay_pasteUse": {
+    "message": "Use these steps",
+    "description": "Replay dialog, the button that reads the pasted steps."
+  },
+  "replay_pasteNotSteps": {
+    "message": "The pasted text is not a steps file: $error$",
+    "description": "Replay dialog, when the pasted text cannot be read. $error$ is the first problem found, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "steps[2].action: is not a known action"
+      }
+    }
   },
   "replay_fromPiwi": {
     "message": "Or a bug report of $project$ on Piwi:",
@@ -6598,6 +6672,20 @@
       "files": {
         "content": "$1",
         "example": "invoice.pdf"
+      }
+    }
+  },
+  "codegen_manualStep": {
+    "message": "Step $step$ is done by hand: $description$",
+    "description": "A warning of the converter: a step of a steps file made from a test run is done by hand, and the generated test only names it in a comment. $step$ is the step's number, $description$ what to do (in English, from the file).",
+    "placeholders": {
+      "description": {
+        "content": "$1",
+        "example": "Open the page the test writes itself"
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
       }
     }
   },
