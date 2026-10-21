@@ -65,6 +65,20 @@ function regressionLines(comparison) {
   return lines;
 }
 
+const machineText = (m) => `${m?.cpus ?? '?'} × ${m?.cpuModel ?? 'CPU'}, Node ${m?.node ?? ''}`;
+
+/** The machine that measured, or for a split run each one and the page rows it measured. */
+function machineNote(meta) {
+  if (!meta.shards?.length) return `Machine: ${machineText(meta.machine)}.`;
+  let from = 1;
+  const parts = meta.shards.map((s) => {
+    const rows = s.pages.length === 1 ? `page ${from}` : `pages ${from}–${from + s.pages.length - 1}`;
+    from += s.pages.length;
+    return `${rows} on ${machineText(s.machine)}`;
+  });
+  return `Machines: ${parts.join('; ')}.`;
+}
+
 function sqlSourceNote(meta) {
   return meta.database === 'postgres'
     ? 'SQL counts come from `pg_stat_statements`, which sees every build; statement lists are normalized by PostgreSQL.'
@@ -166,7 +180,7 @@ export function renderComparison(meta, comparison, { links = {} } = {}) {
     '',
     '<details><summary>How this is measured</summary>',
     '',
-    `Each build ran as its own production server (\`node .output/server/index.mjs\`) on its own copy of the same dataset, signed in as an administrator. Servers were measured in turn, alternating order, after ${meta.samples.warmup} warm-up rounds: ${meta.samples.ssr} server renders and ${meta.samples.load} browser loads (Chromium, warm cache, until the page's own requests stop) per page, and ${meta.samples.api} calls per API request. Times are medians. *Largest paint* is when the page's main content first shows (LCP); *full load* is when its last request ends; *blocking* is main-thread time past 50 ms per task.`,
+    `Each build ran as its own production server (\`node .output/server/index.mjs\`) on its own copy of the same dataset, signed in as an administrator. Servers were measured in turn, alternating order, after ${meta.samples.warmup} warm-up rounds: ${meta.samples.ssr} server renders and ${meta.samples.load} browser loads (Chromium, warm cache, until the page's own requests stop) per page, and ${meta.samples.api} calls per API request. Times are medians. *Largest paint* is when the page's main content first shows (LCP); *full load* is when its last request ends; *blocking* is main-thread time past 50 ms per task.${meta.shards?.length > 1 ? ` The pages were split across ${meta.shards.length} machines, each measuring both builds on its own pages and the API calls they make, so every row compares two builds measured on the same machine.` : ''}`,
     '',
     `A time is a regression when the median grows past both floors and the Mann–Whitney test gives p < 0.01 (which takes at least six samples a side); a count (SQL statements, bytes, requests) when it grows past both floors. Floors: ${Object.values(
       METRICS,
@@ -179,7 +193,7 @@ export function renderComparison(meta, comparison, { links = {} } = {}) {
     '',
     sqlSourceNote(meta),
     '',
-    `Machine: ${meta.machine?.cpus ?? '?'} × ${meta.machine?.cpuModel ?? 'CPU'}, Node ${meta.machine?.node ?? ''}. Suite: \`apps/application/scripts/perf\`.${links.run ? ` [Run and full results](${links.run}).` : ''}`,
+    `${machineNote(meta)} Suite: \`apps/application/scripts/perf\`.${links.run ? ` [Run and full results](${links.run}).` : ''}`,
     '',
     '</details>',
   ];

@@ -12,7 +12,7 @@ record these follow, with its measurements, is [`adr/ci-workflows.md`](../adr/ci
 | `workflows/reusable-e2e-vscode.yml`        | called by `ci.yml`, on demand   | the VS Code extension's integration suite                                                |
 | `workflows/reusable-jetbrains.yml`         | called by `ci.yml`, on demand   | the JetBrains plugin's tests, build and Plugin Verifier runs (2 IDEs on PRs, 4 on main)  |
 | `workflows/reusable-e2e-desktop.yml`       | called by `ci.yml`, on demand   | the desktop shell's Rust tests and E2E smoke test, on macOS, from `ci.yml`'s build       |
-| `workflows/reusable-perf.yml`              | called by `ci.yml`              | the performance suite on the pull request's build and its base commit's, as a PR comment |
+| `workflows/reusable-perf.yml`              | called by `ci.yml`              | the performance suite on the pull request's build and its base commit's, its pages split across 2 machines, as a PR comment |
 | `workflows/pr-lint.yml`                    | pull requests                   | `commitlint`, `title` (the PR title) and `actionlint`                                    |
 | `workflows/docs.yml`                       | pushes to `main`                | builds and deploys the docs and the demo                                                 |
 | `workflows/release-please.yml`             | pushes to `main`                | the release PR, and the tag once it merges                                               |
@@ -38,8 +38,10 @@ and the package smoke test on Linux (on Windows and macOS too when it changes th
 and on four on `main`, where the plugin job also writes the Gradle cache. The extension, VS Code and desktop suites run
 on pull requests only, and so do the container image check (the publish workflow runs it on `main` and on a tag) and
 the performance comparison, which measures against the base commit's build that the
-`build` job cached by its sha when it ran on `main` (it builds the base itself when that commit has none, cached for the
-pull request's later runs only) and reports a regression in its comment without failing. The release PR runs the `Versions` job alone.
+`build` job cached by its sha when it ran on `main` (when that commit has none, the `perf-base` job builds it alongside
+the pull request's own build, cached for the pull request's runs only) and reports a regression in its comment without
+failing. Its pages are split across two `measure` jobs that run at once, each measuring both builds on its own pages so
+every comparison is made on one machine; a `report` job joins their results into the comment. The release PR runs the `Versions` job alone.
 
 ## Conventions
 

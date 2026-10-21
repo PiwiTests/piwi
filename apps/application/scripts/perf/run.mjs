@@ -13,6 +13,10 @@
  * request's SQL is read from `pg_stat_statements`; a last pass with
  * OpenTelemetry on lists the SQL each request ran, on builds that trace.
  *
+ * `--shard 2/3` measures the second third of the pages, and only the API calls
+ * they make (the first shard adds the ones no page makes in the browser), so
+ * machines can share the suite; `report.mjs` joins their results.
+ *
  * Usage (from apps/application/, after `npm run app:build`):
  *   node scripts/perf/run.mjs                                  # this build alone, SQLite
  *   node scripts/perf/run.mjs --target base=../main/apps/application/.output --target head=.output
@@ -20,7 +24,7 @@
  *   node scripts/perf/run.mjs --scale small --pages projects,project-runs --no-browser
  *
  * Options: --scale small|medium|large (default large) · --warmup N · --ssr-samples N ·
- * --load-samples N · --api-samples N · --pages id,id · --no-browser · --no-trace ·
+ * --load-samples N · --api-samples N · --pages id,id · --shard k/n · --no-browser · --no-trace ·
  * --label name=text · --out results.json · --report report.md · --work-dir dir · --reuse-seed
  *
  * PostgreSQL needs pg_stat_statements loaded at startup (see lib/pg.mjs).
@@ -42,6 +46,7 @@ import {
   connectAdmin,
   databaseUrl,
   dropDatabase,
+  nameStatements,
   recreateDatabase,
   redact,
   statementDelta,
@@ -49,7 +54,7 @@ import {
 } from './lib/pg.mjs';
 import { startOtlpReceiver } from './lib/otlp-receiver.mjs';
 import { fetchTimed, loadPage, signedInContext } from './lib/measure.mjs';
-import { knownApiPaths, pageScenarios } from './lib/scenarios.mjs';
+import { knownApiPaths, pageScenarios, shardPages } from './lib/scenarios.mjs';
 import { mode } from './lib/stats.mjs';
 import { compareResults } from './lib/compare.mjs';
 import { renderComparison, renderSingle } from './lib/markdown.mjs';
@@ -71,6 +76,7 @@ const { values: opts } = parseArgs({
     'load-samples': { type: 'string', default: '6' },
     'api-samples': { type: 'string', default: '8' },
     pages: { type: 'string' },
+    shard: { type: 'string' },
     'no-browser': { type: 'boolean', default: false },
     'no-trace': { type: 'boolean', default: false },
     out: { type: 'string', default: '.perf/results.json' },
@@ -93,6 +99,14 @@ const samples = {
 };
 const dialect = opts.database;
 if (!['sqlite', 'postgres'].includes(dialect)) throw new Error('--database is sqlite or postgres');
+const shard = opts.shard ? parseShard(opts.shard) : null;
+
+function parseShard(spec) {
+  const [index, total] = spec.split('/').map(Number);
+  if (!Number.isInteger(index) || !Number.isInteger(total) || index < 1 || index > total)
+    throw new Error(`--shard needs k/n with 1 ≤ k ≤ n, got "${spec}"`);
+  return { index, total };
+}
 
 const targets = (opts.target?.length ? opts.target : ['head=.output']).map((spec) => {
   const eq = spec.indexOf('=');
@@ -329,13 +343,15 @@ async function main() {
   const manifest = await prepareSeed();
   for (const target of targets) target.database = await copySeed(target);
 
-  const pages = pageScenarios(manifest).filter((p) => !opts.pages || opts.pages.split(',').includes(p.id));
-  if (pages.length === 0)
+  const chosen = pageScenarios(manifest).filter((p) => !opts.pages || opts.pages.split(',').includes(p.id));
+  if (chosen.length === 0)
     throw new Error(
       `--pages matched no page (known: ${pageScenarios(manifest)
         .map((p) => p.id)
         .join(', ')})`,
     );
+  const pages = shard ? shardPages(chosen, shard) : chosen;
+  if (pages.length === 0) throw new Error(`shard ${opts.shard} holds none of the ${chosen.length} pages`);
 
   const results = {
     version: 1,
@@ -346,6 +362,7 @@ async function main() {
       scale: opts.scale,
       dataset: manifest.counts,
       samples,
+      shard,
       targets: targets.map((t) => ({ name: t.name, outputDir: t.outputDir, built: buildStamp(t.outputDir) })),
       targetLabels: Object.fromEntries(
         targets.map((t, i) => [
@@ -379,7 +396,9 @@ async function main() {
   let servers = await startTargets({ otel: null });
   const contexts = {};
   if (browser) for (const t of targets) contexts[t.name] = await signedInContext(browser, servers[t.name]);
-  const discovered = new Map(knownApiPaths(manifest).map((p) => [p, new Set()]));
+  // The calls no page makes in the browser are measured once, by the first shard.
+  const known = !shard || shard.index === 1 ? knownApiPaths(manifest) : [];
+  const discovered = new Map(known.map((p) => [p, new Set()]));
 
   try {
     log(`Warming up (${samples.warmup} rounds)…`);
@@ -500,8 +519,22 @@ async function main() {
       delete r.deltas;
     }
   }
+  if (pg) {
+    for (const t of targets) {
+      const breakdowns = [
+        ...results.pages.flatMap((page) => [page.targets[t.name].ssr.sql, page.targets[t.name].load.sql]),
+        ...results.apis.map((api) => api.targets[t.name].sql),
+      ];
+      await nameStatements(
+        pg.sql,
+        pgDatabase(t.name),
+        breakdowns.flatMap((b) => b?.queries ?? []),
+      );
+    }
+  }
 
-  // Pass 2: the SQL of every request, from OpenTelemetry, on the builds that trace.
+  // Pass 2: the SQL of every request, from OpenTelemetry, on the builds that trace. Nothing is timed, so the
+  // builds run side by side.
   if (!opts['no-trace']) {
     log('Tracing pass (OpenTelemetry)…');
     const receiver = await startOtlpReceiver();
@@ -510,20 +543,22 @@ async function main() {
     if (browser) for (const t of targets) traceContexts[t.name] = await signedInContext(browser, servers[t.name]);
     const traced = Object.fromEntries(targets.map((t) => [t.name, { pages: {}, apis: {} }]));
     try {
-      for (const t of targets) {
-        const server = servers[t.name];
-        // A build that predates tracing names no trace; nothing to collect from it.
-        await fetchTimed(server, '/api/auth/me', 'application/json');
-        if (!(await fetchTimed(server, '/api/auth/me', 'application/json')).traceId) continue;
-        for (const page of results.pages) {
-          await fetchTimed(server, page.path, 'text/html');
-          const render = await fetchTimed(server, page.path, 'text/html');
-          const load = browser ? await loadPage(traceContexts[t.name], server, page.path).catch(() => null) : null;
-          traced[t.name].pages[page.id] = { render: render.traceId, load };
-        }
-        for (const api of results.apis)
-          traced[t.name].apis[api.path] = (await fetchTimed(server, api.path, 'application/json')).traceId;
-      }
+      await Promise.all(
+        targets.map(async (t) => {
+          const server = servers[t.name];
+          // A build that predates tracing names no trace; nothing to collect from it.
+          await fetchTimed(server, '/api/auth/me', 'application/json');
+          if (!(await fetchTimed(server, '/api/auth/me', 'application/json')).traceId) return;
+          for (const page of results.pages) {
+            await fetchTimed(server, page.path, 'text/html');
+            const render = await fetchTimed(server, page.path, 'text/html');
+            const load = browser ? await loadPage(traceContexts[t.name], server, page.path).catch(() => null) : null;
+            traced[t.name].pages[page.id] = { render: render.traceId, load };
+          }
+          for (const api of results.apis)
+            traced[t.name].apis[api.path] = (await fetchTimed(server, api.path, 'application/json')).traceId;
+        }),
+      );
     } finally {
       for (const c of Object.values(traceContexts)) await c.close();
       // Stopping flushes the spans still queued.
