@@ -34,6 +34,47 @@
   color: var(--vp-c-text-2);
 }
 
+/* ── Home hero ──────────────────────────────────────────────────────────
+   The illustration beside the heading is theme/components/HeroVisual.vue, in
+   the default theme's image slot: the glow behind it is the theme's own,
+   in the logo's violet and teal, and the slot's box follows the illustration's
+   height rather than the square the theme reserves for an image. */
+
+:root {
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #7c3aed 35%, #2fd9ae 65%);
+  --vp-home-hero-image-filter: blur(48px);
+}
+
+@media (min-width: 640px) {
+  :root {
+    --vp-home-hero-image-filter: blur(64px);
+  }
+}
+
+@media (min-width: 960px) {
+  :root {
+    --vp-home-hero-image-filter: blur(76px);
+  }
+}
+
+.VPHero .image-container {
+  height: auto;
+}
+
+/* Below the two-column layout the illustration sits above the heading: the margins the theme gives a glow alone
+   would run it into the navigation bar and the heading. */
+@media (max-width: 959px) {
+  .VPHero .image {
+    margin: -16px 0 8px;
+  }
+}
+
+@media (min-width: 960px) {
+  .VPHero .image-container {
+    height: 100%;
+  }
+}
+
 /* ── Home page ──────────────────────────────────────────────────────────
    The landing page is built from plain <div> blocks rather than the doc
    layout, so its sections carry their own width, rhythm and grid here. */
