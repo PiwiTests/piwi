@@ -10,8 +10,8 @@
 //   npm run editor:build -w packages/editor && (cd apps/jetbrains && ./gradlew buildPlugin)
 //   node scripts/take-screenshots.mjs [--out <dir>] [--scene <name>…] [--ide <WebStorm directory>] [--probe] [--keep]
 //
-// The IDE keeps its config directory in `.ide/config` across runs, because the licence lives there: on a machine with
-// none, `--start-trial` answers the licence dialog's Start trial tab, which claims WebStorm's 30-day trial for this
+// The IDE keeps its config directory in `.ide/config` across runs, because the license lives there: on a machine with
+// none, `--start-trial` answers the license dialog's Start trial tab, which claims WebStorm's 30-day trial for this
 // IDE version on this machine with no account (an internet connection is all it needs; a version's trial is claimed
 // once per machine), and `--config <dir>` copies an activated IDE's config directory in instead. An EAP build asks
 // for a JetBrains account, so it cannot serve. `--ide` names another installed release. `--probe` only opens the
@@ -168,7 +168,7 @@ function writeIdeaState(workspace) {
 
 /** The IDE's own directories, under one temporary root: its settings, its caches and the built plugin. */
 function writeIdeDirs(root, ide) {
-  // The settings stay in `.ide/config` from run to run, with the licence the IDE holds; the rest is this run's.
+  // The settings stay in `.ide/config` from run to run, with the license the IDE holds; the rest is this run's.
   const dirs = {
     config: path.join(IDE_DIR, 'config'),
     system: path.join(root, 'system'),
@@ -302,7 +302,6 @@ ${Object.values(KEYS)
       '-Didea.suppress.statistics.report=true',
       '-Didea.fatal.error.notification=disabled',
       // The "got it" tooltips, among them the trial's on the status bar widget, which no notification action clears.
-      // (Not `user.home`: the trial is bound to the machine through it, and the IDE asks for a licence again.)
       '-Dide.integration.test.disable.got.it.tooltips=true',
       '-Dawt.useSystemAAFontSettings=lcd',
       '',
@@ -321,35 +320,36 @@ function xinput(...commands) {
 }
 
 /** The screen as it stands, the window alone (the screen around it is black), written at the window's width. */
-async function shoot(name) {
+async function shoot(name, dir = outDir) {
   const raw = path.join(os.tmpdir(), `piwi-jetbrains-${name}-${process.pid}.png`);
   execFileSync('import', ['-display', DISPLAY, '-window', 'root', raw]);
-  fs.mkdirSync(outDir, { recursive: true });
-  const file = path.join(outDir, `jetbrains-${name}.png`);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `jetbrains-${name}.png`);
   await writeAtWidth(await cutWindow(raw), WINDOW.width, file);
   fs.rmSync(raw, { force: true });
   console.log(`wrote ${path.relative(process.cwd(), file)}`);
 }
 
-/** Whether the config directory holds a licence or a trial: the IDE writes it as `<product>.key`. */
+/** Whether the config directory holds a license or a trial: the IDE writes it as `<product>.key`. */
 function licensed(config) {
   return fs.readdirSync(config).some((name) => name.endsWith('.key'));
 }
 
 /**
- * The licence dialog, when the IDE shows one: with `--start-trial`, its Start trial tab and the button there, at the
- * places they take in a 1440 × 900 window at 2×; without, the run stops and says what to do.
+ * Answers the license dialog the IDE shows before the project: with `--start-trial`, its Start trial tab and the
+ * button there, at the places they take in a 1440 × 900 window at 2×; without, the run stops and says what to do.
  */
-async function claimTrialIfAsked(dirs) {
-  if (licensed(dirs.config)) return;
-  const log = path.join(dirs.log, 'idea.log');
-  const asked = () => fs.existsSync(log) && /License required/.test(fs.readFileSync(log, 'utf-8'));
-  const start = Date.now();
-  while (!asked() && Date.now() - start < 60_000) await sleep(2000);
-  if (!asked()) return;
+async function claimTrial(dirs) {
+  if (licensed(dirs.config)) {
+    throw new Error(
+      'The IDE asks for a license although .ide/config holds a key: a trial is bound to the machine it was claimed ' +
+        'on. Remove the key and run again with --start-trial, or pass the config directory of an activated IDE with ' +
+        '--config.',
+    );
+  }
   if (!startTrial) {
     throw new Error(
-      'The IDE asks for a licence. Run again with --start-trial to claim its 30-day trial on this machine, or pass ' +
+      'The IDE asks for a license. Run again with --start-trial to claim its 30-day trial on this machine, or pass ' +
         'the config directory of an activated IDE with --config.',
     );
   }
@@ -364,19 +364,28 @@ async function claimTrialIfAsked(dirs) {
   console.log('trial started: the IDE keeps it in .ide/config');
 }
 
-/** Waits until the IDE's log says the project is open and the editor service runs, or `ms` passed. */
-async function waitForIde(logDir, ms) {
-  const log = path.join(logDir, 'idea.log');
-  const start = Date.now();
-  let seen = { project: false, lsp: false };
+/**
+ * Waits until the IDE's log says the project is open and the editor service has read the stub instance (`contacted`),
+ * or `ms` passed since the last step: the license dialog, which the IDE shows before the project on a machine
+ * without a license, is answered on the way and the wait starts over. `failed` says whether the IDE process is gone.
+ */
+async function waitForIde(dirs, ms, { failed, contacted }) {
+  const log = path.join(dirs.log, 'idea.log');
+  let start = Date.now();
+  let asked = false;
+  let seen = { project: false, service: false };
   while (Date.now() - start < ms) {
+    const failure = failed();
+    if (failure) throw failure;
     if (fs.existsSync(log)) {
       const text = fs.readFileSync(log, 'utf-8');
-      seen = {
-        project: /Project frame set to|project opened/i.test(text),
-        lsp: /LSP server|piwi-language-server|PiwiLsp/i.test(text),
-      };
-      if (seen.project && seen.lsp) return seen;
+      if (!asked && /License required/.test(text)) {
+        asked = true;
+        await claimTrial(dirs);
+        start = Date.now();
+      }
+      seen = { project: /Project frame set to|project opened/i.test(text), service: contacted() };
+      if (seen.project && seen.service) return seen;
     }
     await sleep(2000);
   }
@@ -389,10 +398,12 @@ async function waitForIde(logDir, ms) {
  * is open and the first diagnostics are in, and the IDE is stopped after it.
  */
 async function withIde(run, { file, line, column }, work) {
-  const { ide, root, dirs, workspace, url } = run;
+  const { ide, root, dirs, workspace, url, contacted, reset } = run;
+  reset();
   fs.rmSync(dirs.log, { recursive: true, force: true });
   fs.mkdirSync(dirs.log, { recursive: true });
-  const ideLog = fs.openSync(path.join(root, `ide-${path.basename(file, '.ts')}.out`), 'w');
+  const out = path.join(root, `ide-${path.basename(file, '.ts')}.out`);
+  const ideLog = fs.openSync(out, 'w');
   // JAVA_TOOL_OPTIONS would override the IDE's own options, and it says so in a notification.
   const { JAVA_TOOL_OPTIONS: _javaToolOptions, ...env } = process.env;
   // The native launcher, where the release has one; the shell script otherwise. Both read the same variables.
@@ -415,11 +426,17 @@ async function withIde(run, { file, line, column }, work) {
       detached: true,
     },
   );
+  let spawnError;
+  idea.on('error', (error) => {
+    spawnError = error;
+  });
+  const failed = () =>
+    spawnError ??
+    (idea.exitCode === null ? undefined : new Error(`The IDE exited with code ${idea.exitCode}: see ${out}`));
   try {
-    const seen = await waitForIde(dirs.log, 120_000);
-    await claimTrialIfAsked(dirs);
+    const seen = await waitForIde(dirs, 120_000, { failed, contacted });
     console.log(
-      `IDE: project ${seen.project ? 'open' : 'not seen'}, editor service ${seen.lsp ? 'started' : 'not seen'}, ${file}:${line}`,
+      `IDE: project ${seen.project ? 'open' : 'not seen'}, editor service ${seen.service ? 'connected' : 'not seen'}, ${file}:${line}`,
     );
     // Indexing and the first diagnostics take a while after the project opens; then the balloons go.
     await sleep(40_000);
@@ -483,6 +500,11 @@ async function main() {
   writeIdeaState(workspace);
   const dirs = writeIdeDirs(root, ide);
   const { server, url } = await startStub(commit);
+  // The editor service reads the stub once it runs: the sign the plugin is up, for each launch.
+  let requests = 0;
+  server.on('request', () => {
+    requests += 1;
+  });
   const xvfb = spawn(
     'Xvfb',
     [DISPLAY, '-screen', '0', `${WINDOW.width * SCALE}x${WINDOW.height * SCALE}x24`, '-nolisten', 'tcp'],
@@ -490,19 +512,41 @@ async function main() {
       stdio: 'ignore',
     },
   );
+  let xvfbFailure;
+  xvfb.on('error', (error) => {
+    xvfbFailure = error;
+  });
+  xvfb.on('exit', (code) => {
+    xvfbFailure ??= new Error(`Xvfb exited with code ${code}: is the display ${DISPLAY} free?`);
+  });
   await sleep(1500);
-  const run = { ide, root, dirs, workspace, url };
+  const run = {
+    ide,
+    root,
+    dirs,
+    workspace,
+    url,
+    contacted: () => requests > 0,
+    reset: () => {
+      requests = 0;
+    },
+  };
   try {
+    if (xvfbFailure) throw xvfbFailure;
     if (probe) {
-      await withIde(run, SCENES.heal, () => shoot('probe'));
+      // The probe's capture is not an illustration: it goes to the temp directory.
+      await withIde(run, SCENES.heal, () => shoot('probe', os.tmpdir()));
       return;
     }
+    const unknown = only.filter((name) => !(name in SCENES));
+    if (unknown.length)
+      throw new Error(`Unknown scene: ${unknown.join(', ')} (the scenes: ${Object.keys(SCENES).join(', ')})`);
     const names = Object.keys(SCENES).filter((name) => only.length === 0 || only.includes(name));
     for (const name of names) await withIde(run, SCENES[name], SCENES[name].run);
   } finally {
     xvfb.kill('SIGTERM');
     server.close();
-    // The config directory is not under `root`: it stays, with the licence.
+    // The config directory is not under `root`: it stays, with the license.
     if (!args.includes('--keep')) fs.rmSync(root, { recursive: true, force: true });
     else console.log(`kept ${root}`);
   }

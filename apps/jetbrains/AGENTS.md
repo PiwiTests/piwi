@@ -243,12 +243,12 @@ uploaded by hand from them). It starts an Xvfb display and, for each scene, laun
 editor focused (the editor state of a pre-written `workspace.xml` is not restored on a fresh project). The keys a
 scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes where the
 IDE's actions have none (the Piwi tool window, the notifications), and ImageMagick's `import` captures the screen.
-The IDE's config directory stays in `.ide/config` across runs because the licence lives there: on a machine without
-one, the IDE shows its licence dialog, and `--start-trial` answers its Start trial tab, which claims the release's
+The IDE's config directory stays in `.ide/config` across runs because the license lives there: on a machine without
+one, the IDE shows its license dialog, and `--start-trial` answers its Start trial tab, which claims the release's
 30-day trial with no account (an internet connection suffices; a version's trial is claimed once per machine);
 `--config` copies an activated IDE's config directory in instead. An EAP build asks for a JetBrains account, so it
 cannot serve. `--ide` names another installed release, `--probe` captures the IDE as it stands without driving it,
-and `--keep` leaves the run's directory with the IDE's logs. What was found about the IDE on the way (the licence,
+and `--keep` leaves the run's directory with the IDE's logs. What was found about the IDE on the way (the license,
 the launcher, the properties that keep it quiet, what a check in the real IDE would need) is recorded in
 [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
 

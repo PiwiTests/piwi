@@ -19,7 +19,7 @@ VS Code and JetBrains scripts prove, on every run, that the built plugin loads i
 service, connects to an instance, and draws its failures, its quick fixes and its summaries. They assert none of it:
 they wait for the moment to capture and write an image. The plugins' automated checks remain the in-process ones
 (section 5). A check in the real editor is within reach for VS Code and costly for the JetBrains IDEs, mostly because
-of the licence; both are deferred (section 6).
+of the license; both are deferred (section 6).
 
 ## 1. What exists
 
@@ -78,15 +78,15 @@ All of it verified on WebStorm 2026.2.3 (build 262.10968.77), the release curren
   `<laf themeId="ExperimentalDark" />` is the new UI's dark theme. `-Dawt.useSystemAAFontSettings=lcd` keeps the
   text crisp.
 - **Startup markers in `idea.log`.** `Project frame set to` once the project window shows; `License required` when
-  the licence dialog is up. Once the system directory holds the indexes, a launch reaches the project frame in about
+  the license dialog is up. Once the system directory holds the indexes, a launch reaches the project frame in about
   ten seconds; the first launch on a fresh system directory takes about a minute, and the first diagnostics of the
   plugin another thirty to forty seconds after the frame.
 
-### The licence
+### The license
 
-- **A release asks for a licence** at the first start on a config directory without one, in a dialog with three
+- **A release asks for a license** at the first start on a config directory without one, in a dialog with three
   tabs: *Free non-commercial use* (a JetBrains account is required to log in), *Paid license* (subscription,
-  activation code, licence server) and *Start trial*. **Start trial** claims a 30-day trial of the IDE with an
+  activation code, license server) and *Start trial*. **Start trial** claims a 30-day trial of the IDE with an
   internet connection and nothing else: no account, no form. The trial is written as `<config>/webstorm.key`, and the
   IDE starts licensed from then on. The 2024.1 release shows the same tab. An EAP build has no trial: it asks for a
   JetBrains account, so it cannot serve a script.
@@ -95,7 +95,7 @@ All of it verified on WebStorm 2026.2.3 (build 262.10968.77), the release curren
   trial only when asked (`--start-trial`), by clicking the tab and the button at their places in the 1440 × 900
   window; `--config <dir>` copies an activated IDE's config directory in instead.
 - **The trial is bound to the machine through `user.home`.** Pointing the Java property `user.home` elsewhere (tried
-  so the project view would show `~/acme-mugs` rather than the temporary path) brought the licence dialog back on the
+  so the project view would show `~/acme-mugs` rather than the temporary path) brought the license dialog back on the
   next start, `License required` in the log, the key file still in place. The script does not touch `user.home`; the
   failures scene hides the project view instead.
 - **The trial's balloon**, "Free trial has started. 30 days left", is not a notification: it is a *got it* tooltip
@@ -198,7 +198,7 @@ Verified on VS Code 1.143.0, the stable build `@vscode/test-electron` downloaded
   API the extension's `activate` returns. No DOM: what the workbench draws is not checked.
 - **JetBrains** (`apps/jetbrains/`): platform tests on `BasePlatformTestCase` (`PiwiPluginTest`, `GlueTest`,
   `OpenOriginsTest`, `PiwiRecordingTest`, `Lsp4jAccessTest`) that start the language server from `dist/` in the test
-  IDE, headless, with no licence involved. What the IDE draws (the tool window, the intentions, Code Vision, the
+  IDE, headless, with no license involved. What the IDE draws (the tool window, the intentions, Code Vision, the
   status bar) is not checked.
 - **The screenshot scripts** add, by hand and without assertions, the one thing the above cannot: the built plugin in
   the real product, with the real LSP client and the real UI. A run that reaches its captures is evidence that the
@@ -220,33 +220,34 @@ assertions:
 - the status bar item shows the counts;
 - the Code Lens lines above the locators and the application file name the tests behind them.
 
-Cost: a Playwright config in `apps/vscode/tests/e2e/`, the launcher of the script moved to a shared module, Xvfb in
-the workflow, the VS Code download cached (about 100 MB, `@vscode/test-electron` caches it). A run is one to two
+Cost: a Playwright config in `apps/vscode/tests/e2e/`, the launcher of the script moved to a shared module, the stub
+instance of `tests/integration/run.mjs` (a second copy of the fixture's, with fewer routes) folded into the fixture
+module, Xvfb in the workflow, the VS Code download cached (about 100 MB, `@vscode/test-electron` caches it). A run is one to two
 minutes. Risk: the workbench's DOM (class names, the quick input's rows) changes across VS Code versions, where the
 integration suite's public commands do not; the suite should pin the VS Code version it downloads and move it on
 purpose.
 
-### JetBrains: costly, mainly for the licence
+### JetBrains: costly, mainly for the license
 
 There is no DOM. Three ways to assert, from the cheapest:
 
 1. **The IDE's log and the service's traffic.** The current script can check, after a launch, that `idea.log` holds
    the plugin's start, the editor service's start and no error from the plugin, and the stub can record which routes
-   the service read. This proves loading and connection, not what is drawn. It needs the trial or a licence, like the
+   the service read. This proves loading and connection, not what is drawn. It needs the trial or a license, like the
    captures.
 2. **The IntelliJ Platform's integration test framework**: the IDE Starter with the Driver API, which the
    IntelliJ Platform Gradle plugin exposes as `TestFrameworkType.Starter` (present in the 2.19.0 the build uses). It
    downloads an IDE, installs the plugin,
    opens a project and asserts on UI components (tool windows, editor text, popups) rather than pixels. This is the
-   framework JetBrains documents for UI tests. It brings its own IDE download, the same licence constraint, and a
+   framework JetBrains documents for UI tests. It brings its own IDE download, the same license constraint, and a
    run of several minutes.
 3. **Pixels.** Comparing the captures with references. Fonts, hints and timing make this brittle; not recommended.
 
-The licence is the real cost. A trial is one per IDE version per machine for 30 days; a runner that is a fresh
+The license is the real cost. A trial is one per IDE version per machine for 30 days; a runner that is a fresh
 machine every time could claim one on each run, which is not what the trial is for, and a persistent runner runs out
-after a month. The proper way is a licence in the workflow's secrets (a key, or a licence server): JetBrains grants
-free licences to open-source projects, and whether a fair-source project (FSL-1.1-MIT) qualifies is not established.
-Until a licence exists, a real-IDE check is a job run by hand or nightly on a machine someone activates, not a check
+after a month. The proper way is a license in the workflow's secrets (a key, or a license server): JetBrains grants
+free licenses to open-source projects, and whether a fair-source project (FSL-1.1-MIT) qualifies is not established.
+Until a license exists, a real-IDE check is a job run by hand or nightly on a machine someone activates, not a check
 on every pull request.
 
 ## 7. Decisions
@@ -255,7 +256,7 @@ on every pull request.
 |---|----------|
 | D1 | **No continuous check in the real editors for now.** The three pipelines stay what they are: the way to recapture the illustrations, documented in `apps/docs/AGENTS.md` (Marketing screenshots), `apps/vscode/AGENTS.md` and `apps/jetbrains/AGENTS.md` (Screenshots), and run by hand before a release that changes what the editors show. |
 | D2 | **The plugins' verification stays in-process**: the editor service's unit tests, VS Code's unit and integration suites, the JetBrains platform tests. A change to what an editor draws is checked by recapturing and looking. |
-| D3 | **When a real-editor check is wanted, VS Code comes first**, as a Playwright suite over the screenshot launcher, nightly rather than per pull request. The JetBrains IDEs follow through the Starter framework once a licence for CI exists. |
+| D3 | **When a real-editor check is wanted, VS Code comes first**, as a Playwright suite over the screenshot launcher, nightly rather than per pull request. The JetBrains IDEs follow through the Starter framework once a license for CI exists. |
 | D4 | **The facts above are the reference** for anyone touching the pipelines; a finding that changes (a property renamed, a dialog moved) is corrected here and in the script's header together. |
 
 ## Not in this plan
@@ -269,7 +270,7 @@ on every pull request.
 
 ## Open questions
 
-- A licence for CI: which kind (key or licence server), from which programme, and where it is kept.
+- A license for CI: which kind (key or license server), from which programme, and where it is kept.
 - Whether the Starter framework runs in the 2024.1 the Gradle build targets or needs the build's platform version
   raised.
 - Whether the VS Code suite should drive the stable `@vscode/test-electron` download or the Insiders build the

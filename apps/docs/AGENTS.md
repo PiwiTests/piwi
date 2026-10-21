@@ -308,7 +308,7 @@ reproducible as the UI moves.
 
 Three illustrations come from other pipelines, and the harness's `--check` leaves them alone (`EXTERNAL_DOCS_IMAGES`
 and the `picker-`, `vscode-` and `jetbrains-` prefixes): the video poster above; the browser extension's
-(`picker-*.png`, `tested-elements-overlay.png`), written at 1280 × 800, the size the stores take, by
+(`picker-*.png` at 1280 × 800, the size the stores take, except the DevTools pane; `tested-elements-overlay.png` at 1400 × 900), by
 `PIWI_DOCS_SHOTS=1 npm run extension:test:e2e -- docs-screenshots` from `apps/extension/`; and the editor extensions'
 (`vscode-*.png`, `jetbrains-*.png`), written by
 `apps/vscode/scripts/take-screenshots.mjs` and `apps/jetbrains/scripts/take-screenshots.mjs`, which open one fixture

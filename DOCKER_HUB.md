@@ -1,6 +1,6 @@
 # Piwi Dashboard
 
-**Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them, every run, trace and HTML report, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.
+**Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.
 
 📖 [Documentation](https://piwitests.dev) · 🎮 [Live demo](https://piwitests.dev/demo/) · 🚀 [Deployment guide](https://piwitests.dev/operate/deployment) · 💬 [Source and releases on GitHub](https://github.com/PiwiTests/platform)
 

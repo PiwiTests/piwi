@@ -15,9 +15,11 @@ import { stubChromeStorage } from './recording-stub.js';
  * `PIWI_DOCS_SHOTS=1`; recapture with
  * `PIWI_DOCS_SHOTS=1 npm run extension:test:e2e -- docs-screenshots`.
  *
- * Every image is a 1280 × 800 viewport captured at 2× and written at 1280 px
- * wide, the size the stores take and the docs show; the harness in
- * `apps/application/scripts/take-feature-screenshots.mjs` lists them as
+ * The store images (`picker-pick`, `picker-popup`, `picker-lint`,
+ * `picker-record`) are a 1280 × 800 viewport captured at 2× and written at
+ * 1280 px wide, the size the stores take; the overlay and the DevTools pane
+ * are the docs' alone, at their own sizes. The harness in
+ * `apps/application/scripts/take-feature-screenshots.mjs` lists them all as
  * external so `--check` leaves them alone.
  */
 
@@ -99,20 +101,19 @@ test('picker-popup', async ({ context, extensionId }) => {
   const margin = 24;
   const left = canvas.width - width - margin * 2;
   const top = margin;
-  const shadow = await sharp({
-    create: { ...canvas, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  // The shadow's rectangle composited on a transparent canvas, then blurred in a second pipeline: sharp blurs
+  // before it composites in one.
+  const rectangle = await sharp({
+    create: { width, height, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 0.35 } },
   })
-    .composite([
-      {
-        input: await sharp({
-          create: { width, height, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 0.35 } },
-        })
-          .png()
-          .toBuffer(),
-        left,
-        top: top + 8,
-      },
-    ])
+    .png()
+    .toBuffer();
+  const shadow = await sharp(
+    await sharp({ create: { ...canvas, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: rectangle, left, top: top + 8 }])
+      .png()
+      .toBuffer(),
+  )
     .blur(28)
     .png()
     .toBuffer();

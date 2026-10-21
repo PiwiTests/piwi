@@ -238,7 +238,7 @@ other `curl` examples may stay bash-only. `.env` file contents are not shell com
 Piwi is not a product being sold. Copy is informative, specific and honest — never promotional. The project describes
 itself the same way everywhere:
 
-> **Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them — then groups
+> **Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them, then groups
 > the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted,
 > zero telemetry.
 

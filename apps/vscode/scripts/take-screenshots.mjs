@@ -283,14 +283,17 @@ async function main() {
     await page.locator('.statusbar-item', { hasText: 'Piwi:' }).waitFor({ timeout: 120_000 });
     await closeSecondarySideBar(page);
     await settle(page, 1500);
+    const unknown = only.filter((name) => !(name in SCENES));
+    if (unknown.length) throw new Error(`Unknown scene: ${unknown.join(', ')} (the scenes: ${Object.keys(SCENES).join(', ')})`);
     const names = Object.keys(SCENES).filter((name) => only.length === 0 || only.includes(name));
     for (const name of names) {
       try {
         await SCENES[name](page);
       } catch (error) {
         // The window as it stands says what the scene ran into.
-        fs.mkdirSync(outDir, { recursive: true });
-        await page.screenshot({ path: path.join(outDir, `vscode-${name}-failed.png`) }).catch(() => {});
+        const failed = path.join(os.tmpdir(), `vscode-${name}-failed.png`);
+        await page.screenshot({ path: failed }).catch(() => {});
+        console.error(`the ${name} scene failed: the window as it stood is in ${failed}`);
         throw error;
       }
     }

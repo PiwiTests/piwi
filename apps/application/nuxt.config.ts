@@ -14,7 +14,7 @@ const isDemo = process.env.PIWI_DEMO_MODE === 'true';
 // Static head description for the demo shell — same wording as the docs
 // site's og: cards (apps/docs/.vitepress/config.mts).
 const demoDescription =
-  'CI throws away every report it makes. Piwi keeps them — then groups failures by root cause, scores flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.';
+  'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.';
 
 // The dashboard version is authoritative in `application/package.json`
 // (kept in sync across the monorepo by release-please) — read it once at

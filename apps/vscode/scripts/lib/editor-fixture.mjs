@@ -509,7 +509,12 @@ export function startStub(commit) {
     if (p === `/api/projects/${PROJECT.id}/feature-map`) return json({ features: [] });
     if (p.startsWith('/api/files/')) {
       res.setHeader('Content-Type', 'image/png');
-      return fs.createReadStream(SCREENSHOT).pipe(res);
+      const stream = fs.createReadStream(SCREENSHOT);
+      stream.on('error', () => {
+        res.statusCode = 404;
+        res.end();
+      });
+      return stream.pipe(res);
     }
     res.statusCode = 404;
     json({});
