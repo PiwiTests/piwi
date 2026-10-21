@@ -28,7 +28,9 @@ import {
 } from '#shared/coverage-combine';
 import { RUN_USES, eligibleRunSql, runOriginIn } from '#shared/run-eligibility';
 import { readRunCoverageGaps, type RunCoverageGap } from '#shared/run-coverage-gaps';
+import type { CommitCoverageInput } from '#shared/handlers/change-coverage';
 import {
+  commitDetailRemoved,
   finalCommitTotals,
   latestCoverageCommit,
   loadCommitCoverage,
@@ -188,6 +190,30 @@ export function cachedCommitCoverage(db: DrizzleDB, projectId: number, commit: s
   coverage.catch(() => cache.delete(key));
   if (cache.size > CACHE_ENTRIES) cache.delete(cache.keys().next().value!);
   return coverage;
+}
+
+/**
+ * A head commit's combined coverage, as change coverage reads it; null when it
+ * has none, or only its totals are kept: its files went when a newer commit
+ * superseded it, after its pull-request feedback was posted.
+ */
+export async function changeCommitCoverage(
+  db: DrizzleDB,
+  projectId: number,
+  commit: string,
+): Promise<CommitCoverageInput | null> {
+  if (await commitDetailRemoved(db, projectId, commit)) return null;
+  const coverage = await cachedCommitCoverage(db, projectId, commit).catch((e) => {
+    console.error(`[change-coverage] could not read the coverage of ${commit}`, e);
+    return null;
+  });
+  if (!coverage) return null;
+  return {
+    commit: coverage.commit,
+    files: coverage.combined.files,
+    suites: coverage.combined.suites,
+    areas: { names: coverage.areas.map((a) => a.name), areaOf: coverage.areaOf },
+  };
 }
 
 /** The newest complete run with run coverage on a branch tag, for a project whose runs alone record coverage. */

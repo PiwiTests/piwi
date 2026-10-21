@@ -137,9 +137,9 @@ the next lines no suite ran.
 
 ## In pull requests
 
-The [Uncovered changes](./uncovered-changes) section of the pull-request comment opens with the change's patch
-coverage, the share of its changed lines any suite ran; a file counts as reached when any suite ran a changed line.
-`piwi gate --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
+The [Uncovered changes](./uncovered-changes) section of the pull-request comment counts the change's patch coverage
+and names the changed lines no suite ran, over the same scope. `piwi gate --min-patch-coverage <percent>` warns under
+a minimum, and never fails the build.
 
 ## Over time
 

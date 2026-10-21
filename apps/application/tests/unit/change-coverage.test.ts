@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -126,7 +127,7 @@ describe('computeChangeCoverage', () => {
     expect(cc.uncoveredFiles).toBe(0);
   });
 
-  test('marks a changed file with no reaching test as uncovered', async () => {
+  test('marks an observable changed file no test reached as uncovered', async () => {
     const orders = await seedCase('places an order', 'tests/orders.spec.ts');
     await seedLocator(orders, 'src/api/orders.post.ts:12:4');
     const runId = await seedRun([orders]);
@@ -134,17 +135,72 @@ describe('computeChangeCoverage', () => {
     const cc = await computeChangeCoverage(db, 1, {
       changedFiles: [
         { filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 },
-        { filePath: 'src/utils/rounding.ts', additions: 5, deletions: 1 },
+        { filePath: 'server/api/refunds/[id].post.ts', additions: 5, deletions: 1 },
       ],
       runId,
       tickets: ['PROJ-418'],
     });
 
-    const rounding = cc.files.find((f) => f.filePath === 'src/utils/rounding.ts')!;
-    expect(rounding.reachedInRun).toBe(false);
-    expect(rounding.reachedCountHistory).toBe(0);
+    const refunds = cc.files.find((f) => f.filePath === 'server/api/refunds/[id].post.ts')!;
+    expect(refunds).toMatchObject({ reach: 'unreached', reachedInRun: false, reachedCountHistory: 0 });
     expect(cc.reachedFiles).toBe(1);
     expect(cc.uncoveredFiles).toBe(1);
+  });
+
+  test('counts apart a file nothing observes, one outside the coverage scope and a deleted one', async () => {
+    const orders = await seedCase('places an order', 'tests/orders.spec.ts');
+    const runId = await seedRun([orders]);
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [
+        { filePath: 'src/utils/rounding.ts', additions: 5, deletions: 1 },
+        { filePath: 'src/Generated/Client.g.cs', additions: 90, deletions: 4 },
+        { filePath: 'server/api/legacy.get.ts', additions: 0, deletions: 30, deleted: true },
+      ],
+      runId,
+    });
+
+    expect(cc.files.map((f) => [f.filePath, f.reach])).toEqual([
+      ['src/utils/rounding.ts', 'not-observable'],
+      ['src/Generated/Client.g.cs', 'out-of-scope'],
+      ['server/api/legacy.get.ts', 'deleted'],
+    ]);
+    expect(cc.uncoveredFiles).toBe(0);
+    expect(cc.reachedFiles).toBe(0);
+    expect(cc.notCounted).toEqual({ notObservable: 1, outOfScope: 1, deleted: 1 });
+  });
+
+  test('reads the project’s own coverage scope', async () => {
+    await db
+      .update(schema.projects)
+      .set({ coverageScope: { include: ['server/'], exclude: [] } })
+      .where(eq(schema.projects.id, 1));
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [
+        { filePath: 'server/api/refunds/[id].post.ts', additions: 5, deletions: 1 },
+        { filePath: 'app/pages/orders/[id].vue', additions: 2, deletions: 1 },
+      ],
+    });
+
+    expect(cc.files.map((f) => f.reach)).toEqual(['unreached', 'out-of-scope']);
+  });
+
+  test('a file reached only in the recent window is reached earlier, not uncovered', async () => {
+    const orders = await seedCase('places an order', 'tests/orders.spec.ts');
+    const other = await seedCase('lists users', 'tests/users.spec.ts');
+    await seedLocator(orders, 'src/api/orders.post.ts:12:4');
+    await seedRun([orders]);
+    const narrowed = await seedRun([other]);
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [{ filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 }],
+      runId: narrowed,
+    });
+
+    expect(cc.files[0]).toMatchObject({ reach: 'reached-earlier', reachedInRun: false, reachedCountHistory: 1 });
+    expect(cc.reachedFiles).toBe(1);
+    expect(cc.uncoveredFiles).toBe(0);
   });
 
   test('a skipped or did-not-run case does not count as reach', async () => {
@@ -190,6 +246,7 @@ describe('computeChangeCoverage', () => {
     });
 
     expect(cc.files[0]!.reachedInRun).toBe(true);
+    expect(cc.files[0]!.reach).toBe('out-of-scope');
     expect(cc.files[0]!.ticket).toBeNull();
   });
 
@@ -205,7 +262,7 @@ describe('computeChangeCoverage', () => {
 
     const file = cc.files[0]!;
     expect(file.reachedInRun).toBe(true);
-    expect(file.reachBasis).toBe('reached');
+    expect(file.reach).toBe('reached');
     expect(cc.uncoveredFiles).toBe(0);
   });
 
@@ -220,10 +277,10 @@ describe('computeChangeCoverage', () => {
     });
 
     expect(cc.files[0]!.reachedInRun).toBe(true);
-    expect(cc.files[0]!.reachBasis).toBe('reached');
+    expect(cc.files[0]!.reach).toBe('reached');
   });
 
-  test('an unreached route handler is observable, a bare component is not', async () => {
+  test('an unreached route handler is uncovered, a bare component is not observable', async () => {
     const orders = await seedCase('places an order', 'tests/orders.spec.ts');
     const runId = await seedRun([orders]);
 
@@ -238,8 +295,8 @@ describe('computeChangeCoverage', () => {
     const handler = cc.files.find((f) => f.filePath === 'server/api/refunds/[id].post.ts')!;
     const component = cc.files.find((f) => f.filePath === 'app/components/OrderRow.vue')!;
     expect(handler.reachedInRun).toBe(false);
-    expect(handler.reachBasis).toBe('observable-unreached');
-    expect(component.reachBasis).toBe('no-evidence');
+    expect(handler.reach).toBe('unreached');
+    expect(component.reach).toBe('not-observable');
   });
 
   test('groups files by their primary ticket', async () => {
@@ -295,10 +352,60 @@ describe('computeChangeCoverage', () => {
     });
 
     const [rounding, tax] = cc.files;
-    expect(rounding).toMatchObject({ suites: ['unit-back'], reachBasis: 'reached', reachedInRun: false });
-    expect(tax!.suites).toEqual([]);
+    expect(rounding).toMatchObject({
+      suites: ['unit-back'],
+      reach: 'reached',
+      reachedInRun: false,
+      lines: { changed: 3, ran: 1, undetermined: 0, notRun: [[5, 6]] },
+    });
+    expect(tax).toMatchObject({ suites: [], reach: 'not-observable', lines: null });
     expect(cc.reachedFiles).toBe(1);
-    expect(cc.uncoveredFiles).toBe(1);
+    expect(cc.uncoveredFiles).toBe(0);
     expect(cc.patchCoverage).toMatchObject({ changedLines: 3, executedLines: 1, unitLines: 1, e2eLines: 0 });
+  });
+
+  test('a file whose changed lines the coverage counts and no suite ran is uncovered, with its lines', async () => {
+    const combined = combineCoverage({
+      inventory: null,
+      inScope: () => true,
+      spanTable: new Map(),
+      suites: [
+        {
+          name: 'unit-back',
+          kind: 'unit',
+          files: [
+            {
+              path: 'api/Orders/OrderService.cs',
+              blob: 'b'.repeat(40),
+              executable: [[1, 20]],
+              lines: [[1, 4]],
+              functions: [],
+              allFunctions: [],
+              linesRecorded: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [
+        { filePath: 'api/Orders/OrderService.cs', additions: 4, deletions: 0, changedLines: [10, 11, 12, 15] },
+      ],
+      commitCoverage: { commit: 'c0ffee', files: combined.files, suites: combined.suites },
+    });
+
+    expect(cc.files[0]).toMatchObject({
+      reach: 'unreached',
+      lines: {
+        changed: 4,
+        ran: 0,
+        notRun: [
+          [10, 12],
+          [15, 15],
+        ],
+      },
+    });
+    expect(cc.uncoveredFiles).toBe(1);
   });
 });

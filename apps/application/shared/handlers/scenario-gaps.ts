@@ -78,6 +78,7 @@ import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { DrizzleDB } from './db';
+import type { ChangeReach } from './change-coverage';
 import { recordOutcome } from '../../server/utils/outcomes';
 import { suggestionHash, type HandbackActor } from '../handback-outcomes';
 
@@ -489,31 +490,23 @@ export function detectSurfaceDrift(
   return gaps;
 }
 
-/** One changed file and whether any test reached it, in this run and history. */
+/** One changed file and whether a test reached it, by the rule of change coverage. */
 export interface ChangedFileReach {
   filePath: string;
   additions: number;
   deletions: number;
-  reachedInRun: boolean;
-  reachedCountHistory: number;
-  /**
-   * Whether reach is observable for this file. `no-evidence` means no route or
-   * page convention maps it and no test source touches it, so its unreached
-   * state is not a confident gap. Absent is treated as observable.
-   */
-  reachBasis?: 'reached' | 'observable-unreached' | 'no-evidence';
-  /** The suites of the head commit's coverage that ran one of its changed lines. */
-  suites?: string[];
+  reach: ChangeReach;
+  /** How many changed lines the head commit's coverage counts, when it counts some. */
+  lines?: { changed: number } | null;
   ticket?: string | null;
 }
 
 /**
- * Changed, unreached — a changed source file no test reached in this run and no
- * suite of the head commit's coverage ran a changed line of, paired with its
- * history count so a selection-narrowed run is never mistaken for a
- * gap. Blind spot, reported per ticket at change time. A file the graph cannot
- * observe (no route or page maps it, no test source touches it) is reported at
- * low confidence and says so, rather than as a strong blind spot.
+ * Changed, unreached — a changed file Piwi can observe that no test reached, in
+ * this run or the recent window, and no suite of the head commit's coverage
+ * ran a changed line of: an uncovered change. Blind spot, reported per ticket
+ * at change time. A file reached only in the window is a narrowed run, and one
+ * nothing can observe says nothing; neither opens a gap.
  */
 export function detectChangedUnreached(
   files: ChangedFileReach[],
@@ -522,24 +515,58 @@ export function detectChangedUnreached(
 ): DetectedGap[] {
   const gaps: DetectedGap[] = [];
   for (const file of files) {
-    if (file.reachedInRun || file.suites?.length) continue;
-    const noEvidence = file.reachBasis === 'no-evidence';
-    const base = `+${file.additions} −${file.deletions} · no test in run #${runId} · ${file.reachedCountHistory} in ${windowRuns} runs — observed reach.`;
+    if (file.reach !== 'unreached') continue;
+    const evidence = [
+      `+${file.additions} −${file.deletions} · no test in run #${runId} or in the last ${windowRuns} runs — observed reach.`,
+    ];
+    if (file.lines) {
+      const n = file.lines.changed;
+      evidence.push(`None of its ${n} changed ${n === 1 ? 'line' : 'lines'} ran in the head commit's coverage.`);
+    }
     gaps.push({
       detector: 'changed-unreached',
       kind: 'gap',
       class: 'blind-spot',
       key: file.filePath,
       title: `${file.filePath} changed but not reached`,
-      evidence: noEvidence
-        ? [base, 'No route or page maps this file and no test source touches it — no observed-reach evidence.']
-        : [base],
-      confidence: noEvidence ? 0.3 : file.reachedCountHistory === 0 ? 0.9 : 0.5,
+      evidence,
+      confidence: 0.9,
       files: [file.filePath],
       ticket: file.ticket ?? null,
     });
   }
   return gaps;
+}
+
+/**
+ * Close the open and snoozed *changed, unreached* gaps of `filePaths`: files a
+ * test now reaches by the rule of change coverage. Returns how many closed.
+ */
+export async function closeReachedChangedFiles(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number | null,
+  filePaths: string[],
+): Promise<number> {
+  if (filePaths.length === 0) return 0;
+  const now = new Date();
+  let closed = 0;
+  for (let i = 0; i < filePaths.length; i += 100) {
+    const rows = await db
+      .update(scenarioGaps)
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .where(
+        and(
+          eq(scenarioGaps.projectId, projectId),
+          eq(scenarioGaps.detector, 'changed-unreached'),
+          inArray(scenarioGaps.status, ['open', 'snoozed']),
+          inArray(scenarioGaps.key, filePaths.slice(i, i + 100)),
+        ),
+      )
+      .returning({ id: scenarioGaps.id });
+    closed += rows.length;
+  }
+  return closed;
 }
 
 // ── Graph and outcome detectors (pure) ───────────────────────────────────────

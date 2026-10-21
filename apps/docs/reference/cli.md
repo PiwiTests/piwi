@@ -104,7 +104,7 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `--require-selection <key>` | Fail when a test the named selection matches did not run or failed |
 | `--max-leaks <n>` | Fail when the run left more than *n* browsers, contexts or pages open, counted per opening line |
 | `--max-new-leaks <n>` | Fail when more than *n* of those were never seen on the base branch |
-| `--max-uncovered-changes <n>` | Warn when more than *n* changed files have no observed test reach (warn-only — never fails the gate) |
+| `--max-uncovered-changes <n>` | Warn when more than *n* changed files are [uncovered changes](/features/uncovered-changes): no test reached them (warn-only — never fails the gate) |
 | `--min-patch-coverage <percent>` | Warn when fewer of the change's added and modified lines ran, in the head commit's [combined coverage](/features/combined-coverage) (warn-only — never fails the gate) |
 | `--json` | Print the raw result as JSON instead of a summary |
 | `-h`, `--help` | Show help |

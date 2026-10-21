@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import { combineCoverage, type SuiteFile } from '#shared/coverage-combine';
 import {
+  changedLinesOf,
   computePatchCoverage,
+  lineRangesText,
   patchChangedLines,
   patchCoverageWarning,
   suitesOnChangedLines,
@@ -32,6 +34,34 @@ describe('patchChangedLines', () => {
     const patch = ['@@ -1,4 +1,5 @@', ' a', '-b', '+B', '+C', ' d', '@@ -10,2 +11,2 @@', ' x', '+y'].join('\n');
     expect(patchChangedLines('src/cart.ts', patch)).toEqual([2, 3, 12]);
     expect(patchChangedLines('src/cart.ts', undefined)).toEqual([]);
+  });
+});
+
+describe('changedLinesOf', () => {
+  test('counts a file’s changed reference lines, those that ran, and names the ranges no suite ran', () => {
+    // Line 12 is not executable; 7, 8 and 10 ran in no suite.
+    expect(changedLinesOf(combined.files[0]!, [2, 5, 7, 8, 10, 12])).toEqual({
+      changed: 5,
+      ran: 2,
+      undetermined: 0,
+      notRun: [
+        [7, 8],
+        [10, 10],
+      ],
+    });
+  });
+
+  test('is null when no changed line is a reference line', () => {
+    expect(changedLinesOf(combined.files[0]!, [12, 40])).toBeNull();
+  });
+
+  test('words the ranges as the dashboard does', () => {
+    expect(
+      lineRangesText([
+        [7, 8],
+        [10, 10],
+      ]),
+    ).toBe('7\u00a0to\u00a08, 10');
   });
 });
 
@@ -110,63 +140,76 @@ describe('the pull-request comment', () => {
     );
   });
 
-  test('stops listing a changed file a suite ran a changed line of', () => {
-    const cc: PrChangeCoverage = {
-      totalFiles: 2,
-      uncoveredFiles: 1,
-      reachedFiles: 1,
-      ticketCount: 0,
-      windowRuns: 30,
-      baseBranch: 'main',
-      patchCoverage: pc,
-      tickets: [
-        {
-          ticket: null,
-          files: [
-            {
-              filePath: 'src/cart.ts',
-              additions: 3,
-              deletions: 0,
-              reachedInRun: false,
-              reachedCountHistory: 0,
-              suites: ['unit-front'],
-            },
-            {
-              filePath: 'src/pay.ts',
-              additions: 1,
-              deletions: 0,
-              reachedInRun: false,
-              reachedCountHistory: 0,
-              suites: [],
-            },
-          ],
-        },
-      ],
-    };
-    const section = renderChangeCoverage(cc)!;
-    expect(section).toContain('**Patch coverage 66.7%**');
-    expect(section).toContain("the lines the head commit's coverage suites ran");
-    expect(section).toContain('`src/pay.ts`');
-    expect(section).not.toContain('`src/cart.ts`');
+  const cartLines = changedLinesOf(combined.files[0]!, [2, 5, 8])!;
+  const section = (over: Partial<PrChangeCoverage> = {}): PrChangeCoverage => ({
+    fileReach: true,
+    totalFiles: 2,
+    uncoveredFiles: 1,
+    reachedFiles: 1,
+    notCounted: { notObservable: 0, outOfScope: 0, deleted: 0 },
+    ticketCount: 0,
+    windowRuns: 30,
+    patchCoverage: pc,
+    tickets: [
+      {
+        ticket: null,
+        files: [
+          { filePath: 'src/cart.ts', additions: 3, deletions: 0, reach: 'reached', lines: cartLines },
+          { filePath: 'src/pay.ts', additions: 1, deletions: 0, reach: 'unreached', lines: null },
+        ],
+      },
+    ],
+    ...over,
+  });
+
+  test('lists the uncovered file, then the changed lines no suite ran of a reached one', () => {
+    const text = renderChangeCoverage(section())!;
+    expect(text).toContain('**Patch coverage 66.7%**');
+    expect(text).toContain("and changed lines no suite ran, in the head commit's coverage");
+    expect(text).toContain('- `src/pay.ts` · changed (+1 −0) · 0 tests in 30 runs');
+    expect(text).toContain('**Changed lines no suite ran**\n- `src/cart.ts` · 2 of 3 ran · not run: 8');
+    expect(text).not.toContain('Gate');
+  });
+
+  test('keeps the changed lines when the file list is withheld', () => {
+    const text = renderChangeCoverage(section({ fileReach: false }))!;
+    expect(text.split('\n')[0]).toBe('#### 🟣 Uncovered changes · patch coverage 66.7%');
+    expect(text).toContain("Changed lines no suite ran, in the head commit's coverage.");
+    expect(text).toContain('`src/cart.ts` · 2 of 3 ran');
+    expect(text).not.toContain('`src/pay.ts`');
+  });
+
+  test('renders nothing without a file list or a patch coverage', () => {
+    expect(renderChangeCoverage(section({ fileReach: false, patchCoverage: null }))).toBeNull();
+    expect(
+      renderChangeCoverage(section({ totalFiles: 0, uncoveredFiles: 0, reachedFiles: 0, patchCoverage: null })),
+    ).toBeNull();
+  });
+
+  test('says which changed files it did not count, and why', () => {
+    const text = renderChangeCoverage(section({ notCounted: { notObservable: 2, outOfScope: 1, deleted: 1 } }))!;
+    expect(text).toContain(
+      'Not counted: 2 files Piwi cannot observe, 1 file outside the coverage scope, 1 file deleted.',
+    );
   });
 });
 
 describe('detectChangedUnreached', () => {
-  test('opens no gap for a file a suite ran a changed line of', () => {
+  test('opens a gap for an uncovered change only', () => {
     const gaps = detectChangedUnreached(
       [
-        {
-          filePath: 'src/cart.ts',
-          additions: 3,
-          deletions: 0,
-          reachedInRun: false,
-          reachedCountHistory: 0,
-          suites: ['unit-front'],
-        },
-        { filePath: 'src/pay.ts', additions: 1, deletions: 0, reachedInRun: false, reachedCountHistory: 0, suites: [] },
+        { filePath: 'src/cart.ts', additions: 3, deletions: 0, reach: 'reached' },
+        { filePath: 'src/pay.ts', additions: 1, deletions: 0, reach: 'unreached', lines: { changed: 4 } },
+        { filePath: 'src/narrowed.ts', additions: 1, deletions: 0, reach: 'reached-earlier' },
+        { filePath: 'README.md', additions: 9, deletions: 0, reach: 'not-observable' },
+        { filePath: 'src/cart.test.ts', additions: 2, deletions: 0, reach: 'out-of-scope' },
       ],
       7,
     );
     expect(gaps.map((g) => g.key)).toEqual(['src/pay.ts']);
+    expect(gaps[0]!.evidence).toEqual([
+      '+1 −0 · no test in run #7 or in the last 30 runs — observed reach.',
+      "None of its 4 changed lines ran in the head commit's coverage.",
+    ]);
   });
 });

@@ -437,12 +437,13 @@ describe('buildPrComment — failure headline', () => {
 describe('change coverage section', () => {
   function coverage(overrides: Partial<PrChangeCoverage> = {}): PrChangeCoverage {
     return {
+      fileReach: true,
       totalFiles: 7,
       uncoveredFiles: 2,
       reachedFiles: 5,
+      notCounted: { notObservable: 0, outOfScope: 0, deleted: 0 },
       ticketCount: 1,
       windowRuns: 30,
-      baseBranch: 'main',
       tickets: [
         {
           ticket: 'PROJ-418',
@@ -451,16 +452,14 @@ describe('change coverage section', () => {
               filePath: 'server/api/orders/[id].patch.ts',
               additions: 41,
               deletions: 3,
-              reachedInRun: false,
-              reachedCountHistory: 0,
+              reach: 'unreached',
               draftTitle: 'a scenario that exercises [id].patch.ts',
             },
             {
               filePath: 'components/OrderRow.vue',
               additions: 8,
               deletions: 2,
-              reachedInRun: true,
-              reachedCountHistory: 4,
+              reach: 'reached',
             },
           ],
         },
@@ -475,14 +474,15 @@ describe('change coverage section', () => {
     expect(section).toContain('Observed reach, not instrumented coverage');
     expect(section).toContain('**PROJ-418**');
     expect(section).toContain('`server/api/orders/[id].patch.ts` · changed (+41 −3) · 0 tests in 30 runs');
-    // A reached file is not listed as uncovered.
+    // A reached file is not listed as uncovered, and the comment claims no gate it does not know.
     expect(section).not.toContain('OrderRow.vue');
-    expect(section).toContain('warn');
+    expect(section).toContain('5 files reached.');
+    expect(section).not.toContain('Gate');
   });
 
   test('reports a clean diff without listing files', () => {
     const section = renderChangeCoverage(coverage({ uncoveredFiles: 0, reachedFiles: 7, tickets: [] }));
-    expect(section).toContain('All 7 changed files have observed reach');
+    expect(section).toContain('All 7 changed files are reached.');
   });
 
   test('a backtick in a file path cannot break out of the code span', () => {
@@ -500,8 +500,7 @@ describe('change coverage section', () => {
                 filePath: 'src/`rm -rf`/x.ts',
                 additions: 1,
                 deletions: 0,
-                reachedInRun: false,
-                reachedCountHistory: 0,
+                reach: 'unreached',
               },
             ],
           },
@@ -523,8 +522,7 @@ describe('change coverage section', () => {
       filePath: `src/file-${i}.ts`,
       additions: 1,
       deletions: 0,
-      reachedInRun: false,
-      reachedCountHistory: 0,
+      reach: 'unreached' as const,
     }));
     const section = renderChangeCoverage(
       coverage({
@@ -555,16 +553,14 @@ describe('change coverage section', () => {
                 filePath: 'src/new.ts',
                 additions: 5,
                 deletions: 0,
-                reachedInRun: false,
-                reachedCountHistory: 0,
+                reach: 'unreached',
                 draftTitle: 'exercise new.ts',
               },
               {
                 filePath: 'src/old.ts',
                 additions: 2,
                 deletions: 0,
-                reachedInRun: false,
-                reachedCountHistory: 3,
+                reach: 'reached-earlier',
               },
             ],
           },
@@ -587,8 +583,28 @@ describe('change coverage section', () => {
       'piwi/tests/change-coverage',
     );
     expect(status.state).toBe('success');
-    expect(status.description).toContain('2 of 7');
+    expect(status.description).toBe('2 of 7 changed files no test reached');
     expect(status.context).toBe('piwi/tests/change-coverage');
+  });
+
+  test('the status keeps the patch coverage when the file list is withheld', () => {
+    const patchCoverage = {
+      commit: 'c0ffee1234',
+      changedLines: 4,
+      executedLines: 3,
+      unitLines: 3,
+      e2eLines: 0,
+      undeterminedLines: 0,
+      suites: [],
+      areas: [],
+      files: 1,
+    };
+    const status = buildChangeCoverageStatus(
+      coverage({ fileReach: false, patchCoverage }),
+      'https://x',
+      'piwi/tests/change-coverage',
+    );
+    expect(status.description).toBe('patch coverage 75%');
   });
 });
 

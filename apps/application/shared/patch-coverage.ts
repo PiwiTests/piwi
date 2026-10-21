@@ -4,7 +4,7 @@
  * it is a reference line of its file; a blank line, a comment or a file no
  * suite names is left out of both sides of the ratio.
  */
-import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
+import { lineInRanges, normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import { diffFileFromPatch } from '@piwitests/core/diff-anchors';
 import { coveragePercent, type CombinedFile, type CoverageSuiteKind } from './coverage-combine';
 
@@ -35,6 +35,23 @@ export interface PatchCoverage {
   files: number;
 }
 
+/** One changed file's lines, as the head commit's combined coverage counts them. */
+export interface ChangedLines {
+  /** Changed lines that are reference lines of the file. */
+  changed: number;
+  /** Of those, the lines a suite ran. */
+  ran: number;
+  /** Of those, the lines in a function the browser ran, its lines not recorded. */
+  undetermined: number;
+  /** Of those, the lines no suite ran, as ranges. */
+  notRun: LineRange[];
+}
+
+/** Line ranges in words, each range kept on one line: "57 to 59, 64". */
+export function lineRangesText(ranges: LineRange[]): string {
+  return ranges.map(([start, end]) => (start === end ? String(start) : `${start}\u00a0to\u00a0${end}`)).join(', ');
+}
+
 /** The new file's added lines of a provider's patch, ascending. */
 export function patchChangedLines(path: string, patch: string | null | undefined): number[] {
   if (!patch) return [];
@@ -49,6 +66,19 @@ function countIn(ranges: LineRange[] | undefined, lines: number[]): number {
   let n = 0;
   for (const line of lines) if (lineInRanges(ranges, line)) n++;
   return n;
+}
+
+/** A changed file's lines on its combined coverage; null when none of them is a reference line. */
+export function changedLinesOf(file: CombinedFile, changedLines: number[]): ChangedLines | null {
+  const counted = changedLines.filter((line) => lineInRanges(file.executable, line));
+  if (counted.length === 0) return null;
+  const notRun = counted.filter((line) => lineInRanges(file.classes.none, line));
+  return {
+    changed: counted.length,
+    ran: countIn(file.executed, counted),
+    undetermined: countIn(file.classes.undetermined, counted),
+    notRun: normalizeLineRanges(notRun.map((line) => [line, line])),
+  };
 }
 
 /** Per changed file, the suites that ran one of its changed lines. */

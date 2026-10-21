@@ -153,7 +153,7 @@ an input that is short shows the step that fills it, so a quiet tab is not mista
 ## What this is not
 
 - **Not a test generator.** A gap proposes a scenario; the assertion is yours.
-- **Not a gate.** Uncovered changes can only warn; see [the gate flag](/features/uncovered-changes#the-gate-flag).
+- **Not a gate.** Uncovered changes can only warn; see [the gate flags](/features/uncovered-changes#the-gate-flags).
 
 The Test Map and its server probes are optional: [decline](/operate/capabilities#declining-a-capability) either per
 project or for the instance, and these surfaces disappear.
