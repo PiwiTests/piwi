@@ -12,14 +12,16 @@
  * to its files (`?area=`); the tree sorts by name or by lines not run, kept
  * in this browser. A file opens its view, marked by suite. Every link keeps
  * the commit `?commit=` pinned, the branch and the area. The card's menu
- * exports the commit's combined coverage as LCOV or Cobertura.
+ * exports the commit's combined coverage as LCOV or Cobertura. Under the files
+ * with the most lines no suite ran, a line points at the other lens: the Test
+ * Map's scenario gaps, the tests still to write, unless the project declined it.
  *
  * The notes on what the numbers leave out open the card. A commit whose
  * detail was removed shows its stored totals, suites and areas, and the files
  * give way to a link to the commit that superseded it.
  */
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
-import { CODE_CHIP_CLASS, SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS } from '~/utils';
+import { CODE_CHIP_CLASS, SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS, SENTENCE_LINK_CLASS } from '~/utils';
 import { downloadBlob } from '~/utils/chart-export';
 import {
   carriedSentence,
@@ -42,6 +44,7 @@ const props = defineProps<{
   summary: CoverageSummary;
 }>();
 
+const { isHidden } = await useProjectCapabilities(props.projectId);
 const route = useRoute();
 const router = useRouter();
 
@@ -358,6 +361,11 @@ const exportItems = [
                 </p>
               </li>
             </ol>
+            <p v-if="!isHidden('test-map')" class="text-xs text-muted" data-testid="coverage-test-map-pointer">
+              Lines say what ran; the Test Map’s
+              <NuxtLink :to="`/projects/${projectId}?tab=gaps`" :class="SENTENCE_LINK_CLASS">scenario gaps</NuxtLink>
+              say which tests to write.
+            </p>
           </div>
         </aside>
       </div>

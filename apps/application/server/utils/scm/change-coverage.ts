@@ -26,13 +26,12 @@ import {
   ticketPrefix,
   type ChangeCoverage,
   type ChangedFileInput,
-  type CommitCoverageInput,
 } from '#shared/handlers/change-coverage';
 import { patchChangedLines } from '#shared/patch-coverage';
-import { cachedCommitCoverage } from '../coverage-summary';
-import { commitDetailRemoved } from '../coverage-totals';
+import { changeCommitCoverage } from '../coverage-summary';
 import { readProjectIntegration } from '../integrations/binding';
 import {
+  closeChangedUnreachedGaps,
   detectChangedUnreached,
   rankGap,
   upsertScenarioGaps,
@@ -93,8 +92,12 @@ function exposureCacheSet(key: string, value: Map<string, FileExposure>): void {
 
 export interface RunChangeCoverage {
   coverage: ChangeCoverage;
-  /** Null when the changed-unreached detector muted itself: rows are still persisted, but the pull-request section is withheld. */
-  pr: PrChangeCoverage | null;
+  /**
+   * The pull-request section's data. With the changed-unreached detector muted,
+   * its rows are still persisted but the file list is withheld (`fileReach`
+   * false); the changed lines stay.
+   */
+  pr: PrChangeCoverage;
   /** The locators the diff breaks that this run did not exercise; null when the patches were not available. */
   locatorBreaks: PrLocatorBreaks | null;
 }
@@ -244,34 +247,12 @@ function toChangedFiles(changes: ScmChanges): ChangedFileInput[] {
     filePath: f.filename,
     additions: f.additions,
     deletions: f.deletions,
-    ...(!changes.patchesOmitted && f.patch && f.status !== 'removed' && f.status !== 'deleted'
-      ? { changedLines: patchChangedLines(f.filename, f.patch) }
-      : {}),
+    ...(f.status === 'removed' || f.status === 'deleted'
+      ? { deleted: true }
+      : !changes.patchesOmitted && f.patch
+        ? { changedLines: patchChangedLines(f.filename, f.patch) }
+        : {}),
   }));
-}
-
-/**
- * The head commit's combined coverage, as change coverage reads it; null when
- * it has none, or only its totals are kept: its files went when a newer commit
- * superseded it, after its pull-request feedback was posted.
- */
-async function headCommitCoverage(
-  db: DbClient,
-  projectId: number,
-  headSha: string,
-): Promise<CommitCoverageInput | null> {
-  if (await commitDetailRemoved(db, projectId, headSha)) return null;
-  const coverage = await cachedCommitCoverage(db, projectId, headSha).catch((e) => {
-    console.error(`[change-coverage] could not read the coverage of ${headSha}`, e);
-    return null;
-  });
-  if (!coverage) return null;
-  return {
-    commit: coverage.commit,
-    files: coverage.combined.files,
-    suites: coverage.combined.suites,
-    areas: { names: coverage.areas.map((a) => a.name), areaOf: coverage.areaOf },
-  };
 }
 
 /** A generic, honest draft suggestion for an uncovered changed file. */
@@ -370,7 +351,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     filesTruncated: changes.filesTruncated ?? false,
     totalChangedFiles: changes.totalChangedFiles ?? null,
     scmAvailable: true,
-    commitCoverage: await headCommitCoverage(db, run.projectId, headSha),
+    commitCoverage: await changeCommitCoverage(db, run.projectId, headSha),
   });
 
   // A run off the default branch tags its rows with its own branch; a
@@ -419,10 +400,8 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     filePath: f.filePath,
     additions: f.additions,
     deletions: f.deletions,
-    reachedInRun: f.reachedInRun,
-    reachedCountHistory: f.reachedCountHistory,
-    reachBasis: f.reachBasis,
-    suites: f.suites,
+    reach: f.reach,
+    lines: f.lines,
     ticket: f.ticket,
   }));
   // A muted detector keeps writing its ledger rows — so it still collects triage
@@ -431,10 +410,15 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   const muted = await loadMutedDetectors(db, run.projectId).catch(() => new Set<string>());
   const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
+  // A file this diff no longer reads as an uncovered change closes its gap.
+  const settled = coverage.files.filter((f) => f.reach !== 'unreached').map((f) => f.filePath);
+  await closeChangedUnreachedGaps(db, run.projectId, runId, settled).catch(() => 0);
 
   // Import edges for the changed files no test reached, from a shallow scan at the
   // run's ref — so an unreached file still connects to the files that import it.
-  const unreached = coverage.files.filter((f) => !f.reachedInRun && f.reachedCountHistory === 0).map((f) => f.filePath);
+  const unreached = coverage.files
+    .filter((f) => f.reach === 'unreached' || f.reach === 'not-observable')
+    .map((f) => f.filePath);
   const importPairs = await scanImportEdges(provider, headSha, unreached).catch(() => []);
   await ingestImportEdges(db, run.projectId, runId, importPairs, { branch: branchTag }).catch(() => {});
 
@@ -447,9 +431,9 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
         },
       );
 
-  // Withhold the pull-request "Uncovered changes" section when its detector is
-  // muted; the rows are already persisted above so the detector can still recover.
-  return { coverage, pr: muted.has('changed-unreached') ? null : toPrChangeCoverage(coverage), locatorBreaks };
+  // Withhold the pull-request section's file list when its detector is muted; the
+  // rows are already persisted above so the detector can still recover.
+  return { coverage, pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached')), locatorBreaks };
 }
 
 /**
@@ -470,8 +454,10 @@ export async function readChangeCoverage(
     windowRuns: 30,
     files: [],
     tickets: [],
+    countedFiles: 0,
     reachedFiles: 0,
     uncoveredFiles: 0,
+    notCounted: { notObservable: 0, outOfScope: 0, deleted: 0 },
     patchCoverage: null,
     filesTruncated: false,
     totalChangedFiles: null,
@@ -545,19 +531,24 @@ export async function readChangeCoverage(
     filesTruncated: changes.filesTruncated ?? false,
     totalChangedFiles: changes.totalChangedFiles ?? null,
     scmAvailable: true,
-    commitCoverage: await headCommitCoverage(db, projectId, headSha),
+    commitCoverage: await changeCommitCoverage(db, projectId, headSha),
   });
 }
 
-/** Shape the coverage for the pull-request comment builder. */
-export function toPrChangeCoverage(coverage: ChangeCoverage): PrChangeCoverage {
+/**
+ * Shape the coverage for the pull-request comment builder. `fileReach` false
+ * withholds the files no test reached, the Test Map's part, and keeps the
+ * changed lines.
+ */
+export function toPrChangeCoverage(coverage: ChangeCoverage, fileReach = true): PrChangeCoverage {
   return {
-    totalFiles: coverage.files.length,
+    fileReach,
+    totalFiles: coverage.countedFiles,
     uncoveredFiles: coverage.uncoveredFiles,
     reachedFiles: coverage.reachedFiles,
+    notCounted: coverage.notCounted,
     ticketCount: coverage.tickets.filter((t) => t.ticket).length,
     windowRuns: coverage.windowRuns,
-    baseBranch: coverage.baseBranch,
     filesTruncated: coverage.filesTruncated,
     patchCoverage: coverage.patchCoverage,
     tickets: coverage.tickets.map((group) => ({
@@ -566,10 +557,9 @@ export function toPrChangeCoverage(coverage: ChangeCoverage): PrChangeCoverage {
         filePath: f.filePath,
         additions: f.additions,
         deletions: f.deletions,
-        reachedInRun: f.reachedInRun,
-        reachedCountHistory: f.reachedCountHistory,
-        suites: f.suites,
-        draftTitle: f.reachedInRun || f.suites.length > 0 ? null : draftTitleFor(f.filePath),
+        reach: f.reach,
+        lines: f.lines,
+        draftTitle: f.reach === 'unreached' ? draftTitleFor(f.filePath) : null,
       })),
     })),
   };

@@ -127,8 +127,8 @@ not count.
 Every bar on the coverage page splits lines by class, as a file's marks do. **Files** is a foldable tree, each
 folder and file with its bar, sortable by lines not run; beside it, the selected folder's suites and least-covered
 files. A file opens on its source, through the
-[source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next gap** jumps to
-the next lines none ran.
+[source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next range** jumps to
+the next lines no suite ran. **In the Test Map** lists its routes and pages with their [scenario gaps](./scenario-gaps).
 
 <figure>
   <img src="/screenshots/combined-coverage-file.png" alt="A file's lines marked by suite">
@@ -137,9 +137,9 @@ the next lines none ran.
 
 ## In pull requests
 
-The [Uncovered changes](./uncovered-changes) section of the pull-request comment opens with the change's patch
-coverage, the share of its changed lines any suite ran; a file counts as reached when any suite ran a changed line.
-`piwi gate --min-patch-coverage <percent>` warns under a minimum, and never fails the build.
+The [Uncovered changes](./uncovered-changes) section of the pull-request comment counts the change's patch coverage
+and names the changed lines no suite ran, over the same scope. `piwi gate --min-patch-coverage <percent>` warns under
+a minimum, and never fails the build.
 
 ## Over time
 

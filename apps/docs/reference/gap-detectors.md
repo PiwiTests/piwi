@@ -24,7 +24,7 @@ without it.
 | **Control nobody exercises** | blind-spot | a control on a page that no test's locator targets | the page inventory and the [locator index](/features/locator-usage) | `On 12 page(s) · no locator targets it` |
 | **Reachable, unvisited** | blind-spot | a page other pages link to that no test navigates to | the page inventory | `Linked from 7 page(s) · never navigated to` |
 | **Escaped defect** | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | `Bug report #37: Coupon not applied to the total — no test names it yet` |
-| **Changed, unreached** | blind-spot | a changed file no test reaches, at pull-request time | an SCM token | `+41 −3 · no test in run #812 · 0 in 30 runs` |
+| **Changed, unreached** | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | an SCM token | `+41 −3 · no test in run #812 or in the last 30 runs` |
 | **Single covering test** | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
 | **Orphan test** | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold** | fragile | a failure cluster whose fix later regressed | nothing more | `Fixed in a1b2c3d · regressed 6 days later` |
@@ -47,7 +47,8 @@ locator uses does what one of the method's steps does, on the element that step 
 its URL pattern matches. A method whose every target comes from a parameter gets no decision.
 
 A trusted test is one that is not flaky, not quarantined, and not skipped in its latest run. *Changed, unreached* is
-covered on [Uncovered changes in pull requests](/features/uncovered-changes). A finding never closes itself; triage it.
+covered on [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the
+file. A finding never closes itself; triage it.
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
 call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's

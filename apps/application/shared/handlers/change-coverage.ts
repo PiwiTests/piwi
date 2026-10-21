@@ -4,15 +4,20 @@
  * (locator call sites, captured every run, the tests defined in a changed spec,
  * the route or page a file implements, and the files a test executed when code
  * reach is on) and to the tickets named in the commits and the pull request.
+ * With the head commit's combined coverage, a file a suite ran one of the
+ * changed lines of counts as reached too, each file carries its changed lines
+ * as the coverage counts them, and the change's patch coverage is their sum.
  *
- * Honest by construction: reach is *observed* reach, and "no test in this run"
- * is always paired with the count from the recent window, so a
- * selection-narrowed run is never mistaken for a gap. With the head commit's
- * combined coverage, a file a suite ran one of the changed lines of counts as
- * reached too, and the change's patch coverage is counted on it.
+ * One rule, {@link ChangeReach}, says whether a changed file is reached; the
+ * count, the pull-request comment, the gate, MCP and the *changed, unreached*
+ * detector all read it. Honest by construction: reach is *observed* reach, a
+ * file reached only in the recent window is a narrowed run rather than a
+ * missing test, and a file nothing can observe, outside the coverage scope or
+ * deleted is counted apart, never as uncovered.
  */
 
 import { and, desc, eq, inArray, notInArray } from 'drizzle-orm';
+import { compileCoverageScope } from '@piwitests/core/coverage-scope';
 import {
   codeReach,
   graphEdges,
@@ -21,6 +26,7 @@ import {
   testRuns,
   testRunsCases,
 } from '../../server/database/schema';
+import { projectScope } from '../../server/utils/coverage-totals';
 import type { DrizzleDB } from './db';
 import { parseCallsiteLocation } from '../callsite-location';
 import {
@@ -33,7 +39,14 @@ import {
 import { HISTORY_WINDOW_RUNS } from './scenario-gaps';
 import { eligibleRunSql } from '../run-eligibility';
 import type { CombinedFile, CoverageSuiteKind } from '../coverage-combine';
-import { computePatchCoverage, suitesOnChangedLines, type PatchAreas, type PatchCoverage } from '../patch-coverage';
+import {
+  changedLinesOf,
+  computePatchCoverage,
+  suitesOnChangedLines,
+  type ChangedLines,
+  type PatchAreas,
+  type PatchCoverage,
+} from '#shared/patch-coverage';
 
 /** A repo-relative path normalized for suffix matching. */
 function normalizePath(p: string): string {
@@ -134,17 +147,32 @@ export interface ChangedFileInput {
   deletions: number;
   /** The new file's added and modified lines, from the provider's patch; absent without one. */
   changedLines?: number[];
+  /** The change removed the file. */
+  deleted?: boolean;
 }
 
 /**
- * How much the reach answer can be trusted for a file:
- * - `reached` — a test observably reaches it (this run or history).
- * - `observable-unreached` — it maps to a route or page node, or a spec/call-site
- *   source, so "no test reaches it" is real evidence.
- * - `no-evidence` — no convention maps it and no test source touches it, so
- *   nothing can be said about its reach; not a confident gap.
+ * Whether a changed file is reached, the one rule every consumer reads:
+ * - `reached` — a test of the run under inspection reached it, or a suite of
+ *   the head commit's coverage ran one of its changed lines.
+ * - `reached-earlier` — no test of this run did, but a test of the recent
+ *   window did: a narrowed run, not a missing test.
+ * - `unreached` — Piwi can observe the file (a route or page convention maps
+ *   it, a locator call site, a spec or code reach touches it, or the head
+ *   commit's coverage counts its changed lines) and no test reached it: an
+ *   uncovered change.
+ * - `not-observable` — nothing maps the file to a test, so nothing can be said.
+ * - `out-of-scope` — the project's coverage scope leaves it out.
+ * - `deleted` — the change removed it.
+ *
+ * The first three are counted; the last three are counted apart.
  */
-export type ReachBasis = 'reached' | 'observable-unreached' | 'no-evidence';
+export type ChangeReach = 'reached' | 'reached-earlier' | 'unreached' | 'not-observable' | 'out-of-scope' | 'deleted';
+
+/** A test reached the file, in this run or the recent window, or a suite ran one of its changed lines. */
+export function isReachedChange(reach: ChangeReach): boolean {
+  return reach === 'reached' || reach === 'reached-earlier';
+}
 
 export interface ChangeCoverageFile {
   filePath: string;
@@ -158,9 +186,18 @@ export interface ChangeCoverageFile {
   reachingTestCount: number;
   /** The suites of the head commit's coverage that ran one of the file's changed lines. */
   suites: string[];
-  /** Whether reach for this file is observable at all — drives gap confidence. */
-  reachBasis: ReachBasis;
+  /** Whether a test reached the file, by the one rule. */
+  reach: ChangeReach;
+  /** The file's changed lines as the head commit's coverage counts them; null when it counts none. */
+  lines: ChangedLines | null;
   ticket: string | null;
+}
+
+/** The changed files left out of the counts, by reason. */
+export interface NotCountedChanges {
+  notObservable: number;
+  outOfScope: number;
+  deleted: number;
 }
 
 export interface ChangeCoverageTicket {
@@ -176,8 +213,13 @@ export interface ChangeCoverage {
   windowRuns: number;
   files: ChangeCoverageFile[];
   tickets: ChangeCoverageTicket[];
+  /** Changed files counted: reached or uncovered. */
+  countedFiles: number;
+  /** Counted files a test reached, in this run or the recent window. */
   reachedFiles: number;
+  /** Counted files no test reached: the uncovered changes. */
   uncoveredFiles: number;
+  notCounted: NotCountedChanges;
   /** The changed lines the head commit's combined coverage counts; null without coverage or patches. */
   patchCoverage: PatchCoverage | null;
   /** True when the provider capped the changed-file list, so more files exist than shown. */
@@ -216,13 +258,6 @@ export interface CommitCoverageInput {
   suites: Array<{ name: string; kind: CoverageSuiteKind }>;
   /** The project's named areas; the patch coverage counts each. */
   areas?: PatchAreas | null;
-}
-
-/** A file reached by a test, in the run or the window, or by a suite on its changed lines. */
-export function isReachedFile(
-  file: Pick<ChangeCoverageFile, 'reachedInRun' | 'reachedCountHistory' | 'suites'>,
-): boolean {
-  return file.reachedInRun || file.reachedCountHistory > 0 || file.suites.length > 0;
 }
 
 // ── File reach ───────────────────────────────────────────────────────────────
@@ -347,6 +382,7 @@ export async function computeChangeCoverage(
   const { byFile, caseFiles } = await loadFileReach(db, projectId);
   const { byRoute, byPage } = await loadGraphNodeReach(db, projectId);
   const byCode = await loadCodeReach(db, projectId);
+  const inScope = compileCoverageScope((await projectScope(db, projectId)).scope);
 
   // Which test cases ran in the inspected run, and in each recent run. A case
   // that was skipped or did-not-run is present in the rows but never executed, so
@@ -411,10 +447,22 @@ export async function computeChangeCoverage(
     const reachedInRun = input.runId != null ? [...reaching].some((id) => ranInRun.has(id)) : historyRuns.size > 0;
 
     const combined = combinedByPath.get(file.filePath);
-    const suites = combined && file.changedLines?.length ? suitesOnChangedLines(combined, file.changedLines) : [];
+    const changedOnCoverage = combined && file.changedLines?.length ? file.changedLines : null;
+    const suites = changedOnCoverage ? suitesOnChangedLines(combined!, changedOnCoverage) : [];
+    const lines = changedOnCoverage ? changedLinesOf(combined!, changedOnCoverage) : null;
+    if (lines) observable = true;
 
-    const reachBasis: ReachBasis =
-      reaching.size > 0 || suites.length > 0 ? 'reached' : observable ? 'observable-unreached' : 'no-evidence';
+    const reach: ChangeReach = file.deleted
+      ? 'deleted'
+      : !inScope(file.filePath)
+        ? 'out-of-scope'
+        : reachedInRun || suites.length > 0
+          ? 'reached'
+          : historyRuns.size > 0
+            ? 'reached-earlier'
+            : observable
+              ? 'unreached'
+              : 'not-observable';
 
     return {
       filePath: file.filePath,
@@ -424,18 +472,29 @@ export async function computeChangeCoverage(
       reachedCountHistory: historyRuns.size,
       reachingTestCount: reaching.size,
       suites,
-      reachBasis,
+      reach,
+      lines,
       ticket: fileTickets[file.filePath] ?? primaryTicket,
     };
   });
 
-  const reachedFiles = covered.filter(isReachedFile).length;
+  const countOf = (reach: ChangeReach) => covered.filter((f) => f.reach === reach).length;
+  const reachedFiles = covered.filter((f) => isReachedChange(f.reach)).length;
+  const uncoveredFiles = countOf('unreached');
+  // The lines of the counted files only, so patch coverage and the file counts speak of the same files.
+  const counted = new Set(
+    covered.filter((f) => isReachedChange(f.reach) || f.reach === 'unreached').map((f) => f.filePath),
+  );
   const patchCoverage = commitCoverage
     ? computePatchCoverage(
         commitCoverage.commit,
         commitCoverage.files,
         commitCoverage.suites,
-        new Map(files.filter((f) => f.changedLines?.length).map((f) => [f.filePath, f.changedLines!])),
+        new Map(
+          files
+            .filter((f) => f.changedLines?.length && counted.has(f.filePath))
+            .map((f) => [f.filePath, f.changedLines!]),
+        ),
         commitCoverage.areas ?? null,
       )
     : null;
@@ -460,8 +519,14 @@ export async function computeChangeCoverage(
     windowRuns,
     files: covered,
     tickets: ticketGroups,
+    countedFiles: reachedFiles + uncoveredFiles,
     reachedFiles,
-    uncoveredFiles: covered.length - reachedFiles,
+    uncoveredFiles,
+    notCounted: {
+      notObservable: countOf('not-observable'),
+      outOfScope: countOf('out-of-scope'),
+      deleted: countOf('deleted'),
+    },
     patchCoverage,
     filesTruncated: input.filesTruncated ?? false,
     totalChangedFiles: input.totalChangedFiles ?? null,

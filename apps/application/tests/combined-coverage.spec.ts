@@ -146,16 +146,16 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
   await expect(page.locator('[data-entry="src/Idle.cs"]')).toContainText('no coverage data');
   await expect(page.getByTestId('coverage-folder-totals')).toHaveText('83.3% of 6 lines ran · 1 no suite ran.');
 
-  // Line 8 ran in no suite: the file leads the least-covered list, and its view steps to that gap.
+  // Line 8 ran in no suite: the file leads the least-covered list, and its view steps to that line.
   // Opened from the overview, the file view reads the test's coverage of the file too.
   await expect(page.locator('[data-least-covered="src/Shop.cs"]')).toContainText('1 line no suite ran');
   await page.locator('[data-least-covered="src/Shop.cs"]').getByRole('link').click();
   await expect(page).toHaveURL(/marks=suites/);
   await expect(page.getByTestId('coverage-file-summary')).toContainText('1 test', { timeout: 15_000 });
   await expect(page.getByTestId('coverage-file-marks')).toBeVisible();
-  await expect(page.getByTestId('coverage-file-gaps')).toContainText('1 gap: 1 line.');
-  await page.getByTestId('coverage-gap-next').click();
-  await expect(page.getByTestId('coverage-file-gaps')).toContainText('Gap 1 of 1 · line 8');
+  await expect(page.getByTestId('coverage-file-unrun')).toContainText('1 line no suite ran.');
+  await page.getByTestId('coverage-unrun-next').click();
+  await expect(page.getByTestId('coverage-file-unrun')).toContainText('Lines no suite ran, range 1 of 1 · line 8');
   await expect(page.getByTestId('coverage-file-combined')).toContainText('No suite ran line 8.');
 
   // Each line number is a button naming the line's class: Enter selects it.

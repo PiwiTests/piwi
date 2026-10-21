@@ -53,7 +53,7 @@ Connection:
   --server-url <url>       Dashboard URL      (env PIWI_DASHBOARD_URL)
   --api-key <key>          API key            (env PIWI_API_KEY)
 
-Policy (at least one is required):
+Policy (at least one rule or warn-only flag is required):
   --require-tag <tags>     Comma-separated; every test carrying the tag must pass
   --max-failed <n>         Fail when more than n tests failed
   --max-new-regressions <n>  Fail when more than n tests newly started failing
@@ -66,7 +66,7 @@ Policy (at least one is required):
   --max-new-leaks <n>      Fail when more than n of those were never seen on the base branch
 
 Warn-only (reported, never fails the build):
-  --max-uncovered-changes <n>  Warn when more than n changed files have no observed test reach
+  --max-uncovered-changes <n>  Warn when more than n changed files are uncovered changes: no test reached them
   --min-patch-coverage <percent>  Warn when fewer of the changed lines ran, in the commit's combined coverage
 
 Other:

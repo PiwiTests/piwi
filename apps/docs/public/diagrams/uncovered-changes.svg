@@ -55,28 +55,30 @@
   <text class="l" x="214" y="153">ran recently requested its</text>
   <text class="l" x="214" y="170">route or visited its page,</text>
   <text class="l" x="214" y="187">ran a locator written in it,</text>
-  <text class="l" x="214" y="204">or executed it (code reach)</text>
+  <text class="l" x="214" y="204">or executed it, or a suite</text>
+  <text class="l" x="214" y="221">ran one of its changed lines</text>
   <text class="m" x="214" y="248">this run, and the last 30</text>
   <rect class="ok chip" x="466" y="102" width="176" height="30" rx="7"/>
   <text class="okt" x="554.0" y="121" text-anchor="middle">reached</text>
   <path class="edge" d="M 437 172.0 C 450.5 172.0, 450.5 117, 464 117" marker-end="url(#ucvA)"/>
   <rect class="bs chip" x="466" y="158" width="176" height="30" rx="7"/>
-  <text class="bst" x="554.0" y="177" text-anchor="middle">changed, unreached: a gap</text>
+  <text class="bst" x="554.0" y="177" text-anchor="middle">uncovered change: a gap</text>
   <path class="edge" d="M 437 172.0 C 450.5 172.0, 450.5 173, 464 173" marker-end="url(#ucvA)"/>
   <rect class="dash chip" x="466" y="214" width="176" height="30" rx="7"/>
-  <text class="m" x="554.0" y="233" text-anchor="middle">no evidence either way</text>
+  <text class="m" x="554.0" y="233" text-anchor="middle">not counted, with the reason</text>
   <path class="edge" d="M 437 172.0 C 450.5 172.0, 450.5 229, 464 229" marker-end="url(#ucvA)"/>
   <path class="acc" d="M 181 172.0 L 198 172.0" marker-end="url(#ucvB)"/>
   <rect class="box chip" x="670" y="84" width="226" height="176" rx="8"/>
   <path class="hd" d="M 670.5 114 L 670.5 92 Q 670.5 84.5 678 84.5 L 888 84.5 Q 895.5 84.5 895.5 92 L 895.5 114 Z"/>
   <text class="lb" x="684" y="104">3 · On the pull request</text>
-  <text class="l" x="684" y="136">an Uncovered changes section,</text>
-  <text class="l" x="684" y="153">grouped by ticket</text>
-  <text class="l" x="684" y="170">piwi/tests/change-coverage,</text>
-  <text class="l" x="684" y="187">always success</text>
-  <text class="l" x="684" y="204">get_change_coverage for agents</text>
+  <text class="l" x="684" y="136">an Uncovered changes section:</text>
+  <text class="l" x="684" y="153">the files by ticket, and the</text>
+  <text class="l" x="684" y="170">changed lines no suite ran</text>
+  <text class="l" x="684" y="187">piwi/tests/change-coverage,</text>
+  <text class="l" x="684" y="204">always success</text>
+  <text class="l" x="684" y="221">get_change_coverage for agents</text>
   <text class="m" x="684" y="248">gate flag: a warning only</text>
   <path class="acc" d="M 643 173 L 668 173" marker-end="url(#ucvB)"/>
-  <text class="m" x="24" y="286">Observed reach, not instrumented coverage: a reached file may still hide an untested branch.</text>
+  <text class="m" x="24" y="286">Observed reach, and the head commit’s coverage where it counts the changed lines: a reached file may still hold lines no suite ran.</text>
 
 </svg>

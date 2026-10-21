@@ -224,11 +224,12 @@ The command reads the run id from `PIWI_OUTPUT_FILE` (or `--run-id`, or `./piwi-
 | `--fail-on-flaky` | Any test passed only after a retry — stricter than `--max-new-flaky`, which counts tests *newly* flaky |
 | `--max-leaks <n>`, `--max-new-leaks <n>` | More than `n` [leaks](/features/resource-leaks#in-ci), or new leaks |
 
-At least one rule is required. Exit codes are part of the contract:
+At least one rule is required, or a [warn-only flag](/features/uncovered-changes#the-gate-flags). Exit codes are part
+of the contract:
 **0** satisfied, **1** violated, **2** could not evaluate, so a misconfigured pipeline never passes,
 **3** [inconclusive](/features/environment-incidents).
 
-Four behaviors worth knowing:
+Worth knowing:
 
 - **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
   `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded.

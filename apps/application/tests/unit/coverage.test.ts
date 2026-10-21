@@ -650,9 +650,9 @@ describe('code index and reach answers', () => {
         { filePath: 'src/Web/Services/OrderService.cs', additions: 1, deletions: 0 },
       ],
     });
-    expect(change.files.map((f) => [f.filePath, f.reachBasis, f.reachingTestCount])).toEqual([
+    expect(change.files.map((f) => [f.filePath, f.reach, f.reachingTestCount])).toEqual([
       [BASKET, 'reached', 1],
-      ['src/Web/Services/OrderService.cs', 'no-evidence', 0],
+      ['src/Web/Services/OrderService.cs', 'not-observable', 0],
     ]);
   });
 });

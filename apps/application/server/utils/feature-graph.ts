@@ -9,12 +9,20 @@
  * canonical rows (branch null) are read.
  *
  * Also the feature map — the folded, per-feature view the graph view opens on —
- * at the bottom of this file.
+ * and a file's place in the Test Map, the coverage file view's link to it, at
+ * the bottom of this file.
  */
 
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
-import { graphEdges, scenarioGaps, testCases } from '../database/schema';
-import { loadGapFeatureOwners, subjectFromGapKey } from '#shared/handlers/scenario-gaps';
+import { and, eq, inArray, isNull, like, or } from 'drizzle-orm';
+import { itemsOfFile } from '@piwitests/core/locator-break';
+import { graphEdges, graphNodes, scenarioGaps, testCases } from '../database/schema';
+import {
+  featureOwnersOf,
+  loadGapFeatureOwners,
+  subjectFromGapKey,
+  type GapClass,
+} from '#shared/handlers/scenario-gaps';
+import { filePageTarget, fileRouteTarget, pageKeyMatchesTarget, routeKeyMatchesTarget } from '#shared/graph';
 import { gapClassSeverity, worstGapClass } from '#shared/gap-classes';
 import type { DrizzleDB } from '#shared/handlers/db';
 
@@ -373,4 +381,247 @@ function sumGaps(gaps: Record<string, number>): number {
   let n = 0;
   for (const v of Object.values(gaps)) n += v;
   return n;
+}
+
+// ── A file's place in the Test Map ───────────────────────────────────────────
+
+/** How a file maps to a Test Map node. */
+export type FileNodeVia = 'node' | 'handled-by' | 'convention';
+
+/** An open gap on a file's node, as the coverage file view lists it. */
+export interface FileTestMapGap {
+  id: number;
+  detector: string;
+  class: GapClass;
+  title: string;
+  score: number | null;
+}
+
+/** One Test Map node a file is, or serves. */
+export interface FileTestMapNode {
+  kind: 'page' | 'route' | 'handler' | 'file';
+  key: string;
+  /**
+   * How the file maps to it: `node` is the file's own handler or file node,
+   * `handled-by` a route its handler serves, `convention` the route or page
+   * the framework's file naming gives it.
+   */
+  via: FileNodeVia;
+  /** Distinct tests that reach the node. */
+  tests: number;
+  /** The feature the node belongs to; null for none, and for a hub. */
+  feature: string | null;
+  /** Its open gaps, the highest score first, at most {@link MAX_FILE_NODE_GAPS}. */
+  gaps: FileTestMapGap[];
+  /** Every open gap on the node. */
+  openGaps: number;
+}
+
+export interface FileTestMap {
+  path: string;
+  nodes: FileTestMapNode[];
+}
+
+/** Open gaps listed per node at most; the rest are counted. */
+export const MAX_FILE_NODE_GAPS = 3;
+/** Nodes returned at most, those with the most open gaps first. */
+const MAX_FILE_NODES = 20;
+const KIND_ORDER: Record<FileTestMapNode['kind'], number> = { page: 0, route: 1, handler: 2, file: 3 };
+
+/**
+ * Where a repository file sits in the Test Map: its own `handler` and `file`
+ * nodes, the routes its handler serves (`handled-by`), and the route or page
+ * the framework's file naming gives it, each with the tests that reach it, its
+ * feature and its open gaps. A handler counts the tests of the routes it
+ * serves, and a page the gaps of the controls and links it contains. A
+ * changed file's own *changed, unreached* gap counts on its `file` node,
+ * which is listed for it even when no test ran it. Canonical rows only
+ * (branch null).
+ */
+export async function getFileTestMap(db: DrizzleDB, projectId: number, filePath: string): Promise<FileTestMap> {
+  const path = filePath
+    .replace(/\\/g, '/')
+    .replace(/^\.?\//, '')
+    .trim();
+  const nodes = new Map<string, { kind: FileTestMapNode['kind']; key: string; via: FileNodeVia }>();
+  const add = (kind: FileTestMapNode['kind'], key: string, via: FileNodeVia) => {
+    if (!nodes.has(id(kind, key))) nodes.set(id(kind, key), { kind, key, via });
+  };
+  if (!path) return { path, nodes: [] };
+  const base = path.split('/').pop()!;
+
+  // The file's own nodes, by path suffix as coverage matches files, its own path first.
+  const own = await db
+    .select({ kind: graphNodes.kind, key: graphNodes.key })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        inArray(graphNodes.kind, ['handler', 'file']),
+        isNull(graphNodes.branch),
+        isNull(graphNodes.prunedAt),
+        like(graphNodes.key, `%${base}`),
+      ),
+    );
+  for (const n of itemsOfFile(
+    own.map((o) => ({ ...o, path: o.key })),
+    path,
+  )) {
+    add(n.kind as 'handler' | 'file', n.key, 'node');
+  }
+
+  // The routes each of its handlers serves.
+  const routesOf = new Map<string, string[]>();
+  const handlers = [...nodes.values()].filter((n) => n.kind === 'handler').map((n) => n.key);
+  if (handlers.length > 0) {
+    const served = await db
+      .select({ fromKey: graphEdges.fromKey, toKey: graphEdges.toKey })
+      .from(graphEdges)
+      .where(
+        and(
+          eq(graphEdges.projectId, projectId),
+          eq(graphEdges.kind, 'handled-by'),
+          eq(graphEdges.fromKind, 'route'),
+          eq(graphEdges.toKind, 'handler'),
+          inArray(graphEdges.toKey, handlers),
+          isNull(graphEdges.branch),
+        ),
+      );
+    for (const e of served) {
+      add('route', e.fromKey, 'handled-by');
+      routesOf.set(e.toKey, [...(routesOf.get(e.toKey) ?? []), e.fromKey]);
+    }
+  }
+
+  // The route or page the framework's file naming gives it.
+  const routeTarget = fileRouteTarget(path);
+  const pageTarget = filePageTarget(path);
+  if (routeTarget || pageTarget) {
+    const named = await db
+      .select({ kind: graphNodes.kind, key: graphNodes.key })
+      .from(graphNodes)
+      .where(
+        and(
+          eq(graphNodes.projectId, projectId),
+          inArray(graphNodes.kind, [...(routeTarget ? ['route'] : []), ...(pageTarget ? ['page'] : [])]),
+          isNull(graphNodes.branch),
+          isNull(graphNodes.prunedAt),
+        ),
+      );
+    for (const n of named) {
+      if (n.kind === 'route' && routeTarget && routeKeyMatchesTarget(routeTarget, n.key))
+        add('route', n.key, 'convention');
+      if (n.kind === 'page' && pageTarget && pageKeyMatchesTarget(pageTarget, n.key)) add('page', n.key, 'convention');
+    }
+  }
+
+  // The controls and links each page contains: their gaps are the page's.
+  const pageOf = new Map<string, string>();
+  const pages = [...nodes.values()].filter((n) => n.kind === 'page').map((n) => n.key);
+  if (pages.length > 0) {
+    const contained = await db
+      .select({ fromKey: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+      .from(graphEdges)
+      .where(
+        and(
+          eq(graphEdges.projectId, projectId),
+          eq(graphEdges.kind, 'contains'),
+          eq(graphEdges.fromKind, 'page'),
+          inArray(graphEdges.fromKey, pages),
+          inArray(graphEdges.toKind, ['control', 'link']),
+          isNull(graphEdges.branch),
+        ),
+      );
+    for (const e of contained)
+      if (!pageOf.has(id(e.toKind, e.toKey))) pageOf.set(id(e.toKind, e.toKey), id('page', e.fromKey));
+  }
+
+  // The open gaps on those nodes, read by the keys a detector gives them (typed, or a bare route
+  // key or file path); a gap on the file itself (changed, unreached) puts its file node in the list.
+  const gapKeys = new Set<string>();
+  for (const n of nodes.values()) {
+    gapKeys.add(`${n.kind}:${n.key}`);
+    gapKeys.add(n.key);
+  }
+  for (const nid of pageOf.keys()) gapKeys.add(nid.replace('\x00', ':'));
+  const gapRows = await db
+    .select({
+      id: scenarioGaps.id,
+      key: scenarioGaps.key,
+      detector: scenarioGaps.detector,
+      class: scenarioGaps.class,
+      title: scenarioGaps.title,
+      score: scenarioGaps.score,
+    })
+    .from(scenarioGaps)
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.status, 'open'),
+        or(inArray(scenarioGaps.key, [...gapKeys]), like(scenarioGaps.key, `%${base}`)),
+      ),
+    );
+  const fileSubjects = itemsOfFile(
+    gapRows.map((g) => subjectFromGapKey(g.key)).flatMap((s) => (s.kind === 'file' ? [{ ...s, path: s.key }] : [])),
+    path,
+  );
+  for (const s of fileSubjects) add('file', s.key, 'node');
+  const gapsByNode = new Map<string, FileTestMapGap[]>();
+  for (const g of gapRows) {
+    const subject = subjectFromGapKey(g.key);
+    const own = id(subject.kind, subject.key);
+    const nid = nodes.has(own) ? own : pageOf.get(own);
+    if (!nid) continue;
+    const list = gapsByNode.get(nid) ?? [];
+    list.push({ id: g.id, detector: g.detector, class: g.class as GapClass, title: g.title, score: g.score ?? null });
+    gapsByNode.set(nid, list);
+  }
+  if (nodes.size === 0) return { path, nodes: [] };
+
+  // Distinct tests reaching each node.
+  const testsByNode = new Map<string, Set<string>>();
+  const all = [...nodes.values()];
+  for (let i = 0; i < all.length; i += 200) {
+    const rows = await db
+      .select({ fromKey: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+      .from(graphEdges)
+      .where(
+        and(
+          eq(graphEdges.projectId, projectId),
+          eq(graphEdges.kind, 'reaches'),
+          eq(graphEdges.fromKind, 'test'),
+          isNull(graphEdges.branch),
+          or(...all.slice(i, i + 200).map((n) => and(eq(graphEdges.toKind, n.kind), eq(graphEdges.toKey, n.key)))),
+        ),
+      );
+    for (const e of rows) {
+      const nid = id(e.toKind, e.toKey);
+      testsByNode.set(nid, (testsByNode.get(nid) ?? new Set<string>()).add(e.fromKey));
+    }
+  }
+  // A handler is reached through the routes it serves.
+  for (const [handler, routes] of routesOf) {
+    const nid = id('handler', handler);
+    const tests = new Set(testsByNode.get(nid) ?? []);
+    for (const route of routes) for (const t of testsByNode.get(id('route', route)) ?? []) tests.add(t);
+    testsByNode.set(nid, tests);
+  }
+
+  const ownerOf = await featureOwnersOf(db, projectId, all);
+  const result: FileTestMapNode[] = all.map((n) => {
+    const nid = id(n.kind, n.key);
+    const gaps = (gapsByNode.get(nid) ?? []).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    const owner = ownerOf({ kind: n.kind, key: n.key });
+    return {
+      ...n,
+      tests: testsByNode.get(nid)?.size ?? 0,
+      feature: owner && !owner.hub ? owner.feature : null,
+      gaps: gaps.slice(0, MAX_FILE_NODE_GAPS),
+      openGaps: gaps.length,
+    };
+  });
+  result.sort(
+    (a, b) => b.openGaps - a.openGaps || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.key.localeCompare(b.key),
+  );
+  return { path, nodes: result.slice(0, MAX_FILE_NODES) };
 }

@@ -439,11 +439,15 @@ if (initialTab && !tabHidden(initialTab)) {
 }
 
 // Reflect the active tab in the URL (replace, so tab switches don't stack history).
-// The Settings section belongs to the Settings tab, so it leaves with it.
+// A tab's own keys leave with it: the Settings section, the Gaps tab's graph node.
+const TAB_QUERY_KEYS: Partial<Record<TabValue, string[]>> = { settings: ['section'], gaps: ['node'] };
 watch(activeTab, (tab) => {
   if (route.query.tab === tab) return;
-  const { section: _section, ...query } = route.query;
-  router.replace({ query: tab === 'settings' ? { ...route.query, tab } : { ...query, tab } });
+  const query = { ...route.query };
+  for (const [owner, keys] of Object.entries(TAB_QUERY_KEYS)) {
+    if (owner !== tab) for (const key of keys) delete query[key];
+  }
+  router.replace({ query: { ...query, tab } });
 });
 
 // Rewrite an old ?tab= alias to its canonical value once the page is interactive;

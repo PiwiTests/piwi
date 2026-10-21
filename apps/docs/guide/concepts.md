@@ -307,6 +307,23 @@ as run), the lines that ran and the functions it knows, attributed to no test. A
 from, named when uploading (`unit-back`), of kind `unit` or `e2e`; not Playwright's `describe` block. The **coverage
 scope** is the include and exclude patterns that decide which files a project's coverage counts.
 
+### Coverage and the Test Map
+
+Two answers to "what do the tests miss", each with its own number. **Coverage** measures the code: which lines and
+functions ran, as a ratio over the lines that can run; the lines no test or suite ran are **lines not run**. The
+**Test Map** measures the application: which routes, pages and controls the tests reach and would notice breaking;
+what they miss becomes a [scenario gap](#scenario-gap), a test to write, ranked by exposure and never a percentage.
+They meet at the file: a file's [coverage page](/features/combined-coverage) lists the file's nodes in the Test Map
+with their open gaps and opens the [Gaps tab](/features/scenario-gaps) on one, and the Gaps tab's graph links a file or
+a route handler to its coverage. Neither fails a build.
+
+### Uncovered change
+
+A changed file of a pull request that no test reached, in the run or the project's last 30 runs, and no suite ran a
+changed line of. One rule decides it for the pull-request comment, the gate, MCP and the *changed, unreached* gap; a
+file nothing can observe, outside the coverage scope or deleted is counted apart. **Patch coverage** is the same
+question by line: the share of the changed lines that ran. See [Uncovered changes](/features/uncovered-changes).
+
 ### Suspect lines
 
 The lines changed since a failing test's last passing run that the failing tests executed, read from their

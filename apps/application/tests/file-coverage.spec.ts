@@ -11,7 +11,8 @@ import { PROJECT } from '#shared/test-project-names';
  * runs the nearest test to copy. A selector picks among the versions the tests
  * recorded; without the source the lines show as numbers grouped by their
  * tests. The execution page, the cluster's suspect lines and the Test Map
- * link it, and a project that records no coverage shows none of it.
+ * link it, the page links back to the file's nodes in the Test Map, and a
+ * project that records no coverage shows none of it.
  */
 
 const A = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
@@ -253,6 +254,26 @@ test.describe('File coverage', () => {
       'href',
       new RegExp(`/projects/${projectId}/coverage\\?file=src(%2F|/)Orders(%2F|/)OrdersEndpoints\\.cs$`),
     );
+  });
+
+  test('the file view names the file’s nodes in the Test Map and opens the graph on one', async ({ page }) => {
+    await serveSource(page);
+    await page.goto(`/projects/${projectId}/coverage?file=${ENDPOINTS}`);
+    await waitForHydration(page);
+    const card = page.locator('[data-shot="coverage-file-test-map"]');
+    const node = card.locator(`[data-test-map-node="file:${ENDPOINTS}"]`);
+    await expect(node).toContainText('this file · reached by 4 tests');
+    await node.getByRole('link', { name: ENDPOINTS }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?tab=gaps&node=file`));
+    const seed = page.locator('[data-shot="feature-graph-seed"]');
+    await expect(seed).toContainText(`file:${ENDPOINTS}`);
+    await expect(seed.locator('[data-coverage-link]')).toBeVisible();
+
+    // The graph's node belongs to the Gaps tab: another tab drops it from the address.
+    await page.getByRole('button', { name: /^Runs/ }).first().click();
+    await expect(page).toHaveURL(/[?&]tab=runs/);
+    await expect(page).not.toHaveURL(/[?&]node=/);
   });
 
   test('a project that records no coverage shows no entry point, and its page one sentence', async ({

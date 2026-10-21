@@ -6,7 +6,7 @@ import {
   dataNoteSentence,
   enclosingFunction,
   fileViewNotes,
-  gapSteps,
+  rangeSteps,
   plural,
   totalsSentence,
   withLineage,
@@ -23,24 +23,24 @@ const file = (path: string, executable: number[][], lines: number[][]): SuiteFil
   linesRecorded: true,
 });
 
-describe('gapSteps', () => {
-  const gaps: Array<[number, number]> = [
+describe('rangeSteps', () => {
+  const ranges: Array<[number, number]> = [
     [5, 6],
     [10, 12],
     [20, 20],
   ];
 
-  test('makes the first gap next without a selection', () => {
-    expect(gapSteps(gaps, null)).toEqual({ index: null, previous: null, next: [5, 6] });
+  test('makes the first range next without a selection', () => {
+    expect(rangeSteps(ranges, null)).toEqual({ index: null, previous: null, next: [5, 6] });
   });
 
-  test('steps from the gap a selection is in to the ones around it', () => {
-    expect(gapSteps(gaps, [10, 12])).toEqual({ index: 1, previous: [5, 6], next: [20, 20] });
-    expect(gapSteps(gaps, [20, 20])).toEqual({ index: 2, previous: [10, 12], next: null });
+  test('steps from the range a selection is in to the ones around it', () => {
+    expect(rangeSteps(ranges, [10, 12])).toEqual({ index: 1, previous: [5, 6], next: [20, 20] });
+    expect(rangeSteps(ranges, [20, 20])).toEqual({ index: 2, previous: [10, 12], next: null });
   });
 
-  test('steps from a line between gaps', () => {
-    expect(gapSteps(gaps, [8, 8])).toEqual({ index: null, previous: [5, 6], next: [10, 12] });
+  test('steps from a line between ranges', () => {
+    expect(rangeSteps(ranges, [8, 8])).toEqual({ index: null, previous: [5, 6], next: [10, 12] });
   });
 });
 

@@ -46,7 +46,7 @@ export interface SelectionCoverage {
   total: number;
   /** Tests matched by at least one stored (non-built-in) selection. */
   selected: number;
-  /** Tests matched by no stored selection — the coverage gap. */
+  /** Tests matched by no stored selection: what no selection runs. */
   unselected: number;
   /** A capped sample of unselected tests, for display. */
   unselectedSample: Array<{ testCaseId: number; title: string; filePath: string }>;

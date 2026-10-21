@@ -156,32 +156,26 @@ describe('subjectFromGapKey', () => {
 });
 
 describe('detectChangedUnreached', () => {
-  test('pairs "no test in this run" with the history count and says observed reach', () => {
+  test('says no test of the run or of the window reached it, as observed reach', () => {
     const [gap] = gaps.detectChangedUnreached(
-      [
-        {
-          filePath: 'server/api/orders.post.ts',
-          additions: 41,
-          deletions: 3,
-          reachedInRun: false,
-          reachedCountHistory: 0,
-        },
-      ],
+      [{ filePath: 'server/api/orders.post.ts', additions: 41, deletions: 3, reach: 'unreached' }],
       812,
       30,
     );
     expect(gap!.detector).toBe('changed-unreached');
-    expect(gap!.evidence[0]).toContain('no test in run #812');
-    expect(gap!.evidence[0]).toContain('0 in 30 runs');
-    expect(gap!.evidence[0]).toContain('observed reach');
+    expect(gap!.evidence).toEqual(['+41 −3 · no test in run #812 or in the last 30 runs — observed reach.']);
     expect(gap!.confidence).toBeCloseTo(0.9);
     expect(gap!.files).toEqual(['server/api/orders.post.ts']);
   });
 
-  test('ignores a changed file that a test reached in the run', () => {
+  test('ignores a reached file, one reached in the window and one nothing observes', () => {
     expect(
       gaps.detectChangedUnreached(
-        [{ filePath: 'a.ts', additions: 1, deletions: 0, reachedInRun: true, reachedCountHistory: 4 }],
+        [
+          { filePath: 'a.ts', additions: 1, deletions: 0, reach: 'reached' },
+          { filePath: 'b.ts', additions: 1, deletions: 0, reach: 'reached-earlier' },
+          { filePath: 'c.md', additions: 1, deletions: 0, reach: 'not-observable' },
+        ],
         1,
       ),
     ).toEqual([]);
@@ -565,6 +559,9 @@ describe('computeScenarioGaps', () => {
     });
 
     // A later run's test reaches the route the handler serves.
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
     await seedReach(1, 'route', 'GET /api/orders/:id', 1);
     await gaps.computeScenarioGaps(db, 1);
 
@@ -572,6 +569,72 @@ describe('computeScenarioGaps', () => {
     const row = closed.find((r) => r.detector === 'changed-unreached');
     expect(row).toBeTruthy();
     expect(row!.key).toBe('server/api/orders/[id].get.ts');
+  });
+
+  test('the recompute closes a changed-unreached gap whose file a test executed, or that left the scope', async () => {
+    await seedRun(1);
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
+    const gap = (key: string) => ({
+      projectId: 1,
+      detector: 'changed-unreached',
+      class: 'blind-spot',
+      key,
+      title: `${key} changed but not reached`,
+      status: 'open',
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([gap('src/lib/cart.ts'), gap('src/lib/tax.ts'), gap('src/Client.g.cs')]);
+    // The test executed cart.ts (code reach); nothing reaches tax.ts; Client.g.cs is generated, outside the scope.
+    await db
+      .insert(schema.codeReach)
+      .values({ projectId: 1, testCaseId: 1, file: 'src/lib/cart.ts', runtime: 'browser', lastSeenAt: new Date() });
+
+    await gaps.computeScenarioGaps(db, 1);
+
+    const rows = await db
+      .select({ key: schema.scenarioGaps.key, status: schema.scenarioGaps.status })
+      .from(schema.scenarioGaps)
+      .where(eq(schema.scenarioGaps.detector, 'changed-unreached'));
+    expect(Object.fromEntries(rows.map((r) => [r.key, r.status]))).toEqual({
+      'src/lib/cart.ts': 'closed',
+      'src/lib/tax.ts': 'open',
+      'src/Client.g.cs': 'closed',
+    });
+  });
+
+  test('closes the open and snoozed changed-unreached gaps of files a diff no longer reads as uncovered', async () => {
+    await seedRun(1);
+    const gap = (key: string, status: string) => ({
+      projectId: 1,
+      detector: 'changed-unreached',
+      class: 'blind-spot',
+      key,
+      title: `${key} changed but not reached`,
+      status,
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([
+        gap('src/a.ts', 'open'),
+        gap('src/b.ts', 'snoozed'),
+        gap('src/c.ts', 'dismissed'),
+        gap('src/d.ts', 'open'),
+      ]);
+
+    expect(await gaps.closeChangedUnreachedGaps(db, 1, 1, ['src/a.ts', 'src/b.ts', 'src/c.ts'])).toBe(2);
+
+    const rows = await db
+      .select({ key: schema.scenarioGaps.key, status: schema.scenarioGaps.status })
+      .from(schema.scenarioGaps);
+    expect(Object.fromEntries(rows.map((r) => [r.key, r.status]))).toEqual({
+      'src/a.ts': 'closed',
+      'src/b.ts': 'closed',
+      'src/c.ts': 'dismissed',
+      'src/d.ts': 'open',
+    });
   });
 
   test('success-only reads only routes the graph holds, not third-party beacons', async () => {
