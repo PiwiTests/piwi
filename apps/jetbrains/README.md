@@ -5,6 +5,8 @@ WebStorm, IntelliJ IDEA Ultimate and Rider. Piwi keeps every run CI throws away,
 finds the locator you should have used; this plugin brings that into the IDE. It runs the same editor service as the
 [VS Code extension](../vscode/README.md), so both show the same things.
 
+![WebStorm: a CI failure at its line, the replacement locator offered on Alt+Enter with the edit's preview](https://piwitests.dev/screenshots/jetbrains-heal.png)
+
 Install it from the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/34674-piwi) (**Settings → Plugins**),
 in any JetBrains IDE with the LSP API and JavaScript support, from 2024.1, with Node.js 20 or later.
 
@@ -27,6 +29,8 @@ in any JetBrains IDE with the LSP API and JavaScript support, from 2024.1, with 
 - **Tests recorded at the caret.** **Tools → Piwi → Record Here** opens a browser through your project's own
   Playwright and writes what you do there into the test, calling your page objects when connected. No instance needed.
 - **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended.
+
+![The Piwi tool window below the editor: the latest run's failures as a tree, a local run laid over them, the failing tests tinted in the spec](https://piwitests.dev/screenshots/jetbrains-failures.png)
 
 ## Connect
 

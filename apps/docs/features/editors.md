@@ -143,4 +143,9 @@ and hover in open files; the rest is native:
 - **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert, and **File → New →
   Record a New Test File…**; the controls are in a banner above the editor.
 
+<figure>
+  <img src="/screenshots/jetbrains-failures.png" alt="WebStorm: the failing tests tinted in the spec, the Piwi tool window below with the run's failures">
+  <figcaption>WebStorm: the latest run's failures in the Piwi tool window, a local run laid over them, the failing tests tinted above.</figcaption>
+</figure>
+
 IntelliJ IDEA Community Edition and Android Studio lack the LSP API the plugin needs.

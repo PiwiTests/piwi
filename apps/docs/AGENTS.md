@@ -310,7 +310,7 @@ Three illustrations come from other pipelines, and the harness's `--check` leave
 and the `picker-`, `vscode-` and `jetbrains-` prefixes): the video poster above; the browser extension's
 (`picker-*.png`, `tested-elements-overlay.png`), written at 1280 × 800, the size the stores take, by
 `PIWI_DOCS_SHOTS=1 npm run extension:test:e2e -- docs-screenshots` from `apps/extension/`; and the editor extensions'
-(`vscode-*.png`, and `jetbrains-*.png` once an activated IDE captures them), written by
+(`vscode-*.png`, `jetbrains-*.png`), written by
 `apps/vscode/scripts/take-screenshots.mjs` and `apps/jetbrains/scripts/take-screenshots.mjs`, which open one fixture
 project (`apps/vscode/scripts/lib/editor-fixture.mjs`) against a stub instance in the real editor, under Xvfb. Each
 script's header says how to run it and what it needs. The README's
