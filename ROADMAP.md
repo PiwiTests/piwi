@@ -163,8 +163,7 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   Issues on the SCM token, Jira Data Center, Linear. The rest of step 4 and steps 5–6 of
   [proposals/issue-tracker-integrations.md](proposals/issue-tracker-integrations.md).
 - **Branches as entities** — on top of the shipped branch column: a merge-readiness verdict per branch,
-  branch-class gate policies, cross-branch fix verification and retention by branch class, plus flakiness and trends
-  scoped to the default branch by default. Tier 3 of
+  branch-class gate policies, cross-branch fix verification and retention by branch class. Tier 3 of
   [proposals/first-class-branches.md](proposals/first-class-branches.md).
 - **Exporting whole runs** — [offline export](https://piwitests.dev/features/offline-export) covers one execution and one failure cluster today; a whole run, and a
   test's history across runs, would follow the same shape.
