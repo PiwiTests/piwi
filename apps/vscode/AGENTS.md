@@ -1,8 +1,9 @@
 # VS Code extension — agent guide
 
-Rules for working inside `apps/vscode/` (the Piwi extension for VS Code, published as `piwitests.piwi` to the Visual
-Studio Marketplace and Open VSX). Read [`../../AGENTS.md`](../../AGENTS.md) and
-[`../../packages/editor/AGENTS.md`](../../packages/editor/AGENTS.md) first.
+Rules for working inside `apps/vscode/` (the Piwi extension for VS Code, published as `piwitests.piwi` to the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi) and Open VSX).
+Read [`../../AGENTS.md`](../../AGENTS.md) and [`../../packages/editor/AGENTS.md`](../../packages/editor/AGENTS.md)
+first.
 
 ## What it is
 

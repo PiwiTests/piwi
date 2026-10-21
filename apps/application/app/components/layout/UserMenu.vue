@@ -6,6 +6,7 @@ import {
   PICKER_CHROME_URL,
   PICKER_FIREFOX_URL,
   REPORTER_NPM_URL,
+  VSCODE_EXTENSION_URL,
 } from '#shared/companion-links';
 import { DOCS_BASE_URL } from '#shared/docs';
 
@@ -158,6 +159,13 @@ const items = computed<DropdownMenuItem[][]>(() => {
               description: 'Browser extension · Firefox Add-ons',
               icon: 'i-lucide-mouse-pointer-click',
               to: PICKER_FIREFOX_URL,
+              target: '_blank',
+            },
+            {
+              label: 'Piwi for VS Code',
+              description: 'Extension · Visual Studio Marketplace',
+              icon: 'i-lucide-puzzle',
+              to: VSCODE_EXTENSION_URL,
               target: '_blank',
             },
             {

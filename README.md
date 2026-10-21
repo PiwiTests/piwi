@@ -207,7 +207,7 @@ Everything below is built and published from this repository on each release.
 | Desktop app (`.msi`/`.exe`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/platform/releases/latest) | The server bundled in a native window: no Docker, no Node |
 | [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) | Chrome Web Store | The browser extension, for Chrome, Edge and the other Chromium browsers |
 | [Piwi Picker](https://addons.mozilla.org/firefox/addon/piwi-picker/) | Firefox Add-ons | The same extension, for Firefox |
-| [Piwi for VS Code](https://marketplace.visualstudio.com/items?itemName=piwitests.piwi) | Visual Studio Marketplace, [Open VSX](https://open-vsx.org/extension/piwitests/piwi) | The VS Code extension (Cursor and VSCodium too) |
+| [Piwi for VS Code](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi) | Visual Studio Marketplace, [Open VSX](https://open-vsx.org/extension/piwitests/piwi) | The VS Code extension (Cursor and VSCodium too) |
 | [Piwi for JetBrains IDEs](https://plugins.jetbrains.com/plugin/34674-piwi) | JetBrains Marketplace | The IDE plugin (WebStorm, IntelliJ IDEA Ultimate, Rider, from 2024.1) |
 | [`@piwitests/instrumentation-nitro`](https://www.npmjs.com/package/@piwitests/instrumentation-nitro) | npm | Optional: sends your Nitro/Nuxt backend's logs into a test run |
 | [`PiwiTests.Instrumentation.AspNetCore`](https://www.nuget.org/packages/PiwiTests.Instrumentation.AspNetCore) | NuGet | Optional: the same for an ASP.NET Core backend |

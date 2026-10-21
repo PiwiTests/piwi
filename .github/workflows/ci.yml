@@ -250,7 +250,8 @@ jobs:
           compression-level: 0
 
       # The performance job of a pull request measures against its base commit's build, restored by this key and path
-      # (reusable-perf.yml). A cache saved on main serves every pull request; one a pull request saves serves it alone.
+      # (perf-base, reusable-perf.yml). A cache saved on main serves every pull request; one a pull request saves
+      # serves it alone.
       - name: Stage the build as a performance base
         if: github.event_name == 'push'
         run: |
@@ -707,10 +708,64 @@ jobs:
     with:
       build-artifact: build-output
 
+  # The base commit's build the performance job measures against. The build job cached it by its sha when that commit
+  # ran on main; when it did not (main's change left the build alone, or a later push cancelled its run), it is built
+  # here, alongside this pull request's own build, and cached for this pull request's runs only.
+  perf-base:
+    name: Performance base
+    needs: changes
+    if: needs.changes.outputs.app == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # The merge commit and its first parent: the base the pull request is measured against.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - name: Read the base commit
+        id: base
+        run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+
+      - name: Look for the base build
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: base/apps/application/.output
+          key: perf-base-output-v1-${{ steps.base.outputs.sha }}
+          lookup-only: true
+
+      - name: Check out the base
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          path: base
+
+      - name: Install the base
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-workspace
+        with:
+          directory: base
+
+      - name: Build the base
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: base/apps/application
+        run: npm run app:build
+
+      - name: Save the base build
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: base/apps/application/.output
+          key: perf-base-output-v1-${{ steps.base.outputs.sha }}
+
   # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request.
   perf:
     name: Performance
-    needs: [changes, build]
+    needs: [changes, build, perf-base]
     if: needs.changes.outputs.app == 'true' && github.event_name == 'pull_request'
     uses: ./.github/workflows/reusable-perf.yml
     permissions:
@@ -722,7 +777,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, checks, e2e, package-smoke, demo, aspnet, container, docs, extension, vscode, jetbrains, desktop, perf]
+    needs: [versions, changes, build, checks, e2e, package-smoke, demo, aspnet, container, docs, extension, vscode, jetbrains, desktop, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

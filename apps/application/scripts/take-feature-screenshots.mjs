@@ -1536,7 +1536,7 @@ const SCENES = [
   {
     name: 'user-menu-piwi-tools',
     description:
-      "The user menu's Piwi tools submenu: where to get Piwi Picker, the JetBrains plugin, the desktop app and the reporter, and the docs",
+      "The user menu's Piwi tools submenu: where to get Piwi Picker, the VS Code extension, the JetBrains plugin, the desktop app and the reporter, and the docs",
     route: '/',
     viewport: { width: 1280, height: 900 },
     async run({ page, shoot, settle }) {
