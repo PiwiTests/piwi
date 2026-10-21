@@ -1,7 +1,7 @@
 # Dashboard app — agent guide
 
 Rules for working inside `apps/application/` (the Nuxt 4 app, its Nitro server, the demo SPA and the MCP server).
-Read [`../AGENTS.md`](../AGENTS.md) first for repo-wide conventions, and [`ARCHITECTURE.md`](ARCHITECTURE.md) when you
+Read [`../../AGENTS.md`](../../AGENTS.md) first for repo-wide conventions, and [`ARCHITECTURE.md`](ARCHITECTURE.md) when you
 need the map of what lives where.
 
 Everything below is a **rule or an invariant** — something you cannot infer by reading the code you happen to open.
@@ -84,7 +84,7 @@ imported by both. Exceptions only where the implementations genuinely differ (er
 - Two methods when enabled: session cookie (browser) or API key (Bearer / `X-API-Key`, `pd_` prefix). **An API key
   carries its owner's access** (instance role and project roles), nothing more and nothing less.
 - **`/mcp` takes a third: an OAuth access token** (`pdo_`), from the authorization server MCP clients sign in through
-  (`server/utils/mcp-oauth.ts`, the `/.well-known/*` and `/oauth/*` routes, design record `proposals/mcp-oauth.md`).
+  (`server/utils/mcp-oauth.ts`, the `/.well-known/*` and `/oauth/*` routes, design record `adr/mcp-oauth.md`).
   Only `requireMcpAuth` accepts it, never `requireAuth`, so the REST API refuses it; keep it that way. Each grant owns
   an `api_keys` row named after the client, whose value is never handed out: it carries the access, the write log
   names it, and deleting it ends the grant (foreign-key cascade). Every 401 from `/mcp` carries the
@@ -482,7 +482,7 @@ enum, default, min/max, `secret`, `relevantWhen`/`requiredWhen`, `since`/`until`
 post-0.14.0 var lacks `since`, or if a recorded `default`/`min`/`max` drifts from the code constants.
 
 Do not enumerate env vars in prose anywhere — link to the registry or the generated
-[configuration reference](../apps/docs/AGENTS.md) instead. Two facts worth knowing without opening it: the app runs with **no
+[configuration reference](https://piwitests.dev/reference/configuration) instead. Two facts worth knowing without opening it: the app runs with **no
 env vars set**, and `PIWI_SECRET_KEY` is the master key for AES-256-GCM encryption of DB-stored secrets (AI keys, SCM
 tokens) — recommended in production even without auth, falling back to an insecure development default.
 

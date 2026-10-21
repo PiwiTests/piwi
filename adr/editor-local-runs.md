@@ -1,5 +1,8 @@
 # Local runs in the editor
 
+- Status: accepted
+- Date: 2026-10-07
+
 A plan to make the editor extensions keep up with the developer's own test runs. Today the VS Code extension and the
 JetBrains plugin show the latest **complete CI run** of the branch, read once a minute: a test fixed and re-run from the
 editor stays red until CI runs the whole suite again, the failure markers drift as the file is edited above them, the
@@ -8,7 +11,7 @@ editor's own run into the thing the editor is built around: it reports back at o
 CI baseline, its failures follow the edits, its breakpoints pause the browser with Piwi's picker open, and the status
 bar and the failures view are rebuilt around that loop.
 
-**Status.** Proposed 2026-10-06. Being built on `claude/adoring-curie-oiaifu`, every step in one pull request, in the
+**Status.** Proposed 2026-10-06. Built in one pull request, merged to `main` on 2026-10-07 (#775), in the
 order of [Delivery](#delivery): every step is built (steps 1 to 6; the last one adds `run=<id>` and `origin=local` to
 `branch-failures`, since "my local runs only" needs the server to read local runs alone). Where the build differs
 from this text, the [docs](../apps/docs/features/editor-runs.md) and the code are right: the breakpoints have their own page,
@@ -446,7 +449,7 @@ depends on none of them beyond the entry points that run tests, and can land in 
       **The failures view**, the commands table, the JetBrains section.
 - [ ] `guide/capture-fixtures.md` and `features/locator-healing.md` — `PIWI_PAUSE_AT` beside the two failure-time aids.
 - [ ] `reference/test-metadata.md` — the editor origin and `PIWI_ORIGIN_REF` as the editor sets them.
-- [ ] `ROADMAP.md` — a *Recently shipped* entry once the last PR lands; `plans/` mirrors through `/plan-management`.
+- [x] `ROADMAP.md` — a *Recently shipped* entry once the last PR lands; `plans/` mirrors through `/plan-management`.
 
 ## Verification
 

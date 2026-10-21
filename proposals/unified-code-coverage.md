@@ -17,11 +17,12 @@ local runs that record server coverage, in VS Code and the JetBrains IDEs, readi
 (which gained the executable lines and an ETag). So are, from part 4, the MCP tool `get_coverage`, and from part 6 a
 failure's path against its last pass, a test's path varying with the tests before it (the `order` flaky root cause),
 what quarantining tests leaves uncovered and whether a new test reached its target lines, with the missing-test skill
-checking them (see [`test-coverage-view.md`](test-coverage-view.md), "Built beyond the plan"). API tests through the
-`request` fixture record server coverage. Not built yet: browser functions and lines, the Istanbul adapter (D13), the
-rest of part 4 (line-level impact, uncovered changed lines, the gate's line form, LCOV and Cobertura) and the rest of
-part 6. Each test's coverage is shown on the execution page and per file on a page of its own
-([`test-coverage-view.md`](test-coverage-view.md)). The study's measurements came from
+checking them (see [`test-coverage-view.md`](../adr/test-coverage-view.md), "Built beyond the plan"). API tests through the
+`request` fixture record server coverage. Browser functions are built (`coverage.browser: 'functions'`, 2026-10-16),
+and the LCOV and Cobertura export came with [`combined-code-coverage.md`](../adr/combined-code-coverage.md), as the
+export of a commit's combined coverage (2026-10-17). Not built yet: browser lines (PR 6), the Istanbul adapter (D13),
+the rest of part 4 (line-level impact, uncovered changed lines, the gate's line form) and the rest of part 6. Each test's coverage is shown on the execution page and per file on a page of its own
+([`test-coverage-view.md`](../adr/test-coverage-view.md)). The study's measurements came from
 a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
 written to spend its CPU in business logic (the **pricing application**). New wire fields, options and endpoints
 freeze at 1.0 and need an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -658,7 +659,7 @@ its docs (`code-reach.md`, `backend-logs.md`, `privacy.md`, the reporter options
 
 - Branch (condition) coverage and hit counts: executed or not is what selection and the editors need.
 - Coverage of the test code itself. Coverage of unit tests (`dotnet test`, Vitest), combined with this plan's into one
-  ratio per commit, is [`combined-code-coverage.md`](combined-code-coverage.md).
+  ratio per commit, is [`combined-code-coverage.md`](../adr/combined-code-coverage.md).
 - F#, which the compiler instrumentation does not cover.
 - Mutation testing, and any percentage target or gate that fails a build on coverage.
 

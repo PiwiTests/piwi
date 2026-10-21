@@ -1,6 +1,6 @@
 # Roles, groups and project-scoped permissions
 
-**Status:** phases 1 to 3 implemented 2026-10-05 on branch `ccr-0d4e705a-33job2`; phase 4 (section 10: API key cap, access change log, identity provider group sync, custom roles) not started (decisions in section 9) · **Scope:** authorization on the server (route meta, `requireAuth`,
+**Status:** phases 1 to 3 shipped 2026-10-05 (#762); phase 4 (section 10: API key cap, access change log, identity provider group sync, custom roles) not started (decisions in section 9) · **Scope:** authorization on the server (route meta, `requireAuth`,
 `requireProjectAccess`, project scope), the MCP write tools, the demo router, the dashboard UI (`useAuth`, Settings →
 Users / Permissions, project Members) and the docs (`operate/authentication.md`, `operate/project-access.md`) ·
 **Replaces:** the three global roles and the `project_assignments` table

@@ -9,8 +9,9 @@ recording a detached `HEAD`, honors a `PIWI_BRANCH` override and captures the pu
 an indexed scalar `branch` column; projects carry a `defaultBranch`, resolved from the SCM provider when unset; runs,
 the flaky leaderboard and the MCP tools take a `branch` filter; regression baselines and the visual-diff baseline
 prefer the same branch, then the default branch; and PR feedback exonerates a test that is also flaky on the default
-branch. Still open from Tier 2: scoping flakiness and trends to the default branch *by default* (the filter exists,
-the default does not). Tier 3 — branches as entities, the merge-readiness verdict, branch-class policies and retention
+branch. The flaky leaderboard, Analytics and the project tabs read the default branch by default (2026-10-19). Still
+open from Tier 2: locator-healing candidates preferring the same branch, and quarantine release streaks counted on
+default-branch runs. Tier 3 — branches as entities, the merge-readiness verdict, branch-class policies and retention
 — has not shipped and stays under *Exploring* in [`ROADMAP.md`](../ROADMAP.md). The design below is the original text.
 
 **Summary.** Branch is already load-bearing: pull-request feedback, the auto-heal policy, notification filters and

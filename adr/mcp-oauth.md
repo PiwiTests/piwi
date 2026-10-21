@@ -1,5 +1,8 @@
 # Signing MCP clients in through OAuth
 
+- Status: accepted
+- Date: 2026-10-08
+
 A design record for letting an MCP client (Claude Code, Cursor, VS Code, Gemini CLI, Claude Desktop through
 `mcp-remote`, a claude.ai connector) connect to an instance with authentication on by signing in through the browser,
 as remote MCP servers such as Atlassian's do, instead of pasting an API key into its configuration.
@@ -116,7 +119,7 @@ kind of credential.
 ## What freezes at 1.0
 
 The endpoint addresses, the metadata fields, the token prefixes, the scope name `mcp` and the token response. They are
-standards, so an older client keeps working; recorded as D53 in [`1.0-stabilization.md`](1.0-stabilization.md).
+standards, so an older client keeps working; recorded as D53 in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md).
 
 ## Not in this change
 

@@ -20,6 +20,8 @@ how to run and verify things, and the conventions that apply everywhere.
 | `apps/jetbrains/` — the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
 | `apps/docs/` — the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
 | `.github/` — the CI workflows and the action they share           | [`.github/AGENTS.md`](.github/AGENTS.md)                     |
+| `proposals/` — design records for work proposed or being built    | [`proposals/AGENTS.md`](proposals/AGENTS.md)                 |
+| `adr/` — architecture decision records for shipped work           | [`adr/AGENTS.md`](adr/AGENTS.md)                             |
 
 Reference material worth opening when you need the map rather than the rules:
 [`apps/application/ARCHITECTURE.md`](apps/application/ARCHITECTURE.md) (dashboard) and
@@ -85,8 +87,9 @@ the lockfile on every checkout.
 `plans/` is local-only (gitignored); `plans/README.md` explains the layout: `roadmap.md` (ranked _Build next_ table and
 plan tables), `shipped.md` (ledger), `exploration-findings.md` (bugs, tech debt, gaps), `rejected-ideas.md`, and the
 `active/` · `later/` · `research/` · `archive/` plan folders. Public direction lives in the committed
-[`ROADMAP.md`](ROADMAP.md); design records for shipped programs live in [`proposals/`](proposals/) — when work ships
-from a proposal, mirror its status into `plans/` (the `/plan-management` skill does this).
+[`ROADMAP.md`](ROADMAP.md). Design records live in [`proposals/`](proposals/) while their work is proposed or being
+built, and move to [`adr/`](adr/) as architecture decision records (ADRs) once it has shipped. When work ships from a
+proposal, mirror its status into `plans/` (the `/plan-management` skill does this).
 
 ## Quick start
 
@@ -223,6 +226,9 @@ other `curl` examples may stay bash-only. `.env` file contents are not shell com
 ### Documentation
 
 - Update the affected doc **in the same commit** as the code change.
+- A pull request that ships the last planned piece of a proposal also moves it from `proposals/` to `adr/`, and
+  one that builds part of it updates its Status paragraph. When a proposal counts as shipped, and the steps of the
+  move: [`adr/AGENTS.md`](adr/AGENTS.md#when-a-proposal-has-shipped).
 - User-facing docs live in `apps/docs/` (VitePress → GitHub Pages); `README.md` is the landing page.
 - The live demo's **guided tour** is maintained like the docs and the demo: a change to a screen a tour stop shows
   updates the stop, and its copy in every tour language, **in the same commit**. Rules: the Guided tour section of

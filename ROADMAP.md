@@ -15,6 +15,13 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Recently shipped
 
+- **Local runs in the editor**: a test run started from VS Code or a JetBrains IDE shows its progress in the status
+  bar and reports back within a second of its end; its results, a partial run's included, overlay the latest CI run's
+  failures, which follow the edits made to the file since; the failures view is a tree, one click runs the failing
+  tests again, and a breakpoint pauses the browser with Piwi's picker open, to replace the locator on that line.
+  [adr/editor-local-runs.md](adr/editor-local-runs.md); see
+  [runs from the editor](https://piwitests.dev/features/editor-runs) and
+  [breakpoints in the browser](https://piwitests.dev/features/editor-breakpoints).
 - **Project roles and groups**: five project roles (Viewer, Contributor, Maintainer, Project admin, Uploader), granted
   to users or groups per project or on all projects, replace the three global roles, so a product owner can file an
   issue without triage or upload rights. [proposals/roles-and-groups.md](proposals/roles-and-groups.md); see
@@ -57,8 +64,8 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   situation block (what most likely happened, and the next step), tabbed evidence and a folded fix toolbox; a
   page-structure diff compares the failing ARIA snapshot with the last green run; and a failure inbox on Home lets you
   filter, assign, snooze, quarantine and bulk-triage open clusters across projects, also through MCP.
-  [proposals/failure-experience-audit.md](proposals/failure-experience-audit.md) and
-  [proposals/ui-simplification.md](proposals/ui-simplification.md); see
+  [adr/failure-experience-audit.md](adr/failure-experience-audit.md) and
+  [adr/ui-simplification.md](adr/ui-simplification.md); see
   [the UI overview](https://piwitests.dev/features/ui-overview).
 - **Environment-aware baselines** — every run-level comparison (the Changes tab, regression signals, the CI gate, PR
   feedback, the bisect window, AI diagnosis) picks its baseline through one ladder: the same environment first, then
@@ -94,7 +101,7 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 - **Public share links (opt-in)** — a read-only URL for one execution or one failure cluster that anyone can open
   without an account: the offline-export report rendered live at view time, bounded by the same size budgets,
   revocable, and off unless `PIWI_SHARE_LINKS_ENABLED` is set. Design record in
-  [proposals/public-share-links.md](proposals/public-share-links.md).
+  [adr/public-share-links.md](adr/public-share-links.md).
 - **First-admin setup from the browser** — with authentication enabled on a fresh instance, the login page walks you
   through creating the administrator account and signs you in; `POST /api/auth/setup` stays for scripted provisioning.
 - **Auth rate limiting** — login, initial setup and password-reset endpoints are throttled per client address (failed
@@ -163,8 +170,7 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   Issues on the SCM token, Jira Data Center, Linear. The rest of step 4 and steps 5–6 of
   [proposals/issue-tracker-integrations.md](proposals/issue-tracker-integrations.md).
 - **Branches as entities** — on top of the shipped branch column: a merge-readiness verdict per branch,
-  branch-class gate policies, cross-branch fix verification and retention by branch class, plus flakiness and trends
-  scoped to the default branch by default. Tier 3 of
+  branch-class gate policies, cross-branch fix verification and retention by branch class. Tier 3 of
   [proposals/first-class-branches.md](proposals/first-class-branches.md).
 - **Exporting whole runs** — [offline export](https://piwitests.dev/features/offline-export) covers one execution and one failure cluster today; a whole run, and a
   test's history across runs, would follow the same shape.

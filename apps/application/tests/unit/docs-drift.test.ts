@@ -257,7 +257,7 @@ describe('no leaked version history or planned work', () => {
   // needs", "the tags used to organize projects").
   const BANNED = [/\bsince version\b/i, /\bsince v\d/i, /\bnow supports\b/i];
   // A page describes what a default install does today, so planned work
-  // stays in ROADMAP.md (proposals/docs-revamp.md, principle 5). "Planned" alone
+  // stays in ROADMAP.md (adr/docs-revamp.md, principle 5). "Planned" alone
   // has honest uses (Playwright's planned test list), so only the phrasings
   // that announce future work are banned. An **Experimental** section, which
   // documents something that ships behind a switch, stays allowed.
@@ -485,7 +485,7 @@ describe('hand-written reference pages match the code', () => {
 });
 
 describe('word budget per page type', () => {
-  // Every page is one type (proposals/docs-revamp.md, "One type per page"),
+  // Every page is one type (adr/docs-revamp.md, "One type per page"),
   // and each type has one budget, with no allowlist: a page over its budget is
   // cut or split, never excused. A page's type is its folder; PAGE_TYPE_EXCEPTIONS
   // lists the few pages whose folder says otherwise. Reference pages list values

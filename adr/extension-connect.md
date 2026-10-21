@@ -1,5 +1,8 @@
 # Connecting Piwi Picker in one step, with URL patterns kept on the server
 
+- Status: accepted
+- Date: 2026-09-28
+
 A design record for two changes to how the browser extension (`apps/extension`) and a Piwi instance
 (`apps/application`) meet: a **Connect** button that replaces pasting an API key, and **project URL patterns** that
 live on the instance instead of in each browser.
@@ -77,7 +80,7 @@ deleted with the project. `pattern` uses the extension's glob syntax unchanged (
 local mapping and a server pattern mean the same thing. `environment` is a free label (`staging`, `production`); the
 extension shows it beside the project. `branch` is what the local mapping's branch already is: the branch deployed at
 those URLs, which Tested elements reads. `path_prefix` (added with the path-prefix mapping of
-[`locator-stability-and-pages.md`](../adr/locator-stability-and-pages.md), open question 2) is the part of the site's path the
+[`locator-stability-and-pages.md`](locator-stability-and-pages.md), open question 2) is the part of the site's path the
 tests never saw: `/app` for a site serving `/app/checkout` whose tests ran at `/checkout`. It is normalized by
 `parsePathPrefix` in `@piwitests/core/page-key` (a leading slash, no trailing one, no query, hash or wildcard, at most
 four segments), on the server and in both editors, and a local mapping carries the same field. `test_path_prefix` is
@@ -128,7 +131,7 @@ node of the Test Map, and each absolute page its locators ran on.
 ## What freezes at 1.0
 
 The connect endpoints and their JSON, the URL-pattern endpoints and their JSON, and the pattern syntax (already the
-extension's). Recorded as D21 in [`1.0-stabilization.md`](1.0-stabilization.md).
+extension's). Recorded as D21 in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md).
 
 ## Not in this change
 

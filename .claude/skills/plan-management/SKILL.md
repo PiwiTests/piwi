@@ -7,8 +7,8 @@ description: Update, archive, and track implementation plans and the roadmap. Us
 
 This skill covers the end-to-end workflow for managing implementation plans in the Piwi Dashboard project. Plans live
 in `plans/` (local, gitignored). `plans/README.md` describes the layout; `plans/roadmap.md` is the single source of
-truth for internal priorities; the committed `ROADMAP.md` is the public direction and the committed `proposals/` hold
-design records that often ship without touching `plans/`.
+truth for internal priorities; the committed `ROADMAP.md` is the public direction, the committed `proposals/` hold
+design records that often ship without touching `plans/`, and the committed `adr/` holds the ones that have shipped.
 
 ## Layout
 
@@ -22,7 +22,8 @@ design records that often ship without touching `plans/`.
 | `plans/later/` | Parked plans |
 | `plans/research/` | Benchmarks / audits whose sections serve as specs until a plan is opened |
 | `plans/archive/` | Shipped or closed plans; each starts with an "Archived <date>" note naming where any remainder went |
-| `proposals/` (committed) | Design records — **always check them during an audit**; mirror their status into `plans/` |
+| `proposals/` (committed) | Design records for work proposed or being built — **always check them during an audit**; mirror their status into `plans/`; move a shipped one to `adr/` |
+| `adr/` (committed) | Architecture decision records for shipped work; rules and the move from `proposals/` in `adr/AGENTS.md` |
 
 ## When to Use
 
@@ -71,6 +72,9 @@ Then:
 2. `plans/shipped.md` → add a row in the newest block **and** a row in "Archived plans".
 3. `plans/roadmap.md` → remove the row from *Active plans* / *Parked plans*; drop or update its *Build next* entry.
 4. Anything dropped on purpose → a numbered entry in `plans/rejected-ideas.md` with the reason.
+5. If the plan mirrors a proposal and the proposal's plan has shipped too, move the proposal to `adr/`: the criterion
+   and the steps are in `adr/AGENTS.md` ("When a proposal has shipped", "Moving a proposal to `adr/`"). Unlike the
+   archive move, this one is committed.
 
 ### 4. If partially shipped — update the plan in place
 
@@ -78,6 +82,7 @@ Then:
 - Update the dated **Status** block under the title (bump the date, one bullet per change).
 - Update the plan's row in the roadmap's *Active plans* / *Parked plans* table and, if it moved, the *Build next* table.
 - If the unshipped remainder should be parked, move the file to `plans/later/` and the row to *Parked plans*.
+- If the plan mirrors a proposal, update the proposal's Status paragraph too (committed): what is built, what remains.
 
 ### 5. Roadmap conventions (`plans/roadmap.md`)
 
@@ -102,7 +107,7 @@ Create `plans/active/<name>.md` from the linked spec with the structure below, t
 ### 8. No commit needed
 
 Plans are gitignored (`plans/` is in `.gitignore`) — they're local working documents. Do not commit plan changes or the
-archive move. (This skill file and `AGENTS.md` are committed; edit them only when the workflow itself changes.)
+archive move. Proposal and ADR changes (`proposals/`, `adr/`) are committed. (This skill file and `AGENTS.md` are committed; edit them only when the workflow itself changes.)
 
 ## Plan Structure Conventions
 

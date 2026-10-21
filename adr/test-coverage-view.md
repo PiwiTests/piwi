@@ -1,6 +1,9 @@
 # A test's coverage on the execution page
 
-Since the unified coverage work ([`unified-code-coverage.md`](unified-code-coverage.md)), Piwi stores the **coverage**
+- Status: accepted
+- Date: 2026-10-15
+
+Since the unified coverage work ([`unified-code-coverage.md`](../proposals/unified-code-coverage.md)), Piwi stores the **coverage**
 of each test: the server files, functions and lines an ASP.NET Core backend ran for it, and the browser files its
 pages ran. Nothing shows it to a person yet. Suspect lines, the AI context and the API read it, but the execution page
 cannot answer the first question a reader has about it: what did this test run? This plan adds that answer to the
@@ -107,7 +110,7 @@ backend logs and network capture too. It is independent of the view and can ship
 ### 6. The 1.0 surface
 
 The new endpoints (source by blob, run coverage read, the file view's data if it grows) need an entry next to D55 in
-[`1.0-stabilization.md`](1.0-stabilization.md).
+[`1.0-stabilization.md`](../proposals/1.0-stabilization.md).
 
 ## Rollout
 

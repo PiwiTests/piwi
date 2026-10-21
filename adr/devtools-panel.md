@@ -105,7 +105,7 @@ how do I get the test there?*
 - **Evidence.** The bug report registers a main-world script (`bug-evidence-main.ts`) that sees `fetch`, XHR and the
   console while a bug recording runs, under the origin's optional host permission.
 - **The instance.** An optional connection reads the project list, the function catalog and the locator index; the
-  project a tab belongs to comes from URL patterns stored on the instance (`proposals/extension-connect.md`).
+  project a tab belongs to comes from URL patterns stored on the instance (`adr/extension-connect.md`).
 
 ## Decisions
 

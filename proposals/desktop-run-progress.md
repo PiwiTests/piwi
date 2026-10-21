@@ -9,7 +9,9 @@ platform-native flourishes.
 taskbar/Dock progress bar, the window title and the composed tray tooltip; a tray status dot and (Windows) a taskbar
 overlay icon show run state; and a Windows taskbar thumbnail toolbar adds Stop/Open buttons under the thumbnail. The
 dashboard aggregates its active runs and feeds the shell, showing progress whenever a run is active and flashing the
-outcome (green pass / red fail) before clearing. The one piece still open is the **in-place progress toast** (tier 3):
+outcome (green pass / red fail) before clearing.
+Still open: the live run menu in the tray (rollout step 3), the progress scenario of the ambient-state E2E test
+(step 5), the optional Rerun thumbnail button, and the **in-place progress toast** (tier 3):
 it duplicates the completion notifications that already exist, and its Windows AUMID/WinRT behaviour has to be validated
 on a real desktop, so it is deferred rather than written blind. The Rust and front-end are unit-tested and compile for
 both the native and the Windows target; the native *rendering* — bar colours, the status dot, the overlay icon, and the
