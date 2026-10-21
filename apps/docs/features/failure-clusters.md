@@ -35,11 +35,6 @@ Failed executions sharing an **error fingerprint** join one cluster, so twenty s
 With an embedding model configured, near-duplicate clusters that the fingerprint keeps apart are merged too: see
 [semantic merging](./ai-diagnosis#semantic-merging-optional).
 
-<figure>
-  <img src="/screenshots/failure-clusters-tab.png" alt="A project's Failures tab on the Clusters view: two open clusters, each with its failure, type, triage state, affected tests, occurrences and last run seen">
-  <figcaption>A project's <strong>Failures</strong> tab, <strong>Clusters</strong> view: one row per root cause, however many tests and runs it failed.</figcaption>
-</figure>
-
 ## The failure inbox
 
 The **Failure inbox** on Home lists up to 50 open failure clusters across the projects you can see, most

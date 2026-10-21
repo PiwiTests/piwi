@@ -133,11 +133,6 @@ definition resolves to (the matching tests, the estimated duration, any warnings
 it. Agents use the selection tools of the [MCP server](/reference/mcp-tools#workflow) and the `run-the-right-tests`
 skill.
 
-<figure>
-  <img src="/screenshots/test-selections.png" alt="The Selections tab: the built-in failed and quarantine-free selections and a saved smoke selection, each with its test count and command, over the Suggestions panel">
-  <figcaption>The project's <strong>Selections</strong>: the built-ins, a saved selection, and suggestions mined from the run history.</figcaption>
-</figure>
-
 ## Health and drift
 
 A selection resolves fresh every time, so the set it runs can change under you: a renamed file drops out of a `files`
