@@ -250,6 +250,17 @@ and the seven surfaces that must carry it are in the [root guide](../AGENTS.md#d
 - **State limits plainly.** Playwright-only, pre-1.0, and "not the right tool if…" belong in the README and on the
   landing page. Trust is the point, not a caveat to bury.
 
+## The home hero's illustration
+
+The hero of `index.md` has no `hero.image`: its right half is `theme/components/HeroVisual.vue`, mounted in the default
+theme's `home-hero-image` slot from `theme/index.ts`. It is the Piwi mark, inline, over a small run panel whose story
+is told by CSS keyframes on one shared 14 s clock (`--loop`): the tests land, the two failures are grouped into one
+root cause, the replacement locator is written out as the fix. It is an illustration, not a screenshot: the names and
+timings are invented, and it should stay recognizably a drawing of what Piwi does rather than a copy of a screen. The
+glow behind it and the slot's box are set in `theme/custom.css` (Home hero); a visitor who prefers reduced motion gets
+the final state. Check a change by building the site and watching the loop once in light and dark, at 1440 px and at
+a phone's width: the panel keeps its height while its rows are hidden, so the layout never jumps.
+
 ## Marketing screenshots
 
 The **light/dark diagonal split** is a scene option, not a manual procedure: `split: true` captures the scene in both
