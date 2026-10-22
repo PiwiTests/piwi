@@ -34,12 +34,10 @@ own a key, and none is needed.
 
 ### Is the connection working?
 
-Each time Piwi Picker asks your instance for something (a function catalog, the elements your tests reach, the bug
-reports, the URL patterns as the settings open), it keeps how the request went. The popup says it in one line under
-**Active project**: "Connected to piwi.example.com, checked 5 minutes ago", or, once requests fail, since when
-nothing answers, the key is refused or the instance answers with errors, with a link to the settings. The settings
-show the same beside your instance's address. A key revoked in your API key settings therefore shows in the popup at
-the next request, before a tool fails on it: click **Connect** again.
+Piwi Picker keeps how its last request to your instance went. The popup says it under **Active project**
+("Connected to piwi.example.com, checked 5 minutes ago"), or since when nothing answers, the key is refused or the
+instance answers with errors, with a link to the settings, which show the same beside the address. A revoked key
+thus shows in the popup at the next request, before a tool fails: click **Connect** again.
 
 ### Use an API key instead
 
@@ -48,20 +46,18 @@ click **Save and test**. An instance older than the one-step connection needs th
 
 ### The desktop app as your instance
 
-The [desktop app](./desktop) runs a Piwi instance on your computer, whose server answers only requests carrying the
-app's access token. Once you have [paired the app](./bug-reports#running-it-with-playwright-in-the-desktop-app) under
-**Desktop app**, and while no instance is connected, the settings offer **Use the desktop app as your instance**: one
-click fills in the app's address and its token as the API key, checks them and connects, as **Save and test** does.
-Should the app refuse the token (it was installed again since you paired it), its address stays filled in and the API
-key field waits: paste the token from the app's **Connect Piwi Picker**, or pair again.
+The [desktop app](./desktop) runs a Piwi instance on your computer that answers only requests carrying its access
+token. Once the app is [paired](./bug-reports#running-it-with-playwright-in-the-desktop-app) and no instance is
+connected, **Use the desktop app as your instance** fills in the app's address and token as the API key, checks them
+and connects. If the app refuses the token (installed again since the pairing), paste the one from its **Connect
+Piwi Picker**, or pair again.
 
-The token goes to that address only once the program answering there proves it holds it, before every request, as for
-**Run with Playwright**. Should the app quit and another program take its port, the extension sends nothing and says
-so. This holds after **Unpair** too, and when the token is typed under **Use an API key instead**, where the address
-must be written with `127.0.0.1`: `localhost` may reach another program, so the token is not sent there.
+The token goes out only after the program at that address proves it holds it, before every request, as for **Run
+with Playwright**: another program on the app's port receives nothing, after **Unpair** too. Typed under **Use an API
+key instead**, the address must use `127.0.0.1`, since `localhost` may reach another program.
 
-The other way round, while an instance is connected and no desktop app is paired, the settings point to the pairing.
-The app's address is then shared: **Disconnect** leaves it to the app, and **Unpair** to the instance.
+While an instance is connected and no app is paired, the settings point to the pairing. The shared address stays
+granted: **Disconnect** leaves it to the app, and **Unpair** to the instance.
 
 ## URL patterns
 
