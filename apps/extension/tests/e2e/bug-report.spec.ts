@@ -810,6 +810,42 @@ test.describe('Report a bug', () => {
     expect((await readEvidence(page)).screenshots).toBe(2);
   });
 
+  test('the evidence line counts a mark’s screenshot once it is stored, and says why when there is none', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    // The screenshot comes well after the mark's step has redrawn the bar.
+    const page = await startBugRecording(
+      context,
+      { ok: true },
+      { init: (c) => slowMessages(c, { 'piwi-bug-screenshot': 800 }) },
+    );
+    const evidence = page.locator('#piwi-record-hud-host .evidence').first();
+    await expect(evidence).toHaveText(/^no screenshot/);
+    await pressHudButton(page, 'wrongPage');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('/cart/discounted');
+    await page.keyboard.press('Enter');
+    await expect.poll(async () => (await readStoredEvents(page)).filter((e) => e.kind === 'assert').length).toBe(1);
+    await expect.poll(() => inFlight(page, 'piwi-bug-screenshot')).toBe(1);
+    await expect(evidence).toHaveText(/^no screenshot/);
+    await expect(evidence).toHaveText(/^1 screenshot/);
+    await expect.poll(() => screenshotCount(page)).toBe(1);
+  });
+
+  test('a screenshot that fails says why on the bar at once', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: false, reason: 'not-in-front' });
+    const hud = page.locator('#piwi-record-hud-host');
+    await page.waitForTimeout(300);
+    await expect(hud.getByText('The tab was not the one in front', { exact: false })).toHaveCount(0);
+    await dispatchRuntimeMessage(page, { type: 'piwi-bug-take-screenshot' });
+    await expect(hud.getByText('The tab was not the one in front', { exact: false })).toBeVisible();
+  });
+
   test('the bar is a labelled region, and its dot pulses only when motion is welcome', async ({ context }) => {
     await openShadowRoots(context);
     await routeShop(context, { fixed: false });

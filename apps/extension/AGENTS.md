@@ -477,7 +477,10 @@ by `bug-report-files.ts` (pure) and `@piwitests/core/bug-report` (`renderBugMark
 tell it from any other zip. Readers go by content, never by name: Replay and the desktop app take the same file named
 `.zip`. A bug recording also records `viewport` events (`record-panel.ts`: the page's size when the recording reaches
 it, before its `navigate`, and the size a resize settles at); `normalizeSteps` skips them and `sessionFromEvents` turns
-them into the steps document's `viewports`, by the first step recorded at or after each.
+them into the steps document's `viewports`, by the first step recorded at or after each. The bar's evidence lines (the summary, the
+debugging session's note, why there is no screenshot) are written in place by `updateBugHudEvidence` whenever the
+evidence changes: an entry the page relays, and a screenshot stored or refused (`takeBugScreenshot` ends with
+`refreshBugHudEvidence`), since the bar a mark redraws counts the evidence before its screenshot is in.
 
 **A screenshot of each step.** The recorder asks the worker for a view of the page (`piwi-bug-step-view`, under an id
 it makes up) as it starts on a page and once the page has been still for `VIEW_SETTLE_MS` after an action, with its

@@ -189,12 +189,21 @@ const PANEL_CSS = `
   }
 `;
 
+/** The HUD's lines that say what evidence the report holds: written again whenever it changes. */
+interface BugHudEvidence {
+  summary: HTMLElement;
+  /** What the debugging session is doing, or why it stopped. */
+  debugging: HTMLElement;
+  /** Why there is no screenshot, when the last one failed. */
+  screenshotNote: HTMLElement;
+}
+
 interface BugPanelGlobals {
   __piwiBugFlow?: boolean;
   /** Ends the pick of the flow on screen, as a cancel: see {@link cancelBugPick}. */
   __piwiBugPickCancel?: () => void;
   /** The HUD on screen, its shadow root and its evidence line: see {@link updateBugHudEvidence}. */
-  __piwiBugHud?: { host: HTMLElement; root: ShadowRoot; summary: HTMLElement };
+  __piwiBugHud?: BugHudEvidence & { host: HTMLElement; root: ShadowRoot };
   __piwiPickState?: string;
   __piwiPickedElement?: Element;
 }
@@ -290,6 +299,9 @@ export async function takeBugScreenshot(moment: 'marked' | 'finish' | 'manual', 
     await setBugEvidenceFields({ screenshotNote: screenshotFailureNote(response?.ok ? undefined : response?.reason) });
   } catch {
     await setBugEvidenceFields({ screenshotNote: SCREENSHOT_NOT_KEPT_NOTE }).catch(() => undefined);
+  } finally {
+    // The HUD drawn while the screenshot was taken counted the evidence before it.
+    await refreshBugHudEvidence();
   }
   return false;
 }
@@ -873,8 +885,25 @@ function actualInWords(matcher: AssertionMatcher, actual: string): string {
 export function updateBugHudEvidence(evidence: StoredBugEvidence): boolean {
   const shown = shownBugHud();
   if (!shown) return false;
-  shown.summary.textContent = evidenceSummary(evidence);
+  writeHudEvidence(shown, evidence);
   return true;
+}
+
+/** Reads the evidence stored now and writes the HUD's evidence lines with it, when the HUD is on screen. */
+export async function refreshBugHudEvidence(): Promise<void> {
+  if (!shownBugHud()) return;
+  const evidence = await getBugEvidence().catch(() => null);
+  if (evidence) updateBugHudEvidence(evidence);
+}
+
+function writeHudEvidence(lines: BugHudEvidence, evidence: StoredBugEvidence): void {
+  lines.summary.textContent = evidenceSummary(evidence);
+  const debugging = debuggingNote(evidence);
+  lines.debugging.textContent = debugging ?? '';
+  lines.debugging.hidden = !debugging;
+  const note = evidence.screenshotNote ? screenshotNoteText(evidence.screenshotNote) : null;
+  lines.screenshotNote.textContent = note ?? '';
+  lines.screenshotNote.hidden = !note;
 }
 
 function shownBugHud(): BugPanelGlobals['__piwiBugHud'] | null {
@@ -984,27 +1013,24 @@ export function renderBugHud(
   button('finish', t('bug_finish'), { icon: 'check', tone: 'success', className: 'finish' });
   bar.appendChild(buttons);
 
-  const summary = document.createElement('div');
-  summary.className = 'evidence';
-  summary.textContent = evidenceSummary(evidence);
-  bar.appendChild(summary);
-  panelGlobals().__piwiBugHud = { host, root, summary };
-
-  const note = debuggingNote(evidence);
-  if (note) {
-    const line = document.createElement('div');
-    line.className = 'evidence';
-    line.textContent = note;
-    bar.appendChild(line);
-  }
-
-  for (const text of [captureError, evidence.screenshotNote && screenshotNoteText(evidence.screenshotNote)]) {
-    if (!text) continue;
+  const lines: BugHudEvidence = {
+    summary: document.createElement('div'),
+    debugging: document.createElement('div'),
+    screenshotNote: document.createElement('div'),
+  };
+  lines.summary.className = 'evidence';
+  lines.debugging.className = 'evidence';
+  lines.screenshotNote.className = 'warn';
+  bar.append(lines.summary, lines.debugging);
+  if (captureError) {
     const warn = document.createElement('div');
     warn.className = 'warn';
-    warn.textContent = text;
+    warn.textContent = captureError;
     bar.appendChild(warn);
   }
+  bar.appendChild(lines.screenshotNote);
+  writeHudEvidence(lines, evidence);
+  panelGlobals().__piwiBugHud = { host, root, ...lines };
 
   root.append(style, bar);
   if (focusedAction) (root.querySelector<HTMLElement>(`[data-action="${focusedAction}"]`) ?? host).focus();
