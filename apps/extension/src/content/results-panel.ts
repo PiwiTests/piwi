@@ -8,8 +8,7 @@ import { getActiveProjectOverride, resolveActiveProject } from '../shared/active
 import { pageHere } from '../shared/page-here.js';
 import type { PathPrefixes } from '@piwitests/core/page-key';
 import { ensureSessionAccess } from '../shared/session-access.js';
-import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
-import { isReservedPickName, isValidPickName } from '../shared/session-export.js';
+import { addNamedPick } from '../shared/session-add.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locator-branch.js';
 import { ALL_BRANCHES } from '@piwitests/core/locator-index';
@@ -640,9 +639,11 @@ function spotlight(backdrop: HTMLElement, panel: HTMLElement, target: Element): 
 
 /**
  * Under `row`, a form naming `locator` for the pick session the DevTools
- * panel's Session tab lists, kept as the Elements sidebar keeps it: the name a
- * page object field takes, the locator, and this page's address. Cancel and
- * Escape (the form's reset) close it and give the focus back to `opener`.
+ * panel's Session tab lists, kept by `addNamedPick` as the DevTools pages keep
+ * it: the name a page object field takes, the locator, and this page's
+ * address. It is drawn here, in the panel's shadow root, with the panel's
+ * buttons. Cancel and Escape (the form's reset) close it and give the focus
+ * back to `opener`.
  */
 function openSessionForm(row: HTMLElement, opener: HTMLElement, locator: string): void {
   row.querySelector('.session-form')?.remove();
@@ -670,17 +671,10 @@ function openSessionForm(row: HTMLElement, opener: HTMLElement, locator: string)
     event.preventDefault();
     void (async () => {
       const name = input.value.trim();
-      if (!name) return void (message.textContent = t('session_nameRequired'));
-      if (isReservedPickName(name)) return void (message.textContent = t('session_nameReserved', { name }));
-      if (!isValidPickName(name)) return void (message.textContent = t('session_nameInvalid'));
-      try {
-        await ensureSessionAccess();
-        const picks = await getSessionPicks();
-        if (picks.some((pick) => pick.name === name))
-          return void (message.textContent = t('session_nameTaken', { name }));
-        await addSessionPick({ name, locator, pageUrl: location.href });
-      } catch (err) {
-        message.textContent = err instanceof Error ? err.message : String(err);
+      await ensureSessionAccess();
+      const refused = await addNamedPick(name, locator, () => location.href);
+      if (refused !== null) {
+        message.textContent = refused;
         return;
       }
       form.remove();

@@ -97,6 +97,31 @@ test.describe('the Elements sidebar', () => {
     ]);
   });
 
+  test('Add to session says so when the session storage refuses the pick, and keeps the form', async ({
+    context,
+    extensionId,
+  }) => {
+    const shop = await context.newPage();
+    await openShop(shop);
+    await shop.addScriptTag({ path: path.join(DIST, 'devtools-rank.js') });
+    const sidebar = await openDevtoolsPage(context, extensionId, 'devtools-sidebar.html', shop);
+    await selectElement(sidebar, shop, 'button:nth-of-type(1)');
+    const first = sidebar.getByRole('listitem').first();
+    await sidebar.evaluate(() => {
+      chrome.storage.session.set = () => Promise.reject(new Error('Session storage quota exceeded.'));
+    });
+
+    await first.getByRole('button', { name: 'Add to session' }).click();
+    const name = first.getByRole('textbox', { name: 'Name for this element' });
+    await name.fill('applyCoupon');
+    await name.press('Enter');
+    await expect(first.locator('.form-message')).toHaveText(
+      'Not added to the session: Session storage quota exceeded.',
+    );
+    await expect(name).toHaveValue('applyCoupon');
+    await expect(first.locator('.confirm')).toHaveCount(0);
+  });
+
   test('copies the action and the assertion the element calls for, and they run as pasted', async ({
     context,
     extensionId,

@@ -2,19 +2,18 @@ import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, copyModeMethod, renderCopyMode } from '../shared/copy-modes.js';
 import { describeSelection, type SelectionLocator, type SelectionRanking } from '../shared/devtools-selection.js';
-import { initI18n, localizeDocument, t, tNodes, uiLanguage } from '../shared/i18n.js';
+import { initI18n, localizeDocument, t, uiLanguage } from '../shared/i18n.js';
 import { decorateIcons, icon } from '../shared/icons.js';
 import { PATTERN_CSS } from '../shared/pattern-view.js';
-import { isReservedPickName, isValidPickName } from '../shared/session-export.js';
 import { STEP_CSS } from '../shared/step-view.js';
 import { verdictWords } from '../shared/verdict-words.js';
 import { patternOrigin } from '../shared/web-origin.js';
-import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
 import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { requestSiteAccess } from './inspected.js';
-import { button, el, emptyState, iconLine, noAccessText, type IconName } from './ui.js';
+import { openSessionForm } from './session-form.js';
+import { button, el, emptyState, noAccessText, type IconName } from './ui.js';
 import { rankDevtoolsSelection, type RankOutcome } from './selection.js';
 
 /**
@@ -152,7 +151,7 @@ function locatorRow(
     actions.appendChild(send);
   }
   actions.appendChild(
-    button(t('devtools_addToSession'), () => openSessionForm(row, locator.locator, ranking.pageUrl), {
+    button(t('devtools_addToSession'), () => openSessionForm(row, locator.locator, () => ranking.pageUrl), {
       icon: 'plus',
       tone: 'ghost',
       className: 'add-to-session',
@@ -161,44 +160,6 @@ function locatorRow(
 
   row.append(code, badge, actions);
   return row;
-}
-
-function openSessionForm(row: HTMLElement, locator: string, pageUrl: string): void {
-  row.querySelector('form')?.remove();
-  row.querySelector('.confirm')?.remove();
-  const form = el('form', 'session-form');
-  const input = el('input');
-  input.type = 'text';
-  input.placeholder = t('session_namePlaceholder');
-  input.setAttribute('aria-label', t('session_nameLabel'));
-  // Save submits the form, which checks the name.
-  const save = button(t('common_save'), () => undefined, { icon: 'save', tone: 'primary' });
-  save.type = 'submit';
-  const cancel = button(t('common_cancel'), () => form.remove(), { icon: 'close' });
-  const message = el('div', 'form-message');
-  message.setAttribute('role', 'status');
-  form.append(input, save, cancel, message);
-  form.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') form.remove();
-  });
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    void (async () => {
-      const name = input.value.trim();
-      if (!name) return void (message.textContent = t('session_nameRequired'));
-      if (isReservedPickName(name)) return void (message.textContent = t('session_nameReserved', { name }));
-      if (!isValidPickName(name)) return void (message.textContent = t('session_nameInvalid'));
-      const picks = await getSessionPicks();
-      if (picks.some((pick) => pick.name === name))
-        return void (message.textContent = t('session_nameTaken', { name }));
-      await addSessionPick({ name, locator, pageUrl });
-      form.remove();
-      const added = el('code', 'pick-name', name);
-      row.appendChild(iconLine('check-circle', 'confirm', ...tNodes('devtools_addedToSession', { name: added })));
-    })();
-  });
-  row.appendChild(form);
-  input.focus();
 }
 
 async function start(): Promise<void> {

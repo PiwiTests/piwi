@@ -1675,6 +1675,15 @@
       }
     }
   },
+  "session_addFailed": {
+    "message": "No se añadió a la sesión: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Session storage quota exceeded."
+      }
+    }
+  },
   "pick_overlayBanner": {
     "message": "Inspector de Piwi: haz clic en un elemento para generar sus locators"
   },

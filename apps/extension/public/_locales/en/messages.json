@@ -2029,6 +2029,16 @@
       }
     }
   },
+  "session_addFailed": {
+    "message": "Not added to the session: $error$",
+    "description": "Piwi sidebar in DevTools and the Pick results, Add to session: error under the name field when the browser could not keep the element in the session. $error$ is the browser’s reason, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Session storage quota exceeded."
+      }
+    }
+  },
   "pick_overlayBanner": {
     "message": "Piwi inspector — click any element to generate locators for it",
     "description": "Picking overlay: the banner at the top of the page while an element is picked (Pick an element, Multi-pick, Assertions, Context for an AI agent)."

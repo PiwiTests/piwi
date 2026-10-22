@@ -1,32 +1,18 @@
-import { t, tNodes } from '../shared/i18n.js';
-import { pickNameProblem, type PickNameProblem } from '../shared/session-export.js';
-import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
+import { tNodes, t } from '../shared/i18n.js';
+import { addNamedPick } from '../shared/session-add.js';
 import { button, el, iconLine } from './ui.js';
 
 /**
- * Add to session in the DevTools pages: a name for the locator, checked as the
- * page object needs it (a class field, none taken), then the pick kept in the
- * session the Session tab lists.
+ * Add to session in the DevTools pages (the Elements sidebar, the Locators
+ * console): a name for the locator, checked and kept by `addNamedPick`, which
+ * says why a name is refused or the session storage failed.
  */
-
-function problemText(problem: PickNameProblem, name: string): string {
-  switch (problem) {
-    case 'required':
-      return t('session_nameRequired');
-    case 'reserved':
-      return t('session_nameReserved', { name });
-    case 'invalid':
-      return t('session_nameInvalid');
-    case 'taken':
-      return t('session_nameTaken', { name });
-  }
-}
 
 /**
  * Opens the name form at the end of `host`, in place of a form or a
  * confirmation already there; `pageUrl` is read when the name is saved.
  */
-export function openSessionForm(host: HTMLElement, locator: string, pageUrl: () => Promise<string>): void {
+export function openSessionForm(host: HTMLElement, locator: string, pageUrl: () => string | Promise<string>): void {
   host.querySelector(':scope > .session-form')?.remove();
   host.querySelector(':scope > .confirm')?.remove();
   const form = el('form', 'session-form');
@@ -48,12 +34,11 @@ export function openSessionForm(host: HTMLElement, locator: string, pageUrl: () 
     event.preventDefault();
     void (async () => {
       const name = input.value.trim();
-      const problem = pickNameProblem(name, await getSessionPicks());
-      if (problem) {
-        message.textContent = problemText(problem, name);
+      const refused = await addNamedPick(name, locator, pageUrl);
+      if (refused !== null) {
+        message.textContent = refused;
         return;
       }
-      await addSessionPick({ name, locator, pageUrl: await pageUrl() });
       form.remove();
       const added = el('code', 'pick-name', name);
       host.appendChild(iconLine('check-circle', 'confirm', ...tNodes('devtools_addedToSession', { name: added })));
