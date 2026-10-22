@@ -602,6 +602,24 @@
   "options_stateNotConnected": {
     "message": "Não conectado"
   },
+  "options_desktopOffer": {
+    "message": "O aplicativo de desktop pareado executa o Piwi neste computador: use-o como sua instância, com o endereço e o token dele."
+  },
+  "options_useDesktop": {
+    "message": "Usar o aplicativo de desktop como instância"
+  },
+  "options_desktopPairHint": {
+    "message": "Para executar os relatórios de bug com o Playwright neste computador, $link$.",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "pair the desktop app"
+      }
+    }
+  },
+  "options_desktopPairHintLink": {
+    "message": "pareie o aplicativo de desktop"
+  },
   "options_healthOk": {
     "message": "Respondeu $time$",
     "placeholders": {

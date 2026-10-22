@@ -602,6 +602,24 @@
   "options_stateNotConnected": {
     "message": "Sin conectar"
   },
+  "options_desktopOffer": {
+    "message": "La aplicación de escritorio vinculada ejecuta Piwi en este equipo: úsala como tu instancia, con su dirección y su token."
+  },
+  "options_useDesktop": {
+    "message": "Usar la aplicación de escritorio como instancia"
+  },
+  "options_desktopPairHint": {
+    "message": "Para ejecutar los informes de error con Playwright en este equipo, $link$.",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "pair the desktop app"
+      }
+    }
+  },
+  "options_desktopPairHintLink": {
+    "message": "vincula la aplicación de escritorio"
+  },
   "options_healthOk": {
     "message": "Respondió $time$",
     "placeholders": {

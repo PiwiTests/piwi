@@ -602,6 +602,24 @@
   "options_stateNotConnected": {
     "message": "Nicht verbunden"
   },
+  "options_desktopOffer": {
+    "message": "Die gekoppelte Desktop-App führt Piwi auf diesem Computer aus: Nutzen Sie sie als Ihre Instanz, mit ihrer Adresse und ihrem Token."
+  },
+  "options_useDesktop": {
+    "message": "Desktop-App als Instanz nutzen"
+  },
+  "options_desktopPairHint": {
+    "message": "Um Fehlerberichte mit Playwright auf diesem Computer auszuführen, $link$.",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "pair the desktop app"
+      }
+    }
+  },
+  "options_desktopPairHintLink": {
+    "message": "koppeln Sie die Desktop-App"
+  },
   "options_healthOk": {
     "message": "Antwortete $time$",
     "placeholders": {

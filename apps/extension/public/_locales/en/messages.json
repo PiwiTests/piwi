@@ -739,6 +739,28 @@
     "message": "Not connected",
     "description": "Settings page: badge beside the Connect to Piwi heading before connecting. Short."
   },
+  "options_desktopOffer": {
+    "message": "The desktop app you paired runs Piwi on this computer: use it as your instance, with its address and token.",
+    "description": "Settings page, Connect to Piwi card: shown when the desktop app is paired and no instance is connected, beside the options_useDesktop button."
+  },
+  "options_useDesktop": {
+    "message": "Use the desktop app as your instance",
+    "description": "Settings page, Connect to Piwi card: the button that connects to the paired desktop app's own Piwi instance in one click."
+  },
+  "options_desktopPairHint": {
+    "message": "To run bug reports with Playwright on this computer, $link$.",
+    "description": "Settings page, Connect to Piwi card: shown when an instance is connected and the desktop app is not paired. $link$ is options_desktopPairHintLink, a link to the Desktop app card.",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "pair the desktop app"
+      }
+    }
+  },
+  "options_desktopPairHintLink": {
+    "message": "pair the desktop app",
+    "description": "The link in options_desktopPairHint, which leads to the Desktop app card's Pair button. Lower case: it ends a sentence."
+  },
   "options_healthOk": {
     "message": "Answered $time$",
     "description": "Settings page, a pill beside the instance's address: the last request to the instance worked. $time$ is how long ago, formatted by the browser (“5 minutes ago”). A few words.",

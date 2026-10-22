@@ -44,8 +44,19 @@ the next request, before a tool fails on it: click **Connect** again.
 ### Use an API key instead
 
 Under **Use an API key instead**, paste a key created in your account's [API key settings](/operate/api-keys) and
-click **Save and test**. An instance older than the one-step connection needs this. So does the
-desktop app, whose server answers only requests carrying its access token.
+click **Save and test**. An instance older than the one-step connection needs this.
+
+### The desktop app as your instance
+
+The [desktop app](./desktop) runs a Piwi instance on your computer, whose server answers only requests carrying the
+app's access token. Once you have [paired the app](./bug-reports#running-it-with-playwright-in-the-desktop-app) under
+**Desktop app**, and while no instance is connected, the settings offer **Use the desktop app as your instance**: one
+click fills in the app's address and its token as the API key, checks them and connects, as **Save and test** does.
+Should the app refuse the token (it was installed again since you paired it), its address stays filled in and the API
+key field waits: paste the token from the app's **Connect Piwi Picker**, or pair again.
+
+The other way round, while an instance is connected and no desktop app is paired, the settings point to the pairing.
+The app's address is then shared: **Disconnect** leaves it to the app, and **Unpair** to the instance.
 
 ## URL patterns
 

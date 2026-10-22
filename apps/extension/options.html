@@ -493,6 +493,18 @@
       .code-panel[hidden] {
         display: none;
       }
+      /* An offer to act on in one click: a sentence, and its button at the end. */
+      .offer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 12.5px;
+        line-height: 18px;
+      }
+      .offer[hidden] {
+        display: none;
+      }
       .code-panel code {
         display: inline-block;
         margin: 0 2px;
@@ -635,6 +647,16 @@
           Opens your instance in a new tab, where you allow Piwi Picker; it then receives its own API key.
         </div>
 
+        <!-- The desktop app is paired and no instance is kept: it runs one on this computer. -->
+        <div id="desktop-offer" class="panel offer" hidden>
+          <span data-i18n="options_desktopOffer">
+            The desktop app you paired runs Piwi on this computer: use it as your instance, with its address and token.
+          </span>
+          <button id="use-desktop" type="button" class="small primary" data-i18n="options_useDesktop" data-icon="monitor">
+            Use the desktop app as your instance
+          </button>
+        </div>
+
         <div id="connect-panel" class="panel code-panel" hidden>
           <div id="connect-code-line"></div>
           <button id="connect-cancel" type="button" class="small" data-i18n="options_connectCancel" data-icon="close">
@@ -642,6 +664,8 @@
           </button>
         </div>
         <div id="connected-as" class="connected" hidden></div>
+        <!-- An instance is kept and the desktop app is not paired: where to pair it. -->
+        <div id="desktop-pair-hint" class="hint" hidden></div>
 
         <details id="api-key-fallback">
           <summary data-i18n="options_useApiKey" data-icon="lock">Use an API key instead</summary>

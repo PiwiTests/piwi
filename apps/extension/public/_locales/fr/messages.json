@@ -602,6 +602,24 @@
   "options_stateNotConnected": {
     "message": "Non connecté"
   },
+  "options_desktopOffer": {
+    "message": "L’application de bureau associée exécute Piwi sur cet ordinateur : utilisez-la comme instance, avec son adresse et son jeton."
+  },
+  "options_useDesktop": {
+    "message": "Utiliser l’application de bureau comme instance"
+  },
+  "options_desktopPairHint": {
+    "message": "Pour lancer les rapports de bug avec Playwright sur cet ordinateur, $link$.",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "pair the desktop app"
+      }
+    }
+  },
+  "options_desktopPairHintLink": {
+    "message": "associez l’application de bureau"
+  },
   "options_healthOk": {
     "message": "A répondu $time$",
     "placeholders": {

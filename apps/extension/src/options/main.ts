@@ -31,6 +31,7 @@ import {
   desktopOrigin,
   getDesktopSettings,
   setDesktopSettings,
+  type DesktopSettings,
 } from '../shared/desktop-settings.js';
 import { normalizePathPrefix, parsePathPrefix } from '@piwitests/core/page-key';
 import { waitForApproval } from '../shared/connect-flow.js';
@@ -112,6 +113,9 @@ const mappingHead = document.getElementById('mapping-head') as HTMLElement;
 const apiKeySaveBtn = document.getElementById('api-key-save') as HTMLButtonElement;
 const saveBtn = document.getElementById('save') as HTMLButtonElement;
 const disconnectBtn = document.getElementById('disconnect') as HTMLButtonElement;
+const desktopOffer = document.getElementById('desktop-offer') as HTMLElement;
+const useDesktopBtn = document.getElementById('use-desktop') as HTMLButtonElement;
+const desktopPairHint = document.getElementById('desktop-pair-hint') as HTMLElement;
 const languageSelect = document.getElementById('language') as HTMLSelectElement;
 const draftNote = document.getElementById('language-draft') as HTMLElement;
 
@@ -441,7 +445,60 @@ function renderInstanceState(): void {
   sitesConnectFirst.hidden = kept;
   sitesBody.hidden = !kept;
   void renderInstanceHealth();
+  renderDesktopAsInstance();
 }
+
+/** The desktop app paired, as the Desktop app card last read it; null when none is. */
+let pairedDesktop: DesktopSettings | null = null;
+
+/**
+ * The desktop app runs a Piwi instance on this computer, so the two cards
+ * offer each other: with the app paired and no instance kept, Use the desktop
+ * app as your instance; with an instance kept and no app paired, a line
+ * pointing to the pairing.
+ */
+function renderDesktopAsInstance(): void {
+  const kept = stored.instanceUrl.trim() !== '';
+  desktopOffer.hidden = kept || !pairedDesktop;
+  desktopPairHint.hidden = !kept || !!pairedDesktop;
+  if (desktopPairHint.hidden) {
+    desktopPairHint.replaceChildren();
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = '#desktop-card';
+  link.textContent = t('options_desktopPairHintLink');
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    // An instance on this computer's loopback is likely the app itself: Pair asks it there.
+    const local = desktopOrigin(stored.instanceUrl);
+    if (local && desktopUrlEl.value === DESKTOP_DEFAULT_URL) desktopUrlEl.value = local;
+    showField(desktopPairBtn);
+  });
+  desktopPairHint.replaceChildren(...tNodes('options_desktopPairHint', { link }));
+}
+
+/**
+ * Use the desktop app as your instance: its address and the token the pairing
+ * holds, which its server takes as an API key, kept and checked as Save and
+ * test does. Should the app refuse the token, the address stays filled in and
+ * the key field waits for one.
+ */
+useDesktopBtn.addEventListener('click', () => {
+  const desktop = pairedDesktop;
+  if (!desktop) return;
+  // Before any await, so the click still counts as the user gesture.
+  const permission = requestInstanceHostPermission(desktop.url);
+  const epoch = connectionEpoch;
+  instanceUrlEl.value = desktop.url;
+  apiKeyEl.value = desktop.token;
+  whileRunning(useDesktopBtn, async () => {
+    if (await connectWithKey({ instanceUrl: desktop.url, apiKey: desktop.token }, permission, epoch, true)) return;
+    apiKeyEl.value = '';
+    apiKeyFallback.open = true;
+    showField(apiKeyEl);
+  });
+});
 
 /** The pill beside the instance's address: whether it answered the last request made to it, and when. */
 async function renderInstanceHealth(): Promise<void> {
@@ -884,53 +941,70 @@ apiKeySaveBtn.addEventListener('click', () => {
   const permission = requestInstanceHostPermission(typed.instanceUrl);
   const epoch = connectionEpoch;
   whileRunning(apiKeySaveBtn, async () => {
-    if (!typed.instanceUrl) {
-      setStatus(t('common_enterInstanceUrl'), 'error');
-      return;
-    }
-    setStatus(t('options_testing'));
-    if (!(await permission)) {
-      setStatus(t('options_accessDenied'), 'error');
-      return;
-    }
-    const sameInstance = stored.instanceUrl === typed.instanceUrl;
-    const settings: ConnectionSettings = {
-      ...stored,
-      instanceUrl: typed.instanceUrl,
-      ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0, connectedAs: '' }),
-    };
-    const result = await testConnection(settings, typed.apiKey);
-    if (!result.ok) {
-      setStatus(result.error, 'error');
-      return;
-    }
-    // Disconnected while the instance was tested: nothing is kept.
-    if (epoch !== connectionEpoch) return;
-    const kept = ++connectionEpoch;
-    await setInstanceApiKey(settings.instanceUrl, typed.apiKey);
-    if (kept !== connectionEpoch) return;
-    stored = settings;
-    await setConnectionSettings(settings);
-    if (!sameInstance) await forgetInstanceData();
-    await syncServerPatterns(settings, kept);
-    try {
-      projectOptions = await fetchProjects(settings);
-    } catch {
-      projectOptions = syncedProjectOptions();
-    }
-    if (kept !== connectionEpoch) return;
-    renderMappings();
-    const catalogs = await refreshCatalogs(stored, kept);
-    if (kept !== connectionEpoch) return;
-    const parts = [tn('options_connected', projectOptions.length)];
-    // The API key travels on every catalog fetch; over plain HTTP it travels in
-    // the clear. Worth saying once, at the moment the choice is made — not a
-    // reason to refuse a local instance on `http://localhost`.
-    if (/^http:\/\//i.test(settings.instanceUrl) && typed.apiKey) parts.push(t('options_plainHttp'));
-    if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
-    setStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
+    await connectWithKey(typed, permission, epoch);
   });
 });
+
+/**
+ * Checks `typed`'s address and key against the instance, keeps them, then reads its patterns and catalogs as Connect
+ * does. `permission` is the host permission asked for inside the click; `desktop` says the address and the key are
+ * the paired desktop app's. Answers whether the connection was kept.
+ */
+async function connectWithKey(
+  typed: { instanceUrl: string; apiKey: string },
+  permission: Promise<boolean>,
+  epoch: number,
+  desktop = false,
+): Promise<boolean> {
+  if (!typed.instanceUrl) {
+    setStatus(t('common_enterInstanceUrl'), 'error');
+    return false;
+  }
+  setStatus(t('options_testing'));
+  if (!(await permission)) {
+    setStatus(t('options_accessDenied'), 'error');
+    return false;
+  }
+  const sameInstance = stored.instanceUrl === typed.instanceUrl;
+  const settings: ConnectionSettings = {
+    ...stored,
+    instanceUrl: typed.instanceUrl,
+    ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0, connectedAs: '' }),
+  };
+  const result = await testConnection(settings, typed.apiKey);
+  if (!result.ok) {
+    setStatus(result.error, 'error');
+    return false;
+  }
+  // Disconnected while the instance was tested: nothing is kept.
+  if (epoch !== connectionEpoch) return false;
+  const kept = ++connectionEpoch;
+  await setInstanceApiKey(settings.instanceUrl, typed.apiKey);
+  if (kept !== connectionEpoch) return false;
+  stored = settings;
+  await setConnectionSettings(settings);
+  if (!sameInstance) await forgetInstanceData();
+  renderInstanceState();
+  await syncServerPatterns(settings, kept);
+  try {
+    projectOptions = await fetchProjects(settings);
+  } catch {
+    projectOptions = syncedProjectOptions();
+  }
+  if (kept !== connectionEpoch) return true;
+  renderMappings();
+  const catalogs = await refreshCatalogs(stored, kept);
+  if (kept !== connectionEpoch) return true;
+  const parts = [tn('options_connected', projectOptions.length)];
+  // The API key travels on every catalog fetch; over plain HTTP it travels in
+  // the clear. Worth saying once, at the moment the choice is made — not a
+  // reason to refuse a local instance on `http://localhost`. The desktop app
+  // answers on this computer's loopback alone, which its token never leaves.
+  if (/^http:\/\//i.test(settings.instanceUrl) && typed.apiKey && !desktop) parts.push(t('options_plainHttp'));
+  if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
+  setStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
+  return true;
+}
 
 /** Save keeps the lines of this browser, then fetches the catalogs of the projects they map. */
 saveBtn.addEventListener('click', () => {
@@ -992,14 +1066,12 @@ saveBtn.addEventListener('click', () => {
  * recording's own granted site is a separate grant with its own lifetime.
  */
 async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> {
-  if (!instanceUrl.trim()) return;
-  let origin: string;
-  try {
-    origin = new URL(instanceUrl).origin;
-  } catch {
-    return;
-  }
-  await chrome.permissions.remove({ origins: [hostPattern(origin)] }).catch(() => undefined);
+  const pattern = originPattern(instanceUrl);
+  if (!pattern) return;
+  // The desktop app paired at the same address keeps it for Run with Playwright; Unpair gives it back.
+  const desktop = await getDesktopSettings().catch(() => null);
+  if (desktop && hostPattern(desktop.url) === pattern) return;
+  await chrome.permissions.remove({ origins: [pattern] }).catch(() => undefined);
 }
 
 disconnectBtn.addEventListener('click', () => {
@@ -1165,6 +1237,8 @@ function setDesktopStatus(text: StatusText, kind: StatusKind = ''): void {
 /** The card as the stored pairing says: its badge, its address, and Unpair. */
 async function renderDesktopState(): Promise<void> {
   const desktop = await getDesktopSettings();
+  pairedDesktop = desktop;
+  renderDesktopAsInstance();
   setPill(desktopPill, !!desktop, 'options_statePaired', 'options_stateNotPaired');
   desktopPairBtn.classList.toggle('primary', !desktop);
   desktopForgetBtn.hidden = !desktop;
@@ -1286,7 +1360,11 @@ desktopForgetBtn.addEventListener('click', () => {
   void (async () => {
     const desktop = await getDesktopSettings();
     await clearDesktopSettings();
-    if (desktop) await chrome.permissions.remove({ origins: [hostPattern(desktop.url)] }).catch(() => false);
+    // The instance kept at the app's address goes on using it; Disconnect gives it back.
+    const pattern = desktop ? hostPattern(desktop.url) : null;
+    if (pattern && pattern !== originPattern(stored.instanceUrl)) {
+      await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
+    }
     desktopTokenEl.value = '';
     setDesktopStatus(t('options_desktopForgotten'), 'ok');
     await renderDesktopState();
