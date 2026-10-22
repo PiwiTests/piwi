@@ -4,9 +4,9 @@ import type { ProbeArg } from './types.js';
 export interface PickerOverlayStrings {
   /** The banner's heading for the `'global'` transport with no failing locator. */
   banner?: string;
-  /** The banner's foot before an element is hovered: the keys. */
+  /** The banner's foot before an element is hovered: the keys, Enter picking the focused element. */
   keys?: string;
-  /** The banner's foot while an element is hovered. */
+  /** The banner's foot while an element is hovered: a click or Enter picks it. */
   keysHovering?: string;
   /** The banner's foot once an element is picked. */
   analyzing?: string;
@@ -35,7 +35,9 @@ export interface PickerOverlayArg {
  * the app's own handlers while picking. The hover target snaps to the nearest
  * actionable ancestor (button/link/field/role/test id) and up/down walk the
  * DOM chain before the click commits. The hover reaches into open shadow
- * roots, and the chain walks out of them through each host.
+ * roots, and the chain walks out of them through each host. Enter picks the
+ * outlined element, or with none the focused one, so a control reached with
+ * Tab is picked without the pointer.
  *
  * `transport` picks how a pick/skip is reported, since the two hosts cross
  * fundamentally different boundaries:
@@ -77,10 +79,16 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   }
   const Z = 2147483600;
   const testIdAttr = arg.testIdAttribute || 'data-testid';
+  // The snapshot picker's host forwards the arrows only, so its keys leave Enter out.
+  const enterReaches = arg.transport === 'global';
   const words = {
     banner: 'Piwi inspector — click any element to generate locators for it',
-    keys: '↑ parent · ↓ child · Esc skip',
-    keysHovering: 'click to pick · ↑ parent · ↓ child · Esc skip',
+    keys: enterReaches
+      ? 'Enter picks the focused element · ↑ parent · ↓ child · Esc skip'
+      : '↑ parent · ↓ child · Esc skip',
+    keysHovering: enterReaches
+      ? 'click or Enter to pick · ↑ parent · ↓ child · Esc skip'
+      : 'click to pick · ↑ parent · ↓ child · Esc skip',
     analyzing: 'Analyzing element…',
   };
   for (const key of Object.keys(words) as Array<keyof typeof words>) {
@@ -367,8 +375,13 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   const onMove = (e: any) => {
     const raw = targetOf(e);
     if (!raw || isOwn(raw)) {
+      // The overlay's own chrome outlines nothing, so Enter falls back to the focus.
+      chain = [];
+      idx = 0;
+      lastRaw = null;
       highlight.style.display = 'none';
       label.style.display = 'none';
+      foot.textContent = words.keys;
       return;
     }
     if (raw !== lastRaw) {
@@ -471,14 +484,29 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     if (!el || isOwn(targetOf(e))) return;
     reportPicked(el);
   };
+  // The focused element, inside open shadow roots; none when the focus is on
+  // the page itself or on the overlay.
+  const focused = (): any => {
+    let el = doc.activeElement;
+    while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
+    const tag = ((el && el.tagName) || '').toLowerCase();
+    return !el || tag === 'body' || tag === 'html' || isOwn(el) ? null : el;
+  };
   const onKey = (e: any) => {
     if (e.key === 'Escape') {
       stop(e);
       reportSkipped();
       return;
     }
+    if (e.key === 'Enter' && !e.isComposing) {
+      stop(e);
+      const el = current() || focused();
+      if (el) reportPicked(el);
+      return;
+    }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       stop(e);
+      if (!chain.length) return;
       if (e.key === 'ArrowUp') idx = Math.min(idx + 1, chain.length - 1);
       else idx = Math.max(idx - 1, 0);
       refresh();

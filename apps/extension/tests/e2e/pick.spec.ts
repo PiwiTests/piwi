@@ -430,10 +430,12 @@ test.describe('pick.js in another language', () => {
     await expect(page.locator('#__piwi_picker_banner')).toContainText(
       'Inspecteur Piwi, cliquez sur un élément pour générer ses locators',
     );
-    await expect(page.locator('#__piwi_picker_foot')).toHaveText('↑ parent · ↓ enfant · Échap pour passer');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(
+      'Entrée choisit l’élément qui a le focus · ↑ parent · ↓ enfant · Échap pour passer',
+    );
     await page.hover('#target');
     await expect(page.locator('#__piwi_picker_foot')).toHaveText(
-      'cliquez pour choisir · ↑ parent · ↓ enfant · Échap pour passer',
+      'cliquez ou Entrée pour choisir · ↑ parent · ↓ enfant · Échap pour passer',
     );
     await page.click('#target');
     await expect(page.getByText('Limiter à des parents stables (facultatif)')).toBeVisible();

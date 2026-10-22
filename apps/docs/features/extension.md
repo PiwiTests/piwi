@@ -63,6 +63,9 @@ Hover highlights, a click picks. The pick snaps to the nearest actionable ancest
 the button), and ↑/↓ walk the DOM tree, showing the locator each step would produce. For an element with a role, an
 **anchors** step offers stable parents to scope the locator to, with a live match count.
 
+**Enter** picks too: the highlighted element when the pointer is on one, otherwise the element that has the keyboard
+focus, so a control reached with Tab is picked without the mouse. **Esc** cancels the pick.
+
 Elements inside a web component's open shadow root are picked like any other: ↑ walks out of the shadow root through
 its host element, and the anchors step lists the host and its parents and counts the matches inside open shadow roots,
 as Playwright's locators do.

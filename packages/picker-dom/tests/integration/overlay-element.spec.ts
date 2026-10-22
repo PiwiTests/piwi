@@ -77,7 +77,9 @@ test.describe('installPickerOverlay — global transport (live page)', () => {
     await install(page, { transport: 'global', failing: null });
     const banner = page.locator('#__piwi_picker_banner');
     await expect(banner).toContainText('Piwi inspector — click any element to generate locators for it');
-    await expect(page.locator('#__piwi_picker_foot')).toHaveText('↑ parent · ↓ child · Esc skip');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(
+      'Enter picks the focused element · ↑ parent · ↓ child · Esc skip',
+    );
     await dispatchKey(page, 'Escape');
 
     await page.evaluate(() => delete (globalThis as any).__piwiPickState);
@@ -118,6 +120,70 @@ test.describe('installPickerOverlay — global transport (live page)', () => {
   });
 });
 
+test.describe('installPickerOverlay — picking with the keyboard', () => {
+  const FORM = `<!doctype html><html><body style="margin-top:120px">
+    <form id="form" onsubmit="event.preventDefault(); window.__submits = (window.__submits || 0) + 1">
+      <input id="email" aria-label="Email">
+      <button id="send">Send</button>
+    </form>
+    <p id="note">Note</p>
+    <x-field id="host"></x-field>
+    <script>
+      document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<input id="inner-field">';
+    </script>
+  </body></html>`;
+  const pickState = (page: Page) => page.evaluate(() => (globalThis as any).__piwiPickState ?? null);
+  const pickedId = (page: Page) => page.evaluate(() => (globalThis as any).__piwiPickedElement?.id ?? null);
+
+  test('Enter with nothing outlined picks the focused element, and the page sees no Enter', async ({ page }) => {
+    await page.setContent(FORM);
+    await page.focus('#email');
+    await install(page, { transport: 'global', failing: null });
+    await page.keyboard.press('Enter');
+    expect(await pickState(page)).toBe('picked');
+    expect(await pickedId(page)).toBe('email');
+    expect(await page.evaluate(() => (window as any).__submits ?? 0)).toBe(0);
+  });
+
+  test('Enter picks the focused element inside an open shadow root', async ({ page }) => {
+    await page.setContent(FORM);
+    await page.locator('#host #inner-field').focus();
+    await install(page, { transport: 'global', failing: null });
+    await page.keyboard.press('Enter');
+    expect(await pickedId(page)).toBe('inner-field');
+  });
+
+  test('Enter picks the outlined element over the focused one, after the arrows', async ({ page }) => {
+    await page.setContent(FORM);
+    await page.focus('#email');
+    await install(page, { transport: 'global', failing: null });
+    await page.hover('#send');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(
+      'click or Enter to pick · ↑ parent · ↓ child · Esc skip',
+    );
+    await dispatchKey(page, 'ArrowUp');
+    await page.keyboard.press('Enter');
+    expect(await pickedId(page)).toBe('form');
+  });
+
+  test('Enter with nothing outlined and nothing focused picks nothing', async ({ page }) => {
+    await page.setContent(FORM);
+    await install(page, { transport: 'global', failing: null });
+    await page.keyboard.press('Enter');
+    expect(await pickState(page)).toBeNull();
+    await expect(page.locator('#__piwi_picker_banner')).toBeVisible();
+    // Over the overlay's own banner nothing is outlined either: the focus is what Enter picks.
+    await page.focus('#email');
+    await page.hover('#note');
+    await page.hover('#__piwi_picker_banner');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(
+      'Enter picks the focused element · ↑ parent · ↓ child · Esc skip',
+    );
+    await page.keyboard.press('Enter');
+    expect(await pickedId(page)).toBe('email');
+  });
+});
+
 test.describe('installPickerOverlay — postMessage transport (snapshot picker)', () => {
   test('click probes inline and posts elementPicked, staying inert afterward', async ({ page }) => {
     await page.setContent(FIXTURE);
@@ -144,6 +210,21 @@ test.describe('installPickerOverlay — postMessage transport (snapshot picker)'
     const clicksBefore = (await messagesOfType(page, 'elementPicked')).length;
     await page.click('#submit', { force: true });
     expect((await messagesOfType(page, 'elementPicked')).length).toBe(clicksBefore);
+  });
+
+  test('a forwarded Enter picks the outlined element; the keys leave Enter out', async ({ page }) => {
+    await page.setContent(FIXTURE);
+    await recordPostMessages(page);
+    await page.evaluate((probeSrc) => {
+      (globalThis as any).__piwiProbe = new Function(`return (${probeSrc})`)();
+    }, probeElementAttrs.toString());
+    await install(page, { transport: 'postMessage', probeArg: { keep: ['id'], includeStructural: false } });
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText('↑ parent · ↓ child · Esc skip');
+    await page.hover('#submit');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText('click to pick · ↑ parent · ↓ child · Esc skip');
+    await page.evaluate(() => window.postMessage({ type: 'piwiPickerKey', key: 'Enter' }, '*'));
+    await expect.poll(async () => (await messagesOfType(page, 'elementPicked')).length).toBe(1);
+    expect((await messagesOfType(page, 'elementPicked'))[0].attrs.attributes.id).toBe('submit');
   });
 
   test('Escape posts pickerClosed', async ({ page }) => {

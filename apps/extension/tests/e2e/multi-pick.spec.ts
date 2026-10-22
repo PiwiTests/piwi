@@ -22,7 +22,7 @@ const DIST = path.join(here, '..', '..', 'dist');
 async function waitForFreshPickBanner(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => document.getElementById('__piwi_picker_foot')?.textContent))
-    .toBe('↑ parent · ↓ child · Esc skip');
+    .toBe('Enter picks the focused element · ↑ parent · ↓ child · Esc skip');
 }
 
 const activeTool = (page: Page) =>

@@ -1712,12 +1712,12 @@
     "description": "Picking overlay: the banner at the top of the page while an element is picked (Pick an element, Multi-pick, Assertions, Context for an AI agent)."
   },
   "pick_overlayKeys": {
-    "message": "↑ parent · ↓ child · Esc skip",
-    "description": "Picking overlay: the line under the banner before the pointer is on an element. ↑ and ↓ are the arrow keys, which move the pick to the element’s parent or child; Esc skips the pick. Short."
+    "message": "Enter picks the focused element · ↑ parent · ↓ child · Esc skip",
+    "description": "Picking overlay: the line under the banner before the pointer is on an element. Enter picks the element that has the keyboard focus; ↑ and ↓ are the arrow keys, which move the pick to the element’s parent or child; Esc skips the pick. Short."
   },
   "pick_overlayKeysHovering": {
-    "message": "click to pick · ↑ parent · ↓ child · Esc skip",
-    "description": "Picking overlay: the line under the banner while the pointer is on an element, as pick_overlayKeys with the click first. Short."
+    "message": "click or Enter to pick · ↑ parent · ↓ child · Esc skip",
+    "description": "Picking overlay: the line under the banner while the pointer is on an element: a click or Enter picks that element, then the keys of pick_overlayKeys. Short."
   },
   "pick_overlayAnalyzing": {
     "message": "Analyzing element…",

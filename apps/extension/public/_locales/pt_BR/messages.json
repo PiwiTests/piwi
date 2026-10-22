@@ -1399,10 +1399,10 @@
     "message": "Inspetor do Piwi: clique em um elemento para gerar os locators dele"
   },
   "pick_overlayKeys": {
-    "message": "↑ pai · ↓ filho · Esc pular"
+    "message": "Enter escolhe o elemento em foco · ↑ pai · ↓ filho · Esc pular"
   },
   "pick_overlayKeysHovering": {
-    "message": "clique para escolher · ↑ pai · ↓ filho · Esc pular"
+    "message": "clique ou Enter para escolher · ↑ pai · ↓ filho · Esc pular"
   },
   "pick_overlayAnalyzing": {
     "message": "Analisando o elemento…"

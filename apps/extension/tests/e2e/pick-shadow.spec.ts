@@ -4,7 +4,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { servePages } from './engine-bundle.js';
 import { playwrightLocator } from './playwright-locator.js';
-import { stubChromeI18n } from './i18n-stub.js';
+import { readCatalog, stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -103,5 +103,31 @@ test.describe('pick.js inside open shadow roots', () => {
     const scoped = rows.find((row) => row.startsWith("getByTestId('newsletter')."));
     expect(scoped).toBeDefined();
     expect(await foundId(page, scoped!)).toBe('subscribe');
+  });
+});
+
+test.describe('pick.js with the keyboard', () => {
+  test('Enter picks the focused control, inside an open shadow root', async ({ context }) => {
+    const page = await openShadowPage(context);
+    const foot = page.locator('#__piwi_picker_foot');
+    await expect(foot).toHaveText(readCatalog('en').pick_overlayKeys!.message);
+    await page.locator('x-newsletter #email').focus();
+    await page.keyboard.press('Enter');
+    const rows = await resultRows(page);
+    expect(rows[0]).toBe("getByRole('textbox', { name: 'Email' })");
+    expect(await foundId(page, rows[0]!)).toBe('email');
+    // The Enter picked; the page's form never saw it.
+    expect(await page.evaluate(() => (window as { __submits?: number }).__submits)).toBe(0);
+  });
+
+  test('Enter picks the outlined element rather than the focused one', async ({ context }) => {
+    const page = await openShadowPage(context);
+    await page.locator('x-newsletter #email').focus();
+    await page.hover('#later');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(readCatalog('en').pick_overlayKeysHovering!.message);
+    await page.keyboard.press('Enter');
+    const rows = await resultRows(page);
+    expect(rows[0]).toBe("getByRole('button', { name: 'Remind me later' })");
+    expect(await foundId(page, rows[0]!)).toBe('later');
   });
 });

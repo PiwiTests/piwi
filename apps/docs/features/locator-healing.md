@@ -110,7 +110,8 @@ With `pickLocatorOnFailure: true` (or `PIWI_PICK_LOCATOR_ON_FAIL=true`), a test 
 that broke:
 
 1. **Pick the element.** The pick snaps to the nearest actionable ancestor, and <kbd>↑</kbd>/<kbd>↓</kbd> walk the DOM
-   tree before you click, showing the locator each step would produce.
+   tree before you click, showing the locator each step would produce. <kbd>Enter</kbd> picks the highlighted element,
+   or with none the element that has the keyboard focus.
 2. **Choose stable parents (optional).** The element's ancestors are listed with their strongest hook (`data-testid`,
    `#id`, labeled landmark, role); selecting one scopes the locator to it, with a live **"matches N"** count.
 3. **Confirm** one of the ranked candidates.

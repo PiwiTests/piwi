@@ -1399,10 +1399,10 @@
     "message": "Inspecteur Piwi, cliquez sur un élément pour générer ses locators"
   },
   "pick_overlayKeys": {
-    "message": "↑ parent · ↓ enfant · Échap pour passer"
+    "message": "Entrée choisit l’élément qui a le focus · ↑ parent · ↓ enfant · Échap pour passer"
   },
   "pick_overlayKeysHovering": {
-    "message": "cliquez pour choisir · ↑ parent · ↓ enfant · Échap pour passer"
+    "message": "cliquez ou Entrée pour choisir · ↑ parent · ↓ enfant · Échap pour passer"
   },
   "pick_overlayAnalyzing": {
     "message": "Analyse de l’élément…"

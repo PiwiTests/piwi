@@ -1399,10 +1399,10 @@
     "message": "Piwi-Inspektor: Klicken Sie auf ein Element, um Locators dafür zu erzeugen"
   },
   "pick_overlayKeys": {
-    "message": "↑ Elternelement · ↓ Kind · Esc überspringen"
+    "message": "Enter wählt das fokussierte Element · ↑ Elternelement · ↓ Kind · Esc überspringen"
   },
   "pick_overlayKeysHovering": {
-    "message": "Klicken zum Wählen · ↑ Elternelement · ↓ Kind · Esc überspringen"
+    "message": "Klicken oder Enter zum Wählen · ↑ Elternelement · ↓ Kind · Esc überspringen"
   },
   "pick_overlayAnalyzing": {
     "message": "Element wird analysiert…"
