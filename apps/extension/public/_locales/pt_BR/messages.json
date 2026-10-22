@@ -5517,7 +5517,7 @@
     "message": "getByLabel('E-mail')"
   },
   "devtools_locatorsHint": {
-    "message": "Digite um locator: os elementos que ele encontra nesta página são listados, como o Playwright os encontra. Passe o ponteiro sobre um para destacá-lo na página; Mostrar o seleciona no painel Elementos."
+    "message": "Digite um locator: os elementos que ele encontra nesta página são listados, como o Playwright os encontra. Passe o ponteiro sobre um para destacá-lo na página; Mostrar o seleciona no painel Elementos. Enter guarda o locator no histórico, que as setas para cima e para baixo percorrem."
   },
   "devtools_matches": {
     "message": "Elementos encontrados"

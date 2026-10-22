@@ -647,7 +647,11 @@ style.
   (`__piwiDevtools.query`, `highlight`, `mark`, through `src/devtools/page-script.ts`) and reveals a match by marking
   it with `data-piwi-devtools-reveal` (one element at a time), then running `inspect()` on it in the page's world, found
   in the document or an open shadow root, which needs no permission; a match that has left the page is said so.
-  Session reads the pick session (`SESSION_KEY`) and redraws when it changes.
+  Enter evaluates at once and keeps the expression in the console's history (`src/shared/locator-console.ts`, under
+  `LOCATOR_HISTORY_KEY` through `sessionArea()`, so it outlives the panel), which `HistoryCursor` walks with the arrow
+  keys; the panel opened again shows the newest entry. A locator that reads gets Copy as (each copy mode, through one
+  `renderCopyMode` call) and Add to session (`session-form.ts`, the name checked by `pickNameProblem`), each keeping
+  the expression in the history too. Session reads the pick session (`SESSION_KEY`) and redraws when it changes.
 - **Network and Mock this response** (`panel-network.ts`, pure half `src/shared/mock-code.ts`): requests come only
   from `chrome.devtools.network` (`getHAR` at open, then `onRequestFinished`), kept in the panel's memory, fetch and
   XHR only, and never leave the browser but through the user's copy or download. The list shows the inspected page's

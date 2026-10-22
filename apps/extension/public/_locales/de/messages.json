@@ -5517,7 +5517,7 @@
     "message": "getByLabel('E-Mail')"
   },
   "devtools_locatorsHint": {
-    "message": "Geben Sie einen Locator ein: Die Elemente, die er auf dieser Seite findet, werden aufgelistet, wie Playwright sie findet. Fahren Sie über eines, um es auf der Seite zu umranden; Anzeigen wählt es im Elemente-Bereich aus."
+    "message": "Geben Sie einen Locator ein: Die Elemente, die er auf dieser Seite findet, werden aufgelistet, wie Playwright sie findet. Fahren Sie über eines, um es auf der Seite zu umranden; Anzeigen wählt es im Elemente-Bereich aus. Die Eingabetaste behält den Locator im Verlauf, den die Pfeiltasten nach oben und unten durchgehen."
   },
   "devtools_matches": {
     "message": "Gefundene Elemente"

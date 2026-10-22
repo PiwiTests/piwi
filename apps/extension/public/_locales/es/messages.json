@@ -5517,7 +5517,7 @@
     "message": "getByLabel('Correo electrónico')"
   },
   "devtools_locatorsHint": {
-    "message": "Escribe un locator: se listan los elementos que encuentra en esta página, como los encuentra Playwright. Pasa el puntero sobre uno para resaltarlo en la página; Mostrar lo selecciona en el panel Elementos."
+    "message": "Escribe un locator: se listan los elementos que encuentra en esta página, como los encuentra Playwright. Pasa el puntero sobre uno para resaltarlo en la página; Mostrar lo selecciona en el panel Elementos. Intro guarda el locator en el historial, que las flechas arriba y abajo recorren."
   },
   "devtools_matches": {
     "message": "Elementos encontrados"

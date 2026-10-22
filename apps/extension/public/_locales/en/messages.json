@@ -6538,7 +6538,7 @@
     "description": "DevTools, Piwi panel, Locators tab: example in the empty locator field. Keep getByLabel('…') as it is; the field's label, Email, may be translated."
   },
   "devtools_locatorsHint": {
-    "message": "Type a locator: the elements it finds on this page are listed, as Playwright finds them. Hover one to outline it on the page; Reveal selects it in the Elements panel.",
+    "message": "Type a locator: the elements it finds on this page are listed, as Playwright finds them. Hover one to outline it on the page; Reveal selects it in the Elements panel. Enter keeps the locator in the history, which the up and down arrows go through.",
     "description": "DevTools, Piwi panel, Locators tab: shown while the field is empty."
   },
   "devtools_matches": {

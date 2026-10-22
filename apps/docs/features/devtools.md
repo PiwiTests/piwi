@@ -56,7 +56,11 @@ page navigates; the recording and replay panels on the page stay too, for when D
 - **Locators** is the locator console: type a locator and the elements it finds are listed, as Playwright finds
   them, with the strict-mode verdict. It reads the expression, never runs it: every `getBy*`, `locator()`, chains,
   `filter()`, `and()`/`or()`, `.nth()` and same-origin frames. Hovering one outlines it on the page, and **Reveal**
-  selects it in the Elements panel.
+  selects it in the Elements panel. **Enter** tries the locator at once and keeps it in a history that the up and down
+  arrows go through, as in a shell; the history lasts until the browser closes, so the panel opened again shows the
+  last locator. Under the field, **Copy as** writes the locator as a locator, an action or an assertion, as the
+  Elements sidebar does, and **Add to session** names it for the Session tab. A `page.` typed in front is left out of
+  what is copied.
 - **Session** lists the elements named with **Add to session**, and copies them as a page object, a Markdown table or
   JSON.
 

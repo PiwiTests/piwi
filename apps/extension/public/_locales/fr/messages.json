@@ -5517,7 +5517,7 @@
     "message": "getByLabel('E-mail')"
   },
   "devtools_locatorsHint": {
-    "message": "Tapez un locator : les éléments qu’il trouve sur cette page s’affichent, tels que Playwright les trouve. Survolez-en un pour l’encadrer sur la page ; Afficher le sélectionne dans le panneau Éléments."
+    "message": "Tapez un locator : les éléments qu’il trouve sur cette page s’affichent, tels que Playwright les trouve. Survolez-en un pour l’encadrer sur la page ; Afficher le sélectionne dans le panneau Éléments. Entrée garde le locator dans l’historique, que les flèches haut et bas parcourent."
   },
   "devtools_matches": {
     "message": "Éléments trouvés"

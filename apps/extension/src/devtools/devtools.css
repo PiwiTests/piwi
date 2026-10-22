@@ -947,6 +947,20 @@ ol.steps .piwi-step ~ .detail {
   overflow-wrap: anywhere;
 }
 
+/* What the console does with a locator that reads: Copy as, Add to session, and the name form it opens. */
+.console-actions {
+  padding: 4px 12px 6px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.console-actions[hidden] {
+  display: none;
+}
+
+.console-actions .row-actions {
+  margin-top: 0;
+}
+
 @media (max-width: 640px) {
   .locator-head {
     flex-wrap: wrap;
