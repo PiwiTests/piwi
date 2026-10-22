@@ -126,8 +126,9 @@ button for each and **Copy as a Markdown checklist** for all of them:
   `getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })`.
 
 <figure>
-  <img src="/screenshots/picker-lint.png" alt="Four Add to cart buttons outlined in their product cards, each with a locator scoped by its card">
-  <figcaption>Lint overlay: four buttons share a name in cards that share a test id; each is scoped by its card.</figcaption>
+  <img src="/screenshots/picker-lint.png" alt="Four unnamed wishlist icon buttons outlined in their product cards, each with a test id named after its card's heading">
+  <figcaption>Lint overlay: four icon buttons without a name; each gets a test id named after its card's heading. The Add
+  to cart buttons beside them are not listed: the ranking finds each one through its card.</figcaption>
 </figure>
 
 ## Assertion suggester
