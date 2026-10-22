@@ -3,7 +3,8 @@
  * a context's project starts or ends: half a second after a run ends, the context reads its latest run again, and
  * while a run of its branch is in progress, the context follows it (`live`), counted through that run's own stream.
  * A test run the editor starts carries a ref (`PIWI_ORIGIN_REF`), which the service looks for on the instance for two
- * minutes, and in every run the stream announces: the context follows that run wherever it runs and keeps it as its own
+ * minutes, seldom while the instance's stream is connected, and in every run the stream announces: the context follows
+ * that run wherever it runs and keeps it as its own
  * (`ownRuns`), and so a later run with the same ref, a rerun of the command. A command that ended without its run
  * reaching the instance is said in a notice. The tests the live run begins and ends are kept until the latest run is
  * read once it ended (`liveTests`), and when a run of the editor's own ended and was read, its verdict is said.
@@ -31,6 +32,8 @@ const PROGRESS_MS = 300;
 /** How often, and for how long, the instance is asked for the run of a command the editor built. */
 const OWN_RUN_POLL_MS = 2_000;
 const OWN_RUN_WATCH_MS = 2 * 60_000;
+/** While the instance's stream is connected, which announces the run, it is asked this many times less often. */
+const STREAM_POLL_FACTOR = 10;
 /** The commands whose runs the service recognizes, the latest ones: past this many, the oldest is forgotten. */
 const MAX_WATCHES = 50;
 /** How long after a command ends its run may take to show on the instance. */
@@ -164,7 +167,10 @@ export interface RunWatchOptions {
   runEnded?: (ended: RunEnded) => void;
   /** The streams' timings. */
   stream?: EventStreamOptions;
-  /** How often the instance is asked for the run of a command the editor built. */
+  /**
+   * How often the instance is asked for the run of a command the editor built while its stream is down; ten times
+   * less often while the stream is connected.
+   */
   ownRunPollMs?: number;
   /** How long after a command ends its run may take to reach the instance. */
   commandEndWaitMs?: number;
@@ -235,7 +241,10 @@ export class RunWatch {
       const stream = new InstanceStream(
         connection,
         (event) => this.onEvent(key, event),
-        () => this.options.changed(),
+        (connected) => {
+          this.streamState(key, connected);
+          this.options.changed();
+        },
         this.options.stream,
       );
       this.streams.set(key, stream);
@@ -260,8 +269,9 @@ export class RunWatch {
   }
 
   /**
-   * Look for the run of a command built for `context` with `ref`: on the instance for two minutes, and in the runs the
-   * stream announces for as long as the service keeps the command, one of the latest `MAX_WATCHES`.
+   * Look for the run of a command built for `context` with `ref`: on the instance for two minutes, every `ownRunPollMs`
+   * while the instance's stream is down and `STREAM_POLL_FACTOR` times less often while it is connected, and in the
+   * runs the stream announces for as long as the service keeps the command, one of the latest `MAX_WATCHES`.
    */
   watch(context: PiwiContext, ref: string): void {
     if (this.disposed || !context.client || !context.project) return;
@@ -557,8 +567,9 @@ export class RunWatch {
   }
 
   /**
-   * A run of the context's project ended: the context reads its latest run again once no other run ended for
-   * `SETTLE_MS`, and its live run, among the ones that ended, goes in the same change.
+   * A run of the context's project ended: the context reads its latest run again, from the instance rather than an
+   * answer shared for a moment, once no other run ended for `SETTLE_MS`, and its live run, among the ones that ended,
+   * goes in the same change.
    */
   private settle(context: PiwiContext, runId?: number): void {
     if (this.disposed) return;
@@ -569,7 +580,7 @@ export class RunWatch {
     const timer = setTimeout(async () => {
       this.settling.delete(context);
       const before = context.failures;
-      await context.refreshRun();
+      await context.refreshRun(true);
       if (this.disposed) return;
       if (context.live && ended.has(context.live.runId)) this.end(context);
       this.options.changed();
@@ -604,12 +615,32 @@ export class RunWatch {
     });
   }
 
+  /** Ask the instance for the watch's run after a poll's wait: longer while its stream, which announces runs, is up. */
   private lookLater(w: RefWatch): void {
-    w.timer = setTimeout(() => {
-      w.timer = null;
-      void this.look(w);
-    }, this.options.ownRunPollMs ?? OWN_RUN_POLL_MS);
+    const pace = this.options.ownRunPollMs ?? OWN_RUN_POLL_MS;
+    w.timer = setTimeout(
+      () => {
+        w.timer = null;
+        void this.look(w);
+      },
+      this.isConnected(w.context) ? pace * STREAM_POLL_FACTOR : pace,
+    );
     w.timer.unref?.();
+  }
+
+  /**
+   * The stream of an instance connected or dropped. Connected, the instance is asked once for the runs of the commands
+   * still looked for on it: one may have started meanwhile; dropped, they are asked for at the poll's pace again.
+   */
+  private streamState(key: string, connected: boolean): void {
+    for (const w of this.watches.values()) {
+      if (w.found !== null || Date.now() >= w.until || !this.current(w)) continue;
+      if (streamKey(w.context.client!.connection) !== key) continue;
+      if (w.timer) clearTimeout(w.timer);
+      w.timer = null;
+      if (connected) void this.look(w);
+      else this.lookLater(w);
+    }
   }
 
   private async look(w: RefWatch): Promise<void> {

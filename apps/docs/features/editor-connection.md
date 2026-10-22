@@ -46,7 +46,8 @@ switch once per workspace.
 With the app chosen, the project is the one picked with Connect, else the one whose **linked folder** holds the
 workspace's Playwright config (link the folder on the project's page in the desktop app), else `PIWI_PROJECT_NAME`.
 When the app is used because nothing else names an instance, `PIWI_PROJECT_NAME` comes first, since the reporter
-sends its runs there under that name too.
+sends its runs there under that name too. Several Playwright configs of one repository reading the same project share
+what the editor reads from it: the instance answers each read once.
 
 ## Connect
 

@@ -1802,7 +1802,8 @@ describe('runs as they happen', () => {
       debounceMs: 10,
       // Not within a test: what the service reads again, it reads on an event.
       runPollMs: 60 * 60_000,
-      ownRunPollMs: 200,
+      // Ten times that while the instance's stream is connected, as it is here.
+      ownRunPollMs: 50,
       commandEndWaitMs: 300,
     });
     runsClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
@@ -2180,6 +2181,30 @@ describe('runs as they happen', () => {
     expect(after.contexts[0]).toMatchObject({ run: { id: 41 }, stream: 'live', live: null });
     expect(Date.parse(after.contexts[0]!.updatedAt!)).toBeGreaterThan(Date.parse(before.contexts[0]!.updatedAt!));
     expect(await runsClient.sendRequest('piwi/runStatus')).toEqual(after);
+  });
+
+  test('a command’s run is looked for seldom while the stream is connected, and every poll while it is down', async () => {
+    const at = Date.now();
+    const command = await runTests();
+    const ref = command.ref!;
+    // The stream announces the run: the instance is asked for it ten polls apart.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(refLookups.get(ref)).toBeUndefined();
+    await waitFor(() => refLookups.get(ref));
+    expect(Date.now() - at).toBeGreaterThanOrEqual(450);
+    // The stream drops: every poll, until it is open again.
+    for (const res of instanceStreams) res.end();
+    await waitFor(async () => {
+      const s = (await runsClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+      return s.contexts[0]?.stream === 'polling' ? true : undefined;
+    });
+    const asked = refLookups.get(ref)!;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(refLookups.get(ref)!).toBeGreaterThanOrEqual(asked + 3);
+    await waitFor(async () => {
+      const s = (await runsClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+      return s.contexts[0]?.stream === 'live' ? true : undefined;
+    });
   });
 });
 
@@ -2608,6 +2633,86 @@ describe('a branch with no run yet', () => {
   });
 });
 
+describe('a checkout or a commit', () => {
+  test('is read within seconds: the latest run and the locators a change breaks follow the new HEAD', async () => {
+    const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-editor-head-')));
+    fs.cpSync(dir, other, { recursive: true, filter: (src) => !src.split(path.sep).includes('.git') });
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], {
+        cwd: other,
+        stdio: 'ignore',
+      });
+    git('init', '-q', '-b', 'main');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopHead = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+      // Neither within the test: what the service reads again, it reads when HEAD moves.
+      refreshMs: 60 * 60_000,
+      runPollMs: 60 * 60_000,
+      gitWatchMs: 20,
+    });
+    const headClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const statuses: RunStatusResult[] = [];
+    const published = new Map<string, Array<{ message: string; code?: string }>>();
+    headClient.onNotification('piwi/runStatusChanged', (p: RunStatusResult) => {
+      statuses.push(p);
+    });
+    headClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      published.set(p.uri, p.diagnostics);
+    });
+    headClient.listen();
+    const component = pathToFileURL(path.join(other, 'src/components/CheckoutButton.vue')).href;
+    try {
+      await headClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(other).href, name: 'shop' }],
+      });
+      await headClient.sendNotification('initialized', {});
+      await waitFor(async () => {
+        const s = (await headClient.sendRequest('piwi/status')) as StatusResult;
+        return s.contexts[0]?.connected && s.contexts[0].reachedFiles > 0 ? true : undefined;
+      });
+      const first = await waitFor(async () => {
+        const s = (await headClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+        return s.contexts[0]?.run ? s : undefined;
+      });
+      expect(first.contexts[0]).toMatchObject({ branch: 'main', checkedOut: 'main', run: { id: 41 } });
+
+      // A rename in the open file breaks a locator, against the file as HEAD holds it.
+      const renamed = COMPONENT.replace('Pay now', 'Pay');
+      await headClient.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: component, languageId: 'vue', version: 1, text: renamed },
+      });
+      const broken = await waitFor(() => published.get(component)?.find((d) => d.code === 'locator-break'));
+      expect(broken.message).toContain('"Pay now" → "Pay"');
+
+      // Committed, the rename breaks nothing: HEAD holds it.
+      fs.writeFileSync(path.join(other, 'src/components/CheckoutButton.vue'), renamed);
+      const committedAt = Date.now();
+      git('commit', '-q', '-am', 'rename');
+      await waitFor(() => (published.get(component)?.length === 0 ? true : undefined));
+      expect(Date.now() - committedAt).toBeLessThan(3_000);
+
+      // Checked out, a branch without a run shows the default branch's run, and says which branch is checked out.
+      const checkedOutAt = Date.now();
+      git('checkout', '-q', '-b', 'feature/switch');
+      const switched = await waitFor(() => statuses.find((s) => s.contexts[0]?.checkedOut === 'feature/switch'));
+      expect(Date.now() - checkedOutAt).toBeLessThan(3_000);
+      expect(switched.contexts[0]).toMatchObject({ branch: 'main', checkedOut: 'feature/switch', run: { id: 41 } });
+    } finally {
+      stopHead();
+      headClient.dispose();
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the desktop app chosen with Connect', () => {
   test('comes before the instance the environment names, which the status keeps, and says so', async () => {
     const desktopFile = path.join(dir, '.desktop-chosen.json');
@@ -2809,9 +2914,18 @@ describe('what keeps a context from the instance’s data', () => {
 });
 
 describe('the configs of one repository reading one project', () => {
-  test('download its locator index once, and show each failure once, from the config of its spec', async () => {
-    let downloads = 0;
-    const gate = http.createServer((req, res) => {
+  let downloads = 0;
+  /** The reads of the project's latest run and of its flaky tests, by route. */
+  const reads = new Map<string, number>();
+  let gate: http.Server;
+  let repo = '';
+  let twoClient: MessageConnection;
+  let stopTwo: () => void;
+
+  beforeAll(async () => {
+    gate = http.createServer((req, res) => {
+      const read = /^\/api\/projects\/7\/(branch-failures|flaky-tests)\b/.exec(req.url ?? '')?.[1];
+      if (read) reads.set(read, (reads.get(read) ?? 0) + 1);
       if ((req.url ?? '').startsWith('/api/projects/7/locator-index')) {
         if (req.headers['if-none-match'] === '"shared-1"') {
           res.statusCode = 304;
@@ -2824,7 +2938,7 @@ describe('the configs of one repository reading one project', () => {
     });
     await new Promise<void>((resolve) => gate.listen(0, '127.0.0.1', resolve));
     const gateUrl = `http://127.0.0.1:${(gate.address() as AddressInfo).port}`;
-    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-two-configs-'));
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-two-configs-'));
     const files: Record<string, string> = {
       'playwright.config.ts': 'export default {};\n',
       'tests/rows.spec.ts': "import { test } from '@playwright/test';\n\ntest('removes a row', async () => {});\n",
@@ -2839,38 +2953,48 @@ describe('the configs of one repository reading one project', () => {
     execFileSync('git', ['init', '-q'], { cwd: repo });
     const toServer = new PassThrough();
     const toClient = new PassThrough();
-    const stopTwo = startServer(createConnection(toServer, toClient), {
+    stopTwo = startServer(createConnection(toServer, toClient), {
       env: { PIWI_DASHBOARD_URL: gateUrl, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
       debounceMs: 10,
       runPollMs: 60 * 60_000,
     });
-    const twoClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    twoClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
     twoClient.listen();
-    try {
-      await twoClient.sendRequest('initialize', {
-        processId: null,
-        rootUri: null,
-        capabilities: {},
-        workspaceFolders: [{ uri: pathToFileURL(repo).href, name: 'two' }],
-      });
-      await twoClient.sendNotification('initialized', {});
-      const status = await waitFor(async () => {
-        const s = (await twoClient.sendRequest('piwi/status')) as StatusResult;
-        return s.contexts.length === 2 && s.contexts.every((c) => c.connected) ? s : undefined;
-      });
-      expect(status.contexts.map((c) => c.locators)).toEqual([2, 2]);
-      expect(downloads).toBe(1);
-      const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
-      const shown = failures.items.filter((f) => f.title === 'removes a row');
-      expect(shown.map((f) => [f.root, f.uri])).toEqual([
-        [repo, pathToFileURL(path.join(repo, 'tests/pages/checkout.page.ts')).href],
-      ]);
-    } finally {
-      stopTwo();
-      twoClient.dispose();
-      gate.close();
-      fs.rmSync(repo, { recursive: true, force: true });
-    }
+    await twoClient.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(repo).href, name: 'two' }],
+    });
+    await twoClient.sendNotification('initialized', {});
+  });
+
+  afterAll(() => {
+    stopTwo?.();
+    twoClient?.dispose();
+    gate?.close();
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('download its locator index once, and show each failure once, from the config of its spec', async () => {
+    const status = await waitFor(async () => {
+      const s = (await twoClient.sendRequest('piwi/status')) as StatusResult;
+      return s.contexts.length === 2 && s.contexts.every((c) => c.connected) ? s : undefined;
+    });
+    expect(status.contexts.map((c) => c.locators)).toEqual([2, 2]);
+    expect(downloads).toBe(1);
+    const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+    const shown = failures.items.filter((f) => f.title === 'removes a row');
+    expect(shown.map((f) => [f.root, f.uri])).toEqual([
+      [repo, pathToFileURL(path.join(repo, 'tests/pages/checkout.page.ts')).href],
+    ]);
+  });
+
+  test('read its latest run and its flaky tests once for the refresh they make together', async () => {
+    await waitFor(() => reads.get('flaky-tests'));
+    // The other config's read, on its way or answered a moment before, is the same one.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(Object.fromEntries(reads)).toEqual({ 'branch-failures': 1, 'flaky-tests': 1 });
   });
 });
 
@@ -3111,7 +3235,8 @@ describe('recording from the editor', () => {
       default: 'userPage',
       candidates: [
         { expression: 'userPage', reason: 'used on line 3' },
-        { expression: 'adminPage', reason: 'fixture of this test' },
+        { expression: 'page', reason: "Playwright's page fixture" },
+        { expression: 'adminPage', reason: 'may be a page object' },
       ],
     });
     const atTop = (await recorder.sendRequest('piwi/pageCandidates', {

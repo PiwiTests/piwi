@@ -32,9 +32,10 @@ clients stay thin and both editors give the same answers.
   `refused`, `unreachable`), so a client tells an instance that did not answer apart from a missing connection. While
   one does not answer, the contexts are read again 15 s later, then twice as long each time, up to the refresh's pace
   (`retryUnreachable`, `UNREACHABLE_RETRY_MS`).
-- The latest run on the checked-out branch is read again whenever a run ends, and polled besides (below); while that
-  branch has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in
-  `piwi/runStatus`). That ladder is the default baseline; a client may choose another per context
+- The latest run on the checked-out branch is read again whenever a run ends or `HEAD` moves (a checkout, a commit:
+  below), and polled besides (below); while that branch has none, the default branch's, else the newest of any
+  branch (`runBranch` and `checkedOut` in `piwi/runStatus`). That ladder is the default baseline; a client may choose
+  another per context
   (`piwi/setBaseline { root, choice }`, `PiwiContext.baseline`): a branch's latest complete run, a run by its id
   (`branch-failures?run=`; a 400 or 404 is no run), or a developer's own runs only (`branch-failures?origin=local` on
   the checked-out branch: the newest complete local run, else the local runs alone, `run: null`). A choice is read
@@ -99,8 +100,10 @@ clients stay thin and both editors give the same answers.
 - The editor's own run: `piwi/runArgs` and `piwi/runSelection` give each command a ref (`ed-` and 8 hex characters),
   in its environment as `PIWI_ORIGIN_REF` beside `PIWI_ORIGIN=editor` and in `RunCommand.ref`; the Flake Lab lines
   and the fix plan's verification carry `PIWI_ORIGIN=editor` alone. The service looks for the run carrying it
-  (`latest-run?origin=editor&ref=`, every 2 s for two minutes, or a `run-started` whose metadata names it) and keeps
-  it in `PiwiContext.ownRuns` for its lifetime: its failures read `your run #N` and are `source: 'own'` in
+  (`latest-run?origin=editor&ref=` for two minutes: every 2 s while the instance's stream is down, every 20 s while it
+  is connected, since its `run-started` names the run, and once when the stream connects; or a `run-started` whose
+  metadata names it) and keeps it in `PiwiContext.ownRuns` for its lifetime: its failures read `your run #N` and are
+  `source: 'own'` in
   `piwi/failures`. A client says when the command ended (`piwi/commandEnded`, with its exit code): the service reads
   the run once more and, when no run carries the ref 5 s later, sends `piwi/notice`; the instance is not asked for the
   ref again. A later run carrying it, a rerun of the command (the Run tool window's Rerun, a VS Code terminal reused
@@ -168,7 +171,8 @@ clients stay thin and both editors give the same answers.
   page, answers the recorder over it
   (`host-state.ts`: the storage areas and messages of the IDE bundle's `chrome`, every event through core's
   `parseCaptureEvent`; only the main frame of the page it opened first records, every other frame and page, such as a
-  popup or a cross-origin iframe, is answered as outside a recording), and reports over its IPC channel (`ipc.ts`).
+  popup or a cross-origin iframe, is answered as outside a recording, and a tab or a popup the application opens is
+  said once, as a `notice` the session shows as an update's message), and reports over its IPC channel (`ipc.ts`).
   The events render all the steps with `renderSpec` and the whole block goes in `piwi/recordingChanged`, in order: at
   once, or, within the update interval of the latest update (`UPDATE_INTERVAL_MS`, longer after a slow rendering),
   together once it is over; a pause, from the editor or the recorder's bar (`piwi-recording-paused`, both ways through
@@ -176,14 +180,20 @@ clients stay thin and both editors give the same answers.
   the editor or in the
   browser, closing the browser or closing the file ends the session with a last update, sent at once, and closes the
   browser. `page-candidates.ts` reads the file's text alone (a scanner in the style of `callEndLine`, no TypeScript):
-  the page expressions at a caret (`piwi/pageCandidates`, also the default of `piwi/renderSteps` given a `line`), the
-  context there (`test`, `function`, `class` or `file`, which `piwi/record` checks against `into`), the names declared
-  before it (a page object already declared is not instantiated again), where the block goes and how it is indented,
-  and the module the file's `test` comes from. `imports.ts` reads the names a file's import statements bind and where
-  each top-level statement ends, over several lines too, with the same scanner: an update and `piwi/renderSteps` carry
-  the edit that adds the lines the file's text lacks (`importEdit`), after its last import statement, else at its top,
-  placed in the text the service holds, which the client makes with the block's write. `piwi/renderSteps` indents the
-  code for the caret's line (`indentBlock`).
+  the page expressions at a caret (`piwi/pageCandidates`, also the default of `piwi/renderSteps` given a `line`; a
+  fixture named like a page that no page call of the test runs on, `todoPage`, is offered after `page` as one that
+  `may be a page object`), the context there (`test`, `function`, `class` or `file`, which `piwi/record` checks
+  against `into`), the names declared before it (a page object already declared is not instantiated again), and where
+  the block goes and how it is indented: the caret's line when blank, else a new line after it, or after the statement
+  whose brackets the caret is in (a multi-line `expect(`), and a refusal inside a bracket the file never closes.
+  `imports.ts` reads, in one pass of the same scanner, the names a file's import statements and top-level `require`
+  declarations bind and where each ends (`importBindings`), and the modules its `test` and `expect` come from
+  (`testImportOf`, `expectModuleOf`: `expect` comes from the module `test` comes from when that is `@playwright/test`
+  or the file or a spec beside it imports `expect` from it, else from `@playwright/test`; a session decides it once,
+  when it starts). An update and `piwi/renderSteps` carry the edit that adds the lines the file's text lacks
+  (`importEdit`): after its last import statement, as `require` declarations after the last one in a file that has
+  those and no import statement (`requireForm`), else at its top, placed in the text the service holds, which the
+  client makes with the block's write. `piwi/renderSteps` indents the code for the caret's line (`indentBlock`).
 
 `npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
 JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`
@@ -240,8 +250,17 @@ needs the extension's sources, and a change to the recorder there changes what t
   `ETag` they came with (`If-None-Match`), and a 304 keeps the same object, so what is computed once per index stays.
   The contexts of one service share these answers (`ResponseCache`, created in `startServer`), the same request on its
   way included: a repository with eight Playwright configs reading one project holds and downloads its index once, not
-  eight times. A file's coverage is asked the same way, kept by the context that reads the file rather than in the
-  shared answers, which hold the indexes, and its marks are computed once per coverage and text.
+  eight times. The plain reads share the same map for 2 s (`SHARED_MS`, `PiwiClient.get`): the request on its way and
+  its answer, by instance, key and path, so the project's latest run, flaky tests, Flake Lab, quarantine, selections,
+  timeout opportunities, function catalog and vocabulary are read once per refresh and once per poll for all the
+  configs reading one project, each context getting its own copy of the answer (`structuredClone`), as when it parses
+  its own: nothing keyed by a failure's identity crosses contexts. Each wave of reads the server starts reads afresh
+  (`forgetShared`: a refresh, a poll, `piwi/refreshRun`, a move of `HEAD`), its contexts sharing within it. A read that
+  failed is shared by the callers that joined it alone; a run as it moves (`runDetails`, `latestRunByRef`, a desktop
+  job) keeps no answer, and the read after a run ended takes none (`refreshRun(true)`). The map keeps 16 indexes and 64
+  plain answers at most, those past their time dropped first (`trim`). A file's coverage is asked the same way, kept
+  by the context that reads the file rather than in the shared answers, and its marks are computed once per coverage
+  and text.
 - **A failure shows once, from the config its spec belongs to**: the configs of a repository that read one project each
   list all its failures, and each would find their files from the repository's root; a context places a failure only
   when its config folder holds the failure's spec, or when no config folder does (`placedElsewhere`). So a failure's
@@ -261,7 +280,12 @@ needs the extension's sources, and a change to the recorder there changes what t
   is `desktopProject`, else the one the app links to the folder holding the Playwright config (`projects` in
   `~/.piwi/desktop.json`), else `PIWI_PROJECT_NAME`; reached because nothing else names an instance, it is
   `PIWI_PROJECT_NAME`, the editor's, else the linked one. The service watches that file, `piwi/statusChanged` tells
-  the client when the app starts or quits, and `piwi/desktop` tells Connect what the app offers. A context that
+  the client when the app starts or quits, and `piwi/desktop` tells Connect what the app offers. It watches `HEAD` and
+  `logs/HEAD` of each repository the contexts are in the same way (`fs.watchFile`, every 2 s; `headFiles` in
+  `src/workspace.ts` finds them where git keeps them, for a worktree or a submodule too): a checkout or a commit drops
+  what `HEAD` gave the repository's contexts (`PiwiContext.headMoved`: the files as `HEAD` holds them and its
+  translation values; the files at a run's commit stay), reads their latest run again, published when it changed, and
+  analyzes the open documents again, against the new `HEAD`; the refresh timer and the poll are not moved. A context that
   changes instance forgets everything read from the other one. The reporter keeps its own order. The API key never leaves the process except in `X-API-Key`, and in the MCP server definition `piwi/mcp` hands the
   client for its agent.
 - Nothing from the workspace is sent to the instance but file paths it already stores.

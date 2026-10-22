@@ -108,6 +108,7 @@ import {
 import { failuresDrawn, parseFailuresGrouping } from './failure-tree.js';
 import {
   PiwiClient,
+  forgetShared,
   type ResponseCache,
   type BranchFailure,
   type BranchResolved,
@@ -226,8 +227,10 @@ import {
 } from './protocol.js';
 import {
   findPlaywrightRoots,
+  headFiles,
   playwrightConfigFile,
   relativeTo,
+  repositoryRoot,
   resolveReportedFile,
   splitLocation,
 } from './workspace.js';
@@ -243,6 +246,8 @@ const RUN_POLL_MS = 60_000;
 const STREAM_POLL_FACTOR = 5;
 /** How often the desktop app's discovery file is checked. */
 const DESKTOP_WATCH_MS = 2_000;
+/** How often the repositories' `HEAD` files are checked for a checkout or a commit. */
+const GIT_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
@@ -277,6 +282,8 @@ export interface ServerOptions {
   commandEndWaitMs?: number;
   /** How often the desktop app's discovery file is checked for its start, stop and folder links. */
   desktopWatchMs?: number;
+  /** How often the repositories' `HEAD` files are checked for a checkout or a commit. */
+  gitWatchMs?: number;
   /**
    * The folder holding the files the language server ships beside itself: the recorder's launcher, its IDE bundle
    * and catalogs, and the reporter that reads a config's options. `PIWI_EDITOR_DIST`, else the folder of the running
@@ -583,6 +590,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const onDesktopFile = (now: fs.Stats, before: fs.Stats) => {
     if (now.mtimeMs !== before.mtimeMs || now.size !== before.size) void refreshAll();
   };
+  /** The `HEAD` files watched, with the listener of their repository. */
+  const headWatches: Array<{ file: string; listener: (now: fs.Stats, before: fs.Stats) => void }> = [];
   const documents = new TextDocuments(TextDocument);
   const contexts: PiwiContext[] = [];
   /** The instance's answers the contexts share: the configs of a repository reading one project read its indexes once. */
@@ -1344,6 +1353,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         runTimer = null;
         const due = contexts.filter((c) => dueAt(c) <= Date.now());
         for (const c of due) polledAt.set(c, Date.now());
+        // The due contexts read afresh, together: those of one project share each read.
+        forgetShared(answers);
         const read = await Promise.all(
           due.map(async (c) => {
             const [changed, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
@@ -1712,6 +1723,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   }
 
   async function refreshContexts(): Promise<void> {
+    // The contexts read afresh, together: those of one project share each read.
+    forgetShared(answers);
     // A context's failures are published once its run is read, without waiting for the indexes read after it.
     const runRead = () => {
       runChanged();
@@ -1749,6 +1762,64 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       void refreshAll();
     }, retryWait);
     retryTimer.unref?.();
+  }
+
+  /**
+   * A repository's `HEAD` moved, by a checkout or a commit: its contexts drop what `HEAD` gave them and read the latest
+   * run again, the checked-out branch's, published when it changed, and the open documents are analyzed again, so the
+   * locators a change breaks are compared with the new `HEAD`.
+   */
+  async function headMoved(members: PiwiContext[]): Promise<void> {
+    forgetShared(answers);
+    const changed = await Promise.all(
+      members.map(async (c) => {
+        await c.headMoved();
+        return c.refreshRun();
+      }),
+    );
+    if (stopped) return;
+    if (changed.some(Boolean)) {
+      runChanged();
+      pollRuns();
+    }
+    for (const document of documents.all()) schedule(document, 0);
+  }
+
+  /**
+   * Watch `HEAD` and `logs/HEAD` of each repository the contexts are in, as the desktop app's file is watched: a
+   * checkout writes the first, a commit the second. A move while one is read is read once more after it.
+   */
+  async function watchRepositories(): Promise<void> {
+    const byRoot = new Map<string, PiwiContext[]>();
+    for (const c of contexts) {
+      const root = await repositoryRoot(c.root);
+      byRoot.set(root, [...(byRoot.get(root) ?? []), c]);
+    }
+    for (const [root, members] of byRoot) {
+      const files = await headFiles(root);
+      if (stopped) return;
+      let moving: Promise<void> | null = null;
+      let again = false;
+      const listener = (now: fs.Stats, before: fs.Stats) => {
+        if (now.mtimeMs === before.mtimeMs && now.size === before.size) return;
+        if (moving) {
+          again = true;
+          return;
+        }
+        moving = (async () => {
+          do {
+            again = false;
+            await headMoved(members);
+          } while (again && !stopped);
+        })().finally(() => {
+          moving = null;
+        });
+      };
+      for (const file of files) {
+        fs.watchFile(file, { interval: options.gitWatchMs ?? GIT_WATCH_MS, persistent: false }, listener);
+        headWatches.push({ file, listener });
+      }
+    }
   }
 
   connection.onInitialize((params: InitializeParams) => {
@@ -1791,6 +1862,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       { interval: options.desktopWatchMs ?? DESKTOP_WATCH_MS, persistent: false },
       onDesktopFile,
     );
+    // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
+    void watchRepositories();
   });
 
   documents.onDidOpen((e) => schedule(e.document, 0));
@@ -2789,6 +2862,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(REFRESH_RUN_REQUEST, async (): Promise<RunStatusResult> => {
+    forgetShared(answers);
     await Promise.all(
       contexts.map(async (c) => {
         const [, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
@@ -2860,6 +2934,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (refreshTimer) clearInterval(refreshTimer);
     if (retryTimer) clearTimeout(retryTimer);
     fs.unwatchFile(desktopFile, onDesktopFile);
+    for (const { file, listener } of headWatches) fs.unwatchFile(file, listener);
     if (runTimer) clearTimeout(runTimer);
     if (placeTimer) clearTimeout(placeTimer);
     for (const t of timers.values()) clearTimeout(t);

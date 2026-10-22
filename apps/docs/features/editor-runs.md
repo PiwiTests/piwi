@@ -39,7 +39,9 @@ started it.
 ## After a run
 
 The editor listens to the instance's event stream: within a second of a run of the project ending, it reads the
-branch's latest run and its failures again, and every five minutes with the stream, every minute without.
+branch's latest run and its failures again, and every five minutes with the stream, every minute without. A checkout
+or a commit is noticed within seconds: the editor reads the branch's latest run again, and compares your application
+files with the new `HEAD`.
 
 A run started from the editor is its own wherever it runs: the status bar follows it as it runs, and its failures
 read *your run #124* once it ends. When the command ends and no run on the instance carries its ref, the editor says

@@ -86,6 +86,20 @@ export async function headCommit(repoRoot: string): Promise<string | null> {
   return (await git(repoRoot, ['rev-parse', 'HEAD']))?.trim() || null;
 }
 
+/**
+ * The files git writes when `HEAD` moves, by a checkout or a commit: `HEAD` and `logs/HEAD` of the repository around
+ * `repoRoot`, where git keeps them (those of a worktree or a submodule lie in the main repository's `.git`). Empty
+ * outside a repository.
+ */
+export async function headFiles(repoRoot: string): Promise<string[]> {
+  const out = await git(repoRoot, ['rev-parse', '--git-path', 'HEAD', '--git-path', 'logs/HEAD']);
+  return (out ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((file) => path.resolve(repoRoot, file));
+}
+
 /** A file as `HEAD` holds it; null when it is new or outside a repository. */
 export async function committedText(repoRoot: string, relativePath: string): Promise<string | null> {
   return git(repoRoot, ['show', `HEAD:${relativePath.split(path.sep).join('/')}`]);

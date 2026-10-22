@@ -669,12 +669,15 @@ export class PiwiContext {
    * Fetch the baseline the editor chose and the runs laid over it. The ladder reads the latest run on the checked-out
    * branch (the default branch on a detached head); while that branch has no run, the default branch's, else the
    * newest of any branch. A branch, a run or a developer's own runs are read once: when they hold no run, nothing else
-   * is read. Returns whether the run, its failures or the baseline changed.
+   * is read. `fresh` reads the instance rather than the answer the contexts share for a moment: a run ended since.
+   * Returns whether the run, its failures or the baseline changed.
    */
-  async refreshRun(): Promise<boolean> {
+  async refreshRun(fresh = false): Promise<boolean> {
     if (!this.client || !this.project) return false;
     const client = this.client;
     const projectId = this.project.id;
+    const read = (branch: string | null, baseline?: { run?: number; origin?: 'local' }) =>
+      client.branchFailures(projectId, branch, baseline, fresh);
     const checkedOut = await currentBranch(this.repoRoot);
     const defaultBranch = this.index?.defaultBranch ?? null;
     const choice = this.baseline;
@@ -683,9 +686,9 @@ export class PiwiContext {
       let next: BranchFailures;
       if (choice.kind === 'branch') {
         branch = choice.branch;
-        next = await client.branchFailures(projectId, branch);
+        next = await read(branch);
       } else if (choice.kind === 'run') {
-        next = await client.branchFailures(projectId, null, { run: choice.runId }).catch((e: unknown) => {
+        next = await read(null, { run: choice.runId }).catch((e: unknown) => {
           // A run the instance does not hold, or another project's.
           if (e instanceof PiwiHttpError && (e.status === 400 || e.status === 404)) return noRun();
           throw e;
@@ -695,18 +698,18 @@ export class PiwiContext {
         branch = next.run?.branch ?? null;
       } else if (choice.kind === 'local') {
         branch = checkedOut ?? defaultBranch;
-        next = await client.branchFailures(projectId, branch, { origin: 'local' });
+        next = await read(branch, { origin: 'local' });
         // An instance that does not read `origin` answers a CI run.
         if (next.run && !LOCAL_ORIGINS.has(next.run.origin ?? '')) next = noRun();
       } else {
         // A branch that never ran shows the run it grew from: the default branch's, else the newest of any branch.
         const ladder = [...new Set([checkedOut ?? defaultBranch, defaultBranch, null])];
         branch = ladder[0] ?? null;
-        next = await client.branchFailures(projectId, branch);
+        next = await read(branch);
         for (const other of ladder.slice(1)) {
           if (next.run) break;
           branch = other;
-          next = await client.branchFailures(projectId, other);
+          next = await read(other);
         }
       }
       const label = baselineLabel(choice, next, branch);
@@ -979,12 +982,21 @@ export class PiwiContext {
     return entry;
   }
 
+  /**
+   * `HEAD` moved, by a checkout or a commit: the files as it holds them and its translation values are dropped, to be
+   * read from the new `HEAD` when next asked. The files at a run's commit stay: a commit's files do not move.
+   */
+  async headMoved(): Promise<void> {
+    this.head = await headCommit(this.repoRoot);
+    this.committedFiles = new Map();
+    this.translations = { head: this.head };
+  }
+
   /** A file as `HEAD` holds it (repository-relative), cached until `HEAD` moves. */
   async committed(repoRelative: string): Promise<string | null> {
-    if (!this.committedFiles.has(repoRelative)) {
-      this.committedFiles.set(repoRelative, await committedText(this.repoRoot, repoRelative));
-    }
-    return this.committedFiles.get(repoRelative) ?? null;
+    const files = this.committedFiles;
+    if (!files.has(repoRelative)) files.set(repoRelative, await committedText(this.repoRoot, repoRelative));
+    return files.get(repoRelative) ?? null;
   }
 
   /**
