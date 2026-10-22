@@ -445,6 +445,11 @@ recorder takes:
   with the number of elements it finds, and per pick its container filtered by a text no other container shows
   (`.nth()` on the pattern when none does). Other picks give their own role or class with `.filter({ hasText })`.
   `multi-pick.ts` hands it the page engine's roles, names and texts.
+- **Words** (`verdictWords`, `src/shared/verdict-words.ts`, unit-tested) say what a checked locator is worth: a word
+  (`stable`, `could break`, `brittle`, `unique by position`, `3 matches`, `not checked`), a tone and an explanation
+  (`unique · brittle: CSS class`), from its verdict and `locatorStability` (`assessLocatorChain`'s level and rules). A
+  Pick results row leads with the word and keeps the explanation and the engine's score in its Details; the Elements
+  sidebar shows the same explanation. Never show the score alone as the verdict: it has no scale a person can read.
 - **Hover** (`createHoverLocator`, behind the picker overlay's `__piwiDescribeElement`) must stay
   cheap on pointer moves. Building the engine's indexes costs tens of milliseconds on a large page (about 45 ms at
   3,000 elements, 120 ms at 9,000), so a move gets the ranked candidate (probe without structural anchors, `DomModel`

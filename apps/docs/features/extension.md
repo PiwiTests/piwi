@@ -85,6 +85,10 @@ first. One that also finds others is narrowed, trying in order:
 
 Only when none of these finds it alone is it offered with `.first()` or `.nth()`, and a warning.
 
+Each locator leads with a word: `stable`, `could break` or `brittle` for one that finds the element alone, by what the
+stability rules say of it, and `unique by position`, `3 matches` or `not checked` otherwise, the words the DevTools
+sidebar uses. Its **Details** give the reasons (`unique · brittle: CSS class`) and the stability score.
+
 Copy the result as the bare locator, an action line or an assertion; **Copy all** copies every ranked locator for a
 project's [Locators page](./locator-usage#the-locators-page). The action is the one the element calls for: `fill` with
 what a field holds (`'value'` for an empty field or a password), `check` for a checkbox or a radio, `selectOption` for

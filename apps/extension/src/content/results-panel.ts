@@ -26,6 +26,7 @@ import { copyWithFeedback } from '../shared/clipboard.js';
 import { BUTTON_CSS, makeButton, styleButton } from '../shared/buttons.js';
 import { iconText, type IconName } from '../shared/icons.js';
 import { COPY_MODE_CSS, copyFacts, copyModeButtons } from './copy-mode-row.js';
+import { locatorStability, verdictWords } from '../shared/verdict-words.js';
 
 const HOST_ID = 'piwi-picker-results-host';
 
@@ -113,10 +114,16 @@ export async function renderResultsPanel(
     }
     .row.best { border-color: rgba(167,139,250,.55); background: rgba(124,58,237,.07); }
     .row-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
-    .score {
-      color: #c4b5fd; font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 600; flex-shrink: 0;
-      border: 1px solid #c4b5fd66; border-radius: 999px; padding: 0 7px; margin-top: 1px;
+    .word {
+      font-size: 11px; font-weight: 600; flex-shrink: 0; white-space: nowrap;
+      border: 1px solid currentColor; border-radius: 999px; padding: 0 7px; margin-top: 1px;
     }
+    .word.good { color: #4ade80; }
+    .word.warn { color: #fbbf24; }
+    .order { color: #9ca3af; font-size: 12px; }
+    .why { font-size: 11.5px; line-height: 16px; color: #9ca3af; }
+    .why summary { cursor: pointer; width: max-content; }
+    .why div { margin-top: 3px; overflow-wrap: anywhere; }
     .row code { font-size: 13px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; }
     .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .row-actions .send { margin-inline-start: auto; }
@@ -151,7 +158,9 @@ export async function renderResultsPanel(
     @media (prefers-color-scheme: light) {
       .piwi .muted { color: #6b7280; }
       .sub { color: #6b7280; }
-      .score { color: #6d28d9; border-color: #6d28d966; }
+      .word.good { color: #15803d; }
+      .word.warn { color: #b45309; }
+      .order, .why { color: #6b7280; }
       .unique { color: #15803d; }
       .ambiguous { color: #b45309; }
       .footer, .piwi .lead .piwi-icon { color: #6d28d9; }
@@ -176,10 +185,13 @@ export async function renderResultsPanel(
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = tn('pick_title', ranked.length);
+  const order = document.createElement('div');
+  order.className = 'order';
+  order.textContent = t('pick_order');
   const sub = document.createElement('div');
   sub.className = 'sub';
   sub.textContent = `${t('common_escToClose')} · ${t('pick_tabHint')}`;
-  titleWrap.append(title, sub);
+  titleWrap.append(title, order, sub);
   const headerActions = document.createElement('div');
   headerActions.className = 'header-actions';
   const copyAll = makeButton(
@@ -243,18 +255,20 @@ export async function renderResultsPanel(
       row.className = best ? 'row best' : 'row';
       const top = document.createElement('div');
       top.className = 'row-top';
-      const score = document.createElement('span');
-      score.className = 'score';
-      score.textContent = formatNumber(alt.score);
-      score.title = t('pick_score');
+      const verdict = verdictWords({ ...alt, ...locatorStability(alt.locator) });
+      const word = document.createElement('span');
+      word.className = `word ${verdict.tone}`;
+      word.textContent = verdict.word;
+      word.title = verdict.explanation;
       const code = document.createElement('code');
       code.className = 'piwi-loc';
       code.innerHTML = highlightLocator(alt.locator);
-      top.append(score, code);
+      top.append(word, code);
       row.appendChild(top);
 
       const badge = verdictBadge(alt);
       if (badge) row.appendChild(badge);
+      row.appendChild(reasons(verdict.explanation, alt.score));
       if (best)
         row.appendChild(withLeadingIcon(document.createElement('div'), 'sparkles', 'footer', t('pick_topPick')));
 
@@ -520,6 +534,23 @@ async function fillPiwiSection(
 function withLeadingIcon<T extends HTMLElement>(el: T, name: IconName, className: string, text: string): T {
   el.className = className;
   return iconText(el, name, text);
+}
+
+/** The row's details: the verdict and the stability rules in full, and the engine's score. */
+function reasons(explanation: string, score: number): HTMLElement {
+  const details = document.createElement('details');
+  details.className = 'why';
+  const summary = document.createElement('summary');
+  summary.textContent = t('pick_reasons');
+  const words = document.createElement('div');
+  words.className = 'explanation';
+  words.textContent = explanation;
+  const value = document.createElement('div');
+  value.className = 'score';
+  value.textContent = t('pick_scoreValue', { score: formatNumber(score) });
+  value.title = t('pick_score');
+  details.append(summary, words, value);
+  return details;
 }
 
 /** What the engine found for a locator, under it; nothing for one it could not evaluate. */

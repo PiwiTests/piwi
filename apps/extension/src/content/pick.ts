@@ -17,9 +17,8 @@ import {
   type PickedAnchorInfo,
 } from '@piwitests/picker-dom';
 import { headingLevel, TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
-import { tryParseLocatorChain } from '@piwitests/core/locator-chain';
-import { assessLocatorChain } from '@piwitests/core/locator-stability';
 import { initI18n } from '../shared/i18n.js';
+import { locatorStability } from '../shared/verdict-words.js';
 import { anchorPickerStrings, pickerOverlayStrings } from './picker-strings.js';
 import { renderResultsPanel } from './results-panel.js';
 import {
@@ -47,11 +46,10 @@ function clearPickGlobals(): void {
  * without `.first()` or `.nth()`, and no stability rule calls it brittle.
  */
 function findsAlone(checked: readonly CheckedLocator[]): boolean {
-  return checked.some((alt) => {
-    if (alt.verdict !== 'unique' && alt.verdict !== 'narrowed') return false;
-    const chain = tryParseLocatorChain(alt.locator);
-    return chain !== null && assessLocatorChain(chain).level !== 'brittle';
-  });
+  return checked.some(
+    (alt) =>
+      (alt.verdict === 'unique' || alt.verdict === 'narrowed') && locatorStability(alt.locator).stability !== 'brittle',
+  );
 }
 
 /**

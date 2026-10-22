@@ -225,7 +225,13 @@ test.describe('pick results in connected mode', () => {
 
     const panel = page.locator(`${RESULTS} .panel`);
     await expect(panel).toHaveAttribute('lang', 'fr');
-    await expect(panel.locator('.title')).toHaveText(/^\d+ locators, du plus stable au moins stable$/);
+    await expect(panel.locator('.title')).toHaveText(/^\d+ locators$/);
+    await expect(panel.locator('.order')).toHaveText(
+      'Classés du plus stable au moins stable, ceux qui trouvent cet élément seul en premier',
+    );
+    await expect(panel.locator('.row .word').first()).toHaveText(
+      /^(stable|peut casser|fragile|unique par sa position|\d+ correspondances?|non vérifié)$/,
+    );
     await expect(panel.getByRole('button', { name: /^Tout copier \(\d+\)$/ })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Locator', exact: true }).first()).toBeVisible();
     const section = page.locator(`${RESULTS} .piwi`);

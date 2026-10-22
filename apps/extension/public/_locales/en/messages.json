@@ -1697,6 +1697,14 @@
       }
     }
   },
+  "common_verdictBrittle": {
+    "message": "brittle",
+    "description": "Pick results and the DevTools sidebar: the word before a locator that finds the element alone but that the stability rules call brittle."
+  },
+  "common_verdictWatch": {
+    "message": "could break",
+    "description": "Pick results and the DevTools sidebar: the word before a locator that finds the element alone but could break when the page changes."
+  },
   "multipick_picked_one": {
     "message": "$count$ similar item picked",
     "description": "Multi-pick: the bar shown between picks, before its buttons. $count$ is how many items of the list were picked (2 or 3).",
@@ -2112,14 +2120,18 @@
     }
   },
   "pick_title_other": {
-    "message": "$count$ locators, most stable first",
-    "description": "Pick results: the panel’s title. $count$ is how many locators were found for the picked element; they are listed from the most stable down.",
+    "message": "$count$ locators",
+    "description": "Pick results: the panel’s title. $count$ is how many locators were found for the picked element.",
     "placeholders": {
       "count": {
         "content": "$1",
         "example": "4"
       }
     }
+  },
+  "pick_order": {
+    "message": "Ranked from the most stable, the ones that find this element alone first",
+    "description": "Pick results: line under the title saying in which order the locators are listed."
   },
   "pick_tabHint": {
     "message": "Tab moves between rows",
@@ -2151,7 +2163,21 @@
   },
   "pick_score": {
     "message": "Stability score: the higher, the less likely the locator breaks when the page changes",
-    "description": "Pick results: tooltip of the number shown before each locator."
+    "description": "Pick results: tooltip of the stability score line in a locator’s details."
+  },
+  "pick_reasons": {
+    "message": "Details",
+    "description": "Pick results: the toggle under a locator that shows why it got its word (the verdict and the stability rules) and its stability score."
+  },
+  "pick_scoreValue": {
+    "message": "Stability score: $score$",
+    "description": "Pick results: in a locator’s details, the score the ranking engine gave it. $score$ is a number.",
+    "placeholders": {
+      "score": {
+        "content": "$1",
+        "example": "90"
+      }
+    }
   },
   "pick_unique": {
     "message": "Finds exactly one element on the page right now",

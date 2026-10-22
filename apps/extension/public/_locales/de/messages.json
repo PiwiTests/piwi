@@ -1390,6 +1390,12 @@
       }
     }
   },
+  "common_verdictBrittle": {
+    "message": "fragil"
+  },
+  "common_verdictWatch": {
+    "message": "kann brechen"
+  },
   "multipick_picked_one": {
     "message": "$count$ ähnlicher Eintrag gewählt",
     "placeholders": {
@@ -1742,13 +1748,16 @@
     }
   },
   "pick_title_other": {
-    "message": "$count$ Locators, die stabilsten zuerst",
+    "message": "$count$ Locators",
     "placeholders": {
       "count": {
         "content": "$1",
         "example": "4"
       }
     }
+  },
+  "pick_order": {
+    "message": "Vom stabilsten an geordnet, die nur dieses Element findenden zuerst"
   },
   "pick_tabHint": {
     "message": "Tab wechselt die Zeile"
@@ -1776,6 +1785,18 @@
   },
   "pick_score": {
     "message": "Stabilitätswert: Je höher, desto seltener bricht der Locator, wenn sich die Seite ändert"
+  },
+  "pick_reasons": {
+    "message": "Details"
+  },
+  "pick_scoreValue": {
+    "message": "Stabilitätswert: $score$",
+    "placeholders": {
+      "score": {
+        "content": "$1",
+        "example": "90"
+      }
+    }
   },
   "pick_unique": {
     "message": "Findet jetzt genau ein Element auf der Seite"

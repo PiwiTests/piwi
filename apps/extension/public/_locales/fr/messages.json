@@ -1390,6 +1390,12 @@
       }
     }
   },
+  "common_verdictBrittle": {
+    "message": "fragile"
+  },
+  "common_verdictWatch": {
+    "message": "peut casser"
+  },
   "multipick_picked_one": {
     "message": "$count$ élément similaire choisi",
     "placeholders": {
@@ -1742,13 +1748,16 @@
     }
   },
   "pick_title_other": {
-    "message": "$count$ locators, du plus stable au moins stable",
+    "message": "$count$ locators",
     "placeholders": {
       "count": {
         "content": "$1",
         "example": "4"
       }
     }
+  },
+  "pick_order": {
+    "message": "Classés du plus stable au moins stable, ceux qui trouvent cet élément seul en premier"
   },
   "pick_tabHint": {
     "message": "Tab pour passer d’une ligne à l’autre"
@@ -1776,6 +1785,18 @@
   },
   "pick_score": {
     "message": "Score de stabilité : plus il est haut, moins le locator risque de casser quand la page change"
+  },
+  "pick_reasons": {
+    "message": "Détails"
+  },
+  "pick_scoreValue": {
+    "message": "Score de stabilité : $score$",
+    "placeholders": {
+      "score": {
+        "content": "$1",
+        "example": "90"
+      }
+    }
   },
   "pick_unique": {
     "message": "Trouve exactement un élément sur la page en ce moment"

@@ -205,6 +205,8 @@ interface PanelRow {
   locator: string;
   verdict: 'unique' | 'ambiguous' | null;
   note: string;
+  /** The word before the locator. */
+  word: string;
 }
 
 /** Picks the element marked `data-case="<name>"` on `pick-cases.html` and reads the results panel's rows. */
@@ -230,6 +232,7 @@ async function pickRows(page: Page, name: string): Promise<PanelRow[]> {
         locator: row.querySelector('code')!.textContent!,
         verdict: (badge?.className ?? null) as 'unique' | 'ambiguous' | null,
         note: badge?.textContent ?? '',
+        word: row.querySelector('.word')?.textContent ?? '',
       };
     });
   });
@@ -306,6 +309,7 @@ test.describe('pick.js offers locators Playwright resolves to the picked element
     const loose = rows.find((row) => row.locator === "getByRole('button', { name: 'Failed' })");
     expect(loose?.verdict).toBe('ambiguous');
     expect(loose?.note).toContain('2');
+    expect(loose?.word).toBe('2 matches');
     await expect(playwrightLocator(page, loose!.locator)).toHaveCount(2);
     const exact = rows.find((row) => row.locator === "getByRole('button', { name: 'Failed', exact: true })");
     expect(exact?.verdict).toBe('unique');
@@ -383,6 +387,27 @@ test.describe('pick.js results panel', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator(RESULTS)).toHaveCount(0);
     await expect.poll(() => activeTool(page)).toBeNull();
+  });
+
+  test('each locator leads with a word, and its details give the reasons and the score', async ({ context }) => {
+    const page = await openResults(context);
+    const panel = page.locator(`${RESULTS} .panel`);
+    await expect(panel.locator('.title')).toHaveText(/^\d+ locators?$/);
+    await expect(panel.locator('.order')).toHaveText(
+      'Ranked from the most stable, the ones that find this element alone first',
+    );
+    const row = panel.locator('.row', { hasText: "getByRole('button', { name: 'Join now' })" }).first();
+    const word = row.locator('.word');
+    await expect(word).toHaveText('stable');
+    await expect(word).toHaveClass(/\bgood\b/);
+    await expect(word).toHaveAttribute('title', 'unique · stable');
+    // No bare number before a locator any more: the score waits in the details.
+    for (const text of await panel.locator('.row-top').allTextContents()) expect(text).not.toMatch(/^\d/);
+    const explanation = row.locator('.why .explanation');
+    await expect(explanation).toBeHidden();
+    await row.getByText('Details', { exact: true }).click();
+    await expect(explanation).toHaveText('unique · stable');
+    await expect(row.locator('.why .score')).toHaveText(/^Stability score: \d+$/);
   });
 
   test('a copy button clicked twice within a second goes back to its own label', async ({ context }) => {
