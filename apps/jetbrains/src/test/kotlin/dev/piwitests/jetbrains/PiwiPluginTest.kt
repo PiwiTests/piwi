@@ -360,6 +360,34 @@ class PiwiPluginTest : BasePlatformTestCase() {
             marks.shown = true
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertEquals(3, drawn().size)
+            // A new answer: only the marks it changes are taken off or drawn, the others' highlighters kept.
+            fun highlighters() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
+                .filter { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
+                .associateBy { it.textAttributesKey?.externalName }
+            val first = highlighters()
+            marks.arrived(result.copy(notRun = listOf(LineSpan(2, 3))))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            val second = highlighters()
+            assertSame(first["PIWI_COVERAGE_RUN"], second["PIWI_COVERAGE_RUN"])
+            assertSame(first["PIWI_COVERAGE_CHANGED"], second["PIWI_COVERAGE_CHANGED"])
+            assertNotSame(first["PIWI_COVERAGE_NOT_RUN"], second["PIWI_COVERAGE_NOT_RUN"])
+            assertEquals(
+                listOf(
+                    Triple("PIWI_COVERAGE_RUN", 0, 1),
+                    Triple("PIWI_COVERAGE_NOT_RUN", 2, 3),
+                    Triple("PIWI_COVERAGE_CHANGED", 4, 4),
+                ),
+                drawn(),
+            )
+            // A line typed above: the highlighters follow it, and an answer placing the marks where they went keeps them all.
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) { document.insertString(0, "z\n") }
+            marks.arrived(result.copy(executed = listOf(LineSpan(1, 2, 2)), notRun = listOf(LineSpan(3, 4)), changed = listOf(LineSpan(5, 5))))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(second.values.toSet(), highlighters().values.toSet())
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                document.deleteString(0, 2)
+                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveDocument(document)
+            }
             // Coverage of another version of the file: no mark.
             marks.arrived(result.copy(state = "other-version", executed = emptyList(), notRun = emptyList(), changed = emptyList()))
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -369,6 +397,59 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             marks.shown = wasShown
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
+    /** A renamed or moved file loses the marks of its old URI and is asked again under its new one; a deleted file is forgotten. */
+    fun testCoverageMarksFollowARenamedOrMovedFile() {
+        val dir = File(project.basePath!!, "moving").apply { deleteRecursively() }
+        val io = File(dir, "Basket.cs").apply { parentFile.mkdirs(); writeText("a\nb\nc\n") }
+        val local = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        val file = local.refreshAndFindFileByIoFile(io)!!
+        val target = local.refreshAndFindFileByIoFile(File(dir, "done").apply { mkdirs() })!!
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)!!
+        val marks = project.service<PiwiCoverageMarks>()
+        val wasShown = marks.shown
+        fun drawn() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
+            .count { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
+        fun uri() = file.toNioPath().toUri().toString()
+        fun dispatch() = com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val result = CoverageResult(uri = uri(), state = "exact", executed = listOf(LineSpan(0, 1, 1)), tests = 1)
+        try {
+            marks.shown = true
+            marks.start()
+            // No service runs here: the file is kept under each URI it takes, and its answer drawn as it comes.
+            marks.ask(file)
+            assertSame(file, marks.arrived(result))
+            dispatch()
+            assertEquals(1, drawn())
+            com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { file.rename(this, "Cart.cs") }
+            dispatch()
+            assertEquals(0, drawn())
+            assertNull(marks.arrived(result))
+            val renamed = uri()
+            assertTrue(renamed, renamed.endsWith("/moving/Cart.cs"))
+            assertSame(file, marks.arrived(result.copy(uri = renamed)))
+            dispatch()
+            assertEquals(1, drawn())
+            com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { file.move(this, target) }
+            dispatch()
+            assertEquals(0, drawn())
+            assertNull(marks.arrived(result.copy(uri = renamed)))
+            val moved = uri()
+            assertTrue(moved, moved.endsWith("/moving/done/Cart.cs"))
+            assertSame(file, marks.arrived(result.copy(uri = moved)))
+            dispatch()
+            assertEquals(1, drawn())
+            com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { file.delete(this) }
+            dispatch()
+            assertEquals(0, drawn())
+            assertNull(marks.arrived(result.copy(uri = moved)))
+        } finally {
+            marks.shown = wasShown
+            dir.deleteRecursively()
+            local.refreshAndFindFileByIoFile(File(project.basePath!!))?.let { com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(false, true, true, it) }
+            dispatch()
         }
     }
 

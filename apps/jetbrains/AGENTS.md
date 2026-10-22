@@ -59,6 +59,9 @@ service's `src/http.ts` reads.
   hovered, it and the scroll bar mark show `Glue.coverageMarkTooltip`, what the lines are and what the marks mean;
   clicked, the same as a hint. The highlighters follow the edits; `piwi/coverageChanged`
   replaces a file's answer, draws it again and has its Code Vision asked again (`PiwiProjectService.coverageChanged`).
+  A drawing takes off and adds only the marks that changed (`Glue.coverageMarksDiff`): a highlighter is kept while the
+  answer holds its mark (kind, lines, tooltip) at the lines it covers now. A file renamed or moved, itself or with its
+  folder (`VFS_CHANGES`), loses its marks and is asked again under its new URI; a deleted one is forgotten.
   **Show Coverage Marks** (`Piwi.ToggleCoverageMarks`, a `ToggleAction` under **Tools → Piwi**, kept in
   `PiwiLocalSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks; a file
   without line coverage draws nothing. The service's hover names the tests behind a line; its function lines come in

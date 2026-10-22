@@ -1203,6 +1203,33 @@ class GlueTest {
     }
 
     @Test
+    fun `a new coverage answer takes off and draws only the marks that changed`() {
+        val drawn = Glue.coverageMarks(mappedCoverage, 20, shown = true).toSet()
+        val next = mappedCoverage.copy(executed = listOf(LineSpan(8, 9, 2), LineSpan(17, 30, 3)), notRun = listOf(LineSpan(12, 12)))
+        assertEquals(
+            Glue.CoverageMarksDiff(
+                remove = listOf(
+                    Glue.CoverageMark(Glue.CoverageKind.RUN, 17, 19, "Piwi: run by 1 test"),
+                    Glue.CoverageMark(Glue.CoverageKind.NOT_RUN, 11, 11, "Piwi: no test runs this line"),
+                ),
+                add = listOf(
+                    Glue.CoverageMark(Glue.CoverageKind.RUN, 17, 19, "Piwi: run by 3 tests"),
+                    Glue.CoverageMark(Glue.CoverageKind.NOT_RUN, 12, 12, "Piwi: no test runs this line"),
+                ),
+            ),
+            Glue.coverageMarksDiff(drawn, Glue.coverageMarks(next, 20, shown = true)),
+        )
+        // The same lines in another kind: taken off and drawn again.
+        val changed = Glue.CoverageMark(Glue.CoverageKind.CHANGED, 8, 9, "Piwi: changed since the coverage run")
+        val run = Glue.CoverageMark(Glue.CoverageKind.RUN, 8, 9, "Piwi: run by 2 tests")
+        assertEquals(Glue.CoverageMarksDiff(listOf(run), listOf(changed)), Glue.coverageMarksDiff(setOf(run), listOf(changed)))
+        // Hidden: every mark taken off; nothing drawn yet: each mark drawn once.
+        assertEquals(Glue.CoverageMarksDiff(drawn.toList(), emptyList()), Glue.coverageMarksDiff(drawn, emptyList()))
+        assertEquals(Glue.CoverageMarksDiff(emptyList(), listOf(run)), Glue.coverageMarksDiff(emptySet(), listOf(run, run)))
+        assertEquals(Glue.CoverageMarksDiff(emptyList(), emptyList()), Glue.coverageMarksDiff(drawn, drawn.toList()))
+    }
+
+    @Test
     fun `the coverage answer reads as the service sends it, and C# files are read`() {
         val result = Gson().fromJson(
             """{"uri":"file:///w/a.cs","state":"exact","executed":[{"start":3,"end":4,"tests":2}],"notRun":[{"start":6,"end":6}],""" +

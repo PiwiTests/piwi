@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.impl.DocumentMarkupModel
@@ -15,6 +16,7 @@ import com.intellij.openapi.editor.markup.ActiveGutterRenderer
 import com.intellij.openapi.editor.markup.HighlighterLayer
 import com.intellij.openapi.editor.markup.HighlighterTargetArea
 import com.intellij.openapi.editor.markup.LineMarkerRendererEx
+import com.intellij.openapi.editor.markup.MarkupModel
 import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -22,7 +24,14 @@ import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Condition
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
+import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 import com.intellij.util.ui.JBUI
 import java.awt.Graphics
 import java.awt.Rectangle
@@ -34,9 +43,10 @@ import java.util.concurrent.ConcurrentHashMap
  * and in the scroll bar: the lines tests ran, the executable lines none runs, and, dashed, the lines changed since the
  * coverage run. They are range highlighters on each file's document, which follow its edits until the service pushes
  * the marks it placed again (`piwi/coverageChanged`); the service's hover names the tests behind a line, and a mark's
- * tooltip, in the gutter and the scroll bar, says what the marks mean. A file without
- * line coverage shows none. **Tools → Piwi → Show Coverage Marks** hides them, on this machine only
- * (`PiwiLocalSettings.coverageMarks`), and is offered once a file showed some.
+ * tooltip, in the gutter and the scroll bar, says what the marks mean. Only the marks a new answer changes are taken
+ * off or drawn. A renamed or moved file is asked again under its new URI. A file without line coverage shows none.
+ * **Tools → Piwi → Show Coverage Marks** hides them, on this machine only (`PiwiLocalSettings.coverageMarks`), and is
+ * offered once a file showed some.
  */
 @Service(Service.Level.PROJECT)
 class PiwiCoverageMarks(private val project: Project) : Disposable {
@@ -46,8 +56,8 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
     /** The files asked about, by URI: a pushed answer names its file by the URI it was asked with. */
     private val files = ConcurrentHashMap<String, VirtualFile>()
 
-    /** The highlighters drawn on each file, by URI; on the event thread. */
-    private val drawn = HashMap<String, List<RangeHighlighter>>()
+    /** The highlighters drawn on each file, by URI, then by the mark each one draws; on the event thread. */
+    private val drawn = HashMap<String, Map<Glue.CoverageMark, RangeHighlighter>>()
 
     /** Whether a file showed marks: the action that hides them is offered from then on. */
     @Volatile var known = false
@@ -65,9 +75,13 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
             ApplicationManager.getApplication().invokeLater({ files.keys.forEach(::draw) }, gone)
         }
 
-    /** Ask the coverage of each file opened from now on, and of those open now. */
+    /**
+     * Ask the coverage of each file opened from now on, and of those open now; a file renamed or moved, itself or with
+     * its folder, again under its new URI. A deleted file is forgotten.
+     */
     fun start() {
-        project.messageBus.connect(this).subscribe(
+        val connection = project.messageBus.connect(this)
+        connection.subscribe(
             FileEditorManagerListener.FILE_EDITOR_MANAGER,
             object : FileEditorManagerListener {
                 override fun fileOpened(source: FileEditorManager, file: VirtualFile) = ask(file)
@@ -77,7 +91,36 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
                 }
             },
         )
+        connection.subscribe(
+            VirtualFileManager.VFS_CHANGES,
+            object : BulkFileListener {
+                override fun after(events: List<VFileEvent>) {
+                    val moved = events.mapNotNull { event ->
+                        when {
+                            event is VFilePropertyChangeEvent && event.propertyName == VirtualFile.PROP_NAME -> event.file
+                            event is VFileMoveEvent -> event.file
+                            else -> null
+                        }
+                    }
+                    val deleted = events.any { it is VFileDeleteEvent }
+                    if ((moved.isEmpty() && !deleted) || files.isEmpty()) return
+                    ApplicationManager.getApplication().invokeLater({ follow(moved) }, gone)
+                }
+            },
+        )
         askOpen()
+    }
+
+    /**
+     * Forget the files deleted and those under `moved`, on the event thread, and ask those still there again: their URI
+     * changed.
+     */
+    private fun follow(moved: List<VirtualFile>) {
+        val changed = files.values.filter { file -> !file.isValid || moved.any { VfsUtilCore.isAncestor(it, file, false) } }
+        for (file in changed.toSet()) {
+            forget(file)
+            if (file.isValid) ask(file)
+        }
     }
 
     /** Ask the coverage of every open file again: the service started, or its connection changed. */
@@ -112,37 +155,55 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
         for (uri in uris) {
             files.remove(uri)
             answers.remove(uri)
-            drawn.remove(uri)?.forEach { it.dispose() }
+            drawn.remove(uri)?.values?.forEach { if (it.isValid) it.dispose() }
         }
     }
 
-    /** Draw a file's marks again, on the event thread: none while hidden. */
+    /**
+     * Draw a file's marks again, on the event thread: none while hidden. A highlighter is kept while the answer holds
+     * its mark at the lines it covers now, after the edits; only the others are taken off or added.
+     */
     private fun draw(uri: String) {
-        drawn.remove(uri)?.forEach { if (it.isValid) it.dispose() }
-        val file = files[uri] ?: return
-        val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: return
-        val marks = Glue.coverageMarks(answers[uri], document.lineCount, shown)
-        if (marks.isEmpty()) return
-        val model = DocumentMarkupModel.forDocument(document, project, true)
-        drawn[uri] = marks.map { mark ->
-            val key = keyOf(mark.kind)
-            model.addRangeHighlighter(
-                key,
-                document.getLineStartOffset(mark.start),
-                document.getLineEndOffset(mark.end),
-                HighlighterLayer.SELECTION - 1,
-                HighlighterTargetArea.LINES_IN_RANGE,
-            ).apply {
-                val tooltip = Glue.coverageMarkTooltip(mark)
-                lineMarkerRenderer = CoverageGutterMark(key, dashed = mark.kind == Glue.CoverageKind.CHANGED, tooltip)
-                errorStripeTooltip = tooltip
-            }
+        val old = drawn.remove(uri).orEmpty()
+        val document = files[uri]?.let { FileDocumentManager.getInstance().getCachedDocument(it) }
+        if (document == null) {
+            old.values.forEach { if (it.isValid) it.dispose() }
+            return
+        }
+        val current = LinkedHashMap<Glue.CoverageMark, RangeHighlighter>()
+        for ((mark, highlighter) in old) {
+            if (!highlighter.isValid) continue
+            val now = mark.copy(start = document.getLineNumber(highlighter.startOffset), end = document.getLineNumber(highlighter.endOffset))
+            if (current.putIfAbsent(now, highlighter) != null) highlighter.dispose()
+        }
+        val diff = Glue.coverageMarksDiff(current.keys, Glue.coverageMarks(answers[uri], document.lineCount, shown))
+        diff.remove.forEach { current.remove(it)?.dispose() }
+        if (diff.add.isNotEmpty()) {
+            val model = DocumentMarkupModel.forDocument(document, project, true)
+            diff.add.forEach { current[it] = highlight(model, document, it) }
+        }
+        if (current.isNotEmpty()) drawn[uri] = current
+    }
+
+    /** A mark's highlighter, with its bar in the gutter and its tooltip. */
+    private fun highlight(model: MarkupModel, document: Document, mark: Glue.CoverageMark): RangeHighlighter {
+        val key = keyOf(mark.kind)
+        return model.addRangeHighlighter(
+            key,
+            document.getLineStartOffset(mark.start),
+            document.getLineEndOffset(mark.end),
+            HighlighterLayer.SELECTION - 1,
+            HighlighterTargetArea.LINES_IN_RANGE,
+        ).apply {
+            val tooltip = Glue.coverageMarkTooltip(mark)
+            lineMarkerRenderer = CoverageGutterMark(key, dashed = mark.kind == Glue.CoverageKind.CHANGED, tooltip)
+            errorStripeTooltip = tooltip
         }
     }
 
     override fun dispose() {
         disposed = true
-        val highlighters = drawn.values.flatten()
+        val highlighters = drawn.values.flatMap { it.values }
         drawn.clear()
         answers.clear()
         files.clear()

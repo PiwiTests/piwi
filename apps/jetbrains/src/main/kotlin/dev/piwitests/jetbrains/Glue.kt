@@ -504,6 +504,18 @@ object Glue {
             marks(result.changed, CoverageKind.CHANGED) { "Piwi: changed since the coverage run" }
     }
 
+    /** The coverage marks to take off a file, and those to draw on it, each once. */
+    data class CoverageMarksDiff(val remove: List<CoverageMark>, val add: List<CoverageMark>)
+
+    /**
+     * What turns the marks `drawn` on a file into its `marks`: a mark is kept while one of the same kind, lines and
+     * tooltip is wanted, so only the marks that changed are taken off or drawn.
+     */
+    fun coverageMarksDiff(drawn: Set<CoverageMark>, marks: List<CoverageMark>): CoverageMarksDiff {
+        val wanted = marks.toSet()
+        return CoverageMarksDiff(remove = drawn.filter { it !in wanted }, add = wanted.filter { it !in drawn })
+    }
+
     /** `text` as HTML text: the IDE renders a tooltip as HTML, and the instance's text is never markup. */
     private fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
