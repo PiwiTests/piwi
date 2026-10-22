@@ -2389,15 +2389,15 @@
   },
   "record_pause": {
     "message": "Pause",
-    "description": "Recorder bar in a browser the editor (VS Code, a JetBrains IDE) opened for a recording: button that pauses the recording, so nothing done in the page is recorded until Resume. Short."
+    "description": "Recorder bar, while a recording runs: button that pauses the recording, so nothing done in the page is recorded until Resume. Short."
   },
   "record_resume": {
     "message": "Resume",
-    "description": "Recorder bar in a browser the editor opened for a recording: button that resumes a paused recording. Short."
+    "description": "Recorder bar, while a recording is paused: button that resumes it. Short."
   },
   "record_pausedNote": {
     "message": "Paused: what you do here is not recorded until you resume.",
-    "description": "Recorder bar in a browser the editor opened for a recording, while it is paused: one line under the title."
+    "description": "Recorder bar, while the recording is paused: one line under the title."
   },
   "record_checkElement": {
     "message": "Check an element",
@@ -6116,6 +6116,34 @@
   "devtools_recordingOn_other": {
     "message": "Recording on $site$: $count$ steps",
     "description": "DevTools, Piwi panel, Record tab: a recording runs. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingPaused_one": {
+    "message": "Paused on $site$: $count$ step",
+    "description": "DevTools, Piwi panel, Record tab: a recording is paused from its bar on the page, so nothing is recorded until it resumes. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingPaused_other": {
+    "message": "Paused on $site$: $count$ steps",
+    "description": "DevTools, Piwi panel, Record tab: a recording is paused from its bar on the page, so nothing is recorded until it resumes. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
     "placeholders": {
       "count": {
         "content": "$1",

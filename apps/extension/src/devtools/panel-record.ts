@@ -92,8 +92,9 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
   }
 
   const count = steps.length;
+  const paused = state.active && !bug && state.paused === true;
   const text = state.active
-    ? tn(bug ? 'devtools_bugRecordingOn' : 'devtools_recordingOn', count, {
+    ? tn(bug ? 'devtools_bugRecordingOn' : paused ? 'devtools_recordingPaused' : 'devtools_recordingOn', count, {
         site: state.grantedOriginPattern ? patternOrigin(state.grantedOriginPattern) : '',
       })
     : tn('devtools_recordingStopped', count);
@@ -139,5 +140,5 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
 
   const list = el('ol', 'steps');
   for (const step of steps) list.appendChild(stepRow(step));
-  container.replaceChildren(viewHead(state.active ? 'live' : '', text, ...actions), list);
+  container.replaceChildren(viewHead(state.active && !paused ? 'live' : '', text, ...actions), list);
 }

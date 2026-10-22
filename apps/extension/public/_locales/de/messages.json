@@ -5178,6 +5178,32 @@
       }
     }
   },
+  "devtools_recordingPaused_one": {
+    "message": "Pausiert auf $site$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingPaused_other": {
+    "message": "Pausiert auf $site$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
   "devtools_bugRecordingOn_one": {
     "message": "Bug-Report auf $site$: $count$ Schritt",
     "placeholders": {

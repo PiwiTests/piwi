@@ -28,6 +28,7 @@ import {
   stopRecording,
   discardRecording,
   recordingMode,
+  updateRecording,
   type RecordingState,
 } from '../shared/recording-storage.js';
 import { appendBugEntries, getBugEvidence, setBugEvidenceFields, storeAsPageLeaves } from '../shared/bug-storage.js';
@@ -88,10 +89,11 @@ let testIdAttribute: string | null = null;
 let ideSettings: IdeRecorderSettings | null = null;
 
 /**
- * In the IDE bundle, whether the recording is paused, from the HUD's Pause or the editor's: nothing is captured until
- * it resumes. Read from the recording as each page starts, then kept up to date by the messages of both.
+ * Whether the recording is paused, from the HUD's Pause or, in the IDE bundle, the editor's: nothing is captured until
+ * it resumes. Read from the recording as each page starts, then kept up to date by the HUD and by
+ * `piwi-recording-paused`, which the worker passes on to the recording's other tabs and the launcher to every page.
  */
-let idePaused = false;
+let recordingPaused = false;
 
 /** {@link ACTIONABLE_SELECTOR} with the elements carrying the project's test id attribute. */
 function actionableSelector(): string {
@@ -391,14 +393,20 @@ function focusInClosedShadowRoot(el: Element): boolean {
 
 /** Whether capture is paused in this document: a bug report's pick or dialog is on screen, or the recording is paused. */
 function capturePaused(): boolean {
-  return recorderGlobals().__piwiRecordPaused === true || idePaused;
+  return recorderGlobals().__piwiRecordPaused === true || recordingPaused;
 }
 
-/** Pauses or resumes the recording from the HUD: the launcher keeps it for every page, and tells the editor. */
-async function setIdePaused(paused: boolean): Promise<void> {
-  idePaused = paused;
+/**
+ * Pauses or resumes the recording from the HUD. The extension keeps it in the
+ * recording, which each page reads as it starts, and the worker tells the
+ * recording's other tabs; in the IDE bundle the launcher keeps it for every
+ * page, and tells the editor.
+ */
+async function setRecordingPaused(paused: boolean): Promise<void> {
+  recordingPaused = paused;
   scheduleHudRefresh();
   try {
+    if (!IDE_BUILD) await updateRecording({ paused });
     await chrome.runtime.sendMessage({ type: IDE_PAUSED_MESSAGE, paused });
   } catch {
     captureError = t('common_workerNoAnswer');
@@ -522,25 +530,21 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     small: true,
     className: 'stop',
   });
-  if (IDE_BUILD) {
-    dot.classList.toggle('paused', idePaused);
-    const pauseBtn = makeButton(
-      idePaused ? t('record_resume') : t('record_pause'),
-      () => void setIdePaused(!idePaused),
-      {
-        icon: idePaused ? 'play' : 'pause',
-        small: true,
-        className: 'pause',
-      },
-    );
-    pauseBtn.setAttribute('aria-pressed', String(idePaused));
-    topRow.append(dot, title, pauseBtn, stopBtn);
-  } else {
-    topRow.append(dot, title, stopBtn);
-  }
+  dot.classList.toggle('paused', recordingPaused);
+  const pauseBtn = makeButton(
+    recordingPaused ? t('record_resume') : t('record_pause'),
+    () => void setRecordingPaused(!recordingPaused),
+    {
+      icon: recordingPaused ? 'play' : 'pause',
+      small: true,
+      className: 'pause',
+    },
+  );
+  pauseBtn.setAttribute('aria-pressed', String(recordingPaused));
+  topRow.append(dot, title, pauseBtn, stopBtn);
   bar.appendChild(topRow);
 
-  if (IDE_BUILD && idePaused) {
+  if (recordingPaused) {
     const note = document.createElement('div');
     note.className = 'empty';
     note.textContent = t('record_pausedNote');
@@ -555,7 +559,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     ['record_checkAddress', 'globe', runCheckAddressFlow],
   ] as const) {
     const button = makeButton(t(label), () => void run(bugHooks), { icon: glyph, small: true });
-    button.disabled = IDE_BUILD && idePaused;
+    button.disabled = recordingPaused;
     checks.appendChild(button);
   }
   bar.appendChild(checks);
@@ -1379,9 +1383,9 @@ function installStopListener(): void {
   g.__piwiRecordStopListener = true;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
-    if (IDE_BUILD && message?.type === IDE_PAUSED_MESSAGE && typeof message.paused === 'boolean') {
-      // The editor's Pause or Resume.
-      idePaused = message.paused;
+    if (message?.type === IDE_PAUSED_MESSAGE && typeof message.paused === 'boolean') {
+      // Pause or Resume from another tab of the recording, or from the editor.
+      recordingPaused = message.paused;
       scheduleHudRefresh();
     }
     if (message?.type === 'piwi-bug-debugger-lost') {
@@ -1591,7 +1595,7 @@ async function initRecordPanel(restored: boolean): Promise<void> {
     initI18n(),
     loadRecorderSettings(),
   ]);
-  if (IDE_BUILD) idePaused = state.paused === true;
+  recordingPaused = state.paused === true;
 
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down

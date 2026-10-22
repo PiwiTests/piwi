@@ -442,8 +442,13 @@ A test recording's bar (`renderHud`, in Piwi Picker and in the IDE bundle) has *
 address** (`check-panel.ts`). They reuse the bug report's pick and dialog (`pickElement`, `openRecordDialog` in
 `bug-panel.ts`), pause capture the same way, and record an `assert` event of what the page shows now, with `actual`
 null: the spec writes it as `await expect(…)`. The dialog names the element by the recorded target's first locator, so
-the project's test id attribute applies. Both buttons are disabled while an IDE recording is paused, when the editor
-service drops what the page sends.
+the project's test id attribute applies. Both buttons are disabled while the recording is paused.
+
+**Pause** in the bar (both builds) stops capture without ending the recording, until **Resume**: one guard,
+`capturePaused()`, at every capture listener. The extension keeps it in `RecordingState.paused` (`updateRecording`,
+queued behind the document's appends), which each page reads as the recorder attaches, and sends
+`piwi-recording-paused`, which the worker passes on to the recording's other tabs (`notifyRecorderTabs`); in the IDE
+bundle the launcher keeps it and tells the editor. The DevTools Record tab says the recording is paused.
 
 ## Report a bug
 
@@ -605,8 +610,8 @@ contents alone, into the editor's `dist/`; neither is part of `dist/` or `dist-f
   bundle of the extension, where those branches fold away), in `record-panel.ts` alone: it records the top-level
   document of an http or https page and nothing else (the launcher's script also runs in frames and in a new tab's
   `about:blank`); Stop opens no review (capture stops, the HUD and the border go, `piwi-recording-stopped` still goes
-  out); the HUD names the file from `piwiIdeSettings` (`record_hudTitleInto`) and has **Pause**, which pauses the
-  recording for every page (`piwi-recording-paused` to the launcher, the recording's `paused`), the editor's Pause
+  out); the HUD names the file from `piwiIdeSettings` (`record_hudTitleInto`); its **Pause** goes to the launcher, which
+  keeps the recording's `paused` for every page and tells the editor (`piwi-recording-paused`), the editor's Pause
   reaching the page through `__piwiIdeDispatch`; the page refreshes no catalog.
 - **The project's test id attribute.** `rankElement`, `verifiedLocators` (its engine) and the probe take
   `testIdAttribute`: from `piwiIdeSettings` in the IDE bundle, `data-testid` in the extension. A click snaps to an

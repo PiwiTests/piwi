@@ -362,7 +362,7 @@ chrome.permissions.onAdded.addListener((permissions) => {
 async function notifyRecorderTabs(
   originPattern: string | null,
   exceptTabId?: number,
-  message: { type: string } = { type: 'piwi-recording-stopped' },
+  message: { type: string; paused?: boolean } = { type: 'piwi-recording-stopped' },
 ): Promise<void> {
   if (!originPattern) return;
   let tabs: chrome.tabs.Tab[];
@@ -1183,6 +1183,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // other tab still showing the recorder, regardless of who requested the
     // stop.
     void handleRecordingStopped(sender.tab?.id).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message?.type === 'piwi-recording-paused' && typeof message.paused === 'boolean') {
+    // The bar's Pause or Resume, already in the recording: the recording's other tabs show it and stop capturing too.
+    const paused: boolean = message.paused;
+    void getRecordingState()
+      .then(({ grantedOriginPattern }) =>
+        notifyRecorderTabs(grantedOriginPattern, sender.tab?.id, { type: 'piwi-recording-paused', paused }),
+      )
+      .catch(() => undefined)
+      .then(() => sendResponse({ ok: true }));
     return true;
   }
   return undefined;

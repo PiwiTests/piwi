@@ -128,6 +128,13 @@ test.describe('the Piwi panel', () => {
     });
     await expect(panel.getByRole('status')).toHaveText(`Recording on ${ORIGIN}: 2 steps`);
 
+    // Paused from the bar on the page: the panel says so until it resumes.
+    const twoSteps = [click('apply-coupon', 'Apply coupon', 1), click('checkout', 'Checkout', 2)];
+    await setSession(panel, { piwiRecording: { ...recording, events: twoSteps, paused: true } });
+    await expect(panel.getByRole('status')).toHaveText(`Paused on ${ORIGIN}: 2 steps`);
+    await setSession(panel, { piwiRecording: { ...recording, events: twoSteps, paused: false } });
+    await expect(panel.getByRole('status')).toHaveText(`Recording on ${ORIGIN}: 2 steps`);
+
     await panel.getByRole('button', { name: 'Stop recording' }).click();
     await expect(panel.getByRole('status')).toHaveText('Recording stopped: 2 steps, not exported yet');
     expect(

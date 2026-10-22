@@ -31,7 +31,7 @@ export interface RecordingState {
   mode?: RecordingMode;
   /** A bug recording's token: the main-world evidence script's messages carry it, and the recorder ignores any that do not. */
   bugToken?: string | null;
-  /** A recording started from an editor, paused: nothing done in the browser is captured until it resumes. */
+  /** Paused from the recording bar, or from the editor that started the recording: nothing done in the browser is captured until it resumes. */
   paused?: boolean;
 }
 
@@ -217,6 +217,21 @@ export async function appendRecordingEvent(event: RawCaptureEvent): Promise<Reco
   });
   // The queue itself must never stay rejected, or one failed write would poison
   // every append after it; the rejection still reaches this call's own caller.
+  appendQueue = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * Changes the recording's own fields, on the stored state, behind the appends
+ * this document has queued: an append that read the state before the change
+ * is written first, then the change on top of it.
+ */
+export async function updateRecording(change: Partial<Pick<RecordingState, 'paused'>>): Promise<RecordingState> {
+  const run = appendQueue.then(async () => {
+    const state: RecordingState = { ...(await getRecordingState()), ...change };
+    await setRecordingState(state);
+    return state;
+  });
   appendQueue = run.catch(() => undefined);
   return run;
 }

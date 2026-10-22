@@ -675,6 +675,51 @@ test.describe('record-panel.js', () => {
     expect((await readStoredEvents(page)).length).toBe(before);
   });
 
+  test('Pause in the bar records nothing until Resume, on the next page too, and a pause from another tab shows here', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    const page = await recordingInProgress(context);
+    const hud = page.locator('#piwi-record-hud-host');
+    const paused = () =>
+      page.evaluate(
+        async () => (await (globalThis as any).chrome.storage.session.get('piwiRecording')).piwiRecording.paused,
+      );
+    const steps = async () => normalizeSteps(await readStoredEvents(page)).map((s) => s.action);
+
+    await hud.getByRole('button', { name: 'Pause' }).click();
+    await expect.poll(paused).toBe(true);
+    await expect(hud.getByText('Paused: what you do here is not recorded until you resume.')).toBeVisible();
+    await expect(hud.getByRole('button', { name: 'Resume' })).toHaveAttribute('aria-pressed', 'true');
+    // Nothing is recorded meanwhile, so no check is offered either.
+    await expect(hud.getByRole('button', { name: 'Check an element' })).toBeDisabled();
+    await expect(hud.getByRole('button', { name: 'Check the address' })).toBeDisabled();
+    await page.fill('#username', 'alice');
+    await page.getByTestId('remember-me').click();
+
+    // Still paused on the next page, as the recording says.
+    await page.click('#submit');
+    await page.waitForURL('**/dashboard');
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect(hud.getByRole('button', { name: 'Resume' })).toBeVisible();
+    await page.click('#add');
+    await page.waitForTimeout(200);
+    expect(await steps()).toEqual(['goto']);
+
+    await hud.getByRole('button', { name: 'Resume' }).click();
+    await expect.poll(paused).toBe(false);
+    await expect(hud.getByRole('button', { name: 'Check an element' })).toBeEnabled();
+    await page.click('#add');
+    await expect.poll(steps).toEqual(['goto', 'click']);
+
+    // Paused from the recording's bar in another tab: the worker passes it on.
+    await dispatchRuntimeMessage(page, { type: 'piwi-recording-paused', paused: true });
+    await expect(hud.getByRole('button', { name: 'Resume' })).toBeVisible();
+    await page.click('#add');
+    await page.waitForTimeout(200);
+    expect(await steps()).toEqual(['goto', 'click']);
+  });
+
   test('a page restored from the back/forward cache records that the flow came back to it', async ({ context }) => {
     const page = await recordingInProgress(context);
     const navigations = async () => (await readStoredEvents(page)).filter((e) => e.kind === 'navigate').length;
