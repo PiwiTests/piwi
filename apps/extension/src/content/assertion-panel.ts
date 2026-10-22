@@ -25,6 +25,7 @@ import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { icon } from '../shared/icons.js';
 import { STEP_CSS } from '../shared/step-view.js';
 import { interfacePhrases } from '../shared/core-words.js';
+import { assertionMethod } from '../shared/copy-modes.js';
 
 const HOST_ID = 'piwi-assertion-panel-host';
 
@@ -167,7 +168,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
       badge.dataset.kind = 'assert';
       badge.appendChild(icon('check-circle'));
       const name = document.createElement('span');
-      name.textContent = candidate.method;
+      name.textContent = assertionMethod(candidate.assertion);
       method.append(badge, name);
       const btn = makeButton(t('common_copy'), () => void copyWithFeedback(candidate.expectLine, btn), {
         icon: 'copy',

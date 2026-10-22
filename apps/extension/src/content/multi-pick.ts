@@ -25,7 +25,7 @@ import { pickerOverlayStrings } from './picker-strings.js';
 import { holdFocus } from './modal-panel.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { ICON_CSS, iconText } from '../shared/icons.js';
-import { COPY_MODE_CSS, copyModeButtons } from './copy-mode-row.js';
+import { COPY_MODE_CSS, copyFacts, copyModeButtons } from './copy-mode-row.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 const MIN_PICKS = 2;
@@ -305,7 +305,7 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
         rowEl.appendChild(warn);
       }
 
-      rowEl.appendChild(copyModeButtons(row.locator, panel, activeMode));
+      rowEl.appendChild(copyModeButtons({ locator: row.locator, facts: copyFacts(row.element) }, panel, activeMode));
       panel.appendChild(rowEl);
     }
 

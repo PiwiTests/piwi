@@ -396,9 +396,12 @@ test.describe('pick.js results panel', () => {
     const page = await openResults(context);
     const rows = page.locator(`${RESULTS} .row`);
     expect(await rows.count()).toBeGreaterThan(1);
-    await rows.nth(1).getByRole('button', { name: 'Assertion', exact: true }).click();
+    await rows
+      .nth(1)
+      .getByRole('button', { name: /^Assertion/ })
+      .click();
     for (const row of await rows.all()) {
-      await expect(row.getByRole('button', { name: 'Assertion', exact: true })).toHaveAttribute('data-active', 'true');
+      await expect(row.getByRole('button', { name: /^Assertion/ })).toHaveAttribute('data-active', 'true');
       await expect(row.getByRole('button', { name: 'Locator', exact: true })).toHaveAttribute('data-active', 'false');
     }
   });

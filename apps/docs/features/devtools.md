@@ -31,7 +31,9 @@ locator('.btn').nth(2)                             ⚠ unique by position · bri
 </figure>
 
 A locator that finds the node among others says how many it finds. Under each one, **Locator**, **Action** and
-**Assertion** copy it as `page.…`, as a `click()` or as an `expect(…).toBeVisible()`, and **Add to session** puts it
+**Assertion** copy it as `page.…`, as the action the element calls for (`fill`, `check`, `selectOption` or `click`)
+or as its first assertion (`toHaveValue`, `toHaveText`…, `toHaveCount` for a locator finding several), as in
+[Pick an element](./extension#pick-an-element); each button names what it writes. **Add to session** puts it
 in the session under a name (the panel's Session tab, below). The pane ranks again when the selection changes and after
 the page navigates; **Refresh** ranks the same node on the page as it is now. DevTools' own element picker
 (`Ctrl+Shift+C`, `Cmd+Shift+C` on macOS) selects what the pointer is on.

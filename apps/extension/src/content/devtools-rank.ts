@@ -1,6 +1,7 @@
 import { parseLocatorChain, tryParseLocatorChain } from '@piwitests/core/locator-chain';
 import { assessLocatorChain, type LocatorStabilityRuleId } from '@piwitests/core/locator-stability';
 import { normalizeWhiteSpace } from './engine-aria.js';
+import { elementFacts } from './element-facts.js';
 import { attachPanelShadow } from './panel-root.js';
 import {
   HIGHLIGHT_MESSAGE,
@@ -66,6 +67,7 @@ function rankSelected(node: unknown): SelectionRanking {
     role,
     name: accessibleName,
     locators: checked.slice(0, MAX_LOCATORS).map(toSelectionLocator),
+    facts: elementFacts(element),
   };
 }
 

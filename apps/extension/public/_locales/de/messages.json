@@ -1181,6 +1181,19 @@
   "common_copyModeExpect": {
     "message": "Assertion"
   },
+  "common_copyModeWithMethod": {
+    "message": "$mode$ ($method$)",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "fill"
+      },
+      "mode": {
+        "content": "$2",
+        "example": "Action"
+      }
+    }
+  },
   "multipick_picked_one": {
     "message": "$count$ ähnlicher Eintrag gewählt",
     "placeholders": {

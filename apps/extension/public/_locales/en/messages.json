@@ -1453,11 +1453,25 @@
   },
   "common_copyModeAction": {
     "message": "Action",
-    "description": "Copy button under a locator: copies it as an action line, `await page.….click();`. One word."
+    "description": "Copy button under a locator: copies it as an action line, `await page.….click();`, or `fill`, `check` or `selectOption` as the element calls for. One word."
   },
   "common_copyModeExpect": {
     "message": "Assertion",
-    "description": "Copy button under a locator: copies it as an assertion line, `await expect(page.…).toBeVisible();`. One word."
+    "description": "Copy button under a locator: copies it as an assertion line, `await expect(page.…).toHaveText(…);`, the element's top assertion, `toBeVisible()` when nothing better applies. One word."
+  },
+  "common_copyModeWithMethod": {
+    "message": "$mode$ ($method$)",
+    "description": "Copy button under a locator, once the element tells what the line calls: $mode$ is common_copyModeAction or common_copyModeExpect, $method$ the Playwright method it writes, e.g. `fill` or `toHaveText` (code, not translated). Reads “Action (fill)”.",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "fill"
+      },
+      "mode": {
+        "content": "$2",
+        "example": "Action"
+      }
+    }
   },
   "multipick_picked_one": {
     "message": "$count$ similar item picked",

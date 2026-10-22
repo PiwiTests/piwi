@@ -632,7 +632,7 @@ style.
 - **The selection reaches the ranking through `inspectedWindow.eval`.** The pane injects `devtools-rank.js` into the
   inspected tab (`src/devtools/selection.ts`) and calls `__piwiRankSelected($0)` with `useContentScriptContext`, so
   `$0` arrives in the extension's isolated world as the same element the engine finds. The answer is plain data
-  (`src/shared/devtools-selection.ts`). Firefox has no `useContentScriptContext`: there `$0` is marked with an
+  (`src/shared/devtools-selection.ts`), the element's copy facts included. Firefox has no `useContentScriptContext`: there `$0` is marked with an
   attribute in the page's world and the content script is asked by message (unverified in Firefox so far).
 - **Access** is the tab's `activeTab` grant or the origin's optional host permission. When injection fails on a web
   page, the pane offers **Allow on this site**, which requests that one origin inside the click. Reading the page's
@@ -732,6 +732,14 @@ the focus on its first control, Tab kept inside, and the focus given back as it 
 Assertions, Context for an AI agent, Test functions). **A copy button goes through `copyWithFeedback`**
 (`src/shared/clipboard.ts`, extension pages too): the copy command when the clipboard API refuses, Copied or Not copied
 for a moment, and the button's own label back however often it is clicked.
+
+**The Action and Assertion copy modes write what the element calls for.** `renderCopyMode`
+(`src/shared/copy-modes.ts`) stays pure: it takes the locator and `ElementFacts`, plain data read from the element
+where it is at hand (`elementFacts`, `src/content/element-facts.ts`): `fill` with the field's value (a placeholder
+for an empty field or one `isSensitiveField` masks), `check`, `selectOption`, else `click`; and the first of
+`assertionsFor` (`assertion-suggest.ts`, the Assertions dialog's own list). A locator finding several elements asserts
+`toHaveCount`. The in-page panels pass the facts to `copyModeButtons` (`copy-mode-row.ts`, `copyFacts`); the Elements
+sidebar gets them in the ranking `devtools-rank.ts` answers. Each button names the method it writes, "Action (fill)".
 
 ## Buttons, icons and readable steps
 

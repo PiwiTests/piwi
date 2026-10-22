@@ -25,7 +25,7 @@ import { bindToTool, toolIsCurrent } from '../shared/tool-session.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { BUTTON_CSS, makeButton, styleButton } from '../shared/buttons.js';
 import { iconText, type IconName } from '../shared/icons.js';
-import { COPY_MODE_CSS, copyModeButtons } from './copy-mode-row.js';
+import { COPY_MODE_CSS, copyFacts, copyModeButtons } from './copy-mode-row.js';
 
 const HOST_ID = 'piwi-picker-results-host';
 
@@ -233,7 +233,7 @@ export async function renderResultsPanel(
       const actions = document.createElement('div');
       actions.className = 'row-actions';
       actions.appendChild(
-        copyModeButtons(alt.locator, panel, activeMode, (mode) => {
+        copyModeButtons({ ...alt, facts: copyFacts(target) }, panel, activeMode, (mode) => {
           activeMode = mode;
         }),
       );
@@ -242,8 +242,8 @@ export async function renderResultsPanel(
         const send = makeButton(
           t('pick_sendToEditor'),
           () => {
-            void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode) }).then((result) =>
-              showSendResult(send, result),
+            void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode, copyFacts(target)) }).then(
+              (result) => showSendResult(send, result),
             );
           },
           { icon: 'send', small: true, className: 'send' },

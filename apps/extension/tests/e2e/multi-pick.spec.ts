@@ -245,9 +245,12 @@ test.describe('multi-pick.js', () => {
     await expect(panel).toHaveAttribute('aria-modal', 'true');
 
     const rows = panel.locator('.row');
-    await rows.nth(1).getByRole('button', { name: 'Action', exact: true }).click();
+    await rows
+      .nth(1)
+      .getByRole('button', { name: /^Action/ })
+      .click();
     for (const row of await rows.all()) {
-      await expect(row.getByRole('button', { name: 'Action', exact: true })).toHaveAttribute('data-active', 'true');
+      await expect(row.getByRole('button', { name: /^Action/ })).toHaveAttribute('data-active', 'true');
     }
   });
 

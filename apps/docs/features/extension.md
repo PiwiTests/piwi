@@ -75,8 +75,12 @@ scored as the dashboard scores locators, and run against the page. Those that fi
 first; one that also finds others is offered narrowed (exact, filtered by its text, or scoped to
 its landmark, dialog or row) and, failing that, with `.first()` or `.nth()` and a warning.
 
-Copy the result as the bare locator, an action line or a visibility assertion; **Copy all** copies every ranked
-locator for a project's [Locators page](./locator-usage#the-locators-page).
+Copy the result as the bare locator, an action line or an assertion; **Copy all** copies every ranked locator for a
+project's [Locators page](./locator-usage#the-locators-page). The action is the one the element calls for: `fill` with
+what a field holds (`'value'` for an empty field or a password), `check` for a checkbox or a radio, `selectOption` for
+a select, `click` for anything else. The assertion is the element's first
+[suggestion](#assertion-suggester), and `toHaveCount` for a locator that finds several elements. Each button names
+what it writes, such as **Action (fill)** or **Assertion (toHaveText)**.
 
 ## Multi-pick
 
@@ -95,8 +99,9 @@ and a Markdown checklist.
 
 ## Assertion suggester
 
-Pick an element to get the `expect(...)` candidates that apply to it (`toHaveValue`, `toHaveText`,
-`toHaveAccessibleName`, `toBeVisible`), built on its top-ranked locator. `toHaveAccessibleName` is offered only for an
+Pick an element to get the `expect(...)` candidates that apply to it, most telling first (`toHaveValue`,
+`toBeChecked`, `toContainText` with the start of a long text, `toHaveText`, `toHaveAccessibleName`, `toBeVisible`),
+built on its top-ranked locator. `toHaveAccessibleName` is offered only for an
 element that has a name, as Playwright computes it: a paragraph takes none from its text, a field takes its label's.
 
 ## Copy context for agent

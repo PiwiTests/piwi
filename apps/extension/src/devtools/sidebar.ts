@@ -1,6 +1,6 @@
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { copyWithFeedback } from '../shared/clipboard.js';
-import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
+import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, copyModeMethod, renderCopyMode } from '../shared/copy-modes.js';
 import { stabilityRulesText } from '../shared/core-words.js';
 import { describeSelection, type SelectionLocator, type SelectionRanking } from '../shared/devtools-selection.js';
 import { initI18n, localizeDocument, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
@@ -140,10 +140,12 @@ function locatorRow(
   const actions = el('div', 'row-actions');
   actions.appendChild(el('span', 'copy-label', t('devtools_copyAs')));
   for (const mode of COPY_MODES) {
-    const copy = button(copyModeLabel(mode), () => void copyWithFeedback(renderCopyMode(locator, mode), copy), {
+    const text = renderCopyMode(locator, mode, ranking.facts);
+    const label = copyModeLabel(mode, copyModeMethod(locator, mode, ranking.facts));
+    const copy = button(label, () => void copyWithFeedback(text, copy), {
       icon: COPY_MODE_ICONS[mode],
       tone: 'ghost',
-      title: renderCopyMode(locator, mode),
+      title: text,
     });
     actions.appendChild(copy);
   }

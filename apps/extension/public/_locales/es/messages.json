@@ -1181,6 +1181,19 @@
   "common_copyModeExpect": {
     "message": "Aserción"
   },
+  "common_copyModeWithMethod": {
+    "message": "$mode$ ($method$)",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "fill"
+      },
+      "mode": {
+        "content": "$2",
+        "example": "Action"
+      }
+    }
+  },
   "multipick_picked_one": {
     "message": "$count$ elemento similar elegido",
     "placeholders": {
