@@ -367,7 +367,7 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
     expect(findings[findings.length - 1]).toMatchObject({ role: 'button', suggestion: { value: 'button-300' } });
   });
 
-  test('checks a 1,000-row table with a Delete button per row in seconds', async ({ context }) => {
+  test('checks a 1,000-row table with a Delete button per row', async ({ context }) => {
     const page = await context.newPage();
     // Twenty texts a row, every one but the name shared with other rows: each row's Delete button is narrowed by
     // the row showing its name, after the shared texts are tried against every row.
@@ -377,13 +377,9 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
       return `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}<td><button>Delete</button></td></tr>`;
     });
     await page.setContent(`<!doctype html><html><body><table><tbody>${rows.join('')}</tbody></table></body></html>`);
-    const started = Date.now();
-    const findings = await scan(page);
-    const elapsed = Date.now() - started;
-    console.log(`lint scan of a 1,000-row table: ${elapsed} ms`);
-    // The ranking finds each button through its row: nothing to lint.
-    expect(findings).toEqual([]);
-    expect(elapsed).toBeLessThan(7000);
+    // The ranking finds each button through its row: nothing to lint. How many texts the narrowing reads is
+    // counted in multi-pick-derive.spec.ts; the time a runner takes is not checked here.
+    expect(await scan(page)).toEqual([]);
   });
 
   test('checks the elements inside a web component', async ({ context }) => {
