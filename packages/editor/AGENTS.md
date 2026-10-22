@@ -118,10 +118,10 @@ clients stay thin and both editors give the same answers.
   instance's arguments, or by location (`RunTestsArgs.locations`: a spec under the context's folder and the line of
   its `test(…)` call, `isTestLocation` and `specLocation`, which needs no instance: a test just recorded), and with
   `repeat` each test that many times without retries and without the breakpoints (`repeatArgs`:
-  `--repeat-each=3 --retries=0`, for **Verify ×3**). The instance keeps one result of a test per attempt and project,
-  so a repeated command's run has the `test-completed` results of its stream counted, once per execution
-  (`RunWatch.tally`), and its `piwi/runEnded` carries `repeat` (`repeatVerdict`: `Passed 3 of 3`, `Failed 1 of 3`,
-  `Failed at least 1 of 3` when the stream missed some); when its run reached no instance, its `piwi/commandEnded`
+  `--repeat-each=3 --retries=0`, for **Verify ×3**). A repeated command's run has the `test-completed` results of its
+  stream counted, once per execution (`RunWatch.tally`), beside the run's counts, which hold one result per attempt,
+  project and repetition (an older instance kept one per attempt and project), and its `piwi/runEnded` carries
+  `repeat` (`repeatVerdict`: `Passed 3 of 3`, `Failed 1 of 3`, `Failed at least 1 of 3` when the stream missed some); when its run reached no instance, its `piwi/commandEnded`
   brings a `piwi/notice` from the exit code (`exitVerdict`). The service looks for the run carrying it
   (`latest-run?origin=editor&ref=` for two minutes: every 2 s while the instance's stream is down, every 20 s while it
   is connected, since its `run-started` names the run, and once when the stream connects; or a `run-started` whose

@@ -159,9 +159,9 @@ export interface RepeatCount {
 
 /**
  * How many runs of a run that ran each test `repeat` times passed: `Passed 3 of 3`, `Failed 1 of 3`. The runs are the
- * run's tests (each once per Playwright project, as the instance counts them) times `repeat`. The instance keeps one
- * result of a test per attempt and project, so the runs are counted from the results the run's stream brought; when it
- * did not bring them all, a run that failed says `Failed at least 1 of 3`, and one that did not, that they all passed.
+ * run's tests, which the instance counts once per Playwright project and repetition, and at least the results the run's
+ * stream brought and `repeat`. When the stream did not bring every result, a run that failed says
+ * `Failed at least 1 of 3`, and one that did not, that they all passed.
  */
 export function repeatVerdict(
   repeat: number,
@@ -169,10 +169,10 @@ export function repeatVerdict(
   run: Pick<RunDetails, 'totalTests' | 'failedTests' | 'skippedTests'>,
 ): RepeatVerdict {
   const seen = counted.passed + counted.failed + counted.skipped;
-  const total = Math.max(repeat * run.totalTests, seen);
+  const total = run.totalTests || seen ? Math.max(run.totalTests, seen, repeat) : 0;
   if (!total) return { verdict: 'No test ran', failed: false };
   if (!counted.failed && !run.failedTests) {
-    const skipped = Math.min(total, Math.max(counted.skipped, repeat * run.skippedTests));
+    const skipped = Math.min(total, Math.max(counted.skipped, run.skippedTests));
     if (skipped === total) return { verdict: `Skipped ${total} of ${total}`, failed: false };
     return { verdict: `Passed ${total - skipped} of ${total}${skipped ? `, ${skipped} skipped` : ''}`, failed: false };
   }

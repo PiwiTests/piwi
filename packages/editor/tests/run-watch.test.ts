@@ -28,7 +28,7 @@ describe('the test a live run event names by its title', () => {
 });
 
 describe('the verdict of a run of each test several times', () => {
-  const run = (failedTests: number, totalTests = 1, skippedTests = 0) => ({ totalTests, failedTests, skippedTests });
+  const run = (failedTests: number, totalTests = 3, skippedTests = 0) => ({ totalTests, failedTests, skippedTests });
 
   const verdict = (...args: Parameters<typeof repeatVerdict>) => repeatVerdict(...args).verdict;
 
@@ -42,9 +42,11 @@ describe('the verdict of a run of each test several times', () => {
       failed: true,
     });
     // Two tests, or one test on two Playwright projects.
-    expect(verdict(3, { passed: 4, failed: 2, skipped: 0 }, run(1, 2))).toBe('Failed 2 of 6');
-    expect(verdict(3, { passed: 3, failed: 0, skipped: 3 }, run(0, 2, 1))).toBe('Passed 3 of 6, 3 skipped');
-    expect(verdict(3, { passed: 0, failed: 0, skipped: 3 }, run(0, 1, 1))).toBe('Skipped 3 of 3');
+    expect(verdict(3, { passed: 4, failed: 2, skipped: 0 }, run(2, 6))).toBe('Failed 2 of 6');
+    expect(verdict(3, { passed: 3, failed: 0, skipped: 3 }, run(0, 6, 3))).toBe('Passed 3 of 6, 3 skipped');
+    expect(verdict(3, { passed: 0, failed: 0, skipped: 3 }, run(0, 3, 3))).toBe('Skipped 3 of 3');
+    // An instance that counted one result per test still reads the stream's three.
+    expect(verdict(3, { passed: 2, failed: 1, skipped: 0 }, run(1, 1))).toBe('Failed 1 of 3');
   });
 
   test('says what the run is sure of when its stream did not bring every result', () => {

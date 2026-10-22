@@ -2276,23 +2276,23 @@ describe('runs as they happen', () => {
     await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 62));
     await waitFor(() => (runStreams.get(62)?.size ? true : undefined));
 
-    // The instance keeps one result of a test per attempt and project: the stream brings each of the three runs, and
-    // a catch-up sends the kept one again.
-    const result = (status: string, executionId: number | null) => ({
+    // The stream brings each of the three runs, and a catch-up sends one again.
+    const result = (status: string, executionId: number, repeatEachIndex: number) => ({
       title: 'pays',
       filePath: 'tests/checkout.spec.ts',
-      testCaseId: executionId === null ? null : 1,
+      testCaseId: 1,
       status,
       retries: 0,
+      repeatEachIndex,
       browser: 'chromium',
       executionId,
     });
-    pushRunEvent(62, 'test-completed', result('passed', 1201));
-    pushRunEvent(62, 'test-completed', result('failed', null));
-    pushRunEvent(62, 'test-completed', result('passed', null));
-    pushRunEvent(62, 'test-completed', result('passed', 1201));
-    runDetails.set(62, { ...runDetails.get(62), status: 'failed', totalTests: 1, passedTests: 0, failedTests: 1 });
-    pushRunEvent(62, 'run-finished', { status: 'failed', totalTests: 1, passedTests: 0, failedTests: 1 });
+    pushRunEvent(62, 'test-completed', result('passed', 1201, 0));
+    pushRunEvent(62, 'test-completed', result('failed', 1202, 1));
+    pushRunEvent(62, 'test-completed', result('passed', 1203, 2));
+    pushRunEvent(62, 'test-completed', result('passed', 1201, 0));
+    runDetails.set(62, { ...runDetails.get(62), status: 'failed', totalTests: 3, passedTests: 2, failedTests: 1 });
+    pushRunEvent(62, 'run-finished', { status: 'failed', totalTests: 3, passedTests: 2, failedTests: 1 });
     pushInstanceEvent({ type: 'run-finished', runId: 62, projectId: 7, status: 'failed' });
     const verdict = await waitFor(() => verdicts.find((v) => v.runId === 62));
     expect(verdict).toMatchObject({ runId: 62, failed: 1, repeat: { verdict: 'Failed 1 of 3', failed: true } });
