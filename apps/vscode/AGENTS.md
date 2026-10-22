@@ -33,7 +33,7 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
 - The service's environment follows the editor's proxy settings (`serviceEnvironment` in `src/glue.ts`: `http.proxy`,
   with a `Basic` `http.proxyAuthorization` as its credentials, `http.noProxy` and `http.proxyStrictSSL`, as
-  `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `NODE_USE_ENV_PROXY` and `NODE_TLS_REJECT_UNAUTHORIZED` over the extension
+  `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `NODE_TLS_REJECT_UNAUTHORIZED` over the extension
   host's environment, which passes `NODE_EXTRA_CA_CERTS` through); a change of one starts the service again, 250 ms
   after the last of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's output
   channel, where `piwi.trace.server` writes the traffic with the service.

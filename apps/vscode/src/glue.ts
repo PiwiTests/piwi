@@ -981,15 +981,15 @@ function proxyUrl(proxy: string, authorization: string | null | undefined): stri
 }
 
 /**
- * The environment the editor service starts with: the editor's, `env`, with its proxy settings as the variables Node
- * reads under `NODE_USE_ENV_PROXY` (Node 24 and later): `HTTPS_PROXY` and `HTTP_PROXY` from `http.proxy`, a `Basic`
+ * The environment the editor service starts with: the editor's, `env`, with its proxy settings as the variables the
+ * service reaches an instance through: `HTTPS_PROXY` and `HTTP_PROXY` from `http.proxy`, a `Basic`
  * `http.proxyAuthorization` folded in as its credentials, `NO_PROXY` from `http.noProxy`, and
  * `NODE_TLS_REJECT_UNAUTHORIZED=0` while `http.proxyStrictSSL` is off. A setting left empty keeps the environment's
  * own variable, as it does for the editor. A private certificate authority reaches the service as
  * `NODE_EXTRA_CA_CERTS` in `env`.
  */
 export function serviceEnvironment(settings: ProxySettings, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const result: NodeJS.ProcessEnv = { ...env, NODE_USE_ENV_PROXY: '1' };
+  const result: NodeJS.ProcessEnv = { ...env };
   const proxy = settings.proxy?.trim();
   if (proxy) {
     const url = proxyUrl(proxy, settings.proxyAuthorization);

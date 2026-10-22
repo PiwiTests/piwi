@@ -50,7 +50,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
     }
 
-    /** The service's process gets the IDE's HTTP proxy, as the variables Node reads; nothing when the IDE reaches the instance directly. */
+    /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
     fun testTheServiceGetsTheIdesProxy() {
         val selector = object : java.net.ProxySelector() {
             override fun select(uri: java.net.URI): List<java.net.Proxy> =
@@ -66,7 +66,6 @@ class PiwiPluginTest : BasePlatformTestCase() {
             val environment = PiwiLspServerDescriptor(project).proxyEnvironment(selector)
             assertEquals("http://proxy.example.com:3128", environment["HTTPS_PROXY"])
             assertEquals("http://proxy.example.com:3128", environment["HTTP_PROXY"])
-            assertEquals("1", environment["NODE_USE_ENV_PROXY"])
             assertEquals("localhost,127.0.0.1,::1", environment["NO_PROXY"])
             settings.serverUrl = ""
             assertEquals("no proxy for a public address, none for the service", emptyMap<String, String>(), PiwiLspServerDescriptor(project).proxyEnvironment(selector))

@@ -93,7 +93,8 @@ app.
 
 In VS Code, the editor service reaches the instance through the editor's own proxy settings: `http.proxy`, with
 `http.proxyAuthorization` when it is a `Basic` credential, `http.noProxy`, and `http.proxyStrictSSL`, which turned
-off leaves every certificate unverified. With `http.proxy` empty, the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
+off leaves every certificate unverified. An instance on your machine (`localhost`, `127.0.0.1`), and the desktop
+app, are reached directly. With `http.proxy` empty, the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
 variables of the environment VS Code was started with apply, as they do to the editor. A change of these settings
 starts the service again. An instance whose certificate a private certificate authority signed needs that authority
 in `NODE_EXTRA_CA_CERTS` in the environment VS Code was started with: the extension passes the environment through

@@ -152,6 +152,9 @@ clients stay thin and both editors give the same answers.
   too; never re-implement a core function.
 - `src/context.ts` is one Playwright config of the workspace: its connection, project, branch and cached indexes.
 - `src/piwi-client.ts` is the only file that talks to an instance; it opens the event streams `src/run-stream.ts` reads.
+  Its requests go through `src/http.ts`: with a proxy in the service's environment (`HTTPS_PROXY`, `HTTP_PROXY`,
+  `NO_PROXY`, which both clients set from the editor's proxy settings), an instance off this machine is reached
+  through it (`undici`'s `EnvHttpProxyAgent`, which Node 20 and 22 lack); this machine's addresses directly.
 - `src/desktop-jobs.ts` passes a failure of the team instance to the desktop app as a job (`@piwitests/core/desktop-job`,
   with the token of the app's discovery file), polls its verdict and shares a bisect's first bad commit on the instance
   with the editor's key. A `flake-lab` job carries the test's reproduce plan, read from the instance with recording on

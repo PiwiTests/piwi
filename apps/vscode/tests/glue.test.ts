@@ -1264,23 +1264,18 @@ describe('calls coalesced into one', () => {
 describe('the environment the editor service starts with', () => {
   const env = { PATH: '/usr/bin', NODE_EXTRA_CA_CERTS: '/etc/ssl/corp.pem' };
 
-  test('is the editor’s, with Node reading its proxy variables', () => {
+  test('is the editor’s, its proxy variables included', () => {
     expect(serviceEnvironment({}, { ...env, https_proxy: 'http://shell:3128' })).toEqual({
       ...env,
       https_proxy: 'http://shell:3128',
-      NODE_USE_ENV_PROXY: '1',
     });
-    expect(serviceEnvironment({ proxy: ' ', noProxy: [], proxyStrictSSL: true }, env)).toEqual({
-      ...env,
-      NODE_USE_ENV_PROXY: '1',
-    });
+    expect(serviceEnvironment({ proxy: ' ', noProxy: [], proxyStrictSSL: true }, env)).toEqual(env);
   });
 
   test('the editor’s proxy replaces the environment’s, for http and https alike', () => {
     const shell = { ...env, https_proxy: 'http://shell:3128', http_proxy: 'http://shell:3128' };
     expect(serviceEnvironment({ proxy: ' http://proxy.corp:3128 ' }, shell)).toEqual({
       ...env,
-      NODE_USE_ENV_PROXY: '1',
       HTTPS_PROXY: 'http://proxy.corp:3128',
       HTTP_PROXY: 'http://proxy.corp:3128',
     });

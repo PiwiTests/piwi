@@ -350,13 +350,12 @@ class GlueTest {
     }
 
     @Test
-    fun `the IDE's proxy reaches the service as the variables Node reads, this machine left direct`() {
+    fun `the IDE's proxy reaches the service as the variables it reads, this machine left direct`() {
         assertEquals(
             mapOf(
                 "HTTPS_PROXY" to "http://proxy.example.com:3128",
                 "HTTP_PROXY" to "http://proxy.example.com:3128",
                 "NO_PROXY" to "localhost,127.0.0.1,::1",
-                "NODE_USE_ENV_PROXY" to "1",
             ),
             Glue.proxyEnvironment("proxy.example.com", 3128, emptyList()),
         )

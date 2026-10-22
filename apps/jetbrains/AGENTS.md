@@ -22,8 +22,8 @@ later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `P
 (`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
 while it does not run. The service's process gets the IDE's HTTP proxy for the instance the project names
 (`PiwiLspServerDescriptor.proxyEnvironment`: the default `ProxySelector`, which holds the IDE's proxy settings, asked
-for that address, else for a public one), as `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` with this machine's names, and
-`NODE_USE_ENV_PROXY` (`Glue.proxyEnvironment`).
+for that address, else for a public one), as `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` with this machine's names (`Glue.proxyEnvironment`), which the
+service's `src/http.ts` reads.
 
 - **Nothing starts in an untrusted project.** In a project opened in safe mode (`PiwiProjectService.trusted`, the
   platform's `isTrusted`), the plugin starts no editor service, runs no command (`PiwiCommands.run`, `startRun`) and

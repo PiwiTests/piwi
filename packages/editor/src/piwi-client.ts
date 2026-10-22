@@ -15,6 +15,7 @@ import type { PiwiConnection } from '@piwitests/core/dotenv';
 import type { BisectResultBody } from '@piwitests/core/bisect';
 import type { DesktopJobRequest, DesktopJobVerdict, FlakeLabJobPlan } from '@piwitests/core/desktop-job';
 import type { TimeoutAdvice } from './analysis.js';
+import { instanceFetch } from './http.js';
 
 const TIMEOUT_MS = 15_000;
 /** How long a stored file may take to download: a trace can weigh tens of megabytes. */
@@ -362,7 +363,7 @@ export class PiwiClient {
   ) {}
 
   private async fetchJson<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.connection.serverUrl}${path}`, {
+    const response = await instanceFetch(`${this.connection.serverUrl}${path}`, {
       headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -438,7 +439,7 @@ export class PiwiClient {
     path: string,
     known: { etag: string; value: T } | null,
   ): Promise<{ value: T; etag: string | null }> {
-    const response = await fetch(`${this.connection.serverUrl}${path}`, {
+    const response = await instanceFetch(`${this.connection.serverUrl}${path}`, {
       headers: {
         ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
         ...(known ? { 'If-None-Match': known.etag } : {}),
@@ -451,7 +452,7 @@ export class PiwiClient {
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
-    const response = await fetch(`${this.connection.serverUrl}${path}`, {
+    const response = await instanceFetch(`${this.connection.serverUrl}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -568,7 +569,7 @@ export class PiwiClient {
 
   /** A server-sent events stream, open until it ends or `signal` aborts. */
   private stream(path: string, signal: AbortSignal): Promise<Response> {
-    return fetch(`${this.connection.serverUrl}${path}`, {
+    return instanceFetch(`${this.connection.serverUrl}${path}`, {
       headers: {
         Accept: 'text/event-stream',
         ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
@@ -593,7 +594,7 @@ export class PiwiClient {
   /** A stored file written to `target` as it arrives, through a partial file beside it renamed once complete. */
   async download(storedPath: string, target: string): Promise<void> {
     const encoded = storedPath.split('/').map(encodeURIComponent).join('/');
-    const response = await fetch(`${this.connection.serverUrl}/api/files/${encoded}`, {
+    const response = await instanceFetch(`${this.connection.serverUrl}/api/files/${encoded}`, {
       headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},
       signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
     });
@@ -726,7 +727,7 @@ export class PiwiClient {
 
   /** The same plan as Markdown, for an agent. */
   async fixPlanMarkdown(clusterId: number): Promise<string> {
-    const response = await fetch(
+    const response = await instanceFetch(
       `${this.connection.serverUrl}/api/failure-clusters/${clusterId}/fix-plan?format=markdown`,
       {
         headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},

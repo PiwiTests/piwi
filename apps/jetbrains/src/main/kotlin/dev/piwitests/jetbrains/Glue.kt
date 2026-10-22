@@ -890,8 +890,8 @@ object Glue {
     private val LOOPBACK_NAMES = listOf("localhost", "127.0.0.1", "::1")
 
     /**
-     * The environment that takes the service's Node.js through the IDE's HTTP proxy at `host`:`port`: `HTTPS_PROXY` and
-     * `HTTP_PROXY` naming it, `NODE_USE_ENV_PROXY` so Node reads them, and `NO_PROXY` with this machine's names and
+     * The environment that takes the service through the IDE's HTTP proxy at `host`:`port`: `HTTPS_PROXY` and
+     * `HTTP_PROXY` naming it, and `NO_PROXY` with this machine's names and
      * `exceptions`, the hosts the IDE reaches directly, a `*.example.com` pattern as the `.example.com` suffix Node
      * matches.
      */
@@ -903,7 +903,6 @@ object Glue {
             "HTTPS_PROXY" to proxy,
             "HTTP_PROXY" to proxy,
             "NO_PROXY" to (LOOPBACK_NAMES + direct).distinct().joinToString(","),
-            "NODE_USE_ENV_PROXY" to "1",
         )
     }
 
