@@ -98,6 +98,12 @@ export interface LocatorMatch {
 }
 
 export type LocatorQueryResult =
-  | { ok: true; count: number; matches: LocatorMatch[] }
+  | {
+      ok: true;
+      count: number;
+      matches: LocatorMatch[];
+      /** What the Action and Assertion copy modes write for the first match; null when nothing matches. */
+      facts: ElementFacts | null;
+    }
   /** The expression is not a locator, or names a CSS selector the page refuses (`selector`). */
   | { ok: false; error: string; selector: string | null };

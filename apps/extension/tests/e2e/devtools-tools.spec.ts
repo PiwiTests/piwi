@@ -192,6 +192,34 @@ test.describe('the Piwi panel’s Locators console', () => {
     await expect(panel.getByRole('button', { name: 'Send to editor' })).toHaveCount(0);
   });
 
+  test('copies the assertion the matches call for: a count for several, the element’s own for one', async ({
+    context,
+    extensionId,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const shop = await openShop(context);
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    await panel.getByRole('tab', { name: 'Locators' }).click();
+    const input = panel.getByRole('textbox', { name: 'Locator to try' });
+    const copied = async (name: string): Promise<string> => {
+      await panel.getByRole('button', { name, exact: true }).click();
+      return panel.evaluate(() => navigator.clipboard.readText());
+    };
+
+    await input.fill("getByRole('button', { name: 'Show popup' })");
+    await expect(panel.getByRole('status')).toHaveText('2 elements: strict mode fails');
+    const many = await copied('Assertion (toHaveCount)');
+    expect(many).toBe("await expect(page.getByRole('button', { name: 'Show popup' })).toHaveCount(2);");
+    await expect(shop.getByRole('button', { name: 'Show popup' })).toHaveCount(2);
+
+    await input.fill("getByTestId('apply-coupon')");
+    await expect(panel.getByRole('status')).toHaveText('One element: strict mode passes');
+    expect(await copied('Assertion (toHaveText)')).toBe(
+      "await expect(page.getByTestId('apply-coupon')).toHaveText('Apply coupon');",
+    );
+    expect(await copied('Action (click)')).toBe("await page.getByTestId('apply-coupon').click();");
+  });
+
   test('sends the locator to the paired editor in the copy mode chosen last', async ({ context, extensionId }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const shop = await openShop(context);
@@ -223,11 +251,14 @@ test.describe('the Piwi panel’s Locators console', () => {
     await send.click();
     await expect(panel.getByRole('button', { name: 'Sent' })).toBeVisible();
     await panel.getByRole('button', { name: 'Assertion' }).click();
-    await expect(send).toHaveAttribute('title', "await expect(page.getByTestId('apply-coupon')).toBeVisible();");
+    await expect(send).toHaveAttribute(
+      'title',
+      "await expect(page.getByTestId('apply-coupon')).toHaveText('Apply coupon');",
+    );
     await send.click();
     await expect.poll(sent).toEqual([
       { kind: 'locator', text: "page.getByTestId('apply-coupon')" },
-      { kind: 'locator', text: "await expect(page.getByTestId('apply-coupon')).toBeVisible();" },
+      { kind: 'locator', text: "await expect(page.getByTestId('apply-coupon')).toHaveText('Apply coupon');" },
     ]);
   });
 });

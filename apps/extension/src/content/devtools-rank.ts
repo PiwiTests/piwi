@@ -85,6 +85,7 @@ function queryLocator(expression: string): LocatorQueryResult {
     return {
       ok: true,
       count: lastMatches.length,
+      facts: lastMatches[0] ? elementFacts(lastMatches[0]) : null,
       matches: lastMatches.slice(0, MAX_MATCHES).map((element) => {
         const role = engine.model.role(element);
         const text = normalizeWhiteSpace(element.textContent ?? '');

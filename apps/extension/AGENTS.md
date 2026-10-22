@@ -725,7 +725,7 @@ style.
   Enter evaluates at once and keeps the expression in the console's history (`src/shared/locator-console.ts`, under
   `LOCATOR_HISTORY_KEY` through `sessionArea()`, so it outlives the panel), which `HistoryCursor` walks with the arrow
   keys; the panel opened again shows the newest entry. A locator that reads gets Copy as (each copy mode, through one
-  `renderCopyMode` call), Add to session (`session-form.ts`, the name checked by `pickNameProblem`) and, with an editor
+  `renderCopyMode` call given the match count and the first match's facts, which the query answers), Add to session (`session-form.ts`, the name checked by `pickNameProblem`) and, with an editor
   paired, Send to editor (`editor-send.ts`, a `locator` payload in the copy mode chosen last), each keeping the
   expression in the history too. The Session tab's page object and the Network tab's mock code have no Send to editor:
   the editor protocol (`@piwitests/core/editor-send`) takes a locator line or a steps document, and a block of code

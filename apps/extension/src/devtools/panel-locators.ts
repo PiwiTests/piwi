@@ -1,5 +1,14 @@
 import { copyWithFeedback } from '../shared/clipboard.js';
-import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, renderCopyMode, type CopyMode } from '../shared/copy-modes.js';
+import {
+  COPY_MODE_ICONS,
+  COPY_MODES,
+  copyModeLabel,
+  copyModeMethod,
+  renderCopyMode,
+  type CopyMode,
+  type CopySource,
+  type ElementFacts,
+} from '../shared/copy-modes.js';
 import type { LocatorMatch, LocatorQueryResult } from '../shared/devtools-selection.js';
 import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
@@ -33,9 +42,14 @@ let expression: string | null = null;
 /** The copy mode chosen last, which Send to editor sends. */
 let sendMode: CopyMode = 'bare';
 
+/** A locator that reads, with what the engine found for it: how many elements, and the first one's copy facts. */
+interface ConsoleLocator extends CopySource {
+  facts: ElementFacts | null;
+}
+
 /** The locator as `mode` writes it: the console's one rendering of a copy mode. */
-function inMode(locator: string, mode: CopyMode): string {
-  return renderCopyMode({ locator }, mode);
+function inMode(source: ConsoleLocator, mode: CopyMode): string {
+  return renderCopyMode(source, mode, source.facts);
 }
 
 /** The inspected page's address, read in the page, for a pick added to the session. */
@@ -49,14 +63,14 @@ async function inspectedHref(): Promise<string> {
  * to session and, with an editor paired, Send to editor in the copy mode chosen
  * last, each keeping the expression in the history first.
  */
-function actionsRow(host: HTMLElement, locator: string, paired: boolean, remember: () => void): HTMLElement {
+function actionsRow(host: HTMLElement, source: ConsoleLocator, paired: boolean, remember: () => void): HTMLElement {
   const row = el('div', 'row-actions');
   row.appendChild(el('span', 'copy-label', t('devtools_copyAs')));
   let send: HTMLButtonElement | null = null;
   for (const mode of COPY_MODES) {
-    const text = inMode(locator, mode);
+    const text = inMode(source, mode);
     const copy = button(
-      copyModeLabel(mode),
+      copyModeLabel(mode, copyModeMethod(source, mode, source.facts)),
       () => {
         remember();
         sendMode = mode;
@@ -72,11 +86,11 @@ function actionsRow(host: HTMLElement, locator: string, paired: boolean, remembe
       t('devtools_sendToEditor'),
       () => {
         remember();
-        void sendToEditor({ kind: 'locator', text: inMode(locator, sendMode) }).then((result) =>
+        void sendToEditor({ kind: 'locator', text: inMode(source, sendMode) }).then((result) =>
           showSendResult(sent, result),
         );
       },
-      { icon: 'send', tone: 'ghost', className: 'send', title: inMode(locator, sendMode) },
+      { icon: 'send', tone: 'ghost', className: 'send', title: inMode(source, sendMode) },
     );
     send = sent;
     row.appendChild(sent);
@@ -86,7 +100,7 @@ function actionsRow(host: HTMLElement, locator: string, paired: boolean, remembe
       t('devtools_addToSession'),
       () => {
         remember();
-        openSessionForm(host, locator, inspectedHref);
+        openSessionForm(host, source.locator, inspectedHref);
       },
       { icon: 'plus', tone: 'ghost', className: 'add-to-session' },
     ),
@@ -177,7 +191,8 @@ export function renderLocatorsTab(container: HTMLElement): void {
     }
     const canSend = await paired;
     if (mine !== generation) return;
-    actions.replaceChildren(actionsRow(actions, bareLocator(typed), canSend, remember));
+    const source = { locator: bareLocator(typed), count: result.count, facts: result.facts };
+    actions.replaceChildren(actionsRow(actions, source, canSend, remember));
     actions.hidden = false;
     verdict.className = result.count === 1 ? 'status icon-line good-text' : 'status icon-line warn-text';
     const said = el('span');
