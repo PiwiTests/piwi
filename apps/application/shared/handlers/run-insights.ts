@@ -331,12 +331,21 @@ export async function computeRunInsights(
     }
   }
 
-  // Flaky on retry (passed but had retries), each repetition of a test on its own
+  // Flaky on retry (passed but had retries): once per test, with the repetition that needed the most retries
+  const flakyByTest = new Map<string, (typeof flakyOnRetry)[number]>();
   for (const cc of currentCases) {
-    if (cc.status === 'passed' && (cc.retries ?? 0) > 0) {
-      flakyOnRetry.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, retries: cc.retries ?? 0 });
+    if (cc.status !== 'passed' || (cc.retries ?? 0) === 0) continue;
+    const known = flakyByTest.get(testKey(cc));
+    if (!known || (cc.retries ?? 0) > known.retries) {
+      flakyByTest.set(testKey(cc), {
+        executionId: cc.id,
+        title: cc.title,
+        filePath: cc.filePath,
+        retries: cc.retries ?? 0,
+      });
     }
   }
+  flakyOnRetry.push(...flakyByTest.values());
 
   // Summary stats, one per test result
   const totalTests = currentCases.length;

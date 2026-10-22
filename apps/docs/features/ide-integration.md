@@ -59,8 +59,8 @@ workspace folders. It opens the file at its line and column, and never a file ou
    → **Open in IDE…**.
 2. For VS Code without the Piwi extension, or a JetBrains IDE without the Piwi plugin, set your **workspace root**: the
    absolute path of the folder the tests run from, such as `/home/me/my-repo` (or `C:\Users\me\my-repo` on Windows).
-   Repo-relative paths are joined onto it. With the Piwi extension, leave it empty and keep **The Piwi extension is
-   installed in VS Code** ticked, as it is by default.
+   Repo-relative paths are joined onto it. With the Piwi extension, leave it empty and tick **The Piwi extension is
+   installed in VS Code**, or click **Use the Piwi extension** on the toast that asks for a workspace root.
 3. Pick a **method**, or leave it on **Auto**. The **Test** row's **Open package.json** and **Open &lt;your Playwright
    config&gt;** open a known file with your current settings. In the desktop app, the config's file name is read from the linked folder; elsewhere it is `playwright.config.ts`.
 

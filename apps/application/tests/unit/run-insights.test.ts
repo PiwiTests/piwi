@@ -32,7 +32,7 @@ beforeEach(async () => {
   ]);
 });
 
-type Attempt = { testCaseId: number; browserName: string; status: string; retries: number };
+type Attempt = { testCaseId: number; browserName: string; status: string; retries: number; repeatEachIndex?: number };
 
 async function attempts(testRunId: number, rows: Attempt[]) {
   await db.insert(schema.testRunsCases).values(rows.map((row) => ({ testRunId, ...row })));
@@ -72,6 +72,22 @@ describe('computeRunInsights', () => {
     expect(insights.recurrences).toEqual([]);
     expect(insights).toMatchObject({ totalTests: 4, passedTests: 2, failedTests: 2, passRate: 50 });
     expect(insights).toMatchObject({ baselinePassRate: 75, passRateDelta: -25 });
+  });
+
+  test('lists a test flaky on retry once, whatever its repetitions', async () => {
+    await attempts(10, [{ testCaseId: 2, browserName: 'chromium', status: 'passed', retries: 0 }]);
+    await attempts(11, [
+      { testCaseId: 2, browserName: 'chromium', status: 'failed', retries: 0, repeatEachIndex: 0 },
+      { testCaseId: 2, browserName: 'chromium', status: 'passed', retries: 1, repeatEachIndex: 0 },
+      { testCaseId: 2, browserName: 'chromium', status: 'failed', retries: 0, repeatEachIndex: 1 },
+      { testCaseId: 2, browserName: 'chromium', status: 'failed', retries: 1, repeatEachIndex: 1 },
+      { testCaseId: 2, browserName: 'chromium', status: 'passed', retries: 2, repeatEachIndex: 1 },
+      { testCaseId: 2, browserName: 'chromium', status: 'passed', retries: 0, repeatEachIndex: 2 },
+    ]);
+
+    const insights = await computeRunInsights(db as never, 11);
+
+    expect(insights.flakyOnRetry).toEqual([expect.objectContaining({ title: 'login', retries: 2 })]);
   });
 
   test('without a passing run, failedFallback compares with the last failed one', async () => {

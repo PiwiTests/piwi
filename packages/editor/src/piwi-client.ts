@@ -322,6 +322,8 @@ export type ResponseCache = Map<
      * absent from an index, kept by its `ETag`.
      */
     until?: number;
+    /** Whether the request on its way reads a run as it moves (`fresh`): a fresh read joins only such a request. */
+    fresh?: boolean;
   }
 >;
 
@@ -390,16 +392,19 @@ export class PiwiClient {
    * A GET whose request on its way, and its answer for `SHARED_MS`, the clients sharing `answers` reuse: the configs
    * of a repository reading one project read it once per refresh, each getting its own copy of the answer, as if it
    * had parsed it itself. An answer the instance gave an `ETag` (`branch-failures`) is kept past that time and asked
-   * again with it (`If-None-Match`): a 304 gives a copy of the answer kept. `fresh`, for a run as it moves, shares the
-   * request on its way and keeps no answer to share, only one with an `ETag`, to ask with. A request that failed is
-   * shared by the callers that joined it alone. A plain GET without `answers`.
+   * again with it (`If-None-Match`): a 304 gives a copy of the answer kept. `fresh`, for a run as it moves, shares a
+   * request on its way only when it was asked fresh too, since an earlier one may have read the run before it moved, and
+   * keeps no answer to share, only one with an `ETag`, to ask with. A request that failed is shared by the callers that
+   * joined it alone. A plain GET without `answers`.
    */
   private async get<T>(path: string, fresh = false): Promise<T> {
     const answers = this.answers;
     if (!answers) return this.fetchJson<T>(path);
     const key = this.answerKey(path);
     const known = answers.get(key);
-    if (known?.pending) return (known.pending as Promise<T>).then((value) => structuredClone(value));
+    if (known?.pending && (!fresh || known.fresh)) {
+      return (known.pending as Promise<T>).then((value) => structuredClone(value));
+    }
     if (!fresh && known?.until !== undefined && known.until > Date.now()) return structuredClone(known.value as T);
     const kept = known?.etag ? { etag: known.etag, value: known.value as T } : null;
     const asked = this.askKnown<T>(path, kept);
@@ -407,7 +412,7 @@ export class PiwiClient {
     // Awaited by the clients that share it, if any.
     pending.catch(() => {});
     answers.delete(key);
-    answers.set(key, { pending });
+    answers.set(key, fresh ? { pending, fresh } : { pending });
     try {
       const answer = await asked;
       if (answers.get(key)?.pending === pending) {
@@ -417,8 +422,8 @@ export class PiwiClient {
         else answers.set(key, { value: answer.value, until });
       }
       trim(answers);
-      // The answer kept may be another client's.
-      return answer === kept ? structuredClone(answer.value) : answer.value;
+      // An answer kept, this one or another client's, is shared: each caller gets its own copy.
+      return answer === kept || answers.get(key)?.value === answer.value ? structuredClone(answer.value) : answer.value;
     } catch (e) {
       if (answers.get(key)?.pending === pending) {
         if (kept) answers.set(key, { ...kept, until: 0 });

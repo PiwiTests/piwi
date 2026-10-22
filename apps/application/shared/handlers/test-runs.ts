@@ -674,8 +674,14 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
     const existing = g.caseById.get(row.testCaseId);
     const passedOnRetry = passedRepetitions.has(repetitionKey(row));
     if (existing) {
-      existing.passedOnRetry ||= passedOnRetry;
-      if ((row.retries ?? 0) > existing.retries) {
+      // A repetition that failed for good decides the case, and its last attempt is the one shown; the case passed on
+      // a retry only when every failing repetition did.
+      const replaces =
+        existing.passedOnRetry && !passedOnRetry
+          ? true
+          : existing.passedOnRetry === passedOnRetry && (row.retries ?? 0) > existing.retries;
+      existing.passedOnRetry &&= passedOnRetry;
+      if (replaces) {
         existing.retries = row.retries ?? 0;
         existing.executionId = row.executionId;
         existing.workerIndex = row.workerIndex;

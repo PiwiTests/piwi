@@ -168,6 +168,18 @@ describe('a submitted --repeat-each run', () => {
     ]);
   });
 
+  test('a case failed for good in one repetition is not passed on retry because another repetition recovered', async () => {
+    const { runId } = await submitRun(
+      [result(0, 'failed', 0), result(0, 'failed', 1), result(1, 'failed', 0), result(1, 'passed', 1)],
+      { totalTests: 2, passedTests: 1, failedTests: 1 },
+    );
+    const hard = (await executions(runId)).find((r) => r.repeatEachIndex === 0 && r.retries === 1)!;
+    const groups = await getFailureGroups(db as never, runId);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ flaky: false });
+    expect(groups[0]!.cases[0]).toMatchObject({ passedOnRetry: false, executionId: hard.id });
+  });
+
   test('a failure cluster is not flaky because another repetition passed', async () => {
     const { runId } = await submitRun(REPEATED, { totalTests: 3, passedTests: 2, failedTests: 1 });
     const groups = await getFailureGroups(db as never, runId);
