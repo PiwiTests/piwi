@@ -132,24 +132,86 @@ function roleLocator(role: string, name: string | null): string {
     : `getByRole(${quoteJsString(role)})`;
 }
 
+interface Heading {
+  heading: Element;
+  text: string;
+}
+
+/**
+ * The page's headings that a slug can be made of, each tree (the document, an open shadow root) in document order,
+ * with their texts: read once per scan rather than once per finding and ancestor.
+ */
+class HeadingIndex {
+  private readonly byRoot = new Map<Node, Heading[]>();
+
+  constructor(elements: readonly Element[], model: DomModel) {
+    for (const element of elements) {
+      if (!element.matches(HEADING_SELECTOR)) continue;
+      const text = model.text(element).normalized;
+      if (!slugify(text)) continue;
+      const root = element.getRootNode();
+      const list = this.byRoot.get(root);
+      if (list) list.push({ heading: element, text });
+      else this.byRoot.set(root, [{ heading: element, text }]);
+    }
+  }
+
+  /**
+   * The text of the heading nearest `element`: in its nearest ancestor below `<body>` that holds one, the last
+   * heading before it, else the first after it. A heading holding the element does not count. Past a shadow root,
+   * the host stands for the element.
+   */
+  nearest(element: Element): string | null {
+    let ref = element;
+    let [before, after] = this.around(ref);
+    for (let ancestor = parentElementOrShadowHost(element); ancestor; ancestor = parentElementOrShadowHost(ancestor)) {
+      if (tagNameOf(ancestor) === 'BODY') break;
+      if (ancestor.getRootNode() !== ref.getRootNode()) {
+        ref = ancestor;
+        [before, after] = this.around(ref);
+      }
+      // An ancestor's descendants follow one another in document order: when it holds any heading before `ref`,
+      // it holds the last one.
+      if (before && ancestor.contains(before.heading)) return before.text;
+      if (after && ancestor.contains(after.heading)) return after.text;
+    }
+    return null;
+  }
+
+  /** The last heading before `ref` in its tree and the first after it, neither holding it. */
+  private around(ref: Element): [Heading | undefined, Heading | undefined] {
+    const list = this.byRoot.get(ref.getRootNode()) ?? [];
+    // How many headings come before `ref`, the ones holding it included.
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (list[mid]!.heading.compareDocumentPosition(ref) & Node.DOCUMENT_POSITION_FOLLOWING) low = mid + 1;
+      else high = mid;
+    }
+    let before = low - 1;
+    while (before >= 0 && list[before]!.heading.contains(ref)) before--;
+    let after = low;
+    while (after < list.length && list[after]!.heading.contains(ref)) after++;
+    return [list[before], list[after]];
+  }
+}
+
 /** The text a slug is made from, and where it comes from: the name, a label, the placeholder, the nearest heading, the role. */
-function slugText(element: Element, role: string, name: string | null, model: DomModel): [string, SlugSource] {
+function slugText(
+  element: Element,
+  role: string,
+  name: string | null,
+  model: DomModel,
+  headings: () => HeadingIndex,
+): [string, SlugSource] {
   if (name && slugify(name)) return [name, 'name'];
   const label = model.labels(element).find((l) => slugify(l.normalized));
   if (label) return [label.normalized, 'label'];
   const placeholder = normalizeWhiteSpace(element.getAttribute('placeholder') ?? '');
   if (slugify(placeholder)) return [placeholder, 'placeholder'];
-  for (let ancestor = parentElementOrShadowHost(element); ancestor; ancestor = parentElementOrShadowHost(ancestor)) {
-    if (tagNameOf(ancestor) === 'BODY') break;
-    const headings = [...ancestor.querySelectorAll(HEADING_SELECTOR)].filter(
-      (h) => !h.contains(element) && slugify(model.text(h).normalized),
-    );
-    // The last heading before the element, else the first after it.
-    const before = headings.filter((h) => h.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
-    const heading = before[before.length - 1] ?? headings[0];
-    if (heading) return [`${model.text(heading).normalized} ${role}`, 'heading'];
-  }
-  return [role, 'role'];
+  const heading = headings().nearest(element);
+  return heading ? [`${heading} ${role}`, 'heading'] : [role, 'role'];
 }
 
 /**
@@ -298,6 +360,8 @@ async function suggest(
     if (group) group.push(f.element);
     else twins.set(twinKey(f), [f.element]);
   }
+  let headingIndex: HeadingIndex | undefined;
+  const headings = (): HeadingIndex => (headingIndex ??= new HeadingIndex(engine.elements(), model));
   const containers = new ContainerFinder(model);
   /** The test id given to each container, which every finding inside it shares. */
   const containerIds = new Map<Element, string>();
@@ -327,7 +391,7 @@ async function suggest(
         continue;
       }
     }
-    const [text, source] = slugText(f.element, f.role, f.accessibleName, model);
+    const [text, source] = slugText(f.element, f.role, f.accessibleName, model, headings);
     const value = claimTestId(slugify(text) || slugify(f.role), used);
     suggestions.push({ kind: 'element', attribute, value, source, locator: `getByTestId(${quoteJsString(value)})` });
   }

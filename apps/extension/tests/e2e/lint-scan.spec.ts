@@ -163,6 +163,52 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
     expect(findings.map((f) => f.suggestion.source)).toEqual(['name', 'name', 'heading', 'heading']);
   });
 
+  test('reads the headings once per scan, not once per finding', async ({ context }) => {
+    const page = await context.newPage();
+    const sections = Array.from(
+      { length: 200 },
+      (_, i) => `<section><button></button><h2>Order ${i}</h2><div><button></button></div></section>`,
+    );
+    await page.setContent(`<!doctype html><html><body><main><h1>Orders</h1>${sections.join('')}</main></body></html>`);
+    await page.evaluate(() => {
+      const g = globalThis as unknown as { __headingQueries: number };
+      g.__headingQueries = 0;
+      for (const proto of [Element.prototype, Document.prototype, DocumentFragment.prototype]) {
+        const original = proto.querySelectorAll;
+        proto.querySelectorAll = function (this: ParentNode, selectors: string) {
+          if (/\bh2\b/.test(selectors)) g.__headingQueries++;
+          return original.call(this, selectors);
+        } as typeof original;
+      }
+    });
+    const findings = await scan(page);
+    expect(findings).toHaveLength(400);
+    // The first button of a section comes before its heading, the second after it.
+    expect(values(findings).slice(0, 4)).toEqual([
+      'order-0-button',
+      'order-0-button-2',
+      'order-1-button',
+      'order-1-button-2',
+    ]);
+    expect(findings.every((f) => f.suggestion.source === 'heading')).toBe(true);
+    expect(
+      await page.evaluate(() => (globalThis as unknown as { __headingQueries: number }).__headingQueries),
+    ).toBeLessThanOrEqual(1);
+  });
+
+  test('names a button inside a web component after the heading beside it there', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body><h2>Page</h2><tool-bar></tool-bar><script>
+      customElements.define('tool-bar', class extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: 'open' }).innerHTML = '<div><h3>Formatting</h3><button></button><button></button></div>';
+        }
+      });
+    </script></body></html>`);
+    expect(values(await scan(page))).toEqual(['formatting-button', 'formatting-button-2']);
+  });
+
   test('never suggests a test id the page already uses', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>
