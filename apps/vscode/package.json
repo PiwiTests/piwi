@@ -82,6 +82,86 @@
         "when": "piwi.failuresView == unavailable"
       }
     ],
+    "walkthroughs": [
+      {
+        "id": "getStarted",
+        "title": "Get started with Piwi",
+        "description": "Connect to your Piwi instance, see the latest CI failures, run and record tests, and give your agent Piwi's MCP server.",
+        "steps": [
+          {
+            "id": "connect",
+            "title": "Connect to your Piwi instance",
+            "description": "Piwi reads your suite's runs from your team's instance, or from the desktop app on this machine. A workspace set up for the reporter is connected already.\n[Connect](command:piwi.connect)",
+            "media": {
+              "markdown": "walkthrough/connect.md"
+            },
+            "completionEvents": [
+              "onContext:piwi.active"
+            ]
+          },
+          {
+            "id": "failures",
+            "title": "See the failures of the latest CI run",
+            "description": "The Failures view lists the failures of the latest CI run on your branch, with your local runs since. Each one is also in the Problems panel, at the line that failed.\n[Open the failures](command:piwi.failures.focus)",
+            "media": {
+              "markdown": "walkthrough/failures.md"
+            },
+            "completionEvents": [
+              "onView:piwi.failures"
+            ]
+          },
+          {
+            "id": "run",
+            "title": "Run the failing tests",
+            "description": "Re-run every test still failing, or, in a spec, run the test at the cursor with `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K` on macOS). When the run ends, the failures show what it fixed.\n[Re-run the failing tests](command:piwi.rerunFailing)",
+            "media": {
+              "markdown": "walkthrough/run.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.rerunFailing",
+              "onCommand:piwi.runTestAtCursor",
+              "onCommand:piwi.verifyTestAtCursor",
+              "onCommand:piwi.runSpec",
+              "onCommand:piwi.runTest"
+            ]
+          },
+          {
+            "id": "record",
+            "title": "Record a test",
+            "description": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the cursor. No instance needed.\n[Record a new test file](command:piwi.recordFile)",
+            "media": {
+              "markdown": "walkthrough/record.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.recordFile",
+              "onCommand:piwi.record"
+            ]
+          },
+          {
+            "id": "mcp",
+            "title": "Give your agent Piwi's MCP server",
+            "description": "Your agent can read the suite's failures, flaky tests and healings. VS Code 1.101 and later lists the server for it with your connection; in another editor, copy its configuration.\n[Copy the MCP server configuration](command:piwi.copyMcpConfiguration)",
+            "media": {
+              "markdown": "walkthrough/mcp.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.copyMcpConfiguration"
+            ]
+          },
+          {
+            "id": "settings",
+            "title": "Open the settings",
+            "description": "Choose how a CI failure shows in the Problems panel, when a run started from the editor says what it changed, and whether runs pause at your breakpoints.\n[Open settings](command:piwi.openSettings)",
+            "media": {
+              "markdown": "walkthrough/settings.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.openSettings"
+            ]
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "piwi.connect",
@@ -101,6 +181,11 @@
       {
         "command": "piwi.openLog",
         "title": "Open the log",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.getStarted",
+        "title": "Get started",
         "category": "Piwi"
       },
       {

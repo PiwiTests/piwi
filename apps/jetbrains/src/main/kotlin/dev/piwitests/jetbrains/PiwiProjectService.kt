@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.credentialStore.generateServiceName
+import com.intellij.ide.BrowserUtil
 import com.intellij.ide.impl.isTrusted
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.notification.NotificationAction
@@ -240,15 +241,15 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * Search for Playwright configs off the event thread; when the answer changes, show or hide the
-     * tool window and the status bar item, and start the editor service on the folders found, or
-     * restart it there.
+     * tool window and the status bar item, start the editor service on the folders found, or
+     * restart it there, and offer the first-run notification ([offerFirstRun]).
      */
     fun findPlaywright() {
         ApplicationManager.getApplication().executeOnPooledThread {
             if (gone.value(null)) return@executeOnPooledThread
             val before = playwright
             val found = searchPlaywright()
-            readKnownAddresses()
+            val addresses = readKnownAddresses()
             if (found == before) return@executeOnPooledThread
             // Once the tool windows are registered.
             val tools = ToolWindowManager.getInstance(project)
@@ -258,7 +259,29 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 project.service<StatusBarWidgetsManager>().updateWidget(PiwiStatusBarWidgetFactory::class.java)
             }
             restartServer(runningOnly = found.configDirs.isEmpty())
+            offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
         }
+    }
+
+    /**
+     * Once per installation, the first time a trusted project holds a Playwright config while nothing connects it
+     * (`Glue.showsFirstRun`, with the addresses the project names in `instances`): what Piwi does, with Connect, the
+     * failures and the documentation one click away.
+     */
+    fun offerFirstRun(found: Glue.PlaywrightSearch, instances: List<String?>) {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        if (!Glue.showsFirstRun(properties.getBoolean(FIRST_RUN_SHOWN), trusted(), found.configDirs, status, instances)) return
+        properties.setValue(FIRST_RUN_SHOWN, true)
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(Glue.FIRST_RUN, NotificationType.INFORMATION)
+            .addAction(NotificationAction.createSimpleExpiring("Connect…") { PiwiConnectFlow.run(project) })
+            .addAction(
+                NotificationAction.createSimple(Glue.OPEN_FAILURES) {
+                    ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
+                },
+            )
+            .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOCS_URL) })
+            .notify(project)
     }
 
     /** Start the editor service again, or, unless `runningOnly`, start it for the open files when it does not run. */
@@ -801,6 +824,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
     companion object {
         const val TIMEOUT_SECONDS = 20L
         private const val SHARED_KEY_FORGOTTEN = "piwi.sharedKeyForgotten"
+
+        /** Whether the first-run notification was shown on this installation: an application-level property. */
+        const val FIRST_RUN_SHOWN = "piwi.firstRunShown"
 
         /** How long a file's summary answers for the same text: the indexes the service reads again push nothing. */
         const val SUMMARY_TTL_MILLIS = 5_000L

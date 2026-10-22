@@ -111,6 +111,8 @@ import {
 } from './connect';
 import {
   DOCUMENT_PATTERN,
+  PLAYWRIGHT_CONFIGS,
+  WALKTHROUGH,
   coalesced,
   connectChoices,
   coverageDecorations,
@@ -172,6 +174,7 @@ const RUN_TASK_TYPE = 'piwi';
 const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
 const MCP_OFFERED = 'piwi.mcpOffered';
+const WALKTHROUGH_OPENED = 'piwi.walkthroughOpened';
 const SEND_TOKEN = 'piwi.sendToken';
 const SEND_PORT = 'piwi.sendPort';
 /**
@@ -282,8 +285,22 @@ async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> 
   await context.globalState.update(SHARED_KEY_FORGOTTEN, true);
 }
 
+/**
+ * Once per machine, on the first activation in a workspace that holds a Playwright config: the walkthrough, unless
+ * `workbench.welcomePage.walkthroughs.openOnInstall` is off. Never in the integration suite's window.
+ */
+async function openWalkthroughOnce(context: vscode.ExtensionContext): Promise<void> {
+  if (context.globalState.get(WALKTHROUGH_OPENED) || context.extensionMode === vscode.ExtensionMode.Test) return;
+  if (!vscode.workspace.getConfiguration('workbench').get('welcomePage.walkthroughs.openOnInstall', true)) return;
+  const configs = await vscode.workspace.findFiles(PLAYWRIGHT_CONFIGS, '**/node_modules/**', 1);
+  if (!configs.length) return;
+  await context.globalState.update(WALKTHROUGH_OPENED, true);
+  await vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false);
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<PiwiApi> {
   await forgetSharedKey(context);
+  void openWalkthroughOnce(context);
   const serverModule = vscode.Uri.joinPath(context.extensionUri, 'dist', 'piwi-language-server.cjs').fsPath;
   /** The service as a child process, with the editor's proxy settings in its environment. */
   const service = (): NodeModule => ({
@@ -868,6 +885,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       vscode.commands.executeCommand('workbench.action.openSettings', '@ext:piwitests.piwi'),
     ),
     vscode.commands.registerCommand('piwi.openLog', () => lc.outputChannel.show()),
+    vscode.commands.registerCommand('piwi.getStarted', () =>
+      vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false),
+    ),
     vscode.commands.registerCommand('piwi.refresh', async () => {
       await lc.sendRequest(REFRESH_REQUEST);
       await updateStatus();

@@ -1,7 +1,8 @@
 /**
  * What the extension shows, computed from the editor service's answers with
  * no VS Code API, so it is tested without an editor: the status bar item, the
- * failures view's tree, the file patterns the service reads, the MCP
+ * failures view's tree, the file patterns the service reads, the walkthrough
+ * and the Playwright configs it opens in, the MCP
  * configuration editors without the MCP provider API are given to paste, the
  * file a dashboard's open link names, and the recorded block a recording
  * writes and follows through the edits around it.
@@ -39,6 +40,12 @@ import { isUnder } from './breakpoints';
 /** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
 export const DOCUMENT_PATTERN =
   '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,vue,svelte,astro,html,json,yaml,yml,properties,po,resx,cs,cshtml,razor}';
+
+/** The Playwright configs the extension activates on (`workspaceContains` in `package.json`). */
+export const PLAYWRIGHT_CONFIGS = '**/playwright.config.{ts,js,mjs,cjs,mts,cts}';
+
+/** The walkthrough of `contributes.walkthroughs`, as `workbench.action.openWalkthrough` names it. */
+export const WALKTHROUGH = 'piwitests.piwi#getStarted';
 
 export interface StatusBarView {
   text: string;

@@ -28,6 +28,13 @@ and sign in with the browser: [Editor connection](./editor-connection) has the s
 In VS Code, the extension also opens a path clicked in the dashboard, with no workspace root to set:
 [Open in IDE](./ide-integration#vs-code-the-piwi-extension).
 
+In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
+machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off. Its steps connect, open the latest CI run's
+failures, run the failing tests, record a test, give your agent the MCP server and open the settings, each with a
+button; **Piwi: Get started** opens it again. In a JetBrains IDE, the first trusted project with a Playwright config
+that nothing connects yet shows one notification, once per installation: what Piwi does, with **Connect…**, **Open
+the Failures** and **Learn More**.
+
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
 your files locally.
@@ -142,6 +149,7 @@ clipboard; it holds your API key, so paste it into your user settings, not into 
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress | `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R`) stops it |
 | Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) | |
 | Piwi: Open the log | Show the Piwi output channel, where the editor service logs; the `piwi.trace.server` setting adds the traffic with it | |
+| Piwi: Get started | Open the walkthrough: connect, the failures, a run, a recording, the MCP server, the settings | |
 
 The shortcuts are the same in VS Code and the JetBrains IDEs, and free in their default keymaps on Windows, Linux and
 macOS. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a

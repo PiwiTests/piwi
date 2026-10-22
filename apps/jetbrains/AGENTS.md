@@ -168,6 +168,13 @@ problem; three times in five minutes at most (`PiwiProjectService.watchServer`, 
   and so does `watchConfigs`, a second after the IDE reports a config created, removed, renamed or moved
   (`Glue.isPlaywrightConfig`, every name Playwright reads one from, `.mts` and `.cts` included), or such a folder where
   configs are searched (`Glue.mayHoldConfigs`): the IDE reports a new folder without the files in it.
+- A search whose answer changes offers the first-run notification (`PiwiProjectService.offerFirstRun`), once per
+  installation (`piwi.firstRunShown`, an application-level `PropertiesComponent` flag): in a trusted project holding a
+  Playwright config, while no context of the status is connected and nothing names an instance (the settings,
+  `PIWI_DASHBOARD_URL` in the environment or a config folder's `.env`, the desktop app running: `Glue.showsFirstRun`;
+  the status is null until the service starts), a balloon says what Piwi does (`Glue.FIRST_RUN`), with **Connect…**
+  (`PiwiConnectFlow.run`, as `Piwi.Connect`), **Open the Failures** (the tool window) and **Learn More**
+  (`Glue.DOCS_URL`). `PiwiPluginTest` checks the flag.
 - **Recording** (`PiwiRecordingActions.kt`): **Record Here** (**Tools → Piwi**, the editor's menu, Alt+Insert's
   Generate menu, and Alt+Enter through `RecordHereIntention.kt`) asks
   `piwi/pageCandidates` where the caret is: outside every test, function and class a new test, anywhere else the

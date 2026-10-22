@@ -43,6 +43,23 @@ class GlueTest {
     }
 
     @Test
+    fun `the first-run notification shows once, in a trusted project with a Playwright config that nothing connects`() {
+        val dirs = listOf(Path.of("/w/e2e"))
+        assertEquals(true, Glue.showsFirstRun(shown = false, trusted = true, configDirs = dirs, status = null, instances = listOf(null, "")))
+        assertEquals("once per installation", false, Glue.showsFirstRun(true, true, dirs, null, emptyList()))
+        assertEquals("never in an untrusted project", false, Glue.showsFirstRun(false, false, dirs, null, emptyList()))
+        assertEquals("not without a config", false, Glue.showsFirstRun(false, true, emptyList(), null, emptyList()))
+        assertEquals("not once connected", false, Glue.showsFirstRun(false, true, dirs, connected, emptyList()))
+        val unconnected = StatusResult(listOf(ContextStatus(root = "/w", problem = "No project chosen.")))
+        assertEquals(true, Glue.showsFirstRun(false, true, dirs, unconnected, emptyList()))
+        assertEquals(
+            "not while the project names an instance, before the service answers",
+            false,
+            Glue.showsFirstRun(false, true, dirs, null, listOf(null, "https://piwi.example.com")),
+        )
+    }
+
+    @Test
     fun `the status bar tooltip shows the instance's and the project's text as text, a line per line`() {
         val status = StatusResult(listOf(ContextStatus(root = "/w", problem = "Project <b>pay</b> & co\nAsk an admin.")))
         assertEquals(

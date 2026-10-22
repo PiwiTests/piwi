@@ -244,6 +244,46 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(service.hasPlaywrightConfig())
     }
 
+    /**
+     * The first project holding a Playwright config while nothing connects it says what Piwi does, with Connect, the
+     * failures and the documentation, once per installation.
+     */
+    fun testTheFirstRunNotificationShowsOncePerInstallation() {
+        val service = project.getService(PiwiProjectService::class.java)
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        val shown = mutableListOf<com.intellij.notification.Notification>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            com.intellij.notification.Notifications.TOPIC,
+            object : com.intellij.notification.Notifications {
+                override fun notify(notification: com.intellij.notification.Notification) {
+                    if (notification.content == Glue.FIRST_RUN) shown += notification
+                }
+            },
+        )
+        val config = File(project.basePath!!, "playwright.config.ts")
+        val before = properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN)
+        try {
+            properties.unsetValue(PiwiProjectService.FIRST_RUN_SHOWN)
+            config.writeText("export default {};\n")
+            val found = service.searchPlaywright()
+            service.offerFirstRun(found, listOf("https://piwi.example.com"))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals("a project naming an instance is connected", emptyList<Any>(), shown)
+            assertFalse(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
+            service.offerFirstRun(found, emptyList())
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(listOf("Connect…", "Open the Failures", "Learn More"), shown.single().actions.map { it.templateText })
+            assertTrue(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
+            service.offerFirstRun(found, emptyList())
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals("once per installation", 1, shown.size)
+        } finally {
+            config.delete()
+            service.searchPlaywright()
+            properties.setValue(PiwiProjectService.FIRST_RUN_SHOWN, before)
+        }
+    }
+
     /** A Playwright config created or removed while the project is open is found without Refresh, whatever its name. */
     fun testFindsAConfigCreatedOrRemovedWhileTheProjectIsOpen() {
         val service = project.getService(PiwiProjectService::class.java)

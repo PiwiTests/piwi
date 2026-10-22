@@ -341,6 +341,23 @@ object Glue {
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
     const val UNTRUSTED = "Piwi starts once you trust this project, then open one of its files."
 
+    /** What the first-run notification says Piwi does. */
+    const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
+        "with your local runs laid over them, and records tests at the caret."
+
+    /** The editor extensions' documentation, which the first-run notification's **Learn More** opens. */
+    const val DOCS_URL = "https://piwitests.dev/features/editors"
+
+    /**
+     * Whether the first-run notification shows: not `shown` on this installation yet, in a `trusted` project holding a
+     * Playwright config, while no context of `status` is connected and none of `instances` names an instance (the
+     * project's settings, `PIWI_DASHBOARD_URL` in the environment or a config folder's `.env`, the desktop app while it
+     * runs). `status` is null until the service starts, with the first file opened.
+     */
+    fun showsFirstRun(shown: Boolean, trusted: Boolean, configDirs: List<Path>, status: StatusResult?, instances: List<String?>): Boolean =
+        !shown && trusted && configDirs.isNotEmpty() &&
+            status?.contexts.orEmpty().none { it.connected } && instances.all { it.isNullOrBlank() }
+
     /** The oldest Node.js major version the editor service runs on. */
     const val NODE_MAJOR = 20
 

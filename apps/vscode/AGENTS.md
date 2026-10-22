@@ -39,6 +39,17 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   host's environment, which passes `NODE_EXTRA_CA_CERTS` through); a change of one starts the service again, 250 ms
   after the last of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's output
   channel, where `piwi.trace.server` writes the traffic with the service.
+- **Get started with Piwi** is the walkthrough (`contributes.walkthroughs`, each step's media a Markdown file of
+  `walkthrough/`, which `.vscodeignore` ships): connect, the failures, a run, a recording, the MCP server, the settings,
+  each step with a button that runs the extension's command (`piwi.connect`, `piwi.failures.focus`,
+  `piwi.rerunFailing`, `piwi.recordFile`, `piwi.copyMcpConfiguration`, `piwi.openSettings`) and checked off by its
+  events (`onContext:piwi.active`, `onView:piwi.failures`, `onCommand:…`). It opens once per machine
+  (`piwi.walkthroughOpened` in global state), on the first activation in a workspace holding a Playwright config
+  (`PLAYWRIGHT_CONFIGS` in `src/glue.ts`, the activation event's glob), unless
+  `workbench.welcomePage.walkthroughs.openOnInstall` is off, and never in the integration suite's window
+  (`ExtensionMode.Test`); **Piwi: Get started** (`piwi.getStarted`) opens it again (`WALKTHROUGH`).
+  `tests/walkthrough.test.ts` holds each step to a contributed command or view, a context key the extension sets, and a
+  shipped Markdown file: a renamed command, view or context key fails it.
 - Coverage marks: each visible file the service reads (C# among them) is asked `piwi/coverage` once, again after a
   `piwi/statusChanged`, and drawn as whole-line left borders (`coverageDecorations` in `src/glue.ts`): the lines tests
   ran in `piwi.coverageRunBorder`, the executable lines none runs in `piwi.coverageNotRunBorder`, both defaulting to
