@@ -13,6 +13,7 @@ import {
   serveAppendRecordingEvent,
   serveUpdateRecording,
   updateRecording,
+  isRecordingStartedAt,
   RECORD_INTENT_TTL_MS,
   type RecordIntent,
 } from '../../src/shared/recording-storage.js';
@@ -53,13 +54,42 @@ const clickEvent: RawCaptureEvent = {
 
 describe('recording state', () => {
   it('updateRecording changes the recording’s own fields behind the appends already queued', async () => {
-    await startRecording('https://x.test/*');
+    const { startedAt } = await startRecording('https://x.test/*');
     const append = appendRecordingEvent(clickEvent);
-    const paused = updateRecording({ paused: true, title: 'Checkout' });
+    const paused = updateRecording(startedAt, { paused: true, title: 'Checkout' });
     await Promise.all([append, paused]);
     const state = await getRecordingState();
     expect(state.events).toHaveLength(1);
     expect(state).toMatchObject({ active: true, paused: true, title: 'Checkout' });
+  });
+
+  it('updateRecording changes only the recording that started at the time it is given', async () => {
+    const first = await startRecording('https://x.test/*');
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const second = await startRecording('https://x.test/*');
+    expect(await updateRecording(first.startedAt, { title: 'Old flow' })).toBeNull();
+    expect(await getRecordingState()).toEqual(second);
+    expect(await updateRecording(second.startedAt, { title: 'Checkout' })).toMatchObject({ title: 'Checkout' });
+    expect(await updateRecording(null, { title: 'No recording' })).toBeNull();
+    expect((await getRecordingState()).title).toBe('Checkout');
+  });
+
+  it('updateRecording writes nothing once the recording is discarded', async () => {
+    const { startedAt } = await startRecording('https://x.test/*');
+    await appendRecordingEvent(clickEvent);
+    await discardRecording();
+    expect(await updateRecording(startedAt, { title: 'Checkout' })).toBeNull();
+    expect(await updateRecording(startedAt, { paused: true })).toBeNull();
+    expect(await (globalThis as any).chrome.storage.session.get(RECORDING_KEY)).toEqual({ [RECORDING_KEY]: undefined });
+  });
+
+  it('isRecordingStartedAt matches a stored recording by its start time only', () => {
+    const stored = { active: false, events: [], startedAt: 5, grantedOriginPattern: null };
+    expect(isRecordingStartedAt(stored, 5)).toBe(true);
+    expect(isRecordingStartedAt(stored, 6)).toBe(false);
+    expect(isRecordingStartedAt({ ...stored, startedAt: null }, null)).toBe(false);
+    expect(isRecordingStartedAt(undefined, 5)).toBe(false);
+    expect(isRecordingStartedAt('on', 5)).toBe(false);
   });
 
   it('starts inactive with no events', async () => {
@@ -205,13 +235,13 @@ describe('recording state', () => {
     };
     const typed: RawCaptureEvent = { ...clickEvent, kind: 'change', value: 'alice' };
     const append = appendRecordingEvent(typed);
-    const pause = updateRecording({ paused: true });
+    const pause = updateRecording(5, { paused: true });
 
     vi.resetModules();
     const background = await import('../../src/shared/recording-storage.js');
     const serve = (message: any): Promise<unknown> => {
       if (message.type === 'piwi-append-recording-event') return background.serveAppendRecordingEvent(message.event);
-      if (message.type === 'piwi-update-recording') return background.serveUpdateRecording(message.change);
+      if (message.type === 'piwi-update-recording') return background.serveUpdateRecording(message);
       return serveSessionStorage(message);
     };
     (globalThis as any).chrome = { storage: { session }, runtime: { sendMessage: serve } };
@@ -222,14 +252,20 @@ describe('recording state', () => {
     expect(store[RECORDING_KEY]).toMatchObject({ paused: true, events: [typed] });
   });
 
-  it('the background takes a field change of the right types only', async () => {
-    await startRecording('https://x.test/*');
-    expect(await serveUpdateRecording({ title: 'Checkout', active: false, events: [] })).toMatchObject({
+  it('the background takes a field change of the right types only, for the recording it names', async () => {
+    const { startedAt } = await startRecording('https://x.test/*');
+    expect(
+      await serveUpdateRecording({ startedAt, change: { title: 'Checkout', active: false, events: [] } }),
+    ).toMatchObject({ ok: true, state: { active: true, title: 'Checkout' } });
+    expect(await serveUpdateRecording({ startedAt: startedAt! + 1, change: { title: 'Other' } })).toEqual({
       ok: true,
-      state: { active: true, title: 'Checkout' },
+      state: null,
     });
-    expect(await serveUpdateRecording({ paused: 'yes' })).toEqual({ ok: false, error: 'Malformed recording change.' });
-    expect(await serveUpdateRecording(null)).toEqual({ ok: false, error: 'Malformed recording change.' });
+    expect((await getRecordingState()).title).toBe('Checkout');
+    const malformed = { ok: false, error: 'Malformed recording change.' };
+    expect(await serveUpdateRecording({ startedAt, change: { paused: 'yes' } })).toEqual(malformed);
+    expect(await serveUpdateRecording({ change: { paused: true } })).toEqual(malformed);
+    expect(await serveUpdateRecording({ startedAt, change: null })).toEqual(malformed);
   });
 
   it('the background serves appends from content scripts in order, and refuses a malformed one', async () => {

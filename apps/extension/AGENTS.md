@@ -501,7 +501,12 @@ through `startReplayHere` (`record-ui.ts`, `piwi-start-replay`). The replay dial
 discarded, either mode (`lastRecordedReport`), each under its own label.
 
 A recording of actions has a title (`RecordingState.title`): the first page's `document.title` as the recorder first
-attaches, then the review panel's **Test title** field. Every export of it goes through `recordingTitle`
+attaches, then the review panel's **Test title** field. The panel stores the field a moment after the last keystroke,
+and at once on Copy, Download steps, Send to editor, Replay, close and `pagehide` (`titleWriter`); Discard drops the
+pending write and waits for the one in flight before it removes the recording. A field write names its recording:
+`updateRecording` takes the recording's `startedAt` and writes nothing when the stored recording is gone or a newer one
+(`isRecordingStartedAt`), so a late keystroke never brings a discarded recording back nor renames the one another tab
+records; Pause names the recording its page started with the same way. Every export of it goes through `recordingTitle`
 (`src/shared/recording-title.ts`), which falls back to the first action in words (`titleFromSteps`), so no spec says
 `recorded flow` when the steps name it better: `renderSpec({ title })` for Copy as TypeScript (the review panel and the
 DevTools Record tab), `steps.title` for Download steps, Send to editor, Replay and the replay dialog. A bug report keeps

@@ -230,16 +230,37 @@ export async function appendRecordingEvent(event: RawCaptureEvent): Promise<Reco
 export type RecordingChange = Partial<Pick<RecordingState, 'paused' | 'title'>>;
 
 /**
- * Changes the recording's own fields, on the stored state, in the order of the
- * appends: behind the ones this document has queued, or, in a Firefox content
- * script, behind the ones it has sent the background script, which applies both
- * kinds through one queue. An append that read the state before the change is
- * written first, then the change on top of it.
+ * Whether `stored` is the recording that started at `startedAt`, the identity a
+ * recording keeps from start to discard: never a recording that is gone, nor
+ * one started after it.
  */
-export async function updateRecording(change: RecordingChange): Promise<RecordingState> {
-  if (!hasSessionArea()) return updateViaBackground(change);
+export function isRecordingStartedAt(stored: unknown, startedAt: number | null): stored is RecordingState {
+  return (
+    startedAt != null &&
+    !!stored &&
+    typeof stored === 'object' &&
+    (stored as Partial<RecordingState>).startedAt === startedAt
+  );
+}
+
+/**
+ * Changes the own fields of the recording that started at `startedAt`, on the
+ * stored state, in the order of the appends: behind the ones this document has
+ * queued, or, in a Firefox content script, behind the ones it has sent the
+ * background script, which applies both kinds through one queue. An append
+ * that read the state before the change is written first, then the change on
+ * top of it. Resolves to null, having written nothing, when that recording is
+ * no longer the stored one: discarded, or replaced by a newer recording.
+ */
+export async function updateRecording(
+  startedAt: number | null,
+  change: RecordingChange,
+): Promise<RecordingState | null> {
+  if (!hasSessionArea()) return updateViaBackground(startedAt, change);
   const run = appendQueue.then(async () => {
-    const state: RecordingState = { ...(await getRecordingState()), ...change };
+    const stored = (await sessionArea().get(RECORDING_KEY))[RECORDING_KEY];
+    if (!isRecordingStartedAt(stored, startedAt)) return null;
+    const state: RecordingState = { ...stored, ...change };
     await setRecordingState(state);
     return state;
   });
@@ -248,6 +269,8 @@ export async function updateRecording(change: RecordingChange): Promise<Recordin
 }
 
 export type AppendRecordingEventResponse = { ok: true; state: RecordingState } | { ok: false; error: string };
+
+export type UpdateRecordingResponse = { ok: true; state: RecordingState | null } | { ok: false; error: string };
 
 /**
  * A Firefox content script's append: one message, sent at once rather than
@@ -271,9 +294,9 @@ async function appendViaBackground(event: RawCaptureEvent): Promise<RecordingSta
  * separately would write back the events the get read, dropping an append the
  * background finished in between.
  */
-async function updateViaBackground(change: RecordingChange): Promise<RecordingState> {
-  const response = (await chrome.runtime.sendMessage({ type: 'piwi-update-recording', change })) as
-    | AppendRecordingEventResponse
+async function updateViaBackground(startedAt: number | null, change: RecordingChange): Promise<RecordingState | null> {
+  const response = (await chrome.runtime.sendMessage({ type: 'piwi-update-recording', startedAt, change })) as
+    | UpdateRecordingResponse
     | undefined;
   if (!response?.ok) throw new Error(response?.error ?? t('common_workerNoAnswer'));
   return response.state;
@@ -289,15 +312,23 @@ export async function serveAppendRecordingEvent(event: unknown): Promise<AppendR
   }
 }
 
-/** The background script's half of {@link updateViaBackground}: `paused` and `title` only, each of its own type. */
-export async function serveUpdateRecording(change: unknown): Promise<AppendRecordingEventResponse> {
+/**
+ * The background script's half of {@link updateViaBackground}: the recording's
+ * start time, then `paused` and `title` only, each of its own type.
+ */
+export async function serveUpdateRecording(message: {
+  startedAt?: unknown;
+  change?: unknown;
+}): Promise<UpdateRecordingResponse> {
+  const { startedAt, change } = message;
   const { paused, title } = change && typeof change === 'object' ? (change as Record<string, unknown>) : {};
   const valid: RecordingChange = {};
   if (typeof paused === 'boolean') valid.paused = paused;
   if (typeof title === 'string' || title === null) valid.title = title;
-  if (Object.keys(valid).length === 0) return { ok: false, error: 'Malformed recording change.' };
+  if (typeof startedAt !== 'number' || Object.keys(valid).length === 0)
+    return { ok: false, error: 'Malformed recording change.' };
   try {
-    return { ok: true, state: await updateRecording(valid) };
+    return { ok: true, state: await updateRecording(startedAt, valid) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

@@ -905,6 +905,98 @@ test.describe('record-panel.js', () => {
     ]);
   });
 
+  /** A stopped recording of one click on the login page, which the review panel opens on. */
+  const stoppedLogin = {
+    active: false,
+    startedAt: 1,
+    grantedOriginPattern: `${ORIGIN}/*`,
+    title: 'Sign in',
+    events: [
+      {
+        kind: 'navigate',
+        target: null,
+        value: `${ORIGIN}/login`,
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: `${ORIGIN}/login`,
+        timestamp: 1,
+      },
+      {
+        kind: 'click',
+        target: {
+          tagName: 'button',
+          role: 'button',
+          accessibleName: 'Log in',
+          testId: 'login-submit',
+          text: 'Log in',
+          alternatives: [{ locator: `getByTestId('login-submit')`, method: 'getByTestId', score: 100 }],
+        },
+        value: null,
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: `${ORIGIN}/login`,
+        timestamp: 2,
+      },
+    ],
+  };
+
+  const storedRecording = (page: Page) =>
+    page.evaluate(async () => (await (globalThis as any).chrome.storage.session.get('piwiRecording')).piwiRecording);
+
+  test('Discard right after typing a title leaves no recording behind', async ({ context }) => {
+    await routePages(context);
+    await openShadowRoots(context);
+    await stubChromeStorage(context, { session: { piwiRecording: stoppedLogin } });
+    // Every read answers late, as a busy worker does: a write that read the recording before Discard ends after it.
+    await context.addInitScript(() => {
+      const session = (globalThis as any).chrome.storage.session;
+      const get = session.get;
+      session.get = async (key: string) => {
+        const value = await get(key);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return value;
+      };
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    const review = page.locator('#piwi-record-review-host');
+
+    await review.getByRole('textbox', { name: 'Test title' }).pressSequentially(' then leave');
+    await review.getByRole('button', { name: 'Discard' }).click();
+    await expect(review).toHaveCount(0);
+    // Longer than any write the keystrokes could have started.
+    await page.waitForTimeout(1500);
+    expect(await storedRecording(page)).toBeUndefined();
+  });
+
+  test('a review panel’s title goes to the recording it reviews, never to a newer one', async ({ context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await routePages(context);
+    await openShadowRoots(context);
+    await stubChromeStorage(context, { session: { piwiRecording: stoppedLogin } });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    const review = page.locator('#piwi-record-review-host');
+    const titleField = review.getByRole('textbox', { name: 'Test title' });
+    await expect(titleField).toHaveValue('Sign in');
+
+    // A new recording starts in another tab while this review stays open.
+    const newer = { active: true, events: [], startedAt: 2, grantedOriginPattern: `${ORIGIN}/*`, title: 'Checkout' };
+    await page.evaluate(
+      (piwiRecording) => (globalThis as any).chrome.storage.session.set({ piwiRecording }),
+      newer as unknown,
+    );
+    await titleField.fill('Sign in again');
+    await review.getByRole('button', { name: 'Copy as TypeScript' }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`test('Sign in again'`);
+    await page.waitForTimeout(800);
+    expect(await storedRecording(page)).toEqual(newer);
+  });
+
   test('Download steps saves a steps file whose rendered spec replays the flow in a real browser', async ({
     context,
   }) => {

@@ -97,6 +97,9 @@ let ideSettings: IdeRecorderSettings | null = null;
  */
 let recordingPaused = false;
 
+/** The start time of the recording this page captures, read as it starts: Pause applies to that recording only. */
+let recordingStartedAt: number | null = null;
+
 /** {@link ACTIONABLE_SELECTOR} with the elements carrying the project's test id attribute. */
 function actionableSelector(): string {
   return `${ACTIONABLE_SELECTOR}, [${CSS.escape(testIdAttribute ?? 'data-testid')}]`;
@@ -408,7 +411,7 @@ async function setRecordingPaused(paused: boolean): Promise<void> {
   recordingPaused = paused;
   scheduleHudRefresh();
   try {
-    if (!IDE_BUILD) await updateRecording({ paused });
+    if (!IDE_BUILD) await updateRecording(recordingStartedAt, { paused });
     await chrome.runtime.sendMessage({ type: IDE_PAUSED_MESSAGE, paused });
   } catch {
     captureError = t('common_workerNoAnswer');
@@ -635,6 +638,52 @@ function downloadSteps(doc: PiwiSteps): void {
   );
 }
 
+/** How long after the last keystroke the review panel stores its title. */
+const TITLE_WRITE_MS = 300;
+
+interface TitleWriter {
+  /** Stores `title` once {@link TITLE_WRITE_MS} pass without another. */
+  schedule(title: string): void;
+  /** Stores the pending title now; resolves once no write is in flight. */
+  flush(): Promise<void>;
+  /** Forgets the pending title; resolves once no write is in flight. */
+  drop(): Promise<void>;
+}
+
+/** The review panel's title, stored on the recording the panel reviews and on no other (see `updateRecording`). */
+function titleWriter(startedAt: number | null): TitleWriter {
+  let pending: { title: string } | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let writing: Promise<unknown> = Promise.resolve();
+  const cancel = (): void => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  const idle = (): Promise<void> => writing.then(() => undefined);
+  const flush = (): Promise<void> => {
+    cancel();
+    if (pending) {
+      const { title } = pending;
+      pending = null;
+      writing = writing.then(() => updateRecording(startedAt, { title })).catch(() => undefined);
+    }
+    return idle();
+  };
+  return {
+    schedule(title) {
+      pending = { title };
+      cancel();
+      timer = setTimeout(() => void flush(), TITLE_WRITE_MS);
+    },
+    flush,
+    drop() {
+      cancel();
+      pending = null;
+      return idle();
+    },
+  };
+}
+
 async function renderReviewPanel(state: RecordingState): Promise<void> {
   if (recordingMode(state) === 'bug') {
     await renderBugFinishPanel(state, discardRecording);
@@ -733,9 +782,12 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
         : t('record_notConnected');
   titleWrap.append(title, sub);
   // Every close path (the ×, the backdrop, Discard, Escape) goes through one
-  // function, which detaches the document-level Escape listener below with the panel.
+  // function, which stores the title still pending and detaches the
+  // document-level listeners below with the panel.
+  const titles = titleWriter(state.startedAt);
   const closeController = new AbortController();
   const closePanel = (): void => {
+    void titles.flush();
     closeController.abort();
     host.remove();
   };
@@ -759,9 +811,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   titleInput.maxLength = RECORDING_TITLE_MAX;
   titleInput.value = state.title ?? '';
   titleInput.placeholder = fallbackTitle ?? t('record_testTitlePlaceholder');
-  titleInput.addEventListener('input', () => {
-    void updateRecording({ title: titleInput.value }).catch(() => undefined);
-  });
+  titleInput.addEventListener('input', () => titles.schedule(titleInput.value));
   titleField.append(titleLabel, titleInput);
   const specTitle = (): string | undefined => cleanTitle(titleInput.value) ?? fallbackTitle ?? undefined;
   const stepsDocument = (): PiwiSteps => toStepsDocument(session, { title: specTitle() ?? null });
@@ -805,8 +855,10 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   if (steps.length > 0) {
     const copyPrimary = makeButton(
       catalog.length > 0 ? t('record_copyCodeWithFunctions') : t('record_copyCode'),
-      () =>
-        void copyToClipboard(renderSpec(session, { catalog, urlChecks: true, title: specTitle() }).code, copyPrimary),
+      () => {
+        void titles.flush();
+        void copyToClipboard(renderSpec(session, { catalog, urlChecks: true, title: specTitle() }).code, copyPrimary);
+      },
       { icon: 'copy', tone: 'primary' },
     );
     actions.appendChild(copyPrimary);
@@ -814,23 +866,34 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     if (catalog.length > 0 && withCatalog.matchedSpans.length > 0) {
       const copyRaw = makeButton(
         t('record_copyCodeWithoutFunctions'),
-        () => void copyToClipboard(renderSpec(session, { urlChecks: true, title: specTitle() }).code, copyRaw),
+        () => {
+          void titles.flush();
+          void copyToClipboard(renderSpec(session, { urlChecks: true, title: specTitle() }).code, copyRaw);
+        },
         { icon: 'code' },
       );
       actions.appendChild(copyRaw);
     }
 
     actions.appendChild(
-      makeButton(t('record_downloadSteps'), () => downloadSteps(stepsDocument()), {
-        icon: 'download',
-        title: t('record_downloadStepsTitle'),
-      }),
+      makeButton(
+        t('record_downloadSteps'),
+        () => {
+          void titles.flush();
+          downloadSteps(stepsDocument());
+        },
+        {
+          icon: 'download',
+          title: t('record_downloadStepsTitle'),
+        },
+      ),
     );
 
     if (await getEditorPairing().catch(() => null)) {
       const sendBtn = makeButton(
         t('record_sendToEditor'),
         () => {
+          void titles.flush();
           void sendToEditor({ kind: 'steps', steps: stepsDocument() }).then((result) =>
             showSendResult(sendBtn, result),
           );
@@ -845,11 +908,14 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
       t('record_replay'),
       () => {
         replayBtn.disabled = true;
-        void startReplayHere(stepsDocument()).then((response) => {
-          if (response.ok) return closePanel();
-          replayBtn.disabled = false;
-          message.textContent = response.error ?? t('common_replayStartFailed');
-        });
+        void titles
+          .flush()
+          .then(() => startReplayHere(stepsDocument()))
+          .then((response) => {
+            if (response.ok) return closePanel();
+            replayBtn.disabled = false;
+            message.textContent = response.error ?? t('common_replayStartFailed');
+          });
       },
       { icon: 'play', title: t('record_replayHint') },
     );
@@ -857,7 +923,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   }
 
   actions.appendChild(
-    makeButton(t('common_discard'), () => void discardRecording().then(closePanel, closePanel), {
+    makeButton(t('common_discard'), () => void titles.drop().then(discardRecording).then(closePanel, closePanel), {
       icon: 'trash',
       tone: 'remove',
       className: 'discard',
@@ -876,6 +942,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     },
     { capture: true, signal: closeController.signal },
   );
+  window.addEventListener('pagehide', () => void titles.flush(), { signal: closeController.signal });
 
   backdrop.appendChild(panel);
   root.appendChild(backdrop);
@@ -1652,6 +1719,7 @@ async function initRecordPanel(restored: boolean): Promise<void> {
     loadRecorderSettings(),
   ]);
   recordingPaused = state.paused === true;
+  recordingStartedAt = state.startedAt;
 
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down
@@ -1672,7 +1740,7 @@ async function initRecordPanel(restored: boolean): Promise<void> {
 
   // A recording of actions takes its first page's own title, which the review panel offers as the test's.
   if (!IDE_BUILD && recordingMode(state) === 'actions' && state.title === undefined) {
-    await updateRecording({ title: cleanTitle(document.title) });
+    await updateRecording(state.startedAt, { title: cleanTitle(document.title) });
   }
   // The size comes before the page, so the first one is the size of the first step.
   const viewport = recordingMode(state) === 'bug' ? await recordPageViewport(state) : null;

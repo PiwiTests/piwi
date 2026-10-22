@@ -1010,8 +1010,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-update-recording') {
-    // The recorder's Pause and title in Firefox, in the same queue as its appends — see `updateRecording`.
-    void serveUpdateRecording(message.change).then(sendResponse);
+    // The recorder's Pause and title in Firefox, in the same queue as its appends, see `updateRecording`.
+    void serveUpdateRecording(message).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-start-recording') {
