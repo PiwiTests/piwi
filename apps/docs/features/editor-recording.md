@@ -9,7 +9,7 @@ lang: en-US
 **Piwi: Record here** opens a browser through your project's own Playwright and writes what you do there at the cursor,
 as you do it: steps inside a test, a page object's method or a helper function, a new test anywhere else in a spec. It
 works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
-[Piwi plugin](./editors#jetbrains-ides), and needs no instance, no desktop app and no browser extension.
+[Piwi plugin](./jetbrains), and needs no instance, no desktop app and no browser extension.
 
 ## Start a recording
 
@@ -33,8 +33,8 @@ writes a whole spec into it.
 ## While it records
 
 - **The block** the recording writes is tinted, and written again as each step arrives: a run of steps becomes one call
-  to your own page object or helper once its last step is recorded, and the import that call needs is added at the top
-  of the file. Started on a line inside a call that spans several lines, the block goes after that statement.
+  to your own page object or helper once its last step is recorded. Started on a line inside a call that spans several
+  lines, the block goes after that statement.
 - **The controls**: the step count, **Stop** and **Pause** (**Resume** while paused), above the block in VS Code and in
   a banner above the editor in a JetBrains IDE, and **Pause**, **Stop** and the checks in the browser's recording bar. The status
   bar shows the recording too. While paused, from the editor or the browser, what you do in the browser is not
@@ -47,6 +47,9 @@ writes a whole spec into it.
 - **Warnings** (a brittle locator, a password read from the environment, a file to upload) are on their lines. They stay
   after the recording, each until its line is edited.
 
+What the code holds, from locators to imports, and the options in the Playwright config that shape it:
+[Recorded code](./recorded-code).
+
 ## Stop and undo
 
 **Stop** in the editor or in the browser's recording bar, or closing the browser, ends the recording, and the code stays.
@@ -57,19 +60,17 @@ JetBrains IDE, that Undo also takes back the edits you made in the file meanwhil
 ### Run it, or verify it three times
 
 Once the recording stopped, a notification says what it wrote, `Recorded 6 steps into checkout.spec.ts.`, with two
-actions for the test that holds the block: the new test, or the test you recorded steps into.
+actions for the test that holds the block, the new test or the test you recorded steps into:
 
 - **Run** runs that test, with your breakpoints, as **Piwi: Run the test at the cursor** does.
-- **Verify ×3** runs it three times, without retries and without the breakpoints
-  (`npx playwright test tests/checkout.spec.ts:42 --repeat-each=3 --retries=0`), and says how it went once it ended:
-  `Passed 3 of 3`, or `Failed 1 of 3` with **Open the failures** and **Open in dashboard**.
+- **Verify ×3** runs it three times, without retries and without the breakpoints, as **Piwi: Verify the test at the
+  cursor ×3** does, and says how it went: `Passed 3 of 3`, or `Failed 1 of 3` with **Open the failures** and **Open
+  in dashboard**.
 
-A test the instance does not know yet is run by the line of its `test(…)` call, so neither needs an instance; the
-editor saves the file first, since Playwright runs it as saved. With an instance, the run is the editor's own, followed
-live, and the count comes from the results it streams; without one, from the exit code alone:
-`Passed 3 of 3: tests/checkout.spec.ts:42`, or `Failed at least 1 of 3`. Steps recorded into a page object or a helper
-offer neither action: no test holds them. Later, **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the
-Caret ×3** in a JetBrains IDE) verifies any test the same way; see [Runs from the editor](./editor-runs#run-tests).
+Both save the file, then run the test by the line of its `test(…)` call
+(`npx playwright test tests/checkout.spec.ts:42`), so neither needs an instance:
+[When your run ends](./editor-runs#when-your-run-ends) says how a run without one is counted. Steps recorded into a
+page object or a helper offer neither action: no test holds them.
 
 ### Choose another locator
 
@@ -81,57 +82,6 @@ the line's warning goes. While the recording runs, none is offered: each step wr
 
 The quick fix replaces the locator only where the line holds it once, as it was written: a line that calls your own
 page object or helper has none of its own, and offers none.
-
-## The code
-
-- **Locators** come from the same converter as Piwi Picker's recordings and [`piwi codegen`](/reference/cli#codegen):
-  each is verified to find the element alone on the page, the stable ones first and those your tests already use
-  preferred. A `getByTestId` uses the attribute your config sets.
-- **Pages**: an address on the project's `baseURL` is written as a path, and the step that leads to another page is
-  followed by a wait for it, except next to a call to your own code, which waits for its pages itself.
-- **Imports**: a call to your own code, and `expect` when a step checks something, are imported at the top of the file
-  when it lacks them: `expect` from `@playwright/test`, or from your fixtures module when the file or a spec beside it
-  imports `expect` from there. A spec that loads `test` with `require` gets `require` lines after its last one.
-- **Your own code**: when the editor is connected to an instance or the [desktop app](./desktop), steps that match one
-  of your [test functions](./test-functions) become a call to it.
-- **Passwords** are never recorded: the code reads them from an environment variable named after the field, such as
-  `process.env.E2E_PASSWORD`, including in a call to a page object.
-
-## Code options in the Playwright config
-
-How the recorded code looks is set for the whole repository in `playwright.config.ts`, under the `'@piwi'` key at the
-top level, next to `testDir` and `use`. Everyone who records in the repository gets the same code, with or without an
-instance:
-
-```ts
-import { defineConfig } from '@playwright/test';
-import type {} from '@piwitests/reporter'; // declares '@piwi' on the config; already there with wrapConfig
-
-export default defineConfig({
-  testDir: './tests',
-  '@piwi': {
-    codegen: {
-      testSteps: 'page',
-      tags: ['@recorded'],
-      annotations: [{ type: 'piwi:owner', description: '@shop-team' }],
-    },
-  },
-});
-```
-
-| Option | Default | What it does |
-|---|---|---|
-| `pageWaits` | `true` | `false` leaves out the wait for the next page after a step that leads to it |
-| `values` | `'literal'` | `'env'` reads every typed value from an environment variable named after its field, not only passwords |
-| `envPrefix` | `'E2E_'` | What those variables start with, as in `E2E_PASSWORD`: upper-case letters, digits and underscores |
-| `testSteps` | `'none'` | `'page'` wraps the steps of each page in `await test.step('/cart', …)`, so the report reads like the scenario; in a test only, not in a page object or a helper |
-| `tags` | none | Tags a new test gets |
-| `annotations` | none | Annotations a new test gets, `{ type, description? }` |
-
-The editor reads the section through your project's own Playwright, which hands the top-level keys starting with `@`
-to reporters as they are written, so it applies to the recordings started after the config is saved. **Send to
-editor** from Piwi Picker follows it too. An unknown option or a value of the wrong kind is left out, and the recording
-says so when it starts.
 
 ## Send from Piwi Picker
 
@@ -163,6 +113,7 @@ reaches it from your machine.
 
 ## Related
 
+- [Recorded code](./recorded-code): what a recording writes, and the options that shape it.
 - [Editor extensions](./editors): everything else the editor shows from your suite.
 - [Piwi Picker](./extension): records in your everyday browser, for a bug report or a steps file.
 - [Test functions](./test-functions): the page objects and helpers a recording calls.
