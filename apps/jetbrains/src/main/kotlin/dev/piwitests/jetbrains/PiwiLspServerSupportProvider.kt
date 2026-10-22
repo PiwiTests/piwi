@@ -25,6 +25,10 @@ import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.lsp4j.services.LanguageServer
 import java.lang.ref.WeakReference
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Collections
@@ -59,6 +63,9 @@ class PiwiLspServerSupportProvider : LspServerSupportProvider {
 /** How long `node --version` may take before the interpreter counts as not running. */
 private const val NODE_VERSION_TIMEOUT_MILLIS = 10_000
 
+/** A public https address: the proxy the IDE would use for it is the one for an instance off this machine. */
+private const val REPRESENTATIVE_INSTANCE = "https://piwitests.dev"
+
 class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor(project, "Piwi") {
     override fun isSupportedFile(file: VirtualFile): Boolean = PiwiLspServerSupportProvider.isSupported(file)
 
@@ -75,6 +82,21 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         return GeneralCommandLine(node, server.toString(), "--stdio", "--clientProcessId=${ProcessHandle.current().pid()}")
             .withWorkDirectory(folder)
             .withCharset(Charsets.UTF_8)
+            .withEnvironment(proxyEnvironment())
+    }
+
+    /**
+     * The IDE's HTTP proxy for the instance the project names ([REPRESENTATIVE_INSTANCE] stands in while none is saved),
+     * as the variables the service's Node.js reads (`Glue.proxyEnvironment`); none when the IDE reaches it directly. The
+     * IDE's proxy settings, auto-detected ones included, are the default [ProxySelector], which exposes no exceptions:
+     * `NO_PROXY` keeps this machine's addresses direct.
+     */
+    internal fun proxyEnvironment(selector: ProxySelector? = ProxySelector.getDefault()): Map<String, String> {
+        val instance = project.service<PiwiProjectService>().settings().serverUrl.ifBlank { null } ?: REPRESENTATIVE_INSTANCE
+        val uri = runCatching { URI(instance) }.getOrNull() ?: return emptyMap()
+        val proxies = runCatching { selector?.select(uri) }.getOrNull().orEmpty()
+        val address = proxies.firstOrNull { it.type() == Proxy.Type.HTTP }?.address() as? InetSocketAddress ?: return emptyMap()
+        return Glue.proxyEnvironment(address.hostString, address.port, emptyList())
     }
 
     /** What `node --version` prints, or null when it does not run, or not within 10 s. */

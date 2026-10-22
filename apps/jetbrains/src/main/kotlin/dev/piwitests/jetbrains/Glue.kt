@@ -864,17 +864,47 @@ object Glue {
         }
     }
 
-    /** Where a locator picked at a breakpoint went: on its line, or to the caret because the line or the file has none. */
-    enum class PickOutcome { REPLACED, NO_LOCATOR, NO_FILE }
+    /**
+     * Where a locator picked at a breakpoint went: on its line, or elsewhere because the line or the file holds none,
+     * the editor service does not run, or it did not answer.
+     */
+    enum class PickOutcome { REPLACED, NO_LOCATOR, NO_FILE, NOT_RUNNING, NO_ANSWER }
 
-    /** What the notification says once a locator picked while a run was paused at a breakpoint reached the IDE. */
-    fun pickNotice(at: SendPlace, outcome: PickOutcome): String {
+    /**
+     * What the notification says once a locator picked while a run was paused at a breakpoint reached the IDE: where it
+     * went, at the caret or, with `scratch`, in a new scratch file, and why when not on its line.
+     */
+    fun pickNotice(at: SendPlace, outcome: PickOutcome, scratch: Boolean = false): String {
         val name = at.file.substringAfterLast('/')
+        val went = if (scratch) "The picked locator was inserted in a new scratch file" else "The picked locator was inserted at the caret"
         return when (outcome) {
             PickOutcome.REPLACED -> "The picked locator replaced the one at line ${at.line} of $name."
-            PickOutcome.NO_LOCATOR -> "The picked locator was inserted at the caret: line ${at.line} of $name holds no locator anymore."
-            PickOutcome.NO_FILE -> "The picked locator was inserted at the caret: ${at.file} is not in this project."
+            PickOutcome.NO_LOCATOR -> "$went: line ${at.line} of $name holds no locator anymore."
+            PickOutcome.NO_FILE -> "$went: ${at.file} is not in this project."
+            PickOutcome.NOT_RUNNING -> "$went: the Piwi editor service is not running in this project."
+            PickOutcome.NO_ANSWER -> "$went: the Piwi editor service did not answer."
         }
+    }
+
+    /** The names of this machine, which the service reaches directly whatever the proxy: the desktop app listens on them. */
+    private val LOOPBACK_NAMES = listOf("localhost", "127.0.0.1", "::1")
+
+    /**
+     * The environment that takes the service's Node.js through the IDE's HTTP proxy at `host`:`port`: `HTTPS_PROXY` and
+     * `HTTP_PROXY` naming it, `NODE_USE_ENV_PROXY` so Node reads them, and `NO_PROXY` with this machine's names and
+     * `exceptions`, the hosts the IDE reaches directly, a `*.example.com` pattern as the `.example.com` suffix Node
+     * matches.
+     */
+    fun proxyEnvironment(host: String, port: Int, exceptions: List<String>): Map<String, String> {
+        val name = host.trim().let { if (':' in it && !it.startsWith("[")) "[$it]" else it }
+        val proxy = "http://$name:$port"
+        val direct = exceptions.map { it.trim() }.filter { it.isNotEmpty() }.map { if (it.startsWith("*.")) it.substring(1) else it }
+        return linkedMapOf(
+            "HTTPS_PROXY" to proxy,
+            "HTTP_PROXY" to proxy,
+            "NO_PROXY" to (LOOPBACK_NAMES + direct).distinct().joinToString(","),
+            "NODE_USE_ENV_PROXY" to "1",
+        )
     }
 
     /** A line breakpoint of the IDE: its file's path on disk and its 0-based line. */
@@ -988,6 +1018,12 @@ object Glue {
 
     /** The extensions of the files a recording writes into: JavaScript and TypeScript. */
     val SCRIPT_EXTENSIONS = setOf("ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts")
+
+    /** Whether `path` is one of `configDirs`, the Playwright config folders, or inside one: where a recording may write. */
+    fun inConfigDirs(path: Path?, configDirs: List<Path>): Boolean {
+        val file = path?.let { runCatching { it.toAbsolutePath().normalize() }.getOrNull() } ?: return false
+        return configDirs.any { dir -> runCatching { file.startsWith(dir.toAbsolutePath().normalize()) }.getOrDefault(false) }
+    }
 
     /**
      * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: outside

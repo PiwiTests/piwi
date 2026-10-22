@@ -326,6 +326,45 @@ class GlueTest {
             "The picked locator was inserted at the caret: tests/login.spec.ts is not in this project.",
             Glue.pickNotice(at, Glue.PickOutcome.NO_FILE),
         )
+        assertEquals(
+            "The picked locator was inserted at the caret: the Piwi editor service is not running in this project.",
+            Glue.pickNotice(at, Glue.PickOutcome.NOT_RUNNING),
+        )
+        assertEquals(
+            "The picked locator was inserted in a new scratch file: the Piwi editor service did not answer.",
+            Glue.pickNotice(at, Glue.PickOutcome.NO_ANSWER, scratch = true),
+        )
+    }
+
+    @Test
+    fun `a recording writes only into a script under a Playwright config folder`() {
+        val root = Files.createTempDirectory("piwi-config").toRealPath()
+        val dirs = listOf(root.resolve("e2e"))
+        assertEquals(true, Glue.inConfigDirs(root.resolve("e2e/tests/login.spec.ts"), dirs))
+        assertEquals(true, Glue.inConfigDirs(root.resolve("e2e"), dirs))
+        assertEquals(true, Glue.inConfigDirs(root.resolve("e2e/../e2e/pages/cart.ts"), dirs))
+        assertEquals(false, Glue.inConfigDirs(root.resolve("vite.config.ts"), dirs))
+        assertEquals(false, Glue.inConfigDirs(root.resolve("e2e-old/a.spec.ts"), dirs))
+        assertEquals(false, Glue.inConfigDirs(null, dirs))
+        assertEquals(false, Glue.inConfigDirs(root.resolve("e2e/a.spec.ts"), emptyList()))
+    }
+
+    @Test
+    fun `the IDE's proxy reaches the service as the variables Node reads, this machine left direct`() {
+        assertEquals(
+            mapOf(
+                "HTTPS_PROXY" to "http://proxy.example.com:3128",
+                "HTTP_PROXY" to "http://proxy.example.com:3128",
+                "NO_PROXY" to "localhost,127.0.0.1,::1",
+                "NODE_USE_ENV_PROXY" to "1",
+            ),
+            Glue.proxyEnvironment("proxy.example.com", 3128, emptyList()),
+        )
+        assertEquals(
+            "localhost,127.0.0.1,::1,.example.com,10.0.0.1",
+            Glue.proxyEnvironment("proxy", 8080, listOf("*.example.com", " 10.0.0.1 ", "", "localhost"))["NO_PROXY"],
+        )
+        assertEquals("http://[::1]:3128", Glue.proxyEnvironment("::1", 3128, emptyList())["HTTPS_PROXY"])
     }
 
     @Test

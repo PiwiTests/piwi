@@ -141,8 +141,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   one pick.
 - Command ids are part of the protocol: renaming one is a breaking change for the service.
 - The default keybindings (`contributes.keybindings`: `ctrl+shift+alt+r`, `cmd` on macOS, records at the caret and
-  stops the recording; `ctrl+shift+alt+t` re-runs the failing tests; `ctrl+shift+alt+f` focuses the Failures view)
-  stay free in VS Code's default keymap on Windows, Linux and macOS: `ctrl+shift+alt+<letter>` is, `ctrl+alt+<key>`
+  stops the recording; `ctrl+shift+alt+f` re-runs the failing tests, the JetBrains plugin's chords for the same
+  actions) stay free in VS Code's default keymap on Windows, Linux and macOS: `ctrl+shift+alt+<letter>` is, `ctrl+alt+<key>`
   and the `ctrl+k` chords are not. The extension declares no support for untrusted and virtual workspaces
   (`capabilities` in `package.json`): the service reads the files from disk and runs Playwright.
 - **One undo step per recording.** The block's writes go through the editor that shows the file: the first one opens

@@ -20,7 +20,10 @@ platform passes no process id, and the service exits within seconds of the IDE's
 later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `PiwiProjectService.startFailed` keeps
 (`startProblem`) and says once, the status bar item reads `Piwi: Node.js` and opens the Node.js settings
 (`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
-while it does not run.
+while it does not run. The service's process gets the IDE's HTTP proxy for the instance the project names
+(`PiwiLspServerDescriptor.proxyEnvironment`: the default `ProxySelector`, which holds the IDE's proxy settings, asked
+for that address, else for a public one), as `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` with this machine's names, and
+`NODE_USE_ENV_PROXY` (`Glue.proxyEnvironment`).
 
 - **Nothing starts in an untrusted project.** In a project opened in safe mode (`PiwiProjectService.trusted`, the
   platform's `isTrusted`), the plugin starts no editor service, runs no command (`PiwiCommands.run`, `startRun`) and
@@ -135,7 +138,12 @@ while it does not run.
   Generate menu, and Alt+Enter through `RecordHereIntention.kt`) asks
   `piwi/pageCandidates` where the caret is: outside every test, function and class a new test, anywhere else the
   steps there, which the service refuses where they cannot go (`Glue.recordInto`); without an answer, nothing starts.
-  **Record a New Test File…** (also under **New**) creates the spec first. A dialog asks for the start page and the
+  They are offered only in a script file under one of the project's Playwright config folders (`Glue.inConfigDirs`),
+  and `Ctrl+Alt+Shift+R` (`$default` keymap, the command key on macOS) records, and stops a recording, as
+  `Ctrl+Alt+Shift+F` re-runs the failing tests: the VS Code extension's chords.
+  **Record a New Test File…** (also under **New**) creates the spec first, in a config folder; its name dialog says
+  why a name is refused (`InputValidatorEx`). A tab closed while `piwi/record` is pending cancels the recording, in a
+  balloon. A dialog asks for the start page and the
   page expression (the candidates, the default first, any other typed in), then `piwi/record`, and a popup for the
   Playwright project when it answers with `projects`; the choices stay in `PiwiLocalSettings`.
 - `PiwiRecording.kt` holds the recording sessions (`PiwiRecordings`) and applies `piwi/recordingChanged` on the event
@@ -159,16 +167,23 @@ while it does not run.
   caret moving between writes.
 - `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the
   token from `PasswordSafe`; **Pair with Piwi Picker** copies the pairing address. It mirrors
-  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`). A locator with `at`, picked while a
-  run was paused at a breakpoint, asks `piwi/applyPick` and replaces the range it answers in a write command; when the
-  line holds no locator, it is inserted at the caret, and the balloon says why (`Glue.pickNotice`). A recorded flow goes through
+  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`). Each request is served on a pooled
+  thread, where the token, the file and its document are read: the built-in server's I/O thread touches neither the
+  password safe nor the disk, and only the writes run on the event thread. A locator with `at`, picked while a
+  run was paused at a breakpoint, asks `piwi/applyPick` and replaces the range it answers in a write command; a
+  replacement that fails (a read-only file, a line changed since) answers 422 with why, in a balloon too; when the
+  line holds no locator, the service does not run or does not answer, it is inserted at the caret, and the balloon
+  says why (`Glue.pickNotice`). Without an editor open, a scratch file (`piwi-picker.ts`) takes the insertion, and the
+  answer's `file` is null, as the VS Code extension's untitled editor. A recorded flow goes through
   `piwi/renderSteps` with the caret, for its page expression and its line's indentation, and its import edit apart,
   made with the insertion (`Glue.importWrite`).
 - `PiwiOpenHandler.kt` is the dashboard's Open in IDE: `GET /api/piwi/open?file=…&line=…&column=…[&root=…][&check]` on
   the built-in server, a `RestService`. It answers only a page whose `Origin` is the Piwi instance an open project is
   connected to (its settings, `PIWI_DASHBOARD_URL` in the environment or in a Playwright config folder's `.env`, the
   instances the editor service reports) or the desktop app, and an instance's page finds files only in the projects
-  connected to it; `OpenOrigins.kt` is the pure half. Every other request for the path gets a 403 from the handler
+  connected to it; `OpenOrigins.kt` is the pure half. These addresses are each project's snapshot
+  (`PiwiProjectService.readKnownAddresses`, read on a pooled thread once the configs are found, with each status and
+  when the connection is saved), so the I/O thread reads no `.env` file. Every other request for the path gets a 403 from the handler
   itself, whatever the platform's origin rules or **Allow unsigned requests** trust, and the first refused page of the
   session is named in a notification. It looks the run's path up under the Playwright config folders, the project folder
   and the content roots (`Glue.candidatePaths`), opens only a file inside an open project, and answers JSON with CORS so

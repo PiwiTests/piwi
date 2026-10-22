@@ -110,14 +110,13 @@ clipboard; it holds your API key, so paste it into your user settings, not into 
 
 ## Commands
 
-| Command | What it does | Shortcut in VS Code |
+| Command | What it does | Shortcut |
 |---|---|---|
 | Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) | |
 | Piwi: Refresh | Fetch the indexes and the latest run again | |
 | Piwi: Refresh the latest run | Read the latest run again, as a click on the status bar does | |
 | Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would | |
-| Piwi: Re-run the failing tests | Run every test still failing, one run per Playwright config: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) | `Ctrl+Shift+Alt+T` (`Cmd+Shift+Alt+T` on macOS) |
-| Piwi: Focus on Failures View | Open [the failures view](./editor-runs#the-failures-view) in the Piwi panel | `Ctrl+Shift+Alt+F` (`Cmd+Shift+Alt+F`) |
+| Piwi: Re-run the failing tests | Run every test still failing, one run per Playwright config: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) | `Ctrl+Shift+Alt+F` (`Cmd+Shift+Alt+F` on macOS) |
 | Piwi: Open in dashboard | Open this file's test, or the latest run | |
 | Piwi: Run selection… | Run a saved [selection](/features/test-selection) | |
 | Piwi: Open the latest run | Open the run the status bar shows | |
@@ -128,8 +127,9 @@ clipboard; it holds your API key, so paste it into your user settings, not into 
 | Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) | |
 | Piwi: Open the log | Show the Piwi output channel, where the editor service logs; the `piwi.trace.server` setting adds the traffic with it | |
 
-The shortcuts are free in VS Code's default keymap on Windows, Linux and macOS; **Preferences: Open Keyboard
-Shortcuts** changes them (search `piwi`). The JetBrains plugin's are under [JetBrains IDEs](#jetbrains-ides).
+The shortcuts are the same in VS Code and the JetBrains IDEs, and free in their default keymaps on Windows, Linux and
+macOS. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a
+JetBrains IDE (search `Piwi`).
 
 ## JetBrains IDEs
 

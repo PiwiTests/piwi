@@ -6,15 +6,21 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.io.File
 
 class PiwiOpenHandlerTest : BasePlatformTestCase() {
+    /** The handler reads the addresses the project service read last: the snapshot the settings, the configs and the status refresh. */
+    private fun refresh() = project.service<PiwiProjectService>().readKnownAddresses()
+
     fun testOpensFilesOnlyForTheInstanceAProjectIsConnectedTo() = withHome(desktopJson = null) {
         val settings = project.service<PiwiSettings>().state
         val saved = settings.serverUrl
         val handler = PiwiOpenHandler()
         try {
             settings.serverUrl = ""
+            refresh()
             assertFalse("no instance named, nothing is trusted", handler.trusts("https://piwi.example.com"))
 
             settings.serverUrl = "https://piwi.example.com"
+            assertFalse("the addresses are read when the settings are saved, not per request", handler.trusts("https://piwi.example.com"))
+            refresh()
             assertTrue(handler.trusts("https://piwi.example.com"))
             assertEquals("the files of the project connected to it", listOf(project), handler.projectsFor("https://piwi.example.com"))
             assertEquals("no project for another site", emptyList<Any>(), handler.projectsFor("https://evil.example"))
@@ -24,10 +30,12 @@ class PiwiOpenHandlerTest : BasePlatformTestCase() {
             assertFalse("a local file or a sandboxed frame", handler.trusts("null"))
 
             settings.serverUrl = "http://localhost:3000"
+            refresh()
             assertTrue("the same server under another loopback name", handler.trusts("http://127.0.0.1:3000"))
             assertFalse("another server on this machine", handler.trusts("http://127.0.0.1:3001"))
         } finally {
             settings.serverUrl = saved
+            refresh()
         }
     }
 
@@ -36,12 +44,14 @@ class PiwiOpenHandlerTest : BasePlatformTestCase() {
         if (!System.getenv("PIWI_DESKTOP_CONFIG").isNullOrBlank()) return
         val handler = PiwiOpenHandler()
         withHome(desktopJson = """{"url":"http://127.0.0.1:41234/","token":"t"}""") {
+            refresh()
             assertTrue(handler.trusts("http://127.0.0.1:41234"))
             assertTrue("the same server under another loopback name", handler.trusts("http://localhost:41234"))
             assertEquals("every open project, none connected to an instance", listOf(project), handler.projectsFor("http://127.0.0.1:41234"))
             assertFalse("another server on this machine", handler.trusts("http://127.0.0.1:41235"))
         }
         withHome(desktopJson = null) {
+            refresh()
             assertFalse("the desktop app does not run", handler.trusts("http://127.0.0.1:41234"))
         }
     }

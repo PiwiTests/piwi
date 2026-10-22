@@ -73,6 +73,10 @@
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiOpenHandler"/>
     </extensions>
 
+    <!--
+      The shortcuts go in the default keymap, which every bundled keymap descends from: the macOS keymaps turn their
+      ctrl into the command key. Each is a chord no bundled keymap uses, in the ctrl alt shift family.
+    -->
     <actions>
         <group id="Piwi.Actions" text="Piwi" popup="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
@@ -92,7 +96,9 @@
                     description="Run one of the project's saved selections"/>
             <action id="Piwi.RerunFailing" class="dev.piwitests.jetbrains.RerunFailingAction"
                     text="Re-run the Failing Tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
-                    description="Run every test that still fails, or whose failing line changed since its run"/>
+                    description="Run every test that still fails, or whose failing line changed since its run">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
+            </action>
             <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare With…"
                     icon="AllIcons.Actions.Diff"
                     description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
@@ -116,6 +122,7 @@
                     description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
                 <override-text place="EditorPopup" text="Piwi: Record Here"/>
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
             </action>
             <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
                     text="Record a New Test File…" icon="AllIcons.Ide.Macro.Recording_1"
@@ -127,6 +134,8 @@
                     description="Close the recording's browser; the recorded lines stay, one undo away">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
                 <override-text place="EditorPopup" text="Piwi: Stop Recording"/>
+                <!-- Record Here's chord: the two never apply to the same file at once. -->
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
             </action>
             <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause Recording"
                     icon="AllIcons.Actions.Pause"

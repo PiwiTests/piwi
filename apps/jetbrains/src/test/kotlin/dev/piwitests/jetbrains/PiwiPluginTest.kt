@@ -38,8 +38,40 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
         assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
         assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
-        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks")) {
+        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
+        }
+        // The default keymap, which every bundled keymap descends from, binds the actions used while typing.
+        val keymap = com.intellij.openapi.keymap.KeymapManager.getInstance().getKeymap(com.intellij.openapi.keymap.KeymapManager.DEFAULT_IDEA_KEYMAP)!!
+        fun strokes(id: String) = keymap.getShortcuts(id).filterIsInstance<com.intellij.openapi.actionSystem.KeyboardShortcut>().map { it.firstKeyStroke }
+        val record = javax.swing.KeyStroke.getKeyStroke("ctrl alt shift R")
+        assertEquals(listOf(record), strokes("Piwi.RecordHere"))
+        assertEquals("the same chord stops the recording", listOf(record), strokes("Piwi.StopRecording"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
+    }
+
+    /** The service's process gets the IDE's HTTP proxy, as the variables Node reads; nothing when the IDE reaches the instance directly. */
+    fun testTheServiceGetsTheIdesProxy() {
+        val selector = object : java.net.ProxySelector() {
+            override fun select(uri: java.net.URI): List<java.net.Proxy> =
+                if (uri.host == "piwi.example.com") listOf(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress("proxy.example.com", 3128)))
+                else listOf(java.net.Proxy.NO_PROXY)
+
+            override fun connectFailed(uri: java.net.URI, address: java.net.SocketAddress, failure: java.io.IOException) {}
+        }
+        val settings = project.service<PiwiSettings>().state
+        val saved = settings.serverUrl
+        try {
+            settings.serverUrl = "https://piwi.example.com"
+            val environment = PiwiLspServerDescriptor(project).proxyEnvironment(selector)
+            assertEquals("http://proxy.example.com:3128", environment["HTTPS_PROXY"])
+            assertEquals("http://proxy.example.com:3128", environment["HTTP_PROXY"])
+            assertEquals("1", environment["NODE_USE_ENV_PROXY"])
+            assertEquals("localhost,127.0.0.1,::1", environment["NO_PROXY"])
+            settings.serverUrl = ""
+            assertEquals("no proxy for a public address, none for the service", emptyMap<String, String>(), PiwiLspServerDescriptor(project).proxyEnvironment(selector))
+        } finally {
+            settings.serverUrl = saved
         }
     }
 
@@ -367,13 +399,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(PiwiLspServerSupportProvider.isSupported(myFixture.addFileToProject("src/logo.png", "").virtualFile))
     }
 
-    /** Piwi Picker's request lands at the caret of the open editor, through the IDE's built-in server. */
-    fun testPiwiPickerSendsALocatorToTheCaret() {
-        myFixture.configureByText("checkout.spec.ts", "test('pays', async ({ page }) => {\n  <caret>\n});\n")
-        val token = PiwiSendToken.ensure()
+    /** Posts `body` to the Send to editor endpoint as Piwi Picker does, and waits for the answer, pumping the event queue meanwhile. */
+    private fun sendFromPicker(body: String, bearer: String): java.net.http.HttpResponse<String> {
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
-        val client = java.net.http.HttpClient.newHttpClient()
-        fun post(body: String, bearer: String) = client.sendAsync(
+        val future = java.net.http.HttpClient.newHttpClient().sendAsync(
             java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.PATH}"))
                 .header("Authorization", "Bearer $bearer")
                 .header("Origin", "chrome-extension://abc")
@@ -381,25 +410,53 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 .build(),
             java.net.http.HttpResponse.BodyHandlers.ofString(),
         )
-        fun await(future: CompletableFuture<java.net.http.HttpResponse<String>>): java.net.http.HttpResponse<String> {
-            val deadline = System.currentTimeMillis() + 20_000
-            while (!future.isDone && System.currentTimeMillis() < deadline) {
-                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-                Thread.sleep(20)
-            }
-            return future.get(1, TimeUnit.SECONDS)
+        val deadline = System.currentTimeMillis() + 20_000
+        while (!future.isDone && System.currentTimeMillis() < deadline) {
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            Thread.sleep(20)
         }
+        return future.get(1, TimeUnit.SECONDS)
+    }
 
-        assertEquals(401, await(post("""{"kind":"locator","text":"x"}""", "wrong-token-wrong-token")).statusCode())
-        val bad = await(post("""{"kind":"file"}""", token))
+    /** Piwi Picker's request lands at the caret of the open editor, through the IDE's built-in server. */
+    fun testPiwiPickerSendsALocatorToTheCaret() {
+        myFixture.configureByText("checkout.spec.ts", "test('pays', async ({ page }) => {\n  <caret>\n});\n")
+        val token = PiwiSendToken.ensure()
+        assertEquals(401, sendFromPicker("""{"kind":"locator","text":"x"}""", "wrong-token-wrong-token").statusCode())
+        val bad = sendFromPicker("""{"kind":"file"}""", token)
         assertEquals(400, bad.statusCode())
-        val ok = await(post("""{"kind":"locator","text":"page.getByRole('button', { name: 'Pay now' })"}""", token))
+        val ok = sendFromPicker("""{"kind":"locator","text":"page.getByRole('button', { name: 'Pay now' })"}""", token)
         assertEquals(ok.body(), 200, ok.statusCode())
         assertEquals("chrome-extension://abc", ok.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+        assertEquals(myFixture.file.virtualFile.path, com.google.gson.JsonParser.parseString(ok.body()).asJsonObject.get("file").asString)
         assertEquals(
             "test('pays', async ({ page }) => {\n  page.getByRole('button', { name: 'Pay now' })\n});\n",
             myFixture.editor.document.text,
         )
+    }
+
+    /** Without an editor open, Piwi Picker's text goes into a new scratch file, and the answer names no file. */
+    fun testPiwiPickerOpensAScratchFileWhileNoEditorIsOpen() {
+        val token = PiwiSendToken.ensure()
+        val editors = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+        editors.openFiles.forEach { editors.closeFile(it) }
+        assertNull(editors.selectedTextEditor)
+        val ok = sendFromPicker("""{"kind":"locator","text":"page.getByLabel('Email')"}""", token)
+        assertEquals(ok.body(), 200, ok.statusCode())
+        assertTrue(ok.body(), com.google.gson.JsonParser.parseString(ok.body()).asJsonObject.get("file").isJsonNull)
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val editor = editors.selectedTextEditor
+        val scratch = editor?.virtualFile
+        try {
+            assertTrue(scratch?.name ?: "no editor", scratch?.name?.startsWith("piwi-picker") == true)
+            assertTrue(com.intellij.ide.scratch.ScratchUtil.isScratch(scratch))
+            assertEquals("page.getByLabel('Email')", editor?.document?.text)
+        } finally {
+            if (scratch != null) {
+                editors.closeFile(scratch)
+                com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { scratch.delete(this) }
+            }
+        }
     }
 
     /** The dashboard's Open in IDE finds a run's file in the open project and opens it at its line, through the built-in server. */
@@ -417,7 +474,12 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val settings = project.service<PiwiSettings>().state
         val saved = settings.serverUrl
         settings.serverUrl = "http://localhost:3000"
-        com.intellij.openapi.util.Disposer.register(testRootDisposable) { settings.serverUrl = saved }
+        val service = project.service<PiwiProjectService>()
+        service.readKnownAddresses()
+        com.intellij.openapi.util.Disposer.register(testRootDisposable) {
+            settings.serverUrl = saved
+            service.readKnownAddresses()
+        }
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
         val client = java.net.http.HttpClient.newHttpClient()
         fun get(query: String, origin: String? = "http://127.0.0.1:3000"): java.net.http.HttpResponse<String> {

@@ -472,11 +472,6 @@
       },
       {
         "command": "piwi.rerunFailing",
-        "key": "ctrl+shift+alt+t",
-        "mac": "cmd+shift+alt+t"
-      },
-      {
-        "command": "piwi.failures.focus",
         "key": "ctrl+shift+alt+f",
         "mac": "cmd+shift+alt+f"
       }

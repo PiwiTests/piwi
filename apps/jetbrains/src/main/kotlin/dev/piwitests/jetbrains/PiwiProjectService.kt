@@ -185,6 +185,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /** The project's Playwright configs; null until the first search ends. */
     @Volatile private var playwright: Glue.PlaywrightSearch? = null
 
+    /** The addresses whose pages may open this project's files, as [readKnownAddresses] read them last. */
+    @Volatile private var addresses: ProjectAddresses = ProjectAddresses.NONE
+
     /** Called on the event thread after each refresh of the status. */
     fun onChange(parent: Disposable, listener: () -> Unit) {
         listeners += listener
@@ -240,6 +243,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             if (gone.value(null)) return@executeOnPooledThread
             val before = playwright
             val found = searchPlaywright()
+            readKnownAddresses()
             if (found == before) return@executeOnPooledThread
             // Once the tool windows are registered.
             val tools = ToolWindowManager.getInstance(project)
@@ -457,12 +461,46 @@ class PiwiProjectService(private val project: Project) : Disposable {
         return Glue.parseDesktopDiscovery(runCatching { Files.readString(file) }.getOrNull())
     }
 
+    /** The addresses whose pages may open this project's files, as read last (`PiwiOpenHandler`): nothing from the disk. */
+    fun knownAddresses(): ProjectAddresses = addresses
+
+    /**
+     * Read the addresses whose pages may open this project's files, and keep them: the desktop app's, from the status
+     * and its discovery file, for every open project; this project's instance from its settings, the status's
+     * contexts and, in a trusted project, `PIWI_DASHBOARD_URL` in the `.env` of each Playwright config folder. Reads
+     * the disk, on the calling thread: once the configs are found, with each status, and when the settings are saved.
+     */
+    fun readKnownAddresses(): ProjectAddresses {
+        val status = status
+        val everywhere = listOf(status?.desktopUrl, readDesktopDiscovery()?.url)
+        val own = buildList {
+            add(settings().serverUrl)
+            for (context in status?.contexts.orEmpty()) {
+                add(context.serverUrl)
+                add(context.instance?.serverUrl)
+            }
+            if (trusted()) {
+                for (dir in playwrightConfigDirs()) {
+                    val dotEnv = dir.resolve(".env")
+                    if (Files.isRegularFile(dotEnv)) add(OpenOrigins.dashboardUrlFromDotEnv(runCatching { Files.readString(dotEnv) }.getOrNull()))
+                }
+            }
+        }
+        return ProjectAddresses(everywhere, own).also { addresses = it }
+    }
+
+    /** [readKnownAddresses] on a pooled thread. */
+    private fun refreshKnownAddresses() {
+        ApplicationManager.getApplication().executeOnPooledThread { if (!gone.value(null)) readKnownAddresses() }
+    }
+
     /**
      * Hand the connection to the running service (`piwi/setCredentials`), which reads everything again with it and
      * pushes what changed; without a service, start it for the open files.
      */
     fun sendCredentials() {
         ApplicationManager.getApplication().executeOnPooledThread {
+            readKnownAddresses()
             val manager = LspServerManager.getInstance(project)
             val lsp = manager.getServersForProvider(PiwiLspServerSupportProvider::class.java)
             if (lsp.isEmpty()) {
@@ -507,6 +545,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             statusPushes++
         }
         changed()
+        refreshKnownAddresses()
         offerDesktop(result)
         project.getServiceIfCreated(PiwiCoverageMarks::class.java)?.askOpen()
     }
@@ -584,6 +623,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 failures = readFailures?.items.orEmpty()
             }
         }
+        readKnownAddresses()
         changed()
         offerDesktop(status)
     }

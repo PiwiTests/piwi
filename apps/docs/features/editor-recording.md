@@ -119,7 +119,7 @@ recorded, lands at the editor's cursor too:
    [`piwi codegen --body`](/reference/cli#codegen).
 
 The editor listens on the loopback interface only, and accepts a request only with the token. With several VS Code
-windows open, the one that paired receives. In a remote window (Remote SSH, WSL, Dev Containers), the pairing address
+windows open, the one that paired receives. With no editor open, a JetBrains IDE puts it in a new scratch file. In a remote window (Remote SSH, WSL, Dev Containers), the pairing address
 is the local end of a port VS Code forwards to the listener, listed in the Ports view, so Piwi Picker in your browser
 reaches it from your machine.
 

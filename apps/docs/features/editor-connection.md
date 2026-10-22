@@ -99,6 +99,10 @@ starts the service again. An instance whose certificate a private certificate au
 in `NODE_EXTRA_CA_CERTS` in the environment VS Code was started with: the extension passes the environment through
 to the service.
 
+In a JetBrains IDE, the service gets the HTTP proxy of **Settings → Appearance & Behavior → System Settings → HTTP
+Proxy** for the instance the project names, and reaches this machine's addresses directly. A private certificate
+authority goes in `NODE_EXTRA_CA_CERTS` in the environment the IDE was started with.
+
 ## An unreachable instance
 
 When the instance does not answer, or answers with an error, the status bar reads **Piwi: unreachable** instead of
