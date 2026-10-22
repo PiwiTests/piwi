@@ -17,7 +17,7 @@ import {
 } from '@piwitests/core/locator-chain';
 import { DomModel, normalizeWhiteSpace, parentElementOrShadowHost } from './engine-aria.js';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
-import { repeatedContainers, type RepeatedContainer } from './repeated-container.js';
+import { repeatedContainers, type ContainerOptions, type RepeatedContainer } from './repeated-container.js';
 
 /**
  * How every tool names and ranks an element, checked against the page as it
@@ -72,6 +72,23 @@ export function createPageEngine(doc: Document = document, testIdAttributes?: st
   const engine = createLocatorEngine(doc, { testIdAttributes, ignore: isPiwiElement });
   pageEngines.set(engine.model, engine);
   return engine;
+}
+
+/**
+ * How `repeatedContainers` reads the page through `engine`: its roles, test id attributes, texts (lowered once
+ * for as long as the engine lasts) and visibility.
+ */
+export function engineContainerOptions(engine: LocatorEngine): ContainerOptions {
+  return {
+    roleOf: (node) => engine.model.role(node),
+    testIdAttributes: engine.testIdAttributes,
+    textOf: (node) => engine.model.text(node).normalized,
+    lowerTextOf: (node) => {
+      const text = engine.model.text(node);
+      return (text.lower ??= text.normalized.toLowerCase());
+    },
+    isVisible: (node) => engine.model.isVisible(node),
+  };
 }
 
 /**
@@ -397,28 +414,17 @@ export function checkLocators(
    * shows and its siblings do not.
    */
   const containerScope = (chain: LocatorChain, exact: LocatorChain | null, found: Element[]): LocatorChain | null => {
-    containers ??= repeatedContainers(el, {
-      roleOf: (node) => engine.model.role(node),
-      testIdAttributes: engine.testIdAttributes,
-      textOf: (node) => engine.model.text(node).normalized,
-      lowerTextOf: (node) => {
-        const text = engine.model.text(node);
-        return (text.lower ??= text.normalized.toLowerCase());
-      },
-    });
+    containers ??= repeatedContainers(el, engineContainerOptions(engine));
     const others = found.filter((other) => other !== el);
     const inners = exact && exact !== chain ? [chain, exact] : [chain];
     for (const container of containers) {
-      const repeats = container.siblings.some(
-        (sibling) => sibling !== container.element && others.some((other) => sibling.contains(other)),
-      );
-      if (!repeats) continue;
+      if (!container.repeats(others)) continue;
       const scopes: LocatorChain[] = [];
       const { element, role } = container;
       const ownName = element.hasAttribute('aria-label') || element.hasAttribute('aria-labelledby');
       const name = role && ownName ? engine.model.normalizedAccessibleName(element, false) : '';
       if (role && name) scopes.push({ calls: [byNamedRole(role, name)] });
-      const base = tryParseLocatorChain(container.base);
+      const base = container.base ? tryParseLocatorChain(container.base) : null;
       for (const hasText of base ? container.textsAmong(container.siblings) : []) {
         const filtered = textFilterVariant(base!, hasText);
         if (filtered) scopes.push(filtered);

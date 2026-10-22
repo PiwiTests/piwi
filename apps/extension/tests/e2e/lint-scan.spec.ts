@@ -288,6 +288,40 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
     await expect(page.getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button')).toHaveCount(1);
   });
 
+  test('scopes by the text the pick results filter the container by, which no other copy contains', async ({
+    context,
+  }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div>
+        <div data-testid="product-card"><span>Red mug</span><span>12 €</span><button><svg></svg></button></div>
+        <div data-testid="product-card"><span>Red mug XL</span><span>14 €</span><button><svg></svg></button></div>
+      </div>
+    </body></html>`);
+    const findings = await scan(page);
+    // "Red mug" is in the other card's "Red mug XL" too: filtering by it would find both cards.
+    expect(findings.map((f) => [f.suggestion.kind, f.suggestion.text, f.suggestion.locator])).toEqual([
+      ['scope', '12 €', "getByTestId('product-card').filter({ hasText: '12 €' }).getByRole('button')"],
+      ['scope', 'Red mug XL', "getByTestId('product-card').filter({ hasText: 'Red mug XL' }).getByRole('button')"],
+    ]);
+    await expect(page.getByTestId('product-card').filter({ hasText: '12 €' }).getByRole('button')).toHaveCount(1);
+  });
+
+  test('names the container after a text it shows before one hidden in it', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div class="css-1q8k3fz">
+        <div class="css-7tkz2b"><span hidden>n1</span><span>Groceries</span><button><svg></svg></button></div>
+        <div class="css-7tkz2b"><span hidden>n2</span><span>Packing list</span><button><svg></svg></button></div>
+      </div>
+    </body></html>`);
+    const findings = await scan(page);
+    expect(findings.map((f) => [f.suggestion.kind, f.suggestion.value])).toEqual([
+      ['container', 'groceries'],
+      ['container', 'packing-list'],
+    ]);
+  });
+
   test('keeps the test id on the element when no text tells its container apart', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>

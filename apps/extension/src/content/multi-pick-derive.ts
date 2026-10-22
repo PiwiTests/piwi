@@ -118,6 +118,7 @@ export function derivePattern(picked: Element[], maps: DomRoleMaps, page: Patter
     };
     const perPick = picked.map((el) => repeatedContainers(el, options));
     for (const nearest of perPick[0]!) {
+      if (!nearest.base) continue;
       const containers = perPick.map((list) => list.find((c) => c.base === nearest.base));
       if (containers.some((c) => !c)) continue;
       const chosen = containers as RepeatedContainer[];

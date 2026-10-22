@@ -439,11 +439,11 @@ recorder takes:
   exact (`exact`); `.filter({ hasText })` with the element's text (`text`); an ancestor whose test id is unique
   (`scope`, the test id read from the engine's `testIdAttributes`); the nearest **repeated container** whose siblings
   hold the other matches (`container`: `repeatedContainers` in `repeated-container.ts`, an ancestor sharing a test id,
-  or a tag with a role or a readable class, with its siblings), filtered by a short text it shows and they do not, or
-  by its own `aria-label`/`aria-labelledby` name; a landmark, named dialog or row scope (`scope`). A unique test id
-  goes before the container because it is the author's own hook; a row named from its whole content goes after it,
-  being longer and changing with every cell. `keepAmbiguous` also returns the others with the engine's count, which
-  is what the Pick results panel shows.
+  or a tag with a role or a readable class, with its siblings), filtered by a short text it shows and they do not (a
+  visible one before a hidden one), or by its own `aria-label`/`aria-labelledby` name; a landmark, named dialog or
+  row scope (`scope`). A unique test id goes before the container because it is the author's own hook; a row named
+  from its whole content goes after it, being longer and changing with every cell. `keepAmbiguous` also returns the
+  others with the engine's count, which is what the Pick results panel shows.
   The pick (`pick.ts`) checks the candidates before anything else: the anchors step opens first only when none
   finds the element alone (`unique` or `narrowed`) without the stability rules calling it brittle; otherwise the
   results open at once and offer it as **Scope to a parent…** (`renderResultsPanel` resolving `scope`), after which
@@ -457,6 +457,10 @@ recorder takes:
   with the number of elements it finds, and per pick its container filtered by a text no other container shows
   (`.nth()` on the pattern when none does). Other picks give their own role or class with `.filter({ hasText })`.
   `multi-pick.ts` hands it the page engine's roles, names and texts.
+- **Lint** (`scanForLintIssues`, `lint-scan.ts`) shares it too, through `engineContainerOptions`: a finding's container
+  is the nearest one whose siblings hold another finding of its role and name (`RepeatedContainer.repeats`, the check
+  the ladder makes with the other matches), with `sameTag` so that siblings sharing nothing but their tag count (no
+  locator finds those, which is what the suggested test id fixes), named after the first text `textsAmong` gives.
 - **Words** (`verdictWords`, `src/shared/verdict-words.ts`, unit-tested) say what a checked locator is worth: a word
   (`stable`, `could break`, `brittle`, `unique by position`, `3 matches`, `not checked`), a tone and an explanation
   (`unique · brittle: CSS class`), from its verdict and `locatorStability` (`assessLocatorChain`'s level and rules). A

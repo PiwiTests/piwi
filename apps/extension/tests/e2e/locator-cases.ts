@@ -749,6 +749,14 @@ export const CONTAINER_NARROWING: Array<{
     narrowedBy: 'container',
   },
   {
+    name: 'a list item, by a text it shows rather than a shorter hidden one',
+    target: '#share-packing',
+    candidate: "getByRole('button', { name: 'Share' })",
+    locator: "getByRole('listitem').filter({ hasText: 'Packing list' }).getByRole('button', { name: 'Share' })",
+    verdict: 'narrowed',
+    narrowedBy: 'container',
+  },
+  {
     name: 'rows showing the same text, by position',
     target: '#open-second-draft',
     candidate: "getByRole('button', { name: 'Open' })",

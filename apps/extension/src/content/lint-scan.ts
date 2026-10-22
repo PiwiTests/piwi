@@ -1,7 +1,8 @@
 import { parseLocatorChain, quoteJsString } from '@piwitests/core/locator-chain';
 import { normalizeWhiteSpace, parentElementOrShadowHost, tagNameOf, type DomModel } from './engine-aria.js';
 import type { LocatorEngine } from './locator-engine.js';
-import { checkLocators, createPageEngine, rankElement } from './verified-locators.js';
+import { repeatedContainers, type ContainerOptions } from './repeated-container.js';
+import { checkLocators, createPageEngine, engineContainerOptions, rankElement } from './verified-locators.js';
 
 /** Where an element's suggested test id comes from, the first of these it has. */
 export type SlugSource = 'name' | 'label' | 'placeholder' | 'heading' | 'role';
@@ -85,9 +86,6 @@ const MAX_CHECKED = 800;
 
 /** Characters a suggested test id keeps at most, cut at a word. */
 const SLUG_CHARS = 40;
-
-/** A text longer than this is a description rather than a title: a shorter one names a container better. */
-const TITLE_CHARS = 60;
 
 const HEADING_SELECTOR = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
 
@@ -214,115 +212,6 @@ function slugText(
   return heading ? [`${heading} ${role}`, 'heading'] : [role, 'role'];
 }
 
-/**
- * A container's runs of visible text, whitespace collapsed, each once: its headings' first, then those with a letter,
- * then the others (a price, a count).
- */
-function containerTexts(container: Element, model: DomModel): string[] {
-  const headings: string[] = [];
-  const words: string[] = [];
-  const others: string[] = [];
-  const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const parent = node.parentElement;
-    const text = normalizeWhiteSpace(node.nodeValue ?? '');
-    if (!parent || !text || !slugify(text)) continue;
-    const tag = tagNameOf(parent);
-    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || !model.isVisible(parent)) continue;
-    (parent.closest(HEADING_SELECTOR) ? headings : /\p{L}/u.test(text) ? words : others).push(text);
-  }
-  return [...new Set([...headings, ...words, ...others])];
-}
-
-interface RepeatedContainer {
-  container: Element;
-  /** The container's text no other copy holds. */
-  text: string;
-  /** Whether no other copy's text contains it, in any case: `filter({ hasText })` then keeps this one alone. */
-  filters: boolean;
-}
-
-/**
- * Finds the repeated container a finding sits in. Its caches last one scan: the texts of each container, how many
- * children of one tag of a parent hold each text, and how many twins each ancestor of a group of twins holds.
- */
-class ContainerFinder {
-  private readonly texts = new Map<Element, string[]>();
-  private readonly counts = new Map<Element, Map<string, Map<string, number>>>();
-  private readonly held = new Map<Element[], Map<Element, number>>();
-
-  constructor(private readonly model: DomModel) {}
-
-  /**
-   * The repeated container `element` sits in: the outermost ancestor holding no other element of `twins` (the
-   * findings sharing its role and name), whose parent has another child of the same tag holding a twin. Null when
-   * there is none, or when every text of it is in another child of that tag too.
-   */
-  find(element: Element, twins: Element[]): RepeatedContainer | null {
-    if (twins.length < 2) return null;
-    const held = this.heldBy(twins);
-    let item = element;
-    let parent = parentElementOrShadowHost(item);
-    while (parent && held.get(parent) === 1) {
-      item = parent;
-      parent = parentElementOrShadowHost(item);
-    }
-    if (!parent || item === element) return null;
-    const tag = tagNameOf(item);
-    const copies = [...parent.children].filter((child) => child !== item && tagNameOf(child) === tag);
-    if (!copies.some((copy) => held.has(copy))) return null;
-    const counts = this.countsUnder(parent, tag);
-    const candidates = this.textsOf(item).filter((text) => counts.get(text) === 1);
-    const text = candidates.find((c) => c.length <= TITLE_CHARS) ?? candidates[0];
-    if (!text) return null;
-    const lower = text.toLowerCase();
-    const filters = copies.every((copy) => !this.model.text(copy).normalized.toLowerCase().includes(lower));
-    return { container: item, text, filters };
-  }
-
-  private heldBy(twins: Element[]): Map<Element, number> {
-    let held = this.held.get(twins);
-    if (!held) {
-      held = new Map();
-      for (const twin of twins) {
-        for (let node = parentElementOrShadowHost(twin); node; node = parentElementOrShadowHost(node)) {
-          held.set(node, (held.get(node) ?? 0) + 1);
-        }
-      }
-      this.held.set(twins, held);
-    }
-    return held;
-  }
-
-  private textsOf(container: Element): string[] {
-    let texts = this.texts.get(container);
-    if (!texts) {
-      texts = containerTexts(container, this.model);
-      this.texts.set(container, texts);
-    }
-    return texts;
-  }
-
-  /** How many of `parent`'s children of tag `tag` hold each text. */
-  private countsUnder(parent: Element, tag: string): Map<string, number> {
-    let byTag = this.counts.get(parent);
-    if (!byTag) {
-      byTag = new Map();
-      this.counts.set(parent, byTag);
-    }
-    let counts = byTag.get(tag);
-    if (!counts) {
-      counts = new Map();
-      for (const child of parent.children) {
-        if (tagNameOf(child) !== tag) continue;
-        for (const text of this.textsOf(child)) counts.set(text, (counts.get(text) ?? 0) + 1);
-      }
-      byTag.set(tag, counts);
-    }
-    return counts;
-  }
-}
-
 /** Whether `locator`, evaluated inside `scope` (the page when unset), finds `element` and nothing else. */
 function findsAlone(engine: LocatorEngine, locator: string, element: Element, scope?: Element): boolean {
   try {
@@ -331,6 +220,29 @@ function findsAlone(engine: LocatorEngine, locator: string, element: Element, sc
   } catch {
     return false;
   }
+}
+
+/**
+ * The repeated container `element` sits in, found as the pick ladder finds its containers (`repeatedContainers`, with
+ * siblings sharing only their tag): the nearest whose siblings hold another of `twins` (the findings sharing its role
+ * and name), inside which `inner` finds the element alone, and which shows a text no sibling does. Null when none
+ * does.
+ */
+function repeatedContainer(
+  element: Element,
+  twins: readonly Element[],
+  inner: string,
+  engine: LocatorEngine,
+  options: ContainerOptions,
+): { container: Element; texts: string[] } | null {
+  if (twins.length < 2) return null;
+  const others = twins.filter((twin) => twin !== element);
+  for (const candidate of repeatedContainers(element, options)) {
+    if (!candidate.repeats(others) || !findsAlone(engine, inner, element, candidate.element)) continue;
+    const texts = candidate.textsAmong(candidate.siblings);
+    if (texts.length) return { container: candidate.element, texts };
+  }
+  return null;
 }
 
 type Unsuggested = Omit<LintFinding, 'suggestion'>;
@@ -362,30 +274,36 @@ async function suggest(
   }
   let headingIndex: HeadingIndex | undefined;
   const headings = (): HeadingIndex => (headingIndex ??= new HeadingIndex(engine.elements(), model));
-  const containers = new ContainerFinder(model);
-  /** The test id given to each container, which every finding inside it shares. */
-  const containerIds = new Map<Element, string>();
+  const containerOptions = { ...engineContainerOptions(engine), sameTag: true };
+  /** The test id given to each container, which every finding inside it shares, and the text it is named after. */
+  const containerIds = new Map<Element, { value: string; text: string }>();
 
   const suggestions: LintSuggestion[] = [];
   for (const f of found) {
     if (!(await pause())) return null;
     const inner = roleLocator(f.role, f.accessibleName);
-    const repeated = containers.find(f.element, twins.get(twinKey(f))!);
-    if (repeated && findsAlone(engine, inner, f.element, repeated.container)) {
-      const { container, text, filters } = repeated;
+    const repeated = repeatedContainer(f.element, twins.get(twinKey(f))!, inner, engine, containerOptions);
+    if (repeated) {
+      const { container, texts } = repeated;
       const shared = container.getAttribute(attribute);
       if (shared) {
-        const locator = `getByTestId(${quoteJsString(shared)}).filter({ hasText: ${quoteJsString(text)} }).${inner}`;
-        if (filters && findsAlone(engine, locator, f.element)) {
-          suggestions.push({ kind: 'scope', container, attribute, value: shared, text, locator });
+        const scoped = texts
+          .map((text) => ({
+            text,
+            locator: `getByTestId(${quoteJsString(shared)}).filter({ hasText: ${quoteJsString(text)} }).${inner}`,
+          }))
+          .find(({ locator }) => findsAlone(engine, locator, f.element));
+        if (scoped) {
+          suggestions.push({ kind: 'scope', container, attribute, value: shared, ...scoped });
           continue;
         }
       } else {
-        let value = containerIds.get(container);
-        if (!value) {
-          value = claimTestId(slugify(text), used);
-          containerIds.set(container, value);
+        let named = containerIds.get(container);
+        if (!named) {
+          named = { value: claimTestId(slugify(texts[0]!), used), text: texts[0]! };
+          containerIds.set(container, named);
         }
+        const { value, text } = named;
         const locator = `getByTestId(${quoteJsString(value)}).${inner}`;
         suggestions.push({ kind: 'container', container, attribute, value, text, locator });
         continue;

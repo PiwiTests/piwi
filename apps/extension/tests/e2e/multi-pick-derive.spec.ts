@@ -352,6 +352,42 @@ test.describe('repeatedContainers', () => {
     expect(reads).toBeLessThanOrEqual(200 * 1000);
   });
 
+  test('with sameTag, siblings sharing only their tag repeat, and repeats says whose siblings hold the others', async ({
+    context,
+  }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body><div>
+      <div class="css-1q8k3fz"><span>Blue mug</span><button id="blue"></button></div>
+      <div class="css-1q8k3fz"><span>Red mug</span><button id="red"></button></div>
+      <p><button id="other"></button></p>
+    </div></body></html>`);
+    await installGlobals(page);
+    const result = await page.evaluate(() => {
+      const find = (globalThis as any).repeatedContainers as typeof repeatedContainers;
+      const byId = (id: string) => document.getElementById(id)!;
+      const options = { roleOf: () => null, testIdAttributes: ['data-testid'] };
+      const [card, ...rest] = find(byId('blue'), { ...options, sameTag: true });
+      return {
+        withoutSameTag: find(byId('blue'), options).length,
+        rest: rest.length,
+        base: card!.base,
+        siblings: card!.siblings.length,
+        repeatsRed: card!.repeats([byId('red')]),
+        repeatsOther: card!.repeats([byId('other')]),
+        texts: card!.textsAmong(card!.siblings),
+      };
+    });
+    expect(result).toEqual({
+      withoutSameTag: 0,
+      rest: 0,
+      base: null,
+      siblings: 2,
+      repeatsRed: true,
+      repeatsOther: false,
+      texts: ['Blue mug'],
+    });
+  });
+
   test('reads the texts through lowerTextOf when given, not textOf', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body><ul>

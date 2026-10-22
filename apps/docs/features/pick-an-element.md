@@ -38,7 +38,7 @@ first. One that also finds others is narrowed, trying in order:
 - the exact name or text, then the element's own text as a filter;
 - a parent whose test id is unique on the page;
 - the repeated row, list item or card the element sits in, picked by a short text it shows and its siblings do not
-  (a cell, a heading), or by its own `aria-label`:
+  (a cell, a heading, a visible text before a hidden one), or by its own `aria-label`:
   `getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })`;
 - its landmark, a named dialog or a named row.
 
