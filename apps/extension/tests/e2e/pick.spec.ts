@@ -425,6 +425,49 @@ test.describe('pick.js results panel', () => {
     await expect(ring).toHaveCount(0);
   });
 
+  test('the ring follows the picked element as the page scrolls, without a frame loop', async ({ context }) => {
+    const page = await openResults(context, async (page) => {
+      await page.evaluate(() => {
+        document.body.style.height = '3000px';
+        // Counts the animation frames the page's scripts ask for, the results' included.
+        const g = globalThis as { __frames?: number; __nextFrame?: typeof requestAnimationFrame };
+        g.__frames = 0;
+        g.__nextFrame = requestAnimationFrame.bind(globalThis);
+        globalThis.requestAnimationFrame = (callback) => {
+          g.__frames!++;
+          return g.__nextFrame!(callback);
+        };
+      });
+    });
+    const ring = page.locator(`${RESULTS} .spotlight`);
+    const ringFits = async () => {
+      const box = (await ring.boundingBox())!;
+      const target = (await page.locator('#target').boundingBox())!;
+      return Math.abs(box.x - (target.x - 3)) < 1.5 && Math.abs(box.y - (target.y - 3)) < 1.5;
+    };
+    await expect(ring).toBeVisible();
+    await expect.poll(ringFits).toBe(true);
+
+    // Ten frames with the results open and nothing moving: no frame is asked for.
+    const asked = await page.evaluate(async () => {
+      const g = globalThis as { __frames?: number; __nextFrame?: typeof requestAnimationFrame };
+      g.__frames = 0;
+      for (let i = 0; i < 10; i++) await new Promise((resolve) => g.__nextFrame!(resolve));
+      return g.__frames;
+    });
+    expect(asked).toBe(0);
+
+    await page.evaluate(() => scrollTo(0, 80));
+    await expect.poll(ringFits).toBe(true);
+    expect((await page.locator('#target').boundingBox())!.y).toBeLessThan(120);
+    // Scrolled out of view, the ring goes and the backdrop dims the whole page.
+    await page.evaluate(() => scrollTo(0, 1000));
+    await expect(ring).toBeHidden();
+    await page.evaluate(() => scrollTo(0, 0));
+    await expect(ring).toBeVisible();
+    await expect.poll(ringFits).toBe(true);
+  });
+
   test('moves aside when the picked element would be under it', async ({ context }) => {
     await stubChromeI18n(context);
     const page = await context.newPage();

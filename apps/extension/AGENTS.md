@@ -118,7 +118,8 @@ surface on the page is touched. The bug recorder's Mark what's wrong claims the 
 for its pick alone, so a Pick started meanwhile leaves it be. The Pick results' **Pick another** picks again inside
 the same tool session (`runPick` runs `pickOne` again on the `pick-another` outcome), so it neither starts a tool nor
 ends one; while the results are open they ring the picked element (`spotlight` in `results-panel.ts`), drawn inside
-their own shadow root and gone with it.
+their own shadow root and gone with it, and drawn again on a scroll (heard in the capture phase), a resize, or a size
+change of the element or the panel (`ResizeObserver`), never in a frame loop.
 Escape during the anchors step is that step's Skip, not a cancel. The
 recorder deliberately stays outside this: it is a capture mode, and stopping it because
 another panel opened would discard a recording in progress.

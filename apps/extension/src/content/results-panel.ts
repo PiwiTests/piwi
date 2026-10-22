@@ -293,6 +293,8 @@ export async function renderResultsPanel(
     }
     header.after(tools);
 
+    // The element's facts, read once for every row and every Send to editor of the panel.
+    const facts = copyFacts(target);
     for (const [i, alt] of ranked.entries()) {
       const best = i === 0 && (alt.verdict === 'unique' || alt.verdict === 'narrowed');
       const row = document.createElement('div');
@@ -319,7 +321,7 @@ export async function renderResultsPanel(
       const actions = document.createElement('div');
       actions.className = 'row-actions';
       actions.appendChild(
-        copyModeButtons({ ...alt, facts: copyFacts(target) }, panel, activeMode, (mode) => {
+        copyModeButtons({ ...alt, facts }, panel, activeMode, (mode) => {
           activeMode = mode;
         }),
       );
@@ -334,8 +336,8 @@ export async function renderResultsPanel(
         const send = makeButton(
           t('pick_sendToEditor'),
           () => {
-            void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode, copyFacts(target)) }).then(
-              (result) => showSendResult(send, result),
+            void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode, facts) }).then((result) =>
+              showSendResult(send, result),
             );
           },
           { icon: 'send', small: true, className: 'send' },
@@ -588,7 +590,8 @@ function withLeadingIcon<T extends HTMLElement>(el: T, name: IconName, className
 
 /**
  * Rings `target` on the page under the panel, the rest of the page dimmed
- * around it, following it as the page scrolls or moves it; the backdrop dims
+ * around it, drawn again when the page or a container in it scrolls, the
+ * window resizes, or the element or the panel changes size; the backdrop dims
  * everything while it is off screen or gone. The first time the ring falls
  * under `panel`, the panel moves to the side of the page away from it, and
  * stays there. Returns the function that stops following it.
@@ -599,7 +602,6 @@ function spotlight(backdrop: HTMLElement, panel: HTMLElement, target: Element): 
   ring.hidden = true;
   backdrop.prepend(ring);
   let placed = '';
-  let frame = 0;
   const place = () => {
     const box = target.isConnected ? target.getBoundingClientRect() : null;
     const onScreen =
@@ -631,10 +633,19 @@ function spotlight(backdrop: HTMLElement, panel: HTMLElement, target: Element): 
         box.bottom > over.top;
       if (covered) backdrop.dataset.side = box.left + box.width / 2 < innerWidth / 2 ? 'end' : 'start';
     }
-    frame = requestAnimationFrame(place);
   };
+  // Scroll events do not bubble: the capture phase hears those of every scrolling container too.
+  addEventListener('scroll', place, { capture: true, passive: true });
+  addEventListener('resize', place);
+  const sizes = new ResizeObserver(place);
+  sizes.observe(target);
+  sizes.observe(panel);
   place();
-  return () => cancelAnimationFrame(frame);
+  return () => {
+    removeEventListener('scroll', place, { capture: true });
+    removeEventListener('resize', place);
+    sizes.disconnect();
+  };
 }
 
 /**
