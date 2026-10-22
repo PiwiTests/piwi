@@ -186,6 +186,49 @@ test.describe('the Piwi panel’s Locators console', () => {
     await input.fill("getByRole('button', {");
     await expect(panel.getByRole('status')).toContainText('The console can’t read this locator');
     await expect(panel.getByRole('button', { name: 'Add to session' })).toBeHidden();
+    // No editor is paired: nothing to send to.
+    await input.fill("getByTestId('apply-coupon')");
+    await expect(panel.getByRole('button', { name: 'Add to session' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Send to editor' })).toHaveCount(0);
+  });
+
+  test('sends the locator to the paired editor in the copy mode chosen last', async ({ context, extensionId }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const shop = await openShop(context);
+    const setup = await context.newPage();
+    await setup.goto(`chrome-extension://${extensionId}/popup.html`);
+    // Kept as an earlier version kept it: the panel reads it through the worker's secret area, which moves it there.
+    await setup.evaluate(() =>
+      chrome.storage.local.set({
+        piwiEditorPairing: { url: 'http://127.0.0.1:47211/piwi/send', token: 'editor_token_0123456789' },
+      }),
+    );
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    // What the panel asks the worker to send, answered as a paired editor answers.
+    await panel.evaluate(() => {
+      const sent: unknown[] = [];
+      (globalThis as { __sent?: unknown[] }).__sent = sent;
+      const real = chrome.runtime.sendMessage.bind(chrome.runtime);
+      chrome.runtime.sendMessage = ((message: { type?: string; payload?: unknown }) => {
+        if (message?.type !== 'piwi-send-to-editor') return real(message);
+        sent.push(message.payload);
+        return Promise.resolve({ ok: true, file: null });
+      }) as typeof chrome.runtime.sendMessage;
+    });
+    const sent = () => panel.evaluate(() => (globalThis as { __sent?: unknown[] }).__sent);
+    await panel.getByRole('tab', { name: 'Locators' }).click();
+    await panel.getByRole('textbox', { name: 'Locator to try' }).fill("getByTestId('apply-coupon')");
+    const send = panel.getByRole('button', { name: 'Send to editor' });
+    await expect(send).toHaveAttribute('title', "page.getByTestId('apply-coupon')");
+    await send.click();
+    await expect(panel.getByRole('button', { name: 'Sent' })).toBeVisible();
+    await panel.getByRole('button', { name: 'Assertion' }).click();
+    await expect(send).toHaveAttribute('title', "await expect(page.getByTestId('apply-coupon')).toBeVisible();");
+    await send.click();
+    await expect.poll(sent).toEqual([
+      { kind: 'locator', text: "page.getByTestId('apply-coupon')" },
+      { kind: 'locator', text: "await expect(page.getByTestId('apply-coupon')).toBeVisible();" },
+    ]);
   });
 });
 

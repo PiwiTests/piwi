@@ -4990,6 +4990,9 @@
       }
     }
   },
+  "devtools_sendToEditor": {
+    "message": "Envoyer à l’éditeur"
+  },
   "view_title": {
     "message": "Vue Playwright"
   },

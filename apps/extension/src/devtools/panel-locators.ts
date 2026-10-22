@@ -1,6 +1,8 @@
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, renderCopyMode, type CopyMode } from '../shared/copy-modes.js';
 import type { LocatorMatch, LocatorQueryResult } from '../shared/devtools-selection.js';
+import { getEditorPairing } from '../shared/editor-pairing.js';
+import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 import { formatNumber, t, tn } from '../shared/i18n.js';
 import { bareLocator, getLocatorHistory, HistoryCursor, rememberLocator } from '../shared/locator-console.js';
 import { patternOrigin } from '../shared/web-origin.js';
@@ -15,8 +17,8 @@ import { button, el, emptyState, iconLine, noAccessText } from './ui.js';
  * is read by the shared parser and resolved by the engine over the inspected
  * page, as Playwright resolves it; each element it finds is listed, outlined on
  * the page while hovered, and selected in the Elements panel with Reveal. A
- * locator that reads is copied in a copy mode or added to the session from the
- * row under the field. Enter evaluates the expression at once and keeps it in
+ * locator that reads is copied in a copy mode, added to the session, or sent to
+ * the paired editor from the row under the field. Enter evaluates the expression at once and keeps it in
  * the history (`locator-console.ts`), which the arrow keys walk from the field.
  */
 
@@ -27,6 +29,9 @@ const LISTED = 50;
 
 /** The field's text while the panel stays open; null until the first draw, which recalls the newest of the history. */
 let expression: string | null = null;
+
+/** The copy mode chosen last, which Send to editor sends. */
+let sendMode: CopyMode = 'bare';
 
 /** The locator as `mode` writes it: the console's one rendering of a copy mode. */
 function inMode(locator: string, mode: CopyMode): string {
@@ -40,23 +45,41 @@ async function inspectedHref(): Promise<string> {
 }
 
 /**
- * What the console does with a locator that reads: Copy as each copy mode and
- * Add to session, each keeping the expression in the history first.
+ * What the console does with a locator that reads: Copy as each copy mode, Add
+ * to session and, with an editor paired, Send to editor in the copy mode chosen
+ * last, each keeping the expression in the history first.
  */
-function actionsRow(host: HTMLElement, locator: string, remember: () => void): HTMLElement {
+function actionsRow(host: HTMLElement, locator: string, paired: boolean, remember: () => void): HTMLElement {
   const row = el('div', 'row-actions');
   row.appendChild(el('span', 'copy-label', t('devtools_copyAs')));
+  let send: HTMLButtonElement | null = null;
   for (const mode of COPY_MODES) {
     const text = inMode(locator, mode);
     const copy = button(
       copyModeLabel(mode),
       () => {
         remember();
+        sendMode = mode;
+        if (send) send.title = text;
         void copyWithFeedback(text, copy);
       },
       { icon: COPY_MODE_ICONS[mode], tone: 'ghost', title: text },
     );
     row.appendChild(copy);
+  }
+  if (paired) {
+    const sent = button(
+      t('devtools_sendToEditor'),
+      () => {
+        remember();
+        void sendToEditor({ kind: 'locator', text: inMode(locator, sendMode) }).then((result) =>
+          showSendResult(sent, result),
+        );
+      },
+      { icon: 'send', tone: 'ghost', className: 'send', title: inMode(locator, sendMode) },
+    );
+    send = sent;
+    row.appendChild(sent);
   }
   row.appendChild(
     button(
@@ -101,6 +124,10 @@ export function renderLocatorsTab(container: HTMLElement): void {
   container.replaceChildren(head, actions, results);
 
   const cursor = new HistoryCursor();
+  // Read once per draw of the tab: pairing or unpairing in the settings shows the next time it opens.
+  const paired = getEditorPairing()
+    .then((pairing) => pairing !== null)
+    .catch(() => false);
   const remember = () => {
     const value = input.value.trim();
     if (value) void rememberLocator(value).then((history) => cursor.reset(history));
@@ -148,7 +175,9 @@ export function renderLocatorsTab(container: HTMLElement): void {
       results.replaceChildren();
       return;
     }
-    actions.replaceChildren(actionsRow(actions, bareLocator(typed), remember));
+    const canSend = await paired;
+    if (mine !== generation) return;
+    actions.replaceChildren(actionsRow(actions, bareLocator(typed), canSend, remember));
     actions.hidden = false;
     verdict.className = result.count === 1 ? 'status icon-line good-text' : 'status icon-line warn-text';
     const said = el('span');

@@ -5913,6 +5913,10 @@
       }
     }
   },
+  "devtools_sendToEditor": {
+    "message": "Send to editor",
+    "description": "DevTools, Piwi panel, Locators tab: button under the locator console, shown while an editor is paired. Inserts the locator, in the copy form chosen last, at the cursor of the editor paired with Piwi Picker (VS Code or a JetBrains IDE)."
+  },
   "view_title": {
     "message": "Playwright view",
     "description": "Playwright view: title of the small panel over the page. “Playwright” is a product name."
