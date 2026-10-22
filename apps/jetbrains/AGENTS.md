@@ -234,6 +234,12 @@ npm run editor:build -w packages/editor   # from the repository root: the bundle
 ./gradlew runIde                   # a sandboxed WebStorm with the plugin
 ```
 
+**Change notes.** The Marketplace's What's new is the `<change-notes>` of the built `plugin.xml`, which
+`build.gradle.kts` fills from the `CHANGE_NOTES` environment variable; `reusable-publish-jetbrains.yml` sets it, before
+its first Gradle run, to the release's `ide` entries of the root `CHANGELOG.md` as HTML
+(`node scripts/ide-changelog.mjs --format html` from the repository root): a commit with the `ide` scope is what puts
+a line in it. A build without the variable ships no change notes.
+
 **Screenshots.** `scripts/take-screenshots.mjs` writes the plugin's illustrations
 (`apps/docs/public/screenshots/jetbrains-*.png`, shown by the docs and the README; the Marketplace listing's are
 uploaded by hand from them). It starts an Xvfb display and, for each scene, launches the latest WebStorm release

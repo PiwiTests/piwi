@@ -12,6 +12,8 @@ dist-firefox
 apps/extension/tests/lab/out
 # The VS Code builds the VS Code extension's integration tests download
 .vscode-test
+# The VS Code extension's changelog, which reusable-publish-vscode.yml writes into the package (scripts/ide-changelog.mjs)
+apps/vscode/CHANGELOG.md
 # The JetBrains plugin's Gradle outputs and the IDEs its tests and verifier download
 apps/jetbrains/.gradle
 apps/jetbrains/.intellijPlatform
