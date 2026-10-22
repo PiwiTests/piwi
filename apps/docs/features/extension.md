@@ -93,7 +93,10 @@ what it writes, such as **Action (fill)** or **Assertion (toHaveText)**.
 ## Multi-pick
 
 Pick two or three similar items (rows, cards) to get the pattern they share, such as
-`getByRole('row').filter({ hasText: … })`. It warns when only `.nth()` could tell them apart.
+`getByRole('row').filter({ hasText: … })`. Pick the same button in two rows or cards (Delete, Add to cart) and the
+pattern is the button inside the repeated row or card, with how many elements it finds on the page:
+`getByTestId('product-card').getByRole('button', { name: 'Add to cart' })`, then each pick as its card filtered by a
+text only that card shows, such as its heading. It warns when only `.nth()` could tell them apart.
 
 ## Lint overlay
 

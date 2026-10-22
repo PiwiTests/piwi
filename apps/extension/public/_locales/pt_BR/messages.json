@@ -1259,6 +1259,24 @@
       }
     }
   },
+  "multipick_count_one": {
+    "message": "O locator comum encontra $count$ elemento na página agora",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "multipick_count_other": {
+    "message": "O locator comum encontra $count$ elementos na página agora",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
   "multipick_byPosition": {
     "message": "Encontrado pela posição (nth): quebra se a ordem da lista mudar"
   },

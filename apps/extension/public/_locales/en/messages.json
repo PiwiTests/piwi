@@ -1547,6 +1547,26 @@
       }
     }
   },
+  "multipick_count_one": {
+    "message": "The shared locator finds $count$ element on the page right now",
+    "description": "Multi-pick results: line under the title. $count$ is how many elements the shared locator shown in the title finds on the page as it is now.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "multipick_count_other": {
+    "message": "The shared locator finds $count$ elements on the page right now",
+    "description": "Multi-pick results: line under the title. $count$ is how many elements the shared locator shown in the title finds on the page as it is now.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
   "multipick_byPosition": {
     "message": "Found by its position (nth): it breaks if the order of the list changes",
     "description": "Multi-pick: warning under a locator that finds its item only by its place in the list. “nth” is Playwright code, kept as it is."

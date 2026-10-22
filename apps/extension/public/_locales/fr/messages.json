@@ -1259,6 +1259,24 @@
       }
     }
   },
+  "multipick_count_one": {
+    "message": "Le locator commun trouve $count$ élément sur la page en ce moment",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "multipick_count_other": {
+    "message": "Le locator commun trouve $count$ éléments sur la page en ce moment",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
   "multipick_byPosition": {
     "message": "Repéré par sa position (nth) : il casse si l’ordre de la liste change"
   },

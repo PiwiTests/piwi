@@ -1259,6 +1259,24 @@
       }
     }
   },
+  "multipick_count_one": {
+    "message": "Der gemeinsame Locator findet jetzt $count$ Element auf der Seite",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "multipick_count_other": {
+    "message": "Der gemeinsame Locator findet jetzt $count$ Elemente auf der Seite",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
   "multipick_byPosition": {
     "message": "Über die Position gefunden (nth): bricht, wenn sich die Reihenfolge der Liste ändert"
   },

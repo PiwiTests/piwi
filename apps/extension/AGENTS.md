@@ -410,6 +410,12 @@ recorder takes:
   is what the Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, the Tested
   elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
   call so the engine's caches serve the whole scan.
+- **Multi-pick** (`derivePattern`, `multi-pick-derive.ts`) shares `repeatedContainers` with the ladder: picks
+  sharing a role, each alone in its container, the containers siblings of one kind (rows of one table, cards of one
+  grid), give the container's pattern, `getByTestId('product-card').getByRole('button', { name: 'Add to cart' })`
+  with the number of elements it finds, and per pick its container filtered by a text no other container shows
+  (`.nth()` on the pattern when none does). Other picks give their own role or class with `.filter({ hasText })`.
+  `multi-pick.ts` hands it the page engine's roles, names and texts.
 - **Hover** (`createHoverLocator`, behind the picker overlay's `__piwiDescribeElement`) must stay
   cheap on pointer moves. Building the engine's indexes costs tens of milliseconds on a large page (about 45 ms at
   3,000 elements, 120 ms at 9,000), so a move gets the ranked candidate (probe without structural anchors, `DomModel`
@@ -862,7 +868,7 @@ found by its icon and its color before its words are read, and a step reads at a
   there: the API key and the tokens are in the extension's IndexedDB (see "Connected mode").
 - **Two different test strategies for content-script logic, pick deliberately.** A function
   built entirely from nested helpers with no imports from `@piwitests/core`'s scoring engine
-  (`derivePattern`, `testCatalogAgainstPage`) can be re-serialized via
+  (`derivePattern`, `repeatedContainers`, `testCatalogAgainstPage`) can be re-serialized via
   `Function.prototype.toString()` in tests, installing any genuine cross-module dependency as
   a global first. A function that calls `generateAlternatives` (`scanForLintIssues`,
   `suggestAssertions`, `buildAgentContext`, `record-panel.ts`'s `deriveRecordedTarget`) can't
