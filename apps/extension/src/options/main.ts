@@ -53,7 +53,7 @@ import { RECORDING_KEY, clearRecordIntent, getRecordingState } from '../shared/r
 import { REPLAY_KEY, getReplayState } from '../shared/replay-storage.js';
 import { hostPattern, originPattern } from '../shared/web-origin.js';
 import { canRevoke, siteGrants, type GrantHolders, type GrantUse } from './site-grants.js';
-import { keepMappings, takeKeptMappings } from './kept-mappings.js';
+import { dropKeptMappings, keepMappings, readKeptMappings } from './kept-mappings.js';
 import {
   LANGUAGES,
   browserCatalogLanguage,
@@ -805,19 +805,21 @@ async function connect(instanceUrl: string): Promise<void> {
     // Disconnected while the answer was on its way: nothing is kept.
     if (epoch !== connectionEpoch) return;
     const sameInstance = previous.instanceUrl === instanceUrl;
+    const restore = !previous.instanceUrl.trim();
     const next: ConnectionSettings = {
       ...previous,
       instanceUrl,
       connectedAs: outcome.user?.name ?? '',
       // Another instance's patterns and projects do not apply to this one.
       ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0 }),
-      ...(previous.instanceUrl.trim() ? {} : { projectMappings: await takeKeptMappings(instanceUrl) }),
+      ...(restore ? { projectMappings: await readKeptMappings(instanceUrl) } : {}),
     };
     const kept = ++connectionEpoch;
     await setInstanceApiKey(instanceUrl, outcome.apiKey);
     if (kept !== connectionEpoch) return;
     stored = next;
     await setConnectionSettings(next);
+    if (restore && kept === connectionEpoch) await dropKeptMappings();
     if (!sameInstance) await forgetInstanceData();
     mappings = editableMappings(next);
     apiKeyEl.value = outcome.apiKey;
@@ -987,7 +989,7 @@ async function connectWithKey(
   }
   // Disconnected while the instance was tested: nothing is kept.
   if (epoch !== connectionEpoch) return false;
-  const restored = stored.instanceUrl.trim() ? null : await takeKeptMappings(settings.instanceUrl);
+  const restored = stored.instanceUrl.trim() ? null : await readKeptMappings(settings.instanceUrl);
   const kept = ++connectionEpoch;
   await setInstanceApiKey(settings.instanceUrl, typed.apiKey);
   // The paired app's token, kept as the key, is marked so: Unpair leaves it sent only to the app that proves it.
@@ -996,6 +998,7 @@ async function connectWithKey(
   if (kept !== connectionEpoch) return false;
   stored = restored ? { ...settings, projectMappings: restored } : settings;
   await setConnectionSettings(stored);
+  if (restored && kept === connectionEpoch) await dropKeptMappings();
   if (!sameInstance) await forgetInstanceData();
   mappings = editableMappings(stored);
   renderInstanceState();
@@ -1094,7 +1097,10 @@ disconnectBtn.addEventListener('click', () => {
   pendingConnect?.abort();
   void (async () => {
     const previousUrl = stored.instanceUrl;
-    const keptLines = await keepMappings(previousUrl, (await getConnectionSettings()).projectMappings).catch(() => 0);
+    // With no instance kept, the lines an earlier Disconnect set aside stay for the next connection.
+    const keptLines = previousUrl.trim()
+      ? await keepMappings(previousUrl, (await getConnectionSettings()).projectMappings).catch(() => 0)
+      : 0;
     await clearConnectionSettings();
     await clearInstanceApiKey().catch(() => undefined);
     await clearConnectionHealth().catch(() => undefined);

@@ -536,6 +536,58 @@ test.describe.serial('connect in one step', () => {
     await expect(options.locator('#status')).toHaveText('Disconnected.');
   });
 
+  test('a connection dropped while its key is stored leaves the lines kept for the next one', async ({
+    context,
+    extensionId,
+  }) => {
+    patterns = [];
+    const local = { urlPattern: 'https://local.shop.test/**', projectId: 1, projectLabel: 'Shop' };
+    const options = await context.newPage();
+    await openOptions(options, extensionId);
+    await seedConnection(options, {
+      instanceUrl: baseUrl,
+      projectMappings: [local],
+      serverMappings: [],
+      serverProjects: [],
+      serverSyncedAt: 1,
+      connectedAs: '',
+    });
+    await options.reload();
+    await optionsReady(options);
+    await grantPermissions(options);
+    await options.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(options.locator('#status')).toHaveText(
+      'Disconnected. This browser’s 1 line comes back when you connect to this instance again.',
+    );
+
+    // A Disconnect lands while the key is written: the connection is dropped, not kept.
+    await options.evaluate(() => {
+      const put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...args: Parameters<IDBObjectStore['put']>) {
+        IDBObjectStore.prototype.put = put;
+        (document.getElementById('disconnect') as HTMLButtonElement).click();
+        return put.apply(this, args);
+      };
+    });
+    await options.getByLabel('Address of your Piwi instance').fill(baseUrl);
+    await options.locator('#api-key-fallback summary').click();
+    await options.locator('#api-key').fill(API_KEY);
+    await options.getByRole('button', { name: 'Save and test' }).click();
+    await expect(options.locator('#status')).toHaveText('Disconnected.');
+    await expect(options.locator('#instance-pill')).toHaveText('Not connected');
+    await expect(options.getByRole('button', { name: 'Save and test' })).toBeEnabled();
+    expect(await storedConnection(options)).toBeUndefined();
+
+    // The next connection kept takes them.
+    await options.getByLabel('Address of your Piwi instance').fill(baseUrl);
+    await options.locator('#api-key').fill(API_KEY);
+    await options.getByRole('button', { name: 'Save and test' }).click();
+    await expect(options.locator('#status')).toContainText('Connected: 1 project found.');
+    await expect(options.locator('#mappings .mapping-pattern')).toHaveValue(local.urlPattern);
+    expect(await storedConnection(options)).toMatchObject({ instanceUrl: baseUrl, projectMappings: [local] });
+    expect(await options.evaluate(() => chrome.storage.local.get('piwiKeptMappings'))).toEqual({});
+  });
+
   test('the Active project chosen on one site applies there only, and Disconnect forgets it with the branch chosen', async ({
     context,
     extensionId,

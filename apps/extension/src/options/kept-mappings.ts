@@ -46,10 +46,16 @@ export async function keepMappings(instanceUrl: string, projectMappings: Project
   return projectMappings.length;
 }
 
-/** The lines kept for the instance at `instanceUrl`, as a connection to it is kept; the record goes either way. */
-export async function takeKeptMappings(instanceUrl: string): Promise<ProjectMappings> {
+/**
+ * The lines kept for the instance at `instanceUrl`, read as a connection to it is made. Reading leaves them: a
+ * connection dropped before it is kept (Disconnect, another connection, a failed write) leaves them for the next one.
+ */
+export async function readKeptMappings(instanceUrl: string): Promise<ProjectMappings> {
   const stored = await chrome.storage.local.get(KEPT_MAPPINGS_KEY);
-  if (stored[KEPT_MAPPINGS_KEY] === undefined) return [];
-  await chrome.storage.local.remove(KEPT_MAPPINGS_KEY);
   return keptFor(stored[KEPT_MAPPINGS_KEY], instanceUrl);
+}
+
+/** Drops the kept lines once a connection is kept, to their instance or to another: they are given back once. */
+export async function dropKeptMappings(): Promise<void> {
+  await chrome.storage.local.remove(KEPT_MAPPINGS_KEY);
 }

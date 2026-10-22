@@ -109,7 +109,8 @@ keeps a copy, so a page's project is known with the instance out of reach. For a
 
 A pattern kept in the browser is therefore an override for that browser alone. The settings page marks each pattern
 with where it comes from. **Disconnect** sets the patterns of this browser aside: connecting to the same instance
-again brings them back, and connecting to another drops them, since they name the first one's projects.
+again brings them back, and connecting to another drops them, since they name the first one's projects. A connection
+that is not completed, because you disconnect or cancel along the way, leaves them aside for the next one.
 
 ### Add a site
 

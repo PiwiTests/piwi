@@ -270,7 +270,9 @@ calls this one function rather than re-deriving it. **Disconnect**, and connecti
 site's override and every project's branch choice (`locator-branch.ts`) with the cached catalogs and locator indexes.
 Disconnect sets the lines of this browser aside with the instance's origin (`src/options/kept-mappings.ts`,
 `piwiKeptMappings`); the next connection kept takes them, back into `projectMappings` when it is to the same origin,
-dropped otherwise, since their project ids are that instance's.
+dropped otherwise, since their project ids are that instance's. They are read as a connection is made
+(`readKeptMappings`) and dropped only once it is kept (`dropKeptMappings`, unless a Disconnect came meanwhile), so a
+connection dropped on the way leaves them; a Disconnect with no instance kept leaves them too.
 
 **No recording is ever sent to the instance**, and a bug report only through **Send to Piwi…**: the URL patterns,
 each mapped project's catalog and locator index, and its bug reports (Replay's list) are fetched; what is sent is a URL
