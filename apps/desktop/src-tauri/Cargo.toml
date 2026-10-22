@@ -45,7 +45,7 @@ tauri-plugin-playwright = { version = "0.4", optional = true }
 # so the `HWND` returned by `WebviewWindow::hwnd()` is the same type (one shared
 # copy of the crate), and so nothing extra is pulled in.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_System_Com",
     "Win32_System_Console",
