@@ -10,13 +10,14 @@ lang: en-US
 
 The [Piwi Picker extension](./extension) answers one question beside the browser's own DevTools: what will a test see
 on this page, and how does the test get there? Its developer tools live here rather than in the toolbar popup, which
-keeps the tools that act on the page. In Chrome and Edge, the conditions below and a viewport set in the tab itself go
-through the browser's debugging protocol, and Chrome shows its debugging bar while one is on.
+keeps the tools that act on the page. In Chrome and Edge, the
+[request conditions](./mock-requests#slow-down-or-fail-a-request) and a viewport set in the tab itself go through the
+browser's debugging protocol, and Chrome shows its debugging bar while one is on.
 
 ## The Elements sidebar
 
 Open DevTools, go to **Elements**, and choose the **Piwi** tab beside Styles and Computed. Select a node and the pane
-lists its locators, ranked and checked against the page as it is, the same list [Pick an element](./extension#pick-an-element)
+lists its locators, ranked and checked against the page as it is, the same list [Pick an element](./pick-an-element)
 shows:
 
 ```
@@ -33,7 +34,7 @@ locator('.btn').nth(2)                             ⚠ unique by position · bri
 A locator that finds the node among others says how many it finds. Under each one, **Locator**, **Action** and
 **Assertion** copy it as `page.…`, as the action the element calls for (`fill`, `check`, `selectOption` or `click`)
 or as its first assertion (`toHaveValue`, `toHaveText`…, `toHaveCount` for a locator finding several), as in
-[Pick an element](./extension#pick-an-element); each button names what it writes. **Add to session** puts it
+[Pick an element](./pick-an-element); each button names what it writes. **Add to session** puts it
 in the session under a name (the panel's Session tab, below). With an editor
 [paired](./editor-recording#send-from-piwi-picker), **Send to editor** under the top locator inserts it at the
 editor's cursor, in the copy form you chose last. The pane ranks again when the selection changes and after
@@ -56,7 +57,7 @@ page navigates; the recording and replay panels on the page stay too, for when D
 - **Replay** lists a replay's steps with their results and the verdict once it ends. **Pause**, **Continue**, **Next
   step** and **Stop** act on the replay running in the page.
 - **Network** lists the page's `fetch` and XHR requests, from DevTools' own log while it is open; **Other sites too**
-  adds the requests to other origins. Select one to mock it, slow it down or make it fail (below).
+  adds the requests to other origins. Select one to mock it, slow it down or make it fail: [Mock and slow down requests](./mock-requests).
 - **Locators** is the locator console: type a locator and the elements it finds are listed, as Playwright finds
   them, with the strict-mode verdict. It reads the expression, never runs it: every `getBy*`, `locator()`, chains,
   `filter()`, `and()`/`or()`, `.nth()` and same-origin frames. Hovering one outlines it on the page, and **Reveal**
@@ -70,49 +71,10 @@ page navigates; the recording and replay panels on the page stay too, for when D
   JSON.
 
 The toolbar starts the popup's tools on the inspected page without leaving DevTools: **Pick** is
-[Pick an element](./extension#pick-an-element), **Lint** the [lint overlay](./extension#lint-overlay), and **Tested
+[Pick an element](./pick-an-element), **Lint** the [lint overlay](./lint-overlay), and **Tested
 elements** shows what your tests reach, once Piwi Picker is connected to your instance and the site is mapped to a
 project (the button says what is missing until then). The first time on a site, the click asks for access to it, as
 recording does. Then **Viewport**, **Playwright view** and **Save login for tests** set the page up for a test (below).
-
-## Mock this response
-
-Select a request in the Network tab and the panel writes it as a route for a test:
-
-```ts
-await page.route('**/api/cart?_=*', (route) =>
-  route.fulfill({
-    json: { items: [{ sku: 'SPRING-TEE', qty: 1 }], total: 40 },
-  }),
-);
-```
-
-The URL pattern drops the origin and turns the query values that change on every request (a timestamp, a cache
-buster) into `*`; edit it before copying. A status other than 200 is kept, and a method other than GET is checked.
-**Answer with** switches to a server error (500) or a network failure (`route.abort()`), for testing the page's
-error state. A body over 100 kB goes to a file the route reads, such as `mocks/cart.json`, downloaded beside the code.
-
-Fields named like a password, a token, a key or a session are written as `<hidden>` until you tick **Show hidden
-values**; headers, cookies included, are never written. Nothing is sent anywhere: the code reaches your clipboard
-when you copy it.
-
-## Slow down or fail a request
-
-Under a selected request, the Network tab also offers **Slow down** by the seconds you type, **Fail with 500** and
-**Fail (network error)**: the flaky conditions a test has to survive, tried by hand in your own tab. The first time,
-Piwi Picker asks for access to the site. From then on the tab's requests to that URL wait, answer 500 or fail, on every
-page of the site in that tab, until you remove the condition, click **Turn all off and reload**, or close the tab. A
-banner on the page says which conditions are on, with **Turn off**; other tabs are not affected.
-
-In Chrome and Edge, a condition reaches any request, documents, scripts and images included (tick **Every kind** to
-list them), and the toolbar's **Network** and **CPU** throttle the whole page as DevTools does: fast or slow 3G,
-offline, or a CPU 4, 6 or 20 times slower. They go through the debugging protocol: Chrome shows its debugging bar until
-you turn them all off, and **Cancel** on it ends the throttling, leaving the requests' conditions to the page's `fetch`
-and XHR calls. Firefox has only those: documents, scripts, images and a service worker's requests go past, and a page
-that replaces `fetch` itself may behave differently.
-
-A replay started while a condition is on runs under it, and its panel says which conditions were on, beside the
-verdict.
 
 ## Save login for tests
 
@@ -154,5 +116,5 @@ The labels follow scrolling and come back after the page changes. Labels of elem
 another: each sits above its element, or a row or a few lower or higher when that place is taken. Where elements crowd
 too closely for that, the labels left over are not drawn and the panel says how many. The panel in the corner counts
 each kind, and **Role** shows the labels of one role only. Hidden elements get no label, as `getByRole` does not find them. Press
-**Esc** or `V` again to turn it off. The [lint overlay](./extension#lint-overlay) stays for suggesting the test ids to
+**Esc** or `V` again to turn it off. The [lint overlay](./lint-overlay) stays for suggesting the test ids to
 add.

@@ -13,11 +13,6 @@ are looking at, scored by the same engine the dashboard uses, and records a mult
 spec. It works standalone and sends nothing by default; connecting it to a Piwi instance adds what needs your
 project's history.
 
-<figure>
-  <img src="/screenshots/picker-pick.png" alt="The ranked locators of a Checkout button, the unique one first">
-  <figcaption>Pick an element: the locator that finds exactly one element comes first.</figcaption>
-</figure>
-
 ## What it does
 
 Every tool below runs on the live page, from the toolbar popup. The last three need a
@@ -25,15 +20,15 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 
 | Tool | For |
 |---|---|
-| [Pick an element](#pick-an-element) | a ranked locator for one element, re-checked against the page |
-| [Multi-pick](#multi-pick) | the shared pattern of a list's rows or cards |
-| [Lint overlay](#lint-overlay) | the elements that would make bad locator targets |
-| [Assertion suggester](#assertion-suggester) | `expect(...)` lines for an element |
-| [Copy context for agent](#copy-context-for-agent) | one block about an element for a coding agent |
-| [Record actions](#record-actions) | a runnable spec from clicks and fills across pages |
+| [Pick an element](./pick-an-element) | a ranked locator for one element, re-checked against the page |
+| [Multi-pick](./pick-an-element#multi-pick) | the shared pattern of a list's rows or cards |
+| [Lint overlay](./lint-overlay) | the elements that would make bad locator targets |
+| [Assertion suggester](./pick-an-element#assertion-suggester) | `expect(...)` lines for an element |
+| [Copy context for agent](./pick-an-element#copy-context-for-agent) | one block about an element for a coding agent |
+| [Record actions](./record-actions) | a runnable spec from clicks and fills across pages |
 | [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
 | [Developer tools](./devtools) | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
-| [Matching functions](#matching-functions) | a recording that calls your own functions |
+| [Matching functions](./record-actions#matching-functions) | a recording that calls your own functions |
 | [Test functions](#test-functions-against-this-page) | which of your functions work on this page |
 | [Tested elements](#tested-elements) | which elements of this page your tests reach |
 
@@ -57,117 +52,6 @@ tools that need no pick on the page are in the browser's DevTools: [Developer to
 Picking also has a shortcut, `Ctrl+Shift+E` by default (`Cmd+Shift+E` on macOS); the popup footer shows the key
 bound.
 
-## Pick an element
-
-Hover highlights, a click picks. The pick snaps to the nearest actionable ancestor (the text inside a button picks
-the button), and ↑/↓ walk the DOM tree, showing the locator each step would produce. When a locator that is not
-brittle already finds the element alone, the results open at once, and **Scope to a parent…** in them opens the
-**anchors** step: stable parents to scope the locator to, with a live match count, after which the results show again
-with the scoped locators. When none finds it alone, the anchors step comes first.
-
-**Enter** picks too: the highlighted element when the pointer is on one, otherwise the element that has the keyboard
-focus, so a control reached with Tab is picked without the mouse. **Esc** cancels the pick.
-
-Elements inside a web component's open shadow root are picked like any other: ↑ walks out of the shadow root through
-its host element, and the anchors step lists the host and its parents and counts the matches inside open shadow roots,
-as Playwright's locators do.
-
-Every candidate uses the names Playwright computes (a tab with a count badge is `{ name: 'Regressions 5' }`), is
-scored as the dashboard scores locators, and run against the page. Those that find only the picked element come
-first. One that also finds others is narrowed, trying in order:
-
-- the exact name or text, then the element's own text as a filter;
-- a parent whose test id is unique on the page;
-- the repeated row, list item or card the element sits in, picked by a short text it shows and its siblings do not
-  (a cell, a heading), or by its own `aria-label`:
-  `getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })`;
-- its landmark, a named dialog or a named row.
-
-Only when none of these finds it alone is it offered with `.first()` or `.nth()`, and a warning.
-
-While the results are open, the picked element stays outlined on the page, and the results move to the other side of
-the page when they would cover it. **Pick another** closes them and starts picking the next element, without going
-back to the popup or the shortcut.
-
-Each locator leads with a word: `stable`, `could break` or `brittle` for one that finds the element alone, by what the
-stability rules say of it, and `unique by position`, `3 matches` or `not checked` otherwise, the words the DevTools
-sidebar uses. Its **Details** give the reasons (`unique · brittle: CSS class`) and the stability score.
-
-Copy the result as the bare locator, an action line or an assertion; **Copy all** copies every ranked locator for a
-project's [Locators page](./locator-usage#the-locators-page). The action is the one the element calls for: `fill` with
-what a field holds (`'value'` for an empty field or a password), `check` for a checkbox or a radio, `selectOption` for
-a select, `click` for anything else. The assertion is the element's first
-[suggestion](#assertion-suggester), and `toHaveCount` for a locator that finds several elements. Each button names
-what it writes, such as **Action (fill)** or **Assertion (toHaveText)**. **Add to session** names a
-locator for the session that the DevTools Piwi panel's Session tab lists and copies as a page object, as the Elements
-sidebar does (see [Developer tools](./devtools)).
-
-## Multi-pick
-
-Pick two or three similar items (rows, cards) to get the pattern they share, such as
-`getByRole('row').filter({ hasText: … })`. Pick the same button in two rows or cards (Delete, Add to cart) and the
-pattern is the button inside the repeated row or card, with how many elements it finds on the page:
-`getByTestId('product-card').getByRole('button', { name: 'Add to cart' })`, then each pick as its card filtered by a
-text only that card shows, such as its heading. It warns when only `.nth()` could tell them apart.
-
-## Lint overlay
-
-One click outlines every interactive element no stable locator finds alone and says what to add, with a **Copy**
-button for each and **Copy as a Markdown checklist** for all of them:
-
-- **A test id named after the element**: its accessible name, label or placeholder, else the nearest heading with the
-  role (`data-testid="submit-order"` for a button named "Submit order", `shipping-address-button`), else the role. A
-  value the page already uses, or another suggestion took, gets `-2`, `-3`.
-- **A test id on the repeated container** when the element sits in a row, a card or a list item whose copies hold the
-  same element: named after the text that tells this copy apart (`data-testid="blue-mug"`), with the locator a test
-  then uses, `getByTestId('blue-mug').getByRole('button', { name: 'Add to cart' })`. The container is outlined in
-  amber.
-- **A scope** when those copies already share a test id: no attribute to add, the locator filters by the copy's text,
-  `getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })`.
-
-<figure>
-  <img src="/screenshots/picker-lint.png" alt="Four unnamed wishlist icon buttons outlined in their product cards, each with a test id named after its card's heading">
-  <figcaption>Lint overlay: four icon buttons without a name; each gets a test id named after its card's heading. The Add
-  to cart buttons beside them are not listed: the ranking finds each one through its card.</figcaption>
-</figure>
-
-## Assertion suggester
-
-Pick an element to get the `expect(...)` candidates that apply to it, most telling first (`toHaveValue`,
-`toBeChecked`, `toContainText` with the start of a long text, `toHaveText`, `toHaveAccessibleName`, `toBeVisible`),
-built on its top-ranked locator. `toHaveAccessibleName` is offered only for an
-element that has a name, as Playwright computes it: a paragraph takes none from its text, a field takes its label's.
-
-## Copy context for agent
-
-Pick an element to copy one block for a coding agent: the page URL, the element and every ranked locator.
-
-## Record actions
-
-**Record actions** asks for access to the site you are on, then captures clicks, fills, checks, choices, drags, the
-names of chosen files (never their content), the keys that submit, close or move through a list, and a click on what a
-hover shows, across pages. **Check an element** and **Check the address** add an `expect(…)` of what the page shows
-now. **Pause** stops capturing without ending the recording, on every page and tab of it, so signing in or closing a
-banner stays out of the spec, until **Resume**. **Stop** opens the review: the **Test title**, filled with the first
-page's own title (or, left empty, the first step in words), names the spec's test and the steps file; **Copy as
-TypeScript** for a runnable spec that waits for each page it opens,
-**Download steps** for a [steps file](/reference/steps-format) to share or render with
-[`piwi codegen`](/reference/cli#codegen), [**Send to editor**](./editor-recording#send-from-piwi-picker),
-[**Replay**](./replay-a-bug-report) to play the steps again in the tab and see that each still finds its element, or
-**Discard**. Passwords are never captured, nor a card number, its security code or a one-time code in a field whose
-`autocomplete` names it: the spec reads them from `process.env`.
-
-<figure>
-  <img src="/screenshots/picker-record.png" alt="The review panel after a recording: seven steps, Copy as TypeScript">
-  <figcaption>The review after Stop: every step, the spec one click away.</figcaption>
-</figure>
-
-## Matching functions
-
-With a connection, the recorder loads the [function catalog](./test-functions) of the project mapped to the page and
-ranks, while you record, the functions the steps look like. On export, a complete match becomes a call to your
-function. No AI: it scores your registered functions' DOM patterns.
-
 ## Test functions against this page
 
 **Test functions** in the popup scores every function of the active project's catalog against the page:
@@ -190,7 +74,7 @@ written in the extension's language; locators, test ids and specs never are.
 | Permission | Why |
 |---|---|
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
-| `debugger` (Chrome and Edge) | trusted input for a [replay](./replay-a-bug-report), a bug report's console, requests and screenshots, and DevTools' [throttling](./devtools#slow-down-or-fail-a-request), attached only while one of them runs, under Chrome's own debugging bar. Without it (Firefox, or **Cancel** there), they use the page's events. Nothing leaves your machine |
+| `debugger` (Chrome and Edge) | trusted input for a [replay](./replay-a-bug-report), a bug report's console, requests and screenshots, and DevTools' [throttling](./mock-requests#slow-down-or-fail-a-request), attached only while one of them runs, under Chrome's own debugging bar. Without it (Firefox, or **Cancel** there), they use the page's events. Nothing leaves your machine |
 | `scripting` | injects the picker or the recorder into that tab on demand, and marks your instance's pages once [connected](./extension-connection#what-is-sent); nothing else runs unasked |
 | `storage` | keeps your copy format and, only if you connect, the instance URL, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The API key and the desktop app's and editor's tokens live in the extension's own database, out of reach of web pages; the session and a running recording use `chrome.storage.session`, cleared when the browser closes |
 | `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |

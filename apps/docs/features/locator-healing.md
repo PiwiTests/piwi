@@ -109,11 +109,10 @@ With `pickLocatorOnFailure: true` (or `PIWI_PICK_LOCATOR_ON_FAIL=true`), a test 
 (`.click()`, `.fill()`) or an assertion (`expect(locator).toBeVisible()`), gets the same overlay aimed at the locator
 that broke:
 
-1. **Pick the element.** The pick snaps to the nearest actionable ancestor, and <kbd>↑</kbd>/<kbd>↓</kbd> walk the DOM
-   tree before you click, showing the locator each step would produce. <kbd>Enter</kbd> picks the highlighted element,
-   or with none the element that has the keyboard focus.
-2. **Choose stable parents (optional).** The element's ancestors are listed with their strongest hook (`data-testid`,
-   `#id`, labeled landmark, role); selecting one scopes the locator to it, with a live **"matches N"** count.
+1. **Pick the element.** The pick snaps to the nearest actionable ancestor; <kbd>↑</kbd>/<kbd>↓</kbd> walk the DOM
+   tree, showing each step's locator, and <kbd>Enter</kbd> picks the highlighted element, else the focused one.
+2. **Choose stable parents (optional).** The ancestors are listed with their strongest hook (`data-testid`, `#id`,
+   labeled landmark, role); one selected scopes the locator, with a live **"matches N"** count.
 3. **Confirm** one of the ranked candidates.
 
 ```bash

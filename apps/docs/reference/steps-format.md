@@ -6,7 +6,7 @@ lang: en-US
 
 # Steps file format
 
-A **steps file** is a recording as data rather than code. [Piwi Picker](/features/extension#record-actions) saves one
+A **steps file** is a recording as data rather than code. [Piwi Picker](/features/record-actions) saves one
 with **Download steps**, and [`piwi codegen`](/reference/cli#codegen) turns one into a Playwright spec. Because it
 holds steps and not code, the same file can be rendered for different projects (their `test` import, their
 `baseURL`) and read again by newer tools.

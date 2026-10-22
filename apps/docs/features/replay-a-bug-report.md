@@ -16,7 +16,7 @@ hand.
 ## Choosing a report
 
 - From the finished report, **Replay** plays it at once on the same site. The review of a
-  [recording of actions](./extension#record-actions) has the same **Replay**, to check its steps before you export them.
+  [recording of actions](./record-actions) has the same **Replay**, to check its steps before you export them.
 - From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the
   [`.piwibug` file](/reference/bug-report-file) (or the same file named `.zip`) or its `steps.json`, the text of a
   `steps.json` pasted in, the report or the recording of actions just made in this browser (**Use the actions recorded

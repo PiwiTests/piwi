@@ -17,7 +17,7 @@ send it to your [Piwi instance](./bug-reports).
 ## Recording the steps
 
 Open the popup on the page where the flow starts and choose **Report a bug**, or press `B`. The first time on a site,
-Piwi Picker asks for access to it, as [Record actions](./extension#record-actions) does. From then on, clicks, fills,
+Piwi Picker asks for access to it, as [Record actions](./record-actions) does. From then on, clicks, fills,
 checks, select changes and Enter are recorded across the site's pages, and a red border marks the tab.
 
 A panel in the corner lists the last steps and offers three ways to say what is wrong:
@@ -109,7 +109,7 @@ shows there: see [Replay a bug report](./replay-a-bug-report).
 
 ## Limits
 
-- It follows one site, like [Record actions](./extension#record-actions), in the top-level document only.
+- It follows one site, like [Record actions](./record-actions), in the top-level document only.
 - Without the debugging protocol, only the page's own `fetch` and `XMLHttpRequest` calls are seen: not images,
   stylesheets, a form that loads a new page, or a request made by a worker.
 - A recording sends nothing anywhere: only **Send to Piwi…** does, after showing what it sends.
