@@ -1176,6 +1176,60 @@
   "options_editorUnpair": {
     "message": "Desparear"
   },
+  "options_siteAccessHeading": {
+    "message": "Sites onde o Piwi Picker pode ser executado"
+  },
+  "options_siteAccessHint": {
+    "message": "Em um site que você permite, o Piwi Picker pode ser executado sem um clique no ícone, assim uma gravação ou uma reprodução segue você pelas páginas dele. Ele pede cada site na primeira vez que uma ferramenta precisa dele."
+  },
+  "options_siteAccessEmpty": {
+    "message": "Nenhum site ainda: o Piwi Picker pede um na primeira vez que você grava ou reproduz nele."
+  },
+  "options_siteRevoke": {
+    "message": "Revogar"
+  },
+  "options_siteRevokeLabel": {
+    "message": "Revogar o acesso do Piwi Picker a $site$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteUseInstance": {
+    "message": "Usado pela sua instância do Piwi: Desconectar remove este acesso."
+  },
+  "options_siteUseDesktop": {
+    "message": "Usado pelo aplicativo de desktop: Desparear remove este acesso."
+  },
+  "options_siteUseEditor": {
+    "message": "Usado pelo seu editor: Desparear remove este acesso."
+  },
+  "options_siteBusyRecording": {
+    "message": "Há uma gravação em andamento lá: pare-a primeiro."
+  },
+  "options_siteBusyReplay": {
+    "message": "Há uma reprodução em andamento lá: pare-a primeiro."
+  },
+  "options_siteRevoked": {
+    "message": "O Piwi Picker não é mais executado em $site$ sem um clique no ícone.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteRevokeFailed": {
+    "message": "O navegador manteve o acesso a $site$: remova-o nas configurações de extensões do navegador.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
   "options_editorPaired": {
     "message": "Pareado com o editor em $url$.",
     "placeholders": {

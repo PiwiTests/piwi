@@ -1176,6 +1176,60 @@
   "options_editorUnpair": {
     "message": "Desemparejar"
   },
+  "options_siteAccessHeading": {
+    "message": "Sitios donde Piwi Picker puede ejecutarse"
+  },
+  "options_siteAccessHint": {
+    "message": "En un sitio que permites, Piwi Picker puede ejecutarse sin un clic en su icono, así una grabación o una reproducción te sigue por sus páginas. Pide cada sitio la primera vez que una herramienta lo necesita."
+  },
+  "options_siteAccessEmpty": {
+    "message": "Todavía ningún sitio: Piwi Picker pide uno la primera vez que grabas o reproduces en él."
+  },
+  "options_siteRevoke": {
+    "message": "Revocar"
+  },
+  "options_siteRevokeLabel": {
+    "message": "Revocar el acceso de Piwi Picker a $site$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteUseInstance": {
+    "message": "Lo usa tu instancia de Piwi: Desconectar quita este acceso."
+  },
+  "options_siteUseDesktop": {
+    "message": "Lo usa la aplicación de escritorio: Desvincular quita este acceso."
+  },
+  "options_siteUseEditor": {
+    "message": "Lo usa tu editor: Desemparejar quita este acceso."
+  },
+  "options_siteBusyRecording": {
+    "message": "Hay una grabación en curso allí: detenla primero."
+  },
+  "options_siteBusyReplay": {
+    "message": "Hay una reproducción en curso allí: detenla primero."
+  },
+  "options_siteRevoked": {
+    "message": "Piwi Picker ya no se ejecuta en $site$ sin un clic en su icono.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteRevokeFailed": {
+    "message": "El navegador mantuvo el acceso a $site$: quítalo en la configuración de extensiones del navegador.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
   "options_editorPaired": {
     "message": "Emparejado con el editor en $url$.",
     "placeholders": {

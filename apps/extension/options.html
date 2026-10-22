@@ -423,6 +423,27 @@
         color: var(--fg);
         font-weight: 600;
       }
+      /* A site Piwi Picker may run on: its pattern, what holds it, and Revoke at the end of the row. */
+      .grant-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 12.5px;
+      }
+      .grant-row:last-child {
+        border-bottom: none;
+      }
+      .grant-row .pattern {
+        flex: 1 1 220px;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .grant-row .meta {
+        color: var(--muted);
+      }
       .source {
         flex-shrink: 0;
         font-size: 11px;
@@ -855,6 +876,20 @@
             Unpair
           </button>
         </div>
+      </section>
+
+      <section class="card" id="site-access-card" aria-labelledby="site-access-heading">
+        <div class="card-head">
+          <h2 id="site-access-heading" data-i18n="options_siteAccessHeading" data-icon="globe">
+            Sites Piwi Picker may run on
+          </h2>
+        </div>
+        <p class="lead" data-i18n="options_siteAccessHint">
+          A site you allow is one Piwi Picker can run on without a click on its icon, so a recording or a replay
+          follows you across its pages. It asks for each site the first time a tool needs it.
+        </p>
+        <div id="site-access"></div>
+        <div class="card-foot"><div id="site-access-status" role="status"></div></div>
       </section>
 
       <div class="privacy" data-i18n="options_privacy" data-icon="lock">

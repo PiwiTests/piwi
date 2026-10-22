@@ -1437,6 +1437,72 @@
     "message": "Unpair",
     "description": "Button that forgets the paired editor."
   },
+  "options_siteAccessHeading": {
+    "message": "Sites Piwi Picker may run on",
+    "description": "Settings page: heading of the card listing the sites Piwi Picker holds a host permission for."
+  },
+  "options_siteAccessHint": {
+    "message": "A site you allow is one Piwi Picker can run on without a click on its icon, so a recording or a replay follows you across its pages. It asks for each site the first time a tool needs it.",
+    "description": "Settings page, under options_siteAccessHeading: what allowing a site grants, and when Piwi Picker asks for one."
+  },
+  "options_siteAccessEmpty": {
+    "message": "No site yet: Piwi Picker asks for one the first time you record or replay there.",
+    "description": "Settings page, the sites card: shown when no site is allowed."
+  },
+  "options_siteRevoke": {
+    "message": "Revoke",
+    "description": "Settings page, the sites card: the button that takes a site's permission back. One word if possible."
+  },
+  "options_siteRevokeLabel": {
+    "message": "Revoke Piwi Picker’s access to $site$",
+    "description": "Settings page, the sites card: what a screen reader reads for the Revoke button of one site. $site$ is its pattern, such as https://shop.example/*.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteUseInstance": {
+    "message": "Used by your Piwi instance: Disconnect removes this access.",
+    "description": "Settings page, the sites card: beside the connected Piwi instance's address, whose Revoke is disabled. “Disconnect” is the Connect to Piwi card's button (options_disconnect)."
+  },
+  "options_siteUseDesktop": {
+    "message": "Used by the desktop app: Unpair removes this access.",
+    "description": "Settings page, the sites card: beside the paired desktop app's address, whose Revoke is disabled. “Unpair” is the Desktop app card's button (options_desktopForget)."
+  },
+  "options_siteUseEditor": {
+    "message": "Used by your editor: Unpair removes this access.",
+    "description": "Settings page, the sites card: beside the paired editor's address, whose Revoke is disabled. “Unpair” is the Send to editor card's button (options_editorUnpair)."
+  },
+  "options_siteBusyRecording": {
+    "message": "A recording is running there: stop it first.",
+    "description": "Settings page, the sites card: beside a site a recording runs on, whose Revoke is disabled until it ends."
+  },
+  "options_siteBusyReplay": {
+    "message": "A replay is running there: stop it first.",
+    "description": "Settings page, the sites card: beside a site a replay runs on, whose Revoke is disabled until it ends."
+  },
+  "options_siteRevoked": {
+    "message": "Piwi Picker no longer runs on $site$ unless you click its icon there.",
+    "description": "Settings page, the sites card's status line after Revoke. $site$ is the site's pattern.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteRevokeFailed": {
+    "message": "The browser kept the access to $site$: remove it in the browser’s extension settings.",
+    "description": "Settings page, the sites card's status line when the browser refused to take a site's permission back. $site$ is the site's pattern.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
   "options_editorPaired": {
     "message": "Paired with the editor at $url$.",
     "description": "Status once paired. $url$ is the editor’s local address.",

@@ -89,7 +89,11 @@ and the Edge Add-ons listing that is still outstanding.
   an RFC 8628 device authorization, below; a folded **Use an API key instead** with its own **Save and test**;
   **Disconnect**); **Project mappings**, shown once an instance is kept (the instance's URL patterns, read-only, marked
   **Piwi**; the patterns kept in this browser, a table whose **Save** keeps only them; a folded **Add a site** form);
-  **Desktop app** (below); **Send to editor**. Same plain TypeScript + DOM approach as the popup. Opened via
+  **Desktop app** (below); **Send to editor**; **Sites Piwi Picker may run on** (every host permission granted,
+  `chrome.permissions.getAll`, with a **Revoke** each, redrawn on `chrome.permissions.onAdded`/`onRemoved` and on the
+  recording's and the replay's state; `site-grants.ts`, pure, keeps the site of a running recording or replay and the
+  origins the instance and the pairings hold, which Disconnect and Unpair give back). Same plain TypeScript + DOM
+  approach as the popup. Opened via
   `chrome.runtime.openOptionsPage()`, or as `options.html#add=<pattern>` from the popup's **Add this site**, which
   opens the Add a site form filled in (a line of this browser with the pattern while the form waits for a first sync
   of the instance's projects), never linked to from a content script. `main.ts` awaits the language catalog and the

@@ -1176,6 +1176,60 @@
   "options_editorUnpair": {
     "message": "Entkoppeln"
   },
+  "options_siteAccessHeading": {
+    "message": "Websites, auf denen Piwi Picker laufen darf"
+  },
+  "options_siteAccessHint": {
+    "message": "Auf einer Website, die Sie erlauben, kann Piwi Picker ohne Klick auf sein Symbol laufen, sodass eine Aufzeichnung oder eine Wiedergabe Ihnen über ihre Seiten folgt. Es fragt nach jeder Website, wenn ein Werkzeug sie zum ersten Mal braucht."
+  },
+  "options_siteAccessEmpty": {
+    "message": "Noch keine Website: Piwi Picker fragt danach, wenn Sie dort zum ersten Mal aufzeichnen oder wiedergeben."
+  },
+  "options_siteRevoke": {
+    "message": "Entziehen"
+  },
+  "options_siteRevokeLabel": {
+    "message": "Piwi Picker den Zugriff auf $site$ entziehen",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteUseInstance": {
+    "message": "Von Ihrer Piwi-Instanz genutzt: Trennen entfernt diesen Zugriff."
+  },
+  "options_siteUseDesktop": {
+    "message": "Von der Desktop-App genutzt: Entkoppeln entfernt diesen Zugriff."
+  },
+  "options_siteUseEditor": {
+    "message": "Von Ihrem Editor genutzt: Entkoppeln entfernt diesen Zugriff."
+  },
+  "options_siteBusyRecording": {
+    "message": "Dort läuft eine Aufzeichnung: Beenden Sie sie zuerst."
+  },
+  "options_siteBusyReplay": {
+    "message": "Dort läuft eine Wiedergabe: Beenden Sie sie zuerst."
+  },
+  "options_siteRevoked": {
+    "message": "Piwi Picker läuft auf $site$ nur noch nach einem Klick auf sein Symbol.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteRevokeFailed": {
+    "message": "Der Browser hat den Zugriff auf $site$ behalten: Entfernen Sie ihn in den Erweiterungseinstellungen des Browsers.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
   "options_editorPaired": {
     "message": "Mit dem Editor unter $url$ gekoppelt.",
     "placeholders": {

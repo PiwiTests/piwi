@@ -1,6 +1,7 @@
 import { parsePairing } from '@piwitests/core/editor-send';
 import { editorOriginPattern, getEditorPairing, setEditorPairing } from '../shared/editor-pairing.js';
 import {
+  CONNECTION_KEY,
   getConnectionSettings,
   setConnectionSettings,
   clearConnectionSettings,
@@ -46,8 +47,10 @@ import { clearActiveProjectOverrides } from '../shared/active-project.js';
 import { clearCachedLocatorIndexes } from '../shared/locator-index-cache.js';
 import { clearLocatorBranchOverrides } from '../shared/locator-branch.js';
 import { moveLegacySecrets } from '../shared/legacy-secrets.js';
-import { clearRecordIntent } from '../shared/recording-storage.js';
-import { hostPattern } from '../shared/web-origin.js';
+import { RECORDING_KEY, clearRecordIntent, getRecordingState } from '../shared/recording-storage.js';
+import { REPLAY_KEY, getReplayState } from '../shared/replay-storage.js';
+import { hostPattern, originPattern } from '../shared/web-origin.js';
+import { canRevoke, siteGrants, type GrantHolders, type GrantUse } from './site-grants.js';
 import {
   LANGUAGES,
   browserCatalogLanguage,
@@ -63,7 +66,7 @@ import {
   type MessageKey,
 } from '../shared/i18n.js';
 import { isDraftLanguage, TRANSLATION_ISSUE_URL } from '../shared/languages.js';
-import { decorateIcons, icon, iconText } from '../shared/icons.js';
+import { decorateIcons, icon, iconText, withIcon } from '../shared/icons.js';
 import { STEP_CSS } from '../shared/step-view.js';
 import { PATTERN_CSS, patternView } from '../shared/pattern-view.js';
 
@@ -1109,6 +1112,7 @@ async function renderEditorPairing(): Promise<void> {
   editorUnpairBtn.hidden = !pairing;
   editorPairBtn.classList.toggle('primary', !pairing);
   renderEditorPill();
+  void renderSiteAccess();
 }
 
 editorPairBtn.addEventListener('click', () => {
@@ -1166,6 +1170,7 @@ async function renderDesktopState(): Promise<void> {
   desktopForgetBtn.hidden = !desktop;
   if (desktop && !desktopUrlEl.value) desktopUrlEl.value = desktop.url;
   if (!desktop && !desktopUrlEl.value) desktopUrlEl.value = DESKTOP_DEFAULT_URL;
+  void renderSiteAccess();
 }
 
 /** Keeps a pairing that works: checked against the app first, then stored and said. */
@@ -1293,8 +1298,114 @@ void getDesktopSettings().then((desktop) => {
   return renderDesktopState();
 });
 
+// ---------------------------------------------------------------------------
+// The sites Piwi Picker may run on
+
+const siteAccessEl = document.getElementById('site-access') as HTMLElement;
+const siteAccessStatusEl = document.getElementById('site-access-status') as HTMLElement;
+
+/** What a grant held by the instance or a pairing says, and where it is given back. */
+const GRANT_USE_NOTES: Record<GrantUse, MessageKey> = {
+  instance: 'options_siteUseInstance',
+  desktop: 'options_siteUseDesktop',
+  editor: 'options_siteUseEditor',
+};
+
+/** The grant each use and each running tool holds now. */
+async function grantHolders(): Promise<GrantHolders> {
+  const [desktop, editor, recording, replay] = await Promise.all([
+    getDesktopSettings().catch(() => null),
+    getEditorPairing().catch(() => null),
+    getRecordingState().catch(() => null),
+    getReplayState().catch(() => null),
+  ]);
+  const replaying = !!replay && !replay.finished && (replay.status === 'running' || replay.status === 'paused');
+  return {
+    instance: originPattern(stored.instanceUrl),
+    desktop: desktop ? hostPattern(desktop.url) : null,
+    editor: editor ? editorOriginPattern(editor) : null,
+    recording: recording?.active ? recording.grantedOriginPattern : null,
+    replay: replaying ? originPattern(replay.origin) : null,
+  };
+}
+
+/** Bumped by each render, so the last one started is the one the card shows. */
+let siteAccessRender = 0;
+
+/**
+ * The card lists every site granted, with Revoke; a site a recording or a
+ * replay runs on, or the instance or a pairing uses, says so instead.
+ */
+async function renderSiteAccess(): Promise<void> {
+  const render = ++siteAccessRender;
+  const [granted, holders] = await Promise.all([
+    chrome.permissions.getAll().catch((): chrome.permissions.Permissions => ({ origins: [] })),
+    grantHolders(),
+  ]);
+  if (render !== siteAccessRender) return;
+  const grants = siteGrants(granted.origins ?? [], holders);
+  siteAccessEl.replaceChildren();
+  if (grants.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-mappings';
+    empty.textContent = t('options_siteAccessEmpty');
+    siteAccessEl.appendChild(empty);
+    return;
+  }
+  for (const grant of grants) {
+    const row = document.createElement('div');
+    row.className = 'grant-row';
+    const pattern = document.createElement('span');
+    pattern.className = 'pattern';
+    pattern.appendChild(patternView(grant.pattern));
+    const notes = [
+      ...grant.uses.map((use) => t(GRANT_USE_NOTES[use])),
+      ...(grant.busy ? [t(grant.busy === 'recording' ? 'options_siteBusyRecording' : 'options_siteBusyReplay')] : []),
+    ];
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = notes.join(' ');
+    const revoke = document.createElement('button');
+    revoke.type = 'button';
+    revoke.className = 'danger small';
+    revoke.textContent = t('options_siteRevoke');
+    revoke.setAttribute('aria-label', t('options_siteRevokeLabel', { site: grant.pattern }));
+    withIcon(revoke, 'unlink');
+    revoke.disabled = !canRevoke(grant);
+    revoke.addEventListener('click', () => {
+      whileRunning(revoke, () => revokeSite(grant.pattern));
+    });
+    row.append(pattern, ...(notes.length ? [meta] : []), revoke);
+    siteAccessEl.appendChild(row);
+  }
+}
+
+/** Takes the grant of `pattern` back, unless a recording, a replay, the instance or a pairing has come to hold it. */
+async function revokeSite(pattern: string): Promise<void> {
+  const [grant] = siteGrants([pattern], await grantHolders());
+  if (!grant || !canRevoke(grant)) {
+    await renderSiteAccess();
+    return;
+  }
+  const removed = await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
+  writeStatus(
+    siteAccessStatusEl,
+    tNodes(removed ? 'options_siteRevoked' : 'options_siteRevokeFailed', { site: patternView(pattern) }),
+    removed ? 'ok' : 'error',
+  );
+  await renderSiteAccess();
+}
+
+chrome.permissions.onAdded.addListener(() => void renderSiteAccess());
+chrome.permissions.onRemoved.addListener(() => void renderSiteAccess());
+chrome.storage.onChanged.addListener((changes, area) => {
+  const recordingOrReplay = area === 'session' && (RECORDING_KEY in changes || REPLAY_KEY in changes);
+  if (recordingOrReplay || (area === 'local' && CONNECTION_KEY in changes)) void renderSiteAccess();
+});
+
 renderLanguageSelect();
 void loadInitial();
+void renderSiteAccess();
 void renderEditorPairing();
 
 // Every listener is attached from here on; the e2e specs wait for `html[data-ready]` before they interact.

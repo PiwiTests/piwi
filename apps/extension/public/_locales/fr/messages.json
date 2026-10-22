@@ -1176,6 +1176,60 @@
   "options_editorUnpair": {
     "message": "Dissocier"
   },
+  "options_siteAccessHeading": {
+    "message": "Sites où Piwi Picker peut s’exécuter"
+  },
+  "options_siteAccessHint": {
+    "message": "Sur un site que vous autorisez, Piwi Picker peut s’exécuter sans clic sur son icône : un enregistrement ou un rejeu vous suit ainsi d’une page à l’autre. Il demande chaque site la première fois qu’un outil en a besoin."
+  },
+  "options_siteAccessEmpty": {
+    "message": "Aucun site pour l’instant : Piwi Picker en demande un la première fois que vous y enregistrez ou rejouez."
+  },
+  "options_siteRevoke": {
+    "message": "Retirer"
+  },
+  "options_siteRevokeLabel": {
+    "message": "Retirer l’accès de Piwi Picker à $site$",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteUseInstance": {
+    "message": "Utilisé par votre instance Piwi : Se déconnecter retire cet accès."
+  },
+  "options_siteUseDesktop": {
+    "message": "Utilisé par l’application de bureau : Dissocier retire cet accès."
+  },
+  "options_siteUseEditor": {
+    "message": "Utilisé par votre éditeur : Dissocier retire cet accès."
+  },
+  "options_siteBusyRecording": {
+    "message": "Un enregistrement y est en cours : arrêtez-le d’abord."
+  },
+  "options_siteBusyReplay": {
+    "message": "Un rejeu y est en cours : arrêtez-le d’abord."
+  },
+  "options_siteRevoked": {
+    "message": "Piwi Picker ne s’exécute plus sur $site$ sans un clic sur son icône.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteRevokeFailed": {
+    "message": "Le navigateur a gardé l’accès à $site$ : retirez-le dans les réglages des extensions du navigateur.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
   "options_editorPaired": {
     "message": "Associé à l’éditeur à l’adresse $url$.",
     "placeholders": {

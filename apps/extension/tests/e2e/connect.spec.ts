@@ -636,3 +636,97 @@ test('Send to editor answers, rather than leaving the panel waiting, when the pa
   );
   expect(answer).toEqual({ ok: false, error: expect.stringContaining('This is not a pairing address') });
 });
+
+/**
+ * Plays the browser's host permissions in a settings page: `getAll` answers the
+ * granted patterns, `remove` takes one back, and both fire the listeners the
+ * page added, as the browser's `onAdded` and `onRemoved` do. A spec cannot
+ * answer the browser's prompt, and the extension holds no grant by default.
+ */
+async function stubGrants(page: Page, granted: string[]): Promise<void> {
+  await page.addInitScript((initial) => {
+    const origins = new Set(initial);
+    const listeners = { added: [] as Array<(p: object) => void>, removed: [] as Array<(p: object) => void> };
+    const permissions = chrome.permissions;
+    permissions.getAll = (async () => ({ permissions: [], origins: [...origins] })) as typeof permissions.getAll;
+    permissions.remove = (async ({ origins: gone = [] }: chrome.permissions.Permissions) => {
+      for (const origin of gone) origins.delete(origin);
+      for (const listener of listeners.removed) listener({ origins: gone });
+      return true;
+    }) as typeof permissions.remove;
+    permissions.onAdded.addListener = ((listener: (p: object) => void) =>
+      listeners.added.push(listener)) as typeof permissions.onAdded.addListener;
+    permissions.onRemoved.addListener = ((listener: (p: object) => void) =>
+      listeners.removed.push(listener)) as typeof permissions.onRemoved.addListener;
+    (window as unknown as { __grant: (origin: string) => void }).__grant = (origin) => {
+      origins.add(origin);
+      for (const listener of listeners.added) listener({ origins: [origin] });
+    };
+  }, granted);
+}
+
+test.describe('the sites Piwi Picker may run on', () => {
+  test('none in a new profile', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openOptions(page, extensionId);
+    await expect(page.getByRole('heading', { name: 'Sites Piwi Picker may run on' })).toBeVisible();
+    await expect(page.locator('#site-access')).toHaveText(
+      'No site yet: Piwi Picker asks for one the first time you record or replay there.',
+    );
+  });
+
+  test('lists every site granted with Revoke, and keeps the ones a recording or the instance holds', async ({
+    context,
+    extensionId,
+  }) => {
+    const instance = 'http://127.0.0.1:9';
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.evaluate(async (instanceUrl) => {
+      await chrome.storage.local.set({ piwiConnection: { instanceUrl, projectMappings: [] } });
+      await chrome.storage.session.set({
+        piwiRecording: {
+          active: true,
+          events: [],
+          startedAt: 1,
+          grantedOriginPattern: 'https://rec.example/*',
+          mode: 'actions',
+        },
+      });
+    }, instance);
+    await stubGrants(page, ['https://shop.example/*', `${instance}/*`, 'https://rec.example/*']);
+    await openOptions(page, extensionId);
+
+    const rows = page.locator('#site-access .grant-row');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText(`${instance}/*`);
+    await expect(rows.nth(0)).toContainText('Used by your Piwi instance: Disconnect removes this access.');
+    await expect(
+      rows.nth(0).getByRole('button', { name: `Revoke Piwi Picker’s access to ${instance}/*` }),
+    ).toBeDisabled();
+    await expect(rows.nth(1)).toContainText('https://rec.example/*');
+    await expect(rows.nth(1)).toContainText('A recording is running there: stop it first.');
+    await expect(rows.nth(1).getByRole('button')).toBeDisabled();
+    await expect(rows.nth(2)).toContainText('https://shop.example/*');
+
+    await rows.nth(2).getByRole('button', { name: 'Revoke Piwi Picker’s access to https://shop.example/*' }).click();
+    await expect(page.locator('#site-access-status')).toHaveText(
+      'Piwi Picker no longer runs on https://shop.example/* unless you click its icon there.',
+    );
+    await expect(rows).toHaveCount(2);
+
+    // A site granted meanwhile shows; the recording's site can go once the recording ends.
+    await page.evaluate(() =>
+      (window as unknown as { __grant: (origin: string) => void }).__grant('https://new.example/*'),
+    );
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(1)).toContainText('https://new.example/*');
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecording: { active: false, events: [], startedAt: null, grantedOriginPattern: null },
+      }),
+    );
+    await expect(rows.nth(2).getByRole('button')).toBeEnabled();
+    await expect(rows.nth(2)).not.toContainText('A recording is running there');
+  });
+});

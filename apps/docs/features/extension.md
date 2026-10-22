@@ -181,7 +181,15 @@ written in the extension's language; locators, test ids and specs never are.
 | `scripting` | injects the picker or the recorder into that tab on demand, and marks your instance's pages once [connected](./extension-connection#what-is-sent); nothing else runs unasked |
 | `storage` | keeps your copy format and, only if you connect, the instance URL, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The API key and the desktop app's and editor's tokens live in the extension's own database, out of reach of web pages; the session and a running recording use `chrome.storage.session`, cleared when the browser closes |
 | `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |
-| `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin. Never `<all_urls>` |
+| `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin. Never `<all_urls>`. The settings list every site allowed under **Sites Piwi Picker may run on**, each with **Revoke** |
+
+### Sites Piwi Picker may run on
+
+Recording, replaying, Save login and the DevTools pane each ask for the site you are on the first time they need it,
+and the access stays until you take it back. Settings → **Sites Piwi Picker may run on** lists every site allowed
+with a **Revoke** button; Piwi Picker then runs there only when you click its icon. A site a recording or a replay runs
+on keeps its access until it ends, and your instance's address, the desktop app's and the editor's are given back by
+**Disconnect** and **Unpair**.
 
 ## Connecting to a Piwi instance
 
