@@ -1004,6 +1004,24 @@
   "options_disconnected": {
     "message": "Desconectado."
   },
+  "options_disconnectedKept_one": {
+    "message": "Desconectado. $count$ línea de este navegador vuelve cuando te conectes de nuevo a esta instancia.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_disconnectedKept_other": {
+    "message": "Desconectado. $count$ líneas de este navegador vuelven cuando te conectes de nuevo a esta instancia.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "options_connect": {
     "message": "Conectar"
   },

@@ -1223,6 +1223,26 @@
     "message": "Disconnected.",
     "description": "Settings page: after Disconnect."
   },
+  "options_disconnectedKept_one": {
+    "message": "Disconnected. This browser’s $count$ line comes back when you connect to this instance again.",
+    "description": "Settings page: after Disconnect, when one line under This browser only is kept for the next connection to the same instance. $count$ is the number of lines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_disconnectedKept_other": {
+    "message": "Disconnected. This browser’s $count$ lines come back when you connect to this instance again.",
+    "description": "Settings page: after Disconnect, when several lines under This browser only are kept for the next connection to the same instance. $count$ is the number of lines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "options_connect": {
     "message": "Connect",
     "description": "Settings page: button next to the instance address that starts connecting (opens the instance to allow Piwi Picker). Short."

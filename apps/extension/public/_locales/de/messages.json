@@ -1004,6 +1004,24 @@
   "options_disconnected": {
     "message": "Getrennt."
   },
+  "options_disconnectedKept_one": {
+    "message": "Getrennt. $count$ Zeile dieses Browsers kommt zurück, wenn Sie sich wieder mit dieser Instanz verbinden.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_disconnectedKept_other": {
+    "message": "Getrennt. $count$ Zeilen dieses Browsers kommen zurück, wenn Sie sich wieder mit dieser Instanz verbinden.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "options_connect": {
     "message": "Verbinden"
   },

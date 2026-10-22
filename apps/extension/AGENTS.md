@@ -264,6 +264,9 @@ matcher a catalog entry's own `urlPattern` gate uses). Every consumer that needs
 applies here" (record-panel's HUD and review panel, test-function-panel, the popup's select)
 calls this one function rather than re-deriving it. **Disconnect**, and connecting to another instance, drop every
 site's override and every project's branch choice (`locator-branch.ts`) with the cached catalogs and locator indexes.
+Disconnect sets the lines of this browser aside with the instance's origin (`src/options/kept-mappings.ts`,
+`piwiKeptMappings`); the next connection kept takes them, back into `projectMappings` when it is to the same origin,
+dropped otherwise, since their project ids are that instance's.
 
 **No recording is ever sent to the instance**, and a bug report only through **Send to Piwi…**: the URL patterns,
 each mapped project's catalog and locator index, and its bug reports (Replay's list) are fetched; what is sent is a URL

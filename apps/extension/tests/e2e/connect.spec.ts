@@ -491,6 +491,51 @@ test.describe.serial('connect in one step', () => {
     }
   });
 
+  test('Disconnect keeps the lines of this browser for the next connection to the same instance', async ({
+    context,
+    extensionId,
+  }) => {
+    patterns = [{ pattern: `${baseUrl}/shop/**`, environment: null }];
+    const local = { urlPattern: 'https://local.shop.test/**', projectId: 1, projectLabel: 'Shop', branch: 'develop' };
+    const options = await context.newPage();
+    await openOptions(options, extensionId);
+    await seedConnection(options, {
+      instanceUrl: baseUrl,
+      projectMappings: [local],
+      serverMappings: [],
+      serverProjects: [{ id: 1, label: 'Shop', canEdit: true }],
+      serverSyncedAt: 1,
+      connectedAs: 'Ada Lovelace',
+    });
+    await options.reload();
+    await optionsReady(options);
+    await grantPermissions(options);
+    await expect(options.locator('#mappings .mapping-pattern')).toHaveValue(local.urlPattern);
+
+    await options.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(options.locator('#status')).toHaveText(
+      'Disconnected. This browser’s 1 line comes back when you connect to this instance again.',
+    );
+    expect(await storedConnection(options)).toBeUndefined();
+
+    // Connected again to the same instance: the line is back, as it was.
+    await options.getByLabel('Address of your Piwi instance').fill(baseUrl);
+    await options.locator('#api-key-fallback summary').click();
+    await options.locator('#api-key').fill(API_KEY);
+    await options.getByRole('button', { name: 'Save and test' }).click();
+    await expect(options.locator('#status')).toContainText('Connected: 1 project found.');
+    await expect(options.locator('#mappings .mapping-pattern')).toHaveValue(local.urlPattern);
+    await expect(options.locator('#mappings .mapping-branch').first()).toHaveValue('develop');
+    expect(await storedConnection(options)).toMatchObject({ instanceUrl: baseUrl, projectMappings: [local] });
+
+    // Once given back, a Disconnect with no line keeps none, and says only that.
+    await options.locator('#mappings .remove-mapping').click();
+    await options.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(options.locator('#mappings-status')).toContainText('Saved 0 lines.');
+    await options.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(options.locator('#status')).toHaveText('Disconnected.');
+  });
+
   test('the Active project chosen on one site applies there only, and Disconnect forgets it with the branch chosen', async ({
     context,
     extensionId,

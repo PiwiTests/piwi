@@ -52,6 +52,7 @@ import { RECORDING_KEY, clearRecordIntent, getRecordingState } from '../shared/r
 import { REPLAY_KEY, getReplayState } from '../shared/replay-storage.js';
 import { hostPattern, originPattern } from '../shared/web-origin.js';
 import { canRevoke, siteGrants, type GrantHolders, type GrantUse } from './site-grants.js';
+import { keepMappings, takeKeptMappings } from './kept-mappings.js';
 import {
   LANGUAGES,
   browserCatalogLanguage,
@@ -636,14 +637,9 @@ function syncedProjectOptions(): ProjectOption[] {
   return stored.serverProjects.map((p) => ({ id: p.id, name: p.label, label: p.label }));
 }
 
-async function loadInitial(): Promise<void> {
-  const settings = stored;
-  const epoch = connectionEpoch;
-  instanceUrlEl.value = settings.instanceUrl;
-  apiKeyEl.value = storedApiKey;
-  // A key typed by hand stays visible where it was typed.
-  apiKeyFallback.open = storedApiKey !== '' && settings.serverSyncedAt === 0;
-  mappings = settings.projectMappings.map((m) => ({
+/** The lines of this browser as the table edits them. */
+function editableMappings(settings: ConnectionSettings): EditableMapping[] {
+  return settings.projectMappings.map((m) => ({
     urlPattern: m.urlPattern,
     projectId: m.projectId,
     projectLabel: m.projectLabel,
@@ -651,6 +647,16 @@ async function loadInitial(): Promise<void> {
     pathPrefix: m.pathPrefix ?? '',
     testPathPrefix: m.testPathPrefix ?? '',
   }));
+}
+
+async function loadInitial(): Promise<void> {
+  const settings = stored;
+  const epoch = connectionEpoch;
+  instanceUrlEl.value = settings.instanceUrl;
+  apiKeyEl.value = storedApiKey;
+  // A key typed by hand stays visible where it was typed.
+  apiKeyFallback.open = storedApiKey !== '' && settings.serverSyncedAt === 0;
+  mappings = editableMappings(settings);
   projectOptions = syncedProjectOptions();
   renderMappings();
   renderServerMappings();
@@ -804,6 +810,7 @@ async function connect(instanceUrl: string): Promise<void> {
       connectedAs: outcome.user?.name ?? '',
       // Another instance's patterns and projects do not apply to this one.
       ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0 }),
+      ...(previous.instanceUrl.trim() ? {} : { projectMappings: await takeKeptMappings(instanceUrl) }),
     };
     const kept = ++connectionEpoch;
     await setInstanceApiKey(instanceUrl, outcome.apiKey);
@@ -811,6 +818,7 @@ async function connect(instanceUrl: string): Promise<void> {
     stored = next;
     await setConnectionSettings(next);
     if (!sameInstance) await forgetInstanceData();
+    mappings = editableMappings(next);
     apiKeyEl.value = outcome.apiKey;
     apiKeyFallback.open = false;
     await syncServerPatterns(next, kept);
@@ -978,12 +986,14 @@ async function connectWithKey(
   }
   // Disconnected while the instance was tested: nothing is kept.
   if (epoch !== connectionEpoch) return false;
+  const restored = stored.instanceUrl.trim() ? null : await takeKeptMappings(settings.instanceUrl);
   const kept = ++connectionEpoch;
   await setInstanceApiKey(settings.instanceUrl, typed.apiKey);
   if (kept !== connectionEpoch) return false;
-  stored = settings;
-  await setConnectionSettings(settings);
+  stored = restored ? { ...settings, projectMappings: restored } : settings;
+  await setConnectionSettings(stored);
   if (!sameInstance) await forgetInstanceData();
+  mappings = editableMappings(stored);
   renderInstanceState();
   await syncServerPatterns(settings, kept);
   try {
@@ -1080,6 +1090,7 @@ disconnectBtn.addEventListener('click', () => {
   pendingConnect?.abort();
   void (async () => {
     const previousUrl = stored.instanceUrl;
+    const keptLines = await keepMappings(previousUrl, (await getConnectionSettings()).projectMappings).catch(() => 0);
     await clearConnectionSettings();
     await clearInstanceApiKey().catch(() => undefined);
     await clearConnectionHealth().catch(() => undefined);
@@ -1094,7 +1105,7 @@ disconnectBtn.addEventListener('click', () => {
     renderMappings();
     renderServerMappings();
     renderInstanceState();
-    setStatus(t('options_disconnected'), 'ok');
+    setStatus(keptLines > 0 ? tn('options_disconnectedKept', keptLines) : t('options_disconnected'), 'ok');
   })();
 });
 
