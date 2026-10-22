@@ -9,7 +9,7 @@ One language server, bundled into `dist/piwi-language-server.cjs` by `npm run ed
 ships and starts over stdio: the VS Code extension and the JetBrains plugin. All editor logic lives here, so the
 clients stay thin and both editors give the same answers.
 
-- `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
+- `src/server.ts` wires the protocol: diagnostics, quick fixes, hover and completion, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
@@ -155,8 +155,13 @@ clients stay thin and both editors give the same answers.
   into `PIWI_COVERAGE_BROWSER=functions`. The hover of a line names the tests that ran it, or
   says that none runs it or that it changed since the coverage run.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
-  change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it
-  too; never re-implement a core function.
+  change and their call-site edits, and where completion offers the suite's locator chains (`locatorCompletionSite`):
+  after `page.`, `this.page.` or another page expression `pageCandidates` offers on the cursor's line (`adminPage.`,
+  `this.root.`, `app.page.`), the chain alone; right after `expect(`, the chain on the default page expression there.
+  The file is scanned only when the text before the cursor ends with a member chain and `.` (a method name partly
+  typed after it included), or with `expect(`; `(` is a trigger character, and completion after any other `(` is
+  empty. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it too; never re-implement a
+  core function.
 - `src/context.ts` is one Playwright config of the workspace: its connection, project, branch and cached indexes.
 - `src/piwi-client.ts` is the only file that talks to an instance; it opens the event streams `src/run-stream.ts` reads.
   Its requests go through `src/http.ts`: with a proxy in the service's environment (`HTTPS_PROXY`, `HTTP_PROXY`,

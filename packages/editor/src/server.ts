@@ -63,6 +63,7 @@ import {
   functionSnippet,
   functionSuggestions,
   headedCommand,
+  locatorCompletionSite,
   locatorRange,
   locatorSuggestions,
   locatorsInFile,
@@ -1870,7 +1871,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       capabilities: {
         textDocumentSync: TextDocumentSyncKind.Incremental,
         hoverProvider: true,
-        completionProvider: { triggerCharacters: ['.'] },
+        completionProvider: { triggerCharacters: ['.', '('] },
         codeActionProvider: { codeActionKinds: [CodeActionKind.QuickFix] },
       },
       serverInfo: { name: 'Piwi' },
@@ -2148,7 +2149,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return actions;
   });
 
-  // In test code: after `page.`, the chains the suite uses on the pages this file's tests visit; at the start of a
+  // In test code: after a page expression's `.` (`page.`, `adminPage.`, `this.page.`), the chains the suite uses on the
+  // pages this file's tests visit, and in `expect(` the same chains on the page in use there; at the start of a
   // statement, the project's functions for those pages; inside `piwi:` annotations and tags, their known values.
   connection.onCompletion(async (params): Promise<CompletionItem[]> => {
     const file = uriToPath(params.textDocument.uri);
@@ -2157,7 +2159,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!file || !context?.index || !document) return [];
     const relative = relativeTo(context.root, file);
     if (!relative || !isTestCode(context, relative)) return [];
-    const line = document.getText().split(/\r?\n/)[params.position.line] ?? '';
+    const text = document.getText();
+    const line = text.split(/\r?\n/)[params.position.line] ?? '';
     const before = line.slice(0, params.position.character);
     const annotation = await annotationItems(context, before, params.position);
     if (annotation) return annotation;
@@ -2175,11 +2178,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         textEdit: { range: { start, end: params.position }, newText: functionSnippet(f) },
       }));
     }
-    const typed = /(?:^|[^\w$.])(?:this\.)?page\.([A-Za-z]*)$/.exec(before);
-    if (!typed) return [];
-    const start = { line: params.position.line, character: params.position.character - typed[1]!.length };
+    const site = locatorCompletionSite(text, params.position.line, before);
+    if (!site) return [];
+    const start = { line: params.position.line, character: params.position.character - site.typed.length };
     return locatorSuggestions(context.index, relative).map((s, i) => ({
-      label: s.locator,
+      label: site.prefix + s.locator,
       kind: CompletionItemKind.Value,
       detail: [
         plural(s.tests, 'test'),
@@ -2189,8 +2192,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         .filter(Boolean)
         .join(' · '),
       sortText: String(i).padStart(3, '0'),
-      filterText: s.locator,
-      textEdit: { range: { start, end: params.position }, newText: s.locator },
+      filterText: site.prefix + s.locator,
+      textEdit: { range: { start, end: params.position }, newText: site.prefix + s.locator },
     }));
   });
 

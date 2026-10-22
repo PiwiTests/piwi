@@ -91,8 +91,13 @@ suggested value.
 
 ## Completion
 
-- After `page.` (or `this.page.`) in a spec or a page object: the locator chains your suite already uses on the pages
-  this file's tests visit, most used first and brittle ones last.
+- After a page and a `.` in a spec or a page object: the locator chains your suite already uses on the pages this
+  file's tests visit, most used first and brittle ones last. The page is `page`, `this.page`, or any page the code at
+  the cursor can use, the same ones [a recording](/features/editor-recording#start-a-recording) offers: another page
+  fixture of the test (`adminPage.`), a page object's page field (`this.root.`), a page the test opens
+  (`newPage()`, a popup).
+- Right after `expect(`: the same chains on the page in use there, such as
+  `page.getByRole('button', { name: 'Pay' })`, so an assertion's locator is written in one step.
 - At the start of a statement: the [functions](/features/test-functions) of your catalog whose URL pattern matches
   those pages, as a call with a placeholder per parameter.
 - In a `piwi:` annotation: the types (`piwi:owner`, `piwi:priority`, `piwi:feature`, `piwi:link`), then the owners,

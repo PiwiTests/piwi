@@ -1052,6 +1052,57 @@ describe('the Piwi language server', () => {
     expect(items[0]!.textEdit.range.start.character).toBe('  await page.'.length);
   });
 
+  /** The completion items at a position of an open document. */
+  const completionAt = (file: string, line: number, character: number, triggerCharacter?: string) =>
+    client.sendRequest('textDocument/completion', {
+      textDocument: { uri: uri(file) },
+      position: { line, character },
+      ...(triggerCharacter ? { context: { triggerKind: 2, triggerCharacter } } : {}),
+    }) as Promise<Array<{ label: string; textEdit: { newText: string; range: { start: { character: number } } } }>>;
+
+  test('completes another page fixture of the test, adminPage., with the same chains', async () => {
+    const text = SPEC.replace('async ({ page }) => {}', 'async ({ adminPage }) => {\n  await adminPage.\n}');
+    await open('tests/checkout.spec.ts', text);
+    const items = await completionAt('tests/checkout.spec.ts', 3, '  await adminPage.'.length, '.');
+    expect(items.map((i) => i.textEdit.newText)).toEqual([
+      "getByRole('button', { name: 'Pay now' })",
+      "locator('.cart-row').nth(2)",
+    ]);
+    expect(items[0]!.textEdit.range.start.character).toBe('  await adminPage.'.length);
+  });
+
+  test('completes this.page. in a page object', async () => {
+    await open('tests/pages/checkout.page.ts', PAGE_OBJECT);
+    const line = PAGE_OBJECT.split('\n')[3]!;
+    const character = line.indexOf('this.page.') + 'this.page.'.length;
+    const items = await completionAt('tests/pages/checkout.page.ts', 3, character, '.');
+    expect(items.map((i) => i.label)).toEqual([
+      "getByRole('button', { name: 'Pay now' })",
+      "locator('.cart-row').nth(2)",
+    ]);
+  });
+
+  test('completes expect( with the chains on the page in use there', async () => {
+    const text = SPEC.replace('async ({ page }) => {}', 'async ({ page }) => {\n  await expect(\n}');
+    await open('tests/checkout.spec.ts', text);
+    const items = await completionAt('tests/checkout.spec.ts', 3, '  await expect('.length, '(');
+    expect(items.map((i) => i.label)).toEqual([
+      "page.getByRole('button', { name: 'Pay now' })",
+      "page.locator('.cart-row').nth(2)",
+    ]);
+    expect(items[0]!.textEdit).toMatchObject({
+      newText: "page.getByRole('button', { name: 'Pay now' })",
+      range: { start: { character: '  await expect('.length } },
+    });
+  });
+
+  test('offers no chain after an unrelated member or call', async () => {
+    const text = SPEC.replace('async ({ page }) => {}', 'async ({ page }) => {\n  foo.\n  console.log(\n}');
+    await open('tests/checkout.spec.ts', text);
+    expect(await completionAt('tests/checkout.spec.ts', 3, '  foo.'.length, '.')).toEqual([]);
+    expect(await completionAt('tests/checkout.spec.ts', 4, '  console.log('.length, '(')).toEqual([]);
+  });
+
   test('advises on a test whose timeout could be tighter, and fixes it', async () => {
     const text = SPEC.replace('async ({ page }) => {}', 'async ({ page }) => {\n  test.slow();\n}');
     await open('tests/checkout.spec.ts', text, 5);
