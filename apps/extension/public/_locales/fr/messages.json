@@ -2070,6 +2070,12 @@
   "record_reviewLabel": {
     "message": "Votre enregistrement"
   },
+  "record_testTitle": {
+    "message": "Titre du test"
+  },
+  "record_testTitlePlaceholder": {
+    "message": "Nom du test"
+  },
   "record_nothingRecorded": {
     "message": "Rien n’a été enregistré"
   },

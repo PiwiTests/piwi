@@ -1318,6 +1318,9 @@ test.describe('the replay dialog', () => {
       await expect(dialog.getByRole('button', { name: other })).toHaveCount(0);
       await dialog.getByRole('button', { name: own }).click();
       await expect(dialog).toContainText('2 steps');
+      // A recording of actions goes by its first action when it has no title of its own.
+      if (mode === 'actions') await expect(dialog).toContainText('Click');
+      else await expect(dialog).toContainText('Untitled report');
       await dialog.getByRole('button', { name: 'Replay', exact: true }).click();
       await expect.poll(() => sentOf(page, 'piwi-start-replay')).toHaveLength(1);
       const [start] = await sentOf(page, 'piwi-start-replay');

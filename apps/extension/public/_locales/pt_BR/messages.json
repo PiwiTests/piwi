@@ -2070,6 +2070,12 @@
   "record_reviewLabel": {
     "message": "Sua gravação"
   },
+  "record_testTitle": {
+    "message": "Título do teste"
+  },
+  "record_testTitlePlaceholder": {
+    "message": "Nome do teste"
+  },
   "record_nothingRecorded": {
     "message": "Nada foi gravado"
   },

@@ -113,7 +113,13 @@ test.describe('the Piwi panel', () => {
     await expect(panel.getByRole('tab', { name: 'Record' })).toHaveAttribute('aria-selected', 'true');
     await expect(panel.getByText('Nothing is being recorded.')).toBeVisible();
 
-    const recording = { active: true, startedAt: 1, grantedOriginPattern: `${ORIGIN}/*`, mode: 'actions' };
+    const recording = {
+      active: true,
+      startedAt: 1,
+      grantedOriginPattern: `${ORIGIN}/*`,
+      mode: 'actions',
+      title: 'Apply a coupon',
+    };
     await setSession(panel, { piwiRecording: { ...recording, events: [click('apply-coupon', 'Apply coupon', 1)] } });
     await expect(panel.getByRole('status')).toHaveText(`Recording on ${ORIGIN}: 1 step`);
     await expect(panel.getByRole('listitem')).toHaveCount(1);
@@ -146,6 +152,7 @@ test.describe('the Piwi panel', () => {
     await panel.getByRole('button', { name: 'Copy as TypeScript' }).click();
     await expect(panel.getByRole('button', { name: 'Copied' })).toBeVisible();
     const spec = await panel.evaluate(() => navigator.clipboard.readText());
+    expect(spec).toContain("test('Apply a coupon', async ({ page }) => {");
     expect(spec).toContain("await page.getByTestId('apply-coupon').click();");
     expect(spec).toContain("await page.getByTestId('checkout').click();");
 

@@ -56,7 +56,8 @@ import {
   type ReplayVerdict,
 } from './replay-core.js';
 import { relayEvidence } from '../shared/bug-relay.js';
-import { storeAsPageLeaves } from '../shared/bug-storage.js';
+import { getBugEvidence, storeAsPageLeaves } from '../shared/bug-storage.js';
+import { recordingTitle } from '../shared/recording-title.js';
 import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
@@ -1575,10 +1576,14 @@ async function lastRecordedReport(): Promise<(ChosenReport & { bug: boolean }) |
     const steps = normalizeSteps(recording.events);
     if (steps.length === 0) return null;
     const session = sessionFromEvents(recording.events, recording.startedAt ?? steps[0]!.timestamp);
+    const bug = recordingMode(recording) === 'bug';
+    const title = bug
+      ? ((await getBugEvidence().catch(() => null))?.title?.trim() ?? null)
+      : recordingTitle(recording, steps);
     return {
-      steps: toStepsDocument(session),
+      steps: toStepsDocument(session, { title: title || null }),
       views: { recordingViews: stepViews(session.steps) },
-      bug: recordingMode(recording) === 'bug',
+      bug,
     };
   } catch {
     return null;

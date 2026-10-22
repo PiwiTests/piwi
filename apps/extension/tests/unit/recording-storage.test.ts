@@ -10,6 +10,7 @@ import {
   clearRecordIntent,
   decideRecordIntent,
   serveAppendRecordingEvent,
+  updateRecording,
   RECORD_INTENT_TTL_MS,
   type RecordIntent,
 } from '../../src/shared/recording-storage.js';
@@ -48,6 +49,16 @@ const clickEvent: RawCaptureEvent = {
 };
 
 describe('recording state', () => {
+  it('updateRecording changes the recording’s own fields behind the appends already queued', async () => {
+    await startRecording('https://x.test/*');
+    const append = appendRecordingEvent(clickEvent);
+    const paused = updateRecording({ paused: true, title: 'Checkout' });
+    await Promise.all([append, paused]);
+    const state = await getRecordingState();
+    expect(state.events).toHaveLength(1);
+    expect(state).toMatchObject({ active: true, paused: true, title: 'Checkout' });
+  });
+
   it('starts inactive with no events', async () => {
     const state = await getRecordingState();
     expect(state.active).toBe(false);

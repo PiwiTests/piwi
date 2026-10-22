@@ -2497,6 +2497,14 @@
     "message": "Your recording",
     "description": "Recorder review panel: accessible name of the dialog that opens when a recording stops (read by screen readers, not shown)."
   },
+  "record_testTitle": {
+    "message": "Test title",
+    "description": "Recorder review panel: label of the text field at the top that names the test: the generated spec's test('…') and the steps file's title. Filled with the first page's title. Short."
+  },
+  "record_testTitlePlaceholder": {
+    "message": "Name of the test",
+    "description": "Recorder review panel: placeholder of the “Test title” field, shown only when no title can be made from the steps."
+  },
   "record_nothingRecorded": {
     "message": "Nothing recorded",
     "description": "Recorder review panel: title when the recording has no step."

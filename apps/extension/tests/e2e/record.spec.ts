@@ -19,7 +19,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
 const ORIGIN = 'https://record-test.local';
 
-const LOGIN_PAGE = `<!doctype html><html><body>
+const LOGIN_PAGE = `<!doctype html><html><head><title>Sign in</title></head><body>
   <input id="username" data-testid="username-field" />
   <label><input type="checkbox" data-testid="remember-me" /> Remember me</label>
   <button id="submit" data-testid="login-submit" onclick="location.href='/dashboard'">Log in</button>
@@ -807,12 +807,17 @@ test.describe('record-panel.js', () => {
     // The review panel is in a closed shadow root (deliberate, same reasoning
     // as session-panel.ts/results-panel.ts) — Tab/Enter reaches its buttons
     // the same way session-panel.spec.ts drives its name prompt. Tab order:
-    // close button, then "Copy as TypeScript".
+    // close button, the test's title, then "Copy as TypeScript".
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
 
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('addToCart(page)');
+    // No title was given and no page was recorded: the first action names the test.
+    const spec = await page.evaluate(() => navigator.clipboard.readText());
+    expect(spec).toContain(`test('Click button "Add to cart"', async ({ page }) => {`);
+    expect(spec).not.toContain('recorded flow');
   });
 
   test('Replay on the review panel replays the recorded steps here, and says why when it cannot start', async ({
@@ -911,9 +916,20 @@ test.describe('record-panel.js', () => {
     await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
 
-    // Tab order in the closed shadow root: close, Copy as TypeScript, Download steps.
-    const download = page.waitForEvent('download');
+    // The first page's own title is the test's, until the field changes it.
+    const storedTitle = () =>
+      page.evaluate(
+        async () => (await (globalThis as any).chrome.storage.session.get('piwiRecording')).piwiRecording.title,
+      );
+    expect(await storedTitle()).toBe('Sign in');
+
+    // Tab order in the closed shadow root: close, the test's title, Copy as TypeScript, Download steps.
     await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('Log in and add to cart');
+    await expect.poll(storedTitle).toBe('Log in and add to cart');
+    const download = page.waitForEvent('download');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
@@ -922,6 +938,7 @@ test.describe('record-panel.js', () => {
     const parsed = parseSteps(await readFile((await file.path())!, 'utf-8'));
     if (!parsed.ok) throw new Error(parsed.errors.join('\n'));
     const doc: PiwiSteps = parsed.steps;
+    expect(doc.title).toBe('Log in and add to cart');
     expect(doc.origin).toBe(ORIGIN);
     expect(doc.steps.map((s) => [s.action, s.pageUrl])).toEqual([
       ['goto', '/login'],

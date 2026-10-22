@@ -19,6 +19,7 @@ import {
   type RecordingState,
 } from '../shared/recording-storage.js';
 import { patternOrigin } from '../shared/web-origin.js';
+import { recordingTitle } from '../shared/recording-title.js';
 import { evalInPage } from './inspected.js';
 import { button, el, emptyState, iconLine } from './ui.js';
 
@@ -62,14 +63,15 @@ export function viewHead(dot: string, text: string | Array<Node | string>, ...ac
 
 /** The spec the review panel copies, with the active project's functions when the extension is connected. */
 async function specFor(state: RecordingState): Promise<string> {
-  const session = buildSession(normalizeSteps(state.events), state.events[0]?.timestamp ?? Date.now());
+  const steps = normalizeSteps(state.events);
+  const session = buildSession(steps, state.events[0]?.timestamp ?? Date.now());
   const href = await evalInPage<string>('location.href');
   const pageUrl = href.ok && typeof href.value === 'string' ? href.value : (session.startUrl ?? '');
   const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride(pageUrl)]);
   const project = resolveActiveProject(connection, override, pageUrl);
   await requestCatalogRefresh(project?.projectId ?? null);
   const catalog = await getCachedCatalog(project?.projectId ?? null);
-  return renderSpec(session, { catalog, urlChecks: true }).code;
+  return renderSpec(session, { catalog, urlChecks: true, title: recordingTitle(state, steps) ?? undefined }).code;
 }
 
 function fileStamp(time: number): string {
@@ -123,7 +125,7 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
       t('record_downloadSteps'),
       () => {
         const session = buildSession(steps, state.events[0]?.timestamp ?? Date.now());
-        const doc = toStepsDocument(session);
+        const doc = toStepsDocument(session, { title: recordingTitle(state, steps) });
         downloadBlob(
           new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
           `piwi-steps-${fileStamp(doc.recordedAt)}.json`,

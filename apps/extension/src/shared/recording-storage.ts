@@ -33,6 +33,11 @@ export interface RecordingState {
   bugToken?: string | null;
   /** Paused from the recording bar, or from the editor that started the recording: nothing done in the browser is captured until it resumes. */
   paused?: boolean;
+  /**
+   * A recording of actions' title, for its spec and its steps file: the first page's own title as the recording
+   * reaches it, then what the review panel's field holds. Null when the page had none; absent until the first page.
+   */
+  title?: string | null;
 }
 
 const EMPTY: RecordingState = { active: false, events: [], startedAt: null, grantedOriginPattern: null };
@@ -226,7 +231,9 @@ export async function appendRecordingEvent(event: RawCaptureEvent): Promise<Reco
  * this document has queued: an append that read the state before the change
  * is written first, then the change on top of it.
  */
-export async function updateRecording(change: Partial<Pick<RecordingState, 'paused'>>): Promise<RecordingState> {
+export async function updateRecording(
+  change: Partial<Pick<RecordingState, 'paused' | 'title'>>,
+): Promise<RecordingState> {
   const run = appendQueue.then(async () => {
     const state: RecordingState = { ...(await getRecordingState()), ...change };
     await setRecordingState(state);
