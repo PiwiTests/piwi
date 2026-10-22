@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { declaredNamesAt, pageCandidates, recordingPlacement, testImportOf } from '../src/recorder/page-candidates';
+import { declaredNamesAt, pageCandidates, recordingPlacement } from '../src/recorder/page-candidates';
 
 const file = (...lines: string[]) => lines.join('\n');
 /** The 0-based line holding `marker` (a comment such as `// here`), for a caret placed on it. */
@@ -58,19 +58,60 @@ describe('pageCandidates', () => {
     ]);
   });
 
-  test('with two fixtures and no call yet: the first page fixture', () => {
+  test('with two fixtures and no call yet: page, then the fixtures, which may be page objects', () => {
     const text = file("test('approves', async ({ adminPage, userPage, request }) => {", '', '});');
     const result = pageCandidates(text, 1);
-    expect(result.default).toBe('adminPage');
+    expect(result.default).toBe('page');
     expect(result.candidates.map((c) => [c.expression, c.reason])).toEqual([
-      ['adminPage', 'fixture of this test'],
-      ['userPage', 'fixture of this test'],
+      ['page', "Playwright's page fixture"],
+      ['adminPage', 'may be a page object'],
+      ['userPage', 'may be a page object'],
     ]);
   });
 
   test('a renamed fixture is offered by its local name', () => {
-    const text = file("test('t', async ({ adminPage: admin }) => {", '', '});');
-    expect(pageCandidates(text, 1).default).toBe('admin');
+    const text = file("test('t', async ({ adminPage: admin }) => {", "  await admin.goto('/admin');", '', '});');
+    expect(pageCandidates(text, 2).default).toBe('admin');
+    const unused = file("test('t', async ({ adminPage: admin }) => {", '', '});');
+    expect(pageCandidates(unused, 1).candidates).toEqual([
+      { expression: 'page', reason: "Playwright's page fixture" },
+      { expression: 'admin', reason: 'may be a page object' },
+    ]);
+  });
+
+  test('a fixture named like a page object: page first, until the test calls a page method on it', () => {
+    const object = file(
+      "import { test } from './fixtures';",
+      "test('adds a todo', async ({ todoPage }) => {",
+      "  await todoPage.addTodo('buy milk');",
+      '  // here',
+      '});',
+      '',
+    );
+    expect(pageCandidates(object, lineOf(object, '// here'))).toEqual({
+      context: 'test',
+      default: 'page',
+      candidates: [
+        { expression: 'page', reason: "Playwright's page fixture" },
+        { expression: 'todoPage', reason: 'may be a page object' },
+      ],
+    });
+    expect(pageCandidates(object, 5).candidates).toEqual([
+      { expression: 'page', reason: "Playwright's page fixture" },
+      { expression: 'todoPage', reason: 'may be a page object' },
+    ]);
+    const page = file(
+      "test('adds a todo', async ({ todoPage }) => {",
+      "  await todoPage.goto('/todo');",
+      "  await todoPage.getByRole('textbox').fill('buy milk');",
+      '  // here',
+      '});',
+    );
+    expect(pageCandidates(page, lineOf(page, '// here'))).toEqual({
+      context: 'test',
+      default: 'todoPage',
+      candidates: [{ expression: 'todoPage', reason: 'used on line 3' }],
+    });
   });
 
   test('a popup variable, opened from a waitForEvent promise, becomes the default once used', () => {
@@ -189,8 +230,10 @@ describe('pageCandidates', () => {
     const text = file("test('t', async ({ page, cartPage }) => {", '  await cartPage.addProduct("mug");', '', '});');
     const result = pageCandidates(text, 2);
     expect(result.default).toBe('page');
-    // `cartPage` is a fixture whose name looks like a page's: offered after `page`, never ahead of it.
-    expect(result.candidates[0]).toEqual({ expression: 'page', reason: 'fixture of this test' });
+    expect(result.candidates).toEqual([
+      { expression: 'page', reason: 'fixture of this test' },
+      { expression: 'cartPage', reason: 'may be a page object' },
+    ]);
   });
 
   test('a page object fixture holding the page: offered through it, before its first use and between tests', () => {
@@ -411,14 +454,16 @@ describe('pageCandidates', () => {
       "import { test as base } from '@playwright/test';",
       'const adminTest = base.extend<{ adminPage: Page }>({});',
       "adminTest('opens settings', async ({ adminPage }) => {",
+      "  await adminPage.goto('/settings');",
       '  ',
       '});',
       'adminTest.beforeEach(async ({ adminPage }) => {',
+      "  await adminPage.goto('/');",
       '  ',
       '});',
     );
-    expect(pageCandidates(extended, 3)).toMatchObject({ context: 'test', default: 'adminPage' });
-    expect(pageCandidates(extended, 6)).toMatchObject({ context: 'test', default: 'adminPage' });
+    expect(pageCandidates(extended, 4)).toMatchObject({ context: 'test', default: 'adminPage' });
+    expect(pageCandidates(extended, 8)).toMatchObject({ context: 'test', default: 'adminPage' });
     const renamed = file(
       "import { test as setup } from '@playwright/test';",
       "setup('authenticate', async ({ page }) => {",
@@ -468,7 +513,7 @@ describe('pageCandidates', () => {
     expect(result.context).toBe('test');
     expect(result.candidates).toEqual([
       { expression: 'page', reason: 'used on line 6' },
-      { expression: 'userPage', reason: 'fixture of this test' },
+      { expression: 'userPage', reason: 'may be a page object' },
     ]);
   });
 
@@ -580,21 +625,39 @@ describe('recordingPlacement', () => {
       indent: '',
     });
   });
-});
 
-describe('testImportOf', () => {
-  test('the module the file imports test from', () => {
-    expect(testImportOf(SPEC)).toBe('@playwright/test');
-    expect(testImportOf("import { expect, test } from './fixtures';\n")).toBe('./fixtures');
-    expect(testImportOf("import fixtures, { test } from '../support';\n")).toBe('../support');
+  test('a caret inside the brackets of a statement puts the block after the statement', () => {
+    const text = file(
+      "test('t', async ({ page }) => {",
+      '  await expect(',
+      "    page.getByRole('heading', {",
+      "      name: 'Cart',",
+      '    }),',
+      '  ).toBeVisible();',
+      "  await page.goto('/');",
+      '});',
+    );
+    for (const line of [1, 2, 3, 4, 5]) {
+      expect(recordingPlacement(text, line, 'steps')).toEqual({ line: 6, newLine: true, indent: '  ' });
+    }
+    expect(pageCandidates(text, 2)).toMatchObject({ context: 'test', default: 'page' });
+    const array = file("test('t', async ({ page }) => {", '  const items = [', "    'a',", '  ];', '});');
+    expect(recordingPlacement(array, 2, 'steps')).toEqual({ line: 4, newLine: true, indent: '  ' });
+    expect(declaredNamesAt(array, 2).has('items')).toBe(true);
+    // A blank line inside the brackets too.
+    const blank = file("test('t', async ({ page }) => {", '  await page.goto(', '', "    '/',", '  );', '});');
+    expect(recordingPlacement(blank, 2, 'steps')).toEqual({ line: 5, newLine: true, indent: '  ' });
   });
 
-  test('none when test is renamed, declared in the file, imported as a type, or absent', () => {
-    expect(
-      testImportOf("import { test as base } from '@playwright/test';\nexport const test = base.extend({});"),
-    ).toBeNull();
-    expect(testImportOf("import type { test } from './fixtures';")).toBeNull();
-    expect(testImportOf("// import { test } from './fixtures';\nconst x = 1;")).toBeNull();
-    expect(testImportOf('')).toBeNull();
+  test('a caret inside a bracket the file never closes is refused', () => {
+    const text = file("test('t', async ({ page }) => {", '  await expect(', "    page.getByRole('heading')", '});');
+    expect(recordingPlacement(text, 2, 'steps')).toEqual({
+      refusal:
+        'The cursor is inside a ( opened on line 2 and not closed: close it, or put the cursor after the statement.',
+    });
+    expect(recordingPlacement("test('t', async ({ page }) => {\n  const items = [\n    'a',", 2, 'steps')).toEqual({
+      refusal:
+        'The cursor is inside a [ opened on line 2 and not closed: close it, or put the cursor after the statement.',
+    });
   });
 });

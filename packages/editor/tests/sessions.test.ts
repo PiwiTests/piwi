@@ -331,6 +331,23 @@ describe('starting a recording', () => {
     expect(launchers).toHaveLength(5);
   });
 
+  test('a caret inside a parenthesis the file never closes is refused in one sentence', async () => {
+    const text = [
+      "import { test, expect } from '@playwright/test';",
+      "test('pays', async ({ page }) => {",
+      '  await expect(',
+      "    page.getByRole('heading')",
+      '});',
+    ].join('\n');
+    const { start, launchers } = setup();
+    expect(await start({ line: 3 }, { text })).toEqual({
+      ok: false,
+      message:
+        'The cursor is inside a ( opened on line 3 and not closed: close it, or put the cursor after the statement.',
+    });
+    expect(launchers).toHaveLength(0);
+  });
+
   test('without the recorder’s files there is nothing to start', async () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-sessions-empty-'));
     try {
@@ -436,7 +453,7 @@ describe('a recording session', () => {
   test('a new test at the caret: the test call, its body indented by two spaces, on the page expression', async () => {
     const text = SPEC.replace('async ({ page })', 'async ({ adminPage })');
     const { start, launchers, last } = setup();
-    const result = await start({ into: 'test', line: 5, title: 'signs in' }, { text });
+    const result = await start({ into: 'test', line: 5, title: 'signs in', page: 'adminPage' }, { text });
     expect(result.placement).toEqual({ line: 5, newLine: false, indent: '' });
     const launcher = launchers[0]!;
     launcher.emit({ type: 'started' });
@@ -570,7 +587,7 @@ describe('a recording session', () => {
     expect(last().code).toContain('const signInPage = new SignInPage(page);');
   });
 
-  test('checks added in the browser are expect lines where they were added, and the file is asked for expect', async () => {
+  test('checks added in the browser are expect lines where they were added, and the file is asked for expect from @playwright/test unless a spec beside it takes it from the fixtures module', async () => {
     const text = SPEC.replace("import { test, expect } from '@playwright/test';", "import { test } from './fixtures';");
     const { start, launchers, last } = setup();
     await start({}, { text });
@@ -607,7 +624,71 @@ describe('a recording session', () => {
       [2, expect.stringContaining('/account')],
       [3, expect.stringContaining('Total: 42')],
     ]);
-    expect(last().importEdit).toEqual(insertAt(1, "import { expect } from './fixtures';\n"));
+    expect(last().importEdit).toEqual(insertAt(1, "import { expect } from '@playwright/test';\n"));
+
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-sessions-expect-'));
+    try {
+      fs.writeFileSync(path.join(folder, 'a.spec.ts'), "import { test, expect } from './fixtures';\n");
+      const beside = setup();
+      await beside.start({}, { file: path.join(folder, 'checkout.spec.ts'), text });
+      beside.launchers[0]!.emit({ type: 'started' });
+      beside.launchers[0]!.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+      beside.launchers[0]!.emit({
+        type: 'event',
+        event: event('assert', {
+          target: null,
+          assertion: { matcher: 'toHaveURL', expected: '/login', actual: null, negated: false, note: null },
+        }),
+      });
+      expect(beside.last().code).toContain("await expect(page).toHaveURL('/login');");
+      expect(beside.last().importEdit).toEqual(insertAt(1, "import { expect } from './fixtures';\n"));
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  test('a spec loading test with require gets expect as a require declaration after the last one, once', async () => {
+    const text = [
+      "const { test } = require('@playwright/test');",
+      "const { CartPage } = require('./pages/cart.page');",
+      '',
+      "test('pays', async ({ page }) => {",
+      '',
+      '});',
+      '',
+    ].join('\n');
+    const check = event('assert', {
+      target: null,
+      assertion: { matcher: 'toHaveURL', expected: '/login', actual: null, negated: false, note: null },
+    });
+    const { start, launchers, last } = setup();
+    await start({ line: 4 }, { text });
+    launchers[0]!.emit({ type: 'started' });
+    launchers[0]!.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    launchers[0]!.emit({ type: 'event', event: check });
+    expect(last().code).toBe(["await page.goto('/login');", "await expect(page).toHaveURL('/login');"].join('\n'));
+    expect(last().importEdit).toEqual(insertAt(2, "const { expect } = require('@playwright/test');\n"));
+
+    const bound = setup();
+    await bound.start({ line: 4 }, { text: text.replace('const { test }', 'const { test, expect }') });
+    bound.launchers[0]!.emit({ type: 'started' });
+    bound.launchers[0]!.emit({ type: 'event', event: check });
+    expect(bound.last().importEdit).toBeNull();
+  });
+
+  test('a tab the application opens is said, and the block stays', async () => {
+    const notice = 'A new tab opened: what you do there is not recorded yet. Record in the first tab.';
+    const { start, launchers, updates, last } = setup();
+    await start();
+    const launcher = launchers[0]!;
+    launcher.emit({ type: 'started' });
+    launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    launcher.emit({ type: 'notice', message: notice });
+    expect(last()).toMatchObject({ state: 'recording', code: "await page.goto('/login');", message: notice });
+    expect(last().steps).toHaveLength(1);
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    expect(last().message).toBeNull();
+    expect(updates).toHaveLength(4);
   });
 
   test('the config’s Piwi section sets the waits, the values, their prefix, the test steps and a new test’s tags', async () => {
@@ -998,10 +1079,18 @@ describe('recorderLanguage', () => {
 
 describe('blockImports', () => {
   const check = 'await expect(page).toHaveURL(/\\/cart(?:[?#]|$)/);';
-  test('expect from the module the file takes test from, when the block checks something and the file lacks it', () => {
+  test('expect from @playwright/test, or from the fixtures module known to export it, when the block checks something and the file lacks it', () => {
     const fixtures = "import { test } from './shop-fixtures';\n";
-    expect(blockImports(fixtures, { code: check, imports: [] })).toEqual(["import { expect } from './shop-fixtures';"]);
+    expect(blockImports(fixtures, { code: check, imports: [] })).toEqual([
+      "import { expect } from '@playwright/test';",
+    ]);
+    expect(blockImports(fixtures, { code: check, imports: [] }, { expectModule: './shop-fixtures' })).toEqual([
+      "import { expect } from './shop-fixtures';",
+    ]);
     expect(blockImports("import type { Page } from '@playwright/test';\n", { code: check, imports: [] })).toEqual([
+      "import { expect } from '@playwright/test';",
+    ]);
+    expect(blockImports("const { test } = require('@playwright/test');\n", { code: check, imports: [] })).toEqual([
       "import { expect } from '@playwright/test';",
     ]);
   });

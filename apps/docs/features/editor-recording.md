@@ -22,7 +22,8 @@ Before the browser opens, the editor asks for:
 
 1. **The start page**: a path on the project's `baseURL`, or an address; left empty, the browser opens the `baseURL`.
 2. **The page the steps run on**, when the code around the cursor offers several: `page`, a fixture such as
-   `adminPage`, or `this.page` in a page object. Any other expression can be typed.
+   `adminPage`, or `this.page` in a page object. A fixture named like a page object (`todoPage`) comes after `page`
+   until the test calls a page method on it. Any other expression can be typed.
 3. **The Playwright project**, when the config has several. The browser gets its `use` options: `baseURL`,
    `storageState`, the viewport and device, the locale, the extra headers and `testIdAttribute`.
 
@@ -33,7 +34,7 @@ writes a whole spec into it.
 
 - **The block** the recording writes is tinted, and written again as each step arrives: a run of steps becomes one call
   to your own page object or helper once its last step is recorded, and the import that call needs is added at the top
-  of the file.
+  of the file. Started on a line inside a call that spans several lines, the block goes after that statement.
 - **The controls**: the step count, **Stop** and **Pause** (**Resume** while paused), above the block in VS Code and in
   a banner above the editor in a JetBrains IDE, and **Pause**, **Stop** and the checks in the browser's recording bar. The status
   bar shows the recording too. While paused, from the editor or the browser, what you do in the browser is not
@@ -61,7 +62,8 @@ JetBrains IDE, that Undo also takes back the edits you made in the file meanwhil
 - **Pages**: an address on the project's `baseURL` is written as a path, and the step that leads to another page is
   followed by a wait for it, except next to a call to your own code, which waits for its pages itself.
 - **Imports**: a call to your own code, and `expect` when a step checks something, are imported at the top of the file
-  when it lacks them.
+  when it lacks them: `expect` from `@playwright/test`, or from your fixtures module when the file or a spec beside it
+  imports `expect` from there. A spec that loads `test` with `require` gets `require` lines after its last one.
 - **Your own code**: when the editor is connected to an instance or the [desktop app](./desktop), steps that match one
   of your [test functions](./test-functions) become a call to it.
 - **Passwords** are never recorded: the code reads them from an environment variable named after the field, such as
@@ -125,7 +127,8 @@ reaches it from your machine.
 
 - The browser is the one your tests use, installed by Playwright (`npx playwright install chromium`).
 - The recording does not start your `webServer`: start the application first.
-- It records the top-level page: clicks inside an iframe, and steps in a popup or a new tab, are not recorded yet.
+- It records the top-level page: clicks inside an iframe, and steps in a popup or a new tab, are not recorded yet. The
+  editor says so when the application opens a tab or a popup.
 - A file takes one recording at a time.
 
 ## Related

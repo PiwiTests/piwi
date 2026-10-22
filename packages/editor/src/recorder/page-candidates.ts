@@ -1,9 +1,8 @@
 /**
  * What a recording writes into a file, read from the file's text alone: the page expressions the lines written at a
- * position could run on (`piwi/pageCandidates`), where the recorded block goes and how its lines are indented
- * (`RecordingPlacement`), and the module the file's `test` comes from. One scanner in the style of `callEndLine`:
- * strings, template literals, regular expressions and comments are skipped and brackets matched; no TypeScript
- * parser.
+ * position could run on (`piwi/pageCandidates`), and where the recorded block goes and how its lines are indented
+ * (`RecordingPlacement`). One scanner in the style of `callEndLine`: strings, template literals, regular expressions
+ * and comments are skipped and brackets matched; no TypeScript parser.
  */
 import { isPageExpression } from '@piwitests/core/codegen';
 import type { PageCandidate, PageCandidatesResult, RecordInto, RecordingPlacement } from '../protocol.js';
@@ -318,6 +317,25 @@ const PAGE_FACTORIES = new Set(['newPage', 'firstWindow']);
 
 /** Events whose value is a page: `page.waitForEvent('popup')`, `context.waitForEvent('page')`. */
 const PAGE_EVENTS = new Set(['popup', 'page']);
+
+/** Names after which a `{` opens an object literal: `return {`, `await {`. */
+const OBJECT_BEFORE = new Set([
+  'return',
+  'yield',
+  'throw',
+  'await',
+  'typeof',
+  'void',
+  'delete',
+  'in',
+  'of',
+  'instanceof',
+]);
+
+/** Punctuators after which a `{` opens a block, a body or a class, not an object literal. */
+const BLOCK_BEFORE = new Set([')', ']', '}', ';', '=>', '{', '>']);
+
+const CLOSER_OF: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
 
 /** Whether a name looks like a page's: `page`, or one ending in `Page` (`adminPage`). */
 function pageLikeName(name: string): boolean {
@@ -876,6 +894,26 @@ class FileModel {
     return this.innermost([...this.openers.values()].filter((b) => this.contains(b, offset)).map((b) => [b, b]));
   }
 
+  /**
+   * The outermost bracket of the expression an offset is in: from the innermost bracket around it, out through the
+   * `(`, `[` and object-literal `{` brackets (a multi-line `expect(` and the object it takes). Null when the
+   * innermost one is a block, a body or a class, or when there is none.
+   */
+  expressionAround(offset: number): Bracket | null {
+    let outer: Bracket | null = null;
+    for (let b = this.bracketAt(offset); b && this.holdsExpression(b); b = this.owner[b.open] ?? null) outer = b;
+    return outer;
+  }
+
+  /** Whether a bracket holds an expression: `(`, `[`, or a `{` in an operand position (an object literal, a pattern). */
+  private holdsExpression(b: Bracket): boolean {
+    if (b.char !== '{') return true;
+    const previous = this.tokens[b.open - 1];
+    if (!previous) return false;
+    if (previous.kind === 'name') return OBJECT_BEFORE.has(previous.text);
+    return previous.kind === 'punct' && !BLOCK_BEFORE.has(previous.text);
+  }
+
   /** Whether code starts at an offset: a token, or a comment, but not text inside a string or a comment. */
   startsCodeAt(offset: number): boolean {
     let low = 0;
@@ -898,16 +936,39 @@ class FileModel {
   }
 }
 
+interface BlockPosition {
+  line: number;
+  newLine: boolean;
+  /** The offset that stands for the block's place: where it goes, in the text as it is. */
+  offset: number;
+  /** A bracket around the caret the file never closes: the block has nowhere to go after it. */
+  unclosed: Bracket | null;
+}
+
 /**
  * The line a recording's block goes on, and the offset that stands for it: a blank caret line takes the block; after
- * a line with text, the block goes on a new line after it.
+ * a line with text, the block goes on a new line after it. A caret inside an expression's brackets (the end of a line
+ * of a multi-line `expect(`) puts the block on a new line after the line those brackets close on, the statement's
+ * end.
  */
-function blockPosition(model: FileModel, caretLine: number): { line: number; newLine: boolean; offset: number } {
+function blockPosition(model: FileModel, caretLine: number): BlockPosition {
   const line = Math.max(0, Math.min(caretLine, model.lines.length - 1));
   const text = model.lines[line]!;
   const start = model.starts[line]!;
-  if (!text.trim()) return { line, newLine: false, offset: start };
-  return { line: line + 1, newLine: true, offset: start + text.length };
+  const blank = !text.trim();
+  const caret = blank ? start : start + text.length;
+  const outer = model.expressionAround(caret);
+  if (!outer) {
+    if (blank) return { line, newLine: false, offset: start, unclosed: null };
+    return { line: line + 1, newLine: true, offset: caret, unclosed: null };
+  }
+  // A bracket the file never closes ends at the file's end, or where an outer bracket closes.
+  if (model.tokens[outer.close]?.text !== CLOSER_OF[outer.char]) {
+    return { line: line + 1, newLine: true, offset: caret, unclosed: outer };
+  }
+  const closeLine = model.lineOfToken(outer.close);
+  const offset = model.starts[closeLine]! + model.lines[closeLine]!.length;
+  return { line: closeLine + 1, newLine: true, offset, unclosed: null };
 }
 
 /** A file's indentation step: a tab, or the most common increase in spaces from one line to the next; two by default. */
@@ -957,12 +1018,24 @@ function blockIndent(model: FileModel, offset: number): string {
 
 /**
  * Where a recording started at a caret writes its block: the caret's line when it is blank, else a new line after
- * it, indented like the code of the block around it. `file` writes a whole new file: its first line, not indented.
+ * it, or after the statement whose brackets the caret is in, indented like the code of the block around it. `file`
+ * writes a whole new file: its first line, not indented. A caret inside a bracket the file never closes refuses, with
+ * one sentence for the client to show.
  */
-export function recordingPlacement(text: string, caretLine: number, into: RecordInto): RecordingPlacement {
+export function recordingPlacement(
+  text: string,
+  caretLine: number,
+  into: RecordInto,
+): RecordingPlacement | { refusal: string } {
   if (into === 'file') return { line: 0, newLine: false, indent: '' };
   const model = new FileModel(text);
   const at = blockPosition(model, caretLine);
+  if (at.unclosed) {
+    const opened = model.tokens[at.unclosed.open]!;
+    return {
+      refusal: `The cursor is inside a ${opened.text} opened on line ${model.lineOf(opened.start) + 1} and not closed: close it, or put the cursor after the statement.`,
+    };
+  }
   return { line: at.line, newLine: at.newLine, indent: blockIndent(model, at.offset) };
 }
 
@@ -982,12 +1055,29 @@ function onPage(model: FileModel, use: PageUse, at: number, klass: ClassInfo | n
   return !use.ambiguous || pageLikeName(last) || (segments.length === 1 && declared.page === 'page');
 }
 
-/** The page fixtures of a test worth offering: those its calls do not show to be objects holding a page. */
-function pageFixtures(model: FileModel, test: TestCall, uses: PageUse[]): Declaration[] {
+/**
+ * A test's fixtures named like a page, told apart by the test's calls: `page` and those a page call runs on directly
+ * (`adminPage.goto(…)`, `userPage.getByRole(…)`) are pages; those with no such call may be page objects (`todoPage`
+ * with `todoPage.addTodo(…)`, or nothing yet). A fixture the calls show to hold a page (`app.page.goto(…)`) is
+ * neither: it is offered through its page.
+ */
+function fixturePages(
+  model: FileModel,
+  test: TestCall,
+  uses: PageUse[],
+): { pages: Declaration[]; maybe: Declaration[] } {
   const direct = new Set(uses.filter((u) => !u.expression.includes('.')).map((u) => u.expression));
   const holders = new Set(uses.filter((u) => u.expression.includes('.')).map((u) => u.expression.split('.')[0]!));
-  return model.fixturesOf(test).filter((d) => direct.has(d.name) || !holders.has(d.name));
+  const pages: Declaration[] = [];
+  const maybe: Declaration[] = [];
+  for (const d of model.fixturesOf(test)) {
+    if (d.fixture === 'page' || direct.has(d.name)) pages.push(d);
+    else if (!holders.has(d.name)) maybe.push(d);
+  }
+  return { pages, maybe };
 }
+
+const MAY_BE_PAGE_OBJECT = 'may be a page object';
 
 /**
  * The page expressions the lines written at a caret could run on, best first, and where the block goes
@@ -998,7 +1088,8 @@ function pageFixtures(model: FileModel, test: TestCall, uses: PageUse[]): Declar
  * call before it; else, in a test, its `page` fixture, the receiver of its next page call, or its first page
  * fixture; in a class, `this.page`; in another function, a page it declares; between tests, what the nearest test
  * runs its calls on, else its page fixture; else `page`. A fixture the calls show to hold a page (`app.page`) is
- * offered through it, not on its own.
+ * offered through it, not on its own; a fixture named like a page that no page call runs on (`todoPage`) is offered
+ * after `page`, as one that may be a page object.
  */
 export function pageCandidates(text: string, caretLine: number): PageCandidatesResult {
   const model = new FileModel(text);
@@ -1032,6 +1123,8 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
   let preferred: PageCandidate | undefined;
   let others: PageCandidate[];
   let fallback: PageCandidate;
+  /** The fixtures that may be page objects, offered last, after `page`. */
+  let maybe: PageCandidate[] = [];
   if (klass) {
     const reason = klass.name ? `field of ${klass.name}` : 'field of this class';
     const fields = klass.pageFields.map((field) => ({ expression: `this.${field}`, reason }));
@@ -1043,10 +1136,13 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
       fields[0] ??
       (declared[0] && asCandidate(declared[0]));
   } else if (test) {
-    const fixtures = pageFixtures(model, test, used).filter((d) => model.resolveAt(d.name, at) === d);
+    const visible = (d: Declaration) => model.resolveAt(d.name, at) === d;
+    const split = fixturePages(model, test, used);
+    const fixtures = split.pages.filter(visible);
     const locals = declared.filter((d) => d.fixture === undefined);
-    fallback = { expression: 'page', reason: 'fixture of this test' };
+    fallback = { expression: 'page', reason: "Playwright's page fixture" };
     others = [...fixtures.map(asCandidate), ...locals.map(asCandidate)];
+    maybe = split.maybe.filter(visible).map((d) => ({ expression: d.name, reason: MAY_BE_PAGE_OBJECT }));
     const pageFixture = fixtures.find((d) => d.fixture === 'page');
     const guessed = fixtures[0] ?? locals[0];
     preferred = before[0] ?? (pageFixture && asCandidate(pageFixture)) ?? after[0] ?? (guessed && asCandidate(guessed));
@@ -1056,15 +1152,17 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
     preferred = before[0] ?? (declared[0] && asCandidate(declared[0]));
   } else {
     fallback = { expression: 'page', reason: "Playwright's page fixture" };
-    const tests = testsByDistance(model, at);
-    others = [...tests.flatMap((t) => fileCandidates(model, t)), fallback];
+    const tests = testsByDistance(model, at).map((t) => fileCandidates(model, t));
+    others = [...tests.flatMap((t) => t.pages), fallback];
+    maybe = tests.flatMap((t) => t.maybe);
     const nearest = nearestTest(model, at);
-    preferred = before[0] ?? (nearest ? fileCandidates(model, nearest)[0] : undefined);
+    preferred = before[0] ?? (nearest ? fileCandidates(model, nearest).pages[0] : undefined);
   }
 
   const seen = new Set<string>();
   const candidates: PageCandidate[] = [];
-  for (const c of [preferred ?? fallback, ...before, ...others, ...after]) {
+  const last = maybe.length ? [fallback, ...maybe] : [];
+  for (const c of [preferred ?? fallback, ...before, ...others, ...after, ...last]) {
     if (seen.has(c.expression) || !isPageExpression(c.expression)) continue;
     seen.add(c.expression);
     candidates.push(c);
@@ -1075,8 +1173,9 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
 /**
  * The page expressions a new test could take from a test of the file: what its page calls run on, rooted at its
  * fixtures and named after them (`adminPage` for `{ adminPage: admin }`), the most used first; then its page fixtures.
+ * Apart, the fixtures that may be page objects.
  */
-function fileCandidates(model: FileModel, test: TestCall): PageCandidate[] {
+function fileCandidates(model: FileModel, test: TestCall): { pages: PageCandidate[]; maybe: PageCandidate[] } {
   const uses = model.uses.filter((u) => {
     const offset = model.tokens[u.token]!.start;
     return model.contains(test.body, offset) && onPage(model, u, offset, null);
@@ -1096,10 +1195,14 @@ function fileCandidates(model: FileModel, test: TestCall): PageCandidate[] {
     counted.set(expression, entry);
   }
   const byUse = [...counted.values()].sort((a, b) => b.count - a.count).map((e) => e.candidate);
-  const fixtures = pageFixtures(model, test, uses)
+  const split = fixturePages(model, test, uses);
+  const fixtures = split.pages
     .sort((a, b) => Number(b.fixture === 'page') - Number(a.fixture === 'page'))
     .map((d) => ({ expression: d.fixture!, reason: 'fixture in this file' }));
-  return [...byUse, ...fixtures];
+  return {
+    pages: [...byUse, ...fixtures],
+    maybe: split.maybe.map((d) => ({ expression: d.fixture!, reason: MAY_BE_PAGE_OBJECT })),
+  };
 }
 
 /** The file's tests, the nearest to an offset first. */
@@ -1135,25 +1238,4 @@ export function declaredNamesAt(text: string, caretLine: number): Set<string> {
 export function fileFixtures(text: string): Set<string> {
   const model = new FileModel(text);
   return new Set(model.declarations.flatMap((d) => (d.fixture === undefined ? [] : [d.fixture])));
-}
-
-/** The module a file imports its `test` from (`import { test } from './fixtures'`); null when it imports none. */
-export function testImportOf(text: string): string | null {
-  const model = new FileModel(text);
-  const { tokens } = model;
-  for (let i = 0; i < tokens.length; i++) {
-    if (!model.is(i, 'import') || model.owner[i] !== null || model.is(i + 1, 'type')) continue;
-    // `import { … } from '…'` or `import name, { … } from '…'`.
-    const open = model.isName(i + 1) && model.is(i + 2, ',') ? i + 3 : i + 1;
-    const names = model.is(open, '{') ? model.openers.get(open) : undefined;
-    const source = names && model.is(names.close + 1, 'from') ? tokens[names.close + 2] : undefined;
-    if (!names || source?.kind !== 'string') continue;
-    for (let m = names.open + 1; m < names.close; m++) {
-      if (!model.is(m, 'test') || !(model.is(m - 1, '{') || model.is(m - 1, ','))) continue;
-      if (model.is(m + 1, ',') || model.is(m + 1, '}') || (model.is(m + 1, 'as') && model.is(m + 2, 'test'))) {
-        return source.text;
-      }
-    }
-  }
-  return null;
 }

@@ -174,6 +174,9 @@ describe('the launcher', () => {
       await tab.getByRole('button', { name: 'Contact us' }).click();
       await new Promise((r) => setTimeout(r, 500));
       expect(await tab.locator(RECORDER).count()).toBe(0);
+      // The person hears once that the tab is not recorded.
+      await waitFor(() => (updates.some((u) => u.message?.startsWith('A new tab opened')) ? true : undefined));
+      expect(updates.filter((u) => u.message?.startsWith('A new tab opened'))).toHaveLength(1);
 
       // Paused from the editor, then from the recorder's bar: what is done meanwhile is not recorded.
       sessions.command(result.sessionId!, 'pause');
