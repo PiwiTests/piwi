@@ -73,7 +73,8 @@ and the Edge Add-ons listing that is still outstanding.
 - `src/popup/` — the toolbar popup. Plain TypeScript + DOM, no UI framework — keep it that
   way unless the popup's own complexity genuinely outgrows it. It holds the tools that act on the page, for testers and
   developers alike: **Record actions** and **Pick an element** first, then **Report a bug** and **Replay a bug
-  report**, **Tested elements**, and the other page tools as compact tiles under **More tools**. The developer tools
+  report**, **Tested elements**, and the other page tools as compact tiles under **More tools**. Every tile shows its
+  one-line hint under its label, never only as a tooltip (`popup.spec.ts` checks the compact ones). The developer tools
   that have a home in DevTools are there, not here (see "DevTools"), and Pick, Lint and Tested elements are in the Piwi
   panel's toolbar as well: the popup ends with a line saying so. It has a
   config (gear) button (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that

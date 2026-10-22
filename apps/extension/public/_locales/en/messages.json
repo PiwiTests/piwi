@@ -2252,8 +2252,8 @@
     "description": "Test functions: tooltip of the Refresh button."
   },
   "functions_noProject": {
-    "message": "No Piwi project is set for this site. Add it under Project mappings in Piwi Picker’s settings, or choose a project in Piwi Picker’s menu.",
-    "description": "Test functions: shown instead of the list when no project applies to the page. “Project mappings” is a section of the settings page (options_mappingsHeading)."
+    "message": "No Piwi project is mapped to this site yet. Open Piwi Picker’s settings and add the site under Project mappings, or choose a project under Active project in Piwi Picker’s menu.",
+    "description": "Test functions: shown instead of the list when no project applies to the page. “Project mappings” is a section of the settings page (options_mappingsHeading), “Active project” the popup’s select (popup_activeProject)."
   },
   "functions_empty": {
     "message": "$project$ has no test functions yet. Add one in the Piwi dashboard, by hand or by pasting a function’s code.",
@@ -4480,8 +4480,8 @@
     }
   },
   "coverage_notConnected": {
-    "message": "Connect Piwi Picker to your Piwi instance to see which elements of this page your tests use: in the settings, add the address of your instance, an API key and an address pattern for this site.",
-    "description": "Tested elements panel: message when Piwi Picker is not connected to a Piwi instance."
+    "message": "Piwi Picker is not connected to your Piwi instance yet. Open the settings, enter your instance’s address and click Connect: this panel then shows which elements of the page your tests reach.",
+    "description": "Tested elements panel: message when Piwi Picker is not connected to a Piwi instance, followed by the Open settings button (coverage_openSettings). “Connect” is the settings page’s button (options_connect)."
   },
   "coverage_noProject": {
     "message": "No project is set for this page. Add an address pattern for it in the settings, or choose a project in Piwi Picker’s menu.",

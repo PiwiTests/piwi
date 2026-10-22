@@ -1866,7 +1866,7 @@
     "message": "Baixar de novo as funções deste projeto do Piwi"
   },
   "functions_noProject": {
-    "message": "Nenhum projeto do Piwi está associado a este site. Adicione-o em Projetos por site, nas configurações do Piwi Picker, ou escolha um projeto no menu do Piwi Picker."
+    "message": "Nenhum projeto do Piwi está associado a este site ainda. Abra as configurações do Piwi Picker e adicione o site em Projetos por site, ou escolha um projeto em Projeto ativo, no menu do Piwi Picker."
   },
   "functions_empty": {
     "message": "O projeto $project$ ainda não tem nenhuma função de teste. Adicione uma no painel do Piwi, manualmente ou colando o código de uma função.",
@@ -3760,7 +3760,7 @@
     }
   },
   "coverage_notConnected": {
-    "message": "Conecte o Piwi Picker à sua instância do Piwi para ver quais elementos desta página seus testes usam: nas configurações, adicione o endereço da sua instância, uma chave de API e um padrão de endereço para este site."
+    "message": "O Piwi Picker ainda não está conectado à sua instância do Piwi. Abra as configurações, digite o endereço da sua instância e clique em Conectar: este painel mostrará então quais elementos da página seus testes alcançam."
   },
   "coverage_noProject": {
     "message": "Nenhum projeto está associado a esta página. Adicione um padrão de endereço para ela nas configurações ou escolha um projeto no menu do Piwi Picker."

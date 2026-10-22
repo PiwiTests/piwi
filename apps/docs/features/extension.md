@@ -45,9 +45,9 @@ Chrome or Edge 118 or later (in Edge, click **Allow** on the *Allow extensions f
 **Get**), or from **[Firefox Add-ons ↗](https://addons.mozilla.org/firefox/addon/piwi-picker/)** for Firefox 140 or
 later.
 
-Every tool in the popup has a key on its tile (`1` records, `2` picks, `B` reports a bug). One tool runs at a time and
-**Esc** cancels it; recording runs until its own **Stop**. The tools that need no pick on the page are in the browser's
-DevTools: [Developer tools](./devtools).
+Every tool in the popup has a tile with a line under its name saying what it is for, and a key (`1` records, `2`
+picks, `B` reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**. The
+tools that need no pick on the page are in the browser's DevTools: [Developer tools](./devtools).
 
 <figure>
   <img src="/screenshots/picker-popup.png" alt="The Piwi Picker popup over a shop page, one tile per tool">

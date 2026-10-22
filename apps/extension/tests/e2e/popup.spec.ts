@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { test, expect, openOptions } from './fixtures.js';
 
 /**
@@ -123,6 +124,33 @@ test.describe('popup.html', () => {
     await expect(select).toBeFocused();
     await page.keyboard.press('2');
     expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual([]);
+  });
+
+  test('every compact tile says what it is for in a visible line, not a tooltip', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 480, height: 600 });
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    const hints = {
+      'multi-pick': '2–3 items → a list',
+      'assertion-panel': 'Ranked expect(…) lines',
+      'lint-overlay': 'Hard-to-test elements',
+      'agent-context-panel': 'Summary for an AI',
+      'test-function-panel': 'Check the catalog here',
+    };
+    for (const [id, hint] of Object.entries(hints)) {
+      const tile = page.locator(`#${id}`);
+      await expect(tile.locator('.hint')).toHaveText(hint);
+      await expect(tile.locator('.hint')).toBeVisible();
+      // Read with the label by a screen reader, as the big tiles' hints are.
+      await expect(tile).toHaveAccessibleName(new RegExp(hint.replace(/[()…]/g, '.')));
+      await expect(tile).not.toHaveAttribute('title');
+      // One line, under the label.
+      const box = await tile.locator('.hint').evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return { height: rect.height, clipped: el.scrollWidth > el.clientWidth + 1 };
+      });
+      expect(box, id).toEqual({ height: 14, clipped: false });
+    }
   });
 
   test('shows a config button that opens the options page', async ({ context, extensionId }) => {
@@ -361,6 +389,35 @@ test.describe('Report a bug tile', () => {
     await expect(page.locator('#status')).toHaveText('Finish or discard the current recording before reporting a bug.');
   });
 });
+
+/** The popup with a connection kept, its project row shown: the tallest it is without a recording. */
+async function connectedPopupHeight(page: Page, extensionId: string): Promise<number> {
+  await page.setViewportSize({ width: 480, height: 600 });
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await page.evaluate(() =>
+    chrome.storage.local.set({
+      piwiConnection: {
+        instanceUrl: 'https://piwi.test',
+        apiKey: 'k',
+        projectMappings: [{ urlPattern: 'https://elsewhere.test/**', projectId: 1, projectLabel: 'Shop' }],
+        serverSyncedAt: 1,
+      },
+    }),
+  );
+  await page.reload();
+  await expect(page.locator('#active-project-row')).toBeVisible();
+  return page.locator('.popup').evaluate((el) => el.getBoundingClientRect().height);
+}
+
+for (const language of ['de', 'fr', 'es', 'pt-BR']) {
+  test.describe(`in ${language}`, () => {
+    test.use({ browserLanguage: language });
+    test('the popup fits a popup’s 600 pixels', async ({ context, extensionId }) => {
+      const page = await context.newPage();
+      expect(await connectedPopupHeight(page, extensionId)).toBeLessThanOrEqual(600);
+    });
+  });
+}
 
 test.describe('the developer tools in DevTools', () => {
   test('are not in the popup, which says where they are, and it fits a popup’s 600 pixels', async ({

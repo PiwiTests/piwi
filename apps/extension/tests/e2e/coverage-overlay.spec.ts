@@ -520,7 +520,7 @@ test.describe('coverage overlay states', () => {
     await openShop(page, '?nodialog');
     await injectCoverage(page, 'not-connected');
     const panel = page.locator(`${HOST} .panel`);
-    await expect(panel).toContainText('Connect Piwi Picker to your Piwi instance');
+    await expect(panel).toContainText('Piwi Picker is not connected to your Piwi instance yet. Open the settings');
     await panel.getByRole('button', { name: 'Open Piwi Picker settings' }).click();
     const sent = await page.evaluate(
       () => (globalThis as unknown as { __piwiTestSent: Array<{ type: string }> }).__piwiTestSent,
@@ -1341,7 +1341,7 @@ test.describe('coverage overlay in French', () => {
     await openShop(page, '?nodialog');
     await injectCoverage(page, 'not-connected');
     const panel = page.locator(`${HOST} .panel`);
-    await expect(panel).toContainText('Connectez Piwi Picker à votre instance Piwi');
+    await expect(panel).toContainText('Piwi Picker n’est pas encore connecté à votre instance Piwi');
     await expect(panel.getByRole('button', { name: 'Ouvrir les réglages de Piwi Picker' })).toBeVisible();
     expect(await clippedInShadows(page)).toEqual([]);
   });
