@@ -8,6 +8,8 @@ import { getActiveProjectOverride, resolveActiveProject } from '../shared/active
 import { pageHere } from '../shared/page-here.js';
 import type { PathPrefixes } from '@piwitests/core/page-key';
 import { ensureSessionAccess } from '../shared/session-access.js';
+import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
+import { isReservedPickName, isValidPickName } from '../shared/session-export.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locator-branch.js';
 import { ALL_BRANCHES } from '@piwitests/core/locator-index';
@@ -127,6 +129,15 @@ export async function renderResultsPanel(
     .row code { font-size: 13px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; }
     .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .row-actions .send { margin-inline-start: auto; }
+    .session-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .session-form input {
+      flex: 1 1 180px; min-width: 0; font: inherit; font-size: 12.5px; color: inherit; background: transparent;
+      border: 1px solid rgba(128,128,128,.45); border-radius: 6px; padding: 3px 8px;
+    }
+    .form-message { flex-basis: 100%; color: #fbbf24; font-size: 11.5px; }
+    .form-message:empty { display: none; }
+    .confirm { display: flex; align-items: flex-start; gap: 5px; font-size: 11.5px; line-height: 16px; color: #4ade80; }
+    .confirm .piwi-icon { width: 14px; height: 14px; margin-top: 1px; }
     .unique, .ambiguous, .footer { display: flex; align-items: flex-start; gap: 5px; font-size: 11.5px; line-height: 16px; }
     .unique .piwi-icon, .ambiguous .piwi-icon, .footer .piwi-icon { width: 14px; height: 14px; margin-top: 1px; }
     .unique { color: #4ade80; }
@@ -161,6 +172,8 @@ export async function renderResultsPanel(
       .word.good { color: #15803d; }
       .word.warn { color: #b45309; }
       .order, .why { color: #6b7280; }
+      .form-message { color: #b45309; }
+      .confirm { color: #15803d; }
       .unique { color: #15803d; }
       .ambiguous { color: #b45309; }
       .footer, .piwi .lead .piwi-icon { color: #6d28d9; }
@@ -221,10 +234,20 @@ export async function renderResultsPanel(
         finish();
       }
     };
+    // Escape in an Add to session form closes that form alone, before the tool's own Escape hears it.
+    const onFormKeyDown = (e: KeyboardEvent) => {
+      const form = e.key === 'Escape' ? root.activeElement?.closest('form.session-form') : null;
+      if (!(form instanceof HTMLFormElement)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      form.reset();
+    };
     document.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keydown', onFormKeyDown, true);
     const finish = bindToTool(toolEpoch, () => {
       done = true;
       document.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keydown', onFormKeyDown, true);
       host.remove();
       releaseFocus();
       resolve(outcome);
@@ -279,6 +302,12 @@ export async function renderResultsPanel(
           activeMode = mode;
         }),
       );
+      const addToSession = makeButton(
+        t('devtools_addToSession'),
+        () => openSessionForm(row, addToSession, alt.locator),
+        { icon: 'plus', small: true, className: 'add-to-session' },
+      );
+      actions.appendChild(addToSession);
       if (paired) {
         // The mode is the panel's: each row's Send to editor sends the one chosen last.
         const send = makeButton(
@@ -534,6 +563,65 @@ async function fillPiwiSection(
 function withLeadingIcon<T extends HTMLElement>(el: T, name: IconName, className: string, text: string): T {
   el.className = className;
   return iconText(el, name, text);
+}
+
+/**
+ * Under `row`, a form naming `locator` for the pick session the DevTools
+ * panel's Session tab lists, kept as the Elements sidebar keeps it: the name a
+ * page object field takes, the locator, and this page's address. Cancel and
+ * Escape (the form's reset) close it and give the focus back to `opener`.
+ */
+function openSessionForm(row: HTMLElement, opener: HTMLElement, locator: string): void {
+  row.querySelector('.session-form')?.remove();
+  row.querySelector('.confirm')?.remove();
+  const form = document.createElement('form');
+  form.className = 'session-form';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = t('session_namePlaceholder');
+  input.setAttribute('aria-label', t('session_nameLabel'));
+  // Save submits the form, which checks the name.
+  const save = makeButton(t('common_save'), () => undefined, { icon: 'save', tone: 'primary', small: true });
+  save.type = 'submit';
+  const cancel = makeButton(t('common_cancel'), () => undefined, { icon: 'close', small: true });
+  cancel.type = 'reset';
+  const message = document.createElement('div');
+  message.className = 'form-message';
+  message.setAttribute('role', 'status');
+  form.append(input, save, cancel, message);
+  form.addEventListener('reset', () => {
+    form.remove();
+    opener.focus();
+  });
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void (async () => {
+      const name = input.value.trim();
+      if (!name) return void (message.textContent = t('session_nameRequired'));
+      if (isReservedPickName(name)) return void (message.textContent = t('session_nameReserved', { name }));
+      if (!isValidPickName(name)) return void (message.textContent = t('session_nameInvalid'));
+      try {
+        await ensureSessionAccess();
+        const picks = await getSessionPicks();
+        if (picks.some((pick) => pick.name === name))
+          return void (message.textContent = t('session_nameTaken', { name }));
+        await addSessionPick({ name, locator, pageUrl: location.href });
+      } catch (err) {
+        message.textContent = err instanceof Error ? err.message : String(err);
+        return;
+      }
+      form.remove();
+      const added = document.createElement('code');
+      added.textContent = name;
+      const confirm = document.createElement('div');
+      confirm.className = 'confirm';
+      confirm.setAttribute('role', 'status');
+      row.appendChild(iconText(confirm, 'check-circle', ...tNodes('devtools_addedToSession', { name: added })));
+      opener.focus();
+    })();
+  });
+  row.appendChild(form);
+  input.focus();
 }
 
 /** The row's details: the verdict and the stability rules in full, and the engine's score. */

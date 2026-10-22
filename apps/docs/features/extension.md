@@ -94,7 +94,9 @@ project's [Locators page](./locator-usage#the-locators-page). The action is the 
 what a field holds (`'value'` for an empty field or a password), `check` for a checkbox or a radio, `selectOption` for
 a select, `click` for anything else. The assertion is the element's first
 [suggestion](#assertion-suggester), and `toHaveCount` for a locator that finds several elements. Each button names
-what it writes, such as **Action (fill)** or **Assertion (toHaveText)**.
+what it writes, such as **Action (fill)** or **Assertion (toHaveText)**. **Add to session** names a
+locator for the session that the DevTools Piwi panel's Session tab lists and copies as a page object, as the Elements
+sidebar does (see [Developer tools](./devtools)).
 
 ## Multi-pick
 
