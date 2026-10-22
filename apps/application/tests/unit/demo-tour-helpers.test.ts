@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 import { isTourLanguage, pickTourLanguage } from '../../app/utils/demo-tour/languages';
-import { boldLabels, escapeTourHtml, fillTourText, plainTourText, tourMarkup } from '../../app/utils/demo-tour/markup';
 import {
   readTourPromptState,
   shouldAutoPrompt,
@@ -32,63 +31,6 @@ describe('isTourLanguage', () => {
     expect(isTourLanguage('FR')).toBe(false);
     expect(isTourLanguage('pt')).toBe(false);
     expect(isTourLanguage(null)).toBe(false);
-  });
-});
-
-describe('escapeTourHtml', () => {
-  test('escapes every character HTML gives a meaning to', () => {
-    expect(escapeTourHtml(`<a href="x" title='y'>&</a>`)).toBe(
-      '&lt;a href=&quot;x&quot; title=&#39;y&#39;&gt;&amp;&lt;/a&gt;',
-    );
-  });
-
-  test('leaves plain text alone', () => {
-    expect(escapeTourHtml('Next · 3 of 6 — « Visite guidée »')).toBe('Next · 3 of 6 — « Visite guidée »');
-  });
-});
-
-describe('tourMarkup', () => {
-  test('turns each **label** into a <strong>', () => {
-    expect(tourMarkup('**Most likely** names the cause, and **Next** is the step.')).toBe(
-      '<strong>Most likely</strong> names the cause, and <strong>Next</strong> is the step.',
-    );
-  });
-
-  test('escapes the text, bold labels included', () => {
-    expect(tourMarkup('**A & B** <b>not bold</b>')).toBe('<strong>A &amp; B</strong> &lt;b&gt;not bold&lt;/b&gt;');
-    expect(tourMarkup('**<img src=x onerror=alert(1)>**')).toBe('<strong>&lt;img src=x onerror=alert(1)&gt;</strong>');
-  });
-
-  test('leaves an unpaired ** as written', () => {
-    expect(tourMarkup('2 ** 3')).toBe('2 ** 3');
-  });
-});
-
-describe('plainTourText', () => {
-  test('drops the bold markers', () => {
-    expect(plainTourText('**Simulate a test run** replays a stream.')).toBe('Simulate a test run replays a stream.');
-  });
-});
-
-describe('boldLabels', () => {
-  test('lists the bold labels in order', () => {
-    expect(boldLabels('Pick **Leaky run** in **Simulate a test run**.')).toEqual(['Leaky run', 'Simulate a test run']);
-  });
-
-  test('is empty when nothing is bold', () => {
-    expect(boldLabels('No label here.')).toEqual([]);
-  });
-});
-
-describe('fillTourText', () => {
-  test('fills each known placeholder', () => {
-    expect(fillTourText('{count} stops', { count: 6 })).toBe('6 stops');
-    expect(fillTourText('{a} and {a} of {b}', { a: 'x', b: 'y' })).toBe('x and x of y');
-  });
-
-  test("leaves unknown placeholders and driver.js's {{current}} / {{total}} as written", () => {
-    expect(fillTourText('{count} {unknown}', { count: 4 })).toBe('4 {unknown}');
-    expect(fillTourText('{{current}} of {{total}}', { count: 4 })).toBe('{{current}} of {{total}}');
   });
 });
 

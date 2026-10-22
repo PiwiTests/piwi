@@ -6,12 +6,15 @@ a guided walkthrough, and proposes changes the user applies with a click. It rea
 the access of the person asking, and Piwi's own documentation bundled into the server, so it can say nothing the data
 and the docs do not.
 
-**Status.** Proposed 2026-10-22. Nothing is built. Every question is decided ([Decisions](#decisions), D1–D8): guides
-point only at a closed registry of anchors, every anchor tested; finding elements from the page's ARIA snapshot is
-deferred to [a later step](#later-finding-elements-from-the-pages-aria-snapshot), which keeps the measurements behind
-that choice; a dedicated AI role; proposal cards in PR 6; an authored demo; private conversations; nudge dismissals
-kept per user on the server. Answers are made of typed blocks (section 5): formatted text, code, options to choose
-from, questions with checkboxes, checklists. PR 1 to PR 3 need no model and can start now.
+**Status.** Proposed 2026-10-22. **PR 1 built 2026-10-22**: the guide engine (`useGuide`), extracted from the demo
+tour, which runs on it unchanged; the anchor registry in `shared/guide-anchors/` with the tour's 26 anchors; and its
+three checks, against the source, the seed and the built demo. As built, an anchor lists every page it renders on
+(several components render on more than one), and a sample names its demo persona by id. Every question is decided
+([Decisions](#decisions), D1–D8): guides point only at a closed registry of anchors, every anchor tested; finding
+elements from the page's ARIA snapshot is deferred to [a later step](#later-finding-elements-from-the-pages-aria-snapshot),
+which keeps the measurements behind that choice; a dedicated AI role; proposal cards in PR 6; an authored demo; private
+conversations; nudge dismissals kept per user on the server. Answers are made of typed blocks (section 5): formatted
+text, code, options to choose from, questions with checkboxes, checklists. PR 2 and PR 3 need no model.
 
 ## Why
 
@@ -178,30 +181,32 @@ nothing else can be pointed at (D1). The registry is large and every entry is te
 
 #### The registry
 
-`shared/guide-anchors.ts`, pure data shared by the app, the server, the demo and the tests:
+`shared/guide-anchors/`, pure data shared by the app, the server, the demo and the tests: plain ESM (`index.mjs`
+joining one file per area of the dashboard, the types in `index.d.mts`), like `shared/demo/demo-examples.mjs`, so the
+built-demo check, a plain Node script, reads it too:
 
 ```ts
 export interface GuideAnchor {
   /** The `data-tour` value of the one element it names. */
   id: string;
-  /** The page it lives on, as a pattern of `app/pages`: `/test-run-cases/[id]`, `/settings/ai`. */
-  page: string;
+  /** The pages it renders on, as patterns of `app/pages`, the main one first; `['*']` for the layout and the demo banner. */
+  pages: readonly string[];
   /** What to do on the page before it shows, in order. */
-  reveal?: (
+  reveal?: readonly (
     | { query: Record<string, string> } // a tab: { tab: 'flaky-tests' }, { evidence: 'source' }
     | { unfold: string } // the anchor of the folded section holding it
     | { open: string } // the anchor of the button opening the menu, drawer or modal holding it
   )[];
-  /** One line for the model and the people maintaining it: what the block shows, when someone needs it. */
+  /** One sentence for the model and the people maintaining it: what the block shows, when someone needs it. */
   describes: string;
   /** When it does not always render, the condition in one sentence ("when a locator fix exists"). */
   shownWhen?: string;
   /** What the user or the instance must have for it to render. */
-  requires?: { capability?: CapabilityId; permission?: Permission; desktop?: true };
+  requires?: { capability?: CapabilityId; permission?: Permission; desktop?: true; demo?: true };
   help?: HelpTopicKey;
   doc?: string;
-  /** Where the tests open it: a seeded route, the persona to act as, and what the seed must hold there. */
-  sample: { route: string; persona?: string; expect?: DemoExampleExpect; surface?: 'demo' | 'desktop' };
+  /** Where the tests open it: a seeded route, the demo persona to act as (its id), and what the seed must hold there. */
+  sample: { route: string; persona?: number; expect?: DemoExampleExpect; surface?: 'demo' | 'desktop' };
 }
 ```
 
@@ -358,7 +363,7 @@ Rough effort in developer-weeks, for someone who knows the codebase. PR 1 to PR 
 
 | PR | Contents | Effort |
 | --- | --- | --- |
-| 1 | `useGuide` extracted from the tour; `shared/guide-anchors.ts` with the 26 tour anchors; the source and seed checks; the built-demo anchor pass; the tours on the registry; the AGENTS.md rule. Nothing changes for a user. | 2 |
+| 1 | `useGuide` extracted from the tour; `shared/guide-anchors/` with the 26 tour anchors; the source and seed checks; the built-demo anchor pass; the tours on the registry; the AGENTS.md rule. Nothing changes for a user. | 2 |
 | 2 | Anchor coverage: pages, tabs, settings fields, help-hinted blocks, primary actions, with their samples; the coverage test. Can split by area (failure pages, project tabs, settings, analytics, desktop). | 3–4 |
 | 3 | Authored guides for the first list, from the command palette, on every instance. | 2 |
 | 4 | The `assistant` role; the agent loop for Anthropic and OpenAI-compatible endpoints; tool routing; the assistant tools; conversations, usage, limits; the mock-provider E2E; the 1.0 register entry for its routes. | 3–4 |

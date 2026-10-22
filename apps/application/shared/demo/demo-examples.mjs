@@ -9,8 +9,9 @@
  * `shows` promises; `tests/unit/demo-seed-consistency.test.ts` checks every one
  * against the seed, so a seed change that moves an id fails there, naming the
  * example. The demo's guided tour states what its stops open in the same
- * vocabulary (`app/utils/demo-tour/profiles.ts`), checked the same way. The
- * vocabulary is closed:
+ * vocabulary (`app/utils/demo-tour/profiles.ts`), and so do the guide anchors'
+ * samples (`shared/guide-anchors/`), checked the same way. The vocabulary is
+ * closed:
  *
  * - `testCase: { id, title }`, `execution: { id, title }`, `project: { id, name }`,
  *   `cluster: { id, story }`, `run: { id, project }`: the entity the route opens

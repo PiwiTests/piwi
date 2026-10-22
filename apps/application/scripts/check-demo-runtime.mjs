@@ -22,6 +22,7 @@ import { existsSync } from 'node:fs';
 import { join, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { GUIDE_ANCHORS } from '../shared/guide-anchors/index.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..', '.output', 'public');
@@ -108,7 +109,7 @@ async function waitForServiceWorker(page) {
 // renders (the popover's data attributes), never the registry it is built from.
 
 /** A tour's popover once its stop is fully shown: cutout on the target, popover in place. */
-const TOUR_SETTLED = '.driver-popover.piwi-tour[data-tour-settled]';
+const TOUR_SETTLED = '.driver-popover.piwi-guide[data-guide-settled]';
 /** The prompt opens 1.5 s after the demo is ready; this long after the page shows its data, it would be open. */
 const PROMPT_DELAY_MS = 3000;
 const WIDE = { width: 1280, height: 860 };
@@ -145,8 +146,8 @@ async function startTour(page, profile, language) {
 
 /**
  * Walks the tour that is starting with Next until Done. Each stop must show
- * its target highlighted and in view (a stop shown centered fails: every stop
- * has a target), a title, progress one further, the popover in `lang`, and
+ * its anchor highlighted and in view (a stop shown centered fails: every stop
+ * has an anchor), a title, progress one further, the popover in `lang`, and
  * with `inViewport`, the popover entirely on screen. Then Done must end it.
  */
 async function walkTour(page, profile, { lang = 'en', inViewport = false } = {}) {
@@ -155,17 +156,17 @@ async function walkTour(page, profile, { lang = 'en', inViewport = false } = {})
   let last = null;
   // A tour has at most 7 stops; the bound only stops a broken one from looping.
   for (let step = 0; step < 10; step++) {
-    const popover = page.locator(last ? `${TOUR_SETTLED}:not([data-tour-stop="${last}"])` : TOUR_SETTLED);
+    const popover = page.locator(last ? `${TOUR_SETTLED}:not([data-guide-stop="${last}"])` : TOUR_SETTLED);
     await popover.waitFor({ timeout: 60000 });
     const stop = await popover.evaluate((node) => {
-      const target = node.dataset.tourTarget ?? '';
-      const element = target ? document.querySelector(`.driver-active-element[data-tour="${target}"]`) : null;
+      const anchor = node.dataset.guideAnchor ?? '';
+      const element = anchor ? document.querySelector(`.driver-active-element[data-tour="${anchor}"]`) : null;
       const box = element?.getBoundingClientRect();
       const own = node.getBoundingClientRect();
       return {
-        id: node.dataset.tourStop ?? '',
+        id: node.dataset.guideStop ?? '',
         profile: node.dataset.tourProfile ?? '',
-        target,
+        anchor,
         lang: node.lang,
         title: node.querySelector('.driver-popover-title')?.textContent?.trim() ?? '',
         progress: node.querySelector('.driver-popover-progress-text')?.textContent?.trim() ?? '',
@@ -180,15 +181,15 @@ async function walkTour(page, profile, { lang = 'en', inViewport = false } = {})
     total ||= of;
     const problems = [];
     if (stop.profile !== profile) problems.push(`the ${stop.profile} tour's popover`);
-    if (!stop.target) problems.push('shown centered, with no target');
-    else if (!stop.highlighted) problems.push(`"${stop.target}" is not highlighted in view`);
+    if (!stop.anchor) problems.push('shown centered, with no anchor');
+    else if (!stop.highlighted) problems.push(`"${stop.anchor}" is not highlighted in view`);
     if (!stop.title) problems.push('no title');
     if (current !== shown + 1 || of !== total) problems.push(`progress "${stop.progress}"`);
     if (stop.lang !== lang) problems.push(`lang "${stop.lang}"`);
     if (inViewport && !stop.onScreen) problems.push('the popover leaves the viewport');
     check(
       problems.length === 0,
-      `${profile} tour ${stop.progress}: ${stop.id} → ${stop.target || '(centered)'}`,
+      `${profile} tour ${stop.progress}: ${stop.id} → ${stop.anchor || '(centered)'}`,
       problems.join('; '),
     );
     shown = current;
@@ -265,6 +266,94 @@ async function checkGuidedTour(browser, watch) {
     check(false, 'the guided tour checks completed', String(error).split('\n')[0].slice(0, 160));
   } finally {
     await context.close();
+  }
+}
+
+// ── The guide anchors ──────────────────────────────────────────────────────
+// Every anchor of the guide registry (`shared/guide-anchors/`) whose sample is
+// on the demo, opened at its sample route as its persona, its reveal clicked as
+// the guide engine clicks it, then found visible once scrolled into view. Each
+// persona gets its own browser and each route loads once.
+
+/** The toggle of a folded section, as the guide engine finds it (`useGuide`). */
+const FOLDED_TOGGLE = 'button[aria-expanded="false"], [role="button"][aria-expanded="false"]';
+/** How long an anchor, or the element its reveal clicks, has to render once its page loads. */
+const ANCHOR_WAIT_MS = 60000;
+
+/** The demo's anchors by persona (null: the default one), then by sample route, in registry order. */
+function anchorsBySample() {
+  const personas = new Map();
+  for (const anchor of GUIDE_ANCHORS) {
+    if ((anchor.sample.surface ?? 'demo') !== 'demo') continue;
+    const persona = anchor.sample.persona ?? null;
+    const routes = personas.get(persona) ?? new Map();
+    personas.set(persona, routes);
+    routes.set(anchor.sample.route, [...(routes.get(anchor.sample.route) ?? []), anchor]);
+  }
+  return personas;
+}
+
+/** Runs the `unfold` and `open` steps of `anchor`'s reveal, in order, as the engine does. */
+async function revealAnchor(page, anchor) {
+  for (const step of anchor.reveal ?? []) {
+    if ('unfold' in step) {
+      const section = page.locator(`[data-tour="${step.unfold}"]`).first();
+      await section.waitFor({ state: 'attached', timeout: ANCHOR_WAIT_MS });
+      await section.evaluate((node, folded) => {
+        const toggle = node.matches(folded) ? node : node.querySelector(folded);
+        if (toggle instanceof HTMLElement) toggle.click();
+      }, FOLDED_TOGGLE);
+    }
+    if ('open' in step) {
+      const opener = page.locator(`[data-tour="${step.open}"]`).first();
+      await opener.waitFor({ timeout: ANCHOR_WAIT_MS });
+      if ((await page.locator(`[data-tour="${anchor.id}"]`).count()) === 0) await opener.click();
+    }
+  }
+}
+
+/** One check: `anchor` renders at its sample, visible with a box in the viewport once scrolled into view. */
+async function checkAnchor(page, anchor) {
+  const label = `guide anchor ${anchor.id} shows at ${anchor.sample.route}`;
+  try {
+    await revealAnchor(page, anchor);
+    const element = page.locator(`[data-tour="${anchor.id}"]`).first();
+    await element.waitFor({ state: 'attached', timeout: ANCHOR_WAIT_MS });
+    await element.scrollIntoViewIfNeeded({ timeout: 10000 });
+    const box = await element.boundingBox();
+    const visible = await element.isVisible();
+    const inView = box !== null && box.width > 0 && box.height > 0 && box.y < WIDE.height && box.y + box.height > 0;
+    const where = box ? `a ${Math.round(box.width)}×${Math.round(box.height)} box at y ${Math.round(box.y)}` : 'no box';
+    check(visible && inView, label, visible && inView ? '' : visible ? where : 'not visible');
+  } catch (error) {
+    check(false, label, String(error).split('\n')[0].slice(0, 160));
+  }
+}
+
+/**
+ * Every demo anchor at its sample: one browser context per persona, which
+ * stores that persona as the demo's "Acting as" user and the tour's prompt as
+ * dismissed before any page loads. `watch` attaches the checks every page of
+ * the demo gets.
+ */
+async function checkGuideAnchors(browser, watch) {
+  for (const [persona, routes] of anchorsBySample()) {
+    const context = await browser.newContext({ viewport: WIDE, locale: 'en-US' });
+    await context.addInitScript((id) => {
+      if (id === null) localStorage.removeItem('piwi-demo-user-id');
+      else localStorage.setItem('piwi-demo-user-id', String(id));
+      localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() }));
+    }, persona);
+    const page = await context.newPage();
+    watch(page);
+    try {
+      for (const [route, anchors] of routes) {
+        await page.goto(`${ORIGIN}${BASE}${route.replace(/^\//, '')}`, { waitUntil: 'domcontentloaded' });
+        for (const anchor of anchors) await checkAnchor(page, anchor);
+      }
+    } finally {
+      await context.close();
+    }
   }
 }
 
@@ -514,6 +603,7 @@ async function main() {
     );
 
     await checkGuidedTour(browser, watch);
+    await checkGuideAnchors(browser, watch);
 
     check(
       escapedApiUrls.size === 0,
@@ -536,7 +626,7 @@ async function main() {
     process.exit(1);
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab and every guided tour all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab, every guided tour and every guide anchor all work.',
   );
 }
 

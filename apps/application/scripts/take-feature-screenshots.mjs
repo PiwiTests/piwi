@@ -1455,8 +1455,8 @@ async function waitForTourPrompt(page) {
 /**
  * Starts a role's tour from the prompt, in `language` when given (its name in
  * the prompt's select, `Français`), and waits for the first stop to settle: the
- * popover rendered and the cutout on the stop's target. A stop whose target is
- * missing settles centered, with an empty `data-tour-target`.
+ * popover rendered and the cutout on the stop's anchor. A stop whose anchor is
+ * missing settles centered, with an empty `data-guide-anchor`.
  */
 async function startTourFromPrompt(page, { profile, language }) {
   await waitForTourPrompt(page);
@@ -1465,30 +1465,30 @@ async function startTourFromPrompt(page, { profile, language }) {
     await page.getByRole('option', { name: language }).click();
   }
   await page.getByTestId(`tour-profile-${profile}`).click();
-  const popover = page.locator('.driver-popover.piwi-tour[data-tour-settled]');
+  const popover = page.locator('.driver-popover.piwi-guide[data-guide-settled]');
   await popover.waitFor({ timeout: 60_000 });
-  const target = await popover.getAttribute('data-tour-target');
-  if (target) await page.locator(`[data-tour="${target}"].driver-active-element`).waitFor();
+  const anchor = await popover.getAttribute('data-guide-anchor');
+  if (anchor) await page.locator(`[data-tour="${anchor}"].driver-active-element`).waitFor();
 }
 
 /**
  * Walks the running tour with Next, calling `atStop` on each stop once it has
- * settled (its id, its target, empty for a stop shown centered), and ends the
+ * settled (its id, its anchor, empty for a stop shown centered), and ends the
  * tour on its last stop.
  */
 async function walkTourStops(page, atStop) {
   let last = null;
   for (;;) {
     const popover = page.locator(
-      `.driver-popover.piwi-tour[data-tour-settled]${last ? `:not([data-tour-stop="${last}"])` : ''}`,
+      `.driver-popover.piwi-guide[data-guide-settled]${last ? `:not([data-guide-stop="${last}"])` : ''}`,
     );
     await popover.waitFor({ timeout: 60_000 });
     const stop = await popover.evaluate((node) => ({
-      id: node.dataset.tourStop,
-      target: node.dataset.tourTarget,
+      id: node.dataset.guideStop,
+      anchor: node.dataset.guideAnchor,
       isLast: Boolean(node.querySelector('.driver-popover-done-btn')),
     }));
-    if (stop.target) await page.locator(`[data-tour="${stop.target}"].driver-active-element`).waitFor();
+    if (stop.anchor) await page.locator(`[data-tour="${stop.anchor}"].driver-active-element`).waitFor();
     await atStop(stop);
     if (stop.isLast) break;
     last = stop.id;
@@ -5567,9 +5567,9 @@ const SCENES = [
         await page.evaluate(() => localStorage.removeItem('piwi-demo-tour'));
         await goto('/');
         await startTourFromPrompt(page, { profile });
-        await walkTourStops(page, async ({ id, target }) => {
-          if (!target) {
-            console.log(`   ${profile}/${id}: left out, its target is in the demo banner`);
+        await walkTourStops(page, async ({ id, anchor }) => {
+          if (!anchor) {
+            console.log(`   ${profile}/${id}: left out, its anchor is in the demo banner`);
             return;
           }
           await settle();

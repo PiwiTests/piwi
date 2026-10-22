@@ -1,22 +1,18 @@
 import { describe, expect, test } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { findGuideAnchor } from '#shared/guide-anchors/index.mjs';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { TOUR_COPY, stopCopy } from '~/utils/demo-tour/copy';
 import { TOUR_LANGUAGES, type TourLanguage } from '~/utils/demo-tour/languages';
-import { boldLabels, plainTourText } from '~/utils/demo-tour/markup';
+import { boldLabels, plainGuideText } from '~/utils/guide/markup';
+import { routeOnPage } from '~/utils/guide/stops';
 import type { TourProfileId } from '~/utils/demo-tour/types';
 
 /**
- * The guided tour's registry against its copy and the dashboard's source: every
- * role has one tour of a few stops, every stop has its words in every language,
- * a translation names the same dashboard labels as the English and fits the
- * popover, and every element a stop points at carries its `data-tour` attribute
- * in one component, none left over.
+ * The guided tour's registry against its copy and the guide anchors: every role
+ * has one tour of a few stops, every stop has its words in every language, a
+ * translation names the same dashboard labels as the English and fits the
+ * popover, and every stop points at a guide anchor on the page it opens.
  */
-
-const appDir = fileURLToPath(new URL('../../app', import.meta.url));
 
 /** Every role, once: the compiler asks for a new one here. */
 const PROFILE_IDS = Object.keys({
@@ -65,19 +61,6 @@ function entriesOf(language: TourLanguage): CopyEntry[] {
 }
 
 const ALL_ENTRIES = TOUR_LANGUAGES.flatMap(entriesOf);
-
-/** Every `.vue` file of the app, by its path from `app/`. */
-const vueFiles = (readdirSync(appDir, { recursive: true }) as string[])
-  .filter((path) => path.endsWith('.vue'))
-  .map((path) => ({ path, source: readFileSync(join(appDir, path), 'utf8') }));
-
-/** Each static `data-tour` value in the app's components, with the file of each element that sets it. */
-const dataTourFiles = new Map<string, string[]>();
-for (const { path, source } of vueFiles) {
-  for (const match of source.matchAll(/(?<![:\w-])data-tour="([^"]*)"/g)) {
-    dataTourFiles.set(match[1]!, [...(dataTourFiles.get(match[1]!) ?? []), path]);
-  }
-}
 
 describe('tour profiles', () => {
   test('every role has one tour', () => {
@@ -165,7 +148,7 @@ describe('tour copy', () => {
   test(`a title fits in ${MAX_TITLE} characters and a body in ${MAX_BODY}`, () => {
     const tooLong = ALL_ENTRIES.flatMap((e) => {
       const max = e.name.endsWith('.title') ? MAX_TITLE : e.name.endsWith('.body') ? MAX_BODY : null;
-      const length = plainTourText(e.text).length;
+      const length = plainGuideText(e.text).length;
       return max !== null && length > max ? [`${e.name}: ${length} characters`] : [];
     });
     expect(tooLong).toEqual([]);
@@ -176,39 +159,26 @@ describe('tour copy', () => {
   });
 });
 
-describe('tour targets', () => {
+describe('tour anchors', () => {
   const stops = TOUR_PROFILES.flatMap((profile) =>
     profile.stops.map((stop) => ({ name: `${profile.id}/${stop.id}`, stop })),
   );
 
-  test('every target and folded section is the data-tour of one element', () => {
-    const problems: string[] = [];
-    for (const { name, stop } of stops) {
-      for (const [field, value] of [
-        ['target', stop.target],
-        ['unfold', stop.unfold],
-      ] as const) {
-        if (value === undefined) continue;
-        const files = dataTourFiles.get(value) ?? [];
-        if (files.length !== 1) {
-          problems.push(`${name}: ${field} "${value}" is set on ${files.length} elements (${files.join(', ')})`);
-        }
-      }
-    }
-    expect(problems).toEqual([]);
-  });
-
-  test('every data-tour in the app is a stop’s target or folded section', () => {
-    const used = new Set(stops.flatMap(({ stop }) => [stop.target, stop.unfold].filter((v) => v !== undefined)));
-    expect([...dataTourFiles.keys()].filter((value) => !used.has(value))).toEqual([]);
-  });
-
-  test('every data-tour is a static, kebab-case value', () => {
-    expect([...dataTourFiles.keys()].filter((value) => !KEBAB.test(value))).toEqual([]);
-    const bound = vueFiles.filter(({ source }) => /(?<![\w-])(?:v-bind)?:data-tour\b/.test(source));
+  test('every stop points at a guide anchor', () => {
     expect(
-      bound.map(({ path }) => path),
-      'a bound data-tour cannot be found in the source',
+      stops
+        .filter(({ stop }) => !stop.anchor || !findGuideAnchor(stop.anchor))
+        .map(({ name, stop }) => `${name}: "${stop.anchor}"`),
+      'stops whose anchor is not in shared/guide-anchors/',
     ).toEqual([]);
+  });
+
+  test('a stop with a route opens one of its anchor’s pages', () => {
+    const problems = stops.flatMap(({ name, stop }) => {
+      const anchor = stop.anchor ? findGuideAnchor(stop.anchor) : undefined;
+      if (!stop.route || !anchor || anchor.pages.some((page) => routeOnPage(stop.route!, page))) return [];
+      return [`${name}: ${stop.route} is none of ${anchor.id}'s pages (${anchor.pages.join(', ')})`];
+    });
+    expect(problems).toEqual([]);
   });
 });

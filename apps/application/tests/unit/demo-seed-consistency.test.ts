@@ -28,6 +28,7 @@ import type { WireResourceFinding } from '#shared/types';
 import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
 import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
+import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -919,9 +920,9 @@ describe('flake lab experiments', () => {
   });
 });
 
-// Every docs page's demo example and every stop of the demo's guided tour opens
-// the entity it names, in the state its sentence promises (the `expect`
-// vocabulary of `shared/demo/demo-examples.mjs`).
+// Every docs page's demo example, every stop of the demo's guided tour and every
+// guide anchor's sample opens the entity it names, in the state its sentence
+// promises (the `expect` vocabulary of `shared/demo/demo-examples.mjs`).
 const EXPECT_KEYS = new Set([
   'testCase',
   'execution',
@@ -1257,6 +1258,24 @@ describe('guided tour stops hold in the seed', () => {
     }
     expect(stop.expect, `${name}: ${route} opens a seeded ${opened.key}, so the stop names it`).toBeDefined();
     expectHoldsInSeed(name, route, stop.expect!);
+  });
+});
+
+// An anchor's sample (`shared/guide-anchors/`) names the entity its route opens,
+// and the seed holds what it expects; a sample on a page that shows no single
+// entity expects nothing.
+describe('guide anchor samples hold in the seed', () => {
+  test.each(GUIDE_ANCHORS.map((anchor) => [anchor.id, anchor.sample] as const))('%s', (id, sample) => {
+    const opened = routeEntity(sample.route);
+    if (!opened) {
+      expect(
+        sample.expect,
+        `${id}: ${sample.route} opens no seeded entity, so the sample expects nothing`,
+      ).toBeUndefined();
+      return;
+    }
+    expect(sample.expect, `${id}: ${sample.route} opens a seeded ${opened.key}, so the sample names it`).toBeDefined();
+    expectHoldsInSeed(id, sample.route, sample.expect!);
   });
 });
 

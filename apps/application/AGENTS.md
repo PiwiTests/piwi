@@ -556,7 +556,8 @@ Where to add things in subsystems whose wiring spans several files:
 | Trace-file import                  | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Quality report language            | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only                                                                                                                           |
 | Issue automation criterion         | The rule field and its check in `shared/integrations/automation.ts` (`AutoCreateRule`, `resolveAutoCreateRule`, `evaluateAutoCreate`, `describeAutoCreateRule`); the fact it reads in `gatherAutoCreateFacts` (`shared/handlers/tracker-automation.ts`, shared with the demo preview); the form in `app/utils/tracker-binding-form.ts` and `AutoCreateRulesEditor.vue`; the table on `apps/docs/features/issue-automation.md`. The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules, never re-implement them                                                                                       |
-| Guided tour stop / role / language | A stop: its entry in `TOUR_PROFILES` (`app/utils/demo-tour/profiles.ts`), its title and body under its id in every `copy.<code>.ts`, and the `data-tour` attribute it targets. A role: its id in `TourProfileId` (`types.ts`), its `TOUR_PROFILES` entry, and its label, hint and stops in every copy file. A language: its code in `TOUR_LANGUAGES` and `TOUR_LANGUAGE_INFO` (`languages.ts`), and a `copy.<code>.ts` registered in `TOUR_COPY` (`copy.ts`). A role or language is also named in the _Live demo_ paragraph of `apps/docs/features/ui-overview.md`. Rules under [Guided tour](#guided-tour)                                                                         |
+| Guide anchor                       | Its entry in the area file of `shared/guide-anchors/` (`id`, `pages`, `reveal`, `describes`, `shownWhen`, `requires`, `doc`, `sample`; a new area file is one import and one spread in `index.mjs`), and the static `data-tour` value on the one element it names. Rules under [Guide anchors](#guide-anchors)                                                                                                                                                                                                                                                                                                                                                                      |
+| Guided tour stop / role / language | A stop: its entry in `TOUR_PROFILES` (`app/utils/demo-tour/profiles.ts`), its title and body under its id in every `copy.<code>.ts`, and the guide anchor it points at. A role: its id in `TourProfileId` (`types.ts`), its `TOUR_PROFILES` entry, and its label, hint and stops in every copy file. A language: its code in `TOUR_LANGUAGES` and `TOUR_LANGUAGE_INFO` (`languages.ts`), and a `copy.<code>.ts` registered in `TOUR_COPY` (`copy.ts`). A role or language is also named in the _Live demo_ paragraph of `apps/docs/features/ui-overview.md`. Rules under [Guided tour](#guided-tour)                                                                                |
 
 ## Subsystem invariants
 
@@ -861,21 +862,20 @@ popover on one element per screen that links its docs page. It speaks English, F
 browser's language, or the one picked in the toast); the dashboard stays in English.
 
 `app/utils/demo-tour/` holds the data, all pure: `profiles.ts` (`TOUR_PROFILES`, each stop's `route`, `expect`,
-`target`, `unfold`, `side`, `align`, `doc`), `copy.<code>.ts` registered in `copy.ts` (`TOUR_COPY`, every word the
-tour says, one file per language), `languages.ts` (`TOUR_LANGUAGES`, `TOUR_LANGUAGE_INFO`, `pickTourLanguage`),
-`types.ts`, `markup.ts` (escaping, `**bold**`) and `prompt-state.ts` (what a browser decided, stored under
-`localStorage['piwi-demo-tour']`, and when to ask again). `app/composables/useDemoTour.ts` holds the prompt's state and
-the language, stores the decision, and drives driver.js across a tour's pages; `app/components/demo/` has `DemoTour`
-(host, auto-prompt), `DemoTourPrompt` (the toast) and `DemoTourButton` (banner); `app/assets/css/demo-tour.css` themes
-the popover.
+`anchor`, `side`, `align`, `doc`), `copy.<code>.ts` registered in `copy.ts` (`TOUR_COPY`, every word the tour says,
+one file per language), `languages.ts` (`TOUR_LANGUAGES`, `TOUR_LANGUAGE_INFO`, `pickTourLanguage`), `types.ts` and
+`prompt-state.ts` (what a browser decided, stored under `localStorage['piwi-demo-tour']`, and when to ask again).
+`app/composables/useDemoTour.ts` holds the prompt's state and the language, stores the decision, and starts a role's
+tour as a guide (`GuideRun`, its stops with their copy) that the guide engine runs ([Guide anchors](#guide-anchors));
+`app/components/demo/` has `DemoTour` (host, auto-prompt), `DemoTourPrompt` (the toast) and `DemoTourButton`
+(banner).
 
 - **The switch is `runtimeConfig.public.demoTour`**, on in the demo build and off in every other, and `app.vue`
   mounts the tour only when it is on. `NUXT_PUBLIC_DEMO_TOUR=true` turns it on for a dev server, which is what the
   screenshot harness's `tour` mode does.
-- **`data-tour="<id>"` attributes are the tour's API**, as `data-shot` is the harness's: a stop's `target` and
-  `unfold` name one. A value is static (never a bound `:data-tour`), kebab-case, names the content, and is set in
-  exactly one component. Never remove or rename one without updating its stop: `tests/unit/demo-tour.test.ts` fails
-  naming the stop whose target is gone, and names an attribute no stop uses.
+- **A stop points at a guide anchor**: its `anchor` is the id of an entry of `shared/guide-anchors/`, whose reveal
+  opens what holds it (a tab through the URL, a folded section). `tests/unit/demo-tour.test.ts` fails naming a stop
+  whose anchor is not in the registry, or whose route is none of its anchor's pages.
 - **A stop's `route` opens a seeded screen, and its `expect` names the entity it shows**, in the demo examples'
   vocabulary; `tests/unit/demo-seed-consistency.test.ts` checks it against the generated seed like a demo example. A
   seed change that moves the entity updates the stop, never the check. A stop with no `route` stays on the current
@@ -886,23 +886,65 @@ the popover.
   every copy file: the compiler refuses a missing or extra key, `demo-tour.test.ts` an empty string, an untranslated
   body and a stop with no copy. A dashboard label is `**bold**` and stays in English exactly as the screen spells it;
   the test checks that every language names the same bold labels as the English, in order. `**bold**` is the only
-  markup, and a translation keeps the English's placeholders. The voice is the docs'
+  markup (`app/utils/guide/markup.ts`), and a translation keeps the English's placeholders. The voice is the docs'
   ([`apps/docs/AGENTS.md`](../docs/AGENTS.md#voice)): informative, specific, never promotional. 4–7 stops a tour; a
   title ≤ 60 characters and a body ≤ 360 in every language. French says _vous_, German _Sie_, Spanish _tú_; product
   names are never translated.
 - **A change to a toured screen updates the tour in the same commit**, its copy in every language included, exactly
-  like the docs and the demo: moving or renaming a targeted element, renaming a label a stop quotes in bold, a seed
+  like the docs and the demo: moving or renaming an anchored element, renaming a label a stop quotes in bold, a seed
   change under a stop. A new feature that serves a role may replace a stop; it never grows a tour past 7.
 - **Adding a language** works like a quality report language: its code in `TOUR_LANGUAGES` and its
   `TOUR_LANGUAGE_INFO` entry, then a `copy.<code>.ts` (copy `copy.fr.ts`) registered in `TOUR_COPY` — the compiler asks
   for the file, then for every key — and its English name in the _Live demo_ paragraph of
   `apps/docs/features/ui-overview.md`, which `docs-drift.test.ts` checks for every role and language.
+- Verify with `npm run app:generate:demo && npm run app:check:demo:runtime`: it walks every tour in the built demo
+  (the prompt, **Later**, the banner button, each stop's anchor highlighted, one tour in French, one at phone width).
+
+## Guide anchors
+
+A guide is a list of stops, each a driver.js popover on one element of a page; the demo's guided tour is one. A guide
+points only at **guide anchors**: the registry in `shared/guide-anchors/` lists every element a guide can name, and
+nothing else can be pointed at. It is plain ESM, like `shared/demo/demo-examples.mjs`, so the app, the tests and
+`scripts/check-demo-runtime.mjs` read the same file: one `.mjs` file per area of the dashboard (`home`, `analytics`,
+`projects`, `runs`, `executions`, `clusters`, `test-cases`, `setup`, `settings`, and `demo` for the demo banner),
+joined in `index.mjs` (a new area is one import and one spread there), with the entry shape in `index.d.mts`. An
+entry has:
+
+- `id`, the value of the element's `data-tour` attribute;
+- `pages`, the patterns of `app/pages` it renders on (`/test-run-cases/[id]`, `/`), the main one first, or `['*']` for
+  the layout and the demo banner;
+- `reveal`, what the engine does before the anchor shows, in order: `{ query }` (a tab or pane selected through the
+  URL), `{ unfold: <anchor> }` (clicks the first `aria-expanded="false"` toggle of a folded section),
+  `{ open: <anchor> }` (clicks the opener of a menu, drawer or modal when the anchor is not rendered);
+- `describes` and `shownWhen`: one sentence each, in the docs' voice, on what the block shows and when it renders;
+- `requires`: the capability, permission, desktop shell or demo build it needs; `doc`: its docs page;
+- `sample`: a seeded demo route where it renders (with every `query` its reveal needs), the persona to act as and
+  the `expect` the seed must hold there.
+
+The engine is `app/composables/useGuide.ts`: `start(run)` takes a `GuideRun` (`app/utils/guide/types.ts`: an id, a
+language, the stops with their copy, the words of the popover's controls) and opens each stop's route (else its
+anchor's main page when that is a fixed path), runs the anchor's reveal, scrolls the panels holding it and highlights
+it. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup). The popover carries `data-guide`,
+`data-guide-stop`, `data-guide-anchor` (empty when centered), `data-guide-settled` once settled, `lang` and the
+run's `dataset`, which is what the checks read; `app/assets/css/guide.css` themes it (`piwi-guide*` classes).
+
+- **One element per anchor**: an anchor's `data-tour` value is static (never a bound `:data-tour`), kebab-case, names
+  the content, and is set on exactly one element in exactly one component. An element can carry both `data-tour`
+  and the harness's `data-shot`. A demo-only anchor (`requires.demo`) is set in a component under
+  `app/components/demo/`.
+- **Three checks hold every anchor.** `tests/unit/guide-anchors.test.ts` checks the registry against the source:
+  each id is the `data-tour` of exactly one element and every `data-tour` is an anchor, each page is a file of
+  `app/pages`, a reveal names anchors on the same page, the sample route opens one of its pages with its reveal's
+  query, the sentences fit (≤ 160 characters, one sentence) and the capability exists.
+  `tests/unit/demo-seed-consistency.test.ts` checks each sample's `expect` against the generated seed, as for a demo
+  example. `scripts/check-demo-runtime.mjs` opens every sample in the built demo as its persona, runs the reveal and
+  finds the anchor visible once scrolled into view, one check per anchor.
+- **A change that moves, renames or removes an anchored element updates the registry in the same commit**, and the
+  guides pointing at it (the tour's stops) with it. A new anchor ships with its sample and passes all three checks.
 - **The engine never lets `scrollIntoView` run**: the dashboard scrolls inside its content panel, and
   `scrollIntoView` would shift the layout around it, so the engine scrolls the target's panels itself and stubs
-  driver.js's own call on the target and the popover. driver.js, its CSS and `demo-tour.css` load only when the first
-  tour starts (`loadEngine`).
-- Verify with `npm run app:generate:demo && npm run app:check:demo:runtime`: it walks every tour in the built demo
-  (the prompt, **Later**, the banner button, each stop's target highlighted, one tour in French, one at phone width).
+  driver.js's own call on the target and the popover. driver.js, its CSS and `guide.css` load only when the first
+  guide starts (`loadEngine`).
 
 ## MCP tool conventions (MUST follow)
 

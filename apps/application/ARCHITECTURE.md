@@ -310,7 +310,8 @@ execution's failure timeline under one key for its Timeline and Network tabs), f
 filters, sort and open groups kept per page path until a reload — and `useViewScroll`, its scroll position), settings derivation (`useSettingsNav`,
 `useSettingsEnvState`), analytics scope, the run page's retry command (`useRunRetryCommand` — one failing set and one
 shared mode for every copy button on the page), IDE preferences (`useOpenInIde`), desktop detection (`useIsDesktop`,
-`useTauri`), demo helpers (`useDemoTour`, the guided tour's state and its driver.js run), and small utilities
+`useTauri`), guides (`useGuide`, the engine that walks a guide's stops with a driver.js popover on each stop's
+guide anchor, and `useDemoTour`, the demo tour's prompt and language on top of it), and small utilities
 (`useCopy` / `useCopyRich` — use these instead of hand-rolling `navigator.clipboard`, `useAiStatus`, `useChartTooltip`).
 
 `app/utils/` holds pure helpers: `index.ts` (`formatDuration`, `splitDuration`, `getStatusColor`, `getFileApiPath`,
@@ -333,9 +334,10 @@ auto-heal verify commands add) and `locator-edit.ts` (`buildLocatorEdit` — rew
 source line) now live in `shared/` so the server and demo share them (the fix plan builds the same verify command and
 edits); thin `app/utils/` re-export shims keep them auto-imported. Locator-line edits become a git-applyable unified
 diff via `shared/heal-edit.ts` (`buildHealEdit` / `buildUnifiedLineDiff`), and `shared/callsite-location.ts`
-(`parseCallsiteLocation`) parses a captured `file:line:col` (drive-letter-safe). `app/utils/demo-tour/` holds the
-demo's guided tour as data: the tours (`TOUR_PROFILES`), their words (one `copy.<code>.ts` per language, registered in
-`TOUR_COPY`), the tour languages, the `**bold**` markup and the prompt's stored state.
+(`parseCallsiteLocation`) parses a captured `file:line:col` (drive-letter-safe). `app/utils/guide/` holds the guide
+engine's pure parts: the `GuideRun` and `GuideStop` types, the route a stop opens (`stopRoute`) and the `**bold**`
+markup. `app/utils/demo-tour/` holds the demo's guided tour as data: the tours (`TOUR_PROFILES`), their words (one
+`copy.<code>.ts` per language, registered in `TOUR_COPY`), the tour languages and the prompt's stored state.
 
 The coverage insights (`#shared/coverage-insights`) reach the UI where the project's coverage capability is active,
 and render nothing elsewhere: a failed execution's Coverage section compares it with the test's last passing run
@@ -353,8 +355,10 @@ contexts, the server's and the demo's, carry the divergence through `coverageDiv
 dispatches to per-domain handlers that mirror the server; `app/demo/db.client.ts` is shared by SW and main thread.
 Live updates use a BroadcastChannel instead of SSE. The demo build also mounts the guided tour (`public.demoTour`):
 `DemoTour` in `app.vue` asks a first-time visitor's role and walks that role's seeded screens with a driver.js popover
-on a `data-tour` element of each, driven by `useDemoTour`; the tours are `TOUR_PROFILES` and their words one
-`copy.<code>.ts` per language, both in `app/utils/demo-tour/`. Rules and invariants: see `AGENTS.md`.
+on a guide anchor of each, `useDemoTour` handing the role's tour to the guide engine (`useGuide`); the tours are
+`TOUR_PROFILES` and their words one `copy.<code>.ts` per language, both in `app/utils/demo-tour/`. The anchors are the
+registry in `shared/guide-anchors/`: every element a guide can point at, by its `data-tour` attribute, with the pages
+it renders on, how to reveal it and a seeded sample where it renders. Rules and invariants: see `AGENTS.md`.
 
 ## Key features
 
