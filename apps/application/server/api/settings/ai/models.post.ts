@@ -2,6 +2,7 @@ import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { resolveAiConfig, storedKeyFor } from '../../../utils/ai-provider';
 import { CLAUDE_CLI_MODELS } from '../../../utils/claude-cli-models';
+import { AI_ROLES } from '../../../utils/ai-settings';
 import type { AiModelRole, ModelInfo } from '~~/types/api';
 
 /** Convert per-token pricing string to per-million-tokens, keeping larger values as-is. */
@@ -68,7 +69,7 @@ export default eventHandler(async (event) => {
   // for the provider and base URL that key was saved for.
   let apiKey = body?.apiKey;
   if (!apiKey) {
-    const role: AiModelRole = body?.role === 'research' || body?.role === 'embedding' ? body.role : 'diagnosis';
+    const role: AiModelRole = AI_ROLES.includes(body?.role as AiModelRole) ? (body!.role as AiModelRole) : 'diagnosis';
     const resolved = await resolveAiConfig(await getDatabase());
     apiKey =
       storedKeyFor(resolved?.roles[role], provider, baseUrl) ||

@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Get AI settings',
     description:
-      'Returns full AI configuration: per-role provider settings (diagnosis, research, embedding), API key presence, auto-diagnose toggle, custom instructions, and SCM token presence. `canStoreSecrets` is false when `PIWI_SECRET_KEY` is unset, in which case an API key or SCM token cannot be saved. Requires `settings:manage` (administrators only).',
+      'Returns full AI configuration: per-role provider settings (diagnosis, research, embedding, assistant), API key presence, auto-diagnose toggle, custom instructions, and SCM token presence. `canStoreSecrets` is false when `PIWI_SECRET_KEY` is unset, in which case an API key or SCM token cannot be saved. Requires `settings:manage` (administrators only).',
     'x-required-permission': 'settings:manage',
   },
 });

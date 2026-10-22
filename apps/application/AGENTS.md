@@ -982,6 +982,28 @@ Dockerfile copies both in) and from the registries the docs site renders — nev
 so they cannot say anything the docs do not. How this instance is configured (storage, retention, capability
 states) is deployment shape, shown to administrators only, like the Setup page.
 
+## Assistant
+
+The in-app assistant answers questions with the `assistant` AI role (the diagnosis role when unset) by calling the MCP
+tools in-process: the loop and its tools in `server/utils/assistant/`, the model calls with tools in
+`server/utils/ai-tool-calls.ts`, the routes under `server/api/assistant/`, the wire shapes in `shared/assistant.ts`
+and the conversations in `shared/handlers/assistant.ts` (shared with the demo).
+
+- **The model is offered read tools only.** `assistantReadTools` drops every tool that declares a `permission` and
+  every desktop-only tool, so a new write tool is never offered. Never add a tool that writes to the assistant's set,
+  not even through `find_tools`.
+- **Tools run with the asking user's context.** The route builds the `McpContext` with `requestMcpContext`, as `/mcp`
+  does, and both filter the catalog with `toolsForCaller` (`server/utils/mcp/catalog.ts`). Never call a handler with a
+  wider context than the caller's.
+- **A conversation is never returned to another user**, administrators included. Every read in
+  `shared/handlers/assistant.ts` is narrowed to the owner (`assistantOwnerOf`: the user's id, or null with
+  authentication off), and a miss answers 404.
+- **Tool routing** is `CORE_ASSISTANT_TOOLS` and `PAGE_TOOLS` (an `app/pages` pattern → tool names) in
+  `server/utils/assistant/tools.ts`; `tests/unit/assistant-tools.test.ts` checks every name is a read tool and every
+  pattern a page.
+- **Usage outlives a conversation.** Each answer that called a model writes an `assistant_usage` row, which the daily
+  caps and Settings → AI → AI usage read; deleting a conversation never deletes it.
+
 ## Performance
 
 A change to what a page loads or renders is measured with the performance suite (`scripts/perf/`, `npm run app:perf`):

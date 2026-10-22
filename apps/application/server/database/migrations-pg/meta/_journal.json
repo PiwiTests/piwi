@@ -960,6 +960,13 @@
       "when": 1792531317401,
       "tag": "0136_project_external_id_url",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1792704920497,
+      "tag": "0137_assistant",
+      "breakpoints": true
     }
   ]
 }

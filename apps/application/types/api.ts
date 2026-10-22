@@ -1747,8 +1747,9 @@ export interface ModelInfo {
  * - `diagnosis`  — the main model that writes the final diagnosis (required root)
  * - `research`   — optional cheaper/faster pre-analysis pass (two-stage diagnosis)
  * - `embedding`  — optional embeddings model for semantic failure clustering
+ * - `assistant`  — optional model the in-app assistant answers with; the diagnosis model when unset
  */
-export type AiModelRole = 'diagnosis' | 'research' | 'embedding';
+export type AiModelRole = 'diagnosis' | 'research' | 'embedding' | 'assistant';
 
 /** A fully-resolved provider config for a single role (server-side; holds the raw key). */
 export interface ResolvedAiRole {
@@ -1781,6 +1782,7 @@ export interface AiConfig {
     diagnosis: ResolvedAiRole;
     research: ResolvedAiRole | null;
     embedding: ResolvedAiRole | null;
+    assistant: ResolvedAiRole | null;
   };
 }
 
@@ -1818,6 +1820,7 @@ export interface AiSettings {
     diagnosis: AiRoleSettings | null;
     research: AiRoleSettings | null;
     embedding: AiRoleSettings | null;
+    assistant: AiRoleSettings | null;
   };
   autoDiagnose: boolean;
   hasScmToken: boolean;
@@ -1868,6 +1871,8 @@ export interface AiUsageModelRow {
   model: string;
   diagnoses: number;
   failed: number;
+  /** Assistant answers (turns), counted apart from diagnoses; their tokens are in `inputTokens` and `outputTokens`. */
+  assistantTurns: number;
   inputTokens: number;
   outputTokens: number;
   avgDurationMs: number | null;
@@ -1889,7 +1894,7 @@ export interface AiUsageSummary {
   days: number;
   /** The fewest ratings a helpful share is given over. */
   minRatings: number;
-  totals: { diagnoses: number; inputTokens: number; outputTokens: number };
+  totals: { diagnoses: number; assistantTurns: number; inputTokens: number; outputTokens: number };
   byModel: AiUsageModelRow[];
 }
 

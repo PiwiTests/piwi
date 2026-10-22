@@ -141,7 +141,7 @@ interface InstanceFacts {
   admin: boolean;
 }
 
-function instanceFacts(ctx: McpContext): InstanceFacts {
+export function instanceFacts(ctx: McpContext): InstanceFacts {
   return {
     version: appVersion(),
     surface: process.env.PIWI_DESKTOP_TOKEN ? 'desktop app' : 'server',
@@ -157,7 +157,7 @@ interface AdminFacts {
   states: Record<CapabilityId, CapabilityState>;
 }
 
-async function adminFacts(db: DbClient): Promise<AdminFacts> {
+export async function adminFacts(db: DbClient): Promise<AdminFacts> {
   const days = Number(process.env.PIWI_RETENTION_DAYS);
   return {
     storage: process.env.PIWI_STORAGE_TYPE === 's3' ? 'S3-compatible bucket' : 'local disk',
@@ -168,7 +168,7 @@ async function adminFacts(db: DbClient): Promise<AdminFacts> {
 }
 
 /** Capability ids grouped by their state here. */
-function capabilitiesByState(states: Record<CapabilityId, CapabilityState>) {
+export function capabilitiesByState(states: Record<CapabilityId, CapabilityState>) {
   const grouped: Partial<Record<CapabilityState, CapabilityId[]>> = {};
   for (const def of CAPABILITIES) (grouped[states[def.id]] ??= []).push(def.id);
   return grouped;

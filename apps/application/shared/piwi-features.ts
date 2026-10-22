@@ -206,6 +206,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/ai-diagnosis',
       },
       {
+        title: 'Assistant',
+        summary:
+          'Questions about your runs, failures and setup answered by your AI model from the read tools agents use, with your access; it reads and never changes anything.',
+        needs: ['llm'],
+        where: 'API reference → Assistant',
+        doc: 'features/assistant',
+      },
+      {
         title: 'Backend logs',
         summary:
           'Server-side warnings, errors and spans captured per test and shown next to the request that triggered them.',

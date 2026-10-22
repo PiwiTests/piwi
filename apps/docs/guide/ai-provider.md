@@ -49,11 +49,12 @@ To be told when a diagnosis finishes without watching the panel, turn on **Setti
 
 ## Model roles
 
-Piwi calls models in up to three distinct roles, each with its own complete provider configuration (or a **reuse** pointer to inherit another role's provider and credentials):
+Piwi calls models in up to four distinct roles, each with its own complete provider configuration (or a **reuse** pointer to inherit another role's provider and credentials):
 
 - **Diagnosis**: the main model that writes the final diagnosis (required to enable AI). The quality report narrative uses it too.
 - **Research**: an optional cheaper, faster model that pre-analyzes the failure first (*two-stage diagnosis*).
 - **Embedding**: an optional embeddings model that powers semantic failure clustering and the **Fixed before** similarity.
+- **Assistant**: an optional model the [assistant](/features/assistant) answers with; unset, it uses the diagnosis model.
 
 Configure each role in **Settings → AI → Model providers**. A role set to *reuse* another role uses that role's provider, key, and base URL (only its model can differ), so you don't re-enter credentials for, say, a Haiku research pass on the same Anthropic key.
 

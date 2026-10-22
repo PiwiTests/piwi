@@ -1010,7 +1010,7 @@ export const HELP_TOPICS = {
   },
   'settings.ai-provider': {
     title: 'AI provider',
-    text: 'Configure the model providers behind the three AI roles — diagnosis, research and embedding. Each role has its own provider config, or reuses another role’s provider and credentials. Keys are stored encrypted and never returned by the API.',
+    text: 'Configure the model providers behind the four AI roles — diagnosis, research, embedding and assistant. Each role has its own provider config, or reuses another role’s provider and credentials. Keys are stored encrypted and never returned by the API.',
     doc: 'guide/ai-provider',
     envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL', 'PIWI_AI_TEMPERATURE'],
   },
@@ -1029,6 +1029,18 @@ export const HELP_TOPICS = {
       'PIWI_AI_RESEARCH_BASE_URL',
       'PIWI_AI_RESEARCH_API_KEY',
       'PIWI_AI_RESEARCH_TEMPERATURE',
+    ],
+  },
+  'settings.ai-assistant': {
+    title: 'Assistant model',
+    text: 'The model the in-app assistant answers questions with. Unset, it uses the diagnosis model; set it to point the assistant at a faster, cheaper model while diagnosis keeps the strong one. Like research, it can reuse another role’s provider and key with a model of its own.',
+    doc: 'features/assistant#the-model',
+    envVars: [
+      'PIWI_AI_ASSISTANT_PROVIDER',
+      'PIWI_AI_ASSISTANT_MODEL',
+      'PIWI_AI_ASSISTANT_BASE_URL',
+      'PIWI_AI_ASSISTANT_API_KEY',
+      'PIWI_AI_ASSISTANT_TEMPERATURE',
     ],
   },
   'settings.ai-limits': {

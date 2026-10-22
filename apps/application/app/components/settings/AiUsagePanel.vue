@@ -55,7 +55,8 @@ function formatCount(n: number): string {
 
     <div v-if="usage" class="space-y-3">
       <p class="text-sm text-gray-500">
-        {{ formatCount(usage.totals.diagnoses) }} diagnoses · {{ formatCount(usage.totals.inputTokens) }} input tokens ·
+        {{ formatCount(usage.totals.diagnoses) }} diagnoses · {{ formatCount(usage.totals.assistantTurns) }} assistant
+        answers · {{ formatCount(usage.totals.inputTokens) }} input tokens ·
         {{ formatCount(usage.totals.outputTokens) }} output tokens
       </p>
 
@@ -68,6 +69,9 @@ function formatCount(n: number): string {
               <th class="text-left px-2 py-2 font-medium">Model</th>
               <th class="text-right px-2 py-2 font-medium">Diagnoses</th>
               <th class="text-right px-2 py-2 font-medium">Failed</th>
+              <th class="text-right px-2 py-2 font-medium" title="Questions the assistant answered">
+                Assistant answers
+              </th>
               <th class="text-right px-2 py-2 font-medium">Input tokens</th>
               <th class="text-right px-2 py-2 font-medium">Output tokens</th>
               <th class="text-right px-2 py-2 font-medium">Avg duration</th>
@@ -89,6 +93,7 @@ function formatCount(n: number): string {
               <td class="text-right px-2 py-2" :class="row.failed > 0 ? 'text-red-600 dark:text-red-400' : ''">
                 {{ row.failed }}
               </td>
+              <td class="text-right px-2 py-2">{{ row.assistantTurns }}</td>
               <td class="text-right px-2 py-2" :title="exactCount(row.inputTokens)">
                 {{ formatCount(row.inputTokens) }}
               </td>

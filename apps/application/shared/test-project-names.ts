@@ -18,6 +18,7 @@ export const PROJECT = {
   ANALYTICS_TREND_DEPTH: 'analytics-trend-depth-test',
   API_CREATED: 'api-created-project',
   API_KEY_SUBMIT: 'api-key-submit-test',
+  ASSISTANT: 'assistant-test',
   AUTH_ROLE_CHECKS: 'auth-role-checks-test',
   AUTH_TEST: 'auth-test-project',
   BLOB_GZ: 'blob-gz-test-project',

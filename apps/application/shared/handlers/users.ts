@@ -9,6 +9,7 @@ import {
 } from '../../server/database/schema';
 import { eq, and, ne, sql } from 'drizzle-orm';
 
+import { deleteAssistantConversationsOf } from './assistant';
 import type { DrizzleDB } from './db';
 
 export async function listUsers(db: DrizzleDB) {
@@ -86,6 +87,8 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // Deleted explicitly rather than through the foreign keys' cascade, which the demo's database does not enforce.
   await db.delete(roleBindings).where(eq(roleBindings.userId, id));
   await db.delete(groupMembers).where(eq(groupMembers.userId, id));
+  // A user's assistant conversations are theirs alone, so they go with them.
+  await deleteAssistantConversationsOf(db, id);
   await db.delete(users).where(eq(users.id, id));
   return { success: true };
 }

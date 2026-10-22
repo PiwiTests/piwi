@@ -213,6 +213,11 @@ export default defineNuxtConfig({
       embeddingModel: process.env.PIWI_AI_EMBEDDING_MODEL || '',
       embeddingBaseUrl: process.env.PIWI_AI_EMBEDDING_BASE_URL || '',
       embeddingApiKey: process.env.PIWI_AI_EMBEDDING_API_KEY || '',
+      assistantModel: process.env.PIWI_AI_ASSISTANT_MODEL || '',
+      assistantProvider: process.env.PIWI_AI_ASSISTANT_PROVIDER || '',
+      assistantBaseUrl: process.env.PIWI_AI_ASSISTANT_BASE_URL || '',
+      assistantApiKey: process.env.PIWI_AI_ASSISTANT_API_KEY || '',
+      assistantTemperature: process.env.PIWI_AI_ASSISTANT_TEMPERATURE || '',
     },
     authSecret: (() => {
       if (process.env.PIWI_AUTH_ENABLED === 'true' && !process.env.PIWI_AUTH_SECRET) {

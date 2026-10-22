@@ -10,6 +10,7 @@ function forms(overrides: Partial<Record<keyof RoleForms, Partial<RoleForms['dia
     diagnosis: { ...blankRole(), ...overrides.diagnosis },
     research: { ...blankRole(), ...overrides.research },
     embedding: { ...blankRole(), ...overrides.embedding },
+    assistant: { ...blankRole(), ...overrides.assistant },
   };
 }
 
@@ -72,6 +73,22 @@ describe('ai-settings-form', () => {
         { envManaged: false, autoDiagnose: false },
       );
       expect(body.roles!.research).toEqual({ reuse: 'diagnosis', model: 'claude-haiku-4-5', temperature: undefined });
+    });
+
+    it('sends the assistant role only when its switch is on', () => {
+      const off = buildAiSaveBody(forms({ diagnosis: { provider: 'anthropic' } }), {
+        envManaged: false,
+        autoDiagnose: false,
+      });
+      expect(off.roles!.assistant).toBeNull();
+      const on = buildAiSaveBody(
+        forms({
+          diagnosis: { provider: 'anthropic' },
+          assistant: { enabled: true, reuse: 'diagnosis', model: 'claude-haiku-4-5' },
+        }),
+        { envManaged: false, autoDiagnose: false },
+      );
+      expect(on.roles!.assistant).toEqual({ reuse: 'diagnosis', model: 'claude-haiku-4-5', temperature: undefined });
     });
 
     it('carries an OpenAI role fully, and only sends apiKey when the field is non-empty', () => {

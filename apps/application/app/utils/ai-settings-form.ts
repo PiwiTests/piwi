@@ -1,7 +1,7 @@
 /**
  * Pure helpers for the Settings → AI provider form (`app/pages/settings/ai.vue`).
  *
- * The form edits three model roles (diagnosis, research, embedding). Turning
+ * The form edits four model roles (diagnosis, research, embedding, assistant). Turning
  * those role forms into the PUT body is fiddly enough — and was buggy enough —
  * to be worth isolating from the Vue component so it can be unit-tested.
  *
@@ -12,7 +12,7 @@
  * the server with "a diagnosis role with its own provider is required"). A role
  * counts as configured when:
  *   - diagnosis: a provider is selected — its presence *is* "AI is on"; or
- *   - an optional role (research / embedding): its enable switch is on.
+ *   - an optional role (research / embedding / assistant): its enable switch is on.
  *
  * Saving with no diagnosis provider means "turn AI off" → `{ roles: null }`.
  */
@@ -92,6 +92,7 @@ export function buildAiSaveBody(
       diagnosis: roleSaveBody(roles, 'diagnosis'),
       research: roleSaveBody(roles, 'research'),
       embedding: roleSaveBody(roles, 'embedding'),
+      assistant: roleSaveBody(roles, 'assistant'),
     },
     autoDiagnose: opts.autoDiagnose,
   };

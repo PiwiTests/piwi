@@ -266,6 +266,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'ai.diagnosis', label: 'Diagnosis model', help: 'settings.ai-provider' },
       { id: 'ai.research', label: 'Research model', help: 'settings.ai-research' },
       { id: 'ai.embedding', label: 'Embedding model', help: 'settings.embedding-model' },
+      { id: 'ai.assistant', label: 'Assistant model', help: 'settings.ai-assistant' },
       { id: 'ai.auto-diagnose', label: 'Auto-diagnose', help: 'settings.auto-diagnose' },
       { id: 'ai.notifications', label: 'Diagnosis notifications', help: 'settings.ai-notifications' },
       { id: 'ai.context-limits', label: 'Diagnosis context limits', help: 'settings.ai-limits' },

@@ -45,7 +45,7 @@ function makeRole(
   return isValidRole(role, kind) ? role : null;
 }
 
-const ROLE_ORDER: AiModelRole[] = ['diagnosis', 'research', 'embedding'];
+const ROLE_ORDER: AiModelRole[] = ['diagnosis', 'research', 'embedding', 'assistant'];
 
 /**
  * Resolve a role map, following `reuse` links. `readKey` turns each role's
@@ -55,7 +55,12 @@ function resolveRoles(
   roles: Partial<Record<AiModelRole, RawStoredRole>>,
   readKey: (key?: string) => string = (enc) => (enc ? decryptSecret(enc, getEncryptionKey()) : ''),
 ): AiConfig['roles'] {
-  const out: Record<AiModelRole, ResolvedAiRole | null> = { diagnosis: null, research: null, embedding: null };
+  const out: Record<AiModelRole, ResolvedAiRole | null> = {
+    diagnosis: null,
+    research: null,
+    embedding: null,
+    assistant: null,
+  };
 
   for (const role of ROLE_ORDER) {
     const kind: RoleKind = role === 'embedding' ? 'embedding' : 'chat';
@@ -69,20 +74,19 @@ function resolveRoles(
     }
   }
 
-  return { diagnosis: out.diagnosis!, research: out.research, embedding: out.embedding };
+  return { diagnosis: out.diagnosis!, research: out.research, embedding: out.embedding, assistant: out.assistant };
 }
 
 /**
- * Assemble the full AiConfig from a resolved diagnosis role plus optional
- * research/embedding roles. Returns null when the diagnosis role is unusable.
+ * Assemble the full AiConfig from the resolved roles. Returns null when the
+ * diagnosis role is unusable.
  */
 function assembleConfig(
-  diagnosis: ResolvedAiRole | null,
-  research: ResolvedAiRole | null,
-  embedding: ResolvedAiRole | null,
+  roles: Record<AiModelRole, ResolvedAiRole | null>,
   autoDiagnose: boolean,
   source: 'env' | 'settings',
 ): AiConfig | null {
+  const { diagnosis, research, embedding, assistant } = roles;
   if (!diagnosis) return null;
   return {
     provider: diagnosis.provider,
@@ -92,7 +96,7 @@ function assembleConfig(
     temperature: diagnosis.temperature,
     autoDiagnose,
     source,
-    roles: { diagnosis, research, embedding },
+    roles: { diagnosis, research, embedding, assistant },
   };
 }
 
@@ -111,18 +115,11 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
   if (envAi?.provider) {
     // Environment keys are plain text; stored ones are decrypted.
     const roles = resolveRoles(overlayStoredRoles(rolesFromLegacy(envAi), stored), (key) => key ?? '');
-    return assembleConfig(
-      roles.diagnosis,
-      roles.research,
-      roles.embedding,
-      String(envAi.autoDiagnose) === 'true',
-      'env',
-    );
+    return assembleConfig(roles, String(envAi.autoDiagnose) === 'true', 'env');
   }
 
   if (!stored) return null;
-  const roles = resolveRoles(storedRoles(stored));
-  return assembleConfig(roles.diagnosis, roles.research, roles.embedding, Boolean(stored.autoDiagnose), 'settings');
+  return assembleConfig(resolveRoles(storedRoles(stored)), Boolean(stored.autoDiagnose), 'settings');
 }
 
 const endpointOf = (baseUrl: string | null | undefined) => (baseUrl ?? '').trim().replace(/\/+$/, '').toLowerCase();
@@ -144,6 +141,11 @@ export function storedKeyFor(
 /** Resolved config for a given role, or null when that role is unconfigured. */
 export function resolveAiRole(config: AiConfig, role: AiModelRole): ResolvedAiRole | null {
   return config.roles[role];
+}
+
+/** The model the assistant answers with: its own role when set, else the diagnosis role's provider, key and model. */
+export function assistantRole(config: AiConfig): ResolvedAiRole {
+  return config.roles.assistant ?? config.roles.diagnosis;
 }
 
 export interface AiAttachedImage {
@@ -269,7 +271,7 @@ export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions
 /** The Anthropic SDK, loaded by the first Anthropic call. */
 let anthropicSdk: typeof import('@anthropic-ai/sdk') | null = null;
 
-async function anthropicClient(config: ResolvedAiRole): Promise<Anthropic> {
+export async function anthropicClient(config: ResolvedAiRole): Promise<Anthropic> {
   anthropicSdk ??= await import('@anthropic-ai/sdk');
   return new anthropicSdk.default({
     apiKey: config.apiKey,
@@ -443,7 +445,7 @@ function rejectsMaxTokens(status: number, body: string, attempt: OpenAiAttempt):
  * only know the older mode. Returns the last response, plus its body whenever
  * that response failed (an ok response is left unread for the caller).
  */
-async function postOpenAiWithFallbacks(
+export async function postOpenAiWithFallbacks(
   send: (attempt: OpenAiAttempt) => Promise<Response>,
   opts: AiCallOptions,
   model: string,

@@ -88,6 +88,9 @@ export const {
   analyticsDashboards,
   reportSchedules,
   reportSnapshots,
+  assistantConversations,
+  assistantMessages,
+  assistantUsage,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)

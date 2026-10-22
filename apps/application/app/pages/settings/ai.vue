@@ -21,6 +21,7 @@ const roles = reactive<Record<RoleKey, RoleForm>>({
   diagnosis: blankRole(),
   research: blankRole(),
   embedding: blankRole(),
+  assistant: blankRole(),
 });
 
 const autoDiagnose = ref(false);
@@ -47,17 +48,20 @@ const testingRoles = reactive<Record<RoleKey, boolean>>({
   diagnosis: false,
   research: false,
   embedding: false,
+  assistant: false,
 });
 
 const modelsRecord = reactive<Record<RoleKey, ModelInfo[]>>({
   diagnosis: [],
   research: [],
   embedding: [],
+  assistant: [],
 });
 const loadingModels = reactive<Record<RoleKey, boolean>>({
   diagnosis: false,
   research: false,
   embedding: false,
+  assistant: false,
 });
 
 function resolvedProvider(role: RoleKey): string {
@@ -124,6 +128,19 @@ const ROLE_META = [
     reuseTargets: ['diagnosis', 'research'],
     modelPlaceholderAnthropic: '— Anthropic has no embeddings API —',
     modelPlaceholderOpenai: 'e.g. text-embedding-3-small',
+  },
+  {
+    key: 'assistant',
+    title: 'Assistant model',
+    icon: 'i-lucide-message-circle-question-mark',
+    help: 'settings.ai-assistant',
+    optional: true,
+    enableLabel: 'Separate assistant model',
+    blurb:
+      'The model the in-app assistant answers questions with. Off, the assistant uses the diagnosis model; a faster, cheaper model suits conversation.',
+    reuseTargets: ['diagnosis', 'research'],
+    modelPlaceholderAnthropic: 'e.g. claude-haiku-4-5',
+    modelPlaceholderOpenai: 'e.g. gpt-4o-mini, qwen2.5',
   },
 ] as const;
 

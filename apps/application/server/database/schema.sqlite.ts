@@ -2743,3 +2743,80 @@ export const runDeliveries = sqliteTable(
     runIdx: index('idx_run_deliveries_run_id').on(t.runId),
   }),
 );
+
+// In-app assistant conversations. A conversation belongs to the user who
+// started it and is returned to nobody else, administrators included; with
+// authentication off every visitor is the same virtual administrator and
+// `owner_id` is null. Pruned PIWI_ASSISTANT_RETENTION_DAYS after its last message.
+export const assistantConversations = sqliteTable(
+  'assistant_conversations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'cascade' }), // null when authentication is off
+    title: text('title').notNull().default(''), // the first question, cut to one line
+    extraTools: text('extra_tools', { mode: 'json' }), // tool names find_tools added for the rest of the conversation
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }) // the last message; the retention horizon
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    ownerIdx: index('idx_assistant_conversations_owner').on(t.ownerId, t.updatedAt),
+    updatedIdx: index('idx_assistant_conversations_updated').on(t.updatedAt),
+  }),
+);
+
+// One question or one answer of a conversation: its blocks (`{ blocks }`, what
+// the panel redraws), the page it was asked on, the tools the answer called with
+// their arguments, and the model and tokens of the answer.
+export const assistantMessages = sqliteTable(
+  'assistant_messages',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    conversationId: integer('conversation_id')
+      .notNull()
+      .references(() => assistantConversations.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(), // 'user' | 'assistant'
+    content: text('content', { mode: 'json' }).notNull(), // { blocks: AssistantBlock[] }
+    context: text('context', { mode: 'json' }), // AssistantPageContext of a question
+    toolCalls: text('tool_calls', { mode: 'json' }), // AssistantToolCall[] of an answer
+    provider: text('provider'),
+    model: text('model'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    status: text('status').notNull().default('completed'), // 'completed' | 'failed'
+    error: text('error'),
+    durationMs: integer('duration_ms'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    conversationIdx: index('idx_assistant_messages_conversation').on(t.conversationId, t.id),
+  }),
+);
+
+// One row per assistant answer, for the daily token caps and the AI usage
+// summary. It holds no content and outlives a deleted conversation, so deleting
+// one never gives its tokens back; pruned on the conversations' horizon.
+export const assistantUsage = sqliteTable(
+  'assistant_usage',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }), // null when authentication is off
+    provider: text('provider'),
+    model: text('model'),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    status: text('status').notNull(), // 'completed' | 'failed'
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    createdIdx: index('idx_assistant_usage_created').on(t.createdAt),
+    ownerIdx: index('idx_assistant_usage_owner').on(t.ownerId, t.createdAt),
+  }),
+);

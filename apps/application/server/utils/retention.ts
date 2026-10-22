@@ -5,6 +5,9 @@ import { getDialect } from '../database';
 import type { DbClient } from '../database';
 import {
   analyticsDashboards,
+  assistantConversations,
+  assistantMessages,
+  assistantUsage,
   casePayloads,
   coverageExecutable,
   coverageFragments,
@@ -472,6 +475,33 @@ export async function pruneReportSnapshots(db: DbClient, olderThanDays: number):
       );
     await db.delete(reportSnapshots).where(old);
   }
+  return pruned;
+}
+
+/** Days an assistant conversation is kept after its last message when `PIWI_ASSISTANT_RETENTION_DAYS` is unset. */
+export const DEFAULT_ASSISTANT_RETENTION_DAYS = 90;
+
+/**
+ * Delete the assistant conversations whose last message is older than the
+ * cutoff, with their messages, and the usage rows older than it. Returns the
+ * number of conversations deleted.
+ */
+export async function pruneAssistantConversations(db: DbClient, olderThanDays: number): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanDays * MS_PER_DAY);
+  const old = lt(assistantConversations.updatedAt, cutoff);
+  const pruned = await countWhere(db, assistantConversations, old);
+  if (pruned > 0) {
+    await db
+      .delete(assistantMessages)
+      .where(
+        inArray(
+          assistantMessages.conversationId,
+          db.select({ id: assistantConversations.id }).from(assistantConversations).where(old),
+        ),
+      );
+    await db.delete(assistantConversations).where(old);
+  }
+  await db.delete(assistantUsage).where(lt(assistantUsage.createdAt, cutoff));
   return pruned;
 }
 

@@ -409,6 +409,14 @@ import {
   apiGetAiUsage,
   apiListAiModels,
 } from './ai';
+import {
+  apiAskAssistant,
+  apiAssistantStatus,
+  apiCreateAssistantConversation,
+  apiDeleteAssistantConversation,
+  apiGetAssistantConversation,
+  apiListAssistantConversations,
+} from './assistant';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { demoHttpError } from './http-error';
 import {
@@ -1741,6 +1749,37 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/settings\/ai\/usage$/,
     permission: 'settings:manage',
     handler: (_, __, q) => apiGetAiUsage(q?.get('days') ?? null),
+  },
+  // Assistant — the status and the acting user's own conversations
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/status$/,
+    handler: () => apiAssistantStatus(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/conversations$/,
+    handler: async (_m, _b, _q, ctx) => apiListAssistantConversations(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/assistant\/conversations$/,
+    handler: async (_m, body, _q, ctx) => apiCreateAssistantConversation(body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)$/,
+    handler: async (m, _b, _q, ctx) => apiGetAssistantConversation(+m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)$/,
+    handler: async (m, _b, _q, ctx) => apiDeleteAssistantConversation(+m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/messages$/,
+    handler: async (m, body, _q, ctx) => apiAskAssistant(+m[1]!, body, ctx?.actingUserId ?? null),
   },
   {
     method: 'GET',

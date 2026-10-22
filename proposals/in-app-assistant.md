@@ -9,12 +9,18 @@ and the docs do not.
 **Status.** Proposed 2026-10-22. **PR 1 built 2026-10-22**: the guide engine (`useGuide`), extracted from the demo
 tour, which runs on it unchanged; the anchor registry in `shared/guide-anchors/` with the tour's 26 anchors; and its
 three checks, against the source, the seed and the built demo. As built, an anchor lists every page it renders on
-(several components render on more than one), and a sample names its demo persona by id. Every question is decided
-([Decisions](#decisions), D1–D8): guides point only at a closed registry of anchors, every anchor tested; finding
-elements from the page's ARIA snapshot is deferred to [a later step](#later-finding-elements-from-the-pages-aria-snapshot),
-which keeps the measurements behind that choice; a dedicated AI role; proposal cards in PR 6; an authored demo; private
-conversations; nudge dismissals kept per user on the server. Answers are made of typed blocks (section 5): formatted
-text, code, options to choose from, questions with checkboxes, checklists. PR 2 and PR 3 need no model.
+(several components render on more than one), and a sample names its demo persona by id. **PR 4 built 2026-10-22**,
+the server side with no panel yet: the `assistant` role; the loop with tool calling (native for Anthropic and
+OpenAI-compatible servers; a JSON action mode, one tool call or the answer per reply, for a server that refuses tools
+and for the Claude Code CLI until PR 7); the read tools routed per page with `find_tools` and `get_instance_config`;
+private conversations, and an `assistant_usage` ledger the daily caps count from, so deleting a conversation does not
+reset them; the `assistant` capability; its routes (1.0 register D58); and a fixed demo reply. Every question is
+decided ([Decisions](#decisions), D1–D8): guides point only at a closed registry of anchors, every anchor tested;
+finding elements from the page's ARIA snapshot is deferred to
+[a later step](#later-finding-elements-from-the-pages-aria-snapshot), which keeps the measurements behind that choice;
+a dedicated AI role; proposal cards in PR 6; an authored demo; private conversations; nudge dismissals kept per user on
+the server. Answers are made of typed blocks (section 5): formatted text, code, options to choose from, questions with
+checkboxes, checklists.
 
 ## Why
 
