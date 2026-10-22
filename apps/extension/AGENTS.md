@@ -398,10 +398,16 @@ recorder takes:
   counted with the engine's indexes, built once for a whole scan, on a page of any size; without one (a single pick,
   the recorder), the probe counts them, walking the page. **`checkLocators`** runs every candidate through an engine
   over the page (`createPageEngine`, blind to the extension's own elements): verified first, a candidate finding the
-  element among others narrowed (exact, then `.filter({ hasText })`, then a landmark, dialog, row or test-id scope, the
-  test id read from the engine's `testIdAttributes`) at one point under it, one finding only others dropped,
-  `.first()`/`.nth()` last. `keepAmbiguous` also returns the others with the engine's count, which is what the
-  Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, the Tested
+  element among others narrowed at one point under it, one finding only others dropped, `.first()`/`.nth()` last. The
+  narrowing ladder (`narrow()`), each rung checked unique by the engine and named in `CheckedLocator.narrowedBy`:
+  exact (`exact`); `.filter({ hasText })` with the element's text (`text`); an ancestor whose test id is unique
+  (`scope`, the test id read from the engine's `testIdAttributes`); the nearest **repeated container** whose siblings
+  hold the other matches (`container`: `repeatedContainers` in `repeated-container.ts`, an ancestor sharing a test id,
+  or a tag with a role or a readable class, with its siblings), filtered by a short text it shows and they do not, or
+  by its own `aria-label`/`aria-labelledby` name; a landmark, named dialog or row scope (`scope`). A unique test id
+  goes before the container because it is the author's own hook; a row named from its whole content goes after it,
+  being longer and changing with every cell. `keepAmbiguous` also returns the others with the engine's count, which
+  is what the Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, the Tested
   elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
   call so the engine's caches serve the whole scan.
 - **Hover** (`createHoverLocator`, behind the picker overlay's `__piwiDescribeElement`) must stay
@@ -415,7 +421,8 @@ recorder takes:
 substring of another, a link in the nav and in main, buttons sharing an `aria-label`, a column header, a search field
 with suggestions, a banner) and has real Playwright click the top locator the results panel offers. A new naming or
 narrowing case goes there; one the picker cannot click (it snaps to an ancestor carrying a `role`, so a grid's cell
-is its grid) goes into `locator-engine.spec.ts`'s ranking tests (`__piwiRankTop`).
+is its grid) goes into `locator-engine.spec.ts`'s ranking tests (`__piwiRankTop`), and a repeated-container case into
+`CONTAINER_NARROWING` (`locator-cases.ts`, on `pages/locator-containers.html`).
 
 **`locator-engine.spec.ts` is a differential test against real Playwright**: every expression in
 `locator-cases.ts` is resolved by the engine bundle (`engine-entry.ts`) and by a real

@@ -17,6 +17,7 @@ import {
 } from '@piwitests/core/locator-chain';
 import { DomModel, normalizeWhiteSpace, parentElementOrShadowHost } from './engine-aria.js';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
+import { repeatedContainers, type RepeatedContainer } from './repeated-container.js';
 
 /**
  * How every tool names and ranks an element, checked against the page as it
@@ -34,11 +35,13 @@ import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
  * substring (`{ name: 'Failed' }` also finds "3 failed") or a link repeated in
  * the sidebar and in the page shows once each candidate is run through the
  * engine. One that finds this element alone is verified. One that finds several, this one among them, is narrowed: first to
- * an exact match, then to the one showing this element's text, then inside the
- * nearest landmark, dialog, row, list item or test id that tells it apart. One
- * that finds only others is dropped. When nothing is verified, the best
- * candidate is kept with `.first()` or `.nth()`, which the stability judge
- * flags.
+ * an exact match, then to the one showing this element's text, then inside an
+ * ancestor whose test id is unique on the page, then inside the repeated row,
+ * list item or card it sits in, picked by a short text of that container
+ * (`getByRole('row').filter({ hasText: 'Alice' })`), then inside the nearest
+ * landmark, dialog, row, list item or test id that tells it apart. One that
+ * finds only others is dropped. When nothing is verified, the best candidate is
+ * kept with `.first()` or `.nth()`, which the stability judge flags.
  */
 
 /** Everything that can carry a role, for the probe's role and anchor lookups. */
@@ -227,12 +230,24 @@ export function rankElement(el: Element, options: RankOptions = {}): RankedEleme
  */
 export type LocatorVerdict = 'unique' | 'narrowed' | 'position' | 'ambiguous' | 'unchecked';
 
+/**
+ * How a narrowed locator tells the element apart from the others its candidate finds:
+ * - `exact`: the candidate's name or text matched exactly;
+ * - `text`: `.filter({ hasText })` with the element's own text;
+ * - `container`: inside the repeated row, list item or card it sits in, picked by a text of that container
+ *   (`getByRole('row').filter({ hasText: 'Alice' })`) or by the container's own accessible name;
+ * - `scope`: inside an ancestor found alone (a test id, a landmark, a named dialog or row).
+ */
+export type NarrowingKind = 'exact' | 'text' | 'container' | 'scope';
+
 export interface CheckedLocator extends RankedLocator {
   verdict: LocatorVerdict;
   /** The elements it finds, by the engine; null when unchecked. */
   count: number | null;
   /** For a narrowed or positional locator: the candidate it was built from, and how many elements that one finds. */
   from?: { locator: string; count: number };
+  /** For a narrowed locator: how it was narrowed. */
+  narrowedBy?: NarrowingKind;
 }
 
 export interface CheckOptions {
@@ -306,6 +321,21 @@ function textFilterVariant(chain: LocatorChain, text: string): LocatorChain | nu
   return { calls: [...chain.calls, filter] };
 }
 
+/** `getByRole(role, { name, exact: true })`. */
+const byNamedRole = (role: string, name: string): LocatorCall => ({
+  method: 'getByRole',
+  args: [
+    str(role),
+    {
+      type: 'object',
+      entries: [
+        ['name', str(name)],
+        ['exact', { type: 'boolean', value: true }],
+      ],
+    },
+  ],
+});
+
 /** The call that locates `ancestor` on its own, when it has something that names it. */
 function scopeCall(engine: LocatorEngine, ancestor: Element): LocatorCall | null {
   for (const attribute of engine.testIdAttributes) {
@@ -315,21 +345,7 @@ function scopeCall(engine: LocatorEngine, ancestor: Element): LocatorCall | null
   const role = engine.model.role(ancestor);
   if (!role) return null;
   const name = engine.model.normalizedAccessibleName(ancestor, false);
-  if (name && (NAMED_SCOPE_ROLES.has(role) || LANDMARK_ROLES.has(role))) {
-    return {
-      method: 'getByRole',
-      args: [
-        str(role),
-        {
-          type: 'object',
-          entries: [
-            ['name', str(name)],
-            ['exact', { type: 'boolean', value: true }],
-          ],
-        },
-      ],
-    };
-  }
+  if (name && (NAMED_SCOPE_ROLES.has(role) || LANDMARK_ROLES.has(role))) return byNamedRole(role, name);
   if (LANDMARK_ROLES.has(role)) return { method: 'getByRole', args: [str(role)] };
   return null;
 }
@@ -358,26 +374,77 @@ export function checkLocators(
     return found?.length === 1 && found[0] === el;
   };
 
-  /** A chain that finds `el` alone, built from one that finds it among others. */
   const text = normalizeWhiteSpace(engine.model.text(el).normalized);
-  const narrow = (chain: LocatorChain): LocatorChain | null => {
-    const exact = exactVariant(chain);
-    if (exact && isUnique(exact)) return exact;
-    // Controls that share a name ("Show popup") often still say different things.
-    const byText = textFilterVariant(chain, text);
-    if (byText && isUnique(byText)) return byText;
-    if (chain.calls[0]?.method === 'frameLocator') return null;
-    const inner = exact && find(exact)?.includes(el) ? exact : chain;
+  let containers: RepeatedContainer[] | undefined;
+
+  /** `inner` inside an ancestor that a call finds alone; with `testIdOnly`, an ancestor's unique test id only. */
+  const ancestorScope = (inner: LocatorChain, testIdOnly: boolean): LocatorChain | null => {
     let ancestor = parentElementOrShadowHost(el);
     for (let depth = 0; ancestor && depth < MAX_SCOPE_DEPTH; depth++, ancestor = parentElementOrShadowHost(ancestor)) {
       const scope = scopeCall(engine, ancestor);
-      if (!scope) continue;
+      if (!scope || (testIdOnly && scope.method !== 'getByTestId')) continue;
       const scopeFound = find({ calls: [scope] });
       if (scopeFound?.length !== 1 || scopeFound[0] !== ancestor) continue;
       const scoped: LocatorChain = { calls: [scope, ...inner.calls] };
       if (isUnique(scoped)) return scoped;
     }
     return null;
+  };
+
+  /**
+   * `chain` (else `exact`) inside the nearest repeated container whose siblings hold the other elements `chain`
+   * finds, the container picked by its own accessible name when its author gave it one, else by a short text it
+   * shows and its siblings do not.
+   */
+  const containerScope = (chain: LocatorChain, exact: LocatorChain | null, found: Element[]): LocatorChain | null => {
+    containers ??= repeatedContainers(el, {
+      roleOf: (node) => engine.model.role(node),
+      testIdAttributes: engine.testIdAttributes,
+      textOf: (node) => engine.model.text(node).normalized,
+    });
+    const others = found.filter((other) => other !== el);
+    const inners = exact && exact !== chain ? [chain, exact] : [chain];
+    for (const container of containers) {
+      const repeats = container.siblings.some(
+        (sibling) => sibling !== container.element && others.some((other) => sibling.contains(other)),
+      );
+      if (!repeats) continue;
+      const scopes: LocatorChain[] = [];
+      const { element, role } = container;
+      const ownName = element.hasAttribute('aria-label') || element.hasAttribute('aria-labelledby');
+      const name = role && ownName ? engine.model.normalizedAccessibleName(element, false) : '';
+      if (role && name) scopes.push({ calls: [byNamedRole(role, name)] });
+      const base = tryParseLocatorChain(container.base);
+      for (const hasText of base ? container.textsAmong(container.siblings) : []) {
+        const filtered = textFilterVariant(base!, hasText);
+        if (filtered) scopes.push(filtered);
+      }
+      for (const scope of scopes) {
+        for (const inner of inners) {
+          const scoped: LocatorChain = { calls: [...scope.calls, ...inner.calls] };
+          if (isUnique(scoped)) return scoped;
+        }
+      }
+    }
+    return null;
+  };
+
+  /** A chain that finds `el` alone, built from one that finds it among others, and how it was narrowed. */
+  const narrow = (chain: LocatorChain, found: Element[]): { chain: LocatorChain; kind: NarrowingKind } | null => {
+    const exact = exactVariant(chain);
+    if (exact && isUnique(exact)) return { chain: exact, kind: 'exact' };
+    // Controls that share a name ("Show popup") often still say different things.
+    const byText = textFilterVariant(chain, text);
+    if (byText && isUnique(byText)) return { chain: byText, kind: 'text' };
+    if (chain.calls[0]?.method === 'frameLocator') return null;
+    const inner = exact && find(exact)?.includes(el) ? exact : chain;
+    // A test id unique on the page is the author's own hook, steadier than any text.
+    const byTestId = ancestorScope(inner, true);
+    if (byTestId) return { chain: byTestId, kind: 'scope' };
+    const byContainer = containerScope(chain, inner, found);
+    if (byContainer) return { chain: byContainer, kind: 'container' };
+    const scoped = ancestorScope(inner, false);
+    return scoped ? { chain: scoped, kind: 'scope' } : null;
   };
 
   const verified: CheckedLocator[] = [];
@@ -409,15 +476,16 @@ export function checkLocators(
       continue;
     }
     if (keepAmbiguous) keep(others, { ...alt, locator, verdict: 'ambiguous', count: found.length });
-    const narrowed = narrow(chain);
+    const narrowed = narrow(chain, found);
     if (narrowed) {
       keep(verified, {
         ...alt,
-        locator: renderLocatorChain(narrowed),
+        locator: renderLocatorChain(narrowed.chain),
         score: alt.score - 1,
         verdict: 'narrowed',
         count: 1,
         from: { locator, count: found.length },
+        narrowedBy: narrowed.kind,
       });
     } else fallback ??= { chain, alt, index: found.indexOf(el), count: found.length };
   }

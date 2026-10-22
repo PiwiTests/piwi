@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Repeated containers</title>
+  </head>
+  <body>
+    <h1>Repeated containers</h1>
+
+    <table id="users">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Alice</td>
+          <td>alice@example.com</td>
+          <td>Admin</td>
+          <td><button type="button">Delete</button></td>
+        </tr>
+        <tr>
+          <td>Bob</td>
+          <td>bob@example.com</td>
+          <td>Editor</td>
+          <td><button type="button">Delete</button></td>
+        </tr>
+        <tr>
+          <td>Carol</td>
+          <td>carol@example.com</td>
+          <td>Editor</td>
+          <td><button type="button" id="delete-carol">Delete</button></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <section class="grid" aria-label="Products">
+      <article class="card" data-testid="product-card">
+        <h3>Blue mug</h3>
+        <p class="price">12 €</p>
+        <button type="button">Add to cart</button>
+        <button type="button" aria-label="Add Blue mug to wishlist">♡</button>
+      </article>
+      <article class="card" data-testid="product-card">
+        <h3>Red mug</h3>
+        <p class="price">14 €</p>
+        <button type="button" id="add-red-mug">Add to cart</button>
+        <button type="button" aria-label="Add Red mug to wishlist">♡</button>
+      </article>
+      <article class="card" data-testid="product-card">
+        <h3>Travel mug</h3>
+        <p class="price">22 €</p>
+        <button type="button">Add to cart</button>
+        <button type="button" aria-label="Add Travel mug to wishlist">♡</button>
+      </article>
+    </section>
+
+    <div class="shelf">
+      <div class="lamp-tile"><span>Desk lamp</span> <button type="button">Reserve</button></div>
+      <div class="lamp-tile"><span>Floor lamp</span> <button type="button" id="reserve-floor">Reserve</button></div>
+    </div>
+
+    <table id="orders">
+      <tbody>
+        <tr aria-label="Order 1001">
+          <td>1001</td>
+          <td>12 €</td>
+          <td><button type="button">Refund</button></td>
+        </tr>
+        <tr aria-label="Order 1002">
+          <td>1002</td>
+          <td>14 €</td>
+          <td><button type="button" id="refund-1002">Refund</button></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <ul id="drafts">
+      <li>Untitled draft <button type="button">Open</button></li>
+      <li>Untitled draft <button type="button" id="open-second-draft">Open</button></li>
+    </ul>
+
+    <div class="profile"><button type="button">Edit</button></div>
+    <div class="notes"><span>Notes</span> <button type="button" id="edit-notes">Edit</button></div>
+  </body>
+</html>

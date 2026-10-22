@@ -1,7 +1,7 @@
 import { test, expect, selectors, type Page } from '@playwright/test';
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { engineBundle, servePages, tagElements } from './engine-bundle.js';
-import { EDGE_CASES, LOCATOR_CASES, SCOPING_CASES } from './locator-cases.js';
+import { CONTAINER_CASES, CONTAINER_NARROWING, EDGE_CASES, LOCATOR_CASES, SCOPING_CASES } from './locator-cases.js';
 import { playwrightLocator } from './playwright-locator.js';
 
 /**
@@ -148,6 +148,54 @@ test.describe('locator engine matches Playwright', () => {
     });
   }
 
+  for (const [group, expressions] of Object.entries(CONTAINER_CASES)) {
+    test(`containers: ${group}`, async ({ page }) => {
+      await openFixture(page, 'locator-containers.html');
+      const { mismatches, matchedSomething } = await compare(page, expressions);
+      expect(mismatches, mismatches.join('\n')).toEqual([]);
+      expect(matchedSomething).toBeGreaterThan(expressions.length / 3);
+    });
+  }
+
+  test('a candidate is narrowed inside the repeated container it sits in, by a text of that container', async ({
+    page,
+  }) => {
+    await openFixture(page, 'locator-containers.html');
+    for (const { name, target, candidate, ...expected } of CONTAINER_NARROWING) {
+      const checked = await page.evaluate(
+        ([selector, locator]) =>
+          (
+            globalThis as unknown as {
+              __piwiCheckLocators: (s: string, l: string[]) => Array<{ locator: string; verdict: string }>;
+            }
+          ).__piwiCheckLocators(selector, [locator]),
+        [target, candidate] as const,
+      );
+      expect(checked, name).toEqual([expected]);
+      expect(await playwrightOutcome(page, expected.locator), name).toEqual({
+        ids: [await page.locator(target).getAttribute('data-eid')],
+      });
+    }
+  });
+
+  test('the top locator of a button in a card is scoped to the card, not taken by position', async ({ page }) => {
+    await openFixture(page, 'locator-containers.html');
+    for (const withEngine of [true, false]) {
+      const ranked = await page.evaluate(
+        (w) =>
+          (
+            globalThis as unknown as {
+              __piwiRankTop: (s: string, w: boolean) => { role: string | null; locator: string | null };
+            }
+          ).__piwiRankTop('#add-red-mug', w),
+        withEngine,
+      );
+      expect(ranked.locator, `counted by ${withEngine ? 'an engine' : 'the probe'}`).toBe(
+        "getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button', { name: 'Add to cart' })",
+      );
+    }
+  });
+
   test('a strict engine refuses several frame owners, as an action does', async ({ page }) => {
     await openFixture(page, 'locator-scoping.html');
     const expressions = [
@@ -230,7 +278,7 @@ test.describe('locator engine matches Playwright', () => {
         }
       ).__piwiRankTop('li:nth-child(43) button', true),
     );
-    const top = "getByRole('listitem').filter({ hasText: 'Product 42 mug' }).getByRole('button')";
+    const top = "getByRole('listitem').filter({ hasText: 'Product 42 mug' }).getByRole('button', { name: 'Remove' })";
     expect(ranked).toEqual({ role: 'button', locator: top });
     await tagElements(page);
     expect(await playwrightOutcome(page, top)).toEqual({
@@ -258,7 +306,7 @@ test.describe('locator engine matches Playwright', () => {
       ["getByRole('button', { name: 'Delete' })"],
     );
     const narrowed = "getByTestId('order-1002').getByRole('button', { name: 'Delete', exact: true })";
-    expect(checked).toEqual([{ locator: narrowed, verdict: 'narrowed' }]);
+    expect(checked).toEqual([{ locator: narrowed, verdict: 'narrowed', narrowedBy: 'scope' }]);
     selectors.setTestIdAttribute('data-qa');
     try {
       expect(await playwrightOutcome(page, narrowed)).toEqual({

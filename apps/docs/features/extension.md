@@ -72,8 +72,16 @@ as Playwright's locators do.
 
 Every candidate uses the names Playwright computes (a tab with a count badge is `{ name: 'Regressions 5' }`), is
 scored as the dashboard scores locators, and run against the page. Those that find only the picked element come
-first; one that also finds others is offered narrowed (exact, filtered by its text, or scoped to
-its landmark, dialog or row) and, failing that, with `.first()` or `.nth()` and a warning.
+first. One that also finds others is narrowed, trying in order:
+
+- the exact name or text, then the element's own text as a filter;
+- a parent whose test id is unique on the page;
+- the repeated row, list item or card the element sits in, picked by a short text it shows and its siblings do not
+  (a cell, a heading), or by its own `aria-label`:
+  `getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })`;
+- its landmark, a named dialog or a named row.
+
+Only when none of these finds it alone is it offered with `.first()` or `.nth()`, and a warning.
 
 Copy the result as the bare locator, an action line or an assertion; **Copy all** copies every ranked locator for a
 project's [Locators page](./locator-usage#the-locators-page). The action is the one the element calls for: `fill` with

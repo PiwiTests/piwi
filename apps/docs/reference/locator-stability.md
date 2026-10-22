@@ -47,6 +47,12 @@ stable and that find only that element on the page, and picks one the way
 id, CSS), when that is stable enough; otherwise the most stable one. When no stable locator finds only that element,
 the overlay says to give it a test id.
 
+A candidate that finds the element among others is narrowed before the choice, as the extension narrows it: made
+exact, filtered by the element's text, or scoped to a parent. An element of a list, a grid or a table is scoped to its
+row or card, filtered by a text that row or card shows and the others do not:
+`getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })` rather than
+`getByRole('button', { name: 'Add to cart' }).nth(1)`.
+
 A replacement is checked against the page as it is now. A test that uses the locator in another state of the page
 may need a different one.
 

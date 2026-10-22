@@ -174,12 +174,13 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
   });
 
   test('puts the test id on the repeated container, named after the text that tells it apart', async ({ context }) => {
+    // Generated class names give the ranking no container to scope by, so the buttons stay ambiguous.
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>
       <div class="grid">
-        <div class="card"><img alt=""><span class="price">12 €</span><span>Blue mug</span><button>Add to cart</button></div>
-        <div class="card"><img alt=""><span class="price">12 €</span><span>Red mug</span><button>Add to cart</button></div>
-        <div class="card"><img alt=""><span class="price">14 €</span><span>Green mug</span><button>Add to cart</button></div>
+        <div class="css-1q8k3fz"><img alt=""><span class="price">12 €</span><span>Blue mug</span><button>Add to cart</button></div>
+        <div class="css-1q8k3fz"><img alt=""><span class="price">12 €</span><span>Red mug</span><button>Add to cart</button></div>
+        <div class="css-1q8k3fz"><img alt=""><span class="price">14 €</span><span>Green mug</span><button>Add to cart</button></div>
       </div>
     </body></html>`);
     const findings = await scan(page);

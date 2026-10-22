@@ -916,8 +916,12 @@ test.describe('coverage overlay: locators at risk', () => {
       count: 1,
       tests: ['adds the red mug'],
       callSites: ['tests/legacy.spec.ts:12:5'],
-      // Every stable locator for it also finds the other cards' buttons.
-      replacement: 'add-test-id',
+      // Its name finds every card's button: the card showing "Red mug" sets it apart.
+      replacement: {
+        recommended:
+          "getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button', { name: 'Add to cart' })",
+        durable: null,
+      },
     });
     // The card holding "Blue mug" sets it apart from the other prices, and its role, paragraph, from the card's other texts.
     expect(price).toMatchObject({
@@ -953,9 +957,10 @@ test.describe('coverage overlay: locators at risk', () => {
         [string, string[], number]
       >,
     }));
+    // Cards that no text tells apart: every stable locator also finds the other cards' buttons.
     const cards = Array.from(
       { length: products },
-      (_, i) => `<article class="card" id="product-${i}"><h3>Product ${i}</h3>
+      (_, i) => `<article class="card" id="product-${i}"><h3>Mug</h3>
         <div><button class="primary">Add to cart</button><button>Details</button></div></article>`,
     ).join('');
     await servePages(page, 'https://brittle.test', {
@@ -1006,8 +1011,10 @@ test.describe('coverage overlay: locators at risk', () => {
       "tests/legacy.spec.ts:20:5\n- locator('aside.cart > button')\n+ getByRole('button', { name: 'Checkout' })",
     );
     await expect(
-      panel.locator('li.row', { hasText: "locator('.grid .primary').nth(1)" }).locator('.detail').last(),
-    ).toHaveText('No stable locator finds only this element: give it a test id.');
+      panel.locator('li.row', { hasText: "locator('.grid .primary').nth(1)" }).locator('code.suggestion'),
+    ).toHaveText(
+      "→ getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button', { name: 'Add to cart' })",
+    );
     await expect(panel.locator('li.row', { hasText: "locator('.card .primary')" })).toContainText(
       'Finds 4 elements here, so no replacement is offered.',
     );
