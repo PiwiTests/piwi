@@ -287,6 +287,25 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
     expect(findings[findings.length - 1]).toMatchObject({ role: 'button', suggestion: { value: 'button-300' } });
   });
 
+  test('checks a 1,000-row table with a Delete button per row in seconds', async ({ context }) => {
+    const page = await context.newPage();
+    // Twenty texts a row, every one but the name shared with other rows: each row's Delete button is narrowed by
+    // the row showing its name, after the shared texts are tried against every row.
+    const shared = ['Active', 'Admin', 'France', 'Paris', 'EUR', 'Premium', 'Yes', 'No', 'Monthly', 'Card'];
+    const rows = Array.from({ length: 1000 }, (_, i) => {
+      const cells = [`Customer ${i}`, ...shared, ...shared.map((s) => `${s} plan`).slice(0, 9)];
+      return `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}<td><button>Delete</button></td></tr>`;
+    });
+    await page.setContent(`<!doctype html><html><body><table><tbody>${rows.join('')}</tbody></table></body></html>`);
+    const started = Date.now();
+    const findings = await scan(page);
+    const elapsed = Date.now() - started;
+    console.log(`lint scan of a 1,000-row table: ${elapsed} ms`);
+    // The ranking finds each button through its row: nothing to lint.
+    expect(findings).toEqual([]);
+    expect(elapsed).toBeLessThan(7000);
+  });
+
   test('checks the elements inside a web component', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body><toolbar-buttons></toolbar-buttons><script>

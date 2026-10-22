@@ -401,6 +401,10 @@ export function checkLocators(
       roleOf: (node) => engine.model.role(node),
       testIdAttributes: engine.testIdAttributes,
       textOf: (node) => engine.model.text(node).normalized,
+      lowerTextOf: (node) => {
+        const text = engine.model.text(node);
+        return (text.lower ??= text.normalized.toLowerCase());
+      },
     });
     const others = found.filter((other) => other !== el);
     const inners = exact && exact !== chain ? [chain, exact] : [chain];
