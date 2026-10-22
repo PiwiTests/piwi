@@ -4,8 +4,8 @@
  * never bundled), loads the recorder's IDE bundle into every page with an init script, answers the recorder over the
  * binding it exposes (`host-state.ts`: the main frame of the first page it opens records, every other frame and page
  * is answered as outside a recording), and tells the service over the IPC channel what happens: the browser open,
- * each event captured, Stop pressed in the browser, the browser closed, or why it could not record. It closes the
- * browser and exits when the service asks it to stop or goes away. Bundled on its own as
+ * each event captured, a tab or a popup opened, Stop pressed in the browser, the browser closed, or why it could not
+ * record. It closes the browser and exits when the service asks it to stop or goes away. Bundled on its own as
  * `dist/piwi-recorder-launcher.cjs`.
  */
 import { createRequire } from 'node:module';
@@ -30,6 +30,9 @@ interface Playwright {
 
 /** How long closing the browser may take before the launcher exits anyway. */
 const CLOSE_TIMEOUT_MS = 5_000;
+
+/** What the person hears once for each tab or popup the application opens, where nothing is recorded. */
+const NEW_TAB_NOTICE = 'A new tab opened: what you do there is not recorded yet. Record in the first tab.';
 
 let browser: Browser | null = null;
 /** The recording's host and the page it records, once the browser is open. */
@@ -116,10 +119,15 @@ async function start(request: LaunchRequest): Promise<void> {
         : host.handleOutside(payload),
     );
     await context.addInitScript({ path: request.bundle });
-    context.on('page', (opened) => watch(context, opened));
     page = await context.newPage();
     recording = page;
     opened = { host, page };
+    watch(context, page);
+    // A tab or a popup the application opens: the recorder there is answered as outside the recording.
+    context.on('page', (tab) => {
+      watch(context, tab);
+      void send({ type: 'notice', message: NEW_TAB_NOTICE });
+    });
   } catch (error) {
     return fail('launch-failed', `The browser did not open: ${errorLine(error)}.`);
   }

@@ -43,6 +43,19 @@ jobs:
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
 
+      # The plugin's change notes, the Marketplace's "What's new": the release's
+      # `ide` entries of the root CHANGELOG.md as HTML, which build.gradle.kts
+      # reads from CHANGE_NOTES into plugin.xml. Set before the first Gradle run,
+      # so every run of the job builds the same plugin.xml.
+      - name: Write the change notes
+        run: |
+          node scripts/ide-changelog.mjs --format html > "$RUNNER_TEMP/change-notes.html"
+          {
+            echo 'CHANGE_NOTES<<CHANGE_NOTES_END'
+            cat "$RUNNER_TEMP/change-notes.html"
+            echo 'CHANGE_NOTES_END'
+          } >> "$GITHUB_ENV"
+
       - name: Build the editor service
         working-directory: ./packages/editor
         run: npm run editor:build

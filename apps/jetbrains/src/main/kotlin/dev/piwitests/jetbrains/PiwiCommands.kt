@@ -15,7 +15,9 @@ import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.progress.ProgressIndicator
@@ -28,6 +30,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
 import org.jetbrains.ide.BuiltInServerManager
 import java.awt.datatransfer.StringSelection
+import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
@@ -109,11 +112,14 @@ object PiwiCommands {
         }
     }
 
-    /** Run every test still failing or edited since its run, as `piwi/failures` lists them. */
-    fun rerunFailing(project: Project) {
+    /**
+     * Run every test still failing or edited since its run, as `piwi/failures` lists them: of every Playwright config,
+     * or of the one at `root`, from its node in the tool window.
+     */
+    fun rerunFailing(project: Project, root: String? = null) {
         background(project, "Piwi: resolving the failing tests") {
             val service = project.service<PiwiProjectService>()
-            val runs = service.server()?.failures(FailuresParams(service.local().failuresGrouping))?.orNull()?.rerun.orEmpty()
+            val runs = Glue.failingRuns(service.server()?.failures(FailuresParams(service.local().failuresGrouping))?.orNull(), root)
             if (runs.isEmpty()) notify(project, "No failing test to re-run.") else runs.forEach { runTests(project, it) }
         }
     }
@@ -172,6 +178,41 @@ object PiwiCommands {
 
     /** The notices of `RunCommand.notice` already shown: each is shown once. */
     private val noticesShown: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * Run the test whose `test(…)` call holds the 0-based position of the spec at `uri` (`piwi/testAt`), as [runTests]
+     * does: by its id when Piwi knows it, else by its location, and with `repeat` by its location, that many times; or
+     * with `wholeSpec` the spec's tests Piwi knows. The spec is saved first, since a run reads it from the disk; a
+     * balloon says when there is no test to run.
+     */
+    fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean, repeat: Int? = null) {
+        background(project, "Piwi: finding the test") {
+            val found = project.service<PiwiProjectService>().server()?.testAt(TestAtParams(uri, line, character))?.orNull()
+            val args = if (wholeSpec) {
+                found?.spec?.testIds?.takeIf { it.isNotEmpty() }?.let { RunTestsArgs(uri, it) }
+            } else {
+                Glue.testAtRun(uri, found, repeat)
+            }
+            if (args != null) {
+                saveSpec(project, uri)
+                runTests(project, args)
+            } else {
+                notify(project, if (wholeSpec) "No test of this spec is known yet." else "The caret is in no test.")
+            }
+        }
+    }
+
+    /** Save the spec at `uri` when its document has unsaved changes, on the event thread, waiting for it. */
+    private fun saveSpec(project: Project, uri: String) {
+        val path = runCatching { Path.of(URI(uri)) }.getOrNull() ?: return
+        ApplicationManager.getApplication().invokeAndWait({
+            if (project.isDisposed) return@invokeAndWait
+            val file = LocalFileSystem.getInstance().findFileByNioFile(path) ?: return@invokeAndWait
+            val documents = FileDocumentManager.getInstance()
+            val document = documents.getCachedDocument(file) ?: return@invokeAndWait
+            if (documents.isDocumentUnsaved(document)) documents.saveDocument(document)
+        }, ModalityState.defaultModalityState())
+    }
 
     /**
      * Run a test command of the service: its notice shown once, and, with breakpoints (`PIWI_PAUSE_AT`), the Send to

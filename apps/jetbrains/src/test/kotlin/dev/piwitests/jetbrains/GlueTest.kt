@@ -39,7 +39,24 @@ class GlueTest {
     @Test
     fun `when not connected, offers Connect with the reason`() {
         val view = Glue.statusView(StatusResult(listOf(ContextStatus(root = "/w", problem = "No project chosen."))), null)
-        assertEquals(Glue.StatusView("Piwi: connect", "No project chosen.", null, Glue.StatusAction.CONNECT), view)
+        assertEquals(Glue.StatusView("Piwi: connect", "No project chosen.", null, Glue.StatusAction.CONNECT, Glue.StatusIcon.CONNECT), view)
+    }
+
+    @Test
+    fun `the first-run notification shows once, in a trusted project with a Playwright config that nothing connects`() {
+        val dirs = listOf(Path.of("/w/e2e"))
+        assertEquals(true, Glue.showsFirstRun(shown = false, trusted = true, configDirs = dirs, status = null, instances = listOf(null, "")))
+        assertEquals("once per installation", false, Glue.showsFirstRun(true, true, dirs, null, emptyList()))
+        assertEquals("never in an untrusted project", false, Glue.showsFirstRun(false, false, dirs, null, emptyList()))
+        assertEquals("not without a config", false, Glue.showsFirstRun(false, true, emptyList(), null, emptyList()))
+        assertEquals("not once connected", false, Glue.showsFirstRun(false, true, dirs, connected, emptyList()))
+        val unconnected = StatusResult(listOf(ContextStatus(root = "/w", problem = "No project chosen.")))
+        assertEquals(true, Glue.showsFirstRun(false, true, dirs, unconnected, emptyList()))
+        assertEquals(
+            "not while the project names an instance, before the service answers",
+            false,
+            Glue.showsFirstRun(false, true, dirs, null, listOf(null, "https://piwi.example.com")),
+        )
     }
 
     @Test
@@ -86,7 +103,7 @@ class GlueTest {
             Glue.nodeProblem("node", null),
         )
         assertEquals(
-            Glue.StatusView("Piwi: Node.js", "$old\nClick to open the Node.js settings.", null, Glue.StatusAction.NODE_SETTINGS),
+            Glue.StatusView("Piwi: Node.js", "$old\nClick for the Node.js settings.", null, Glue.StatusAction.NODE_SETTINGS, Glue.StatusIcon.WARNING),
             Glue.statusView(null, null, startProblem = old),
         )
         assertEquals(old, Glue.connectionSummary(null, startProblem = old))
@@ -98,7 +115,13 @@ class GlueTest {
         val problem = "Could not reach http://piwi: fetch failed"
         val status = StatusResult(listOf(ContextStatus(root = "/w", problem = problem, problemKind = "unreachable")))
         assertEquals(
-            Glue.StatusView("Piwi: unreachable", "$problem\nPiwi reads it again on its own; click to read it now.", null, Glue.StatusAction.RETRY),
+            Glue.StatusView(
+                "Piwi: unreachable",
+                "$problem\nPiwi reads it again on its own; Refresh reads it now.",
+                null,
+                Glue.StatusAction.RETRY,
+                Glue.StatusIcon.UNREACHABLE,
+            ),
             Glue.statusView(status, null),
         )
         assertEquals("Not connected. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
@@ -107,13 +130,14 @@ class GlueTest {
     }
 
     @Test
-    fun `a passing run, with its flaky tests, which a click reads again`() {
+    fun `a passing run, with its flaky tests, which the popup's first entry reads again`() {
         assertEquals(
             Glue.StatusView(
                 "Piwi: 118 passed · 2 flaky",
                 "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\nhttp://piwi, from the workspace .env",
                 "http://piwi/test-runs/41",
                 Glue.StatusAction.REFRESH,
+                Glue.StatusIcon.PASSED,
             ),
             Glue.statusView(connected, runs(passed)),
         )
@@ -230,6 +254,109 @@ class GlueTest {
     }
 
     @Test
+    fun `the status bar item speaks for the selected file's Playwright config, the deepest holding it, else the first connected`() {
+        val shop = ContextStatus(root = "/w/shop", problem = "No project chosen.", problemKind = "no-project")
+        val admin = ContextStatus(root = "/w/shop/admin/", connected = true)
+        val web = ContextStatus(root = "/w/web", connected = true)
+        val contexts = listOf(shop, admin, web)
+        assertEquals(admin, Glue.statusContext(contexts, "/w/shop/admin/tests/users.spec.ts"))
+        assertEquals(shop, Glue.statusContext(contexts, "/w/shop/tests/cart.spec.ts"))
+        assertEquals(web, Glue.statusContext(contexts, "/w/web/checkout.spec.ts"))
+        // A folder whose name only begins the same does not hold the file.
+        assertEquals(admin, Glue.statusContext(contexts, "/w/shopping/a.spec.ts"))
+        // Outside every config, or without a file: the first connected.
+        assertEquals(admin, Glue.statusContext(contexts, "/elsewhere/notes.md"))
+        assertEquals(admin, Glue.statusContext(contexts, null))
+        // Windows paths, with either separator and the drive letter in either case.
+        val windows = listOf(ContextStatus(root = "C:\\w\\shop", connected = true), ContextStatus(root = "c:\\w\\web"))
+        assertEquals(windows[1], Glue.statusContext(windows, "C:/w/web/a.spec.ts"))
+        // Nothing connected: the first the instance did not answer, else the first.
+        val unreachable = ContextStatus(root = "/w/web", problemKind = "unreachable")
+        assertEquals(unreachable, Glue.statusContext(listOf(shop, unreachable), null))
+        assertEquals(shop, Glue.statusContext(listOf(shop), "/elsewhere/a.ts"))
+        assertEquals(null, Glue.statusContext(emptyList(), "/w/a.ts"))
+    }
+
+    @Test
+    fun `with several Playwright configs, the item shows the selected file's run and its tooltip names that config`() {
+        val status = StatusResult(
+            listOf(
+                ContextStatus(root = "/w/shop", connected = true, projectName = "Shop", label = "shop"),
+                ContextStatus(root = "/w/admin", connected = true, projectName = "Admin"),
+            ),
+        )
+        val runs = RunStatusResult(
+            listOf(
+                RunStatus(root = "/w/shop", branch = "main", run = passed.copy(status = "failed", failedTests = 3)),
+                RunStatus(root = "/w/admin", branch = "main", run = passed.copy(id = 12, passedTests = 5, flakyTests = 0)),
+            ),
+        )
+        val admin = Glue.statusView(status, runs, file = "/w/admin/tests/users.spec.ts")
+        assertEquals("Piwi: 5 passed", admin.text)
+        assertEquals(
+            listOf("Run #12 of Admin on main: 5 passed, 0 failed, 0 flaky, 0 skipped", "The active file's Playwright config, in admin (one of 2)"),
+            admin.tooltip.lines(),
+        )
+        val shop = Glue.statusView(status, runs, file = "/w/shop/cart.spec.ts")
+        assertEquals("Piwi: 3 failing · 2 flaky", shop.text)
+        assertEquals("The active file's Playwright config, in shop (one of 2)", shop.tooltip.lines()[1])
+        // A file in neither, or none: the first connected, and how to see another's run.
+        assertEquals("Piwi: 3 failing · 2 flaky", Glue.statusView(status, runs, file = "/w/README.md").text)
+        assertEquals(
+            "The Playwright config in shop (one of 2): open a file of another one to see its run",
+            Glue.statusView(status, runs).tooltip.lines()[1],
+        )
+        // A config without a run is never shown another's.
+        assertEquals("Piwi: no run", Glue.statusView(status, RunStatusResult(runs.contexts!!.take(1)), file = "/w/admin/a.spec.ts").text)
+        // A config that is not connected says so, for itself.
+        val partly = StatusResult(listOf(status.contexts!![0], ContextStatus(root = "/w/admin", problem = "No project chosen.")))
+        assertEquals(
+            Glue.StatusView(
+                "Piwi: connect",
+                "No project chosen.\nThe active file's Playwright config, in admin (one of 2)",
+                null,
+                Glue.StatusAction.CONNECT,
+                Glue.StatusIcon.CONNECT,
+            ),
+            Glue.statusView(partly, runs, file = "/w/admin/a.spec.ts"),
+        )
+    }
+
+    @Test
+    fun `the icon and the error color follow what the text counts`() {
+        fun look(view: Glue.StatusView) = view.icon to view.error
+        val failed = passed.copy(status = "failed", failedTests = 3)
+        assertEquals(Glue.StatusIcon.PASSED to false, look(Glue.statusView(connected, runs(passed))))
+        assertEquals(Glue.StatusIcon.FAILING to true, look(Glue.statusView(connected, runs(failed))))
+        assertEquals(Glue.StatusIcon.WARNING to false, look(Glue.statusView(connected, runs(passed.copy(status = "interrupted")))))
+        assertEquals(Glue.StatusIcon.RUNNING to true, look(Glue.statusView(connected, runs(passed.copy(status = "running", failedTests = 1)))))
+        assertEquals(Glue.StatusIcon.RUNNING to false, look(Glue.statusView(connected, runs(passed.copy(status = "running")))))
+        assertEquals(Glue.StatusIcon.PIWI to false, look(Glue.statusView(connected, runs(null))))
+        // A run in progress: by its own failures, whatever the latest run's.
+        fun live(run: RunInfo?, failing: Int) = RunStatusResult(
+            listOf(RunStatus(root = "/w", run = run, live = LiveRun(runId = 124, done = 4, total = 9, failed = failing))),
+        )
+        assertEquals(Glue.StatusIcon.RUNNING to false, look(Glue.statusView(connected, live(failed, 0))))
+        assertEquals(Glue.StatusIcon.RUNNING to true, look(Glue.statusView(connected, live(passed, 1))))
+        assertEquals(Glue.StatusIcon.RUNNING to true, look(Glue.statusView(connected, live(null, 2))))
+        // Every failing test fixed by a local run.
+        val fixed = RunStatusResult(listOf(RunStatus(root = "/w", run = failed, failingTests = 0, resolved = 3, overlays = 1)))
+        assertEquals(Glue.StatusIcon.PASSED to false, look(Glue.statusView(connected, fixed)))
+        // A developer's own runs alone.
+        fun local(failing: Int) = RunStatusResult(listOf(RunStatus(root = "/w", failingTests = failing, overlays = 1)))
+        assertEquals(Glue.StatusIcon.FAILING to true, look(Glue.statusView(connected, local(2))))
+        assertEquals(Glue.StatusIcon.PASSED to false, look(Glue.statusView(connected, local(0))))
+        // The service and the connection.
+        assertEquals(Glue.StatusIcon.PIWI to false, look(Glue.statusView(null, null)))
+        assertEquals(Glue.StatusIcon.WARNING to false, look(Glue.statusView(null, null, startProblem = "Piwi needs Node.js 20 or later.")))
+        assertEquals(Glue.StatusIcon.CONNECT to false, look(Glue.statusView(StatusResult(listOf(ContextStatus(root = "/w"))), null)))
+        assertEquals(
+            Glue.StatusIcon.UNREACHABLE to false,
+            look(Glue.statusView(StatusResult(listOf(ContextStatus(root = "/w", problemKind = "unreachable"))), null)),
+        )
+    }
+
+    @Test
     fun `the files are drawn again when the latest run changes, not while a run in progress moves`() {
         val latest = runs(passed.copy(status = "failed", failedTests = 1))
         val moving = RunStatusResult(
@@ -326,6 +453,56 @@ class GlueTest {
             "The picked locator was inserted at the caret: tests/login.spec.ts is not in this project.",
             Glue.pickNotice(at, Glue.PickOutcome.NO_FILE),
         )
+        assertEquals(
+            "The picked locator was inserted at the caret: the Piwi editor service is not running in this project.",
+            Glue.pickNotice(at, Glue.PickOutcome.NOT_RUNNING),
+        )
+        assertEquals(
+            "The picked locator was inserted in a new scratch file: the Piwi editor service did not answer.",
+            Glue.pickNotice(at, Glue.PickOutcome.NO_ANSWER, scratch = true),
+        )
+    }
+
+    @Test
+    fun `a recording writes only into a script under a Playwright config folder`() {
+        val root = Files.createTempDirectory("piwi-config").toRealPath()
+        val dirs = listOf(root.resolve("e2e"))
+        assertEquals(true, Glue.inConfigDirs(root.resolve("e2e/tests/login.spec.ts"), dirs))
+        assertEquals(true, Glue.inConfigDirs(root.resolve("e2e"), dirs))
+        assertEquals(true, Glue.inConfigDirs(root.resolve("e2e/../e2e/pages/cart.ts"), dirs))
+        assertEquals(false, Glue.inConfigDirs(root.resolve("vite.config.ts"), dirs))
+        assertEquals(false, Glue.inConfigDirs(root.resolve("e2e-old/a.spec.ts"), dirs))
+        assertEquals(false, Glue.inConfigDirs(null, dirs))
+        assertEquals(false, Glue.inConfigDirs(root.resolve("e2e/a.spec.ts"), emptyList()))
+    }
+
+    @Test
+    fun `a service that stopped while starting is started again, a few times only`() {
+        val start = 1_000_000L
+        assertEquals(true, Glue.restartsService(start, start + 2_000, emptyList()))
+        assertEquals(false, Glue.restartsService(start, start + Glue.SERVICE_START_MILLIS + 1, emptyList()))
+        assertEquals(false, Glue.restartsService(null, start, emptyList()))
+        val recent = listOf(start - 60_000, start - 30_000, start - 10_000)
+        assertEquals(false, Glue.restartsService(start, start + 2_000, recent))
+        val old = recent.map { it - Glue.SERVICE_RESTART_PERIOD_MILLIS }
+        assertEquals(true, Glue.restartsService(start, start + 2_000, old))
+    }
+
+    @Test
+    fun `the IDE's proxy reaches the service as the variables it reads, this machine left direct`() {
+        assertEquals(
+            mapOf(
+                "HTTPS_PROXY" to "http://proxy.example.com:3128",
+                "HTTP_PROXY" to "http://proxy.example.com:3128",
+                "NO_PROXY" to "localhost,127.0.0.1,::1",
+            ),
+            Glue.proxyEnvironment("proxy.example.com", 3128, emptyList()),
+        )
+        assertEquals(
+            "localhost,127.0.0.1,::1,.example.com,10.0.0.1",
+            Glue.proxyEnvironment("proxy", 8080, listOf("*.example.com", " 10.0.0.1 ", "", "localhost"))["NO_PROXY"],
+        )
+        assertEquals("http://[::1]:3128", Glue.proxyEnvironment("::1", 3128, emptyList())["HTTPS_PROXY"])
     }
 
     @Test
@@ -716,6 +893,30 @@ class GlueTest {
     }
 
     @Test
+    fun `a recorded line's warning offers the step's other verified locators in place of the written one`() {
+        val written = "locator('form > button.btn-3')"
+        val step = RecordingStep(locators = listOf("getByTestId('pay')", "getByRole('button', { name: 'Pay' })", written), chosen = 2)
+        val line = "await page.$written.click();"
+        assertEquals(
+            listOf(
+                Glue.LocatorChoice("Use getByTestId('pay')", "getByTestId('pay')", 11, 41),
+                Glue.LocatorChoice("Use getByRole('button', { name: 'Pay' })", "getByRole('button', { name: 'Pay' })", 11, 41),
+            ),
+            Glue.locatorChoices(line, step),
+        )
+        // After any page expression, and inside a call.
+        assertEquals(2, Glue.locatorChoices("await adminPage.$written.fill(process.env.E2E_PASSWORD ?? '');", step).size)
+        assertEquals(18, Glue.locatorChoices("await expect(page.$written).toBeVisible();", step).first().start)
+        // A single locator, none written, or the written one not on the line exactly once: nothing.
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices(line, RecordingStep(locators = listOf(written), chosen = 0)))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices(line, step.copy(chosen = null)))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices(line, null))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices("await cartPage.pay();", step))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices("await page.$written.dragTo(page.$written);", step))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices("await page.locator('form > button.btn-4').click();", step))
+    }
+
+    @Test
     fun `the banner says what the recording does and offers what applies`() {
         assertEquals(
             Glue.RecordingBanner("Piwi: opening the browser to record into this file…", listOf(Glue.RecordingAction.STOP)),
@@ -882,6 +1083,44 @@ class GlueTest {
     }
 
     @Test
+    fun `with several Playwright configs, a node each over its own run, which alone counts the editor's own run`() {
+        val run = treeFailures.tree!!.single()
+        fun config(root: String, label: String) = FailureTreeNode(
+            key = "context:$root", kind = "context", label = label, description = "Shop · 2 failing",
+            tooltip = listOf("Playwright config in $root"), icon = "context", expanded = true, url = "http://piwi/test-runs/120",
+            children = listOf(run.copy(key = "context:$root/run", root = root)), root = root,
+        )
+        val several = treeFailures.copy(
+            run = null,
+            runLabel = null,
+            tree = listOf(config("/w/apps/shop", "apps/shop"), config("/w/apps/admin", "apps/admin")),
+        )
+        val live = LiveRun(runId = 125, status = "running", done = 4, total = 9, own = true)
+        val (shop, admin) = Glue.failureNodes(several, treeNow, live, liveRoot = "/w/apps/admin")
+        assertEquals(
+            listOf("context", "apps/shop", "Shop · 2 failing", "context", "/w/apps/shop", "http://piwi/test-runs/120"),
+            listOf(shop.kind, shop.label, shop.description, shop.icon, shop.root, shop.url),
+        )
+        assertEquals("4 min ago" to "/w/apps/shop", shop.children.single().description to shop.children.single().root)
+        assertEquals("running 4/9", admin.children.single().description)
+        // The run's node of an older service names no config: the editor's own run shows on it.
+        assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live, liveRoot = "/w/apps/admin").single().description)
+        // The header names no run: each config's node carries its own.
+        assertEquals(null, Glue.runHeader(several, treeNow))
+    }
+
+    @Test
+    fun `Re-run the Failing Tests runs every config's failing tests, or one config's from its node`() {
+        val shop = RunTestsArgs("file:///w/apps/shop/tests/a.spec.ts", listOf(7), root = "/w/apps/shop")
+        val admin = RunTestsArgs("file:///w/apps/admin/tests/b.spec.ts", listOf(8), root = "/w/apps/admin")
+        val result = treeFailures.copy(rerun = listOf(shop, admin))
+        assertEquals(listOf(shop, admin), Glue.failingRuns(result))
+        assertEquals(listOf(admin), Glue.failingRuns(result, "/w/apps/admin"))
+        assertEquals(emptyList<RunTestsArgs>(), Glue.failingRuns(result, "/w/apps/docs"))
+        assertEquals(emptyList<RunTestsArgs>(), Glue.failingRuns(null))
+    }
+
+    @Test
     fun `without a tree nothing is drawn, and the header names the run with or without a failure`() {
         assertEquals(emptyList<Glue.FailureNode>(), Glue.failureNodes(FailuresResult(emptyList(), treeFailures.run)))
         assertEquals(emptyList<Glue.FailureNode>(), Glue.failureNodes(null))
@@ -1031,6 +1270,34 @@ class GlueTest {
     }
 
     @Test
+    fun `a run of each test three times says how many of its runs passed, whatever the setting`() {
+        assertEquals(
+            Glue.RunVerdict(true, "Run #124 · Failed 1 of 3", listOf("Open the Failures", "Open in Dashboard")),
+            Glue.runVerdict(ended.copy(repeat = RepeatVerdict("Failed 1 of 3", failed = true)), "never"),
+        )
+        val passed = ended.copy(failed = 0, repeat = RepeatVerdict("Passed 3 of 3", failed = false))
+        assertEquals(Glue.RunVerdict(false, "Run #124 · Passed 3 of 3", listOf("Open the Failures", "Open in Dashboard")), Glue.runVerdict(passed, "failures"))
+    }
+
+    @Test
+    fun `the test at a line runs by its id when Piwi knows it, else by its location, and by its location to verify it`() {
+        val uri = "file:///w/tests/checkout.spec.ts"
+        val known = TestAtResult(EditorTest(7, "pays"), SpecTests(uri, listOf(7)), "tests/checkout.spec.ts:3")
+        assertEquals(RunTestsArgs(uri, listOf(7)), Glue.testAtRun(uri, known))
+        assertEquals(
+            RunTestsArgs(uri, emptyList(), locations = listOf("tests/checkout.spec.ts:3"), repeat = 3),
+            Glue.testAtRun(uri, known, Glue.VERIFY_REPEAT),
+        )
+        val recorded = TestAtResult(location = "tests/checkout.spec.ts:12")
+        assertEquals(RunTestsArgs(uri, emptyList(), locations = listOf("tests/checkout.spec.ts:12")), Glue.testAtRun(uri, recorded))
+        assertEquals(null, Glue.testAtRun(uri, TestAtResult()))
+        assertEquals(null, Glue.testAtRun(uri, null))
+        // An older service gives no location: a test it knows still runs, but cannot be verified.
+        assertEquals(RunTestsArgs(uri, listOf(7)), Glue.testAtRun(uri, known.copy(location = null)))
+        assertEquals(null, Glue.testAtRun(uri, known.copy(location = null), 3))
+    }
+
+    @Test
     fun `a test of the run in progress says it runs, and its files are drawn again when it begins or ends`() {
         assertEquals("<html>Piwi: running · passed 4/4</html>", Glue.testResultTooltip("running", "passed 4/4"))
         // The service's text is shown as text, never as markup.
@@ -1117,6 +1384,16 @@ class GlueTest {
         assertEquals(false, Glue.isPlaywrightConfig(null))
     }
 
+    @Test
+    fun `a spec is named as the editor service reads specs`() {
+        for (name in listOf("checkout.spec.ts", "cart.test.mjs", "row.spec.tsx", "login.test.cjs", "a.spec.js")) {
+            assertEquals(true, Glue.isSpecFile(name))
+        }
+        assertEquals(false, Glue.isSpecFile("checkout.page.ts"))
+        assertEquals(false, Glue.isSpecFile("checkout.spec.ts.bak"))
+        assertEquals(false, Glue.isSpecFile("spec.ts"))
+    }
+
     private val mappedCoverage = CoverageResult(
         uri = "file:///w/src/Web/Services/BasketService.cs",
         state = "mapped",
@@ -1162,6 +1439,33 @@ class GlueTest {
         assertEquals(true, Glue.hasCoverageMarks(mappedCoverage))
         assertEquals(false, Glue.hasCoverageMarks(other))
         assertEquals(false, Glue.hasCoverageMarks(other.copy(state = "none")))
+    }
+
+    @Test
+    fun `a new coverage answer takes off and draws only the marks that changed`() {
+        val drawn = Glue.coverageMarks(mappedCoverage, 20, shown = true).toSet()
+        val next = mappedCoverage.copy(executed = listOf(LineSpan(8, 9, 2), LineSpan(17, 30, 3)), notRun = listOf(LineSpan(12, 12)))
+        assertEquals(
+            Glue.CoverageMarksDiff(
+                remove = listOf(
+                    Glue.CoverageMark(Glue.CoverageKind.RUN, 17, 19, "Piwi: run by 1 test"),
+                    Glue.CoverageMark(Glue.CoverageKind.NOT_RUN, 11, 11, "Piwi: no test runs this line"),
+                ),
+                add = listOf(
+                    Glue.CoverageMark(Glue.CoverageKind.RUN, 17, 19, "Piwi: run by 3 tests"),
+                    Glue.CoverageMark(Glue.CoverageKind.NOT_RUN, 12, 12, "Piwi: no test runs this line"),
+                ),
+            ),
+            Glue.coverageMarksDiff(drawn, Glue.coverageMarks(next, 20, shown = true)),
+        )
+        // The same lines in another kind: taken off and drawn again.
+        val changed = Glue.CoverageMark(Glue.CoverageKind.CHANGED, 8, 9, "Piwi: changed since the coverage run")
+        val run = Glue.CoverageMark(Glue.CoverageKind.RUN, 8, 9, "Piwi: run by 2 tests")
+        assertEquals(Glue.CoverageMarksDiff(listOf(run), listOf(changed)), Glue.coverageMarksDiff(setOf(run), listOf(changed)))
+        // Hidden: every mark taken off; nothing drawn yet: each mark drawn once.
+        assertEquals(Glue.CoverageMarksDiff(drawn.toList(), emptyList()), Glue.coverageMarksDiff(drawn, emptyList()))
+        assertEquals(Glue.CoverageMarksDiff(emptyList(), listOf(run)), Glue.coverageMarksDiff(emptySet(), listOf(run, run)))
+        assertEquals(Glue.CoverageMarksDiff(emptyList(), emptyList()), Glue.coverageMarksDiff(drawn, drawn.toList()))
     }
 
     @Test

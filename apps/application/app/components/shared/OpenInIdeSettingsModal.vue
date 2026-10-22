@@ -2,7 +2,8 @@
 /**
  * Per-browser configuration for the "Open in IDE" affordance — which method to
  * use, the local workspace root that maps a repo-relative path to an absolute
- * one, the VS Code flavor, and the JetBrains product/port. Persisted to
+ * one, the VS Code flavor and whether the Piwi extension is installed there,
+ * and the JetBrains product/port. Persisted to
  * localStorage via `useOpenInIde`; never sent to the server (the source lives on
  * the visitor's machine, so the mapping is inherently per-device).
  *
@@ -16,7 +17,7 @@ import {
   type IdeMethod,
 } from '~/composables/useOpenInIde';
 import type { VscodeScheme } from '~/utils/ide-links';
-import { JETBRAINS_PLUGIN_URL } from '#shared/companion-links';
+import { JETBRAINS_PLUGIN_URL, VSCODE_EXTENSION_URL } from '#shared/companion-links';
 
 const { prefs, settingsOpen, settingsContext, openInIde } = useOpenInIde();
 const isDesktop = useIsDesktop();
@@ -127,7 +128,7 @@ function testOpen(filePath: string) {
         <UFormField
           label="Method"
           name="method"
-          description="Auto asks the Piwi JetBrains plugin first, then the IDE's command-line launcher in the desktop app, then the JetBrains local server, then falls back to a URL launch."
+          description="Auto asks the Piwi JetBrains plugin first, then the IDE's command-line launcher in the desktop app, then the JetBrains local server, then falls back to a URL launch: VS Code with a workspace root, JetBrains with a project name, else the Piwi extension in VS Code."
         >
           <USelect v-model="prefs.method" :items="methodItems" class="w-full" />
         </UFormField>
@@ -135,14 +136,27 @@ function testOpen(filePath: string) {
         <UFormField
           label="Workspace root"
           name="defaultRoot"
-          description="Absolute path to your local checkout — repo-relative paths are joined onto it (VS Code needs this)."
+          description="Absolute path to your local checkout — repo-relative paths are joined onto it (VS Code without the Piwi extension needs this)."
         >
           <UInput v-model="prefs.defaultRoot" placeholder="/home/me/my-repo" class="w-full" />
         </UFormField>
 
-        <UFormField v-if="showVscode" label="VS Code flavor" name="vscodeScheme">
-          <USelect v-model="prefs.vscodeScheme" :items="schemeItems" class="w-full" />
-        </UFormField>
+        <template v-if="showVscode">
+          <UFormField label="VS Code flavor" name="vscodeScheme">
+            <USelect v-model="prefs.vscodeScheme" :items="schemeItems" class="w-full" />
+          </UFormField>
+          <UFormField
+            name="vscodeExtension"
+            description="Without a workspace root, the Piwi extension finds the file in the window focused last. Auto asks it when no workspace root and no JetBrains project name is set."
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <UCheckbox v-model="prefs.vscodeExtension" label="The Piwi extension is installed in VS Code" />
+              <UButton :to="VSCODE_EXTENSION_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+                Visual Studio Marketplace
+              </UButton>
+            </div>
+          </UFormField>
+        </template>
 
         <template v-if="showJetbrains">
           <div class="grid grid-cols-2 gap-3">

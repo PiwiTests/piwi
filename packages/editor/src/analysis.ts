@@ -30,6 +30,7 @@ import {
 import type { RankedLocator } from '@piwitests/core/locator-healing-types';
 import { flakeCommand } from './commands.js';
 import type { CallSiteAlternatives, CodeIndex, FlakeLabEntry } from './piwi-client.js';
+import { pageCandidates } from './recorder/page-candidates.js';
 import { relativeTo } from './workspace.js';
 
 /** A locator the index knows at one line of a file. */
@@ -472,7 +473,10 @@ export function applyPatchFile(text: string, file: PatchFile): string | null {
   return lines.join(eol);
 }
 
-/** A chain offered after `page.`: the suite already uses it on a page this file's tests visit. */
+/**
+ * A chain offered after a page expression's `.` or in `expect(`: the suite already uses it on a page this file's
+ * tests visit.
+ */
 export interface LocatorSuggestion {
   locator: string;
   /** Tests using it. */
@@ -511,6 +515,39 @@ export function locatorSuggestions(index: LocatorIndex, relativePath: string): L
   const rank = (s: LocatorSuggestion) =>
     s.stability?.level === 'brittle' ? 2 : s.stability?.level === 'watch' ? 1 : 0;
   return out.sort((a, b) => rank(a) - rank(b) || b.tests - a.tests).slice(0, MAX_SUGGESTIONS);
+}
+
+/** Where a locator chain completes at a cursor. */
+export interface LocatorCompletionSite {
+  /** What was typed since the `.` or the `expect(`: the chain written replaces it. */
+  typed: string;
+  /** Written before the chain: nothing after a page expression's `.`, the page expression and `.` in `expect(`. */
+  prefix: string;
+}
+
+const PAGE_MEMBER = /(?:^|[^\w$.])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\.([A-Za-z]*)$/;
+const EXPECT_CALL = /(?:^|[^\w$.])expect\(\s*([A-Za-z_$][\w$]*)?$/;
+
+/**
+ * Where a locator chain completes at a cursor on the 0-based `line` of `text`, `before` being that line's text before
+ * the cursor: after `page.`, `this.page.` or any page expression `pageCandidates` offers on that line (`adminPage.`,
+ * `this.adminPage.`, a page a test opens), the chain alone; right after `expect(`, the chain on the default page
+ * expression there. Null anywhere else. The file is scanned only for a member chain followed by `.` other than
+ * `page` and `this.page`, and for `expect(`.
+ */
+export function locatorCompletionSite(text: string, line: number, before: string): LocatorCompletionSite | null {
+  const member = PAGE_MEMBER.exec(before);
+  if (member) {
+    const expression = member[1]!;
+    const known =
+      expression === 'page' ||
+      expression === 'this.page' ||
+      pageCandidates(text, line).candidates.some((c) => c.expression === expression);
+    return known ? { typed: member[2]!, prefix: '' } : null;
+  }
+  const call = EXPECT_CALL.exec(before);
+  if (call) return { typed: call[1] ?? '', prefix: `${pageCandidates(text, line).default}.` };
+  return null;
 }
 
 /** What the suite does on the page a page file renders. */

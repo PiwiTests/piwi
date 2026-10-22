@@ -103,7 +103,7 @@ bisect exercises test changes only.
 
 ### Jobs from your editor
 
-On a failure of a team instance, the [editor extensions](/features/editors#ci-failures-in-the-problems-panel) offer
+On a failure of a team instance, the [editor extensions](/features/editor-failures#ci-failures-in-the-problems-panel) offer
 **Reproduce in the desktop app** and **Find the breaking commit in the desktop app**; on a flaky test, or a failure
 whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-editor-and-the-failure-pages) run of
 the team instance's plan. The window shows the commits, tests or arms, and runs nothing until you start it. The editor

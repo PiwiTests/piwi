@@ -68,6 +68,12 @@ every comparison is made on one machine; a `report` job joins their results into
   `release` environment (`environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}`), whose
   protection rules and secrets are set in the repository settings. `id-token: write` only where a step uses it (npm
   provenance). `.github/` is owned by its maintainer (`CODEOWNERS`).
+- **The editor extensions' changelogs are written at publish time.** `scripts/ide-changelog.mjs` keeps the `ide`
+  entries of the root `CHANGELOG.md`, under their version and section: `reusable-publish-vscode.yml` writes every
+  version's as `apps/vscode/CHANGELOG.md` (gitignored; `.vscodeignore` lets it into the VSIX) before `vsce package`,
+  and `reusable-publish-jetbrains.yml` writes the release's as HTML into `CHANGE_NOTES`, which `build.gradle.kts`
+  reads as the plugin's change notes, before its first Gradle run. Nothing generated is committed, and what
+  release-please writes is left as it is.
 - **Bounded.** `timeout-minutes` on every job, about three times its usual duration.
 - **Actions pinned by commit.** Every `uses:` of an action outside this repository names the full commit SHA of a
   release, with its tag in a trailing comment: `uses: actions/checkout@<sha> # v7.0.1`. Resolve it with

@@ -15,6 +15,7 @@ import type { PiwiConnection } from '@piwitests/core/dotenv';
 import type { BisectResultBody } from '@piwitests/core/bisect';
 import type { DesktopJobRequest, DesktopJobVerdict, FlakeLabJobPlan } from '@piwitests/core/desktop-job';
 import type { TimeoutAdvice } from './analysis.js';
+import { instanceFetch } from './http.js';
 
 const TIMEOUT_MS = 15_000;
 /** How long a stored file may take to download: a trace can weigh tens of megabytes. */
@@ -305,27 +306,76 @@ export interface DesktopJobState {
 }
 
 /**
- * The answers of conditional requests, by instance, key and path: the `ETag` the instance gave and the value read with
- * it, or the request on its way. The contexts of one service share it: the configs of a repository reading the same
- * project share one index, read once.
+ * The instance's answers, by instance, key and path: for a conditional request, the `ETag` the instance gave and the
+ * value read with it; for a plain one, the value for a moment (`until`), with its `ETag` when the instance gave one;
+ * for either, the request on its way. The contexts of one service share it: the configs of a repository reading the
+ * same project share one index, read once, and read the project's lists once per refresh.
  */
-export type ResponseCache = Map<string, { etag?: string; value?: unknown; pending?: Promise<unknown> }>;
+export type ResponseCache = Map<
+  string,
+  {
+    etag?: string;
+    value?: unknown;
+    pending?: Promise<unknown>;
+    /**
+     * Until when a plain answer is shared (ms since the epoch), past for one kept to be asked again with its `ETag`;
+     * absent from an index, kept by its `ETag`.
+     */
+    until?: number;
+    /** Whether the request on its way reads a run as it moves (`fresh`): a fresh read joins only such a request. */
+    fresh?: boolean;
+  }
+>;
 
-/** The answers a `ResponseCache` keeps at most; the least recently used goes first. */
+/** The indexes a `ResponseCache` keeps at most, by their `ETag`; the least recently used goes first. */
 const MAX_ANSWERS = 16;
+/** How long a plain answer is shared by the clients reading one instance, and how many are kept at most meanwhile. */
+const SHARED_MS = 2_000;
+const MAX_SHARED = 64;
+
+/**
+ * Drop the plain answers past their time but those with an `ETag`, then the least recently used beyond what is kept
+ * of each kind, the indexes and the plain answers; a request on its way stays.
+ */
+function trim(answers: ResponseCache): void {
+  const now = Date.now();
+  let indexes = 0;
+  let shared = 0;
+  // The newest come last: counted from the end, the entries beyond a cap are the oldest.
+  for (const [key, entry] of [...answers].reverse()) {
+    if (entry.pending) continue;
+    if (entry.until === undefined) {
+      if (++indexes > MAX_ANSWERS) answers.delete(key);
+    } else if ((entry.until <= now && entry.etag === undefined) || ++shared > MAX_SHARED) {
+      answers.delete(key);
+    }
+  }
+}
+
+/**
+ * Drop the plain answers shared for a moment: the reads that follow, together, read the instance as it stands, those
+ * with an `ETag` asking with it.
+ */
+export function forgetShared(answers: ResponseCache): void {
+  for (const [key, entry] of answers) {
+    if (entry.until === undefined) continue;
+    if (entry.etag === undefined) answers.delete(key);
+    else entry.until = 0;
+  }
+}
 
 export class PiwiClient {
   /**
-   * `answers` keeps what an `ETag` came with: the instance answers 304 while it holds, and the same value is used; the
-   * same request on its way for another client is shared.
+   * `answers` keeps what an `ETag` came with: the instance answers 304 while it holds, and the same value is used; a
+   * plain answer for `SHARED_MS`; the same request on its way for another client is shared.
    */
   constructor(
     readonly connection: PiwiConnection,
     private readonly answers?: ResponseCache,
   ) {}
 
-  private async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.connection.serverUrl}${path}`, {
+  private async fetchJson<T>(path: string): Promise<T> {
+    const response = await instanceFetch(`${this.connection.serverUrl}${path}`, {
       headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -333,11 +383,61 @@ export class PiwiClient {
     return (await response.json()) as T;
   }
 
+  /** The key of a request's answer in `answers`: the instance, the key it is read with and the path. */
+  private answerKey(path: string): string {
+    return `${this.connection.serverUrl}\n${this.connection.apiKey ?? ''}\n${path}`;
+  }
+
+  /**
+   * A GET whose request on its way, and its answer for `SHARED_MS`, the clients sharing `answers` reuse: the configs
+   * of a repository reading one project read it once per refresh, each getting its own copy of the answer, as if it
+   * had parsed it itself. An answer the instance gave an `ETag` (`branch-failures`) is kept past that time and asked
+   * again with it (`If-None-Match`): a 304 gives a copy of the answer kept. `fresh`, for a run as it moves, shares a
+   * request on its way only when it was asked fresh too, since an earlier one may have read the run before it moved, and
+   * keeps no answer to share, only one with an `ETag`, to ask with. A request that failed is shared by the callers that
+   * joined it alone. A plain GET without `answers`.
+   */
+  private async get<T>(path: string, fresh = false): Promise<T> {
+    const answers = this.answers;
+    if (!answers) return this.fetchJson<T>(path);
+    const key = this.answerKey(path);
+    const known = answers.get(key);
+    if (known?.pending && (!fresh || known.fresh)) {
+      return (known.pending as Promise<T>).then((value) => structuredClone(value));
+    }
+    if (!fresh && known?.until !== undefined && known.until > Date.now()) return structuredClone(known.value as T);
+    const kept = known?.etag ? { etag: known.etag, value: known.value as T } : null;
+    const asked = this.askKnown<T>(path, kept);
+    const pending = asked.then((answer) => answer.value);
+    // Awaited by the clients that share it, if any.
+    pending.catch(() => {});
+    answers.delete(key);
+    answers.set(key, fresh ? { pending, fresh } : { pending });
+    try {
+      const answer = await asked;
+      if (answers.get(key)?.pending === pending) {
+        const until = fresh ? 0 : Date.now() + SHARED_MS;
+        if (answer.etag) answers.set(key, { etag: answer.etag, value: answer.value, until });
+        else if (fresh) answers.delete(key);
+        else answers.set(key, { value: answer.value, until });
+      }
+      trim(answers);
+      // An answer kept, this one or another client's, is shared: each caller gets its own copy.
+      return answer === kept || answers.get(key)?.value === answer.value ? structuredClone(answer.value) : answer.value;
+    } catch (e) {
+      if (answers.get(key)?.pending === pending) {
+        if (kept) answers.set(key, { ...kept, until: 0 });
+        else answers.delete(key);
+      }
+      throw e;
+    }
+  }
+
   /** A GET answered from `answers` while the instance says it did not change; a plain GET without them. */
   private async getConditional<T>(path: string): Promise<T> {
     const answers = this.answers;
-    if (!answers) return this.get(path);
-    const key = `${this.connection.serverUrl}\n${this.connection.apiKey ?? ''}\n${path}`;
+    if (!answers) return this.fetchJson<T>(path);
+    const key = this.answerKey(path);
     const known = answers.get(key);
     if (known?.pending) return known.pending as Promise<T>;
     const asked = this.askKnown<T>(path, known?.etag ? { etag: known.etag, value: known.value as T } : null);
@@ -350,8 +450,7 @@ export class PiwiClient {
       const answer = await asked;
       if (answer.etag) answers.set(key, { etag: answer.etag, value: answer.value });
       else answers.delete(key);
-      for (const oldest of [...answers.keys()].slice(0, Math.max(0, answers.size - MAX_ANSWERS)))
-        answers.delete(oldest);
+      trim(answers);
       return answer.value;
     } catch (e) {
       if (known?.etag) answers.set(key, { etag: known.etag, value: known.value });
@@ -365,7 +464,7 @@ export class PiwiClient {
     path: string,
     known: { etag: string; value: T } | null,
   ): Promise<{ value: T; etag: string | null }> {
-    const response = await fetch(`${this.connection.serverUrl}${path}`, {
+    const response = await instanceFetch(`${this.connection.serverUrl}${path}`, {
       headers: {
         ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
         ...(known ? { 'If-None-Match': known.etag } : {}),
@@ -378,7 +477,7 @@ export class PiwiClient {
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
-    const response = await fetch(`${this.connection.serverUrl}${path}`, {
+    const response = await instanceFetch(`${this.connection.serverUrl}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -457,28 +556,31 @@ export class PiwiClient {
   /**
    * The latest complete run on `branch` (any branch when null), with the later runs of its branch laid over it; with
    * `run`, that run instead; with `origin: 'local'`, a developer's own runs only, laid over none when no complete one
-   * exists. An instance older than these answers as if they were absent.
+   * exists. An instance older than these answers as if they were absent. Asked with the `ETag` of the answer kept,
+   * when the instance gave one: a 304 is that answer. `fresh` reads the instance rather than the answer shared for a
+   * moment.
    */
   branchFailures(
     projectId: number,
     branch: string | null,
     baseline: { run?: number; origin?: 'local' } = {},
+    fresh = false,
   ): Promise<BranchFailures> {
     const query = new URLSearchParams(branch ? { branch, overlays: '1' } : { overlays: '1' });
     if (baseline.run !== undefined) query.set('run', String(baseline.run));
     if (baseline.origin) query.set('origin', baseline.origin);
-    return this.get(`/api/projects/${projectId}/branch-failures?${query}`);
+    return this.get(`/api/projects/${projectId}/branch-failures?${query}`, fresh);
   }
 
-  /** A run's details, with what launched it in its metadata. */
+  /** A run's details, with what launched it in its metadata, as it stands now. */
   runDetails(runId: number): Promise<RunDetails> {
-    return this.get(`/api/test-runs/${runId}`);
+    return this.get(`/api/test-runs/${runId}`, true);
   }
 
   /** The newest run of the project whose launcher stamped this origin and ref (`PIWI_ORIGIN_REF`); null when none. */
   latestRunByRef(projectId: number, origin: string, ref: string): Promise<{ id: number; status: string } | null> {
     const query = new URLSearchParams({ origin, ref });
-    return this.get(`/api/projects/${projectId}/latest-run?${query}`);
+    return this.get(`/api/projects/${projectId}/latest-run?${query}`, true);
   }
 
   /** The instance's run events (`GET /api/stream`): a response whose body is a server-sent events stream. */
@@ -493,7 +595,7 @@ export class PiwiClient {
 
   /** A server-sent events stream, open until it ends or `signal` aborts. */
   private stream(path: string, signal: AbortSignal): Promise<Response> {
-    return fetch(`${this.connection.serverUrl}${path}`, {
+    return instanceFetch(`${this.connection.serverUrl}${path}`, {
       headers: {
         Accept: 'text/event-stream',
         ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
@@ -518,7 +620,7 @@ export class PiwiClient {
   /** A stored file written to `target` as it arrives, through a partial file beside it renamed once complete. */
   async download(storedPath: string, target: string): Promise<void> {
     const encoded = storedPath.split('/').map(encodeURIComponent).join('/');
-    const response = await fetch(`${this.connection.serverUrl}/api/files/${encoded}`, {
+    const response = await instanceFetch(`${this.connection.serverUrl}/api/files/${encoded}`, {
       headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},
       signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
     });
@@ -651,7 +753,7 @@ export class PiwiClient {
 
   /** The same plan as Markdown, for an agent. */
   async fixPlanMarkdown(clusterId: number): Promise<string> {
-    const response = await fetch(
+    const response = await instanceFetch(
       `${this.connection.serverUrl}/api/failure-clusters/${clusterId}/fix-plan?format=markdown`,
       {
         headers: this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {},
@@ -696,7 +798,7 @@ export class PiwiClient {
 
   /** Desktop app only: a job's status and, once done, its verdict. */
   desktopJob(id: string): Promise<DesktopJobState> {
-    return this.get(`/api/desktop/repro-requests/${encodeURIComponent(id)}`);
+    return this.get(`/api/desktop/repro-requests/${encodeURIComponent(id)}`, true);
   }
 
   /** An execution's page in the dashboard. */

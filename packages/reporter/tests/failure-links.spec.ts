@@ -28,6 +28,13 @@ describe('caseLocateUrl', () => {
     );
   });
 
+  it('names the `--repeat-each` repetition past the first', () => {
+    expect(caseLocateUrl('https://dash.example.com', 42, { ...TEST, repeatEachIndex: 3 })).toBe(
+      'https://dash.example.com/test-runs/42/locate?file=tests%2Fcheckout.spec.ts&title=applies%20the%20discount&retry=2&browser=chromium&repeat=3',
+    );
+    expect(caseLocateUrl('https://dash.example.com', 42, { ...TEST, repeatEachIndex: 0 })).not.toContain('repeat=');
+  });
+
   it('encodes characters a title may carry', () => {
     const url = caseLocateUrl('https://dash.example.com', 1, { ...TEST, title: 'a+b & c=d #1' });
     expect(url).toContain('title=a%2Bb%20%26%20c%3Dd%20%231');

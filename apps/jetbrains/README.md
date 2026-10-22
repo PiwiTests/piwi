@@ -42,5 +42,5 @@ the caret, and Piwi's MCP server is one copy away for the AI Assistant.
 Nothing from your project is sent to the instance: its locator index, code reach and latest run are compared with your
 files locally.
 
-[Editor extensions](https://piwitests.dev/features/editors) documents everything the plugin shows, with the differences
-from VS Code under [JetBrains IDEs](https://piwitests.dev/features/editors#jetbrains-ides).
+[Editor extensions](https://piwitests.dev/features/editors) documents everything the plugin shows, and
+[JetBrains plugin](https://piwitests.dev/features/jetbrains) what it needs and where it differs from VS Code.

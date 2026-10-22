@@ -143,6 +143,34 @@ describe('lastAttempts per project', () => {
   });
 });
 
+describe('lastAttempts per repetition', () => {
+  it('keeps one last attempt per `--repeat-each` repetition, each with its own retries', () => {
+    const rows = [
+      { id: 1, testCaseId: 1, repeatEachIndex: 0, retries: 0, status: 'passed' },
+      { id: 2, testCaseId: 1, repeatEachIndex: 1, retries: 0, status: 'failed' },
+      { id: 3, testCaseId: 1, repeatEachIndex: 2, retries: 0, status: 'passed' },
+      { id: 4, testCaseId: 1, repeatEachIndex: 1, retries: 1, status: 'failed' },
+    ];
+    expect(lastAttempts(rows).map((r) => r.id)).toEqual([1, 4, 3]);
+  });
+
+  it('reads a row without a repetition as the first one', () => {
+    const a = { id: 5, testCaseId: 1, retries: 0 };
+    const b = { id: 9, testCaseId: 1, repeatEachIndex: 0, retries: 0 };
+    expect(lastAttempts([a, b])).toEqual([b]);
+  });
+
+  it('keeps the bug open while one repetition still reproduces it', () => {
+    const rows = [
+      { id: 1, testCaseId: 7, repeatEachIndex: 0, retries: 0, status: 'failed', expectedStatus: 'failed' },
+      { id: 2, testCaseId: 7, repeatEachIndex: 1, retries: 0, status: 'passed', expectedStatus: 'failed' },
+      { id: 3, testCaseId: 8, repeatEachIndex: 0, retries: 0, status: 'failed', expectedStatus: 'failed' },
+      { id: 4, testCaseId: 8, repeatEachIndex: 1, retries: 0, status: 'failed', expectedStatus: 'failed' },
+    ];
+    expect(looksFixedTests(rows).map((r) => r.testCaseId)).toEqual([8]);
+  });
+});
+
 describe('looksFixed', () => {
   const fixed = { status: 'failed', expectedStatus: 'failed' };
   const stillFails = { status: 'passed', expectedStatus: 'failed' };

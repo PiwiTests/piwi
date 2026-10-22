@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { findPlaywrightRoots, playwrightConfigFile } from '../src/workspace';
+import { contextLabel, findPlaywrightRoots, playwrightConfigFile } from '../src/workspace';
 
 let dir = '';
 
@@ -29,5 +29,19 @@ describe('the Playwright configs of a workspace', () => {
     expect(playwrightConfigFile(path.join(dir, 'mts'))).toBe(path.join(dir, 'mts', 'playwright.config.mts'));
     expect(playwrightConfigFile(path.join(dir, 'cts'))).toBe(path.join(dir, 'cts', 'playwright.config.cts'));
     expect(playwrightConfigFile(dir)).toBe(null);
+  });
+});
+
+describe('the name of a Playwright config’s folder', () => {
+  test('is relative to the workspace folder holding it, after its name when there are several', () => {
+    const shop = path.join(dir, 'shop');
+    const admin = path.join(dir, 'admin');
+    expect(contextLabel(shop, [shop])).toBe('shop');
+    expect(contextLabel(path.join(shop, 'apps', 'e2e'), [shop])).toBe('apps/e2e');
+    expect(contextLabel(path.join(shop, 'e2e'), [shop, admin])).toBe('shop/e2e');
+    expect(contextLabel(admin, [shop, admin])).toBe('admin');
+    // The deepest workspace folder holding it.
+    expect(contextLabel(path.join(shop, 'apps', 'e2e'), [shop, path.join(shop, 'apps')])).toBe('apps/e2e');
+    expect(contextLabel(path.join(dir, 'elsewhere'), [shop])).toBe(path.join(dir, 'elsewhere'));
   });
 });

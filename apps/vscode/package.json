@@ -8,6 +8,10 @@
   "license": "SEE LICENSE IN LICENSE",
   "icon": "icon.png",
   "homepage": "https://piwitests.dev",
+  "bugs": {
+    "url": "https://github.com/PiwiTests/platform/issues"
+  },
+  "qna": "https://github.com/PiwiTests/platform/issues",
   "repository": {
     "type": "git",
     "url": "https://github.com/PiwiTests/platform",
@@ -15,6 +19,16 @@
   },
   "engines": {
     "vscode": "^1.91.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The Piwi editor service reads the workspace's files from disk and runs its Playwright."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "The Piwi editor service reads the files from disk and runs Playwright; a virtual workspace has neither."
+    }
   },
   "categories": [
     "Testing",
@@ -30,7 +44,8 @@
   ],
   "main": "./dist/extension.cjs",
   "activationEvents": [
-    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs,mts,cts}"
+    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs,mts,cts}",
+    "onUri"
   ],
   "contributes": {
     "viewsContainers": {
@@ -63,8 +78,88 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "The Piwi editor service is not answering. It starts with the first file of a Playwright workspace opened; refresh once it runs.\n[Refresh](command:piwi.refresh)",
+        "contents": "The Piwi editor service is not answering. It starts with the extension, on a workspace that holds a Playwright config; Refresh asks it again, and the log says what it did.\n[Refresh](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == unavailable"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "getStarted",
+        "title": "Get started with Piwi",
+        "description": "Connect to your Piwi instance, see the latest CI failures, run and record tests, and give your agent Piwi's MCP server.",
+        "steps": [
+          {
+            "id": "connect",
+            "title": "Connect to your Piwi instance",
+            "description": "Piwi reads your suite's runs from your team's instance, or from the desktop app on this machine. A workspace set up for the reporter is connected already.\n[Connect](command:piwi.connect)",
+            "media": {
+              "markdown": "walkthrough/connect.md"
+            },
+            "completionEvents": [
+              "onContext:piwi.active"
+            ]
+          },
+          {
+            "id": "failures",
+            "title": "See the failures of the latest CI run",
+            "description": "The Failures view lists the failures of the latest CI run on your branch, with your local runs since. Each one is also in the Problems panel, at the line that failed.\n[Open the failures](command:piwi.failures.focus)",
+            "media": {
+              "markdown": "walkthrough/failures.md"
+            },
+            "completionEvents": [
+              "onView:piwi.failures"
+            ]
+          },
+          {
+            "id": "run",
+            "title": "Run the failing tests",
+            "description": "Re-run every test still failing, or, in a spec, run the test at the cursor with `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K` on macOS). When the run ends, the failures show what it fixed.\n[Re-run the failing tests](command:piwi.rerunFailing)",
+            "media": {
+              "markdown": "walkthrough/run.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.rerunFailing",
+              "onCommand:piwi.runTestAtCursor",
+              "onCommand:piwi.verifyTestAtCursor",
+              "onCommand:piwi.runSpec",
+              "onCommand:piwi.runTest"
+            ]
+          },
+          {
+            "id": "record",
+            "title": "Record a test",
+            "description": "Piwi opens a browser with your project's Playwright and writes what you do there into a new spec. In a spec, `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R` on macOS) records at the cursor. No instance needed.\n[Record a new test file](command:piwi.recordFile)",
+            "media": {
+              "markdown": "walkthrough/record.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.recordFile",
+              "onCommand:piwi.record"
+            ]
+          },
+          {
+            "id": "mcp",
+            "title": "Give your agent Piwi's MCP server",
+            "description": "Your agent can read the suite's failures, flaky tests and healings. VS Code 1.101 and later lists the server for it with your connection; in another editor, copy its configuration.\n[Copy the MCP server configuration](command:piwi.copyMcpConfiguration)",
+            "media": {
+              "markdown": "walkthrough/mcp.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.copyMcpConfiguration"
+            ]
+          },
+          {
+            "id": "settings",
+            "title": "Open the settings",
+            "description": "Choose how a CI failure shows in the Problems panel, when a run started from the editor says what it changed, and whether runs pause at your breakpoints.\n[Open settings](command:piwi.openSettings)",
+            "media": {
+              "markdown": "walkthrough/settings.md"
+            },
+            "completionEvents": [
+              "onCommand:piwi.openSettings"
+            ]
+          }
+        ]
       }
     ],
     "commands": [
@@ -84,6 +179,16 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.openLog",
+        "title": "Open the log",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.getStarted",
+        "title": "Get started",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.refresh",
         "title": "Refresh",
         "category": "Piwi"
@@ -97,6 +202,21 @@
       {
         "command": "piwi.runTestsForFile",
         "title": "Run the tests that reach this file",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.runTestAtCursor",
+        "title": "Run the test at the cursor",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.verifyTestAtCursor",
+        "title": "Verify the test at the cursor ×3",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.runSpec",
+        "title": "Run this spec",
         "category": "Piwi"
       },
       {
@@ -295,6 +415,18 @@
           "when": "piwi.hasCoverage"
         },
         {
+          "command": "piwi.runTestAtCursor",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.verifyTestAtCursor",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runSpec",
+          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
           "command": "piwi.record",
           "when": "editorLangId =~ /^(typescript|javascript)(react)?$/"
         },
@@ -312,6 +444,21 @@
         }
       ],
       "editor/context": [
+        {
+          "command": "piwi.runTestAtCursor",
+          "group": "piwi@1",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.verifyTestAtCursor",
+          "group": "piwi@1",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runSpec",
+          "group": "piwi@1",
+          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
         {
           "command": "piwi.runTestsForFile",
           "group": "piwi@1",
@@ -402,6 +549,31 @@
           "group": "inline@1"
         },
         {
+          "command": "piwi.rerunFailing",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.context\\..*\\bfailing\\b/",
+          "group": "inline@1"
+        },
+        {
+          "command": "piwi.openInDashboard",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.context\\..*\\brun\\b/",
+          "group": "inline@2"
+        },
+        {
+          "command": "piwi.rerunFailing",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.context\\..*\\bfailing\\b/",
+          "group": "1_run@1"
+        },
+        {
+          "command": "piwi.compareWith",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.(context\\b|run$)/",
+          "group": "2_baseline@1"
+        },
+        {
+          "command": "piwi.openInDashboard",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.context\\..*\\brun\\b/",
+          "group": "3_open@1"
+        },
+        {
           "command": "piwi.runTest",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\./",
           "group": "1_run@1"
@@ -438,6 +610,31 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "piwi.record",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r",
+        "when": "editorTextFocus && !piwi.recording && editorLangId =~ /^(typescript|javascript)(react)?$/"
+      },
+      {
+        "command": "piwi.stopRecording",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r",
+        "when": "piwi.recording"
+      },
+      {
+        "command": "piwi.rerunFailing",
+        "key": "ctrl+shift+alt+f",
+        "mac": "cmd+shift+alt+f"
+      },
+      {
+        "command": "piwi.runTestAtCursor",
+        "key": "ctrl+shift+alt+k",
+        "mac": "cmd+shift+alt+k",
+        "when": "editorTextFocus"
+      }
+    ],
     "configuration": {
       "title": "Piwi",
       "properties": {
@@ -470,6 +667,39 @@
           ],
           "default": "always",
           "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
+        },
+        "piwi.failureSeverity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "off"
+          ],
+          "enumDescriptions": [
+            "An error, in the Problems panel and on the line.",
+            "A warning.",
+            "An information.",
+            "None: the failures view, the gutter and the lines above the tests still show it."
+          ],
+          "default": "error",
+          "markdownDescription": "How a failure of the latest run shows at its line in the editor and the Problems panel. A failure of a run on another branch, such as the default branch's while yours has no run, is a warning at most; one whose line you changed since the run, an information."
+        },
+        "piwi.trace.server": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "enumDescriptions": [
+            "Nothing.",
+            "Each request, answer and notification.",
+            "Each one with its contents."
+          ],
+          "default": "off",
+          "description": "Traces the traffic with the Piwi editor service in the Piwi output channel, which Piwi: Open the log shows."
         }
       }
     },
@@ -539,6 +769,20 @@
       {
         "id": "piwi.mcp",
         "label": "Piwi"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "piwi",
+        "required": [
+          "ref"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "The ref of the test run: the `PIWI_ORIGIN_REF` its command sets, by which Piwi follows the run."
+          }
+        }
       }
     ]
   },

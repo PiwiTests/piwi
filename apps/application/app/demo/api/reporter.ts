@@ -28,7 +28,7 @@ import {
   buildNetworkRequestInsertValues,
   type NetworkRequestBuilder,
 } from '~~/server/utils/network-request-helpers';
-import { matchInsertedRunCases } from '~~/server/utils/inserted-run-cases';
+import { matchInsertedRunCases, resolveRepeatEachIndex } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
@@ -485,6 +485,7 @@ export interface RunCaseInput {
   duration?: number | null;
   error?: string | null;
   retries?: number | null;
+  repeatEachIndex?: number | null;
   attempts?: unknown;
   line: number | null;
   column: number | null;
@@ -518,7 +519,7 @@ export interface RunCaseInput {
   blockedBy?: string | null;
 }
 
-/** Browser identity for the unique (run, case, retries, browser) key. */
+/** Browser identity for the unique (run, case, repeat, retries, browser) key. */
 function resolveBrowserName(browser: unknown): string | null {
   if (typeof browser === 'string') return browser;
   if (browser && typeof browser === 'object') {
@@ -611,13 +612,16 @@ export async function persistRunCases(
     const existingRunCases = await db
       .select({
         testCaseId: testRunsCases.testCaseId,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
         retries: testRunsCases.retries,
         browserName: testRunsCases.browserName,
       })
       .from(testRunsCases)
       .where(eq(testRunsCases.testRunId, testRunId));
-    // Same composite key as the DB unique index (run, case, retries, browser).
-    existingRunCaseSet = new Set(existingRunCases.map((r) => `${r.testCaseId}::${r.retries}::${r.browserName ?? ''}`));
+    // Same composite key as the DB unique index (run, case, repeat, retries, browser).
+    existingRunCaseSet = new Set(
+      existingRunCases.map((r) => `${r.testCaseId}::${r.repeatEachIndex}::${r.retries}::${r.browserName ?? ''}`),
+    );
   }
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
@@ -656,7 +660,7 @@ export async function persistRunCases(
     caseMetaSnapshots.set(caseId, { tags, locks, meta: testMeta, displayTitle: resolved.displayTitles[i] ?? null });
 
     if (deduplicate && existingRunCaseSet) {
-      const rowKey = `${caseId}::${c.retries ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
+      const rowKey = `${caseId}::${resolveRepeatEachIndex(c.repeatEachIndex)}::${c.retries ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
       if (existingRunCaseSet.has(rowKey)) continue;
     }
 
@@ -720,6 +724,7 @@ export async function persistRunCases(
       duration: c.duration ?? null,
       error: capErrorText(c.error, DEFAULT_INGEST_LIMITS.errorChars),
       retries: c.retries ?? 0,
+      repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(c.attempts, 30),
       line: c.line,
       column: c.column,
@@ -793,8 +798,9 @@ export async function persistRunCases(
     wakeSnoozed: !options.keepSnoozed,
   });
 
-  // ON CONFLICT DO NOTHING + the (run, case, retries, browser) unique index keep
-  // this idempotent across batch retries and same-test-different-browser rows.
+  // ON CONFLICT DO NOTHING + the (run, case, repeat, retries, browser) unique
+  // index keep this idempotent across batch retries, while each attempt,
+  // browser and repetition of a test stays a row of its own.
   const insertedCases = matchInsertedRunCases(
     runCasesRows,
     await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
@@ -802,6 +808,7 @@ export async function persistRunCases(
       status: testRunsCases.status,
       testCaseId: testRunsCases.testCaseId,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
     }),
   );
@@ -879,6 +886,7 @@ export async function apiPostRunEvents(
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
+        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
       },
     });
   }
@@ -955,6 +963,7 @@ export async function apiPostRunEvents(
         // Mirrors the server: the attempt number lets the live page mark a
         // passed-on-retry (flaky) test as passing rather than failing.
         retries: tc.retries ?? null,
+        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
       },
@@ -1072,6 +1081,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         .select({
           testCaseId: testRunsCases.testCaseId,
           browserName: testRunsCases.browserName,
+          repeatEachIndex: testRunsCases.repeatEachIndex,
           retries: testRunsCases.retries,
           status: testRunsCases.status,
         })

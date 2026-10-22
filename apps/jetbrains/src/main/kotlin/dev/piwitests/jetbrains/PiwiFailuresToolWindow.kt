@@ -49,12 +49,14 @@ import javax.swing.tree.TreePath
  * JetBrains IDEs highlights open files only. The run comes first, with the runs laid over it, then the failures
  * grouped by file, cluster or owner, or flat (the toggles of the toolbar, kept in `PiwiLocalSettings`): a failure of a
  * local run says so, a failure whose line changed since its run is marked edited, and the failures a later run passed
- * follow, marked fixed. Each is at its line as the edits since the run left it, and the tree follows the edits
+ * follow, marked fixed. When several Playwright configs have something to show, each has a node of its own over its
+ * run. Each failure is at its line as the edits since the run left it, and the tree follows the edits
  * (`piwi/failuresChanged`), keeping the expanded and selected nodes. Double-click or Enter opens a failure's line, where
- * the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions; Next and
- * Previous Occurrence go from failure to failure. Above it, the connection and the run, and Connect, Refresh, Re-run
- * the Failing Tests, the dashboard links, the previous and next failure, expand and collapse all, the groupings and the
- * settings in the toolbar.
+ * the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions, and a
+ * config's (Re-run the Failing Tests, Compare With…, Open in Dashboard, for that config); Next and Previous Occurrence
+ * go from failure to failure. Above it, the connection and the run, and Connect, Refresh, Re-run the Failing Tests, the
+ * dashboard links, the previous and next failure, expand and collapse all, the groupings and the settings in the
+ * toolbar.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
@@ -100,8 +102,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         val render: () -> Unit = {
             val local = service.local()
             val result = service.failuresResult
-            val live = service.runs?.contexts.orEmpty().firstNotNullOfOrNull { it.live?.takeIf { live -> live.own } }
-            val nodes = Glue.failureNodes(result, live = live)
+            val own = service.runs?.contexts.orEmpty().firstOrNull { it.live?.own == true }
+            val nodes = Glue.failureNodes(result, live = own?.live, liveRoot = own?.root)
             val before = shown
             if (before != null && nodes != before && Glue.sameShape(before, nodes)) {
                 // Only what the nodes say changed, such as a run in progress counting its tests: each row is redrawn in
@@ -280,6 +282,25 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         }
     }
 
+    /** An action of the right-click menu on a Playwright config's node or a run's, shown when it applies to the selected one. */
+    private class ConfigAction(
+        text: String,
+        icon: Icon?,
+        private val selected: () -> Glue.FailureNode?,
+        private val applies: (Glue.FailureNode) -> Boolean,
+        private val perform: (Glue.FailureNode) -> Unit,
+    ) : AnAction(text, null, icon), DumbAware {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabledAndVisible = selected()?.takeIf { it.kind == "context" || it.kind == "run" }?.let(applies) == true
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            selected()?.let(perform)
+        }
+    }
+
     /** An action of the right-click menu on a failure, shown when it applies to the selected one. */
     private class FailureAction(
         text: String,
@@ -310,7 +331,14 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             }
             Unit
         }
+        val failingIn = { n: Glue.FailureNode -> n.kind == "context" && n.root != null && Glue.failingRuns(service.failuresResult, n.root).isNotEmpty() }
         return DefaultActionGroup(
+            ConfigAction("Re-run the Failing Tests", AllIcons.RunConfigurations.RerunFailedTests, selected, failingIn) {
+                PiwiCommands.rerunFailing(project, it.root)
+            },
+            ConfigAction("Compare With…", AllIcons.Actions.Diff, selected, { it.root != null }) { CompareWithAction.choose(project, it.root) },
+            ConfigAction("Open in Dashboard", AllIcons.General.Web, selected, { it.url != null }) { n -> n.url?.let { BrowserUtil.browse(it) } },
+            Separator.getInstance(),
             FailureAction("Run This Test", AllIcons.Actions.Execute, selected, { Glue.failureRunArgs(it) != null }) {
                 Glue.failureRunArgs(it)?.let { args -> PiwiCommands.runTests(project, args) }
             },
@@ -358,6 +386,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         ) {
             val node = nodeOf(value) ?: return
             icon = when (node.icon) {
+                "context" -> AllIcons.Nodes.Module
                 "fixed", "passed" -> AllIcons.RunConfigurations.TestPassed
                 "edited" -> AllIcons.General.Information
                 "failing", "failed" -> AllIcons.General.Error

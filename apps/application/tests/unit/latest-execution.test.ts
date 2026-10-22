@@ -25,6 +25,7 @@ function row(overrides: Partial<NewerExecutionRow> & { runId: number }): NewerEx
   return {
     id: nextId++,
     status: 'failed',
+    repeatEachIndex: 0,
     retries: 0,
     browserName: 'chromium',
     failureClusterId: 1,
@@ -124,6 +125,35 @@ describe('summarizeNewerExecutions', () => {
     const s = summarizeNewerExecutions({ ...current, browserName: null }, [row({ runId: 6, browserName: null })]);
     expect(s).toMatchObject({ isLatest: false, laterInOtherProject: false, projectName: null });
   });
+
+  test('a later run failed it when one of its repetitions failed, whichever ran last', () => {
+    const repeated = [
+      row({ runId: 6, repeatEachIndex: 2, status: 'passed' }),
+      row({ runId: 6, repeatEachIndex: 1, status: 'failed' }),
+      row({ runId: 6, repeatEachIndex: 0, status: 'passed' }),
+    ];
+    const s = summarizeNewerExecutions(current, repeated);
+    expect(s.newest).toMatchObject({ runId: 6, status: 'failed', executionId: repeated[1]!.id });
+    expect(s.failedAgainRunIds).toEqual([6]);
+  });
+
+  test("a repetition's retries are its own: a retry pass of one does not clear another's failure", () => {
+    const repeated = [
+      row({ runId: 6, repeatEachIndex: 0, retries: 1, status: 'passed' }),
+      row({ runId: 6, repeatEachIndex: 0, retries: 0, status: 'failed' }),
+      row({ runId: 6, repeatEachIndex: 1, retries: 0, status: 'failed' }),
+    ];
+    expect(summarizeNewerExecutions(current, repeated).newest).toMatchObject({ status: 'failed', retries: 0 });
+    const flaky = [
+      row({ runId: 7, repeatEachIndex: 0, retries: 1, status: 'passed' }),
+      row({ runId: 7, repeatEachIndex: 0, retries: 0, status: 'failed' }),
+      row({ runId: 7, repeatEachIndex: 1, retries: 0, status: 'passed' }),
+    ];
+    expect(summarizeNewerExecutions(current, flaky)).toMatchObject({
+      newest: { runId: 7, status: 'passed', retries: 1 },
+      failedAgainCount: 0,
+    });
+  });
 });
 
 describe('getNewerExecutions', () => {
@@ -159,6 +189,7 @@ describe('getNewerExecutions', () => {
       browserName: 'chromium',
       ...extra,
     });
+    // Execution 19 is another repetition of the test in run 2: its retry is not a later attempt of execution 10.
     await db
       .insert(schema.testRunsCases)
       .values([
@@ -171,17 +202,19 @@ describe('getNewerExecutions', () => {
         exec(16, 6),
         exec(17, 7, { testCaseId: 2 }),
         exec(18, 8, { status: 'passed' }),
+        exec(19, 2, { repeatEachIndex: 1, retries: 1 }),
       ]);
   });
 
-  test('later runs and later attempts of the same run, newest first; lab runs and older runs left out', async () => {
+  test('later runs and later attempts of the same repetition, newest first; lab runs and older runs left out', async () => {
     const rows = await getNewerExecutions(db, {
       testCaseId: 1,
       runId: 2,
       runStartTime: new Date(T0 + hour),
+      repeatEachIndex: 0,
       retries: 0,
     });
-    // Run 3 is a probe, run 1 is older, execution 17 is another test.
+    // Run 3 is a probe, run 1 is older, execution 17 is another test, execution 19 another repetition.
     expect(rows.map((r) => r.id)).toEqual([18, 16, 15, 14, 11]);
     // Another project comes back: the summary decides what to do with it.
     expect(rows.find((r) => r.id === 14)?.browserName).toBe('firefox');
@@ -194,6 +227,7 @@ describe('getNewerExecutions', () => {
       testCaseId: 1,
       runId: 4,
       runStartTime: new Date(T0 + 3 * hour),
+      repeatEachIndex: 0,
       retries: 0,
     });
     expect(rows.map((r) => r.id)).toEqual([18, 16, 15]);
@@ -219,7 +253,13 @@ describe('getNewerExecutions', () => {
         browserName: 'chromium',
       })),
     );
-    const rows = await getNewerExecutions(db, { testCaseId: 1, runId: 1, runStartTime: new Date(T0), retries: 0 });
+    const rows = await getNewerExecutions(db, {
+      testCaseId: 1,
+      runId: 1,
+      runStartTime: new Date(T0),
+      repeatEachIndex: 0,
+      retries: 0,
+    });
     expect(rows).toHaveLength(50);
     expect(rows[0]!.id).toBe(1059);
   });

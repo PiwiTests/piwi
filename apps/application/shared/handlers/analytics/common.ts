@@ -414,6 +414,7 @@ export interface FilteredExecution {
   testRunId: number;
   testCaseId: number;
   browserName: string | null;
+  repeatEachIndex: number;
   retries: number | null;
   status: string;
   duration: number | null;
@@ -447,6 +448,7 @@ export async function fetchFilteredExecutions(
         testRunId: testRunsCases.testRunId,
         testCaseId: testRunsCases.testCaseId,
         browserName: testRunsCases.browserName,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
         retries: testRunsCases.retries,
         status: testRunsCases.status,
         duration: testRunsCases.duration,

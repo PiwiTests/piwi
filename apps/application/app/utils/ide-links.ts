@@ -7,7 +7,9 @@
  * Four mechanisms are supported (see `apps/docs/features/ide-integration.md`):
  *  - JetBrains via the Piwi plugin's `/api/piwi/open` on the IDE's built-in
  *    server — the one that finds the file itself and reports whether it opened
- *  - VS Code family via the `vscode://file/<abs>:<line>:<col>` URL scheme
+ *  - VS Code family via the `vscode://file/<abs>:<line>:<col>` URL scheme, or
+ *    via the Piwi extension's `vscode://piwitests.piwi/open` link, which finds
+ *    a repo-relative path itself
  *  - JetBrains via the `jetbrains://<product>/navigate/reference` URL scheme
  *  - JetBrains via the built-in local web server / IDE Remote Control plugin
  */
@@ -79,6 +81,30 @@ export function buildVscodeUrl(o: {
   // Windows (`C:/…`) does not, so add one → `vscode://file/C:/…`.
   const withSlash = encoded.startsWith('/') ? encoded : `/${encoded}`;
   return `${o.scheme}://file${withSlash}${positionSuffix(o.line, o.column)}`;
+}
+
+/** The Piwi extension's id in VS Code and its forks, the authority of its `vscode://` links. */
+export const VSCODE_EXTENSION_ID = 'piwitests.piwi';
+
+/**
+ * `vscode://piwitests.piwi/open?file=<path>&line=&column=&root=` (and the
+ * insiders/vscodium/cursor variants): the Piwi extension finds the path as the
+ * run reported it under its workspace's folders, so no workspace root is
+ * needed. `root`, when known, is the folder the path is relative to. Line and
+ * column are 1-based. Each value is percent-encoded whole, a space as `%20`.
+ */
+export function buildVscodeExtensionUrl(o: {
+  scheme: VscodeScheme;
+  path: string;
+  line?: number | null;
+  column?: number | null;
+  root?: string | null;
+}): string {
+  const query = [`file=${encodeURIComponent(toPosixPath(o.path))}`];
+  if (o.line != null) query.push(`line=${o.line}`);
+  if (o.line != null && o.column != null) query.push(`column=${o.column}`);
+  if (o.root) query.push(`root=${encodeURIComponent(toPosixPath(o.root))}`);
+  return `${o.scheme}://${VSCODE_EXTENSION_ID}/open?${query.join('&')}`;
 }
 
 /** A 1-based line or column as the 0-based value an IDE API takes, or null. */

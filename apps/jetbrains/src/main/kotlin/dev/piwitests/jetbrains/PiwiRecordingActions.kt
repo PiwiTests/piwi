@@ -22,7 +22,7 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.ui.InputValidator
+import com.intellij.openapi.ui.InputValidatorEx
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
@@ -35,6 +35,7 @@ import com.intellij.ui.dsl.builder.COLUMNS_LARGE
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import java.io.IOException
+import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import java.util.concurrent.ExecutionException
@@ -46,6 +47,9 @@ private fun recordingOf(e: AnActionEvent): RecordingSession? {
     val recordings = e.project?.getServiceIfCreated(PiwiRecordings::class.java) ?: return null
     return e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { recordings.sessionFor(it) } ?: recordings.only()
 }
+
+/** The file's path on disk; null for a file that is not there. */
+private fun VirtualFile.nioPathOrNull(): Path? = runCatching { toNioPath() }.getOrNull()
 
 /** The menus that show a recording action only where it applies: the editor's, and the recorded block's gutter mark's. */
 private val CONTEXT_MENUS = setOf(ActionPlaces.EDITOR_POPUP, ActionPlaces.EDITOR_GUTTER_POPUP)
@@ -84,22 +88,32 @@ class RecordHereGenerateAction : RecordHereAction() {
     }
 }
 
-/** Piwi: Record a New Test File… — a spec created in the folder at hand, then recorded into. */
+/**
+ * Piwi: Record a New Test File… — a spec created in the folder at hand, under a Playwright config's folder (the first
+ * one when no folder is at hand), then recorded into.
+ */
 class RecordNewFileAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        val project = e.project
-        e.presentation.isEnabledAndVisible = project != null && project.service<PiwiProjectService>().hasPlaywrightConfig()
+        val service = e.project?.service<PiwiProjectService>()
+        e.presentation.isEnabledAndVisible = service != null && service.hasPlaywrightConfig() &&
+            directoryAtHand(e).let { it == null || Glue.inConfigDirs(it.nioPathOrNull(), service.playwrightConfigDirs()) }
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val selected = e.getData(CommonDataKeys.VIRTUAL_FILE)?.takeIf { it.isInLocalFileSystem }
-        val directory = (if (selected?.isDirectory == true) selected else selected?.parent)
-            ?: project.service<PiwiProjectService>().playwrightConfigDirs().firstOrNull()?.let { LocalFileSystem.getInstance().findFileByNioFile(it) }
+        val service = project.service<PiwiProjectService>()
+        val directory = directoryAtHand(e)?.takeIf { Glue.inConfigDirs(it.nioPathOrNull(), service.playwrightConfigDirs()) }
+            ?: service.playwrightConfigDirs().firstOrNull()?.let { LocalFileSystem.getInstance().findFileByNioFile(it) }
             ?: return
         PiwiRecordFlow.recordNewFile(project, directory)
+    }
+
+    /** The folder selected, or the selected file's; null when nothing on disk is. */
+    private fun directoryAtHand(e: AnActionEvent): VirtualFile? {
+        val selected = e.getData(CommonDataKeys.VIRTUAL_FILE)?.takeIf { it.isInLocalFileSystem } ?: return null
+        return if (selected.isDirectory) selected else selected.parent
     }
 }
 
@@ -157,19 +171,26 @@ class ResumeRecordingAction : AnAction(), DumbAware {
 object PiwiRecordFlow {
     private const val NOT_RUNNING = "The Piwi editor service is not running in this project yet."
 
-    /** Whether a recording can write into `file`: a script of a project with a Playwright config, not recorded into already. */
+    /**
+     * Whether a recording can write into `file`: a script under one of the project's Playwright config folders, not
+     * recorded into already.
+     */
     fun canRecordInto(project: Project, file: VirtualFile): Boolean =
         file.isInLocalFileSystem &&
             (file.extension?.lowercase() ?: "") in Glue.SCRIPT_EXTENSIONS &&
-            project.service<PiwiProjectService>().hasPlaywrightConfig() &&
+            Glue.inConfigDirs(file.nioPathOrNull(), project.service<PiwiProjectService>().playwrightConfigDirs()) &&
             project.getServiceIfCreated(PiwiRecordings::class.java)?.sessionFor(file) == null
 
     fun recordHere(project: Project, editor: Editor, file: VirtualFile) = start(project, editor, file, null)
 
     fun recordNewFile(project: Project, directory: VirtualFile) {
-        val validator = object : InputValidator {
-            override fun checkInput(inputString: String?): Boolean =
-                Glue.specFileName(inputString.orEmpty())?.let { directory.findChild(it) == null } == true
+        val validator = object : InputValidatorEx {
+            override fun getErrorText(inputString: String?): String? {
+                val name = Glue.specFileName(inputString.orEmpty()) ?: return "A JavaScript or TypeScript file, such as checkout.spec.ts"
+                return if (directory.findChild(name) == null) null else "This file exists already."
+            }
+
+            override fun checkInput(inputString: String?): Boolean = getErrorText(inputString) == null
 
             override fun canClose(inputString: String?): Boolean = checkInput(inputString)
         }
@@ -316,7 +337,7 @@ object PiwiRecordFlow {
         }
     }
 
-    /** Registers the session `piwi/record` started, unless the file has no editor left or is recorded into already. */
+    /** Registers the session `piwi/record` started, unless the file has no editor left (said in a balloon) or is recorded into already. */
     private fun register(
         project: Project,
         editor: Editor,
@@ -331,7 +352,10 @@ object PiwiRecordFlow {
         val target = editor.takeUnless { it.isDisposed }
             ?: (FileEditorManager.getInstance(project).getSelectedEditor(file) as? TextEditor)?.editor
         when {
-            target == null -> recordings.remote.send(sessionId, "stop")
+            target == null -> {
+                PiwiCommands.notify(project, "The recording was canceled: ${file.name} was closed.")
+                recordings.remote.send(sessionId, "stop")
+            }
             recordings.sessionFor(file) != null -> {
                 recordings.remote.send(sessionId, "stop")
                 PiwiCommands.notify(project, "Piwi is already recording into ${file.name}.")

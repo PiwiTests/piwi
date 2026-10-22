@@ -38,6 +38,7 @@ export function mapWireCaseToRunCase(tc: WireCase): RunCaseInput {
     timeout: tc.timeout ?? null,
     error: tc.error,
     retries: tc.retries,
+    repeatEachIndex: tc.repeatEachIndex ?? null,
     attempts: tc.attempts ?? null,
     line,
     column,

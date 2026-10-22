@@ -390,6 +390,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
       error: testRunsCases.error,
       browser: testRunsCases.browser,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       duration: testRunsCases.duration,
       line: testRunsCases.line,
       column: testRunsCases.column,
@@ -781,14 +782,19 @@ async function cluesSection(db: DbClient, rep: RepresentativeRow, limits: Contex
 /**
  * Per-attempt error progression for the failing test in its run. Each retry is
  * already stored as its own row (dedup key includes `retries`), so this needs no
- * extra collection. The progression discriminates a deterministic bug (same
- * error every attempt) from flakiness (passes on retry) or a race (differing
- * errors).
+ * extra collection; the attempts read are those of the execution's own
+ * `--repeat-each` repetition, which retries on its own. The progression
+ * discriminates a deterministic bug (same error every attempt) from flakiness
+ * (passes on retry) or a race (differing errors).
  */
 async function retryProgressionSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
   if (rep.testCaseId == null) return null;
 
-  const conds = [eq(testRunsCases.testRunId, rep.testRunId), eq(testRunsCases.testCaseId, rep.testCaseId)];
+  const conds = [
+    eq(testRunsCases.testRunId, rep.testRunId),
+    eq(testRunsCases.testCaseId, rep.testCaseId),
+    eq(testRunsCases.repeatEachIndex, rep.repeatEachIndex),
+  ];
   if (rep.browserName) conds.push(eq(testRunsCases.browserName, rep.browserName));
 
   const attempts = await db

@@ -2,7 +2,8 @@
  * Recording a test from the editor. **Piwi: Record here** and **Piwi: Record a new test file** ask the editor service
  * to open a browser (`piwi/record`); each `piwi/recordingChanged` then rewrites the recorded block in the file, with
  * the import lines it needs in the same edit. While it records, the block is tinted, its controls are a CodeLens
- * above it and the recording is in the status bar; its warnings are diagnostics on their lines. The block is followed
+ * above it and the recording is in the status bar; its warnings are diagnostics on their lines, which offer, once it
+ * stopped, the other locators the recorder verified for their step as quick fixes. The block is followed
  * through the edits around it (`followBlock` in `glue.ts`), and typing inside it pauses the recording.
  */
 import * as path from 'node:path';
@@ -14,6 +15,7 @@ import {
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
   STOP_RECORDING_REQUEST,
+  TEST_AT_REQUEST,
   type FileEdit,
   type PageCandidatesParams,
   type PageCandidatesResult,
@@ -24,11 +26,14 @@ import {
   type RecordingCommandParams,
   type RecordingPlacement,
   type RecordingUpdate,
+  type RecordingStep,
   type RecordingWarning,
   type StopRecordingParams,
+  type TestAtResult,
 } from '@piwitests/editor/protocol';
 import {
   DOCUMENT_PATTERN,
+  RECORDED_ACTIONS,
   TEST_FILE,
   configTestDir,
   followBlock,
@@ -39,7 +44,9 @@ import {
   recordingSummary,
   recordingView,
   writeBlock,
+  editedLine,
   followEdit,
+  locatorChoices,
   type RecordedBlock,
   type TextChange,
   type TextSpan,
@@ -64,11 +71,13 @@ interface Session {
   state: RecordingUpdate['state'];
   steps: number;
   warnings: RecordingWarning[];
+  /** The steps of the update whose warnings show: the locators a warning's quick fixes offer. */
+  recorded: RecordingStep[];
   /** Paused because the block was edited: nothing is written until Resume. */
   edited: boolean;
   /** Keep my edits was chosen, or the window closes: nothing more is written. */
   keep: boolean;
-  /** Stopped or failed: the controls are gone, and the warnings stay until the block is edited. */
+  /** Stopped or failed: the controls are gone, and each warning stays until its line is edited. */
   finished: boolean;
   /** The document's version after the last write; another version means something else edited it since. */
   writtenVersion: number | null;
@@ -197,6 +206,38 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     );
   };
 
+  /**
+   * The quick fixes on the warnings among `shown` of a recording into `document` that stopped: for each step warned
+   * about, one per other locator the recorder verified for it, which replaces the written one on its line.
+   */
+  const locatorFixes = (document: vscode.TextDocument, shown: readonly vscode.Diagnostic[]): vscode.CodeAction[] => {
+    const s = [...sessions.values()].find((session) => session.finished && session.uri === document.uri.toString());
+    if (!s) return [];
+    const warned = new Map<string, { line: number; step: RecordingStep; diagnostics: vscode.Diagnostic[] }>();
+    for (const diagnostic of shown) {
+      const line = diagnostic.range.start.line;
+      const warning =
+        diagnostic.source === 'Piwi'
+          ? s.warnings.find((w) => s.block.range.start.line + w.line === line && w.message === diagnostic.message)
+          : undefined;
+      const step = warning ? s.recorded[warning.step] : undefined;
+      if (!warning || !step || line >= document.lineCount) continue;
+      const key = `${line} ${warning.step}`;
+      const entry = warned.get(key) ?? { line, step, diagnostics: [] };
+      entry.diagnostics.push(diagnostic);
+      warned.set(key, entry);
+    }
+    return [...warned.values()].flatMap(({ line, step, diagnostics: fixed }) =>
+      locatorChoices(document.lineAt(line).text, step).map((choice) => {
+        const action = new vscode.CodeAction(choice.title, vscode.CodeActionKind.QuickFix);
+        action.edit = new vscode.WorkspaceEdit();
+        action.edit.replace(document.uri, new vscode.Range(line, choice.start, line, choice.end), choice.locator);
+        action.diagnostics = fixed;
+        return action;
+      }),
+    );
+  };
+
   const forget = (s: Session) => {
     sessions.delete(s.id);
     diagnostics.delete(s.document.uri);
@@ -221,6 +262,23 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     if (picked && command) await vscode.commands.executeCommand(command.command, ...command.arguments);
   };
 
+  /**
+   * The notification after a recording stopped: what was written, with **Run** and **Verify ×3** for the test that
+   * holds the block when there is one (`piwi/testAt` at the line the block ends on), which run that test as the block
+   * stands when clicked.
+   */
+  const stopped = async (s: Session, update: RecordingUpdate) => {
+    const text = recordingSummary(update, s.keep, path.basename(s.document.uri.fsPath));
+    const at = () => ({ uri: s.uri, line: s.block.range.end.line });
+    const found = s.written
+      ? await lc.sendRequest<TestAtResult>(TEST_AT_REQUEST, { ...at(), character: 0 }).catch(() => null)
+      : null;
+    const actions = found?.location ? [RECORDED_ACTIONS.run, RECORDED_ACTIONS.verify] : [];
+    const picked = await vscode.window.showInformationMessage(text, ...actions);
+    if (picked === RECORDED_ACTIONS.run) await vscode.commands.executeCommand('piwi.runTestAtCursor', at());
+    else if (picked === RECORDED_ACTIONS.verify) await vscode.commands.executeCommand('piwi.verifyTestAtCursor', at());
+  };
+
   /** The recording ended: its controls go, its warnings stay; `update` is its last one, null when ended here. */
   const finish = (s: Session, update: RecordingUpdate | null) => {
     s.finished = true;
@@ -229,7 +287,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     decorate(s.uri);
     refresh();
     if (update?.state === 'failed') void tell(update.message || 'the recording stopped.', update.command, true);
-    else if (update) void vscode.window.showInformationMessage(recordingSummary(update, s.keep));
+    else if (update) void stopped(s, update);
   };
 
   /** Ends the recordings of a file that is no longer open: nothing more is written there. */
@@ -297,20 +355,30 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
 
   /**
    * Follows a recording's block through a change of its file. An edit inside a written block pauses the recording;
-   * after the recording, it removes the block's warnings, which no longer describe it.
+   * after the recording, it removes the warnings of the lines it edits, which no longer describe them, and all of
+   * them when it adds or removes a line of the block.
    */
   const follow = (s: Session, changes: TextChange[]) => {
     let inside = false;
     let moved = false;
+    let reshaped = false;
+    /** The lines of the block edited in place, counted from its first line. */
+    const lines = new Set<number>();
     for (const change of changes) {
       const next = followBlock(s.block.range, change);
+      if (next.where === 'inside') {
+        const line = editedLine(change);
+        if (line === null) reshaped = true;
+        else lines.add(line - s.block.range.start.line);
+      }
       s.block = { ...s.block, range: next.block };
       inside ||= next.where === 'inside';
       moved ||= next.where === 'above';
     }
     if (s.finished) {
-      if (inside) forget(s);
-      else if (moved) showWarnings(s);
+      if (inside) s.warnings = reshaped ? [] : s.warnings.filter((warning) => !lines.has(warning.line));
+      if (inside && !s.warnings.length) forget(s);
+      else if (inside || moved) showWarnings(s);
       return;
     }
     if (!s.written) return;
@@ -380,6 +448,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     const writes = update.state !== 'failed' && !s.edited && !s.keep && (s.written || !!update.code || !ending);
     if (writes && (await write(s, recordedBlockText(update.code, s.indent), update.importEdit, ending))) {
       s.warnings = update.warnings;
+      s.recorded = update.steps;
       showWarnings(s);
     }
     if (ending) {
@@ -433,6 +502,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
       state: 'starting',
       steps: 0,
       warnings: [],
+      recorded: [],
       edited: false,
       keep: false,
       finished: false,
@@ -706,6 +776,11 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
           ];
         },
       },
+    ),
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file', pattern: DOCUMENT_PATTERN },
+      { provideCodeActions: (document, _range, { diagnostics: shown }) => locatorFixes(document, shown) },
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
     ),
     lc.onNotification(RECORDING_NOTIFICATION, (update: RecordingUpdate) => receive(update)),
     lc.onDidChangeState((e) => {

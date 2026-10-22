@@ -1,9 +1,11 @@
 /**
  * What the extension shows, computed from the editor service's answers with
  * no VS Code API, so it is tested without an editor: the status bar item, the
- * failures view's tree, the file patterns the service reads, the MCP
- * configuration editors without the MCP provider API are given to paste, and
- * the recorded block a recording writes and follows through the edits around it.
+ * failures view's tree, the file patterns the service reads, the walkthrough
+ * and the Playwright configs it opens in, the MCP
+ * configuration editors without the MCP provider API are given to paste, the
+ * file a dashboard's open link names, and the recorded block a recording
+ * writes and follows through the edits around it.
  */
 import type {
   BaselineChoice,
@@ -20,6 +22,7 @@ import type {
   LiveRun,
   McpServerDefinition,
   RecordingPlacement,
+  RecordingStep,
   RecordingUpdate,
   RunStatus,
   RunEnded,
@@ -27,13 +30,22 @@ import type {
   RunTestsArgs,
   StatusResult,
   SummaryLine,
+  TestAtResult,
   TestLineStatus,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
+import * as path from 'node:path';
+import { isUnder } from './breakpoints';
 
 /** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
 export const DOCUMENT_PATTERN =
   '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,vue,svelte,astro,html,json,yaml,yml,properties,po,resx,cs,cshtml,razor}';
+
+/** The Playwright configs the extension activates on (`workspaceContains` in `package.json`). */
+export const PLAYWRIGHT_CONFIGS = '**/playwright.config.{ts,js,mjs,cjs,mts,cts}';
+
+/** The walkthrough of `contributes.walkthroughs`, as `workbench.action.openWalkthrough` names it. */
+export const WALKTHROUGH = 'piwitests.piwi#getStarted';
 
 export interface StatusBarView {
   text: string;
@@ -126,31 +138,69 @@ export function refreshingText(text: string): string {
   return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
 }
 
+type StatusContext = StatusResult['contexts'][number];
+
 /**
- * The status bar item: the latest run on the checked-out branch, with what the runs laid over it fixed or still fail,
- * or what keeps the service from reading it. While a run is in progress, the editor's own or one on the branch, the
- * item counts it, and the tooltip has both. A click reads the latest run again; the tooltip says when it was read and
- * links to the run, the dashboard and Connect.
+ * The context the status bar item speaks for: the one whose Playwright config folder holds the active file, the
+ * deepest when several do; else the first connected one, else the first the instance did not answer, else the first.
+ */
+export function statusContext(contexts: readonly StatusContext[], activeFile: string | null): StatusContext | null {
+  const holding = activeFile
+    ? contexts.filter((c) => isUnder(c.root, activeFile)).sort((a, b) => b.root.length - a.root.length)[0]
+    : undefined;
+  return (
+    holding ??
+    contexts.find((c) => c.connected) ??
+    contexts.find((c) => c.problemKind === 'unreachable') ??
+    contexts[0] ??
+    null
+  );
+}
+
+/**
+ * With several Playwright configs, which one the item speaks for: `The active file's Playwright config, in apps/admin
+ * (one of 3)`.
+ */
+function configLine(
+  contexts: readonly StatusContext[],
+  shown: StatusContext,
+  activeFile: string | null,
+): string | null {
+  if (contexts.length < 2) return null;
+  const where = shown.label ?? path.basename(shown.root);
+  return activeFile && isUnder(shown.root, activeFile)
+    ? md(`The active file's Playwright config, in ${where} (one of ${contexts.length})`)
+    : md(`The Playwright config in ${where} (one of ${contexts.length}): open a file of another one to see its run`);
+}
+
+/**
+ * The status bar item, for the Playwright config of the active file (`statusContext`): the latest run on the
+ * checked-out branch, with what the runs laid over it fixed or still fail, or what keeps the service from reading it.
+ * While a run is in progress, the editor's own or one on the branch, the item counts it, and the tooltip has both. A
+ * click reads the latest run again; the tooltip names the config when there are several, says when the run was read
+ * and links to the run, the dashboard and Connect.
  */
 export function statusBarView(
   status: StatusResult | null,
   runs: RunStatusResult | null,
   desktopChosen = false,
   now = Date.now(),
+  activeFile: string | null = null,
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
-  if (!contexts.length) {
+  const shown = statusContext(contexts, activeFile);
+  if (!shown) {
     return { text: '$(beaker) Piwi', tooltip: 'No Playwright config found', action: 'none', url: null, error: false };
   }
   const hint = desktopHint(status, desktopChosen);
   const connect = '[Connect](command:piwi.connect)';
-  const connected = contexts.find((c) => c.connected);
-  const unreachable = contexts.find((c) => c.problemKind === 'unreachable');
-  if (!connected && unreachable) {
+  const which = configLine(contexts, shown, activeFile);
+  if (!shown.connected && shown.problemKind === 'unreachable') {
     return {
       text: '$(debug-disconnect) Piwi: unreachable',
       tooltip: lines(
-        md(unreachable.problem ?? 'The instance did not answer'),
+        md(shown.problem ?? 'The instance did not answer'),
+        which,
         'Piwi reads it again on its own.',
         hint,
         `[Retry](command:piwi.refresh) · ${connect}`,
@@ -160,16 +210,18 @@ export function statusBarView(
       error: false,
     };
   }
-  if (!connected) {
+  if (!shown.connected) {
     return {
       text: '$(plug) Piwi: connect',
-      tooltip: lines(md(contexts[0]!.problem ?? 'Not connected'), hint, connect),
+      tooltip: lines(md(shown.problem ?? 'Not connected'), which, hint, connect),
       action: 'connect',
       url: null,
       error: false,
     };
   }
-  const run = runs?.contexts.find((c) => c.root === connected.root) ?? runs?.contexts[0];
+  const connected = shown;
+  const run =
+    runs?.contexts.find((c) => c.root === connected.root) ?? (contexts.length === 1 ? runs?.contexts[0] : undefined);
   // On the ladder, the checked-out branch has no run yet: another branch's is shown.
   const ladder = !run?.baseline || run.baseline.choice.kind === 'ladder';
   const fallback =
@@ -192,6 +244,7 @@ export function statusBarView(
         text: live ? liveText(live) : failing ? `$(error) Piwi: ${failing} failing` : '$(pass) Piwi: no failure',
         tooltip: lines(
           `${plural(run.overlays, 'local run')} of ${where}, ${plural(failing, 'test')} failing`,
+          which,
           baseline,
           progress,
           updated,
@@ -207,7 +260,7 @@ export function statusBarView(
     }
     return {
       text: live ? liveText(live) : '$(beaker) Piwi: no run',
-      tooltip: lines(`No run of ${where} yet`, baseline, progress, updated, from, reporter, hint, links),
+      tooltip: lines(`No run of ${where} yet`, which, baseline, progress, updated, from, reporter, hint, links),
       action: 'refresh',
       url: null,
       error: false,
@@ -219,6 +272,7 @@ export function statusBarView(
   const fixed = run.resolved ?? 0;
   const tooltip = lines(
     `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
+    which,
     baseline,
     run.overlays ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally` : null,
     progress,
@@ -308,6 +362,8 @@ export interface FailureNode {
   state: 'expanded' | 'collapsed' | 'none';
   /** The page a click on a run opens; a failure's execution page. */
   url: string | null;
+  /** On a Playwright config's node and a run's: that config's folder, which their actions act on. */
+  root?: string;
   /** The failure a leaf stands for. */
   failure?: WorkspaceFailure;
   children: FailureNode[];
@@ -315,6 +371,7 @@ export interface FailureNode {
 
 /** The codicon of each icon of the service's tree. */
 const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
+  context: 'root-folder',
   run: 'beaker',
   history: 'history',
   failed: 'error',
@@ -329,18 +386,19 @@ const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
 
 /**
  * The failures view's nodes, from the tree the service grouped: a run's age after its description (`4 min ago`), and,
- * while the editor's own run is `live`, that run on the run's node (`running 4/9`), whose tooltip says it too.
+ * while the editor's own run is `live`, that run on the node of the run of its Playwright config (`liveRoot`; any run's
+ * node when either does not say which: `running 4/9`), whose tooltip says it too.
  */
 export function failureNodes(
   result: FailuresResult | null,
-  options: { now?: number; live?: LiveRun | null } = {},
+  options: { now?: number; live?: LiveRun | null; liveRoot?: string | null } = {},
 ): FailureNode[] {
   const now = options.now ?? Date.now();
   const live = options.live?.own ? options.live : null;
   const failures = new Map((result?.items ?? []).map((f) => [f.executionId, f]));
   const draw = (node: FailureTreeNode): FailureNode => {
     const age = node.startTime ? relativeTime(node.startTime, now) : null;
-    const running = live && node.kind === 'run';
+    const running = live && node.kind === 'run' && (!options.liveRoot || !node.root || node.root === options.liveRoot);
     const [first, ...rest] = node.tooltip.map(md);
     return {
       key: node.key,
@@ -355,6 +413,7 @@ export function failureNodes(
       icon: FAILURE_ICONS[node.icon] ?? 'circle-outline',
       state: node.children.length ? (node.expanded ? 'expanded' : 'collapsed') : 'none',
       url: node.url,
+      ...(node.root ? { root: node.root } : {}),
       ...(node.executionId !== undefined && failures.has(node.executionId)
         ? { failure: failures.get(node.executionId)! }
         : {}),
@@ -362,6 +421,15 @@ export function failureNodes(
     };
   };
   return (result?.tree ?? []).map(draw);
+}
+
+/**
+ * What **Re-run the failing tests** runs: the tests still failing of every Playwright config, one run each
+ * (`FailuresResult.rerun`), or of the config at `root` alone, run from its node in the failures view.
+ */
+export function failingRuns(result: FailuresResult | null, root?: string): RunTestsArgs[] {
+  const runs = result?.rerun ?? [];
+  return root ? runs.filter((r) => r.root === root) : runs;
 }
 
 /** An entry of **Compare with…**: a baseline, or `run-by-id`, which asks for the run's id first. */
@@ -448,6 +516,24 @@ export interface TestDecoration {
   failingLine: number | null;
   hover: string;
   dashboardUrl: string | null;
+  /** The test's id, which **Run** in its hover runs; null from a service that does not give it. */
+  testCaseId: number | null;
+}
+
+/** The commands a test's gutter hover runs: `enabledCommands` of its trusted `MarkdownString`. */
+export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests'];
+
+/** A test's gutter hover in the file at `uri`: its result, then **Run** and **Open in dashboard** when it has them. */
+export function testHoverMarkdown(test: TestDecoration, uri: string): string {
+  const link = (title: string, command: string, args: unknown[]) =>
+    `[${title}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
+  const links = [
+    test.testCaseId !== null
+      ? link('Run', 'piwi.runTests', [{ uri, testIds: [test.testCaseId] } satisfies RunTestsArgs])
+      : '',
+    test.dashboardUrl ? link('Open in dashboard', 'piwi.openInDashboard', [test.dashboardUrl]) : '',
+  ].filter(Boolean);
+  return links.length ? `${test.hover}\n\n${links.join(' · ')}` : test.hover;
 }
 
 /** The decorations of a file's tests: the summary lines that carry a result. */
@@ -465,6 +551,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
               l.command?.command === 'piwi.openInDashboard' && typeof l.command.arguments?.[0] === 'string'
                 ? (l.command.arguments[0] as string)
                 : null,
+            testCaseId: l.testCaseId ?? null,
           },
         ]
       : [],
@@ -535,12 +622,21 @@ function titleList(titles: string[], count: number): string {
 /**
  * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
  * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
- * fails, with **Re-run failing**; an information otherwise. Null when `setting` keeps it quiet.
+ * fails, with **Re-run failing**; an information otherwise. Null when `setting` keeps it quiet. A run of each test
+ * several times says how many of its runs passed, `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
  */
 export function runVerdict(
   ended: RunEnded,
   setting: RunNotifications = 'always',
 ): { severity: 'information' | 'warning'; text: string; actions: string[] } | null {
+  if (ended.repeat) {
+    const { verdict, failed } = ended.repeat;
+    return {
+      severity: failed ? 'warning' : 'information',
+      text: `Piwi: run #${ended.runId} · ${verdict}`,
+      actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard],
+    };
+  }
   const still = ended.stillFailingCount ?? ended.stillFailing.length;
   const added = ended.newFailureCount ?? ended.newFailures.length;
   const parts: string[] = [];
@@ -771,6 +867,38 @@ export function followEdit(edit: FileEdit, changes: TextChange[]): FileEdit {
   return { range: { start: at.start, end: at.start }, newText: edit.newText };
 }
 
+/** The line a change edits without adding or removing a line: its range and its text on that line alone; else null. */
+export function editedLine(change: TextChange): number | null {
+  const { start, end } = change.range;
+  return start.line === end.line && !LINE_BREAK.test(change.text) ? start.line : null;
+}
+
+/** A quick fix on a recorded line's warning: another locator of the step, for the written one at `[start, end)`. */
+export interface LocatorChoice {
+  /** `Use getByTestId('pay')`. */
+  title: string;
+  locator: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * The other locators the recorder verified for a step, best first, as quick fixes on `line`, the text of the line the
+ * step is written on: each puts its locator in place of the written one (`RecordingStep.chosen`), which is found on the
+ * line as it is written, after a page expression or inside a call. None when the step has a single locator, or when
+ * the written one is not on the line exactly once.
+ */
+export function locatorChoices(line: string, step: Pick<RecordingStep, 'locators' | 'chosen'>): LocatorChoice[] {
+  const locators = step.locators ?? [];
+  const written = step.chosen == null ? undefined : locators[step.chosen];
+  if (!written || locators.length < 2) return [];
+  const start = line.indexOf(written);
+  if (start < 0 || line.includes(written, start + 1)) return [];
+  return locators
+    .filter((locator) => locator && locator !== written)
+    .map((locator) => ({ title: `Use ${locator}`, locator, start, end: start + written.length }));
+}
+
 /** The service's import edit as a change of the document; null without one. */
 export function importChange(edit: FileEdit | null | undefined): TextChange | null {
   return edit ? { range: edit.range, text: edit.newText } : null;
@@ -903,17 +1031,55 @@ export function recordInto(context: string): 'steps' | 'test' {
   return context === 'file' ? 'test' : 'steps';
 }
 
-/** The notification after a recording stopped: what was written, or that the block keeps the edits made in it. */
+/**
+ * The notification after a recording stopped: what was written into `file`, or that the block keeps the edits made
+ * in it.
+ */
 export function recordingSummary(
   update: Pick<RecordingUpdate, 'steps' | 'warnings' | 'message'>,
   keptEdits: boolean,
+  file: string,
 ): string {
   if (keptEdits) return 'Piwi: recording stopped. The recorded block keeps your edits.';
   const warnings = update.warnings.length;
-  const counts = `${plural(update.steps.length, 'step')} written${warnings ? `, ${plural(warnings, 'warning')} to check` : ''}`;
+  const check = warnings ? `, ${plural(warnings, 'warning')} to check` : '';
+  const written = update.steps.length
+    ? `recorded ${plural(update.steps.length, 'step')} into ${file}${check}`
+    : `nothing was recorded into ${file}`;
   const message = update.message?.trim();
-  if (!message) return `Piwi: recording stopped, ${counts}.`;
-  return `Piwi: ${/[.!?]$/.test(message) ? message : `${message}.`} ${counts}.`;
+  if (!message) return `Piwi: ${written}.`;
+  return `Piwi: ${/[.!?]$/.test(message) ? message : `${message}.`} ${written[0]!.toUpperCase()}${written.slice(1)}.`;
+}
+
+/** The actions the notification after a recording offers for the test that holds the block. */
+export const RECORDED_ACTIONS = { run: 'Run', verify: 'Verify ×3' } as const;
+
+/** How many times **Verify ×3** runs a test. */
+export const VERIFY_REPEAT = 3;
+
+/** A line of a spec: the argument the notification after a recording gives the run commands. */
+export interface TestLine {
+  uri: string;
+  /** 0-based. */
+  line: number;
+}
+
+/** The line a run command's argument names; null for anything else, such as the file a context menu passes. */
+export function testLineArg(arg: unknown): TestLine | null {
+  const at = arg as Partial<TestLine> | null | undefined;
+  return typeof at?.uri === 'string' && typeof at.line === 'number' && at.line >= 0
+    ? { uri: at.uri, line: at.line }
+    : null;
+}
+
+/**
+ * What runs the test `piwi/testAt` found at a line of the spec at `uri`: by its id when Piwi knows it, else by its
+ * location; with `repeat`, by its location, that many times. Null outside every test.
+ */
+export function testAtRun(uri: string, found: TestAtResult | null, repeat?: number): RunTestsArgs | null {
+  if (found?.test && !repeat) return { uri, testIds: [found.test.id] };
+  if (!found?.location) return null;
+  return { uri, testIds: [], locations: [found.location], ...(repeat ? { repeat } : {}) };
 }
 
 /** A Playwright test file's name: `.spec` or `.test`, then a JavaScript or TypeScript extension. */
@@ -932,4 +1098,158 @@ export function newTestFileName(sample: string | null): string {
   const suffix =
     (sample && TEST_FILE.exec(sample)?.[0]) || (sample && /\.[cm]?js$/.test(sample) ? '.spec.js' : '.spec.ts');
   return `recorded${suffix}`;
+}
+
+/**
+ * One run of `fn` for the calls made until `schedule` runs it: the first call schedules the run, the later ones join
+ * it, and a call once it ran schedules the next.
+ */
+export function coalesced(fn: () => void, schedule: (run: () => void) => void): () => void {
+  let scheduled = false;
+  return () => {
+    if (scheduled) return;
+    scheduled = true;
+    schedule(() => {
+      scheduled = false;
+      fn();
+    });
+  };
+}
+
+/** The longest name a test run's task gets: the start of `playwright test` and its arguments. */
+const TASK_NAME_LENGTH = 80;
+
+/** The name of a test run's task: `playwright test` and its arguments, cut at `TASK_NAME_LENGTH` characters. */
+export function runTaskName(args: readonly string[]): string {
+  const name = ['playwright test', ...args].join(' ');
+  return name.length > TASK_NAME_LENGTH ? `${name.slice(0, TASK_NAME_LENGTH - 1)}…` : name;
+}
+
+/**
+ * What a `vscode://piwitests.piwi/open` link names: the file as the run reported it, its 1-based line and column, and
+ * the folder the file is relative to, when the dashboard knows it.
+ */
+export interface OpenLink {
+  file: string;
+  line: number;
+  column: number;
+  root: string | null;
+}
+
+/**
+ * An open link's query as `vscode.Uri.query` gives it, decoded: `file=…&line=…&column=…&root=…`, each value taken as
+ * written up to the next `&` that starts one of these keys, so a path may hold an `&`. A line or column missing or
+ * below 1 is 1. Null without a file.
+ */
+export function openLink(query: string): OpenLink | null {
+  const params = new Map<string, string>();
+  for (const pair of query.split(/&(?=(?:file|line|column|root)=)/)) {
+    const eq = pair.indexOf('=');
+    if (eq > 0) params.set(pair.slice(0, eq), pair.slice(eq + 1));
+  }
+  const file = params.get('file')?.trim();
+  if (!file) return null;
+  const position = (name: string) => {
+    const n = Number.parseInt(params.get(name) ?? '', 10);
+    return Number.isInteger(n) && n >= 1 ? n : 1;
+  };
+  return { file, line: position('line'), column: position('column'), root: params.get('root')?.trim() || null };
+}
+
+/** Whether `file` is `folder` or inside it. */
+function within(folder: string, file: string): boolean {
+  return path.relative(folder, file) === '' || isUnder(folder, file);
+}
+
+/**
+ * The file an open link names, found as the editor service finds a run's path: an absolute path as given, else joined
+ * to each folder, then by ever shorter suffixes (at least the file and its directory). The folders are the link's
+ * `root` when it lies in a workspace folder, then the Playwright configs' folders, then the workspace folders. Only a
+ * file inside a workspace folder is returned; null when none exists. `exists` says whether a path is a file.
+ */
+export function resolveOpenFile(
+  link: Pick<OpenLink, 'file' | 'root'>,
+  places: { workspaceFolders: readonly string[]; configRoots: readonly string[] },
+  exists: (file: string) => boolean,
+): string | null {
+  const found = (file: string) => places.workspaceFolders.some((folder) => within(folder, file)) && exists(file);
+  const reported = link.file.replace(/\\/g, '/');
+  if (path.isAbsolute(reported) && found(path.resolve(reported))) return path.resolve(reported);
+  const root = link.root ? path.resolve(link.root) : null;
+  const roots = [
+    ...(root && places.workspaceFolders.some((folder) => within(folder, root)) ? [root] : []),
+    ...places.configRoots,
+    ...places.workspaceFolders,
+  ];
+  const parts = reported.split('/').filter((p) => p && p !== '.');
+  for (const folder of new Set(roots)) {
+    for (let from = 0; parts.length - from >= Math.min(2, parts.length); from++) {
+      const candidate = path.join(folder, ...parts.slice(from));
+      if (found(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/** The message shown when an open link names no file of this window. */
+export function openLinkMissing(file: string): string {
+  return `Piwi: no file of this window matches ${file}. VS Code opens a link in the window focused last: focus the window of the project that holds it, then open the link again.`;
+}
+
+/** The editor's proxy settings, `http.*` in VS Code's configuration, which the editor service follows. */
+export interface ProxySettings {
+  /** `http.proxy`: the proxy's URL; empty, the environment's own variables apply. */
+  proxy?: string | null;
+  /** `http.proxyStrictSSL`: whether certificates are verified. */
+  proxyStrictSSL?: boolean | null;
+  /** `http.proxyAuthorization`: the value of the `Proxy-Authorization` header. */
+  proxyAuthorization?: string | null;
+  /** `http.noProxy`: the hosts reached without the proxy. */
+  noProxy?: string[] | null;
+}
+
+/** The proxy's URL with a `Basic` authorization as its credentials, when it has none of its own; else as given. */
+function proxyUrl(proxy: string, authorization: string | null | undefined): string {
+  const basic = /^Basic\s+([A-Za-z0-9+/]+=*)$/i.exec(authorization?.trim() ?? '');
+  if (!basic) return proxy;
+  let url: URL;
+  try {
+    url = new URL(proxy);
+  } catch {
+    return proxy;
+  }
+  const credential = Buffer.from(basic[1], 'base64').toString('utf-8');
+  const colon = credential.indexOf(':');
+  if (url.username || url.password || colon < 0) return proxy;
+  url.username = credential.slice(0, colon);
+  url.password = credential.slice(colon + 1);
+  return url.href;
+}
+
+/**
+ * The environment the editor service starts with: the editor's, `env`, with its proxy settings as the variables the
+ * service reaches an instance through: `HTTPS_PROXY` and `HTTP_PROXY` from `http.proxy`, a `Basic`
+ * `http.proxyAuthorization` folded in as its credentials, `NO_PROXY` from `http.noProxy`, and
+ * `NODE_TLS_REJECT_UNAUTHORIZED=0` while `http.proxyStrictSSL` is off. A setting left empty keeps the environment's
+ * own variable, as it does for the editor. A private certificate authority reaches the service as
+ * `NODE_EXTRA_CA_CERTS` in `env`.
+ */
+export function serviceEnvironment(settings: ProxySettings, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = { ...env };
+  const proxy = settings.proxy?.trim();
+  if (proxy) {
+    const url = proxyUrl(proxy, settings.proxyAuthorization);
+    // The lower-case variables come first for Node: a setting replaces them.
+    delete result.https_proxy;
+    delete result.http_proxy;
+    result.HTTPS_PROXY = url;
+    result.HTTP_PROXY = url;
+  }
+  const noProxy = (settings.noProxy ?? []).map((host) => host.trim()).filter(Boolean);
+  if (noProxy.length) {
+    delete result.no_proxy;
+    result.NO_PROXY = noProxy.join(',');
+  }
+  if (settings.proxyStrictSSL === false) result.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  return result;
 }

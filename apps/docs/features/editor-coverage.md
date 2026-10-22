@@ -62,7 +62,7 @@ The marks come from, in order:
 3. **The version the most tests recorded that your repository holds** (`git cat-file`).
 
 From the second and the third, the lines are placed on your file through the diff between the two, as
-[failures follow your edits](./editor-runs#failures-follow-your-edits): a line moved by the edits above it keeps its
+[failures follow your edits](./editor-failures#failures-follow-your-edits): a line moved by the edits above it keeps its
 mark on its new line; a line the diff adds or rewrites is marked changed since the coverage run, not guessed; a line it
 removes loses its mark. Blank lines are never marked changed.
 

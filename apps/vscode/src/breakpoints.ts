@@ -38,12 +38,3 @@ export function runBreakpoints(breakpoints: readonly BreakpointLike[], roots: re
   }
   return out;
 }
-
-/**
- * The environment a terminal is told apart by, for reusing it: everything but the run's ref, which the service follows
- * through the terminal's first ref when it is shared. Two runs with other breakpoints need two terminals.
- */
-export function terminalEnvKey(env: Record<string, string> | undefined): string {
-  const entries = Object.entries(env ?? {}).filter(([key]) => key !== 'PIWI_ORIGIN_REF');
-  return JSON.stringify(entries.sort(([a], [b]) => a.localeCompare(b)));
-}

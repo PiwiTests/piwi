@@ -25,6 +25,9 @@ The desktop app needs no pairing with the editor: while it runs, it publishes it
 `~/.piwi/desktop.json`, which the editor reads, as the reporter does. The editor notices within seconds when the app
 starts or quits. With nothing else naming an instance, the editor uses the app as soon as it runs.
 
+The app is looked for on the machine the extension runs on: in a remote window of VS Code (Remote SSH, WSL, Dev
+Containers), that is the remote machine, and `localhost` in `piwi.serverUrl` names it too.
+
 ### Beside a shared instance
 
 When the environment, a `.env` or Connect names your team's instance, the desktop app sits beside it rather than
@@ -43,7 +46,8 @@ switch once per workspace.
 With the app chosen, the project is the one picked with Connect, else the one whose **linked folder** holds the
 workspace's Playwright config (link the folder on the project's page in the desktop app), else `PIWI_PROJECT_NAME`.
 When the app is used because nothing else names an instance, `PIWI_PROJECT_NAME` comes first, since the reporter
-sends its runs there under that name too.
+sends its runs there under that name too. Several Playwright configs of one repository reading the same project share
+what the editor reads from it: the instance answers each read once.
 
 ## Connect
 
@@ -84,6 +88,21 @@ instance is in use, or was chosen and is not running. In a JetBrains IDE, **Sett
 tool window say the same, or why the editor is not connected. The plugin starts its service when you
 open a file of a project that holds a Playwright config; until then, both say so, and Connect still finds the desktop
 app.
+
+## Behind a proxy
+
+In VS Code, the editor service reaches the instance through the editor's own proxy settings: `http.proxy`, with
+`http.proxyAuthorization` when it is a `Basic` credential, `http.noProxy`, and `http.proxyStrictSSL`, which turned
+off leaves every certificate unverified. An instance on your machine (`localhost`, `127.0.0.1`), and the desktop
+app, are reached directly. With `http.proxy` empty, the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
+variables of the environment VS Code was started with apply, as they do to the editor. A change of these settings
+starts the service again. An instance whose certificate a private certificate authority signed needs that authority
+in `NODE_EXTRA_CA_CERTS` in the environment VS Code was started with: the extension passes the environment through
+to the service.
+
+In a JetBrains IDE, the service gets the HTTP proxy of **Settings → Appearance & Behavior → System Settings → HTTP
+Proxy** for the instance the project names, and reaches this machine's addresses directly. A private certificate
+authority goes in `NODE_EXTRA_CA_CERTS` in the environment the IDE was started with.
 
 ## An unreachable instance
 

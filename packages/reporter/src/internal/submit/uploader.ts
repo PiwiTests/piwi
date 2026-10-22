@@ -200,6 +200,7 @@ export class Uploader {
           title: testCase.title,
           location: testCase.location,
           retries: testCase.retries ?? 0,
+          repeatEachIndex: testCase.repeatEachIndex ?? 0,
           suitePath: testCase.suitePath ?? null,
         }),
       );

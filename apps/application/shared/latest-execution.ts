@@ -6,16 +6,20 @@
  *
  * Only the same Playwright project counts (`browserName`, null equal to null):
  * a Chromium failure is neither confirmed nor cleared by a Firefox pass. A run
- * stores one row per attempt, so each newer run is read through its final
- * attempt; a later attempt of the execution's own run counts as newer too.
+ * stores one row per attempt, so each newer run is read through the test's
+ * outcome there: the final attempt of each `--repeat-each` repetition, a failed
+ * one first (`decidesOutcome`). A later attempt of the execution's own
+ * repetition counts as newer too.
  */
-import { isFailedStatus } from '#shared/utils/test-counts';
+import { decidesOutcome, isFailedStatus } from '#shared/utils/test-counts';
 
 /** One newer execution of the same test, as `getNewerExecutions` selects it. */
 export interface NewerExecutionRow {
   id: number;
   runId: number;
   status: string;
+  /** Playwright's `repeatEachIndex`: each repetition of a test retries on its own. */
+  repeatEachIndex: number;
   retries: number | null;
   browserName: string | null;
   failureClusterId: number | null;
@@ -33,7 +37,10 @@ export interface LatestExecutionCurrent {
 export interface LatestExecution {
   /** No newer execution of the test in the same Playwright project. */
   isLatest: boolean;
-  /** The newest execution of the test in the same project: a later run's final attempt, else a later attempt of this run. */
+  /**
+   * The newest execution of the test in the same project: the attempt that decides its outcome in a later run, else
+   * a later attempt of this execution's repetition.
+   */
   newest: {
     executionId: number;
     runId: number;
@@ -77,11 +84,17 @@ export function summarizeNewerExecutions(
   const sameProject = rows.filter((r) => (r.browserName ?? null) === project);
   const laterInOtherProject = rows.some((r) => (r.browserName ?? null) !== project);
 
-  // The final attempt of each run: the row with the highest retry.
-  const finalByRun = new Map<number, NewerExecutionRow>();
+  // The final attempt of each repetition in each run (the row with the highest
+  // retry), then the one that decides the test's outcome in that run.
+  const finalByRepeat = new Map<string, NewerExecutionRow>();
   for (const r of sameProject) {
-    const prev = finalByRun.get(r.runId);
-    if (!prev || (r.retries ?? 0) > (prev.retries ?? 0)) finalByRun.set(r.runId, r);
+    const key = `${r.runId}\x00${r.repeatEachIndex}`;
+    const prev = finalByRepeat.get(key);
+    if (!prev || (r.retries ?? 0) > (prev.retries ?? 0)) finalByRepeat.set(key, r);
+  }
+  const finalByRun = new Map<number, NewerExecutionRow>();
+  for (const r of finalByRepeat.values()) {
+    if (decidesOutcome(r, finalByRun.get(r.runId))) finalByRun.set(r.runId, r);
   }
   // Newest first: later runs by start time, then id; the execution's own run is the oldest.
   const finals = [...finalByRun.values()].sort((a, b) => {

@@ -38,8 +38,39 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
         assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
         assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
-        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks")) {
+        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
+        }
+        // The default keymap, which every bundled keymap descends from, binds the actions used while typing.
+        val keymap = com.intellij.openapi.keymap.KeymapManager.getInstance().getKeymap(com.intellij.openapi.keymap.KeymapManager.DEFAULT_IDEA_KEYMAP)!!
+        fun strokes(id: String) = keymap.getShortcuts(id).filterIsInstance<com.intellij.openapi.actionSystem.KeyboardShortcut>().map { it.firstKeyStroke }
+        val record = javax.swing.KeyStroke.getKeyStroke("ctrl alt shift R")
+        assertEquals(listOf(record), strokes("Piwi.RecordHere"))
+        assertEquals("the same chord stops the recording", listOf(record), strokes("Piwi.StopRecording"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
+    }
+
+    /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
+    fun testTheServiceGetsTheIdesProxy() {
+        val selector = object : java.net.ProxySelector() {
+            override fun select(uri: java.net.URI): List<java.net.Proxy> =
+                if (uri.host == "piwi.example.com") listOf(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress("proxy.example.com", 3128)))
+                else listOf(java.net.Proxy.NO_PROXY)
+
+            override fun connectFailed(uri: java.net.URI, address: java.net.SocketAddress, failure: java.io.IOException) {}
+        }
+        val settings = project.service<PiwiSettings>().state
+        val saved = settings.serverUrl
+        try {
+            settings.serverUrl = "https://piwi.example.com"
+            val environment = PiwiLspServerDescriptor(project).proxyEnvironment(selector)
+            assertEquals("http://proxy.example.com:3128", environment["HTTPS_PROXY"])
+            assertEquals("http://proxy.example.com:3128", environment["HTTP_PROXY"])
+            assertEquals("localhost,127.0.0.1,::1", environment["NO_PROXY"])
+            settings.serverUrl = ""
+            assertEquals("no proxy for a public address, none for the service", emptyMap<String, String>(), PiwiLspServerDescriptor(project).proxyEnvironment(selector))
+        } finally {
+            settings.serverUrl = saved
         }
     }
 
@@ -48,25 +79,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val service = project.getService(PiwiProjectService::class.java)
         try {
             service.saveCredentials("https://a.example/", "Shop", "pd_a")
-            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop", baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop", baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             service.settings().serverUrl = "https://b.example"
             assertEquals(null, service.credentials().apiKey)
             service.saveCredentials("https://b.example", "Shop", "pd_b")
             service.settings().serverUrl = "https://a.example"
             assertEquals("pd_a", service.credentials().apiKey)
             service.disconnect()
-            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             // A project only, no address and no key.
             service.saveCredentials("", "Shop", "pd_ignored")
-            assertEquals(EditorCredentials(null, null, "Shop", baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             // The desktop app, chosen on this machine: what is saved for the instance stays.
             service.useDesktop("Mugs")
-            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs", baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             service.useInstance()
-            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs", baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             service.useDesktop(null)
             service.disconnect()
-            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             assertFalse(service.hasApiKey("https://a.example"))
             assertTrue(service.hasApiKey("https://b.example"))
         } finally {
@@ -213,6 +244,46 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(service.hasPlaywrightConfig())
     }
 
+    /**
+     * The first project holding a Playwright config while nothing connects it says what Piwi does, with Connect, the
+     * failures and the documentation, once per installation.
+     */
+    fun testTheFirstRunNotificationShowsOncePerInstallation() {
+        val service = project.getService(PiwiProjectService::class.java)
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        val shown = mutableListOf<com.intellij.notification.Notification>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            com.intellij.notification.Notifications.TOPIC,
+            object : com.intellij.notification.Notifications {
+                override fun notify(notification: com.intellij.notification.Notification) {
+                    if (notification.content == Glue.FIRST_RUN) shown += notification
+                }
+            },
+        )
+        val config = File(project.basePath!!, "playwright.config.ts")
+        val before = properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN)
+        try {
+            properties.unsetValue(PiwiProjectService.FIRST_RUN_SHOWN)
+            config.writeText("export default {};\n")
+            val found = service.searchPlaywright()
+            service.offerFirstRun(found, listOf("https://piwi.example.com"))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals("a project naming an instance is connected", emptyList<Any>(), shown)
+            assertFalse(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
+            service.offerFirstRun(found, emptyList())
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(listOf("Connect…", "Open the Failures", "Learn More"), shown.single().actions.map { it.templateText })
+            assertTrue(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
+            service.offerFirstRun(found, emptyList())
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals("once per installation", 1, shown.size)
+        } finally {
+            config.delete()
+            service.searchPlaywright()
+            properties.setValue(PiwiProjectService.FIRST_RUN_SHOWN, before)
+        }
+    }
+
     /** A Playwright config created or removed while the project is open is found without Refresh, whatever its name. */
     fun testFindsAConfigCreatedOrRemovedWhileTheProjectIsOpen() {
         val service = project.getService(PiwiProjectService::class.java)
@@ -280,6 +351,92 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /**
+     * The status bar item speaks for the Playwright config of the selected file, its text in the error color while that
+     * config's tests fail, and its popup holds what its state calls for first, then Piwi's actions.
+     */
+    fun testTheStatusBarItemFollowsTheSelectedFile() {
+        val service = project.getService(PiwiProjectService::class.java)
+        val shop = File(project.basePath!!, "shop")
+        val admin = File(shop, "admin")
+        val cart = File(shop, "cart.spec.ts")
+        val users = File(admin, "users.spec.ts")
+        admin.mkdirs()
+        cart.writeText("test('pays', async () => {});\n")
+        users.writeText("test('lists', async () => {});\n")
+        val files = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        val editors = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+        val error = com.intellij.util.ui.NamedColorUtil.getErrorForeground()
+        val widget = PiwiStatusBarWidget(project)
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, widget)
+        val label = widget.component as javax.swing.JLabel
+        var told = 0
+        service.onChange(widget) { told++ }
+        fun waitUntil(condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+            }
+            assertTrue(condition())
+        }
+        try {
+            editors.openFiles.forEach { editors.closeFile(it) }
+            widget.install(com.intellij.openapi.wm.WindowManager.getInstance().getStatusBar(project)!!)
+            // The read the item asks for once installed ends before the answers are pushed: no service runs here.
+            waitUntil { told > 0 }
+            Thread.sleep(200)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            service.statusChanged(
+                StatusResult(
+                    listOf(
+                        ContextStatus(root = shop.path, connected = true, projectName = "Shop"),
+                        ContextStatus(root = admin.path, connected = true, projectName = "Admin"),
+                    ),
+                ),
+            )
+            service.runStatusChanged(
+                RunStatusResult(
+                    listOf(
+                        RunStatus(root = shop.path, run = RunInfo(id = 41, status = "failed", totalTests = 3, passedTests = 1, failedTests = 2)),
+                        RunStatus(root = admin.path, run = RunInfo(id = 12, status = "passed", totalTests = 5, passedTests = 5)),
+                    ),
+                ),
+            )
+            waitUntil { label.text == "Piwi: 2 failing" }
+            // Without an editor, the first connected config.
+            assertEquals(error.rgb, label.foreground.rgb)
+            editors.openFile(files.refreshAndFindFileByIoFile(users)!!, true)
+            assertEquals("Piwi: 5 passed", label.text)
+            assertTrue(error.rgb != label.foreground.rgb)
+            assertTrue(label.toolTipText, label.toolTipText.contains("The active file's Playwright config, in admin (one of 2)"))
+            assertNotNull(label.icon)
+            val manager = ActionManager.getInstance()
+            val entries = widget.actions().getChildren(null)
+                .map { if (it is com.intellij.openapi.actionSystem.Separator) "-" else manager.getId(it) ?: it.templateText }
+            assertEquals(
+                listOf(
+                    "Read the Latest Run Again", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
+                    "Piwi.RerunFailing", "Open the Failures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
+                    "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
+                    "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
+                ),
+                entries,
+            )
+            editors.openFile(files.refreshAndFindFileByIoFile(cart)!!, true)
+            assertEquals("Piwi: 2 failing", label.text)
+            assertEquals(error.rgb, label.foreground.rgb)
+        } finally {
+            editors.openFiles.forEach { editors.closeFile(it) }
+            shop.deleteRecursively()
+            // No service runs here: a read leaves nothing of the pushed answers to the next tests.
+            service.refreshStatus()
+            val deadline = System.currentTimeMillis() + 10_000
+            while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
     /** A file's coverage answer is drawn as marks in the gutter, one per span, hidden and shown again with the action. */
     fun testCoverageMarksAreDrawnAndHidden() {
         val base = File(project.basePath!!)
@@ -329,6 +486,34 @@ class PiwiPluginTest : BasePlatformTestCase() {
             marks.shown = true
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertEquals(3, drawn().size)
+            // A new answer: only the marks it changes are taken off or drawn, the others' highlighters kept.
+            fun highlighters() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
+                .filter { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
+                .associateBy { it.textAttributesKey?.externalName }
+            val first = highlighters()
+            marks.arrived(result.copy(notRun = listOf(LineSpan(2, 3))))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            val second = highlighters()
+            assertSame(first["PIWI_COVERAGE_RUN"], second["PIWI_COVERAGE_RUN"])
+            assertSame(first["PIWI_COVERAGE_CHANGED"], second["PIWI_COVERAGE_CHANGED"])
+            assertNotSame(first["PIWI_COVERAGE_NOT_RUN"], second["PIWI_COVERAGE_NOT_RUN"])
+            assertEquals(
+                listOf(
+                    Triple("PIWI_COVERAGE_RUN", 0, 1),
+                    Triple("PIWI_COVERAGE_NOT_RUN", 2, 3),
+                    Triple("PIWI_COVERAGE_CHANGED", 4, 4),
+                ),
+                drawn(),
+            )
+            // A line typed above: the highlighters follow it, and an answer placing the marks where they went keeps them all.
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) { document.insertString(0, "z\n") }
+            marks.arrived(result.copy(executed = listOf(LineSpan(1, 2, 2)), notRun = listOf(LineSpan(3, 4)), changed = listOf(LineSpan(5, 5))))
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(second.values.toSet(), highlighters().values.toSet())
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                document.deleteString(0, 2)
+                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveDocument(document)
+            }
             // Coverage of another version of the file: no mark.
             marks.arrived(result.copy(state = "other-version", executed = emptyList(), notRun = emptyList(), changed = emptyList()))
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -338,6 +523,59 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             marks.shown = wasShown
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
+    /** A renamed or moved file loses the marks of its old URI and is asked again under its new one; a deleted file is forgotten. */
+    fun testCoverageMarksFollowARenamedOrMovedFile() {
+        val dir = File(project.basePath!!, "moving").apply { deleteRecursively() }
+        val io = File(dir, "Basket.cs").apply { parentFile.mkdirs(); writeText("a\nb\nc\n") }
+        val local = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        val file = local.refreshAndFindFileByIoFile(io)!!
+        val target = local.refreshAndFindFileByIoFile(File(dir, "done").apply { mkdirs() })!!
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)!!
+        val marks = project.service<PiwiCoverageMarks>()
+        val wasShown = marks.shown
+        fun drawn() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
+            .count { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
+        fun uri() = file.toNioPath().toUri().toString()
+        val dispatch = { com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue() }
+        val result = CoverageResult(uri = uri(), state = "exact", executed = listOf(LineSpan(0, 1, 1)), tests = 1)
+        try {
+            marks.shown = true
+            marks.start()
+            // No service runs here: the file is kept under each URI it takes, and its answer drawn as it comes.
+            marks.ask(file)
+            assertSame(file, marks.arrived(result))
+            dispatch()
+            assertEquals(1, drawn())
+            com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { file.rename(this, "Cart.cs") }
+            dispatch()
+            assertEquals(0, drawn())
+            assertNull(marks.arrived(result))
+            val renamed = uri()
+            assertTrue(renamed, renamed.endsWith("/moving/Cart.cs"))
+            assertSame(file, marks.arrived(result.copy(uri = renamed)))
+            dispatch()
+            assertEquals(1, drawn())
+            com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { file.move(this, target) }
+            dispatch()
+            assertEquals(0, drawn())
+            assertNull(marks.arrived(result.copy(uri = renamed)))
+            val moved = uri()
+            assertTrue(moved, moved.endsWith("/moving/done/Cart.cs"))
+            assertSame(file, marks.arrived(result.copy(uri = moved)))
+            dispatch()
+            assertEquals(1, drawn())
+            com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { file.delete(this) }
+            dispatch()
+            assertEquals(0, drawn())
+            assertNull(marks.arrived(result.copy(uri = moved)))
+        } finally {
+            marks.shown = wasShown
+            dir.deleteRecursively()
+            local.refreshAndFindFileByIoFile(File(project.basePath!!))?.let { com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(false, true, true, it) }
+            dispatch()
         }
     }
 
@@ -367,13 +605,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(PiwiLspServerSupportProvider.isSupported(myFixture.addFileToProject("src/logo.png", "").virtualFile))
     }
 
-    /** Piwi Picker's request lands at the caret of the open editor, through the IDE's built-in server. */
-    fun testPiwiPickerSendsALocatorToTheCaret() {
-        myFixture.configureByText("checkout.spec.ts", "test('pays', async ({ page }) => {\n  <caret>\n});\n")
-        val token = PiwiSendToken.ensure()
+    /** Posts `body` to the Send to editor endpoint as Piwi Picker does, and waits for the answer, pumping the event queue meanwhile. */
+    private fun sendFromPicker(body: String, bearer: String): java.net.http.HttpResponse<String> {
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
-        val client = java.net.http.HttpClient.newHttpClient()
-        fun post(body: String, bearer: String) = client.sendAsync(
+        val future = java.net.http.HttpClient.newHttpClient().sendAsync(
             java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.PATH}"))
                 .header("Authorization", "Bearer $bearer")
                 .header("Origin", "chrome-extension://abc")
@@ -381,25 +616,53 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 .build(),
             java.net.http.HttpResponse.BodyHandlers.ofString(),
         )
-        fun await(future: CompletableFuture<java.net.http.HttpResponse<String>>): java.net.http.HttpResponse<String> {
-            val deadline = System.currentTimeMillis() + 20_000
-            while (!future.isDone && System.currentTimeMillis() < deadline) {
-                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-                Thread.sleep(20)
-            }
-            return future.get(1, TimeUnit.SECONDS)
+        val deadline = System.currentTimeMillis() + 20_000
+        while (!future.isDone && System.currentTimeMillis() < deadline) {
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            Thread.sleep(20)
         }
+        return future.get(1, TimeUnit.SECONDS)
+    }
 
-        assertEquals(401, await(post("""{"kind":"locator","text":"x"}""", "wrong-token-wrong-token")).statusCode())
-        val bad = await(post("""{"kind":"file"}""", token))
+    /** Piwi Picker's request lands at the caret of the open editor, through the IDE's built-in server. */
+    fun testPiwiPickerSendsALocatorToTheCaret() {
+        myFixture.configureByText("checkout.spec.ts", "test('pays', async ({ page }) => {\n  <caret>\n});\n")
+        val token = PiwiSendToken.ensure()
+        assertEquals(401, sendFromPicker("""{"kind":"locator","text":"x"}""", "wrong-token-wrong-token").statusCode())
+        val bad = sendFromPicker("""{"kind":"file"}""", token)
         assertEquals(400, bad.statusCode())
-        val ok = await(post("""{"kind":"locator","text":"page.getByRole('button', { name: 'Pay now' })"}""", token))
+        val ok = sendFromPicker("""{"kind":"locator","text":"page.getByRole('button', { name: 'Pay now' })"}""", token)
         assertEquals(ok.body(), 200, ok.statusCode())
         assertEquals("chrome-extension://abc", ok.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+        assertEquals(myFixture.file.virtualFile.path, com.google.gson.JsonParser.parseString(ok.body()).asJsonObject.get("file").asString)
         assertEquals(
             "test('pays', async ({ page }) => {\n  page.getByRole('button', { name: 'Pay now' })\n});\n",
             myFixture.editor.document.text,
         )
+    }
+
+    /** Without an editor open, Piwi Picker's text goes into a new scratch file, and the answer names no file. */
+    fun testPiwiPickerOpensAScratchFileWhileNoEditorIsOpen() {
+        val token = PiwiSendToken.ensure()
+        val editors = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+        editors.openFiles.forEach { editors.closeFile(it) }
+        assertNull(editors.selectedTextEditor)
+        val ok = sendFromPicker("""{"kind":"locator","text":"page.getByLabel('Email')"}""", token)
+        assertEquals(ok.body(), 200, ok.statusCode())
+        assertTrue(ok.body(), com.google.gson.JsonParser.parseString(ok.body()).asJsonObject.get("file").isJsonNull)
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val editor = editors.selectedTextEditor
+        val scratch = editor?.virtualFile
+        try {
+            assertTrue(scratch?.name ?: "no editor", scratch?.name?.startsWith("piwi-picker") == true)
+            assertTrue(com.intellij.ide.scratch.ScratchUtil.isScratch(scratch))
+            assertEquals("page.getByLabel('Email')", editor?.document?.text)
+        } finally {
+            if (scratch != null) {
+                editors.closeFile(scratch)
+                com.intellij.openapi.application.WriteAction.runAndWait<java.io.IOException> { scratch.delete(this) }
+            }
+        }
     }
 
     /** The dashboard's Open in IDE finds a run's file in the open project and opens it at its line, through the built-in server. */
@@ -417,7 +680,12 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val settings = project.service<PiwiSettings>().state
         val saved = settings.serverUrl
         settings.serverUrl = "http://localhost:3000"
-        com.intellij.openapi.util.Disposer.register(testRootDisposable) { settings.serverUrl = saved }
+        val service = project.service<PiwiProjectService>()
+        service.readKnownAddresses()
+        com.intellij.openapi.util.Disposer.register(testRootDisposable) {
+            settings.serverUrl = saved
+            service.readKnownAddresses()
+        }
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
         val client = java.net.http.HttpClient.newHttpClient()
         fun get(query: String, origin: String? = "http://127.0.0.1:3000"): java.net.http.HttpResponse<String> {

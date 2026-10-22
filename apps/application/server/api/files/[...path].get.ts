@@ -10,6 +10,7 @@ import { resolveStoredTrace } from '../../utils/trace-reconstruct';
 import { prepareHtmlReport } from '../../utils/html-report';
 import { readReportArchiveIndex } from '../../utils/report-archive';
 import { getDatabase } from '../../database';
+import { etagMatches } from '../../utils/json-etag';
 
 defineRouteMeta({
   openAPI: {
@@ -106,7 +107,7 @@ export default eventHandler(async (event) => {
     const etag = `"${path.split('/blobs/')[1]}"`;
     setResponseHeader(event, 'ETag', etag);
     setResponseHeader(event, 'Cache-Control', 'private, max-age=31536000, immutable');
-    if (getRequestHeader(event, 'if-none-match') === etag) {
+    if (etagMatches(getRequestHeader(event, 'if-none-match'), etag)) {
       setResponseStatus(event, 304);
       return null;
     }

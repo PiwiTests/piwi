@@ -1,8 +1,8 @@
 /**
  * The command lines the editor runs in a terminal: built here from arguments checked one by one, never taken as an
  * instance's command text. An instance names what to run (the Playwright arguments of a test or a selection, the
- * verification of a fix plan); an argument that is not a test filter or an option of {@link PLAYWRIGHT_OPTIONS}, or
- * that a shell would expand, refuses the whole command.
+ * verification of a fix plan), or the editor names tests by their location in a spec; an argument that is not a test
+ * filter or an option of {@link PLAYWRIGHT_OPTIONS}, or that a shell would expand, refuses the whole command.
  */
 
 /** Characters bash, zsh, PowerShell or cmd expand inside double quotes, plus control characters. */
@@ -53,6 +53,42 @@ export function validPlaywrightArgs(args: unknown[]): args is string[] {
     if (takesValue && eq < 0 && typeof args[++i] !== 'string') return false;
   }
   return true;
+}
+
+/** The options a run of each test several times sets itself. */
+const REPEAT_OPTIONS = new Set(['--repeat-each', '--retries']);
+
+/** The most runs of each test a repeated run asks for. */
+const MAX_REPEAT = 100;
+
+/**
+ * `args` running each test `repeat` times without retries (`--repeat-each=3 --retries=0`), in place of the repeat and
+ * retries they set; null when they are not {@link validPlaywrightArgs} or `repeat` is not a whole number from 1 to
+ * {@link MAX_REPEAT}.
+ */
+export function repeatArgs(args: unknown[], repeat: unknown): string[] | null {
+  if (!validPlaywrightArgs(args)) return null;
+  if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || repeat > MAX_REPEAT) return null;
+  const kept: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    const eq = arg.indexOf('=');
+    const name = arg.startsWith('-') ? (eq < 0 ? arg : arg.slice(0, eq)) : null;
+    const words = name && eq < 0 && PLAYWRIGHT_OPTIONS.get(name) ? [arg, args[++i]!] : [arg];
+    if (!name || !REPEAT_OPTIONS.has(name)) kept.push(...words);
+  }
+  return [...kept, `--repeat-each=${repeat}`, '--retries=0'];
+}
+
+/**
+ * Whether `location` names a test as Playwright's location filter takes it: a spec's path relative to the Playwright
+ * config's folder, with forward slashes, then the 1-based line of its `test(…)` call (`tests/checkout.spec.ts:42`).
+ */
+export function isTestLocation(location: unknown): location is string {
+  if (typeof location !== 'string') return false;
+  const match = /^([^:]+):[1-9]\d*$/.exec(location);
+  const file = match?.[1];
+  return !!file && !file.startsWith('/') && !file.startsWith('-') && !file.split('/').includes('..');
 }
 
 /** `npx playwright test` with `args`, or null when they are not {@link validPlaywrightArgs} or one cannot be quoted. */

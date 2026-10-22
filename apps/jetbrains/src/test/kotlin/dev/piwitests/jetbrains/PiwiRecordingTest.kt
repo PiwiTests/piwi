@@ -384,7 +384,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         send(update("s6", code, warnings = listOf(RecordingWarning(step = 1, line = 1, message = brittle))))
         val document = myFixture.editor.document
         val shown = recordings.warnings(document).single()
-        assertEquals("await page.locator('.row').nth(2).click();" to brittle, document.getText(shown.first) to shown.second)
+        assertEquals("await page.locator('.row').nth(2).click();" to brittle, document.getText(shown.range) to shown.message)
         assertTrue(myFixture.doHighlighting(HighlightSeverity.WEAK_WARNING).any { it.description == "Piwi: $brittle" })
 
         recordings.stop(session)
@@ -392,7 +392,46 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals("Recorded 2 steps into warned.spec.ts. 1 warning to check, on its line.", notes.last().content)
         assertEquals(1, recordings.warnings(document).size)
         typeAt("nth(2)", "x")
-        assertEquals(emptyList<Pair<Any, String>>(), recordings.warnings(document))
+        assertEquals(emptyList<RecordingWarningView>(), recordings.warnings(document))
+    }
+
+    private fun locatorFixes(): List<com.intellij.codeInsight.intention.IntentionAction> = myFixture.availableIntentions.filter {
+        it is UseRecordedLocatorFix || (it as? com.intellij.codeInsight.intention.IntentionActionDelegate)?.delegate is UseRecordedLocatorFix
+    }
+
+    /**
+     * Once the recording stopped, a warning on a step with other verified locators offers each of them as a quick fix:
+     * applied, it puts that locator in place of the written one on the line, in one undoable command, and that line's
+     * warning goes while the others stay. While it records, none is offered.
+     */
+    fun testAWarningOffersTheStepsOtherLocatorsOnceTheRecordingStopped() {
+        myFixture.configureByText("fix.spec.ts", "test('t', async ({ page }) => {\n  \n});\n")
+        val session = register("s13", line = 1, newLine = false, indent = "  ")
+        val brittle = "The best locator captured for this element is brittle: locator('form > button.btn-3')"
+        val password = "A password was typed here; the spec reads it from E2E_PASSWORD."
+        val code = "await page.locator('form > button.btn-3').click();\nawait page.getByLabel('Password').fill(process.env.E2E_PASSWORD ?? '');"
+        val steps = listOf(
+            RecordingStep("Click Pay", 0, listOf("getByTestId('pay')", "getByRole('button', { name: 'Pay' })", "locator('form > button.btn-3')"), chosen = 2),
+            RecordingStep("Fill Password", 1, listOf("getByLabel('Password')", "locator('#password')"), chosen = 0),
+        )
+        val warnings = listOf(RecordingWarning(step = 0, line = 0, message = brittle), RecordingWarning(step = 1, line = 1, message = password))
+        send(update("s13", code, warnings = warnings).copy(steps = steps))
+        myFixture.editor.caretModel.moveToOffset(text().indexOf("locator('form"))
+        assertEquals(emptyList<String>(), locatorFixes().map { it.text })
+
+        recordings.stop(session)
+        send(update("s13", code, state = "stopped", warnings = warnings).copy(steps = steps))
+        val recorded = text()
+        assertEquals(setOf("Use getByTestId('pay')", "Use getByRole('button', { name: 'Pay' })"), locatorFixes().map { it.text }.toSet())
+        myFixture.checkPreviewAndLaunchAction(locatorFixes().single { it.text == "Use getByTestId('pay')" })
+        assertEquals(recorded.replace("page.locator('form > button.btn-3')", "page.getByTestId('pay')"), text())
+        assertEquals(listOf(password), recordings.warnings(myFixture.editor.document).map { it.message })
+        assertEquals(emptyList<String>(), locatorFixes().map { it.text })
+        undo()
+        assertEquals(recorded, text())
+
+        myFixture.editor.caretModel.moveToOffset(text().indexOf("getByLabel"))
+        assertEquals(listOf("Use locator('#password')"), locatorFixes().map { it.text })
     }
 
     /**
@@ -428,12 +467,16 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         send(update("s9", "await page.goto('/');"))
         val statusBar = PiwiStatusBarWidget(project)
-        assertEquals("Piwi: ● recording · 1 step", statusBar.getText())
+        fun statusText(): String {
+            statusBar.update()
+            return (statusBar.component as javax.swing.JLabel).text
+        }
+        assertEquals("Piwi: ● recording · 1 step", statusText())
         // The service sends nothing for a pause: the banner says so at once.
         assertTrue(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertEquals(listOf("pause s9"), sent)
         assertEquals("Piwi: recording paused · 1 step", session.view.text)
-        assertEquals("Piwi: recording paused · 1 step", statusBar.getText())
+        assertEquals("Piwi: recording paused · 1 step", statusText())
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertTrue(myFixture.testAction(actions.getAction("Piwi.ResumeRecording")).isEnabled)
         assertEquals(listOf("pause s9", "resume s9"), sent)
@@ -444,6 +487,6 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals(listOf("pause s9", "resume s9", "stop s9"), sent)
         send(update("s9", "await page.goto('/');", state = "stopped"))
         assertNull(recordings.only())
-        assertFalse(statusBar.getText().contains("recording"))
+        assertFalse(statusText().contains("recording"))
     }
 }

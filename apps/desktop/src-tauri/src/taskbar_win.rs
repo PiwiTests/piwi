@@ -62,9 +62,11 @@ enum Glyph {
 /// Install the thumbnail toolbar on the main window. Best-effort: any failure
 /// (no HWND, COM unavailable) simply leaves the taskbar button without buttons.
 pub fn install(window: &WebviewWindow) {
-    let Ok(hwnd) = window.hwnd() else {
+    let Ok(handle) = window.hwnd() else {
         return;
     };
+    // Tauri gives the handle as the HWND of the `windows` version it depends on: the same pointer.
+    let hwnd = HWND(handle.0);
     // Leak one AppHandle clone as the subclass's ref-data; it lives for the whole
     // process, so there is nothing to free.
     let app: Box<AppHandle> = Box::new(window.app_handle().clone());

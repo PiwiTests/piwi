@@ -226,15 +226,16 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
 }
 
 /**
- * The executions of a test newer than one execution: its later attempts in the
- * same run, and every attempt in a run that started later (a tie on the start
- * time goes to the higher run id), newest first. Every Playwright project and
- * every branch, lab runs left out; `summarizeNewerExecutions` keeps the
- * execution's own project. Fifty rows at most.
+ * The executions of a test newer than one execution: the later attempts of its
+ * own repetition in the same run, and every attempt in a run that started later
+ * (a tie on the start time goes to the higher run id), newest first. Every
+ * Playwright project and every branch, lab runs left out;
+ * `summarizeNewerExecutions` keeps the execution's own project. Fifty rows at
+ * most.
  */
 export async function getNewerExecutions(
   db: DrizzleDB,
-  ref: { testCaseId: number; runId: number; runStartTime: Date | null; retries: number },
+  ref: { testCaseId: number; runId: number; runStartTime: Date | null; repeatEachIndex: number; retries: number },
 ): Promise<NewerExecutionRow[]> {
   const laterRun = ref.runStartTime
     ? or(
@@ -247,6 +248,7 @@ export async function getNewerExecutions(
       id: testRunsCases.id,
       runId: testRuns.id,
       status: testRunsCases.status,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       browserName: testRunsCases.browserName,
       failureClusterId: testRunsCases.failureClusterId,
@@ -258,7 +260,14 @@ export async function getNewerExecutions(
       and(
         eq(testRunsCases.testCaseId, ref.testCaseId),
         notLabRun(testRuns.origin),
-        or(laterRun, and(eq(testRuns.id, ref.runId), gt(testRunsCases.retries, ref.retries))),
+        or(
+          laterRun,
+          and(
+            eq(testRuns.id, ref.runId),
+            eq(testRunsCases.repeatEachIndex, ref.repeatEachIndex),
+            gt(testRunsCases.retries, ref.retries),
+          ),
+        ),
       ),
     )
     .orderBy(desc(testRuns.startTime), desc(testRuns.id), desc(testRunsCases.retries))
@@ -288,8 +297,9 @@ export async function getTestRunCase(
   // Large evidence payloads are content-addressed; a row may still keep them inline.
   const evidence = await inlineCasePayloads(db, trc);
 
-  // Every attempt is its own execution row (unique on run + test case + retries
-  // + browser), so each stored attempt maps to the sibling row that holds it.
+  // Every attempt is its own execution row (unique on run + test case + repeat
+  // + retries + browser), so each stored attempt maps to the sibling row of the
+  // same repetition that holds it.
   const siblingRows = await db
     .select({ id: testRunsCases.id, retries: testRunsCases.retries, status: testRunsCases.status })
     .from(testRunsCases)
@@ -297,6 +307,7 @@ export async function getTestRunCase(
       and(
         eq(testRunsCases.testRunId, trc.testRunId),
         eq(testRunsCases.testCaseId, trc.testCaseId),
+        eq(testRunsCases.repeatEachIndex, trc.repeatEachIndex),
         trc.browserName ? eq(testRunsCases.browserName, trc.browserName) : sql`${testRunsCases.browserName} IS NULL`,
       ),
     );
@@ -309,7 +320,8 @@ export async function getTestRunCase(
     : null;
 
   // A pass that needed a retry has no error of its own: its headline, steps and
-  // `why` come from the last failed attempt of the same run, test and browser.
+  // `why` come from the last failed attempt of the same run, test, browser and
+  // repetition.
   const retries = trc.retries ?? 0;
   const passedOnRetry = trc.status === 'passed' && retries > 0;
   const failedSibling = passedOnRetry
@@ -631,6 +643,7 @@ export async function getTestRunCase(
           testCaseId: trc.testCaseId,
           runId: trc.testRunId,
           runStartTime: testRun.startTime ?? null,
+          repeatEachIndex: trc.repeatEachIndex,
           retries: trc.retries ?? 0,
         }),
       )
@@ -681,10 +694,10 @@ export async function getTestRunCase(
         })
       : null;
   // The run's one failed test, when a max-failures cutoff has a single one to
-  // open, counted like the sentence's failed count: one final attempt per test
-  // and browser. A test that failed on every retry opens its last attempt; a
-  // test that passed on retry is not a failure. The failed rows and the retries
-  // are the only rows that can be or replace a final failed attempt.
+  // open, counted like the sentence's failed count: one final attempt per test,
+  // browser and repetition. A test that failed on every retry opens its last
+  // attempt; a test that passed on retry is not a failure. The failed rows and
+  // the retries are the only rows that can be or replace a final failed attempt.
   const runFailedFinals =
     trc.status === 'didnotrun' &&
     !blockedByCase &&
@@ -696,6 +709,7 @@ export async function getTestRunCase(
               id: testRunsCases.id,
               testCaseId: testRunsCases.testCaseId,
               browserName: testRunsCases.browserName,
+              repeatEachIndex: testRunsCases.repeatEachIndex,
               retries: testRunsCases.retries,
               status: testRunsCases.status,
             })
@@ -1365,6 +1379,7 @@ export async function getAttemptDiff(db: DrizzleDB, id: number): Promise<Attempt
   const [current] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
   if (!current) return { applicable: false, reason: 'not-found', attempts: [], differences: [] };
 
+  // The attempts of the execution's own repetition: each `--repeat-each` repetition retries on its own.
   const siblingRows = await db
     .select()
     .from(testRunsCases)
@@ -1372,6 +1387,7 @@ export async function getAttemptDiff(db: DrizzleDB, id: number): Promise<Attempt
       and(
         eq(testRunsCases.testRunId, current.testRunId),
         eq(testRunsCases.testCaseId, current.testCaseId),
+        eq(testRunsCases.repeatEachIndex, current.repeatEachIndex),
         current.browserName
           ? eq(testRunsCases.browserName, current.browserName)
           : sql`${testRunsCases.browserName} IS NULL`,

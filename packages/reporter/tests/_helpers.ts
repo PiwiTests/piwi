@@ -149,6 +149,7 @@ export function fakeSuite(opts: { projectMetadata?: Record<string, unknown> } = 
 
 /** A fake Playwright `TestCase`. */
 export function fakeTestCase(opts: {
+  id?: string;
   title?: string;
   file?: string;
   line?: number;
@@ -156,8 +157,11 @@ export function fakeTestCase(opts: {
   parent?: any;
   annotations?: any[];
   expectedStatus?: string;
+  repeatEachIndex?: number;
 }): any {
   return {
+    id: opts.id,
+    repeatEachIndex: opts.repeatEachIndex ?? 0,
     title: opts.title ?? 'test',
     expectedStatus: opts.expectedStatus ?? 'passed',
     location: { file: opts.file ?? '/tmp/test.spec.ts', line: opts.line ?? 1, column: opts.column ?? 1 },

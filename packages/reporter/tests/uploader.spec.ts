@@ -231,6 +231,27 @@ describe('Uploader.uploadCaseFiles', () => {
     }
   });
 
+  it('names the execution by its retry and its `--repeat-each` repetition', async () => {
+    const traceFile = path.join(tmpDir, 'trace.zip');
+    fs.writeFileSync(traceFile, 'TRACE-BYTES');
+
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/traces/check') return jsonRes(res, 200, { missing: [] });
+      return jsonRes(res, 200, { ok: true });
+    });
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      const repeated = { ...makeCase(traceFile), retries: 1, repeatEachIndex: 2 } as CollectedTestCase;
+      await uploader.uploadCaseFiles('proj', 5, 'streamtok', repeated, true, null);
+
+      const body = requests.find((r) => r.url === '/api/test-runs/5/case-files')!.body;
+      expect(body).toContain('"retries":1');
+      expect(body).toContain('"repeatEachIndex":2');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('retries with the trace file body on a 422 (server did not actually have the blob)', async () => {
     const traceFile = path.join(tmpDir, 'trace.zip');
     fs.writeFileSync(traceFile, 'TRACE-BYTES');

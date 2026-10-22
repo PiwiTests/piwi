@@ -328,8 +328,9 @@ export async function importBlobReportRun(
       await importPersistOptions(db, projectId, run.id, parsed.startTime),
     );
 
-    // A repeatEach run collides on the junction's unique key and drops a case;
-    // the files of a dropped case have no execution to link to.
+    // An execution the archive holds twice collides on the junction's unique
+    // key and is stored once; the files of a dropped copy have no execution to
+    // link to.
     const executionByIndex = new Map(insertedCases.map((row) => [row.inputIndex, row.id]));
     if (insertedCases.length < parsed.cases.length) {
       port.warn?.(

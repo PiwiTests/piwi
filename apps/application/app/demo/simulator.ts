@@ -1335,6 +1335,7 @@ async function runSingleSimulation(
             type: 'begin',
             title: test.title,
             location: test.location,
+            repeatEachIndex: 0,
             workerIndex,
             shardIndex: shardOverride?.shardIndex ?? null,
             startedAt,
@@ -1419,6 +1420,7 @@ async function runSingleSimulation(
             timeout: 30000,
             error: a.error ?? null,
             retries: attempt,
+            repeatEachIndex: 0,
             attempts: test.attempts.slice(0, attempt + 1).map((att, i) => ({
               retry: i,
               status: att.status,
@@ -1505,6 +1507,7 @@ async function runSingleSimulation(
           duration: 0,
           timeout: 30000,
           retries: 0,
+          repeatEachIndex: 0,
           workerIndex: null,
           shardIndex: shardOverride?.shardIndex ?? null,
           startedAt: null,

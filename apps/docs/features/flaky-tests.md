@@ -17,7 +17,7 @@ For the same signals aggregated across every project, see [Analytics](./analytic
 
 A test is flaky when its result isn't deterministic. Piwi computes a **flakiness score** (0–100) per test from two signals, weighted 60/40:
 
-- **Retry passes** — failed on the first attempt, passed on retry.
+- **Retry passes** — failed, then passed on retry (each `--repeat-each` repetition on its own).
 - **Status alternation** — flips between pass and fail across runs.
 
 The **failure rate** is shown but not scored.

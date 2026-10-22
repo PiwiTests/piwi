@@ -63,6 +63,7 @@ import {
   functionSnippet,
   functionSuggestions,
   headedCommand,
+  locatorCompletionSite,
   locatorRange,
   locatorSuggestions,
   locatorsInFile,
@@ -105,19 +106,27 @@ import {
   runIdOf,
   withServerUrl,
 } from './context.js';
-import { failuresDrawn, parseFailuresGrouping } from './failure-tree.js';
+import { failuresAnswer, parseFailuresGrouping, type ContextFailures } from './failure-tree.js';
 import {
   PiwiClient,
+  forgetShared,
   type ResponseCache,
   type BranchFailure,
   type BranchResolved,
+  type CatalogCase,
   type FileCoverage,
   type FixPlan,
   type FlakeLabEntry,
 } from './piwi-client.js';
-import { playwrightArgsOf, playwrightTestCommand, verificationCommand } from './commands.js';
+import {
+  isTestLocation,
+  playwrightArgsOf,
+  playwrightTestCommand,
+  repeatArgs,
+  verificationCommand,
+} from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
-import { RunWatch, newRunRef } from './run-watch.js';
+import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
@@ -175,6 +184,7 @@ import {
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
+  TEST_AT_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
@@ -187,12 +197,14 @@ import {
   type EditorBreakpoint,
   type EditorCredentials,
   type EditorTest,
+  type FailureSeverity,
   type FailuresGrouping,
   type FailuresParams,
   type FailuresResult,
   type FileSummary,
   type FileSummaryParams,
   type McpServersResult,
+  type Notice,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RecordParams,
@@ -215,6 +227,8 @@ import {
   type StatusResult,
   type StopRecordingParams,
   type SummaryLine,
+  type TestAtParams,
+  type TestAtResult,
   type TestFailure,
   type TestLineStatus,
   type TestsForFile,
@@ -225,9 +239,12 @@ import {
   type WorkspaceFailure,
 } from './protocol.js';
 import {
+  contextLabel,
   findPlaywrightRoots,
+  headFiles,
   playwrightConfigFile,
   relativeTo,
+  repositoryRoot,
   resolveReportedFile,
   splitLocation,
 } from './workspace.js';
@@ -243,6 +260,8 @@ const RUN_POLL_MS = 60_000;
 const STREAM_POLL_FACTOR = 5;
 /** How often the desktop app's discovery file is checked. */
 const DESKTOP_WATCH_MS = 2_000;
+/** How often the repositories' `HEAD` files are checked for a checkout or a commit. */
+const GIT_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
@@ -253,6 +272,8 @@ const OPTIONS_WAIT_MS = 3_000;
  * fetch goes on, so the next ask has it.
  */
 const LOOKUP_WAIT_MS = 1_500;
+/** The latest commands that run each test several times whose end the service says, at most. */
+const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
 const TEST_CALL =
   /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
@@ -277,6 +298,8 @@ export interface ServerOptions {
   commandEndWaitMs?: number;
   /** How often the desktop app's discovery file is checked for its start, stop and folder links. */
   desktopWatchMs?: number;
+  /** How often the repositories' `HEAD` files are checked for a checkout or a commit. */
+  gitWatchMs?: number;
   /**
    * The folder holding the files the language server ships beside itself: the recorder's launcher, its IDE bundle
    * and catalogs, and the reporter that reads a config's options. `PIWI_EDITOR_DIST`, else the folder of the running
@@ -349,6 +372,19 @@ interface PlacerSeed {
   placed: ReadonlyMap<Placeable, Placement | null>;
 }
 
+/** The `test(…)` call spanning a 0-based line of a file's lines: the line it starts on and its title; else null. */
+function testCallAt(lines: string[], line: number): { line: number; title: string } | null {
+  for (let i = 0; i <= Math.min(line, lines.length - 1); i++) {
+    const m = TEST_CALL.exec(lines[i]!);
+    if (!m) continue;
+    const open = lines[i]!.indexOf('(', m.index);
+    const end = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
+    if (end >= line) return { line: i, title: m[2]! };
+    i = end;
+  }
+  return null;
+}
+
 /** The titles of the `test(…)` calls of a file's text. */
 function testTitles(text: string): Set<string> {
   const titles = new Set<string>();
@@ -359,8 +395,35 @@ function testTitles(text: string): Set<string> {
   return titles;
 }
 
+/**
+ * The severity of a failure's diagnostic as the client's setting chooses it (`error` when unset): a warning at most for
+ * a run on another branch, an information for a line edited since the run; null with `off`.
+ */
+function failureSeverity(
+  setting: FailureSeverity | null | undefined,
+  otherBranch: boolean,
+  edited: boolean,
+): DiagnosticSeverity | null {
+  if (setting === 'off') return null;
+  if (edited || setting === 'information') return DiagnosticSeverity.Information;
+  if (setting === 'warning' || otherBranch) return DiagnosticSeverity.Warning;
+  return DiagnosticSeverity.Error;
+}
+
 function toEditorTest(context: PiwiContext, t: LocatorIndexTest): EditorTest {
   return { id: t.id, title: t.title, file: t.file, status: t.status, url: context.client?.testUrl(t.id) ?? '' };
+}
+
+function caseToEditorTest(context: PiwiContext, c: CatalogCase): EditorTest {
+  return {
+    id: c.id,
+    title: c.title,
+    file: c.filePath,
+    status: (['passed', 'failed', 'flaky', 'skipped'].includes(c.status ?? '')
+      ? c.status
+      : null) as EditorTest['status'],
+    url: context.client?.testUrl(c.id) ?? '',
+  };
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -583,6 +646,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const onDesktopFile = (now: fs.Stats, before: fs.Stats) => {
     if (now.mtimeMs !== before.mtimeMs || now.size !== before.size) void refreshAll();
   };
+  /** The `HEAD` files watched, with the listener of their repository. */
+  const headWatches: Array<{ file: string; listener: (now: fs.Stats, before: fs.Stats) => void }> = [];
   const documents = new TextDocuments(TextDocument);
   const contexts: PiwiContext[] = [];
   /** The instance's answers the contexts share: the configs of a repository reading one project read its indexes once. */
@@ -910,11 +975,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /**
-   * Each context's failures where they show, then the failures a later run passed, at their `test(…)` line; the latest
-   * complete run of the first context that has one, and the runs laid over it.
+   * Each context's failures where they show, then the failures a later run passed, at their `test(…)` line, with its
+   * latest complete run, the runs laid over it and its baseline: one context's as the answer's, several under a node
+   * each (`failuresAnswer`).
    */
   const failuresResult = (pass: Placer): FailuresResult => {
-    const items = contexts.flatMap((context): WorkspaceFailure[] => {
+    const views = contexts.flatMap((context): ContextFailures[] => {
       const client = context.client;
       if (!client) return [];
       const failing = (context.failures?.failures ?? []).flatMap((f): WorkspaceFailure[] => {
@@ -975,56 +1041,56 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           },
         ];
       });
-      return [...failing, ...fixed];
+      const run = context.failures?.run;
+      return [
+        {
+          root: context.root,
+          label: contextLabel(context.root, folders),
+          projectName: context.project?.name ?? null,
+          items: [...failing, ...fixed],
+          run: run
+            ? {
+                id: run.id,
+                branch: run.branch,
+                status: run.status,
+                startTime: run.startTime,
+                totalTests: run.totalTests,
+                passedTests: run.passedTests,
+                failedTests: run.failedTests,
+                flakyTests: run.flakyTests,
+                skippedTests: run.skippedTests,
+                url: client.runUrl(run.id),
+                ...(run.origin ? { origin: run.origin } : {}),
+                own: isOwnRun(context, run.id),
+              }
+            : null,
+          overlays: (context.failures?.overlays ?? []).map((o) => ({
+            id: o.id,
+            origin: o.origin,
+            startTime: o.startTime,
+            status: o.status,
+            totalTests: o.totalTests,
+            passedTests: o.passedTests,
+            failedTests: o.failedTests,
+            url: client.runUrl(o.id),
+            own: isOwnRun(context, o.id),
+          })),
+          baseline: { choice: context.baseline, label: context.baselineLabel },
+          ...(context.runReadAt !== null ? { updatedAt: new Date(context.runReadAt).toISOString() } : {}),
+        },
+      ];
     });
-    const shown =
-      contexts.find((c) => c.client && c.failures?.run) ??
-      contexts.find((c) => c.client && c.failures?.overlays?.length);
-    if (!shown) return { items, ...failuresDrawn({ items }, failuresGrouping) };
-    const run = shown.failures?.run;
-    const client = shown.client!;
-    const view = {
-      items,
-      run: run
-        ? {
-            id: run.id,
-            branch: run.branch,
-            status: run.status,
-            startTime: run.startTime,
-            totalTests: run.totalTests,
-            passedTests: run.passedTests,
-            failedTests: run.failedTests,
-            flakyTests: run.flakyTests,
-            skippedTests: run.skippedTests,
-            url: client.runUrl(run.id),
-            ...(run.origin ? { origin: run.origin } : {}),
-            own: isOwnRun(shown, run.id),
-          }
-        : null,
-      overlays: (shown.failures?.overlays ?? []).map((o) => ({
-        id: o.id,
-        origin: o.origin,
-        startTime: o.startTime,
-        status: o.status,
-        totalTests: o.totalTests,
-        passedTests: o.passedTests,
-        failedTests: o.failedTests,
-        url: client.runUrl(o.id),
-        own: isOwnRun(shown, o.id),
-      })),
-      baseline: { choice: shown.baseline, label: shown.baselineLabel },
-      ...(shown.runReadAt !== null ? { updatedAt: new Date(shown.runReadAt).toISOString() } : {}),
-    } satisfies Omit<FailuresResult, keyof ReturnType<typeof failuresDrawn>>;
-    return { ...view, ...failuresDrawn(view, failuresGrouping) };
+    return failuresAnswer(views, failuresGrouping);
   };
   /** The failures last sent in `piwi/failuresChanged`. */
-  let failuresSent = JSON.stringify({ items: [], ...failuresDrawn({ items: [] }, 'file') } satisfies FailuresResult);
+  let failuresSent = JSON.stringify(failuresAnswer([], 'file'));
 
   /**
    * Place every context's failures on the files as they stand, publish the files whose failure diagnostics changed,
    * and send `piwi/failuresChanged` when the failures' list did. A failure whose test left its spec publishes nothing;
-   * one whose line changed since its run is an information. With `edited`, a document's text as it stands, only the
-   * failures it holds are placed again, on the texts the latest pass read for the other files.
+   * the others publish with the severity the credentials choose (`failureSeverity`), none with `off`. With `edited`, a
+   * document's text as it stands, only the failures it holds are placed again, on the texts the latest pass read for
+   * the other files.
    */
   const publishFailures = (edited?: { file: string; text: string }) => {
     const pass = edited && lastPass ? placer(edited, seedWithout(lastPass, edited.file)) : placer();
@@ -1038,17 +1104,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const start = text.length - text.trimStart().length;
         const uri = pathToFileURL(at.file).href;
         const edited = at.state === 'edited';
+        const otherBranch = context.runBranch !== context.checkedOutBranch;
+        const severity = failureSeverity(credentials.failureSeverity, otherBranch, edited);
+        if (severity === null) continue;
         const run = runLabel(context, f);
-        const where = `${f.title}, ${run}${
-          context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : ''
-        }`;
+        const where = `${f.title}, ${run}${otherBranch ? ` on ${context.runBranch ?? 'another branch'}` : ''}`;
         const headline = f.headline ?? 'Failed';
         (next.get(uri) ?? next.set(uri, []).get(uri)!).push({
           range: {
             start: { line: at.line - 1, character: start },
             end: { line: at.line - 1, character: Math.max(start, text.trimEnd().length) },
           },
-          severity: edited ? DiagnosticSeverity.Information : DiagnosticSeverity.Error,
+          severity,
           source: 'Piwi',
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
@@ -1344,6 +1411,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         runTimer = null;
         const due = contexts.filter((c) => dueAt(c) <= Date.now());
         for (const c of due) polledAt.set(c, Date.now());
+        // The due contexts read afresh, together: those of one project share each read.
+        forgetShared(answers);
         const read = await Promise.all(
           due.map(async (c) => {
             const [changed, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
@@ -1651,6 +1720,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const currentStatus = (): StatusResult => ({
     contexts: contexts.map((c) => ({
       root: c.root,
+      label: contextLabel(c.root, folders),
       connected: !!c.index && !c.problem,
       serverUrl: c.client?.connection.serverUrl ?? null,
       source: c.source,
@@ -1712,6 +1782,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   }
 
   async function refreshContexts(): Promise<void> {
+    // The contexts read afresh, together: those of one project share each read.
+    forgetShared(answers);
     // A context's failures are published once its run is read, without waiting for the indexes read after it.
     const runRead = () => {
       runChanged();
@@ -1751,6 +1823,64 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     retryTimer.unref?.();
   }
 
+  /**
+   * A repository's `HEAD` moved, by a checkout or a commit: its contexts drop what `HEAD` gave them and read the latest
+   * run again, the checked-out branch's, published when it changed, and the open documents are analyzed again, so the
+   * locators a change breaks are compared with the new `HEAD`.
+   */
+  async function headMoved(members: PiwiContext[]): Promise<void> {
+    forgetShared(answers);
+    const changed = await Promise.all(
+      members.map(async (c) => {
+        await c.headMoved();
+        return c.refreshRun();
+      }),
+    );
+    if (stopped) return;
+    if (changed.some(Boolean)) {
+      runChanged();
+      pollRuns();
+    }
+    for (const document of documents.all()) schedule(document, 0);
+  }
+
+  /**
+   * Watch `HEAD` and `logs/HEAD` of each repository the contexts are in, as the desktop app's file is watched: a
+   * checkout writes the first, a commit the second. A move while one is read is read once more after it.
+   */
+  async function watchRepositories(): Promise<void> {
+    const byRoot = new Map<string, PiwiContext[]>();
+    for (const c of contexts) {
+      const root = await repositoryRoot(c.root);
+      byRoot.set(root, [...(byRoot.get(root) ?? []), c]);
+    }
+    for (const [root, members] of byRoot) {
+      const files = await headFiles(root);
+      if (stopped) return;
+      let moving: Promise<void> | null = null;
+      let again = false;
+      const listener = (now: fs.Stats, before: fs.Stats) => {
+        if (now.mtimeMs === before.mtimeMs && now.size === before.size) return;
+        if (moving) {
+          again = true;
+          return;
+        }
+        moving = (async () => {
+          do {
+            again = false;
+            await headMoved(members);
+          } while (again && !stopped);
+        })().finally(() => {
+          moving = null;
+        });
+      };
+      for (const file of files) {
+        fs.watchFile(file, { interval: options.gitWatchMs ?? GIT_WATCH_MS, persistent: false }, listener);
+        headWatches.push({ file, listener });
+      }
+    }
+  }
+
   connection.onInitialize((params: InitializeParams) => {
     folders = (params.workspaceFolders ?? []).map((f) => uriToPath(f.uri)).filter((f): f is string => !!f);
     if (!folders.length && params.rootUri) {
@@ -1765,7 +1895,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       capabilities: {
         textDocumentSync: TextDocumentSyncKind.Incremental,
         hoverProvider: true,
-        completionProvider: { triggerCharacters: ['.'] },
+        completionProvider: { triggerCharacters: ['.', '('] },
         codeActionProvider: { codeActionKinds: [CodeActionKind.QuickFix] },
       },
       serverInfo: { name: 'Piwi' },
@@ -1791,6 +1921,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       { interval: options.desktopWatchMs ?? DESKTOP_WATCH_MS, persistent: false },
       onDesktopFile,
     );
+    // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
+    void watchRepositories();
   });
 
   documents.onDidOpen((e) => schedule(e.document, 0));
@@ -2041,7 +2173,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return actions;
   });
 
-  // In test code: after `page.`, the chains the suite uses on the pages this file's tests visit; at the start of a
+  // In test code: after a page expression's `.` (`page.`, `adminPage.`, `this.page.`), the chains the suite uses on the
+  // pages this file's tests visit, and in `expect(` the same chains on the page in use there; at the start of a
   // statement, the project's functions for those pages; inside `piwi:` annotations and tags, their known values.
   connection.onCompletion(async (params): Promise<CompletionItem[]> => {
     const file = uriToPath(params.textDocument.uri);
@@ -2050,7 +2183,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!file || !context?.index || !document) return [];
     const relative = relativeTo(context.root, file);
     if (!relative || !isTestCode(context, relative)) return [];
-    const line = document.getText().split(/\r?\n/)[params.position.line] ?? '';
+    const text = document.getText();
+    const line = text.split(/\r?\n/)[params.position.line] ?? '';
     const before = line.slice(0, params.position.character);
     const annotation = await annotationItems(context, before, params.position);
     if (annotation) return annotation;
@@ -2068,11 +2202,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         textEdit: { range: { start, end: params.position }, newText: functionSnippet(f) },
       }));
     }
-    const typed = /(?:^|[^\w$.])(?:this\.)?page\.([A-Za-z]*)$/.exec(before);
-    if (!typed) return [];
-    const start = { line: params.position.line, character: params.position.character - typed[1]!.length };
+    const site = locatorCompletionSite(text, params.position.line, before);
+    if (!site) return [];
+    const start = { line: params.position.line, character: params.position.character - site.typed.length };
     return locatorSuggestions(context.index, relative).map((s, i) => ({
-      label: s.locator,
+      label: site.prefix + s.locator,
       kind: CompletionItemKind.Value,
       detail: [
         plural(s.tests, 'test'),
@@ -2082,8 +2216,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         .filter(Boolean)
         .join(' · '),
       sortText: String(i).padStart(3, '0'),
-      filterText: s.locator,
-      textEdit: { range: { start, end: params.position }, newText: s.locator },
+      filterText: site.prefix + s.locator,
+      textEdit: { range: { start, end: params.position }, newText: site.prefix + s.locator },
     }));
   });
 
@@ -2338,6 +2472,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status)),
           endLine,
           ...(failure ? { failure } : {}),
+          testCaseId: found.id,
         });
         out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
         if (!failed || !failure) return;
@@ -2463,18 +2598,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const relative = relativeTo(context.root, file);
     if (relative && SPEC_FILE.test(relative)) {
       const cases = await context.casesOf(relative);
-      return {
-        basis: 'defined',
-        tests: cases.map((c) => ({
-          id: c.id,
-          title: c.title,
-          file: c.filePath,
-          status: (['passed', 'failed', 'flaky', 'skipped'].includes(c.status ?? '')
-            ? c.status
-            : null) as EditorTest['status'],
-          url: context.client?.testUrl(c.id) ?? '',
-        })),
-      };
+      return { basis: 'defined', tests: cases.map((c) => caseToEditorTest(context, c)) };
     }
     if (isTestCode(context, relative)) {
       const tests = new Map<number, LocatorIndexTest>();
@@ -2491,6 +2615,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return {
       basis: reached.size ? 'reach' : 'none',
       tests: [...reached.values()].map((t) => toEditorTest(context, t)),
+    };
+  });
+
+  connection.onRequest(TEST_AT_REQUEST, async (params: TestAtParams): Promise<TestAtResult> => {
+    const none: TestAtResult = { test: null, spec: null, location: null };
+    const file = uriToPath(params.uri);
+    const context = file ? contextFor(file) : null;
+    const relative = file && context ? relativeTo(context.root, file) : null;
+    if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
+    const call = testCallAt((readText(file) ?? '').split(/\r?\n/), params.line);
+    const cases = await context.casesOf(relative);
+    const found = call ? new Map(cases.map((c) => [c.title, c])).get(call.title) : undefined;
+    return {
+      test: found ? caseToEditorTest(context, found) : null,
+      spec: cases.length ? { uri: params.uri, testIds: cases.map((c) => c.id) } : null,
+      location: call ? `${relative}:${call.line + 1}` : null,
     };
   });
 
@@ -2532,16 +2672,37 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   };
 
+  /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
+  const specLocation = (context: PiwiContext, location: unknown): location is string => {
+    if (!isTestLocation(location)) return false;
+    const spec = location.slice(0, location.lastIndexOf(':'));
+    return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
+  };
+
+  /** The Playwright arguments that run the tests `params` names: by location, else by id from the instance. */
+  const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
+    if (Array.isArray(params.locations) && params.locations.length) {
+      return params.locations.every((l) => specLocation(context, l)) ? [...params.locations] : null;
+    }
+    if (!context.client || !context.project || !params.testIds?.length) return null;
+    const answer = await context.client.runArgs(context.project.id, params.testIds);
+    return Array.isArray(answer.args) && answer.args.length ? answer.args : playwrightArgsOf(answer.command);
+  };
+
+  /** The commands that run each test several times, by ref: what their end says when their run reaches no instance. */
+  const repeatedCommands = new Map<string, { root: string; repeat: number; target: string }>();
+
   connection.onRequest(RUN_ARGS_REQUEST, async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
-    if (!context?.client || !context.project || !params.testIds.length) return null;
-    const answer = await context.client.runArgs(context.project.id, params.testIds);
-    const args = Array.isArray(answer.args) && answer.args.length ? answer.args : playwrightArgsOf(answer.command);
+    if (!context) return null;
+    const repeat = params.repeat ?? null;
+    const tests = await testArgs(context, params);
+    const args = tests && repeat !== null ? repeatArgs(tests, repeat) : tests;
     const command = args?.length ? playwrightTestCommand(args) : null;
     if (!args || !command) return null;
     const ref = newRunRef();
-    runWatch.watch(context, ref);
+    runWatch.watch(context, ref, repeat);
     const run: RunCommand = {
       cwd: commandFolder(context),
       args,
@@ -2549,7 +2710,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
-    return withBreakpoints(context, run, params.breakpoints);
+    if (repeat === null) return withBreakpoints(context, run, params.breakpoints);
+    repeatedCommands.set(ref, { root: context.root, repeat, target: tests!.join(' ') });
+    for (const oldest of repeatedCommands.keys()) {
+      if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
+      repeatedCommands.delete(oldest);
+    }
+    return run;
   });
 
   // An answer is what the client holds from then on: a change is pushed against it, so a client that read the state
@@ -2789,6 +2956,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(REFRESH_RUN_REQUEST, async (): Promise<RunStatusResult> => {
+    forgetShared(answers);
     await Promise.all(
       contexts.map(async (c) => {
         const [, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
@@ -2803,8 +2971,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (typeof params?.ref === 'string') runWatch.commandStarted(params.ref, params.terminalRef);
   });
 
+  // A command that runs each test several times says how it went: from its run when the instance holds it
+  // (`piwi/runEnded`), else from its exit code.
   connection.onNotification(COMMAND_ENDED_NOTIFICATION, (params: CommandEndedParams) => {
-    if (typeof params?.ref === 'string') void runWatch.commandEnded(params.ref, params.exitCode ?? null);
+    if (typeof params?.ref !== 'string') return;
+    const { ref } = params;
+    const exitCode = typeof params.exitCode === 'number' ? params.exitCode : null;
+    void runWatch.commandEnded(ref, exitCode).then((reached) => {
+      const repeated = repeatedCommands.get(ref);
+      if (!repeated || reached) return;
+      const verdict = exitVerdict(repeated.repeat, exitCode, repeated.target);
+      void connection.sendNotification(NOTICE_NOTIFICATION, { root: repeated.root, ...verdict } satisfies Notice);
+    });
   });
 
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {
@@ -2844,6 +3022,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onNotification(SET_CREDENTIALS_NOTIFICATION, (next: EditorCredentials) => {
     credentials = next ?? {};
     applyBaselines();
+    // The failures read so far take the severity these credentials choose.
+    publishFailures();
     // The refresh opens the streams the instance refused again, with these credentials.
     void refreshAll();
   });
@@ -2860,6 +3040,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (refreshTimer) clearInterval(refreshTimer);
     if (retryTimer) clearTimeout(retryTimer);
     fs.unwatchFile(desktopFile, onDesktopFile);
+    for (const { file, listener } of headWatches) fs.unwatchFile(file, listener);
     if (runTimer) clearTimeout(runTimer);
     if (placeTimer) clearTimeout(placeTimer);
     for (const t of timers.values()) clearTimeout(t);

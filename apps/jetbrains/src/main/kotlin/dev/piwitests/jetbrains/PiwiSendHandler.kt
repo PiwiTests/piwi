@@ -1,20 +1,25 @@
 package dev.piwitests.jetbrains
 
-import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.intellij.credentialStore.generateServiceName
 import com.intellij.ide.passwordSafe.PasswordSafe
+import com.intellij.ide.scratch.ScratchRootType
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
+import com.intellij.openapi.editor.ReadOnlyModificationException
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.IdeFocusManager
 import io.netty.buffer.Unpooled
@@ -36,8 +41,11 @@ import java.nio.file.Path
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
-/** The pairing token Piwi Picker sends with each request, kept in the password safe. */
+/** The pairing token Piwi Picker sends with each request, kept in the password safe: read on a pooled thread. */
 object PiwiSendToken {
     private val attributes = PiwiCredentials.attributes(generateServiceName("Piwi", "sendToken"))
 
@@ -55,10 +63,12 @@ object PiwiSendToken {
 }
 
 /**
- * `POST /api/piwi/send` on the IDE's built-in server: what Piwi Picker sends,
- * inserted at the caret of the focused project's editor. A locator picked while
- * a run was paused at a breakpoint replaces the locator of its line instead
- * (`piwi/applyPick`), and goes to the caret when the line holds none.
+ * `POST /api/piwi/send` on the IDE's built-in server: what Piwi Picker sends, inserted at the
+ * caret of the focused project's editor, or into a new scratch file while no editor is open. A
+ * locator picked while a run was paused at a breakpoint replaces the locator of its line instead
+ * (`piwi/applyPick`), and goes to the caret when the line holds none. Each request is served on
+ * a pooled thread, where the token, the file and its document are read; the server's I/O thread
+ * reads nothing from the password safe or the disk, and only the write runs on the event thread.
  */
 class PiwiSendHandler : HttpRequestHandler() {
     override fun isSupported(request: FullHttpRequest): Boolean =
@@ -74,145 +84,175 @@ class PiwiSendHandler : HttpRequestHandler() {
             respond(context, origin, HttpResponseStatus.NO_CONTENT, null)
             return true
         }
-        if (!Glue.sendAuthorized(request.headers().get(HttpHeaderNames.AUTHORIZATION), PiwiSendToken.current())) {
-            respond(context, origin, HttpResponseStatus.UNAUTHORIZED, mapOf("error" to "not paired"))
-            return true
-        }
-        if (request.content().readableBytes() > Glue.MAX_SEND_BYTES) {
-            respond(context, origin, HttpResponseStatus.REQUEST_ENTITY_TOO_LARGE, mapOf("error" to "too large"))
-            return true
-        }
-        when (val payload = Glue.parseSendPayload(request.content().toString(Charsets.UTF_8))) {
-            is Glue.SendPayload.Refused -> respond(context, origin, HttpResponseStatus.BAD_REQUEST, mapOf("error" to payload.error))
-            else -> insert(payload).whenComplete { file, error ->
-                if (error != null) {
-                    respond(context, origin, HttpResponseStatus.UNPROCESSABLE_ENTITY, mapOf("error" to (error.cause ?: error).message))
-                } else {
-                    respond(context, origin, HttpResponseStatus.OK, mapOf("inserted" to true, "file" to file))
-                }
+        val authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION)
+        // The request is released once this returns: its body is taken here, and checked on the pooled thread.
+        val body = if (request.content().readableBytes() > Glue.MAX_SEND_BYTES) null else request.content().toString(Charsets.UTF_8)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val (status, answer) = try {
+                answer(authorization, body)
+            } catch (e: Exception) {
+                HttpResponseStatus.UNPROCESSABLE_ENTITY to mapOf("error" to (e.message ?: e.javaClass.simpleName))
             }
+            respond(context, origin, status, answer)
         }
         return true
     }
 
+    /** The answer to a request: the token first, then the body's size and shape, then the insertion. */
+    private fun answer(authorization: String?, body: String?): Pair<HttpResponseStatus, Map<String, Any?>> {
+        if (!Glue.sendAuthorized(authorization, PiwiSendToken.current())) {
+            return HttpResponseStatus.UNAUTHORIZED to mapOf("error" to "not paired")
+        }
+        if (body == null) return HttpResponseStatus.REQUEST_ENTITY_TOO_LARGE to mapOf("error" to "too large")
+        return when (val payload = Glue.parseSendPayload(body)) {
+            is Glue.SendPayload.Refused -> HttpResponseStatus.BAD_REQUEST to mapOf("error" to payload.error)
+            else -> HttpResponseStatus.OK to mapOf("inserted" to true, "file" to insert(payload))
+        }
+    }
+
     /**
-     * Render a recorded flow through the editor service, for the page expression at the caret and with its imports
-     * apart, then insert it at the caret; completes with the file's path.
+     * Inserts the payload in the focused project and answers the path of the file written, null for a scratch file. A
+     * pick at a line goes through `piwi/applyPick`; a recorded flow is rendered by the editor service for the caret,
+     * its page expression and its line's indentation, with its import edit apart. On a pooled thread.
      */
-    private fun insert(payload: Glue.SendPayload): CompletableFuture<String?> {
-        val result = CompletableFuture<String?>()
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val project = targetProject() ?: throw IllegalStateException("no project is open")
-                var notice: String? = null
-                val picked = payload as? Glue.SendPayload.Locator
-                val at = picked?.at
-                if (picked != null && at != null) {
-                    val server = project.service<PiwiProjectService>().server()
-                    val answer = server?.applyPick(ApplyPickParams(file = at.file, line = at.line - 1, locator = picked.text))?.orNull()
-                    val uri = answer?.uri
-                    val edit = answer?.edit
-                    if (uri != null && edit != null) {
-                        val done = CompletableFuture<String?>()
-                        ApplicationManager.getApplication().invokeLater {
-                            done.complete(runCatching { replaceOnLine(project, uri, edit) }.getOrNull())
-                        }
-                        val file = done.get(10, java.util.concurrent.TimeUnit.SECONDS)
-                        if (file != null) {
-                            PiwiCommands.notify(project, Glue.pickNotice(at, Glue.PickOutcome.REPLACED))
-                            result.complete(file)
-                            return@executeOnPooledThread
-                        }
-                    }
-                    notice = Glue.pickNotice(at, if (uri != null) Glue.PickOutcome.NO_LOCATOR else Glue.PickOutcome.NO_FILE)
+    private fun insert(payload: Glue.SendPayload): String? {
+        val project = targetProject() ?: throw IllegalStateException("no project is open")
+        var outcome: Glue.PickOutcome? = null
+        val picked = payload as? Glue.SendPayload.Locator
+        val at = picked?.at
+        if (picked != null && at != null) {
+            val server = project.service<PiwiProjectService>().server()
+            val answer = server?.applyPick(ApplyPickParams(file = at.file, line = at.line - 1, locator = picked.text))?.orNull()
+            val uri = answer?.uri
+            val edit = answer?.edit
+            if (uri != null && edit != null) {
+                val file = try {
+                    replaceOnLine(project, uri, edit, at)
+                } catch (e: IllegalStateException) {
+                    PiwiCommands.notify(project, "Piwi: ${e.message}", NotificationType.WARNING)
+                    throw e
                 }
-                val caret = caretOf(project)
-                var importEdit: FileEdit? = null
-                val text = when (payload) {
-                    is Glue.SendPayload.Locator -> payload.text
-                    is Glue.SendPayload.Steps -> {
-                        val server = project.service<PiwiProjectService>().server()
-                            ?: throw IllegalStateException("the Piwi editor service is not running in this project")
-                        val params = RenderStepsParams(caret?.uri ?: "", payload.steps, caret?.line, caret?.character, "separate")
-                        val rendered = server.renderSteps(params).orNull()
-                        importEdit = rendered?.importEdit
-                        rendered?.code?.takeIf { it.isNotBlank() }
-                            ?: throw IllegalStateException(rendered?.warnings?.joinToString("; ") ?: "nothing to insert")
-                    }
-                    is Glue.SendPayload.Refused -> throw IllegalStateException(payload.error)
-                }
-                ApplicationManager.getApplication().invokeLater {
-                    try {
-                        result.complete(insertAtCaret(project, text, importEdit, payload is Glue.SendPayload.Locator, notice))
-                    } catch (e: Exception) {
-                        result.completeExceptionally(e)
-                    }
-                }
-            } catch (e: Exception) {
-                result.completeExceptionally(e)
+                PiwiCommands.notify(project, Glue.pickNotice(at, Glue.PickOutcome.REPLACED))
+                return file
+            }
+            outcome = when {
+                server == null -> Glue.PickOutcome.NOT_RUNNING
+                answer == null -> Glue.PickOutcome.NO_ANSWER
+                uri == null -> Glue.PickOutcome.NO_FILE
+                else -> Glue.PickOutcome.NO_LOCATOR
             }
         }
-        return result
+        val caret = caretOf(project)
+        var importEdit: FileEdit? = null
+        val text = when (payload) {
+            is Glue.SendPayload.Locator -> payload.text
+            is Glue.SendPayload.Steps -> {
+                val server = project.service<PiwiProjectService>().server()
+                    ?: throw IllegalStateException("the Piwi editor service is not running in this project")
+                val params = RenderStepsParams(caret?.uri ?: "", payload.steps, caret?.line, caret?.character, "separate")
+                val rendered = server.renderSteps(params).orNull()
+                importEdit = rendered?.importEdit
+                rendered?.code?.takeIf { it.isNotBlank() }
+                    ?: throw IllegalStateException(rendered?.warnings?.joinToString("; ") ?: "nothing to insert")
+            }
+            is Glue.SendPayload.Refused -> throw IllegalStateException(payload.error)
+        }
+        val insertion = Insertion(text, importEdit, payload is Glue.SendPayload.Locator, at, outcome)
+        return onEventThread { insertAtCaret(project, insertion) }
     }
 
     private fun targetProject(): Project? =
         IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project
             ?: ProjectManager.getInstance().openProjects.firstOrNull { !it.isDefault }
 
-    /** The file open in the project's editor (its URI, when it is on disk) and its caret, 0-based. */
+    /** What goes in, and what the balloon says once it did: where a pick went and why, else what was inserted. */
+    private class Insertion(
+        val text: String,
+        val importEdit: FileEdit?,
+        val locator: Boolean,
+        val at: Glue.SendPlace?,
+        val outcome: Glue.PickOutcome?,
+    ) {
+        fun notice(scratch: Boolean): String {
+            if (at != null && outcome != null) return Glue.pickNotice(at, outcome, scratch)
+            val what = if (locator) "the locator" else "the recorded steps"
+            return if (scratch) "Inserted $what from Piwi Picker in a new scratch file: no editor was open." else "Inserted $what from Piwi Picker."
+        }
+    }
+
+    /** The file open in the project's editor (its URI, when it is on disk) and its caret, 0-based; null without an editor. */
     private data class Caret(val uri: String?, val line: Int, val character: Int)
 
-    private fun caretOf(project: Project): Caret? {
-        val future = CompletableFuture<Caret?>()
-        ApplicationManager.getApplication().invokeLater {
-            val editor = FileEditorManager.getInstance(project).selectedTextEditor
-            future.complete(
-                editor?.let {
-                    val offset = it.caretModel.offset
-                    val line = it.document.getLineNumber(offset)
-                    val uri = it.virtualFile?.let { file -> runCatching { file.toNioPath().toUri().toString() }.getOrNull() }
-                    Caret(uri, line, offset - it.document.getLineStartOffset(line))
-                },
-            )
+    private fun caretOf(project: Project): Caret? = onEventThread {
+        FileEditorManager.getInstance(project).selectedTextEditor?.let {
+            val offset = it.caretModel.offset
+            val line = it.document.getLineNumber(offset)
+            val uri = it.virtualFile?.let { file -> runCatching { file.toNioPath().toUri().toString() }.getOrNull() }
+            Caret(uri, line, offset - it.document.getLineStartOffset(line))
         }
-        return future.get(10, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
+    /** Runs `block` on the event thread and waits for its answer, at most [EVENT_THREAD_WAIT_SECONDS]; what it throws is thrown here. */
+    private fun <T> onEventThread(block: () -> T): T {
+        val done = CompletableFuture<T>()
+        ApplicationManager.getApplication().invokeLater {
+            try {
+                done.complete(block())
+            } catch (e: Exception) {
+                done.completeExceptionally(e)
+            }
+        }
+        return try {
+            done.get(EVENT_THREAD_WAIT_SECONDS, TimeUnit.SECONDS)
+        } catch (e: ExecutionException) {
+            throw e.cause ?: e
+        } catch (_: TimeoutException) {
+            throw IllegalStateException("the IDE did not take the insertion within $EVENT_THREAD_WAIT_SECONDS seconds")
+        }
     }
 
     /**
-     * Replaces the range of `edit`, on one line of the file at `uri`, with its text, as one command; the file's path, or
-     * null when the file or the line is not there.
+     * Replaces the range `edit` names, on one line of the file at `uri`, with its text, as one command, and answers
+     * the file's path. The file and its document are read here, on the pooled thread; the write alone runs on the
+     * event thread, against the document as it stands then. Throws, with why, when nothing was replaced.
      */
-    private fun replaceOnLine(project: Project, uri: String, edit: FileEdit): String? {
-        val range = edit.range ?: return null
-        val start = range.start ?: return null
-        val end = range.end ?: return null
-        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(URI(uri))) ?: return null
-        val document = FileDocumentManager.getInstance().getDocument(file) ?: return null
-        if (start.line != end.line || start.line >= document.lineCount) return null
-        val lineStart = document.getLineStartOffset(start.line)
-        val lineEnd = document.getLineEndOffset(start.line)
-        if (start.character > end.character || lineStart + end.character > lineEnd) return null
-        WriteCommandAction.runWriteCommandAction(project, "Replace with the Locator Picked in Piwi", null, {
-            document.replaceString(lineStart + start.character, lineStart + end.character, edit.newText ?: "")
-        })
+    private fun replaceOnLine(project: Project, uri: String, edit: FileEdit, at: Glue.SendPlace): String {
+        val name = at.file.substringAfterLast('/')
+        fun refuse(why: String): Nothing = throw IllegalStateException("the locator at line ${at.line} of $name was not replaced: $why")
+        val start = edit.range?.start ?: refuse("the editor service named no range")
+        val end = edit.range?.end ?: refuse("the editor service named no range")
+        if (start.line != end.line) refuse("the range spans several lines")
+        val path = runCatching { Path.of(URI(uri)) }.getOrNull() ?: refuse("$uri is not a file")
+        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path) ?: refuse("$name is not on disk")
+        val document = ApplicationManager.getApplication().runReadAction(Computable { FileDocumentManager.getInstance().getDocument(file) })
+            ?: refuse("$name cannot be edited as text")
+        onEventThread {
+            WriteCommandAction.runWriteCommandAction(project, "Replace with the Locator Picked in Piwi", null, {
+                if (start.line >= document.lineCount) refuse("line ${at.line} is not there anymore")
+                val lineStart = document.getLineStartOffset(start.line)
+                if (start.character > end.character || lineStart + end.character > document.getLineEndOffset(start.line)) {
+                    refuse("line ${at.line} changed")
+                }
+                try {
+                    document.replaceString(lineStart + start.character, lineStart + end.character, edit.newText ?: "")
+                } catch (_: ReadOnlyModificationException) {
+                    refuse("$name is read-only")
+                }
+            })
+        }
         return file.path
     }
 
     /**
-     * Inserts `text` at the caret (the service indented it for the caret's line), and the service's import edit, placed in
-     * the text before the code goes in, as one command.
+     * Inserts the text at the caret (the service indented it for the caret's line), and the service's import edit,
+     * placed in the text before the code goes in, as one command. Without an editor, a scratch file takes it.
      */
-    private fun insertAtCaret(
-        project: Project,
-        text: String,
-        importEdit: FileEdit?,
-        locator: Boolean,
-        notice: String? = null,
-    ): String? {
-        val editor = FileEditorManager.getInstance(project).selectedTextEditor
-            ?: throw IllegalStateException("no editor is open in ${project.name}")
+    private fun insertAtCaret(project: Project, insertion: Insertion): String? {
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return insertInScratch(project, insertion)
         val document = editor.document
         val caret = editor.caretModel.primaryCaret
+        val text = insertion.text
+        val importEdit = insertion.importEdit
         WriteCommandAction.runWriteCommandAction(project, "Insert from Piwi Picker", null, {
             val start = caret.selectionStart
             val end = caret.selectionEnd
@@ -229,15 +269,25 @@ class PiwiSendHandler : HttpRequestHandler() {
             }
             caret.moveToOffset(after)
         })
-        PiwiCommands.notify(
-            project,
-            notice ?: if (locator) "Inserted the locator from Piwi Picker." else "Inserted the recorded steps from Piwi Picker.",
-        )
+        PiwiCommands.notify(project, insertion.notice(scratch = false))
         return editor.virtualFile?.path
     }
 
+    /**
+     * No editor open: the text, after its import lines, goes into a new scratch file, opened with the caret at its end.
+     * The answer names no file, a scratch file being none of the project's.
+     */
+    private fun insertInScratch(project: Project, insertion: Insertion): String? {
+        val content = insertion.importEdit?.newText.orEmpty() + insertion.text
+        val file = ScratchRootType.getInstance().createScratchFile(project, SCRATCH_NAME, null, content)
+            ?: throw IllegalStateException("no editor is open in ${project.name}, and no scratch file could be created")
+        FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, file, content.length), true)
+        PiwiCommands.notify(project, insertion.notice(scratch = true))
+        return null
+    }
+
     private fun respond(context: ChannelHandlerContext, origin: String?, status: HttpResponseStatus, body: Map<String, Any?>?) {
-        val bytes = body?.let { Gson().toJson(it).toByteArray() } ?: ByteArray(0)
+        val bytes = body?.let { JSON.toJson(it).toByteArray() } ?: ByteArray(0)
         val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, Unpooled.wrappedBuffer(bytes))
         val headers = response.headers()
         if (body != null) headers.set(HttpHeaderNames.CONTENT_TYPE, "application/json")
@@ -254,6 +304,15 @@ class PiwiSendHandler : HttpRequestHandler() {
     companion object {
         const val PATH = "/api/piwi/send"
         private val EXTENSION_ORIGIN = Regex("^(chrome|moz)-extension://.+")
+
+        /** The answers carry `file: null` for a scratch file, as the VS Code extension's do. */
+        private val JSON = GsonBuilder().serializeNulls().create()
+
+        /** The scratch file a request opens while no editor is; the platform numbers it when one exists. */
+        private const val SCRATCH_NAME = "piwi-picker.ts"
+
+        /** How long the event thread may take to apply an insertion: a modal dialog holds it meanwhile. */
+        private const val EVENT_THREAD_WAIT_SECONDS = 10L
     }
 }
 

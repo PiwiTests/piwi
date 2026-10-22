@@ -550,6 +550,22 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editors',
       },
       {
+        title: 'JetBrains plugin',
+        summary:
+          'The editor extensions in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API: what the plugin needs, the failures in its tool window, Code Vision above the code, and its actions under Tools → Piwi.',
+        needs: [],
+        where: 'JetBrains IDEs: Tools → Piwi, the Piwi tool window',
+        doc: 'features/jetbrains',
+      },
+      {
+        title: 'Failures in the editor',
+        summary:
+          "The latest CI run's failures at the lines that failed, with the heal and the fix plan as quick fixes, your local runs laid over them, each failing line followed through your edits, and the failures view as a tree.",
+        needs: [],
+        where: 'The Problems panel; the Failures view in VS Code, the Piwi tool window in a JetBrains IDE',
+        doc: 'features/editor-failures',
+      },
+      {
         title: 'Runs from the editor',
         summary:
           "Run tests from VS Code or a JetBrains IDE, follow the run in the status bar, and see its results laid over the latest CI run's failures within a second of its end.",
@@ -580,6 +596,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: [],
         where: 'Piwi: Record here; Tools → Piwi → Record Here in a JetBrains IDE',
         doc: 'features/editor-recording',
+      },
+      {
+        title: 'Recorded code',
+        summary:
+          "What a recording from the editor writes: locators verified on the page, a wait for each new page, the imports it needs, calls to your page objects and passwords read from the environment, shaped for the whole repository by the '@piwi' options in the Playwright config.",
+        needs: [],
+        where: "playwright.config.ts → '@piwi' → codegen",
+        doc: 'features/recorded-code',
       },
       {
         title: 'Editor connection',

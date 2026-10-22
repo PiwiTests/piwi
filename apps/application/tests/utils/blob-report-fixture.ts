@@ -18,6 +18,8 @@ export interface FixtureTest {
   line?: number;
   column?: number;
   timeout?: number;
+  /** Playwright's `repeatEachIndex`: the `--repeat-each` repetition this test is, 0 by default. */
+  repeatEachIndex?: number;
   /** One entry per attempt; an empty array leaves the test unrun. */
   attempts?: Array<{
     status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
@@ -185,7 +187,7 @@ function buildProject(projectName: string, file: string, tests: FixtureTest[]) {
       location: { file, line: test.line ?? 3, column: test.column ?? 5 },
       retries: 1,
       tags: [],
-      repeatEachIndex: 0,
+      repeatEachIndex: test.repeatEachIndex ?? 0,
       annotations: [],
       timeout: test.timeout ?? 30000,
     });

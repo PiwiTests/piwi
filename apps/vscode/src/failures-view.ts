@@ -1,9 +1,10 @@
 /**
  * The Piwi view in the Panel: the latest run's failures as the tree the service groups (`FailuresResult.tree`, drawn
- * by `failureNodes` in `glue.ts`), as `piwi/failuresChanged` pushes them, read from `piwi/failures` with the grouping
- * when the extension starts, when the connection changes and when the grouping does. A failure's click opens its line; its
- * inline actions and context menu run the commands `package.json` binds to its `contextValue`. The grouping and
- * whether the view follows the active editor are kept in `workspaceState`.
+ * by `failureNodes` in `glue.ts`), under a node per Playwright config when several have something to show, as
+ * `piwi/failuresChanged` pushes them, read from `piwi/failures` with the grouping when the extension starts, when the
+ * connection changes and when the grouping does. A failure's click opens its line; its inline actions and context
+ * menu, and a config's, run the commands `package.json` binds to its `contextValue`. The grouping and whether the view
+ * follows the active editor are kept in `workspaceState`.
  */
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
@@ -15,7 +16,7 @@ import {
   type RunStatusResult,
   type StatusResult,
 } from '@piwitests/editor/protocol';
-import { FAILURES_GROUPINGS, failureNodes, type FailureNode } from './glue';
+import { FAILURES_GROUPINGS, failingRuns, failureNodes, type FailureNode } from './glue';
 
 const GROUPING = 'piwi.failuresGrouping';
 const FOLLOW = 'piwi.followEditor';
@@ -32,8 +33,16 @@ const ICON_COLORS: Record<string, string> = {
   edit: 'problemsInfoIcon.foreground',
 };
 
-/** The tree items' `contextValue`: `piwi.failure` and the actions it offers, which the menus' `when` clauses read. */
-function contextValue(node: FailureNode, desktop: boolean): string {
+/**
+ * The tree items' `contextValue`: `piwi.failure` and the actions it offers, `piwi.context` with `failing` when its
+ * Playwright config has tests to re-run and `run` when it has a run to open, which the menus' `when` clauses read.
+ */
+function contextValue(node: FailureNode, desktop: boolean, result: FailuresResult | null): string {
+  if (node.kind === 'context') {
+    return ['piwi.context', failingRuns(result, node.root).length ? 'failing' : null, node.url ? 'run' : null]
+      .filter(Boolean)
+      .join('.');
+  }
   if (node.kind !== 'failure' || !node.failure) return `piwi.${node.kind}`;
   const f = node.failure;
   return [
@@ -122,8 +131,8 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
 
   /** Draw the failures as they were read last, for the run in progress. */
   render(): void {
-    const live = this.runs()?.contexts.find((c) => c.live?.own)?.live ?? null;
-    this.roots = failureNodes(this.result, { live });
+    const own = this.runs()?.contexts.find((c) => c.live?.own);
+    this.roots = failureNodes(this.result, { live: own?.live ?? null, liveRoot: own?.root ?? null });
     this.parents.clear();
     const walk = (nodes: FailureNode[], parent: FailureNode | undefined) => {
       for (const node of nodes) {
@@ -160,7 +169,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     item.tooltip = tooltip;
     const color = ICON_COLORS[node.icon];
     item.iconPath = new vscode.ThemeIcon(node.icon, color ? new vscode.ThemeColor(color) : undefined);
-    item.contextValue = contextValue(node, !!this.status()?.desktopUrl);
+    item.contextValue = contextValue(node, !!this.status()?.desktopUrl, this.result);
     const f = node.failure;
     if (f) {
       item.command = {

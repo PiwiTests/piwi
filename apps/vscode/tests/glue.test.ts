@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type {
   CoverageResult,
@@ -10,10 +11,12 @@ import type {
   RunEnded,
   RunStatusResult,
   StatusResult,
+  TestAtResult,
 } from '@piwitests/editor/protocol';
 import {
   DOCUMENT_PATTERN,
   baselinePicks,
+  coalesced,
   coverageDecorations,
   hasCoverageMarks,
   pickNotice,
@@ -21,13 +24,20 @@ import {
   connectChoices,
   desktopJobNotice,
   disconnectQuestion,
+  editedLine,
+  failingRuns,
   failureNodes,
   followBlock,
   followEdit,
   importChange,
+  locatorChoices,
   recordInto,
   mcpConfiguration,
   newTestFileName,
+  openLink,
+  openLinkMissing,
+  resolveOpenFile,
+  runTaskName,
   placedBlock,
   recordedBlockText,
   recordingSummary,
@@ -39,9 +49,15 @@ import {
   filesRedraw,
   ownLiveRun,
   runVerdict,
+  serviceEnvironment,
   sourceLabel,
   statusBarView,
+  statusContext,
+  testAtRun,
   testDecorations,
+  testHoverMarkdown,
+  testLineArg,
+  TEST_HOVER_COMMANDS,
   withBaseline,
   writeBlock,
   type RecordedBlock,
@@ -297,6 +313,75 @@ describe('statusBarView', () => {
     expect(refreshingText('$(error) Piwi: 2 failing')).toBe('$(sync~spin) Piwi: 2 failing');
     expect(refreshingText('Piwi')).toBe('$(sync~spin) Piwi');
   });
+
+  describe('with several Playwright configs', () => {
+    const shop = connected.contexts[0]!;
+    const admin = { ...shop, root: '/w/apps/admin', label: 'apps/admin', projectName: 'Admin' };
+    const several: StatusResult = { contexts: [{ ...shop, label: 'w' }, admin] };
+    const runs: RunStatusResult = {
+      contexts: [
+        run({}).contexts[0]!,
+        {
+          ...run({ id: 300, status: 'failed', failedTests: 2, passedTests: 10, url: 'http://piwi/test-runs/300' })
+            .contexts[0]!,
+          root: '/w/apps/admin',
+          branch: 'main',
+        },
+      ],
+    };
+
+    test('speaks for the config of the active file, the deepest that holds it', () => {
+      const view = statusBarView(several, runs, false, Date.now(), '/w/apps/admin/tests/users.spec.ts');
+      expect(view).toMatchObject({
+        text: '$(error) Piwi: 2 failing · 2 flaky',
+        url: 'http://piwi/test-runs/300',
+        error: true,
+      });
+      expect(view.tooltip.split('\n\n').slice(0, 2)).toEqual([
+        'Run #300 of Admin on main: 10 passed, 2 failed, 2 flaky, 0 skipped',
+        "The active file's Playwright config, in apps/admin (one of 2)",
+      ]);
+      expect(statusBarView(several, runs, false, Date.now(), '/w/tests/login.spec.ts')).toMatchObject({
+        text: '$(pass) Piwi: 118 passed · 2 flaky',
+        url: 'http://piwi/test-runs/41',
+      });
+    });
+
+    test('without an active file in a config, the first connected one, and says how to see another', () => {
+      for (const file of [null, '/elsewhere/notes.md']) {
+        const view = statusBarView(several, runs, false, Date.now(), file);
+        expect(view.url).toBe('http://piwi/test-runs/41');
+        expect(view.tooltip.split('\n\n')[1]).toBe(
+          'The Playwright config in w (one of 2): open a file of another one to see its run',
+        );
+      }
+      const first = statusBarView({ contexts: [{ ...shop, connected: false, problem: 'No project.' }, admin] }, runs);
+      expect(first.url).toBe('http://piwi/test-runs/300');
+      expect(statusContext(several.contexts, null)?.root).toBe('/w');
+      expect(statusContext([], '/w/a.ts')).toBeNull();
+    });
+
+    test('a config that is not connected says so for its files, whatever the others read', () => {
+      const unlinked = { ...admin, connected: false, problem: 'No project is linked to apps/admin.' };
+      const view = statusBarView({ contexts: [shop, unlinked] }, runs, false, Date.now(), '/w/apps/admin/a.spec.ts');
+      expect(view).toMatchObject({ text: '$(plug) Piwi: connect', action: 'connect', url: null });
+      expect(view.tooltip.split('\n\n').slice(0, 2)).toEqual([
+        'No project is linked to apps/admin.',
+        "The active file's Playwright config, in apps/admin (one of 2)",
+      ]);
+      const down = { ...admin, connected: false, problem: 'Down.', problemKind: 'unreachable' as const };
+      expect(statusBarView({ contexts: [shop, down] }, runs, false, Date.now(), '/w/apps/admin/a.ts').action).toBe(
+        'retry',
+      );
+    });
+
+    test('without the label of an older service, the folder’s name', () => {
+      const older: StatusResult = { contexts: [shop, { ...admin, label: undefined }] };
+      expect(statusBarView(older, runs, false, Date.now(), '/w/apps/admin/a.ts').tooltip).toContain(
+        "The active file's Playwright config, in admin (one of 2)",
+      );
+    });
+  });
 });
 
 describe('relativeTime', () => {
@@ -479,6 +564,7 @@ describe('the tests of a file', () => {
             command: 'piwi.openInDashboard',
             arguments: ['http://piwi/test-cases/9'],
           },
+          testCaseId: 9,
         },
         { line: 8, title: 'passed 4/4', status: 'passed', endLine: 10 },
       ]),
@@ -490,6 +576,7 @@ describe('the tests of a file', () => {
         failingLine: 5,
         hover: '**Piwi**: failing · passed 1/4 · failed',
         dashboardUrl: 'http://piwi/test-cases/9',
+        testCaseId: 9,
       },
       {
         status: 'passed',
@@ -498,6 +585,7 @@ describe('the tests of a file', () => {
         failingLine: null,
         hover: '**Piwi**: passing · passed 4/4',
         dashboardUrl: null,
+        testCaseId: null,
       },
     ]);
   });
@@ -511,8 +599,34 @@ describe('the tests of a file', () => {
         failingLine: null,
         hover: '**Piwi**: running · passed 4/4',
         dashboardUrl: null,
+        testCaseId: null,
       },
     ]);
+  });
+
+  test('a test’s gutter hover runs it and opens it in the dashboard, with the commands it is trusted with', () => {
+    const [test] = testDecorations([
+      {
+        line: 3,
+        title: 'passed 4/4',
+        status: 'passed',
+        command: {
+          title: 'Open in dashboard',
+          command: 'piwi.openInDashboard',
+          arguments: ['http://piwi/test-cases/9'],
+        },
+        testCaseId: 9,
+      },
+    ]);
+    const run = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', testIds: [9] }]));
+    const open = encodeURIComponent(JSON.stringify(['http://piwi/test-cases/9']));
+    expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts')).toBe(
+      `**Piwi**: passing · passed 4/4\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open})`,
+    );
+    expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests']);
+    // A service that gives neither: the result alone.
+    const [bare] = testDecorations([{ line: 3, title: 'passed 4/4', status: 'passed' }]);
+    expect(testHoverMarkdown(bare!, 'file:///w/a.spec.ts')).toBe('**Piwi**: passing · passed 4/4');
   });
 
   test('a failing test whose failing line changed since the run keeps its tint, and its hover says so', () => {
@@ -786,6 +900,54 @@ describe('following the recorded block', () => {
   });
 });
 
+describe('a recorded line’s warning', () => {
+  const step = {
+    locators: ["getByTestId('pay')", "getByRole('button', { name: 'Pay' })", "locator('form > button.btn-3')"],
+    chosen: 2,
+  };
+  const written = "locator('form > button.btn-3')";
+
+  test('offers each other verified locator of its step, best first, in place of the written one', () => {
+    const line = `    await page.${written}.click();`;
+    const start = line.indexOf(written);
+    const end = start + written.length;
+    expect(locatorChoices(line, step)).toEqual([
+      { title: "Use getByTestId('pay')", locator: "getByTestId('pay')", start, end },
+      {
+        title: "Use getByRole('button', { name: 'Pay' })",
+        locator: "getByRole('button', { name: 'Pay' })",
+        start,
+        end,
+      },
+    ]);
+  });
+
+  test('finds the written locator after any page expression and inside a call', () => {
+    expect(locatorChoices(`await adminPage.${written}.click();`, step)).toHaveLength(2);
+    expect(locatorChoices(`await this.page.${written}.fill(process.env.E2E_PASSWORD ?? '');`, step)).toHaveLength(2);
+    expect(locatorChoices(`await expect(page.${written}).toBeVisible();`, step)[0]).toMatchObject({
+      start: 18,
+      end: 48,
+    });
+  });
+
+  test('offers nothing for a single locator, none written, or one not on the line exactly once', () => {
+    const line = `await page.${written}.click();`;
+    expect(locatorChoices(line, { locators: [written], chosen: 0 })).toEqual([]);
+    expect(locatorChoices(line, { ...step, chosen: null })).toEqual([]);
+    expect(locatorChoices('await cartPage.pay();', step)).toEqual([]);
+    expect(locatorChoices(`await page.${written}.dragTo(page.${written});`, step)).toEqual([]);
+    expect(locatorChoices("await page.locator('form > button.btn-4').click();", step)).toEqual([]);
+  });
+
+  test('goes once its line is edited in place; an edit that adds or removes a line edits none in place', () => {
+    expect(editedLine(change(span(4, 12, 4, 42), "getByTestId('pay')"))).toBe(4);
+    expect(editedLine(change(span(4, 12, 4, 12), 'x'))).toBe(4);
+    expect(editedLine(change(span(4, 12, 5, 0), ''))).toBeNull();
+    expect(editedLine(change(span(4, 12, 4, 12), '\n  '))).toBeNull();
+  });
+});
+
 describe('where a recording writes', () => {
   test('outside every test, function and class, a new test; anywhere else, the steps there', () => {
     expect(recordInto('test')).toBe('steps');
@@ -974,15 +1136,52 @@ describe('the recording’s controls', () => {
   test('once stopped, a notification counts the steps and the warnings', () => {
     const step = { words: 'Click Pay', line: 0, locators: [], chosen: null };
     const warning = { step: 0, line: 0, message: 'Brittle locator' };
-    expect(recordingSummary({ steps: [step, step], warnings: [warning], message: null }, false)).toBe(
-      'Piwi: recording stopped, 2 steps written, 1 warning to check.',
-    );
-    expect(recordingSummary({ steps: [step], warnings: [], message: 'The browser was closed' }, false)).toBe(
-      'Piwi: The browser was closed. 1 step written.',
-    );
-    expect(recordingSummary({ steps: [step], warnings: [], message: null }, true)).toBe(
+    expect(
+      recordingSummary({ steps: [step, step], warnings: [warning], message: null }, false, 'checkout.spec.ts'),
+    ).toBe('Piwi: recorded 2 steps into checkout.spec.ts, 1 warning to check.');
+    expect(
+      recordingSummary({ steps: [step], warnings: [], message: 'The browser was closed' }, false, 'checkout.spec.ts'),
+    ).toBe('Piwi: The browser was closed. Recorded 1 step into checkout.spec.ts.');
+    expect(recordingSummary({ steps: [step], warnings: [], message: null }, true, 'checkout.spec.ts')).toBe(
       'Piwi: recording stopped. The recorded block keeps your edits.',
     );
+    expect(recordingSummary({ steps: [], warnings: [], message: null }, false, 'checkout.spec.ts')).toBe(
+      'Piwi: nothing was recorded into checkout.spec.ts.',
+    );
+  });
+});
+
+describe('the test at a line', () => {
+  const uri = 'file:///w/tests/checkout.spec.ts';
+  const known: TestAtResult = {
+    test: { id: 7, title: 'pays', file: 'tests/checkout.spec.ts', status: 'passed', url: 'http://piwi/test-cases/7' },
+    spec: { uri, testIds: [7] },
+    location: 'tests/checkout.spec.ts:3',
+  };
+  const recorded: TestAtResult = { test: null, spec: null, location: 'tests/checkout.spec.ts:12' };
+
+  test('runs by its id when Piwi knows it, else by its location', () => {
+    expect(testAtRun(uri, known)).toEqual({ uri, testIds: [7] });
+    expect(testAtRun(uri, recorded)).toEqual({ uri, testIds: [], locations: ['tests/checkout.spec.ts:12'] });
+  });
+
+  test('runs by its location several times to verify it', () => {
+    expect(testAtRun(uri, known, 3)).toEqual({ uri, testIds: [], locations: ['tests/checkout.spec.ts:3'], repeat: 3 });
+  });
+
+  test('runs nothing outside every test, or by an id alone to verify', () => {
+    expect(testAtRun(uri, { test: null, spec: null, location: null })).toBeNull();
+    expect(testAtRun(uri, null)).toBeNull();
+    // An older service gives no location.
+    expect(testAtRun(uri, { test: known.test, spec: known.spec })).toEqual({ uri, testIds: [7] });
+    expect(testAtRun(uri, { test: known.test, spec: known.spec }, 3)).toBeNull();
+  });
+
+  test('is the line a command names, else none: the file a context menu passes is not one', () => {
+    expect(testLineArg({ uri, line: 11 })).toEqual({ uri, line: 11 });
+    expect(testLineArg({ scheme: 'file', path: '/w/tests/checkout.spec.ts' })).toBeNull();
+    expect(testLineArg({ uri, line: -1 })).toBeNull();
+    expect(testLineArg(undefined)).toBeNull();
   });
 });
 
@@ -1156,6 +1355,66 @@ describe('the failures view', () => {
     expect(failureNodes({ ...result, tree: [] })).toEqual([]);
   });
 
+  test('a Playwright config’s node: its folder and codicon, over its run, which alone counts the editor’s own run', () => {
+    const live: LiveRun = {
+      runId: 125,
+      status: 'running',
+      done: 4,
+      total: 9,
+      failed: 1,
+      startedAt: '2026-09-27T10:03:00.000Z',
+      own: true,
+    };
+    const run = result.tree[0]!;
+    const config = (root: string, label: string, url: string): FailureTreeNode => ({
+      key: `context:${root}`,
+      kind: 'context',
+      label,
+      description: 'Shop · 2 failing',
+      tooltip: [`Playwright config in ${root}`, 'Project: Shop'],
+      icon: 'context',
+      expanded: true,
+      url,
+      root,
+      children: [{ ...run, key: `context:${root}/run`, url, root }],
+    });
+    const two: FailuresResult = {
+      ...result,
+      runLabel: null,
+      tree: [
+        config('/w/apps/shop', 'apps/shop', 'http://piwi/test-runs/120'),
+        config('/w/apps/admin', 'apps/admin', 'http://piwi/test-runs/300'),
+      ],
+    };
+    const [shop, admin] = failureNodes(two, { now, live, liveRoot: '/w/apps/admin' });
+    expect(shop).toMatchObject({
+      key: 'context:/w/apps/shop',
+      kind: 'context',
+      label: 'apps/shop',
+      description: 'Shop · 2 failing',
+      tooltip: 'Playwright config in /w/apps/shop\n\nProject: Shop',
+      icon: 'root-folder',
+      state: 'expanded',
+      url: 'http://piwi/test-runs/120',
+      root: '/w/apps/shop',
+    });
+    expect(shop!.children[0]).toMatchObject({ kind: 'run', root: '/w/apps/shop', description: '4 min ago' });
+    expect(admin!.children[0]).toMatchObject({ root: '/w/apps/admin', description: 'running 4/9' });
+    // The run's node of an older service names no config: the editor's own run shows on it.
+    expect(failureNodes(result, { now, live, liveRoot: '/w/apps/admin' })[0]!.description).toBe('running 4/9');
+  });
+
+  test('Re-run the failing tests runs every config’s, or one config’s from its node', () => {
+    const rerun = [
+      { uri: 'file:///w/apps/shop/tests/a.spec.ts', root: '/w/apps/shop', testIds: [7] },
+      { uri: 'file:///w/apps/admin/tests/b.spec.ts', root: '/w/apps/admin', testIds: [8] },
+    ];
+    expect(failingRuns({ ...result, rerun })).toEqual(rerun);
+    expect(failingRuns({ ...result, rerun }, '/w/apps/admin')).toEqual([rerun[1]]);
+    expect(failingRuns({ ...result, rerun }, '/w/apps/docs')).toEqual([]);
+    expect(failingRuns(null)).toEqual([]);
+  });
+
   test('Run this test names the failure’s config', () => {
     expect(failureRunArgs({ ...failing, root: '/w/apps/admin', uri: 'file:///w/shared/pages/admin.ts' })).toEqual({
       uri: 'file:///w/shared/pages/admin.ts',
@@ -1221,6 +1480,19 @@ describe('the verdict of a run started from the editor', () => {
     expect(runVerdict(ended, 'failures')).not.toBeNull();
     expect(runVerdict(ended, 'never')).toBeNull();
   });
+
+  test('a run of each test three times says how many of its runs passed, whatever the setting', () => {
+    expect(runVerdict({ ...ended, repeat: { verdict: 'Failed 1 of 3', failed: true } }, 'never')).toEqual({
+      severity: 'warning',
+      text: 'Piwi: run #124 · Failed 1 of 3',
+      actions: ['Open the failures', 'Open in dashboard'],
+    });
+    const passed = { ...ended, failed: 0, repeat: { verdict: 'Passed 3 of 3', failed: false } };
+    expect(runVerdict(passed, 'failures')).toMatchObject({
+      severity: 'information',
+      text: 'Piwi: run #124 · Passed 3 of 3',
+    });
+  });
 });
 
 describe('a locator picked at a breakpoint', () => {
@@ -1234,5 +1506,145 @@ describe('a locator picked at a breakpoint', () => {
     expect(pickNotice(at, 'no-file')).toBe(
       'Piwi: the picked locator was inserted at the cursor: tests/login.spec.ts is not in this workspace.',
     );
+  });
+});
+
+describe('calls coalesced into one', () => {
+  test('the calls made before the scheduled run join it, and a call after it schedules the next', () => {
+    const runs: Array<() => void> = [];
+    let drawn = 0;
+    const draw = coalesced(
+      () => drawn++,
+      (run) => runs.push(run),
+    );
+    draw();
+    draw();
+    draw();
+    expect(runs).toHaveLength(1);
+    expect(drawn).toBe(0);
+    runs[0]();
+    expect(drawn).toBe(1);
+    draw();
+    expect(runs).toHaveLength(2);
+    runs[1]();
+    expect(drawn).toBe(2);
+  });
+});
+
+describe('the environment the editor service starts with', () => {
+  const env = { PATH: '/usr/bin', NODE_EXTRA_CA_CERTS: '/etc/ssl/corp.pem' };
+
+  test('is the editor’s, its proxy variables included', () => {
+    expect(serviceEnvironment({}, { ...env, https_proxy: 'http://shell:3128' })).toEqual({
+      ...env,
+      https_proxy: 'http://shell:3128',
+    });
+    expect(serviceEnvironment({ proxy: ' ', noProxy: [], proxyStrictSSL: true }, env)).toEqual(env);
+  });
+
+  test('the editor’s proxy replaces the environment’s, for http and https alike', () => {
+    const shell = { ...env, https_proxy: 'http://shell:3128', http_proxy: 'http://shell:3128' };
+    expect(serviceEnvironment({ proxy: ' http://proxy.corp:3128 ' }, shell)).toEqual({
+      ...env,
+      HTTPS_PROXY: 'http://proxy.corp:3128',
+      HTTP_PROXY: 'http://proxy.corp:3128',
+    });
+  });
+
+  test('a Basic authorization goes in the proxy’s URL as its credentials, encoded', () => {
+    const basic = `Basic ${Buffer.from('ann:p@ss:w0rd').toString('base64')}`;
+    const made = serviceEnvironment({ proxy: 'http://proxy.corp:3128', proxyAuthorization: basic }, {});
+    expect(made.HTTPS_PROXY).toBe('http://ann:p%40ss%3Aw0rd@proxy.corp:3128/');
+    expect(made.HTTP_PROXY).toBe(made.HTTPS_PROXY);
+  });
+
+  test('another authorization, or a URL with credentials of its own, leaves the URL as given', () => {
+    const basic = `Basic ${Buffer.from('ann:secret').toString('base64')}`;
+    const negotiate = { proxy: 'http://proxy.corp:3128', proxyAuthorization: 'Negotiate YIIBxg==' };
+    expect(serviceEnvironment(negotiate, {}).HTTPS_PROXY).toBe('http://proxy.corp:3128');
+    const own = { proxy: 'http://bob:pw@proxy.corp:3128', proxyAuthorization: basic };
+    expect(serviceEnvironment(own, {}).HTTPS_PROXY).toBe('http://bob:pw@proxy.corp:3128');
+  });
+
+  test('names the hosts reached without the proxy, and leaves certificates unverified only when asked', () => {
+    const made = serviceEnvironment(
+      { proxy: 'http://proxy.corp:3128', noProxy: [' localhost', '.corp', ''], proxyStrictSSL: false },
+      { ...env, no_proxy: 'shell' },
+    );
+    expect(made.NO_PROXY).toBe('localhost,.corp');
+    expect(made.no_proxy).toBeUndefined();
+    expect(made.NODE_TLS_REJECT_UNAUTHORIZED).toBe('0');
+    expect(serviceEnvironment({ proxyStrictSSL: true }, env).NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+  });
+});
+
+describe('the task a test run is', () => {
+  test('is named after its command, cut when long', () => {
+    expect(runTaskName(['tests/login.spec.ts:12'])).toBe('playwright test tests/login.spec.ts:12');
+    expect(runTaskName([])).toBe('playwright test');
+    const long = runTaskName(['--grep', 'x'.repeat(200)]);
+    expect(long).toHaveLength(80);
+    expect(long.endsWith('…')).toBe(true);
+  });
+});
+
+describe('an open link from the dashboard', () => {
+  test('names the file, its 1-based line and column, and the folder it is relative to', () => {
+    expect(openLink('file=tests/a b+c&d.spec.ts&line=12&column=5&root=/work/shop')).toEqual({
+      file: 'tests/a b+c&d.spec.ts',
+      line: 12,
+      column: 5,
+      root: '/work/shop',
+    });
+    expect(openLink('file=tests/a.spec.ts&line=0&column=x')).toEqual({
+      file: 'tests/a.spec.ts',
+      line: 1,
+      column: 1,
+      root: null,
+    });
+    expect(openLink('line=3')).toBeNull();
+    expect(openLink('')).toBeNull();
+  });
+
+  const folder = path.resolve('/work/shop');
+  const e2e = path.join(folder, 'e2e');
+  const other = path.resolve('/work/other');
+  const files = new Set([
+    path.join(e2e, 'tests', 'login.spec.ts'),
+    path.join(folder, 'package.json'),
+    path.join(folder, 'apps', 'web', 'tests', 'cart.spec.ts'),
+    path.join(other, 'tests', 'secret.spec.ts'),
+  ]);
+  const exists = (file: string) => files.has(file);
+  const places = { workspaceFolders: [folder], configRoots: [e2e] };
+  const resolve = (file: string, root: string | null = null) => resolveOpenFile({ file, root }, places, exists);
+
+  test('finds the run’s path under a Playwright config’s folder, then the workspace folders', () => {
+    expect(resolve('tests/login.spec.ts')).toBe(path.join(e2e, 'tests', 'login.spec.ts'));
+    expect(resolve('tests\\login.spec.ts')).toBe(path.join(e2e, 'tests', 'login.spec.ts'));
+    expect(resolve('package.json')).toBe(path.join(folder, 'package.json'));
+  });
+
+  test('takes an absolute path inside a workspace folder as given, and a CI path by its suffix', () => {
+    expect(resolve(path.join(folder, 'package.json'))).toBe(path.join(folder, 'package.json'));
+    expect(resolve('/home/runner/work/shop/e2e/tests/login.spec.ts')).toBe(path.join(e2e, 'tests', 'login.spec.ts'));
+  });
+
+  test('looks under the link’s root first when it lies in a workspace folder', () => {
+    const web = path.join(folder, 'apps', 'web');
+    expect(resolve('tests/cart.spec.ts', web)).toBe(path.join(web, 'tests', 'cart.spec.ts'));
+    expect(resolve('tests/cart.spec.ts')).toBeNull();
+    expect(resolve('tests/secret.spec.ts', other)).toBeNull();
+  });
+
+  test('never names a file outside the workspace folders', () => {
+    expect(resolve(path.join(other, 'tests', 'secret.spec.ts'))).toBeNull();
+    expect(resolve('../other/tests/secret.spec.ts')).toBeNull();
+    const noFolder = { workspaceFolders: [], configRoots: [e2e] };
+    expect(resolveOpenFile({ file: 'tests/login.spec.ts', root: null }, noFolder, exists)).toBeNull();
+  });
+
+  test('says which window to open it from when this one holds no such file', () => {
+    expect(openLinkMissing('tests/a.spec.ts')).toContain('tests/a.spec.ts');
   });
 });

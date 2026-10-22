@@ -4,10 +4,12 @@ import {
   failingCount,
   failureRunNote,
   failureTree,
+  failuresAnswer,
   failuresDrawn,
   parseFailuresGrouping,
   rerunFailingArgs,
   runLabel,
+  type ContextFailures,
 } from '../src/failure-tree';
 import type { FailuresResult, FailureTreeNode } from '../src/protocol';
 
@@ -265,6 +267,152 @@ describe('the failures tree', () => {
       null,
       null,
     ]);
+  });
+});
+
+describe('the failures of several Playwright configs', () => {
+  const shop: ContextFailures = {
+    ...result,
+    items: result.items.map((f) => ({ ...f, root: '/w' })),
+    root: '/w',
+    label: 'w',
+    projectName: 'Shop',
+    baseline: { choice: { kind: 'ladder' }, label: 'CI run #120 on feature/x' },
+    updatedAt: '2026-09-27T10:05:00.000Z',
+  };
+  const admin: ContextFailures = {
+    items: [
+      {
+        ...result.items[0]!,
+        root: '/w/admin',
+        executionId: 50,
+        runId: 300,
+        testCaseId: 70,
+        file: 'tests/users.spec.ts',
+      },
+    ],
+    run: { ...result.run!, id: 300, branch: 'main', url: 'http://piwi/test-runs/300' },
+    overlays: [],
+    root: '/w/admin',
+    label: 'admin',
+    projectName: 'Admin',
+    updatedAt: '2026-09-27T10:07:00.000Z',
+  };
+  /** A config whose run fails nothing it holds. */
+  const docs: ContextFailures = {
+    items: [],
+    run: { ...result.run!, id: 41, branch: 'main', failedTests: 0, url: 'http://piwi/test-runs/41' },
+    overlays: [],
+    root: '/w/docs',
+    label: 'docs',
+    projectName: 'Docs',
+  };
+  const idle: ContextFailures = { items: [], run: null, overlays: [], root: '/w/idle', label: 'idle' };
+
+  test('one config with something to show: its tree as it stands, its run naming its config', () => {
+    const answer = failuresAnswer([shop, idle], 'file');
+    expect(answer).toEqual({
+      items: shop.items,
+      run: shop.run,
+      overlays: shop.overlays,
+      baseline: shop.baseline,
+      updatedAt: '2026-09-27T10:05:00.000Z',
+      ...failuresDrawn({ ...shop, root: '/w' }, 'file'),
+    });
+    expect(answer.tree.map((n) => [n.kind, n.key, n.root])).toEqual([['run', 'run', '/w']]);
+    // Without one, nothing.
+    expect(failuresAnswer([idle], 'file')).toEqual({ items: [], ...failuresDrawn({ items: [] }, 'file') });
+  });
+
+  test('several: one node per config, in their order, each over its own tree with its own counts', () => {
+    const answer = failuresAnswer([shop, idle, admin, docs], 'file');
+    expect(labels(answer.tree)).toEqual([
+      [
+        'w (Shop · 2 failing · 1 fixed locally)',
+        [
+          [
+            'Run #120 · CI · feature/x · 2 failing · 1 fixed locally ()',
+            [
+              ['Your runs since (1 run)', ['#124 · your run · 1 passed, 1 failed']],
+              ['tests/checkout.spec.ts (1 failing · 1 fixed locally)', ['pays', 'removes a row']],
+              ['tests/login.spec.ts (1 failing)', ['logs in', 'logs in']],
+            ],
+          ],
+        ],
+      ],
+      [
+        'admin (Admin · 1 failing)',
+        [['Run #300 · CI · main · 1 failing ()', [['tests/users.spec.ts (1 failing)', ['logs in']]]]],
+      ],
+      // Without a failure, its run alone.
+      ['docs (Docs · 0 failing)', ['Run #41 · CI · main · 0 failing']],
+    ]);
+    const [first, second] = answer.tree;
+    expect(first).toMatchObject({
+      key: 'context:/w',
+      kind: 'context',
+      icon: 'context',
+      expanded: true,
+      url: 'http://piwi/test-runs/120',
+      root: '/w',
+      tooltip: [
+        'Playwright config in /w',
+        'Project: Shop',
+        'Run #120 · CI · feature/x · 2 failing · 1 fixed locally',
+        'Baseline: CI run #120 on feature/x',
+      ],
+    });
+    // Each key under a config's node starts with its own: two configs never share one.
+    expect(first!.children[0]).toMatchObject({
+      key: 'context:/w\nrun',
+      kind: 'run',
+      root: '/w',
+      startTime: shop.run!.startTime,
+    });
+    expect(first!.children[0]!.children[0]!.children[0]!.key).toBe('context:/w\noverlay:124');
+    expect(second!.children[0]!.children[0]!.key).toBe('context:/w/admin\ngroup:file:tests/users.spec.ts');
+    expect(second!.children[0]!.children[0]!.children[0]).toMatchObject({
+      key: 'context:/w/admin\nfailure:50',
+      executionId: 50,
+    });
+    // No run speaks for all of them: each node carries its own.
+    expect(answer).not.toHaveProperty('run');
+    expect(answer).not.toHaveProperty('overlays');
+    expect(answer).not.toHaveProperty('baseline');
+    expect(answer).toMatchObject({
+      runLabel: null,
+      failing: 3,
+      updatedAt: '2026-09-27T10:07:00.000Z',
+      rerun: [
+        { uri: 'file:///w/tests/login.spec.ts', root: '/w', testIds: [7, 8] },
+        { uri: 'file:///w/tests/login.spec.ts', root: '/w/admin', testIds: [70] },
+      ],
+    });
+    expect(answer.items.map((f) => f.executionId)).toEqual([1, 2, 3, 4, 50]);
+  });
+
+  test('a config with runs laid over none, or failures without a run, has its node too', () => {
+    const local: ContextFailures = {
+      ...admin,
+      run: null,
+      overlays: result.overlays,
+      baseline: { choice: { kind: 'local' }, label: 'your local runs only' },
+    };
+    const older: ContextFailures = { ...docs, run: null, items: [{ ...result.items[0]!, root: '/w/docs' }] };
+    const tree = failuresAnswer([local, older], 'flat').tree;
+    expect(labels(tree)).toEqual([
+      [
+        'admin (Admin · 1 failing)',
+        [
+          [
+            'Your local runs · 1 failing (no baseline)',
+            [['Your runs (1 run)', ['#124 · your run · 1 passed, 1 failed']], 'logs in'],
+          ],
+        ],
+      ],
+      ['docs (Docs · 1 failing)', ['logs in']],
+    ]);
+    expect(tree.map((n) => n.url)).toEqual([null, null]);
   });
 });
 

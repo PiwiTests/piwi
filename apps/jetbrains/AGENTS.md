@@ -18,9 +18,15 @@ the service through the platform's LSP API with the project's Node.js interprete
 platform passes no process id, and the service exits within seconds of the IDE's end, however it ends), once
 `node --version` says 20 or
 later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `PiwiProjectService.startFailed` keeps
-(`startProblem`) and says once, the status bar item reads `Piwi: Node.js` and opens the Node.js settings
-(`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
-while it does not run.
+(`startProblem`) and says once, the status bar item reads `Piwi: Node.js` and its menu opens the Node.js settings
+first (`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
+while it does not run. The service's process gets the IDE's HTTP proxy for the instance the project names
+(`PiwiLspServerDescriptor.proxyEnvironment`: the default `ProxySelector`, which holds the IDE's proxy settings, asked
+for that address, else for a public one), as `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` with this machine's names (`Glue.proxyEnvironment`), which the
+service's `src/http.ts` reads. The platform stops a service whose start failed: it sends the open files on a pooled
+thread, and a tab opened or closed meanwhile throws a `ConcurrentModificationException` there. A service that stops
+within 30 s of its start is started again two seconds later, unless another one starts or runs, or Node.js is the
+problem; three times in five minutes at most (`PiwiProjectService.watchServer`, `Glue.restartsService`).
 
 - **Nothing starts in an untrusted project.** In a project opened in safe mode (`PiwiProjectService.trusted`, the
   platform's `isTrusted`), the plugin starts no editor service, runs no command (`PiwiCommands.run`, `startRun`) and
@@ -56,6 +62,9 @@ while it does not run.
   hovered, it and the scroll bar mark show `Glue.coverageMarkTooltip`, what the lines are and what the marks mean;
   clicked, the same as a hint. The highlighters follow the edits; `piwi/coverageChanged`
   replaces a file's answer, draws it again and has its Code Vision asked again (`PiwiProjectService.coverageChanged`).
+  A drawing takes off and adds only the marks that changed (`Glue.coverageMarksDiff`): a highlighter is kept while the
+  answer holds its mark (kind, lines, tooltip) at the lines it covers now. A file renamed or moved, itself or with its
+  folder (`VFS_CHANGES`), loses its marks and is asked again under its new URI; a deleted one is forgotten.
   **Show Coverage Marks** (`Piwi.ToggleCoverageMarks`, a `ToggleAction` under **Tools → Piwi**, kept in
   `PiwiLocalSettings.coverageMarks`, on by default) is hidden, not only disabled, until a file showed marks; a file
   without line coverage draws nothing. The service's hover names the tests behind a line; its function lines come in
@@ -72,7 +81,9 @@ while it does not run.
   service grouped (`FailuresResult.tree`) with a run's age, the nodes VS Code's view has: the run, **Your runs since**,
   then the failures grouped by file, cluster, owner or flat (the toolbar's `ToggleAction`s, kept in
   `PiwiLocalSettings.failuresGrouping`, sent with every `piwi/failures`, and read again at once by
-  `PiwiProjectService.regroup`, the service keeping it for what it pushes). A `ColoredTreeCellRenderer` draws a
+  `PiwiProjectService.regroup`, the service keeping it for what it pushes), under a node per Playwright config
+  (`AllIcons.Nodes.Module`) when several have something to show; the editor's own run in progress shows on the run of
+  its config (`liveRoot`), and the header line names no run then. A `ColoredTreeCellRenderer` draws a
   failure's title, headline, run (`Glue.failureRunNote`: `your run #N`, `edited since run #N` with the information
   icon, fixed with the passed icon) and place; `TreeSpeedSearch` finds a title. The tree is built again only when
   its nodes changed, from `piwi/failuresChanged` as the edits move them too, keeping the expanded and selected nodes
@@ -82,21 +93,37 @@ while it does not run.
   or a run's page; the right-click menu
   (`PopupHandler.installPopupMenu`) runs the test, opens the trace, the screenshot or the page, copies the context for
   an agent (`piwi/agentContext`) and, on a CI failure while the desktop app runs, passes it to the app, through
-  `PiwiCommands`. **Re-run the Failing Tests** (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs
-  `FailuresResult.rerun`, one run per Playwright config, and **Run This Test** `Glue.failureRunArgs`: both name the
-  failure's config (`WorkspaceFailure.root`). **Compare With…** (`Piwi.CompareWith`, **Tools → Piwi** and the toolbar) is a popup of
-  `Glue.baselineEntries` (the ladder, each of `RunStatus.branches`, a run by its id through `Messages.showInputDialog`,
-  which `piwi/runId` reads on a pooled thread, a balloon saying when the text is not one, the local runs only) for the context of the file at hand; `PiwiProjectService.setBaseline` keeps the choice in
+  `PiwiCommands`; on a config's node, it re-runs that config's failing tests, chooses its baseline and opens its run
+  (`ConfigAction`, `Glue.FailureNode.root`), on a run's node the last two. **Re-run the Failing Tests**
+  (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs `FailuresResult.rerun`, one run per Playwright config
+  (`PiwiCommands.rerunFailing`, a config's alone from its node: `Glue.failingRuns`), and **Run This Test**
+  `Glue.failureRunArgs`: both name the failure's config (`WorkspaceFailure.root`). **Compare With…**
+  (`Piwi.CompareWith`, **Tools → Piwi** and the toolbar) is a popup of `Glue.baselineEntries` (the ladder, each of
+  `RunStatus.branches`, a run by its id through `Messages.showInputDialog`, which `piwi/runId` reads on a pooled thread,
+  a balloon saying when the text is not one, the local runs only) for the context of the file at hand, or of the node
+  it runs from (`CompareWithAction.choose`); `PiwiProjectService.setBaseline` keeps the choice in
   `PiwiLocalSettings.baselines` (by root, `Glue.encodeBaseline`, the ladder as no entry), sends `piwi/setBaseline`, and
   `credentials()` sends them all as `baselines`. The header line names it (`Glue.runHeader`). The service
   starts with the first supported file opened (2024.1 has no way to start it without one): until then the status is
   null, and the status bar and tool window say so.
-- The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`): a click runs `PiwiProjectService.refreshRun`
-  (`piwi/refreshRun` then `refreshStatus`, on a pooled thread, `Piwi: refreshing…` meanwhile), **Refresh** while the
-  instance does not answer (`Piwi: unreachable`, `problemKind`, `StatusAction.RETRY`), and Connect while not
-  connected. Its tooltip says the same as VS Code's in plain text: the counts, the local runs, the run in progress and
-  when the run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project
-  installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
+- The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`) is a `CustomStatusBarWidget` around a `JBLabel` (the
+  platform's text presentations take no color): an icon (`Glue.StatusIcon`: the plugin's, `AllIcons` for the
+  connection and for a failing or passed run, `AnimatedIcon.Default` for a run in progress or a read), the text, and the
+  theme's error foreground (`NamedColorUtil.getErrorForeground`, else `JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`)
+  while tests of the run it counts fail, a run in progress by its own failures (`StatusView.error`). It speaks for the
+  context of the selected editor's file (`Glue.statusContext`: the deepest config folder holding it, else the first
+  connected; `PiwiStatusBarWidget.shownFile`), drawn again on `FileEditorManagerListener.selectionChanged`; with
+  several contexts the tooltip names that config (`ContextStatus.label`, else its folder's name), and another
+  context's run is never shown for it. A click opens `PiwiStatusBarWidget.actions()` (`createActionGroupPopup`, with
+  the selected editor's data context, the disabled actions left out): first what the state calls for
+  (`Glue.StatusAction`: **Read the Latest Run Again**, `PiwiProjectService.refreshRun`, `piwi/refreshRun` then
+  `refreshStatus` on a pooled thread, `Piwi: refreshing…` meanwhile; **Refresh** while the instance does not answer,
+  `Piwi: unreachable`, `problemKind`; Connect while not connected; the Node.js settings; while a recording runs, its
+  block and its controls), then the registered actions by id: Re-run the Failing Tests, Open the Failures (the tool
+  window), Open the Latest Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record
+  Here, Refresh, Connect and Settings. Its tooltip says the same as VS Code's in plain text: the counts, the local
+  runs, the run in progress and when the run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and
+  the reporter version the project installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
   **Tools → Piwi** and in the tool window's toolbar) opens the run the status bar shows.
 - With **Run the tests in the IDE's Playwright runner** (`PiwiLocalSettings.playwrightRunner`, off by default), a test
   run whose command is `npx playwright test …` (`Glue.playwrightTestArgs`) starts as a temporary Playwright run
@@ -114,9 +141,19 @@ while it does not run.
   (`PiwiCommands.notify`), and so is `piwi/runEnded` (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the
   Failures**, **Open in Dashboard** and, when something fails, **Re-run Failing**, as
   `PiwiLocalSettings.runNotifications` allows (**Settings → Tools → Piwi**: `always`, `failures`, `never`, in
-  `.idea/workspace.xml`, on this machine only).
-- Breakpoints: `PiwiCommands.runTests` (every test run: Code Vision, **Run this test**, **Run the Tests That Reach
-  This File**, **Re-run the Failing Tests**) and **Run Selection…** pass the IDE's breakpoints to the service
+  `.idea/workspace.xml`, on this machine only); a run's `repeat` (**Verify ×3**) is said whatever the setting,
+  `Run #124 · Failed 1 of 3`, a warning when one of the runs failed. The severity of a failure's diagnostic is
+  `PiwiLocalSettings.failureSeverity` (`Glue.FAILURE_SEVERITIES`, the same page's Runs group), sent in `credentials()`;
+  the LSP client shows an information as a weak warning.
+- **Run the Test at the Caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`), **Verify the Test at the Caret ×3**
+  (`Piwi.VerifyTestAtCursor`) and **Run This Spec** (`Piwi.RunSpec`), under **Tools → Piwi** and in the editor's menu
+  of a spec (`Glue.isSpecFile`) in a project with a Playwright config (`RunInSpecAction`), ask `piwi/testAt` for the
+  caret on a pooled thread, save the spec's document when it has unsaved changes (on the event thread), then run as
+  `PiwiCommands.runTests` does (`PiwiCommands.runTestAt`) the test by its id when Piwi knows it, else by its location
+  (`Glue.testAtRun`), and to verify it by its location three times (`Glue.VERIFY_REPEAT`); or say in a balloon that
+  there is none. The gutter icon's click stays Open in Dashboard.
+- Breakpoints: `PiwiCommands.runTests` (every test run: Code Vision, **Run this test**, **Run the Test at the
+  Caret**, **Run This Spec**, **Run the Tests That Reach This File**, **Re-run the Failing Tests**) and **Run Selection…** pass the IDE's breakpoints to the service
   (`PiwiProjectService.breakpoints`: `XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints`, the
   enabled `XLineBreakpoint`s in local files, in a read action, then `Glue.runBreakpoints`: script files under a
   Playwright config's folder), unless the checkbox under **Settings → Tools → Piwi** (`PiwiLocalSettings.breakpoints`,
@@ -131,11 +168,24 @@ while it does not run.
   and so does `watchConfigs`, a second after the IDE reports a config created, removed, renamed or moved
   (`Glue.isPlaywrightConfig`, every name Playwright reads one from, `.mts` and `.cts` included), or such a folder where
   configs are searched (`Glue.mayHoldConfigs`): the IDE reports a new folder without the files in it.
+- A search whose answer changes offers the first-run notification (`PiwiProjectService.offerFirstRun`), once per
+  installation (`piwi.firstRunShown`, an application-level `PropertiesComponent` flag): in a trusted project holding a
+  Playwright config, while no context of the status is connected and nothing names an instance (the settings,
+  `PIWI_DASHBOARD_URL` in the environment or a config folder's `.env`, the desktop app running: `Glue.showsFirstRun`;
+  the status is null until the service starts), a balloon says what Piwi does (`Glue.FIRST_RUN`), with **Connect…**
+  (`PiwiConnectFlow.run`, as `Piwi.Connect`), **Open the Failures** (the tool window) and **Learn More**
+  (`Glue.DOCS_URL`). `PiwiPluginTest` checks the flag.
 - **Recording** (`PiwiRecordingActions.kt`): **Record Here** (**Tools → Piwi**, the editor's menu, Alt+Insert's
   Generate menu, and Alt+Enter through `RecordHereIntention.kt`) asks
   `piwi/pageCandidates` where the caret is: outside every test, function and class a new test, anywhere else the
   steps there, which the service refuses where they cannot go (`Glue.recordInto`); without an answer, nothing starts.
-  **Record a New Test File…** (also under **New**) creates the spec first. A dialog asks for the start page and the
+  They are offered only in a script file under one of the project's Playwright config folders (`Glue.inConfigDirs`),
+  and `Ctrl+Alt+Shift+R` (`$default` keymap, the command key on macOS) records, and stops a recording, as
+  `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret: the VS Code
+  extension's chords, which no bundled keymap uses.
+  **Record a New Test File…** (also under **New**) creates the spec first, in a config folder; its name dialog says
+  why a name is refused (`InputValidatorEx`). A tab closed while `piwi/record` is pending cancels the recording, in a
+  balloon. A dialog asks for the start page and the
   page expression (the candidates, the default first, any other typed in), then `piwi/record`, and a popup for the
   Playwright project when it answers with `projects`; the choices stay in `PiwiLocalSettings`.
 - `PiwiRecording.kt` holds the recording sessions (`PiwiRecordings`) and applies `piwi/recordingChanged` on the event
@@ -146,29 +196,45 @@ while it does not run.
   command (`RecordingUpdate.importEdit`, placed by the service in the text as it stands: `Glue.importWrite` makes it
   before the block's write or after it, above the block), and range markers follow it; Enter at the end of its last line is below it. The
   block is tinted with `PIWI_RECORDING_BLOCK`, with a gutter mark offering Stop, Pause and Resume; its warnings are
-  weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes; the banner over
+  weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes. Once the recording
+  stopped, a warning on a step with other verified locators (`RecordingStep.locators`, kept with the warning in
+  `RecordingWarningMark`) offers each as a quick fix (`UseRecordedLocatorFix`, through `newAnnotation(…).withFix`,
+  `Glue.locatorChoices`): **Use getByTestId('pay')** puts it in place of the written one, found on the line exactly
+  once, in one command, and the line it changes shows the warning no more; none while it records, since the next update
+  writes the block again. The banner over
   the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step count and the
-  actions, and the status bar item shows them too, a click going to the block (`Glue.recordingStatus`). The service
+  actions, and the status bar item shows them too, its menu going to the block first (`Glue.recordingStatus`). The service
   says `paused` in an update for a pause from here or from the browser's bar; the client shows one from here at once.
   An edit inside the block pauses the recording
   (`piwi/recordingCommand`) with **Resume** (the service sends the block again) or **Keep My Edits** (Stop: nothing
   more is written). Closing the file or the project stops its sessions; a service that stops ends them with a last
-  update, and Stop ends one at once when the service does not answer. One undo step: a `StartMarkAction` in a command
+  update, and Stop ends one at once when the service does not answer. The balloon after Stop says what was written
+  (`Glue.recordingSummary`); while the service runs, when `piwi/testAt` finds a test holding the block's last line, it
+  offers **Run** and **Verify ×3** (`Glue.RUN_RECORDED`, `Glue.VERIFY_RECORDED`), which run that test through
+  `PiwiCommands.runTestAt` from a range marker at the block's end, so at the line the block ends on when clicked. No
+  Code Vision offers them. One undo step: a `StartMarkAction` in a command
   of its own just before the first write, a `FinishMarkAction` at the end, so one Undo after Stop goes back to before
   the recording, edits made in the file meanwhile included; `PiwiRecordingTest` drives it with synthetic updates, the
   caret moving between writes.
 - `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the
   token from `PasswordSafe`; **Pair with Piwi Picker** copies the pairing address. It mirrors
-  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`). A locator with `at`, picked while a
-  run was paused at a breakpoint, asks `piwi/applyPick` and replaces the range it answers in a write command; when the
-  line holds no locator, it is inserted at the caret, and the balloon says why (`Glue.pickNotice`). A recorded flow goes through
+  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`). Each request is served on a pooled
+  thread, where the token, the file and its document are read: the built-in server's I/O thread touches neither the
+  password safe nor the disk, and only the writes run on the event thread. A locator with `at`, picked while a
+  run was paused at a breakpoint, asks `piwi/applyPick` and replaces the range it answers in a write command; a
+  replacement that fails (a read-only file, a line changed since) answers 422 with why, in a balloon too; when the
+  line holds no locator, the service does not run or does not answer, it is inserted at the caret, and the balloon
+  says why (`Glue.pickNotice`). Without an editor open, a scratch file (`piwi-picker.ts`) takes the insertion, and the
+  answer's `file` is null, as the VS Code extension's untitled editor. A recorded flow goes through
   `piwi/renderSteps` with the caret, for its page expression and its line's indentation, and its import edit apart,
   made with the insertion (`Glue.importWrite`).
 - `PiwiOpenHandler.kt` is the dashboard's Open in IDE: `GET /api/piwi/open?file=…&line=…&column=…[&root=…][&check]` on
   the built-in server, a `RestService`. It answers only a page whose `Origin` is the Piwi instance an open project is
   connected to (its settings, `PIWI_DASHBOARD_URL` in the environment or in a Playwright config folder's `.env`, the
   instances the editor service reports) or the desktop app, and an instance's page finds files only in the projects
-  connected to it; `OpenOrigins.kt` is the pure half. Every other request for the path gets a 403 from the handler
+  connected to it; `OpenOrigins.kt` is the pure half. These addresses are each project's snapshot
+  (`PiwiProjectService.readKnownAddresses`, read on a pooled thread once the configs are found, with each status and
+  when the connection is saved), so the I/O thread reads no `.env` file. Every other request for the path gets a 403 from the handler
   itself, whatever the platform's origin rules or **Allow unsigned requests** trust, and the first refused page of the
   session is named in a notification. It looks the run's path up under the Playwright config folders, the project folder
   and the content roots (`Glue.candidatePaths`), opens only a file inside an open project, and answers JSON with CORS so
@@ -187,8 +253,8 @@ while it does not run.
 - The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
   choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
-  (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting, the run notifications and the
-  baselines), on this machine only;
+  (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting, the run notifications, the
+  failure severity and the baselines), on this machine only;
   choosing the app never touches the instance, its project or its key.
 
 ## Rules
@@ -233,6 +299,12 @@ npm run editor:build -w packages/editor   # from the repository root: the bundle
 ./gradlew verifyPlugin             # the Plugin Verifier on `verifyIdes` (gradle.properties; -PverifyIdes=WS:2024.1 for one)
 ./gradlew runIde                   # a sandboxed WebStorm with the plugin
 ```
+
+**Change notes.** The Marketplace's What's new is the `<change-notes>` of the built `plugin.xml`, which
+`build.gradle.kts` fills from the `CHANGE_NOTES` environment variable; `reusable-publish-jetbrains.yml` sets it, before
+its first Gradle run, to the release's `ide` entries of the root `CHANGELOG.md` as HTML
+(`node scripts/ide-changelog.mjs --format html` from the repository root): a commit with the `ide` scope is what puts
+a line in it. A build without the variable ships no change notes.
 
 **Screenshots.** `scripts/take-screenshots.mjs` writes the plugin's illustrations
 (`apps/docs/public/screenshots/jetbrains-*.png`, shown by the docs and the README; the Marketplace listing's are

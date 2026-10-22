@@ -30,7 +30,8 @@
       <li><b>Tests recorded at the caret.</b> <b>Record Here</b> opens a browser through your project's own
           Playwright and writes what you do there into the test, calling your page objects when connected. No
           instance needed.</li>
-      <li><b>The status bar.</b> The latest run, the run you started as it runs, and what it changed once it ended.</li>
+      <li><b>The status bar.</b> The latest run of the Playwright config you are editing in, the run you started as it
+          runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions.</li>
     </ul>
 
     <p><b>Connect</b></p>
@@ -73,6 +74,10 @@
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiOpenHandler"/>
     </extensions>
 
+    <!--
+      The shortcuts go in the default keymap, which every bundled keymap descends from: the macOS keymaps turn their
+      ctrl into the command key. Each is a chord no bundled keymap uses, in the ctrl alt shift family.
+    -->
     <actions>
         <group id="Piwi.Actions" text="Piwi" popup="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
@@ -88,11 +93,31 @@
                     text="Run the Tests That Reach This File" description="Run them in the Run tool window">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             </action>
+            <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
+                    text="Run the Test at the Caret" icon="AllIcons.Actions.Execute"
+                    description="Run the test whose test(…) call holds the caret, in the Run tool window, with the breakpoints">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Run the Test at the Caret"/>
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
+            </action>
+            <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
+                    text="Verify the Test at the Caret ×3"
+                    description="Run the test whose test(…) call holds the caret 3 times without retries, headless, and say how many runs passed">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Verify the Test at the Caret ×3"/>
+            </action>
+            <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run This Spec"
+                    description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Run This Spec"/>
+            </action>
             <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
                     description="Run one of the project's saved selections"/>
             <action id="Piwi.RerunFailing" class="dev.piwitests.jetbrains.RerunFailingAction"
                     text="Re-run the Failing Tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
-                    description="Run every test that still fails, or whose failing line changed since its run"/>
+                    description="Run every test that still fails, or whose failing line changed since its run">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
+            </action>
             <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare With…"
                     icon="AllIcons.Actions.Diff"
                     description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
@@ -116,6 +141,7 @@
                     description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
                 <override-text place="EditorPopup" text="Piwi: Record Here"/>
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
             </action>
             <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
                     text="Record a New Test File…" icon="AllIcons.Ide.Macro.Recording_1"
@@ -127,6 +153,8 @@
                     description="Close the recording's browser; the recorded lines stay, one undo away">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
                 <override-text place="EditorPopup" text="Piwi: Stop Recording"/>
+                <!-- Record Here's chord: the two never apply to the same file at once. -->
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
             </action>
             <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause Recording"
                     icon="AllIcons.Actions.Pause"

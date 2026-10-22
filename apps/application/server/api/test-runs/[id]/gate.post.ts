@@ -121,6 +121,7 @@ export default eventHandler(async (event) => {
     .select({
       id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       tags: testRunsCases.tags,
       failureClusterId: testRunsCases.failureClusterId,
@@ -134,21 +135,23 @@ export default eventHandler(async (event) => {
   // A test with retries has one row per attempt. It counts as passing when any
   // attempt passed, so a flaky-but-recovered test does not trip a required tag
   // — `maxNewFlaky` is the rule for that, and conflating the two would make
-  // `requireTags` impossible to satisfy on any suite with retries enabled.
-  const passedCaseIds = new Set<number>();
+  // `requireTags` impossible to satisfy on any suite with retries enabled. Each
+  // `--repeat-each` repetition retries on its own: a failed repetition stays
+  // failed whatever the others did.
+  const repetitionKey = (row: { testCaseId: number; repeatEachIndex: number }) =>
+    `${row.testCaseId}\x00${row.repeatEachIndex}`;
+  const passedRepetitions = new Set<string>();
   for (const row of caseRows) {
-    if (row.status === 'passed') passedCaseIds.add(row.testCaseId);
+    if (row.status === 'passed') passedRepetitions.add(repetitionKey(row));
   }
+  const failedForGood = (row: (typeof caseRows)[number]) =>
+    FAIL_STATUSES.includes(row.status) && !passedRepetitions.has(repetitionKey(row));
 
   // A quarantined test still ran and still reported — it is only excluded from
   // the verdict. Counting it would defeat the point; hiding that it failed
   // would make a green gate untrustworthy, so the count is reported instead.
   const quarantined = await getQuarantinedCaseIds(db, run.projectId);
-  const failingCaseIds = new Set(
-    caseRows
-      .filter((row) => FAIL_STATUSES.includes(row.status) && !passedCaseIds.has(row.testCaseId))
-      .map((row) => row.testCaseId),
-  );
+  const failingCaseIds = new Set(caseRows.filter(failedForGood).map((row) => row.testCaseId));
   const quarantinedFailures = [...failingCaseIds].filter((id) => quarantined.has(id)).length;
   const countedFailures = Math.max(0, failingCaseIds.size - quarantinedFailures);
 
@@ -167,8 +170,7 @@ export default eventHandler(async (event) => {
     const reported = new Set<number>();
     failingByTag[tag] = tagged
       .filter((row) => {
-        if (!FAIL_STATUSES.includes(row.status)) return false;
-        if (passedCaseIds.has(row.testCaseId)) return false;
+        if (!failedForGood(row)) return false;
         if (quarantined.has(row.testCaseId)) return false;
         if (reported.has(row.testCaseId)) return false;
         reported.add(row.testCaseId);
@@ -184,13 +186,7 @@ export default eventHandler(async (event) => {
   if (policy.requireSelection) {
     const failingExecByCase = new Map<number, number>();
     for (const row of caseRows) {
-      if (
-        FAIL_STATUSES.includes(row.status) &&
-        !passedCaseIds.has(row.testCaseId) &&
-        !failingExecByCase.has(row.testCaseId)
-      ) {
-        failingExecByCase.set(row.testCaseId, row.id);
-      }
+      if (failedForGood(row) && !failingExecByCase.has(row.testCaseId)) failingExecByCase.set(row.testCaseId, row.id);
     }
     const selection = await getSelection(db, run.projectId, policy.requireSelection);
     const matchedTests = selection
@@ -198,16 +194,16 @@ export default eventHandler(async (event) => {
       : [];
     const notRun: NonNullable<GateFacts['selection']>['notRun'] = [];
     const failed: NonNullable<GateFacts['selection']>['failed'] = [];
+    const passedCaseIds = new Set(caseRows.filter((row) => row.status === 'passed').map((row) => row.testCaseId));
     for (const test of matchedTests) {
       if (quarantined.has(test.testCaseId)) continue;
-      if (passedCaseIds.has(test.testCaseId)) continue; // ran and passed — satisfied
       if (failingExecByCase.has(test.testCaseId)) {
         failed.push({
           title: test.title,
           filePath: test.filePath,
           executionId: failingExecByCase.get(test.testCaseId)!,
         });
-      } else {
+      } else if (!passedCaseIds.has(test.testCaseId)) {
         // Absent from the run, or present only as a skip — never verified.
         notRun.push({ title: test.title, filePath: test.filePath });
       }

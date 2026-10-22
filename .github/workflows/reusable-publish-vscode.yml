@@ -38,6 +38,13 @@ jobs:
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
 
+      # The VSIX's CHANGELOG.md, the Marketplace's Changelog tab: the `ide`
+      # entries of every release, from the root CHANGELOG.md. It is written
+      # here and never committed (.gitignore); .vscodeignore lets it into the
+      # package.
+      - name: Write the changelog
+        run: node scripts/ide-changelog.mjs --format md --all > apps/vscode/CHANGELOG.md
+
       - name: Package
         id: package
         working-directory: ./apps/vscode

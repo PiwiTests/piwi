@@ -9,6 +9,7 @@ import { matchesShardToken, readShardTokensFromMeta } from '../../../utils/shard
 import { upsertTraceBlob, upsertTraceFile, findTraceBlob } from '../../../utils/trace-blobs';
 import { deriveTraceEvidence } from '../../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../../utils/ingest-health';
+import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
 import { attachmentStoragePaths } from '../../../utils/attachment-paths';
 import { getStorage } from '../../../storage';
 import { joinSuitePath } from '#shared/utils/suites';
@@ -37,7 +38,7 @@ defineRouteMeta({
  *
  * Multipart fields:
  *  - streamToken   — run stream token, sent before any file part
- *  - testCase      — JSON { title, location, retries, suitePath } identifying the run case
+ *  - testCase      — JSON { title, location, retries, repeatEachIndex, suitePath } identifying the run case
  *  - trace         — optional trace ZIP file
  *  - trace_hash    — optional SHA-256 of the trace, checked against it; without a file,
  *                    names a trace the project already stores. The server hashes a
@@ -121,7 +122,9 @@ async function handleCaseFiles(
 ): Promise<{ success: boolean; executionId: number; traces: number; attachments: number }> {
   const { fields } = multipart;
 
-  let caseInfo: { title?: string; location?: string; retries?: number; suitePath?: string[] | null } | undefined;
+  let caseInfo:
+    | { title?: string; location?: string; retries?: number; repeatEachIndex?: number; suitePath?: string[] | null }
+    | undefined;
   const rawCase = fields.get('testCase');
   if (rawCase !== undefined) {
     try {
@@ -165,6 +168,7 @@ async function handleCaseFiles(
   // Locate the run case row the reporter streamed earlier
   const { filePath } = parseLocation(caseInfo.location);
   const retries = caseInfo.retries ?? 0;
+  const repeatEachIndex = resolveRepeatEachIndex(caseInfo.repeatEachIndex);
   const suitePath = caseInfo.suitePath ? joinSuitePath(caseInfo.suitePath) : '';
 
   const sharedCases = await db
@@ -189,6 +193,7 @@ async function handleCaseFiles(
             eq(testRunsCases.testRunId, id),
             eq(testRunsCases.testCaseId, sharedCase.id),
             eq(testRunsCases.retries, retries),
+            eq(testRunsCases.repeatEachIndex, repeatEachIndex),
           ),
         )
         .orderBy(desc(testRunsCases.id))
