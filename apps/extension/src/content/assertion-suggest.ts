@@ -1,5 +1,5 @@
 import { quoteJsString } from '@piwitests/core/locator-chain';
-import { deriveTopLocator } from './verified-locators.js';
+import { createPageEngine, deriveTopLocator } from './verified-locators.js';
 import { isSensitiveField } from './sensitive-fields.js';
 
 interface AssertionCandidate {
@@ -28,7 +28,8 @@ export interface AssertionSuggestion {
  * here), `toHaveText` (whitespace-normalized, reading the live DOM directly
  * rather than the truncated 80-char `textContent` `generateAlternatives`
  * itself works from), `toHaveAccessibleName` (the name Playwright computes,
- * from `DomModel`), and `toBeVisible` as the
+ * from the engine's `DomModel`; only when it is not empty, since the ranking's
+ * fallback name is one Playwright does not compute), and `toBeVisible` as the
  * universal fallback. Ordered most-specific-to-the-element first.
  * `toMatchAriaSnapshot` is not suggested.
  *
@@ -52,8 +53,10 @@ export function suggestAssertions(el: Element): AssertionSuggestion {
     return null;
   }
 
-  const { locator, accessibleName } = deriveTopLocator(el);
+  const engine = createPageEngine(el.ownerDocument);
+  const { locator } = deriveTopLocator(el, engine);
   if (locator == null) return { locator: null, candidates: [] };
+  const accessibleName = engine.model.normalizedAccessibleName(el, false);
 
   const candidates: AssertionCandidate[] = [];
 

@@ -90,6 +90,30 @@ test.describe('suggestAssertions (via the real built assertion-panel.js)', () =>
     await expect(playwrightLocator(page, locator!)).toHaveText('Regressions5');
   });
 
+  test('a paragraph, which takes no name from its text, gets no toHaveAccessibleName', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <p>Free shipping from 30 €.</p>
+    </body></html>`);
+    const { locator, candidates } = await suggestFor(page, 'p');
+
+    expect(locator).not.toBeNull();
+    expect(candidates.map((c) => c.method)).toEqual(['toHaveText', 'toBeVisible']);
+    await expect(playwrightLocator(page, locator!)).toHaveAccessibleName('');
+  });
+
+  test('a field named by its label asserts that name, as Playwright computes it', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <label for="city">Delivery city</label> <input id="city" />
+    </body></html>`);
+    const { locator, candidates } = await suggestFor(page, 'input');
+
+    expect(candidates.map((c) => c.method)).toEqual(['toHaveAccessibleName', 'toBeVisible']);
+    expect(candidates[0]!.expectLine).toBe(`await expect(page.${locator}).toHaveAccessibleName('Delivery city');`);
+    await expect(playwrightLocator(page, locator!)).toHaveAccessibleName('Delivery city');
+  });
+
   test('whitespace in text content is normalized (collapsed and trimmed)', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>

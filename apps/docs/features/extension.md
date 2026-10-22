@@ -96,7 +96,8 @@ and a Markdown checklist.
 ## Assertion suggester
 
 Pick an element to get the `expect(...)` candidates that apply to it (`toHaveValue`, `toHaveText`,
-`toHaveAccessibleName`, `toBeVisible`), built on its top-ranked locator.
+`toHaveAccessibleName`, `toBeVisible`), built on its top-ranked locator. `toHaveAccessibleName` is offered only for an
+element that has a name, as Playwright computes it: a paragraph takes none from its text, a field takes its label's.
 
 ## Copy context for agent
 
