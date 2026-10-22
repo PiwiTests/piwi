@@ -1986,6 +1986,9 @@
       }
     }
   },
+  "record_hudLabel": {
+    "message": "Gravação"
+  },
   "record_pause": {
     "message": "Pausar"
   },

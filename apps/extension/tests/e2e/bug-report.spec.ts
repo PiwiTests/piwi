@@ -810,6 +810,23 @@ test.describe('Report a bug', () => {
     expect((await readEvidence(page)).screenshots).toBe(2);
   });
 
+  test('the bar is a labelled region, and its dot pulses only when motion is welcome', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    const hud = page.locator('#piwi-record-hud-host');
+    await expect(hud.getByRole('region', { name: 'Piwi Picker bug report' })).toBeVisible();
+    const dotAnimation = () =>
+      page.evaluate(
+        () =>
+          getComputedStyle(document.getElementById('piwi-record-hud-host')!.shadowRoot!.querySelector('.dot')!)
+            .animationName,
+      );
+    expect(await dotAnimation()).toBe('pulse');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    expect(await dotAnimation()).toBe('none');
+  });
+
   test('an evidence entry updates the HUD in place: the focus stays on its button', async ({ context }) => {
     await openShadowRoots(context);
     await routeShop(context, { fixed: false });

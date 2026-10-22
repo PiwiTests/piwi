@@ -767,7 +767,9 @@ Assertions, Context for an AI agent, Test functions). **A panel that leaves the 
 dialog**: `role="region"` with its translated name as `aria-label`, and a close button with an accessible name (the
 lint overlay, the Playwright view, the Tested elements panel). **A copy button goes through `copyWithFeedback`**
 (`src/shared/clipboard.ts`, extension pages too): the copy command when the clipboard API refuses, Copied or Not copied
-for a moment, and the button's own label back however often it is clicked.
+for a moment, and the button's own label back however often it is clicked. A bar that stays on the page beside it (the recording
+bar, the bug report bar) is `role="region"` with a translated `aria-label`, never a dialog, and anything it animates
+stops under `prefers-reduced-motion: reduce`.
 
 **The Action and Assertion copy modes write what the element calls for.** `renderCopyMode`
 (`src/shared/copy-modes.ts`) stays pure: it takes the locator and `ElementFacts`, plain data read from the element

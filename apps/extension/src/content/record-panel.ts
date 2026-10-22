@@ -487,6 +487,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
     .dot.paused { background: #9ca3af; animation: none; }
     .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     .checks { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -515,8 +516,11 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   const matches = catalog.length > 0 ? rankFunctionMatches(steps, catalog).slice(0, 3) : [];
   const lastTarget = [...state.events].reverse().find((e) => e.target)?.target ?? null;
 
+  // A landmark, not a dialog: the page stays usable around it.
   const bar = document.createElement('div');
   bar.className = 'bar';
+  bar.setAttribute('role', 'region');
+  bar.setAttribute('aria-label', t('record_hudLabel'));
   bar.lang = uiLanguage();
 
   const topRow = document.createElement('div');

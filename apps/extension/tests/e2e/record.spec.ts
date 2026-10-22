@@ -720,6 +720,23 @@ test.describe('record-panel.js', () => {
     expect(await steps()).toEqual(['goto', 'click']);
   });
 
+  test('the bar is a labelled region, and its dot pulses only when motion is welcome', async ({ context }) => {
+    await openShadowRoots(context);
+    const page = await recordingInProgress(context);
+    const hud = page.locator('#piwi-record-hud-host');
+    await expect(hud.getByRole('region', { name: 'Recording' })).toBeVisible();
+    await expect(hud.getByRole('dialog')).toHaveCount(0);
+    const dotAnimation = () =>
+      page.evaluate(
+        () =>
+          getComputedStyle(document.getElementById('piwi-record-hud-host')!.shadowRoot!.querySelector('.dot')!)
+            .animationName,
+      );
+    expect(await dotAnimation()).toBe('pulse');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    expect(await dotAnimation()).toBe('none');
+  });
+
   test('a page restored from the back/forward cache records that the flow came back to it', async ({ context }) => {
     const page = await recordingInProgress(context);
     const navigations = async () => (await readStoredEvents(page)).filter((e) => e.kind === 'navigate').length;

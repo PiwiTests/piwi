@@ -2387,6 +2387,10 @@
       }
     }
   },
+  "record_hudLabel": {
+    "message": "Recording",
+    "description": "Recorder bar shown on the page while a recording runs: its accessible name, read by screen readers, not shown."
+  },
   "record_pause": {
     "message": "Pause",
     "description": "Recorder bar, while a recording runs: button that pauses the recording, so nothing done in the page is recorded until Resume. Short."
