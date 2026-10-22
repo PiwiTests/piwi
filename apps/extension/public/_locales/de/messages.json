@@ -2046,6 +2046,12 @@
   "pick_sendToEditor": {
     "message": "An den Editor senden"
   },
+  "pick_scopeToParent": {
+    "message": "Auf ein Elternelement begrenzen…"
+  },
+  "pick_scopeToParentHint": {
+    "message": "Das Formular, den Dialog oder die Zeile um das Element wählen, an die seine Locators gebunden werden"
+  },
   "functions_title": {
     "message": "Testfunktionen auf dieser Seite"
   },

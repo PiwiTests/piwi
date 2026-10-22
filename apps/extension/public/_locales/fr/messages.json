@@ -2046,6 +2046,12 @@
   "pick_sendToEditor": {
     "message": "Envoyer à l’éditeur"
   },
+  "pick_scopeToParent": {
+    "message": "Limiter à un parent…"
+  },
+  "pick_scopeToParentHint": {
+    "message": "Choisir le formulaire, la boîte de dialogue ou la ligne autour de l’élément pour y ancrer ses locators"
+  },
   "functions_title": {
     "message": "Fonctions de test sur cette page"
   },

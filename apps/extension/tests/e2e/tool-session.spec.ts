@@ -42,13 +42,12 @@ const OTHER_SURFACES = [
   'piwi-app-root',
 ];
 
-/** Picks the Pay button and skips the anchors step: the pick's results panel is open. */
+/** Picks the Pay button, which its test id finds alone, so no anchors step: the pick's results panel is open. */
 async function openPickResults(page: Page): Promise<void> {
   await inject(page, 'pick.js');
   await expect(page.locator('#__piwi_picker_banner')).toHaveCount(1);
   await page.hover('#pay');
   await page.click('#pay');
-  await page.getByRole('button', { name: 'Skip (Esc)' }).click();
   await expect(page.locator('#piwi-picker-results-host')).toBeAttached();
 }
 

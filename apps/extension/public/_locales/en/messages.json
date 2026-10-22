@@ -2457,6 +2457,14 @@
     "message": "Send to editor",
     "description": "Button on a picked locator: inserts it, in the chosen copy form, at the cursor of the editor paired with Piwi Picker (VS Code or a JetBrains IDE)."
   },
+  "pick_scopeToParent": {
+    "message": "Scope to a parent…",
+    "description": "Pick results: button that opens the anchors step for the picked element, to anchor its locators to a parent (a form, a dialog, a row), then shows the results again."
+  },
+  "pick_scopeToParentHint": {
+    "message": "Choose the form, dialog or row around the element to anchor its locators to",
+    "description": "Pick results: tooltip of the Scope to a parent button."
+  },
   "functions_title": {
     "message": "Test functions on this page",
     "description": "Test functions: the panel’s title and aria-label. The panel checks each test function of the project against the page open."

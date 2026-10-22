@@ -431,7 +431,12 @@ recorder takes:
   by its own `aria-label`/`aria-labelledby` name; a landmark, named dialog or row scope (`scope`). A unique test id
   goes before the container because it is the author's own hook; a row named from its whole content goes after it,
   being longer and changing with every cell. `keepAmbiguous` also returns the others with the engine's count, which
-  is what the Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, the Tested
+  is what the Pick results panel shows.
+  The pick (`pick.ts`) checks the candidates before anything else: the anchors step opens first only when none
+  finds the element alone (`unique` or `narrowed`) without the stability rules calling it brittle; otherwise the
+  results open at once and offer it as **Scope to a parent…** (`renderResultsPanel` resolving `scope`), after which
+  the anchored candidates are checked and the results open again. `verifiedLocators` (the recorder),
+  `deriveTopLocator` (assertions, the Tested
   elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
   call so the engine's caches serve the whole scan.
 - **Multi-pick** (`derivePattern`, `multi-pick-derive.ts`) shares `repeatedContainers` with the ladder: picks

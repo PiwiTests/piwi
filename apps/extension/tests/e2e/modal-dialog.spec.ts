@@ -14,12 +14,16 @@ const DIST = path.join(here, '..', '..', 'dist');
  * back out when it closes or leaves the page.
  */
 
+/** Two buttons alike, so no locator finds the first alone and the pick opens the anchors step inside the dialog. */
 function modalPage(dialogStyle = ''): string {
   return `<!doctype html><html><body>
-    <dialog id="d" style="${dialogStyle}"><p>Settings</p><button id="target">Save settings</button></dialog>
+    <dialog id="d" style="${dialogStyle}"><p>Settings</p><button>Save settings</button><button>Save settings</button></dialog>
     <script>document.getElementById('d').showModal();</script>
   </body></html>`;
 }
+
+/** The first of the dialog's buttons. */
+const TARGET = '#d > button:first-of-type';
 
 const RESULTS = '#piwi-picker-results-host';
 const ORIGIN = 'https://modal-dialog.test';
@@ -37,8 +41,8 @@ async function openModalPage(context: BrowserContext, dialogStyle = ''): Promise
 /** Picks the dialog's button and waits for the results panel; the anchors step is skipped with a click, or Escape. */
 async function pickInDialog(page: Page, skipWith: 'click' | 'Escape' = 'click'): Promise<void> {
   await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
-  await page.hover('#target');
-  await page.click('#target');
+  await page.hover(TARGET);
+  await page.click(TARGET);
   // The dialog is a parent to scope to: the anchors step.
   await expect(page.getByText('Scope to stable parents')).toBeVisible();
   if (skipWith === 'click') await page.getByRole('button', { name: 'Skip (Esc)' }).click({ timeout: 5000 });

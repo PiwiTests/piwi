@@ -12,10 +12,20 @@ const DIST = path.join(here, '..', '..', 'dist');
 const activeTool = (page: Page) =>
   page.evaluate(() => (globalThis as { __piwiActiveTool?: { id: string } }).__piwiActiveTool?.id ?? null);
 
-/** A button inside a form with a test id: picking it opens the anchors step. */
+/** A button inside a form with a test id: its own test id finds it alone, so the results open at once. */
 const ANCHORED = `<!doctype html><html><body style="margin-top:120px">
   <form data-testid="signup-form"><button id="target" data-testid="join-btn">Join now</button></form>
 </body></html>`;
+
+/** Two forms alike: no candidate finds the first button alone, so picking it opens the anchors step first. */
+const AMBIGUOUS = `<!doctype html><html><body style="margin-top:120px">
+  <form data-testid="signup-form"><button>Join now</button></form>
+  <form data-testid="signup-form"><button>Join now</button></form>
+</body></html>`;
+/** The first button of {@link AMBIGUOUS}. */
+const FIRST_JOIN = 'form:first-of-type > button';
+
+const isResultsOpen = (page: Page) => page.evaluate(() => !!document.getElementById('piwi-picker-results-host'));
 
 /**
  * Drives the real built `pick.js` — injected the same way
@@ -25,11 +35,11 @@ const ANCHORED = `<!doctype html><html><body style="margin-top:120px">
  * verification, not simulated end-to-end here).
  */
 test.describe('pick.js', () => {
-  test('picks an element, skips the anchors step, and opens the results panel', async ({ context }) => {
+  test('picks an element a candidate finds alone and opens the results without the anchors step', async ({
+    context,
+  }) => {
     const page = await context.newPage();
-    await page.setContent(`<!doctype html><html><body>
-      <form data-testid="signup-form"><button id="target" data-testid="join-btn">Join now</button></form>
-    </body></html>`);
+    await page.setContent(ANCHORED);
 
     await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
     await expect(page.getByText('click any element to generate locators')).toBeVisible();
@@ -37,17 +47,28 @@ test.describe('pick.js', () => {
     await page.hover('#target');
     await page.click('#target');
 
-    // The role has an anchor-worthy ancestor (the form's data-testid), so the
-    // anchors step opens — skip it to reach the results panel.
-    await expect(page.getByText('Scope to stable parents')).toBeVisible();
-    await page.getByRole('button', { name: 'Skip (Esc)' }).click();
-
     // The results panel lives in a closed shadow root (deliberate — see
     // results-panel.ts) so its contents aren't reachable through Playwright's
     // locator engine; the host existing confirms the flow reached the end.
-    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-picker-results-host'))).toBe(true);
+    await expect.poll(() => isResultsOpen(page)).toBe(true);
+    await expect(page.getByText('Scope to stable parents')).toHaveCount(0);
     // …and the picking overlay is gone by then: one left reading "Analyzing
     // element…" at the end of the flow would look exactly like a pick that hung.
+    await expect(page.locator('#__piwi_picker_banner')).toHaveCount(0);
+  });
+
+  test('picks an element no candidate finds alone: the anchors step opens first', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(AMBIGUOUS);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect(page.getByText('click any element to generate locators')).toBeVisible();
+    await page.hover(FIRST_JOIN);
+    await page.click(FIRST_JOIN);
+
+    await expect(page.getByText('Scope to stable parents')).toBeVisible();
+    expect(await isResultsOpen(page)).toBe(false);
+    await page.getByRole('button', { name: 'Skip (Esc)' }).click();
+    await expect.poll(() => isResultsOpen(page)).toBe(true);
     await expect(page.locator('#__piwi_picker_banner')).toHaveCount(0);
   });
 
@@ -102,10 +123,10 @@ test.describe('pick.js', () => {
 
   test('Escape at the anchors step skips it, and the results open for the pick still running', async ({ context }) => {
     const page = await context.newPage();
-    await page.setContent(ANCHORED);
+    await page.setContent(AMBIGUOUS);
     await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
-    await page.hover('#target');
-    await page.click('#target');
+    await page.hover(FIRST_JOIN);
+    await page.click(FIRST_JOIN);
     await expect(page.getByText('Scope to stable parents')).toBeVisible();
 
     await page.keyboard.press('Escape');
@@ -141,10 +162,10 @@ test.describe('pick.js', () => {
 
   test('a pick replaced at the anchors step leaves no panel behind and opens no results', async ({ context }) => {
     const page = await context.newPage();
-    await page.setContent(ANCHORED);
+    await page.setContent(AMBIGUOUS);
     await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
-    await page.hover('#target');
-    await page.click('#target');
+    await page.hover(FIRST_JOIN);
+    await page.click(FIRST_JOIN);
     await expect(page.getByText('Scope to stable parents')).toBeVisible();
 
     await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
@@ -333,6 +354,37 @@ async function openResults(context: BrowserContext, before?: (page: Page) => Pro
 }
 
 test.describe('pick.js results panel', () => {
+  test('Scope to a parent opens the anchors step, then the results again with the scoped locators', async ({
+    context,
+  }) => {
+    await stubChromeI18n(context);
+    const page = await context.newPage();
+    await page.setContent(ANCHORED);
+    await page.evaluate(() => {
+      (globalThis as { __piwiTestOpenShadow?: boolean }).__piwiTestOpenShadow = true;
+    });
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await page.hover('#target');
+    await page.click('#target');
+    const panel = page.locator(`${RESULTS} .panel`);
+    await expect(panel).toBeVisible();
+    const locators = () => panel.locator('.row code').allTextContents();
+    expect((await locators()).some((locator) => locator.startsWith("getByTestId('signup-form')"))).toBe(false);
+
+    await panel.getByRole('button', { name: 'Scope to a parent…' }).click();
+    await expect(page.locator(RESULTS)).toHaveCount(0);
+    await expect(page.getByText('Scope to stable parents')).toBeVisible();
+    await page.locator('label', { hasText: 'signup-form' }).locator('input').check();
+    await page.getByRole('button', { name: 'Use selected parents' }).click();
+
+    await expect(panel).toBeVisible();
+    expect(await locators()).toContain("getByTestId('signup-form').getByRole('button')");
+    expect(await activeTool(page)).toBe('pick');
+    await page.keyboard.press('Escape');
+    await expect(page.locator(RESULTS)).toHaveCount(0);
+    await expect.poll(() => activeTool(page)).toBeNull();
+  });
+
   test('a copy button clicked twice within a second goes back to its own label', async ({ context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const page = await openResults(context);
@@ -428,7 +480,7 @@ test.describe('pick.js in another language', () => {
   test('the picking overlay and the anchors step speak French', async ({ context }) => {
     await stubChromeI18n(context, 'fr');
     const page = await context.newPage();
-    await page.setContent(ANCHORED);
+    await page.setContent(AMBIGUOUS);
     await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
     await expect(page.locator('#__piwi_picker_banner')).toContainText(
       'Inspecteur Piwi, cliquez sur un élément pour générer ses locators',
@@ -436,11 +488,11 @@ test.describe('pick.js in another language', () => {
     await expect(page.locator('#__piwi_picker_foot')).toHaveText(
       'Entrée choisit l’élément qui a le focus · ↑ parent · ↓ enfant · Échap pour passer',
     );
-    await page.hover('#target');
+    await page.hover(FIRST_JOIN);
     await expect(page.locator('#__piwi_picker_foot')).toHaveText(
       'cliquez ou Entrée pour choisir · ↑ parent · ↓ enfant · Échap pour passer',
     );
-    await page.click('#target');
+    await page.click(FIRST_JOIN);
     await expect(page.getByText('Limiter à des parents stables (facultatif)')).toBeVisible();
     await expect(page.getByText('Aucun parent choisi, les locators habituels seulement.')).toBeVisible();
     await expect(page.getByText('contient exactement 1 élément correspondant')).toBeVisible();

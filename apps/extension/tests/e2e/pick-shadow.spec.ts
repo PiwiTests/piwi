@@ -79,13 +79,17 @@ test.describe('pick.js inside open shadow roots', () => {
     expect(await page.locator('#__piwi_picker_highlight').boundingBox()).toEqual(await button.boundingBox());
 
     await page.locator('x-newsletter #subscribe-text').click();
-    // The anchors step lists the parents out through the shadow root's host.
-    const anchors = page.locator('label').filter({ hasText: 'data-testid="newsletter"' });
-    await expect(anchors).toContainText('<x-newsletter>');
-    await expect(anchors).toContainText('contains exactly 1 matching element');
     const rows = await resultRows(page);
     expect(rows[0]).toBe("getByRole('button', { name: 'Subscribe' })");
     expect(await foundId(page, rows[0]!)).toBe('subscribe');
+
+    // The anchors step lists the parents out through the shadow root's host.
+    await page.getByRole('button', { name: 'Scope to a parent…' }).click();
+    const anchors = page.locator('label').filter({ hasText: 'data-testid="newsletter"' });
+    await expect(anchors).toContainText('<x-newsletter>');
+    await expect(anchors).toContainText('contains exactly 1 matching element');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#piwi-picker-results-host')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect.poll(() => activeTool(page)).toBeNull();
     expect(await page.evaluate(() => (window as { __submits?: number }).__submits)).toBe(0);
@@ -95,6 +99,7 @@ test.describe('pick.js inside open shadow roots', () => {
     const page = await openShadowPage(context);
     await page.locator('x-newsletter #subscribe').hover();
     await page.locator('x-newsletter #subscribe').click();
+    await page.getByRole('button', { name: 'Scope to a parent…' }).click();
     const anchors = page.locator('label').filter({ hasText: 'data-testid="newsletter"' });
     await anchors.locator('input[type="checkbox"]').check();
     await expect(page.getByText('Selection matches exactly 1 element')).toBeVisible();

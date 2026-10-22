@@ -29,6 +29,14 @@ import { COPY_MODE_CSS, copyFacts, copyModeButtons } from './copy-mode-row.js';
 
 const HOST_ID = 'piwi-picker-results-host';
 
+export interface ResultsOptions {
+  /** Offer Scope to a parent, which reopens the anchors step for the element. */
+  canScope?: boolean;
+}
+
+/** How the panel ended: dismissed, or with a request for the anchors step. */
+export type ResultsOutcome = 'closed' | 'scope';
+
 /** How many tests the Piwi section lists before pointing at the full view. */
 const PIWI_TESTS_SHOWN = 6;
 
@@ -47,17 +55,20 @@ const PIWI_TESTS_SHOWN = 6;
  * section lists the project's tests whose locators reach that element.
  *
  * Resolves once the user dismisses the panel (Escape, the close button, a
- * click outside it, or handing the element over to Tested elements), or once
- * the tool started as `toolEpoch` ends. The caller has run `initI18n()`.
+ * click outside it, or handing the element over to Tested elements), with
+ * `closed`, or asks for the anchors step (Scope to a parent, offered with
+ * `canScope`), with `scope`; `closed` too once the tool started as `toolEpoch`
+ * ends. The caller has run `initI18n()`.
  */
 export async function renderResultsPanel(
   ranked: CheckedLocator[],
   target: Element | null,
   toolEpoch: number,
-): Promise<void> {
+  options: ResultsOptions = {},
+): Promise<ResultsOutcome> {
   let activeMode = await getLastCopyMode().catch(() => 'bare' as const);
   const paired = (await getEditorPairing().catch(() => null)) !== null;
-  if (!toolIsCurrent(toolEpoch)) return;
+  if (!toolIsCurrent(toolEpoch)) return 'closed';
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -95,6 +106,7 @@ export async function renderResultsPanel(
     .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; }
     .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 12px; }
     .row {
       display: flex; flex-direction: column; gap: 7px;
       border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px;
@@ -178,14 +190,17 @@ export async function renderResultsPanel(
   headerActions.append(copyAll);
   header.append(titleWrap, headerActions);
   panel.appendChild(header);
+  const tools = document.createElement('div');
+  tools.className = 'tools';
 
   const piwiSection = document.createElement('div');
   piwiSection.className = 'piwi';
   piwiSection.hidden = true;
   panel.appendChild(piwiSection);
 
-  return new Promise<void>((resolve) => {
+  return new Promise<ResultsOutcome>((resolve) => {
     let done = false;
+    let outcome: ResultsOutcome = 'closed';
     let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -200,7 +215,7 @@ export async function renderResultsPanel(
       document.removeEventListener('keydown', onKeyDown, true);
       host.remove();
       releaseFocus();
-      resolve();
+      resolve(outcome);
     });
     headerActions.append(
       makeButton(t('common_close'), finish, { icon: 'close', iconOnly: true, tone: 'ghost', className: 'close' }),
@@ -208,6 +223,19 @@ export async function renderResultsPanel(
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
     });
+    if (options.canScope) {
+      tools.appendChild(
+        makeButton(
+          t('pick_scopeToParent'),
+          () => {
+            outcome = 'scope';
+            finish();
+          },
+          { icon: 'layers', small: true, title: t('pick_scopeToParentHint'), className: 'scope' },
+        ),
+      );
+    }
+    if (tools.childElementCount) header.after(tools);
 
     for (const [i, alt] of ranked.entries()) {
       const best = i === 0 && (alt.verdict === 'unique' || alt.verdict === 'narrowed');

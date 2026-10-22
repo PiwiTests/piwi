@@ -60,8 +60,10 @@ bound.
 ## Pick an element
 
 Hover highlights, a click picks. The pick snaps to the nearest actionable ancestor (the text inside a button picks
-the button), and ↑/↓ walk the DOM tree, showing the locator each step would produce. For an element with a role, an
-**anchors** step offers stable parents to scope the locator to, with a live match count.
+the button), and ↑/↓ walk the DOM tree, showing the locator each step would produce. When a locator that is not
+brittle already finds the element alone, the results open at once, and **Scope to a parent…** in them opens the
+**anchors** step: stable parents to scope the locator to, with a live match count, after which the results show again
+with the scoped locators. When none finds it alone, the anchors step comes first.
 
 **Enter** picks too: the highlighted element when the pointer is on one, otherwise the element that has the keyboard
 focus, so a control reached with Tab is picked without the mouse. **Esc** cancels the pick.
