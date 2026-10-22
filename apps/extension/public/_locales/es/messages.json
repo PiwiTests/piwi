@@ -2073,6 +2073,12 @@
   "pick_scopeToParentHint": {
     "message": "Elegir el formulario, el diálogo o la fila que rodea al elemento para anclar en él sus locators"
   },
+  "pick_pickAnother": {
+    "message": "Elegir otro"
+  },
+  "pick_pickAnotherHint": {
+    "message": "Cerrar estos resultados y elegir otro elemento de la página"
+  },
   "functions_title": {
     "message": "Funciones de prueba en esta página"
   },

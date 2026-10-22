@@ -115,7 +115,10 @@ it runs leaves it be (`isToolActive`); any other tool replaces it. Its teardown 
 `teardownToolSurfaces`: the picking overlay and the anchors step go, listeners included,
 `__piwiPickState`/`__piwiAnchorState` are answered for a flow that waits on them, and no other
 surface on the page is touched. The bug recorder's Mark what's wrong claims the page as `pick`
-for its pick alone, so a Pick started meanwhile leaves it be.
+for its pick alone, so a Pick started meanwhile leaves it be. The Pick results' **Pick another** picks again inside
+the same tool session (`runPick` runs `pickOne` again on the `pick-another` outcome), so it neither starts a tool nor
+ends one; while the results are open they ring the picked element (`spotlight` in `results-panel.ts`), drawn inside
+their own shadow root and gone with it.
 Escape during the anchors step is that step's Skip, not a cancel. The
 recorder deliberately stays outside this: it is a capture mode, and stopping it because
 another panel opened would discard a recording in progress.

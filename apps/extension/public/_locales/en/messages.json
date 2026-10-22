@@ -2491,6 +2491,14 @@
     "message": "Choose the form, dialog or row around the element to anchor its locators to",
     "description": "Pick results: tooltip of the Scope to a parent button."
   },
+  "pick_pickAnother": {
+    "message": "Pick another",
+    "description": "Pick results: button that closes the results and starts picking another element on the page."
+  },
+  "pick_pickAnotherHint": {
+    "message": "Close these results and pick another element on the page",
+    "description": "Pick results: tooltip of the Pick another button."
+  },
   "functions_title": {
     "message": "Test functions on this page",
     "description": "Test functions: the panel’s title and aria-label. The panel checks each test function of the project against the page open."

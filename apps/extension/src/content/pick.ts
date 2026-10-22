@@ -20,7 +20,7 @@ import { headingLevel, TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/l
 import { initI18n } from '../shared/i18n.js';
 import { locatorStability } from '../shared/verdict-words.js';
 import { anchorPickerStrings, pickerOverlayStrings } from './picker-strings.js';
-import { renderResultsPanel } from './results-panel.js';
+import { renderResultsPanel, type ResultsOutcome } from './results-panel.js';
 import {
   checkLocators,
   installDescribeHook,
@@ -84,9 +84,10 @@ async function askAnchors(
  * One element: picked on the page, its candidates ranked and checked, then the
  * results. The anchors step opens first only when no candidate finds the
  * element alone; otherwise the results offer it as Scope to a parent, and show
- * again with the scoped candidates checked.
+ * again with the scoped candidates checked. Resolves with how the results
+ * ended, undefined when they never opened.
  */
-async function pickOne(toolEpoch: number): Promise<void> {
+async function pickOne(toolEpoch: number): Promise<ResultsOutcome | undefined> {
   const g = globalThis as any;
   clearPickGlobals();
   installPickerOverlay({ transport: 'global', failing: null, strings: pickerOverlayStrings() });
@@ -118,16 +119,17 @@ async function pickOne(toolEpoch: number): Promise<void> {
     }
     if (checked.length === 0) return;
     const outcome = await renderResultsPanel(checked, el, toolEpoch, { canScope: role !== null });
-    if (outcome !== 'scope' || !toolIsCurrent(toolEpoch)) return;
+    if (outcome !== 'scope' || !toolIsCurrent(toolEpoch)) return outcome;
     scope = true;
   }
 }
 
 /**
- * Runs the full guided pick flow (see {@link pickOne}). A single injection of
- * this module runs this once. Injected again while a pick runs (a second "Pick
- * element" trigger), it leaves that pick be; any other tool running gives way
- * to it.
+ * Runs the full guided pick flow (see {@link pickOne}), once per element the
+ * results' Pick another asks for, all in the one tool session. A single
+ * injection of this module runs this once. Injected again while a pick runs (a
+ * second "Pick element" trigger), it leaves that pick be; any other tool
+ * running gives way to it.
  */
 async function runPick(): Promise<void> {
   if (isToolActive('pick')) return;
@@ -138,7 +140,8 @@ async function runPick(): Promise<void> {
     // The overlay, the anchors step and the results speak the language chosen in the settings.
     await initI18n();
     if (!toolIsCurrent(toolEpoch)) return;
-    await pickOne(toolEpoch);
+    let outcome = await pickOne(toolEpoch);
+    while (outcome === 'pick-another' && toolIsCurrent(toolEpoch)) outcome = await pickOne(toolEpoch);
   } catch (err) {
     // A throw anywhere after the pick is logged, and the overlay goes below:
     // left up, it would read "Analyzing element…" for good.

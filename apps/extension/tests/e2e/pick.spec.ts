@@ -410,6 +410,64 @@ test.describe('pick.js results panel', () => {
     await expect(row.locator('.why .score')).toHaveText(/^Stability score: \d+$/);
   });
 
+  test('keeps the picked element outlined under the results, until they close', async ({ context }) => {
+    const page = await openResults(context);
+    const ring = page.locator(`${RESULTS} .spotlight`);
+    await expect(ring).toBeVisible();
+    const box = (await ring.boundingBox())!;
+    const target = (await page.locator('#target').boundingBox())!;
+    expect(Math.abs(box.x - (target.x - 3))).toBeLessThan(1.5);
+    expect(Math.abs(box.y - (target.y - 3))).toBeLessThan(1.5);
+    expect(Math.abs(box.width - (target.width + 6))).toBeLessThan(1.5);
+    expect(Math.abs(box.height - (target.height + 6))).toBeLessThan(1.5);
+    await page.keyboard.press('Escape');
+    await expect(page.locator(RESULTS)).toHaveCount(0);
+    await expect(ring).toHaveCount(0);
+  });
+
+  test('moves aside when the picked element would be under it', async ({ context }) => {
+    await stubChromeI18n(context);
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.setContent(`<!doctype html><html><body>
+      <button id="target" style="position:absolute;left:30%;top:300px">Join now</button>
+    </body></html>`);
+    await page.evaluate(() => {
+      (globalThis as { __piwiTestOpenShadow?: boolean }).__piwiTestOpenShadow = true;
+    });
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await page.hover('#target');
+    await page.click('#target');
+    const panel = page.locator(`${RESULTS} .panel`);
+    await expect(panel).toBeVisible();
+    await expect(page.locator(`${RESULTS} .backdrop`)).toHaveAttribute('data-side', 'end');
+    const over = (await panel.boundingBox())!;
+    const ring = (await page.locator(`${RESULTS} .spotlight`).boundingBox())!;
+    expect(ring.x + ring.width).toBeLessThan(over.x);
+  });
+
+  test('Pick another closes the results and picks again in the same tool session', async ({ context }) => {
+    const page = await openResults(context);
+    const epoch = () =>
+      page.evaluate(() => (globalThis as { __piwiActiveTool?: { epoch: number } }).__piwiActiveTool?.epoch ?? null);
+    const first = await epoch();
+    const panel = page.locator(`${RESULTS} .panel`);
+    await panel.getByRole('button', { name: 'Pick another' }).click();
+    await expect(page.locator(RESULTS)).toHaveCount(0);
+    await expect(page.getByText('click any element to generate locators')).toBeVisible();
+    expect(await activeTool(page)).toBe('pick');
+    expect(await epoch()).toBe(first);
+
+    await page.hover('#search');
+    await page.click('#search');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.row code').first()).toHaveText("getByRole('textbox', { name: 'Search' })");
+    await page.keyboard.press('Escape');
+    await expect(page.locator(RESULTS)).toHaveCount(0);
+    await expect.poll(() => activeTool(page)).toBeNull();
+    await expect(page.locator('#__piwi_picker_banner')).toHaveCount(0);
+  });
+
   test('a copy button clicked twice within a second goes back to its own label', async ({ context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const page = await openResults(context);

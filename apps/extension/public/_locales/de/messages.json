@@ -2073,6 +2073,12 @@
   "pick_scopeToParentHint": {
     "message": "Das Formular, den Dialog oder die Zeile um das Element wählen, an die seine Locators gebunden werden"
   },
+  "pick_pickAnother": {
+    "message": "Weiteres wählen"
+  },
+  "pick_pickAnotherHint": {
+    "message": "Diese Ergebnisse schließen und ein weiteres Element der Seite wählen"
+  },
   "functions_title": {
     "message": "Testfunktionen auf dieser Seite"
   },

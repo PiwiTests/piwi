@@ -37,8 +37,8 @@ export interface ResultsOptions {
   canScope?: boolean;
 }
 
-/** How the panel ended: dismissed, or with a request for the anchors step. */
-export type ResultsOutcome = 'closed' | 'scope';
+/** How the panel ended: dismissed, with a request for the anchors step, or with one to pick another element. */
+export type ResultsOutcome = 'closed' | 'scope' | 'pick-another';
 
 /** How many tests the Piwi section lists before pointing at the full view. */
 const PIWI_TESTS_SHOWN = 6;
@@ -59,9 +59,11 @@ const PIWI_TESTS_SHOWN = 6;
  *
  * Resolves once the user dismisses the panel (Escape, the close button, a
  * click outside it, or handing the element over to Tested elements), with
- * `closed`, or asks for the anchors step (Scope to a parent, offered with
- * `canScope`), with `scope`; `closed` too once the tool started as `toolEpoch`
- * ends. The caller has run `initI18n()`.
+ * `closed`; asks for the anchors step (Scope to a parent, offered with
+ * `canScope`), with `scope`; or for another pick (Pick another), with
+ * `pick-another`; `closed` too once the tool started as `toolEpoch` ends.
+ * While it is open, `target` stays outlined on the page. The caller has run
+ * `initI18n()`.
  */
 export async function renderResultsPanel(
   ranked: CheckedLocator[],
@@ -92,7 +94,15 @@ export async function renderResultsPanel(
       position: fixed; inset: 0; background: rgba(0,0,0,.35);
       display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh;
     }
+    .backdrop.spotlit { background: transparent; }
+    .backdrop[data-side="start"] { justify-content: flex-start; padding-inline: 16px; }
+    .backdrop[data-side="end"] { justify-content: flex-end; padding-inline: 16px; }
+    .spotlight {
+      position: fixed; pointer-events: none; border: 2px solid #a78bfa; border-radius: 4px;
+      box-shadow: 0 0 0 1px rgba(17,24,39,.6), 0 0 0 100vmax rgba(0,0,0,.35);
+    }
     .panel {
+      position: relative;
       background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px;
       width: min(640px, 92vw); max-height: 78vh; overflow: auto;
       box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5;
@@ -226,6 +236,11 @@ export async function renderResultsPanel(
   return new Promise<ResultsOutcome>((resolve) => {
     let done = false;
     let outcome: ResultsOutcome = 'closed';
+    const endWith = (ending: ResultsOutcome) => () => {
+      outcome = ending;
+      finish();
+    };
+    const stopSpotlight = target ? spotlight(backdrop, panel, target) : () => {};
     let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -248,6 +263,7 @@ export async function renderResultsPanel(
       done = true;
       document.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keydown', onFormKeyDown, true);
+      stopSpotlight();
       host.remove();
       releaseFocus();
       resolve(outcome);
@@ -258,19 +274,25 @@ export async function renderResultsPanel(
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
     });
+    tools.appendChild(
+      makeButton(t('pick_pickAnother'), endWith('pick-another'), {
+        icon: 'pick',
+        small: true,
+        title: t('pick_pickAnotherHint'),
+        className: 'pick-another',
+      }),
+    );
     if (options.canScope) {
       tools.appendChild(
-        makeButton(
-          t('pick_scopeToParent'),
-          () => {
-            outcome = 'scope';
-            finish();
-          },
-          { icon: 'layers', small: true, title: t('pick_scopeToParentHint'), className: 'scope' },
-        ),
+        makeButton(t('pick_scopeToParent'), endWith('scope'), {
+          icon: 'layers',
+          small: true,
+          title: t('pick_scopeToParentHint'),
+          className: 'scope',
+        }),
       );
     }
-    if (tools.childElementCount) header.after(tools);
+    header.after(tools);
 
     for (const [i, alt] of ranked.entries()) {
       const best = i === 0 && (alt.verdict === 'unique' || alt.verdict === 'narrowed');
@@ -563,6 +585,57 @@ async function fillPiwiSection(
 function withLeadingIcon<T extends HTMLElement>(el: T, name: IconName, className: string, text: string): T {
   el.className = className;
   return iconText(el, name, text);
+}
+
+/**
+ * Rings `target` on the page under the panel, the rest of the page dimmed
+ * around it, following it as the page scrolls or moves it; the backdrop dims
+ * everything while it is off screen or gone. The first time the ring falls
+ * under `panel`, the panel moves to the side of the page away from it, and
+ * stays there. Returns the function that stops following it.
+ */
+function spotlight(backdrop: HTMLElement, panel: HTMLElement, target: Element): () => void {
+  const ring = document.createElement('div');
+  ring.className = 'spotlight';
+  ring.hidden = true;
+  backdrop.prepend(ring);
+  let placed = '';
+  let frame = 0;
+  const place = () => {
+    const box = target.isConnected ? target.getBoundingClientRect() : null;
+    const onScreen =
+      box !== null &&
+      box.width + box.height > 0 &&
+      box.bottom > 0 &&
+      box.right > 0 &&
+      box.top < innerHeight &&
+      box.left < innerWidth;
+    const key = onScreen ? `${box.left} ${box.top} ${box.width} ${box.height}` : '';
+    if (key !== placed) {
+      placed = key;
+      ring.hidden = !onScreen;
+      backdrop.classList.toggle('spotlit', onScreen);
+      if (onScreen) {
+        ring.style.left = `${box.left - 3}px`;
+        ring.style.top = `${box.top - 3}px`;
+        ring.style.width = `${box.width + 6}px`;
+        ring.style.height = `${box.height + 6}px`;
+      }
+    }
+    if (onScreen && !backdrop.dataset.side) {
+      const over = panel.getBoundingClientRect();
+      const covered =
+        over.width > 0 &&
+        box.left < over.right &&
+        box.right > over.left &&
+        box.top < over.bottom &&
+        box.bottom > over.top;
+      if (covered) backdrop.dataset.side = box.left + box.width / 2 < innerWidth / 2 ? 'end' : 'start';
+    }
+    frame = requestAnimationFrame(place);
+  };
+  place();
+  return () => cancelAnimationFrame(frame);
 }
 
 /**

@@ -85,6 +85,10 @@ first. One that also finds others is narrowed, trying in order:
 
 Only when none of these finds it alone is it offered with `.first()` or `.nth()`, and a warning.
 
+While the results are open, the picked element stays outlined on the page, and the results move to the other side of
+the page when they would cover it. **Pick another** closes them and starts picking the next element, without going
+back to the popup or the shortcut.
+
 Each locator leads with a word: `stable`, `could break` or `brittle` for one that finds the element alone, by what the
 stability rules say of it, and `unique by position`, `3 matches` or `not checked` otherwise, the words the DevTools
 sidebar uses. Its **Details** give the reasons (`unique · brittle: CSS class`) and the stability score.
