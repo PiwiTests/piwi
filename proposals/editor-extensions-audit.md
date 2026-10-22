@@ -1,6 +1,10 @@
 # The editor extensions: a UX and feature audit
 
-**Status.** Audit, proposed 2026-10-21. Nothing of it is built yet. It covers the IDE plug-in as this repository
+**Status.** Audit, proposed 2026-10-21. Being built: Q1 to Q4, Q6, Q9 to Q14, M3 and M4 are built, and so are Q8
+for the commands that exist (recording and re-running the failing tests, the same chords in both editors) and the one
+tokenization per update of M12. Remaining: Q5 (the severity of a failure), Q7 (running the test at the cursor, which
+gets Q8's last chord), M1, M2, M5 to M11, the rest of M12 (appendix A, 27 and 28), the coverage marks of appendix A,
+21 and 22, and every L item. It covers the IDE plug-in as this repository
 names it: the **editor extensions**, that is the VS Code extension (`apps/vscode`, published as `piwitests.piwi`),
 the JetBrains plugin (`apps/jetbrains`, `dev.piwitests.piwi`) and the **editor service** they both run
 (`packages/editor`, the language server). The plan in [section 10](#10-a-prioritized-plan) ranks what to build; the
