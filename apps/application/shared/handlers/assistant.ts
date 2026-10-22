@@ -11,6 +11,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, sum } from 'drizzle-orm';
 import { assistantConversations, assistantMessages, assistantUsage } from '../../server/database/schema';
 import {
+  assistantMessageText,
   assistantTitleFrom,
   type AssistantBlock,
   type AssistantConversation,
@@ -185,7 +186,7 @@ export async function addAssistantMessage(
     .returning({ id: assistantMessages.id });
   const title =
     !conversation.title && message.role === 'user'
-      ? assistantTitleFrom(message.blocks.map((b) => b.text).join(' '))
+      ? assistantTitleFrom(assistantMessageText(message.blocks))
       : undefined;
   await db
     .update(assistantConversations)
