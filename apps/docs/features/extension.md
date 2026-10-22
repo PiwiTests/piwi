@@ -89,12 +89,22 @@ Pick two or three similar items (rows, cards) to get the pattern they share, suc
 
 ## Lint overlay
 
-One click outlines every interactive element no stable locator finds alone, with a suggested `data-testid` for each
-and a Markdown checklist.
+One click outlines every interactive element no stable locator finds alone and says what to add, with a **Copy**
+button for each and **Copy as a Markdown checklist** for all of them:
+
+- **A test id named after the element**: its accessible name, label or placeholder, else the nearest heading with the
+  role (`data-testid="submit-order"` for a button named "Submit order", `shipping-address-button`), else the role. A
+  value the page already uses, or another suggestion took, gets `-2`, `-3`.
+- **A test id on the repeated container** when the element sits in a row, a card or a list item whose copies hold the
+  same element: named after the text that tells this copy apart (`data-testid="blue-mug"`), with the locator a test
+  then uses, `getByTestId('blue-mug').getByRole('button', { name: 'Add to cart' })`. The container is outlined in
+  amber.
+- **A scope** when those copies already share a test id: no attribute to add, the locator filters by the copy's text,
+  `getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })`.
 
 <figure>
-  <img src="/screenshots/picker-lint.png" alt="Four Add to cart buttons outlined, each with a suggested data-testid">
-  <figcaption>Lint overlay: four buttons share a name; each gets a test id to add.</figcaption>
+  <img src="/screenshots/picker-lint.png" alt="Four Add to cart buttons outlined in their product cards, each with a locator scoped by its card">
+  <figcaption>Lint overlay: four buttons share a name in cards that share a test id; each is scoped by its card.</figcaption>
 </figure>
 
 ## Assertion suggester

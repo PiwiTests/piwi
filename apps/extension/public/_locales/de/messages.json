@@ -1333,6 +1333,35 @@
       }
     }
   },
+  "lint_onContainer": {
+    "message": "Am wiederholten $tag$ mit „$text$“",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<li>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_scopeBy": {
+    "message": "Über das wiederholte $tag$ mit „$text$“ eingrenzen: seine Kopien teilen schon eine Test-ID",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<article>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_thenLocator": {
+    "message": "Ein Test findet es dann mit"
+  },
   "assert_dialog": {
     "message": "Vorgeschlagene Assertions"
   },

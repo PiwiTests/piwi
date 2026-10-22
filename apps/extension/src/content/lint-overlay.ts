@@ -1,19 +1,37 @@
 import { formatNumber, initI18n, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel, toolIsCurrent } from '../shared/tool-session.js';
-import { scanForLintIssues, type LintFinding, type LintScan } from './lint-scan.js';
+import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
+import { scanForLintIssues, type LintFinding, type LintScan, type LintSuggestion } from './lint-scan.js';
 import { attachPanelShadow } from './panel-root.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { withIcon } from '../shared/icons.js';
 
 const HOST_ID = 'piwi-lint-overlay-host';
-/** The attribute each finding suggests adding. */
-const TEST_ID_ATTRIBUTE = 'data-testid';
 
+function tagOf(element: Element): string {
+  return element.tagName.toLowerCase();
+}
+
+/** `data-testid="add-to-cart"`, the attribute a suggestion adds. */
+function attributeText(suggestion: LintSuggestion): string {
+  return `${suggestion.attribute}="${suggestion.value}"`;
+}
+
+/** What a suggestion's Copy button copies: the attribute to add, or the locator to scope with. */
+function copiedText(suggestion: LintSuggestion): string {
+  return suggestion.kind === 'scope' ? suggestion.locator : attributeText(suggestion);
+}
+
+/** One line per finding, in English as every generated text: what to add, where, and the locator it gives. */
 function markdownChecklist(findings: LintFinding[]): string {
-  const lines = findings.map((f) => {
-    const name = f.accessibleName ? ` "${f.accessibleName}"` : '';
-    return `- [ ] \`${f.element.tagName.toLowerCase()}\` (role: ${f.role}${name}) — add \`${TEST_ID_ATTRIBUTE}="${f.suggestedTestId}"\``;
+  const lines = findings.map(({ element, role, accessibleName, suggestion: s }) => {
+    const name = accessibleName ? ` "${accessibleName}"` : '';
+    const what = `- [ ] \`${tagOf(element)}\` (role: ${role}${name})`;
+    if (s.kind === 'element') return `${what}: add \`${attributeText(s)}\``;
+    const where = `the repeated \`<${tagOf(s.container)}>\` holding "${s.text}"`;
+    if (s.kind === 'scope') return `${what}: scope by ${where}, \`${s.locator}\``;
+    return `${what}: add \`${attributeText(s)}\` to ${where}, then \`${s.locator}\``;
   });
   return lines.join('\n');
 }
@@ -21,7 +39,8 @@ function markdownChecklist(findings: LintFinding[]): string {
 /**
  * One-keystroke (from the popup) audit overlay: outlines every
  * interactive element that would score badly as a locator target right now,
- * with a suggested `data-testid` per element and a Markdown checklist export.
+ * with what to add for each (a test id named after the element, or one on the
+ * repeated container it sits in) and a Markdown checklist export.
  * The panel opens at once and fills in when the scan, which works in slices,
  * is done. A second trigger toggles it back off, same pattern as the
  * Playwright view.
@@ -39,6 +58,7 @@ function toggleLintOverlay(): void {
   installEscapeToCancel();
   let closed = false;
   delete g.__piwiLintFindings;
+  delete g.__piwiLintChecklist;
 
   const host = document.createElement('div');
   host.id = HOST_ID;
@@ -53,7 +73,9 @@ function toggleLintOverlay(): void {
       background: rgba(239,68,68,.14); border-radius: 4px;
       box-shadow: 0 0 0 1px rgba(255,255,255,.9), 0 0 0 3px rgba(69,10,10,.5);
     }
+    .box.container { border: 2px dashed #f59e0b; background: none; box-shadow: 0 0 0 1px rgba(255,255,255,.9); }
     ${BUTTON_CSS}
+    ${LOCATOR_SYNTAX_CSS}
     .panel {
       position: fixed; top: 12px; right: 12px; pointer-events: auto; width: min(380px, 88vw);
       max-height: 82vh; overflow: auto; background: #111827; color: #f9fafb; border-radius: 12px;
@@ -91,8 +113,15 @@ function toggleLintOverlay(): void {
     .row code:hover { border-style: solid; }
     .row code .attr { color: #93c5fd; }
     .row code .value { color: #86efac; }
+    .row .where, .row .then { color: #9ca3af; overflow-wrap: anywhere; }
+    .row .where .container-tag { color: #fbbf24; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row .where .named { color: #f9fafb; font-weight: 600; }
+    .row code.piwi-loc { word-break: normal; overflow-wrap: anywhere; }
+    .row code.then-locator { font-size: 11.5px; border: none; padding: 0; background: none; cursor: auto; }
     @media (prefers-color-scheme: light) {
-      .empty, .notice, .row .name { color: #6b7280; }
+      .empty, .notice, .row .name, .row .where, .row .then { color: #6b7280; }
+      .row .where .container-tag { color: #b45309; }
+      .row .where .named { color: #111827; }
       .row .tag { color: #b91c1c; }
       .row .name .named { color: #111827; }
       .row code .attr { color: #1d4ed8; }
@@ -183,36 +212,71 @@ function toggleLintOverlay(): void {
         name.append(...tNodes('lint_role', { role }));
       }
       head.append(tag, ' ', name);
-      const attribute = `${TEST_ID_ATTRIBUTE}="${f.suggestedTestId}"`;
-      const fix = document.createElement('div');
-      fix.className = 'fix';
-      const code = document.createElement('code');
-      const attr = document.createElement('span');
-      attr.className = 'attr';
-      attr.textContent = TEST_ID_ATTRIBUTE;
-      const value = document.createElement('span');
-      value.className = 'value';
-      value.textContent = `"${f.suggestedTestId}"`;
-      code.append(attr, '=', value);
-      code.title = t('common_clickToCopy');
-      const copy = makeButton(t('common_copy'), () => void copyWithFeedback(attribute, copy), {
-        icon: 'copy',
-        small: true,
-      });
-      code.addEventListener('click', () => void copyWithFeedback(attribute, copy));
-      fix.append(code, copy);
-      row.append(head, fix);
+      row.append(head, ...suggestionNodes(f.suggestion));
       panel.appendChild(row);
     }
   };
 
+  /** Where the suggestion goes, when not on the element itself, then the text to copy and its Copy button. */
+  const suggestionNodes = (s: LintSuggestion): HTMLElement[] => {
+    const nodes: HTMLElement[] = [];
+    if (s.kind !== 'element') {
+      const where = document.createElement('div');
+      where.className = 'where';
+      const containerTag = document.createElement('span');
+      containerTag.className = 'container-tag';
+      containerTag.textContent = `<${tagOf(s.container)}>`;
+      const text = document.createElement('span');
+      text.className = 'named';
+      text.textContent = s.text;
+      where.append(...tNodes(s.kind === 'scope' ? 'lint_scopeBy' : 'lint_onContainer', { tag: containerTag, text }));
+      nodes.push(where);
+    }
+    const copied = copiedText(s);
+    const fix = document.createElement('div');
+    fix.className = 'fix';
+    const code = document.createElement('code');
+    if (s.kind === 'scope') {
+      code.className = 'piwi-loc';
+      code.innerHTML = highlightLocator(s.locator);
+    } else {
+      const attr = document.createElement('span');
+      attr.className = 'attr';
+      attr.textContent = s.attribute;
+      const value = document.createElement('span');
+      value.className = 'value';
+      value.textContent = `"${s.value}"`;
+      code.append(attr, '=', value);
+    }
+    code.title = t('common_clickToCopy');
+    const copy = makeButton(t('common_copy'), () => void copyWithFeedback(copied, copy), {
+      icon: 'copy',
+      small: true,
+    });
+    code.addEventListener('click', () => void copyWithFeedback(copied, copy));
+    fix.append(code, copy);
+    nodes.push(fix);
+    if (s.kind === 'container') {
+      const then = document.createElement('div');
+      then.className = 'then';
+      const locator = document.createElement('code');
+      locator.className = 'piwi-loc then-locator';
+      locator.innerHTML = highlightLocator(s.locator);
+      then.append(t('lint_thenLocator'), ' ', locator);
+      nodes.push(then);
+    }
+    return nodes;
+  };
+
   const boxes: HTMLDivElement[] = [];
+  /** The outlined elements: the findings, then each container a suggestion goes on, once. */
+  let outlined: Array<{ element: Element; container: boolean }> = [];
   /** Every element's box is read before any outline moves, so the page lays out once per draw. */
   const drawBoxes = () => {
-    const rects = findings.map((f) => f.element.getBoundingClientRect());
+    const rects = outlined.map((o) => o.element.getBoundingClientRect());
     while (boxes.length < rects.length) {
       const box = document.createElement('div');
-      box.className = 'box';
+      box.className = outlined[boxes.length]!.container ? 'box container' : 'box';
       layer.appendChild(box);
       boxes.push(box);
     }
@@ -262,13 +326,27 @@ function toggleLintOverlay(): void {
     // real bundling is the only way to exercise it correctly, so results are
     // bridged out here the same way picker state is bridged through other
     // well-known globals elsewhere in this extension.
-    g.__piwiLintFindings = findings.map((f) => ({
-      tag: f.element.tagName.toLowerCase(),
-      role: f.role,
-      accessibleName: f.accessibleName,
-      suggestedTestId: f.suggestedTestId,
-      bestScore: f.bestScore,
+    g.__piwiLintFindings = findings.map(({ element, role, accessibleName, bestScore, suggestion: s }) => ({
+      tag: tagOf(element),
+      role,
+      accessibleName,
+      bestScore,
+      suggestion: {
+        kind: s.kind,
+        attribute: s.attribute,
+        value: s.value,
+        locator: s.locator,
+        ...(s.kind === 'element' ? { source: s.source } : { container: tagOf(s.container), text: s.text }),
+      },
     }));
+    g.__piwiLintChecklist = markdownChecklist(findings);
+    const containers = new Set(
+      findings.flatMap((f) => (f.suggestion.kind === 'element' ? [] : [f.suggestion.container])),
+    );
+    outlined = [
+      ...findings.map((f) => ({ element: f.element, container: false })),
+      ...[...containers].map((element) => ({ element, container: true })),
+    ];
     showFindings(scan);
     drawBoxes();
   });

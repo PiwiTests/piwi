@@ -1633,6 +1633,38 @@
       }
     }
   },
+  "lint_onContainer": {
+    "message": "On the repeated $tag$ holding \"$text$\"",
+    "description": "Lint overlay: above a suggested test id that goes on the element’s container (a row, a card, a list item repeated on the page) rather than on the element. $tag$ is the container’s HTML tag as code, kept as it is; $text$ is the page’s own text that tells this container apart from its copies.",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<li>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_scopeBy": {
+    "message": "Scope by the repeated $tag$ holding \"$text$\": its copies share a test id already",
+    "description": "Lint overlay: above a locator to use instead of adding a test id, when the element sits in a repeated container (row, card, list item) whose copies all carry the same test id. $tag$ is the container’s HTML tag as code, kept as it is; $text$ is the page’s own text that tells this container apart.",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<article>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_thenLocator": {
+    "message": "A test then finds it with",
+    "description": "Lint overlay: before the locator a test uses once the suggested test id is added to the element’s container."
+  },
   "assert_dialog": {
     "message": "Suggested assertions",
     "description": "Assertions panel: accessible name of the dialog that lists expect(…) lines for a picked element."

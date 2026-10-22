@@ -1333,6 +1333,35 @@
       }
     }
   },
+  "lint_onContainer": {
+    "message": "No $tag$ repetido que contém “$text$”",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<li>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_scopeBy": {
+    "message": "Delimitar pelo $tag$ repetido que contém “$text$”: suas cópias já compartilham um test id",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<article>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_thenLocator": {
+    "message": "Um teste o encontra então com"
+  },
   "assert_dialog": {
     "message": "Asserções sugeridas"
   },

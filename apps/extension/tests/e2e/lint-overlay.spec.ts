@@ -89,6 +89,56 @@ test.describe('lint-overlay.js', () => {
     );
   });
 
+  test('says where each test id goes and copies it', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const page = await context.newPage();
+    // The clipboard API needs a secure context, which a blank page is not.
+    await page.route('https://shop.test/', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><body>
+          <button>Submit order</button><button>Submit order</button>
+          <div>
+            <div class="card"><span>Blue mug</span><button><svg></svg></button></div>
+            <div class="card"><span>Red mug</span><button><svg></svg></button></div>
+          </div>
+          <div>
+            <div data-testid="product-card"><span>Green mug</span><a href="#"><svg></svg></a></div>
+            <div data-testid="product-card"><span>Black mug</span><a href="#"><svg></svg></a></div>
+          </div>
+        </body></html>`,
+      }),
+    );
+    await page.goto('https://shop.test/');
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+
+    const rows = page.locator('#piwi-lint-overlay-host .panel .row');
+    await expect(rows).toHaveCount(6);
+    await expect(rows.nth(0).locator('.where')).toHaveCount(0);
+    await expect(rows.nth(0).locator('.fix code')).toHaveText('data-testid="submit-order"');
+
+    await expect(rows.nth(2).locator('.where')).toHaveText('On the repeated <div> holding "Blue mug"');
+    await expect(rows.nth(2).locator('.fix code')).toHaveText('data-testid="blue-mug"');
+    await expect(rows.nth(2).locator('.then')).toHaveText(
+      "A test then finds it with getByTestId('blue-mug').getByRole('button')",
+    );
+    await rows.nth(2).getByRole('button', { name: 'Copy' }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('data-testid="blue-mug"');
+
+    await expect(rows.nth(4).locator('.where')).toHaveText(
+      'Scope by the repeated <div> holding "Green mug": its copies share a test id already',
+    );
+    await rows.nth(4).locator('.fix code').click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      "getByTestId('product-card').filter({ hasText: 'Green mug' }).getByRole('link')",
+    );
+    // An outline on each finding and on each container a test id goes on.
+    await expect(page.locator('#piwi-lint-overlay-host .box')).toHaveCount(10);
+    await expect(page.locator('#piwi-lint-overlay-host .box.container')).toHaveCount(4);
+  });
+
   test('speaks French in a French browser', async ({ context }) => {
     await openShadowRoots(context);
     await stubChromeI18n(context, 'fr');

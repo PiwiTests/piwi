@@ -10,9 +10,19 @@ interface ExposedFinding {
   tag: string;
   role: string;
   accessibleName: string | null;
-  suggestedTestId: string;
   bestScore: number;
+  suggestion: {
+    kind: 'element' | 'container' | 'scope';
+    attribute: string;
+    value: string;
+    locator: string;
+    source?: string;
+    container?: string;
+    text?: string;
+  };
 }
+
+const values = (findings: ExposedFinding[]) => findings.map((f) => f.suggestion.value);
 
 /**
  * `scanForLintIssues` calls @piwitests/core's `generateAlternatives`, which
@@ -66,7 +76,17 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
       expect(f.accessibleName).toBeNull();
       expect(f.bestScore).toBeLessThan(50);
     }
-    expect(findings.map((f) => f.suggestedTestId)).toEqual(['button-1', 'button-2']);
+    // No name, label, placeholder or heading: the role, made unique.
+    expect(findings.map((f) => f.suggestion)).toEqual([
+      { kind: 'element', attribute: 'data-testid', value: 'button', source: 'role', locator: "getByTestId('button')" },
+      {
+        kind: 'element',
+        attribute: 'data-testid',
+        value: 'button-2',
+        source: 'role',
+        locator: "getByTestId('button-2')",
+      },
+    ]);
   });
 
   test('flags buttons sharing a name no locator tells apart but by position', async ({ context }) => {
@@ -92,7 +112,7 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
     expect(await scan(page)).toEqual([]);
   });
 
-  test('numbers suggested test ids per role, not with one counter shared across roles', async ({ context }) => {
+  test('suffixes a suggested test id per slug, not with one counter shared across roles', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>
       <button></button>
@@ -101,7 +121,160 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
       <input type="checkbox" />
     </body></html>`);
     const findings = await scan(page);
-    expect(findings.map((f) => f.suggestedTestId)).toEqual(['button-1', 'checkbox-1', 'button-2', 'checkbox-2']);
+    expect(values(findings)).toEqual(['button', 'checkbox', 'button-2', 'checkbox-2']);
+  });
+
+  test('names a suggested test id after the accessible name, accents and punctuation dropped', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button>Submit order</button>
+      <button>Submit order</button>
+      <a href="#" aria-label="Café & thé, à emporter !"></a>
+      <a href="#" aria-label="Café & thé, à emporter !"></a>
+    </body></html>`);
+    const findings = await scan(page);
+    expect(values(findings)).toEqual([
+      'submit-order',
+      'submit-order-2',
+      'cafe-the-a-emporter',
+      'cafe-the-a-emporter-2',
+    ]);
+    expect(findings.map((f) => f.suggestion.source)).toEqual(['name', 'name', 'name', 'name']);
+    expect(findings[0]!.suggestion.locator).toBe("getByTestId('submit-order')");
+  });
+
+  test('names a field after its placeholder, and an unnamed button after the nearest heading', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <input placeholder="Email address"><input placeholder="Email address">
+      <section>
+        <h2>Billing</h2>
+        <section><h2>Shipping address</h2><button></button><button></button></section>
+        <h2>Payment</h2>
+      </section>
+    </body></html>`);
+    const findings = await scan(page);
+    expect(values(findings)).toEqual([
+      'email-address',
+      'email-address-2',
+      'shipping-address-button',
+      'shipping-address-button-2',
+    ]);
+    expect(findings.map((f) => f.suggestion.source)).toEqual(['name', 'name', 'heading', 'heading']);
+  });
+
+  test('never suggests a test id the page already uses', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <a href="/help" data-testid="show-popup">Help</a>
+      <button aria-label="Show popup"></button>
+      <button aria-label="Show popup"></button>
+    </body></html>`);
+    expect(values(await scan(page))).toEqual(['show-popup-2', 'show-popup-3']);
+  });
+
+  test('puts the test id on the repeated container, named after the text that tells it apart', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div class="grid">
+        <div class="card"><img alt=""><span class="price">12 €</span><span>Blue mug</span><button>Add to cart</button></div>
+        <div class="card"><img alt=""><span class="price">12 €</span><span>Red mug</span><button>Add to cart</button></div>
+        <div class="card"><img alt=""><span class="price">14 €</span><span>Green mug</span><button>Add to cart</button></div>
+      </div>
+    </body></html>`);
+    const findings = await scan(page);
+    expect(findings.map((f) => f.suggestion)).toEqual([
+      {
+        kind: 'container',
+        attribute: 'data-testid',
+        value: 'blue-mug',
+        container: 'div',
+        text: 'Blue mug',
+        locator: "getByTestId('blue-mug').getByRole('button', { name: 'Add to cart' })",
+      },
+      expect.objectContaining({ kind: 'container', value: 'red-mug', text: 'Red mug' }),
+      // "14 €" is this card's alone too, but a text with words names it better.
+      expect.objectContaining({ kind: 'container', value: 'green-mug', text: 'Green mug' }),
+    ]);
+  });
+
+  test('prefers a heading of the repeated container, and shares one test id among the findings inside it', async ({
+    context,
+  }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div>
+        <div class="row"><span>Draft</span><h3>Invoice 12</h3><button><svg></svg></button><a href="#"><svg></svg></a></div>
+        <div class="row"><span>Draft</span><h3>Invoice 13</h3><button><svg></svg></button><a href="#"><svg></svg></a></div>
+      </div>
+    </body></html>`);
+    const findings = await scan(page);
+    expect(findings.map((f) => [f.role, f.suggestion.kind, f.suggestion.value, f.suggestion.locator])).toEqual([
+      ['button', 'container', 'invoice-12', "getByTestId('invoice-12').getByRole('button')"],
+      ['link', 'container', 'invoice-12', "getByTestId('invoice-12').getByRole('link')"],
+      ['button', 'container', 'invoice-13', "getByTestId('invoice-13').getByRole('button')"],
+      ['link', 'container', 'invoice-13', "getByTestId('invoice-13').getByRole('link')"],
+    ]);
+  });
+
+  test('scopes by the test id the repeated containers already share, filtered by their text', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div>
+        <div data-testid="product-card"><span>Blue mug</span><button><svg></svg></button></div>
+        <div data-testid="product-card"><span>Red mug</span><button><svg></svg></button></div>
+      </div>
+    </body></html>`);
+    const findings = await scan(page);
+    expect(findings.map((f) => f.suggestion)).toEqual([
+      {
+        kind: 'scope',
+        attribute: 'data-testid',
+        value: 'product-card',
+        container: 'div',
+        text: 'Blue mug',
+        locator: "getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button')",
+      },
+      expect.objectContaining({ kind: 'scope', text: 'Red mug' }),
+    ]);
+    // The locator finds that button alone in real Playwright.
+    await expect(page.getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button')).toHaveCount(1);
+  });
+
+  test('keeps the test id on the element when no text tells its container apart', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div>
+        <div class="card"><span>Red mug</span><button>Add to cart</button></div>
+        <div class="card"><span>Red mug</span><button>Add to cart</button></div>
+      </div>
+    </body></html>`);
+    const findings = await scan(page);
+    expect(findings.map((f) => [f.suggestion.kind, f.suggestion.value])).toEqual([
+      ['element', 'add-to-cart'],
+      ['element', 'add-to-cart-2'],
+    ]);
+  });
+
+  test('copies a checklist naming each fix', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <button>Submit order</button><button>Submit order</button>
+      <div>
+        <div class="card"><span>Blue mug</span><button><svg></svg></button></div>
+        <div class="card"><span>Red mug</span><button><svg></svg></button></div>
+      </div>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+    const checklist = await (
+      await page.waitForFunction(() => (globalThis as any).__piwiLintChecklist as string | undefined)
+    ).jsonValue();
+    expect(checklist!.split('\n')).toEqual([
+      '- [ ] `button` (role: button "Submit order"): add `data-testid="submit-order"`',
+      '- [ ] `button` (role: button "Submit order"): add `data-testid="submit-order-2"`',
+      '- [ ] `button` (role: button): add `data-testid="blue-mug"` to the repeated `<div>` holding "Blue mug", then `getByTestId(\'blue-mug\').getByRole(\'button\')`',
+      '- [ ] `button` (role: button): add `data-testid="red-mug"` to the repeated `<div>` holding "Red mug", then `getByTestId(\'red-mug\').getByRole(\'button\')`',
+    ]);
   });
 
   test('checks every button of a long table, its rows and cells aside', async ({ context }) => {
@@ -110,7 +283,7 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
     await page.setContent(`<!doctype html><html><body><table><tbody>${rows.join('')}</tbody></table></body></html>`);
     const findings = await scan(page);
     expect(findings).toHaveLength(300);
-    expect(findings[findings.length - 1]).toMatchObject({ role: 'button', suggestedTestId: 'button-300' });
+    expect(findings[findings.length - 1]).toMatchObject({ role: 'button', suggestion: { value: 'button-300' } });
   });
 
   test('checks the elements inside a web component', async ({ context }) => {
@@ -124,7 +297,7 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
       });
     </script></body></html>`);
     const findings = await scan(page);
-    expect(findings.map((f) => f.suggestedTestId)).toEqual(['button-1', 'button-2']);
+    expect(values(findings)).toEqual(['button', 'button-2']);
   });
 
   test('leaves the page responsive while it checks a long table', async ({ context }) => {
