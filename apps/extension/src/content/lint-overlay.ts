@@ -139,7 +139,7 @@ function toggleLintOverlay(): void {
 
   const panel = document.createElement('div');
   panel.className = 'panel';
-  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('role', 'region');
   panel.lang = uiLanguage();
   panel.setAttribute('aria-label', t('lint_dialog'));
 

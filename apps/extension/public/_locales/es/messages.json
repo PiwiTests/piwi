@@ -5038,6 +5038,9 @@
   "view_title": {
     "message": "Vista Playwright"
   },
+  "view_close": {
+    "message": "Cerrar la vista Playwright"
+  },
   "view_noRole": {
     "message": "(sin rol)"
   },

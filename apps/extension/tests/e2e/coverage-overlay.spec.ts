@@ -429,6 +429,17 @@ test.describe('coverage overlay on a page', () => {
     expect(box!.x).toBeLessThan(20);
   });
 
+  test('the panel is a named region, not a dialog, and its × closes the overlay', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const region = page.locator(HOST).getByRole('region', { name: 'Piwi: tested elements' });
+    await expect(region).toBeVisible();
+    await expect(page.locator(HOST).getByRole('dialog')).toHaveCount(0);
+    await region.getByRole('button', { name: 'Close (Esc)' }).click();
+    await expect(page.locator(HOST)).not.toBeAttached();
+  });
+
   test('injecting it again turns it off', async ({ page, context }) => {
     await stubCoverageChrome(context);
     await openShop(page, '?nodialog');

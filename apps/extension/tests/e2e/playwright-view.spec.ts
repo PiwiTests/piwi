@@ -257,4 +257,16 @@ test.describe('Playwright view', () => {
     await page.addScriptTag({ path: path.join(DIST, 'playwright-view.js') });
     await expect(host).toHaveCount(0);
   });
+
+  test('its panel is a named region, not a dialog, and its × turns the view off', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(SHOP);
+    await openView(page);
+    const host = page.locator('#piwi-playwright-view-host');
+    const region = host.getByRole('region', { name: 'Playwright view' });
+    await expect(region).toBeVisible();
+    await expect(host.getByRole('dialog')).toHaveCount(0);
+    await region.getByRole('button', { name: 'Close the Playwright view' }).click();
+    await expect(host).toHaveCount(0);
+  });
 });

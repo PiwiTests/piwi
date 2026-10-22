@@ -5967,6 +5967,10 @@
     "message": "Playwright view",
     "description": "Playwright view: title of the small panel over the page. “Playwright” is a product name."
   },
+  "view_close": {
+    "message": "Close the Playwright view",
+    "description": "Playwright view: aria-label and tooltip of the × button of its panel, which turns the view off. “Playwright” is a product name."
+  },
   "view_noRole": {
     "message": "(no role)",
     "description": "Playwright view: in a label over an element, after its tag name, when the element has no role Playwright recognizes. Short."

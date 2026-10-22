@@ -136,7 +136,7 @@ function togglePlaywrightView(): void {
 
   const panel = document.createElement('div');
   panel.className = 'panel';
-  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('role', 'region');
   panel.setAttribute('aria-label', t('view_title'));
   panel.lang = uiLanguage();
   const header = document.createElement('div');
@@ -144,7 +144,7 @@ function togglePlaywrightView(): void {
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = t('view_title');
-  const closeBtn = makeButton(t('common_close'), () => off(), {
+  const closeBtn = makeButton(t('view_close'), () => off(), {
     icon: 'close',
     iconOnly: true,
     tone: 'ghost',

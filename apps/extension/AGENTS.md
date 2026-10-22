@@ -734,7 +734,9 @@ open modal dialog the same way. `modal-dialog.spec.ts` covers it.
 
 **A panel over the page with a backdrop is modal through `holdFocus`** (`src/content/modal-panel.ts`): `aria-modal`,
 the focus on its first control, Tab kept inside, and the focus given back as it closes (the pick results, multi-pick,
-Assertions, Context for an AI agent, Test functions). **A copy button goes through `copyWithFeedback`**
+Assertions, Context for an AI agent, Test functions). **A panel that leaves the page usable is a landmark, not a
+dialog**: `role="region"` with its translated name as `aria-label`, and a close button with an accessible name (the
+lint overlay, the Playwright view, the Tested elements panel). **A copy button goes through `copyWithFeedback`**
 (`src/shared/clipboard.ts`, extension pages too): the copy command when the clipboard API refuses, Copied or Not copied
 for a moment, and the button's own label back however often it is clicked.
 

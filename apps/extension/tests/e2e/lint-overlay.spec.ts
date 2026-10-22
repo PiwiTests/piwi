@@ -149,6 +149,12 @@ test.describe('lint-overlay.js', () => {
     const panel = page.locator('#piwi-lint-overlay-host .panel');
     await expect(panel).toHaveAttribute('lang', 'fr');
     await expect(panel).toHaveAttribute('aria-label', 'Contrôle\u00a0: éléments difficiles à cibler');
+    // A non-modal panel: a named region, not a dialog.
+    await expect(page.locator('#piwi-lint-overlay-host').getByRole('region')).toHaveAttribute(
+      'aria-label',
+      'Contrôle : éléments difficiles à cibler',
+    );
+    await expect(page.locator('#piwi-lint-overlay-host').getByRole('dialog')).toHaveCount(0);
     await expect(panel.locator('.title')).toHaveText('2 éléments difficiles à cibler');
     await expect(panel.locator('.export')).toHaveText('Copier en liste de tâches Markdown');
     await expect(panel.locator('.row .name').first()).toHaveText('rôle button');
