@@ -63,6 +63,10 @@ Hover highlights, a click picks. The pick snaps to the nearest actionable ancest
 the button), and ↑/↓ walk the DOM tree, showing the locator each step would produce. For an element with a role, an
 **anchors** step offers stable parents to scope the locator to, with a live match count.
 
+Elements inside a web component's open shadow root are picked like any other: ↑ walks out of the shadow root through
+its host element, and the anchors step lists the host and its parents and counts the matches inside open shadow roots,
+as Playwright's locators do.
+
 Every candidate uses the names Playwright computes (a tab with a count badge is `{ name: 'Regressions 5' }`), is
 scored as the dashboard scores locators, and run against the page. Those that find only the picked element come
 first; one that also finds others is offered narrowed (exact, filtered by its text, or scoped to
@@ -157,9 +161,10 @@ Function catalogs refresh in the background. **A recording is never sent to your
 
 ## Limits
 
-- **One frame at a time.** The picker and the recorder see the top-level document, not iframes. The picker does not
-  reach inside shadow DOM; the recorder records the fields of open shadow roots, and from a closed one only the keys
-  of a password field (Enter, Escape, the arrows).
+- **One frame at a time.** The picker and the recorder see the top-level document, not iframes.
+- **Open shadow roots only.** The picker reaches inside open shadow roots; a closed one is out of reach, and a pick
+  there picks its host element. The recorder records the fields of open shadow roots, and from a closed one only the
+  keys of a password field (Enter, Escape, the arrows).
 - **Recording covers one origin.** On another site it stops capturing: stop and review, or start again there.
 - **No aria-snapshot copier** yet for `toMatchAriaSnapshot()`.
 

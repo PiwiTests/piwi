@@ -34,7 +34,8 @@ export interface PickerOverlayArg {
  * highlight, an instruction banner, and capture-phase listeners that suppress
  * the app's own handlers while picking. The hover target snaps to the nearest
  * actionable ancestor (button/link/field/role/test id) and up/down walk the
- * DOM chain before the click commits.
+ * DOM chain before the click commits. The hover reaches into open shadow
+ * roots, and the chain walks out of them through each host.
  *
  * `transport` picks how a pick/skip is reported, since the two hosts cross
  * fundamentally different boundaries:
@@ -228,6 +229,23 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     return cls ? `locator(${quoteJs(`.${cls}`)})` : tag;
   };
 
+  // An element's parent, out through its shadow root's host at the top of an
+  // open shadow root, so a chain started inside a web component reaches the page.
+  const parentOf = (node: any): any => {
+    if (node.parentElement) return node.parentElement;
+    const root = node.getRootNode ? node.getRootNode() : null;
+    return root && root !== doc && root.host ? root.host : null;
+  };
+
+  // The element an event happened on, inside open shadow roots: the browser
+  // retargets `target` to the outermost host, the composed path keeps the
+  // innermost element. A closed shadow root stays at its host.
+  const targetOf = (e: any): any => {
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : null;
+    const first = path && path.length ? path[0] : null;
+    return first && first.nodeType === 1 ? first : e.target;
+  };
+
   // The hover chain: raw target up to (not including) body, capped.
   const buildChain = (raw: any): any[] => {
     const chain: any[] = [];
@@ -236,7 +254,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
       const tag = (node.tagName || '').toLowerCase();
       if (tag === 'body' || tag === 'html') break;
       chain.push(node);
-      node = node.parentElement;
+      node = parentOf(node);
     }
     return chain.length ? chain : [raw];
   };
@@ -347,7 +365,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     }
   };
   const onMove = (e: any) => {
-    const raw = e.target;
+    const raw = targetOf(e);
     if (!raw || isOwn(raw)) {
       highlight.style.display = 'none';
       label.style.display = 'none';
@@ -450,7 +468,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   const onClick = (e: any) => {
     stop(e);
     const el = current();
-    if (!el || isOwn(e.target)) return;
+    if (!el || isOwn(targetOf(e))) return;
     reportPicked(el);
   };
   const onKey = (e: any) => {

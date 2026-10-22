@@ -79,8 +79,9 @@ export interface AnchorPickerArg {
  * land in `__piwiPickAnchors` (+ `__piwiPickChainCount`). While the step
  * shows, `__piwiAnchorCleanup` holds its teardown (see `removeAnchorPicker`).
  * Role resolution reuses the maps passed in `arg` (single source of truth in
- * `@piwitests/core`). The panel is in English unless `arg.strings` gives its
- * texts. Must stay fully self-contained.
+ * `@piwitests/core`). The ancestors and every count reach through open shadow
+ * roots, as Playwright's locators do. The panel is in English unless
+ * `arg.strings` gives its texts. Must stay fully self-contained.
  */
 export function showAnchorPicker(arg: AnchorPickerArg): void {
   const g = globalThis as any;
@@ -129,6 +130,45 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     return al && /^\d+$/.test(al) ? Number(al) : null;
   };
 
+  // An element's parent, out through its shadow root's host at the top of an
+  // open shadow root, as Playwright's locators pierce them.
+  const parentOf = (n: any): any => {
+    if (n.parentElement) return n.parentElement;
+    const root = n.getRootNode ? n.getRootNode() : null;
+    return root && root !== doc && root.host ? root.host : null;
+  };
+  // The page's open shadow roots, nested ones included, found once: every
+  // count below searches them as well as the light DOM, as Playwright does.
+  const shadowRoots: any[] = [];
+  const collectRoots = (root: any) => {
+    const all = root.querySelectorAll('*');
+    for (let i = 0; i < all.length; i++) {
+      const sr = all[i].shadowRoot;
+      if (sr) {
+        shadowRoots.push(sr);
+        collectRoots(sr);
+      }
+    }
+  };
+  try {
+    collectRoots(doc);
+  } catch {
+    shadowRoots.length = 0;
+  }
+  // Whether `node` is `scope` or inside it, across shadow boundaries.
+  const within = (node: any, scope: any): boolean => {
+    if (scope === doc) return true;
+    for (let n = node; n; n = parentOf(n)) if (n === scope) return true;
+    return false;
+  };
+  // `scope.querySelectorAll(sel)` plus the matches in every open shadow root
+  // under the scope, its own included.
+  const queryAll = (scope: any, sel: string): any[] => {
+    const found: any[] = Array.from(scope.querySelectorAll(sel));
+    for (const sr of shadowRoots) if (within(sr.host, scope)) found.push(...Array.from(sr.querySelectorAll(sel)));
+    return found;
+  };
+
   // A role the maps cannot give the picked element itself (one only the
   // host's accessibility model computes, such as a paragraph's) cannot be
   // counted from them: its counts are unavailable rather than 0.
@@ -138,9 +178,9 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   // otherwise same resolved role (level-scoped for headings). -1 when unknown.
   const leafMatches = (scope: any): number => {
     try {
-      if (leafTestId) return scope.querySelectorAll(`[${testIdAttr}=${JSON.stringify(leafTestId)}]`).length;
+      if (leafTestId) return queryAll(scope, `[${testIdAttr}=${JSON.stringify(leafTestId)}]`).length;
       if (!leafCountable) return -1;
-      const nodes = scope.querySelectorAll(roleSources);
+      const nodes = queryAll(scope, roleSources);
       if (nodes.length > 2000) return -1;
       let matched = 0;
       for (let i = 0; i < nodes.length; i++) {
@@ -158,14 +198,14 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   // Document-wide role nodes, computed once for anchor uniqueness counts.
   let roleNodes: any[] = [];
   try {
-    const all = doc.querySelectorAll(roleSources);
-    if (all.length <= 4000) roleNodes = Array.from(all);
+    const all = queryAll(doc, roleSources);
+    if (all.length <= 4000) roleNodes = all;
   } catch {
     roleNodes = [];
   }
   const count = (sel: string): number | undefined => {
     try {
-      return doc.querySelectorAll(sel).length;
+      return queryAll(doc, sel).length;
     } catch {
       return undefined;
     }
@@ -179,7 +219,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     selectable: boolean;
   }
   const rows: Row[] = [];
-  let node = el.parentElement;
+  let node = parentOf(el);
   let depth = 0;
   while (node && depth < 12) {
     depth++;
@@ -226,7 +266,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
       hookLabel,
       selectable: !!(testId || id || (role && (ariaLabel || info.roleCount === 1))),
     });
-    node = node.parentElement;
+    node = parentOf(node);
   }
 
   if (rows.length === 0) {
@@ -279,9 +319,9 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   // emitted chain agree: testid > id > labeled role > bare role.
   const segMatches = (scope: any, info: any): any[] => {
     try {
-      if (info.testId) return Array.from(scope.querySelectorAll(`[${testIdAttr}=${JSON.stringify(info.testId)}]`));
-      if (info.id) return Array.from(scope.querySelectorAll(`#${doc.defaultView.CSS.escape(info.id)}`));
-      const nodes = Array.from(scope.querySelectorAll(roleSources));
+      if (info.testId) return queryAll(scope, `[${testIdAttr}=${JSON.stringify(info.testId)}]`);
+      if (info.id) return queryAll(scope, `#${doc.defaultView.CSS.escape(info.id)}`);
+      const nodes = queryAll(scope, roleSources);
       if (nodes.length > 2000) return [];
       return nodes.filter(
         (n: any) =>

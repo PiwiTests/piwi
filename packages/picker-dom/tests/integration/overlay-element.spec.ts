@@ -212,3 +212,51 @@ test.describe('installPickerOverlay — the project’s test id attribute', () =
     expect(await page.evaluate(() => (globalThis as any).__piwiPickedElement.id)).toBe('inner');
   });
 });
+
+test.describe('installPickerOverlay — shadow roots', () => {
+  // `<x-card>` holds a button in an open shadow root, `<x-sealed>` one in a closed root.
+  const SHADOW = `<!doctype html><html><body style="margin-top:120px">
+    <section id="list"><x-card id="card"></x-card></section>
+    <x-sealed id="sealed"></x-sealed>
+    <script>
+      const open = document.getElementById('card').attachShadow({ mode: 'open' });
+      open.innerHTML = '<div id="frame"><button id="buy"><span id="buy-text">Buy</span></button></div>';
+      const closed = document.getElementById('sealed').attachShadow({ mode: 'closed' });
+      closed.innerHTML = '<button id="hidden">Hidden</button>';
+    </script>
+  </body></html>`;
+  const inShadow = (page: Page, id: string) => page.locator('#card').locator(`#${id}`);
+  const pickedId = (page: Page) => page.evaluate(() => (globalThis as any).__piwiPickedElement?.id ?? null);
+
+  test('a control inside an open shadow root is outlined on hover and picked on click', async ({ page }) => {
+    await page.setContent(SHADOW);
+    await install(page, { transport: 'global', failing: null });
+    await inShadow(page, 'buy-text').hover();
+    await expect(page.locator('#__piwi_picker_label')).toContainText('<button>');
+    await expect(page.locator('#__piwi_picker_locator')).toContainText("locator('#buy')");
+    const outline = await page.locator('#__piwi_picker_highlight').boundingBox();
+    expect(outline).toEqual(await inShadow(page, 'buy').boundingBox());
+    await inShadow(page, 'buy-text').click();
+    expect(await pickedId(page)).toBe('buy');
+  });
+
+  test('the chain walks out of the shadow root through its host', async ({ page }) => {
+    await page.setContent(SHADOW);
+    await install(page, { transport: 'global', failing: null });
+    await inShadow(page, 'buy').hover();
+    for (let i = 0; i < 3; i++) await dispatchKey(page, 'ArrowUp');
+    await expect(page.locator('#__piwi_picker_locator')).toContainText("locator('#list')");
+    await dispatchKey(page, 'ArrowDown');
+    await expect(page.locator('#__piwi_picker_locator')).toContainText("locator('#card')");
+    await inShadow(page, 'buy').click({ force: true });
+    expect(await pickedId(page)).toBe('card');
+  });
+
+  test('a closed shadow root stays at its host', async ({ page }) => {
+    await page.setContent(SHADOW);
+    await install(page, { transport: 'global', failing: null });
+    await page.hover('#sealed');
+    await page.click('#sealed');
+    expect(await pickedId(page)).toBe('sealed');
+  });
+});
