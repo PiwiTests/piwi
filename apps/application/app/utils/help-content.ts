@@ -1253,6 +1253,7 @@ export const HELP_TOPICS = {
       'Click a source path to open it in your local editor.',
       '',
       '- **JetBrains IDE with the Piwi plugin** (Rider, WebStorm, IntelliJ IDEA) whose project is connected to this instance — nothing to set: the IDE finds the file in its open projects, opens it at the line and confirms.',
+      '- **VS Code with the Piwi extension** — nothing to set: the extension finds the file in the window focused last.',
       '- **Otherwise** set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method and hit **Test** to check it works.',
       '- **Desktop app** — also opens files through your IDE’s command-line launcher (`code`, `rider`, …).',
       '- **Browser** — **Auto** falls back to the JetBrains local server, then to a `vscode://` or `jetbrains://` launch, which cannot confirm.',
