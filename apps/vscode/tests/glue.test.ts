@@ -14,6 +14,7 @@ import type {
 import {
   DOCUMENT_PATTERN,
   baselinePicks,
+  coalesced,
   coverageDecorations,
   hasCoverageMarks,
   pickNotice,
@@ -39,6 +40,7 @@ import {
   filesRedraw,
   ownLiveRun,
   runVerdict,
+  serviceEnvironment,
   sourceLabel,
   statusBarView,
   testDecorations,
@@ -1234,5 +1236,79 @@ describe('a locator picked at a breakpoint', () => {
     expect(pickNotice(at, 'no-file')).toBe(
       'Piwi: the picked locator was inserted at the cursor: tests/login.spec.ts is not in this workspace.',
     );
+  });
+});
+
+describe('calls coalesced into one', () => {
+  test('the calls made before the scheduled run join it, and a call after it schedules the next', () => {
+    const runs: Array<() => void> = [];
+    let drawn = 0;
+    const draw = coalesced(
+      () => drawn++,
+      (run) => runs.push(run),
+    );
+    draw();
+    draw();
+    draw();
+    expect(runs).toHaveLength(1);
+    expect(drawn).toBe(0);
+    runs[0]();
+    expect(drawn).toBe(1);
+    draw();
+    expect(runs).toHaveLength(2);
+    runs[1]();
+    expect(drawn).toBe(2);
+  });
+});
+
+describe('the environment the editor service starts with', () => {
+  const env = { PATH: '/usr/bin', NODE_EXTRA_CA_CERTS: '/etc/ssl/corp.pem' };
+
+  test('is the editor’s, with Node reading its proxy variables', () => {
+    expect(serviceEnvironment({}, { ...env, https_proxy: 'http://shell:3128' })).toEqual({
+      ...env,
+      https_proxy: 'http://shell:3128',
+      NODE_USE_ENV_PROXY: '1',
+    });
+    expect(serviceEnvironment({ proxy: ' ', noProxy: [], proxyStrictSSL: true }, env)).toEqual({
+      ...env,
+      NODE_USE_ENV_PROXY: '1',
+    });
+  });
+
+  test('the editor’s proxy replaces the environment’s, for http and https alike', () => {
+    const shell = { ...env, https_proxy: 'http://shell:3128', http_proxy: 'http://shell:3128' };
+    expect(serviceEnvironment({ proxy: ' http://proxy.corp:3128 ' }, shell)).toEqual({
+      ...env,
+      NODE_USE_ENV_PROXY: '1',
+      HTTPS_PROXY: 'http://proxy.corp:3128',
+      HTTP_PROXY: 'http://proxy.corp:3128',
+    });
+  });
+
+  test('a Basic authorization goes in the proxy’s URL as its credentials, encoded', () => {
+    const basic = `Basic ${Buffer.from('ann:p@ss:w0rd').toString('base64')}`;
+    const made = serviceEnvironment({ proxy: 'http://proxy.corp:3128', proxyAuthorization: basic }, {});
+    expect(made.HTTPS_PROXY).toBe('http://ann:p%40ss%3Aw0rd@proxy.corp:3128/');
+    expect(made.HTTP_PROXY).toBe(made.HTTPS_PROXY);
+  });
+
+  test('another authorization, or a URL with credentials of its own, leaves the URL as given', () => {
+    const basic = `Basic ${Buffer.from('ann:secret').toString('base64')}`;
+    const negotiate = { proxy: 'http://proxy.corp:3128', proxyAuthorization: 'Negotiate YIIBxg==' };
+    expect(serviceEnvironment(negotiate, {}).HTTPS_PROXY).toBe('http://proxy.corp:3128');
+    const own = { proxy: 'http://bob:pw@proxy.corp:3128', proxyAuthorization: basic };
+    expect(serviceEnvironment(own, {}).HTTPS_PROXY).toBe('http://bob:pw@proxy.corp:3128');
+  });
+
+  test('names the hosts reached without the proxy, and leaves certificates unverified only when asked', () => {
+    const made = serviceEnvironment(
+      { proxy: 'http://proxy.corp:3128', noProxy: [' localhost', '.corp', ''], proxyStrictSSL: false },
+      { ...env, no_proxy: 'shell' },
+    );
+    expect(made.NO_PROXY).toBe('localhost,.corp');
+    expect(made.no_proxy).toBeUndefined();
+    expect(made.NODE_TLS_REJECT_UNAUTHORIZED).toBe('0');
+    expect(serviceEnvironment({ proxyStrictSSL: true }, env).NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
   });
 });

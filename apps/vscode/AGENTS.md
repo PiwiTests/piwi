@@ -15,9 +15,10 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
 - `src/extension.ts` starts the service with `vscode-languageclient`, draws `piwi/fileSummary` as CodeLens (a test's
   line as a gutter icon from `media/`, its details in a hover, the `piwi.failingTestBackground` color over a
   failing test and `piwi.failingLineBackground` on the line it failed at, still drawn once that line changed since
-  the run, which the hover says: `testDecorations` in `src/glue.ts`; `piwi/failuresChanged` draws them again; the
-  gutter is drawn with CodeLens turned off too, from the same `piwi/fileSummary`, asked once per text version and
-  drawing of the files: `summaryOf`, `decorateVisible`) and
+  the run, which the hover says: `testDecorations` in `src/glue.ts`; `piwi/failuresChanged` and
+  `piwi/coverageChanged` draw them again, once for the notifications of a 50 ms burst (`filesChanged`, `coalesced`
+  in `src/glue.ts`); the gutter is drawn with CodeLens turned off too, from the same `piwi/fileSummary`, asked once
+  per text version and drawing of the files: `summaryOf`, `decorateVisible`) and
   `piwi/runStatus` in the status bar (the tests still failing and those fixed locally since the latest run, from
   `failingTests` and `resolved`, and the run in progress, `live`; a notification that moves only the run in progress
   leaves the CodeLens and the gutter as they are: `runsInFiles`), implements the commands the service names
@@ -30,6 +31,12 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
+- The service's environment follows the editor's proxy settings (`serviceEnvironment` in `src/glue.ts`: `http.proxy`,
+  with a `Basic` `http.proxyAuthorization` as its credentials, `http.noProxy` and `http.proxyStrictSSL`, as
+  `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `NODE_USE_ENV_PROXY` and `NODE_TLS_REJECT_UNAUTHORIZED` over the extension
+  host's environment, which passes `NODE_EXTRA_CA_CERTS` through); a change of one starts the service again, 250 ms
+  after the last of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's output
+  channel, where `piwi.trace.server` writes the traffic with the service.
 - Coverage marks: each visible file the service reads (C# among them) is asked `piwi/coverage` once, again after a
   `piwi/statusChanged`, and drawn as whole-line left borders (`coverageDecorations` in `src/glue.ts`): the lines tests
   ran in `piwi.coverageRunBorder`, the executable lines none runs in `piwi.coverageNotRunBorder`, both defaulting to
@@ -97,7 +104,9 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   (`lastRun`).
 - `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in
   global state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and
-  copies the pairing address. A recorded flow is rendered by the service (`piwi/renderSteps`, indented for the
+  copies the pairing address as the browser's machine reaches it (`pickerPairing`: `vscode.env.asExternalUri`, which
+  a remote window forwards), while a run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), the reporter
+  running where the extension does. A recorded flow is rendered by the service (`piwi/renderSteps`, indented for the
   caret's line) before it is inserted, with the service's import edit in the same edit.
   A locator with `at`, picked while a run was paused at a breakpoint, asks `piwi/applyPick` and applies its edit as a
   workspace edit on that line; when the line holds no locator, it is inserted at the cursor, and the notification
@@ -131,6 +140,11 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   this machine only: choosing the app never touches `piwi.serverUrl`, `piwi.project` or the key, so switching back is
   one pick.
 - Command ids are part of the protocol: renaming one is a breaking change for the service.
+- The default keybindings (`contributes.keybindings`: `ctrl+shift+alt+r`, `cmd` on macOS, records at the caret and
+  stops the recording; `ctrl+shift+alt+t` re-runs the failing tests; `ctrl+shift+alt+f` focuses the Failures view)
+  stay free in VS Code's default keymap on Windows, Linux and macOS: `ctrl+shift+alt+<letter>` is, `ctrl+alt+<key>`
+  and the `ctrl+k` chords are not. The extension declares no support for untrusted and virtual workspaces
+  (`capabilities` in `package.json`): the service reads the files from disk and runs Playwright.
 - **One undo step per recording.** The block's writes go through the editor that shows the file: the first one opens
   an undo stop and the later ones join it (`undoStopBefore: false`; the one Stop brings closes it), so one Undo after
   Stop removes the block and its imports. A save during the recording (auto save included) or an edit of the file
@@ -148,6 +162,11 @@ npm run vscode:test               # unit tests of src/glue.ts
 xvfb-run -a npm run vscode:test:integration   # VS Code (downloaded to .vscode-test/) on a fixture repository
 npm run vscode:package            # dist/piwi.vsix
 ```
+
+**Changelog.** The Marketplace's Changelog tab shows the package's `CHANGELOG.md`, which `reusable-publish-vscode.yml`
+writes before `vsce package` from the `ide` entries of the root `CHANGELOG.md`, under their version and section
+(`node scripts/ide-changelog.mjs --format md --all > apps/vscode/CHANGELOG.md` from the repository root): a commit
+with the `ide` scope is what puts a line in it. The file is gitignored, and `.vscodeignore` lets it into the VSIX.
 
 **Screenshots.** `scripts/take-screenshots.mjs` writes the extension's illustrations (`apps/docs/public/screenshots/vscode-*.png`,
 shown by the docs, the README and the Marketplace README): it opens the fixture project of

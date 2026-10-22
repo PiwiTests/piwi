@@ -933,3 +933,77 @@ export function newTestFileName(sample: string | null): string {
     (sample && TEST_FILE.exec(sample)?.[0]) || (sample && /\.[cm]?js$/.test(sample) ? '.spec.js' : '.spec.ts');
   return `recorded${suffix}`;
 }
+
+/**
+ * One run of `fn` for the calls made until `schedule` runs it: the first call schedules the run, the later ones join
+ * it, and a call once it ran schedules the next.
+ */
+export function coalesced(fn: () => void, schedule: (run: () => void) => void): () => void {
+  let scheduled = false;
+  return () => {
+    if (scheduled) return;
+    scheduled = true;
+    schedule(() => {
+      scheduled = false;
+      fn();
+    });
+  };
+}
+
+/** The editor's proxy settings, `http.*` in VS Code's configuration, which the editor service follows. */
+export interface ProxySettings {
+  /** `http.proxy`: the proxy's URL; empty, the environment's own variables apply. */
+  proxy?: string | null;
+  /** `http.proxyStrictSSL`: whether certificates are verified. */
+  proxyStrictSSL?: boolean | null;
+  /** `http.proxyAuthorization`: the value of the `Proxy-Authorization` header. */
+  proxyAuthorization?: string | null;
+  /** `http.noProxy`: the hosts reached without the proxy. */
+  noProxy?: string[] | null;
+}
+
+/** The proxy's URL with a `Basic` authorization as its credentials, when it has none of its own; else as given. */
+function proxyUrl(proxy: string, authorization: string | null | undefined): string {
+  const basic = /^Basic\s+([A-Za-z0-9+/]+=*)$/i.exec(authorization?.trim() ?? '');
+  if (!basic) return proxy;
+  let url: URL;
+  try {
+    url = new URL(proxy);
+  } catch {
+    return proxy;
+  }
+  const credential = Buffer.from(basic[1], 'base64').toString('utf-8');
+  const colon = credential.indexOf(':');
+  if (url.username || url.password || colon < 0) return proxy;
+  url.username = credential.slice(0, colon);
+  url.password = credential.slice(colon + 1);
+  return url.href;
+}
+
+/**
+ * The environment the editor service starts with: the editor's, `env`, with its proxy settings as the variables Node
+ * reads under `NODE_USE_ENV_PROXY` (Node 24 and later): `HTTPS_PROXY` and `HTTP_PROXY` from `http.proxy`, a `Basic`
+ * `http.proxyAuthorization` folded in as its credentials, `NO_PROXY` from `http.noProxy`, and
+ * `NODE_TLS_REJECT_UNAUTHORIZED=0` while `http.proxyStrictSSL` is off. A setting left empty keeps the environment's
+ * own variable, as it does for the editor. A private certificate authority reaches the service as
+ * `NODE_EXTRA_CA_CERTS` in `env`.
+ */
+export function serviceEnvironment(settings: ProxySettings, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = { ...env, NODE_USE_ENV_PROXY: '1' };
+  const proxy = settings.proxy?.trim();
+  if (proxy) {
+    const url = proxyUrl(proxy, settings.proxyAuthorization);
+    // The lower-case variables come first for Node: a setting replaces them.
+    delete result.https_proxy;
+    delete result.http_proxy;
+    result.HTTPS_PROXY = url;
+    result.HTTP_PROXY = url;
+  }
+  const noProxy = (settings.noProxy ?? []).map((host) => host.trim()).filter(Boolean);
+  if (noProxy.length) {
+    delete result.no_proxy;
+    result.NO_PROXY = noProxy.join(',');
+  }
+  if (settings.proxyStrictSSL === false) result.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  return result;
+}

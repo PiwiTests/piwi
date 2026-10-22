@@ -13,6 +13,7 @@ import {
   LanguageClient,
   TransportKind,
   type LanguageClientOptions,
+  type NodeModule,
   type ServerOptions,
 } from 'vscode-languageclient/node';
 import {
@@ -106,6 +107,7 @@ import {
 } from './connect';
 import {
   DOCUMENT_PATTERN,
+  coalesced,
   connectChoices,
   coverageDecorations,
   hasCoverageMarks,
@@ -127,7 +129,9 @@ import {
   statusBarView,
   baselinePicks,
   withBaseline,
+  serviceEnvironment,
   type FailureNode,
+  type ProxySettings,
 } from './glue';
 import { isUnder, runBreakpoints, terminalEnvKey } from './breakpoints';
 import { FailuresView } from './failures-view';
@@ -142,6 +146,12 @@ const LIVE_TESTS_DRAW_MS = 1_000;
 const GUTTER_EDIT_MS = 300;
 /** Pause after a change of the connection's settings or key before it is handed to the service. */
 const CREDENTIALS_WAIT_MS = 250;
+/** Pause after a change of the editor's proxy settings before the service is started again with them. */
+const PROXY_WAIT_MS = 250;
+/** Pause after a notification before the CodeLens and the gutter are drawn again: those of a burst draw once. */
+const FILES_DRAW_WAIT_MS = 50;
+/** The editor's settings the service's environment follows (`serviceEnvironment`); a change starts it again. */
+const PROXY_SETTINGS = ['http.proxy', 'http.proxyStrictSSL', 'http.proxyAuthorization', 'http.noProxy'];
 /** A terminal whose shell has not activated shell integration this long after it opened never will. */
 const SHELL_INTEGRATION_WAIT_MS = 10_000;
 /** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
@@ -248,6 +258,17 @@ async function applyCredentials(context: vscode.ExtensionContext, lc: LanguageCl
   await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
 }
 
+/** The editor's proxy settings, which the service's environment follows. */
+function proxySettings(): ProxySettings {
+  const http = vscode.workspace.getConfiguration('http');
+  return {
+    proxy: http.get<string>('proxy'),
+    proxyStrictSSL: http.get<boolean>('proxyStrictSSL'),
+    proxyAuthorization: http.get<string | null>('proxyAuthorization'),
+    noProxy: http.get<string[]>('noProxy'),
+  };
+}
+
 /**
  * Deletes the key shared by every instance, once: a workspace naming another
  * instance would send it there. Connect again to save a key per instance.
@@ -261,10 +282,13 @@ async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> 
 export async function activate(context: vscode.ExtensionContext): Promise<PiwiApi> {
   await forgetSharedKey(context);
   const serverModule = vscode.Uri.joinPath(context.extensionUri, 'dist', 'piwi-language-server.cjs').fsPath;
-  const serverOptions: ServerOptions = {
-    run: { module: serverModule, transport: TransportKind.stdio },
-    debug: { module: serverModule, transport: TransportKind.stdio },
-  };
+  /** The service as a child process, with the editor's proxy settings in its environment. */
+  const service = (): NodeModule => ({
+    module: serverModule,
+    transport: TransportKind.stdio,
+    options: { env: serviceEnvironment(proxySettings(), process.env) },
+  });
+  const serverOptions = { run: service(), debug: service() } satisfies ServerOptions;
   handed = await credentials(context);
   let credentialsTimer: ReturnType<typeof setTimeout> | null = null;
   const credentialsChanged = () => {
@@ -275,6 +299,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }, CREDENTIALS_WAIT_MS);
   };
   context.subscriptions.push({ dispose: () => credentialsTimer && clearTimeout(credentialsTimer) });
+  // The service is started again with the editor's proxy settings, 250 ms after the last of a burst of changes.
+  let proxyTimer: ReturnType<typeof setTimeout> | null = null;
+  let restarting: Promise<void> = Promise.resolve();
+  const proxyChanged = () => {
+    if (proxyTimer) clearTimeout(proxyTimer);
+    proxyTimer = setTimeout(() => {
+      proxyTimer = null;
+      restarting = restarting
+        .then(async () => {
+          serverOptions.run = service();
+          serverOptions.debug = service();
+          lc.outputChannel.info('The proxy settings changed: starting the editor service again.');
+          await lc.restart();
+          await updateStatus();
+        })
+        .catch(() => undefined);
+    }, PROXY_WAIT_MS);
+  };
+  context.subscriptions.push({ dispose: () => proxyTimer && clearTimeout(proxyTimer) });
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', pattern: DOCUMENT_PATTERN }],
     // Read on each start of the service, the client's restarts after it stopped unexpectedly included.
@@ -367,12 +410,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (shown.has(d) && piwiFile(d)) void summaryOf(d).then((summary) => decorateTests(d, summary?.lines ?? []));
     }
   };
-  /** The files' CodeLens and gutter drawn again, from a summary asked again. */
-  const filesChanged = () => {
-    drawing++;
-    lensesChanged.fire();
-    decorateVisible();
-  };
+  /** The files' CodeLens and gutter drawn again, from a summary asked again, once for the notifications of a burst. */
+  let filesDraw: ReturnType<typeof setTimeout> | null = null;
+  const filesChanged = coalesced(
+    () => {
+      drawing++;
+      lensesChanged.fire();
+      decorateVisible();
+    },
+    (run) => {
+      filesDraw = setTimeout(() => {
+        filesDraw = null;
+        run();
+      }, FILES_DRAW_WAIT_MS);
+    },
+  );
+  context.subscriptions.push({ dispose: () => filesDraw && clearTimeout(filesDraw) });
   const gutterEdits = new Map<string, ReturnType<typeof setTimeout>>();
   context.subscriptions.push(
     vscode.window.onDidChangeVisibleTextEditors(() => decorateVisible()),
@@ -667,16 +720,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const pairedPort = context.globalState.get<number>(SEND_PORT);
   // Another window may hold the port: that window keeps the pairing.
   if (pairedPort && sendToken) await listen(pairedPort).catch(() => null);
-  /** The pairing address, the listener started and the token minted first when they are not. */
-  const pairing = async (): Promise<string> => {
+  /** The listener's loopback address and the token, the listener started and the token minted when they are not. */
+  const pairing = async (): Promise<{ url: string; token: string }> => {
     if (!sendToken) {
       sendToken = randomBytes(24).toString('base64url');
       await context.secrets.store(SEND_TOKEN, sendToken);
     }
     const listener = sendListener ?? (await listen(pairedPort ?? 0).catch(() => listen(0)));
     await context.globalState.update(SEND_PORT, listener.port);
-    return formatPairing({ url: listener.url, token: sendToken });
+    return { url: listener.url, token: sendToken };
   };
+  /**
+   * The pairing address Piwi Picker pastes: the listener's address as the browser's machine reaches it, which a
+   * remote window (SSH, WSL, a dev container) forwards to the local machine.
+   */
+  const pickerPairing = async (): Promise<string> => {
+    const { url, token } = await pairing();
+    const external = await vscode.env.asExternalUri(vscode.Uri.parse(url));
+    return formatPairing({ url: external.toString(true), token });
+  };
+  /** The pairing address a run's reporter posts a pick to: the loopback address of the machine the run is on. */
+  const runPairing = async (): Promise<string> => formatPairing(await pairing());
 
   /** The enabled breakpoints a run pauses at, as `piwi.breakpoints` allows; none outside the Playwright configs. */
   const breakpointsForRun = () =>
@@ -699,7 +763,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }
     let env = command.env;
     if (env?.PIWI_PAUSE_AT) {
-      const address = await pairing().catch(() => null);
+      const address = await runPairing().catch(() => null);
       if (address) env = { ...env, PIWI_EDITOR_SEND: address };
     }
     lastRun = { ...command, env };
@@ -753,6 +817,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.openSettings', () =>
       vscode.commands.executeCommand('workbench.action.openSettings', '@ext:piwitests.piwi'),
     ),
+    vscode.commands.registerCommand('piwi.openLog', () => lc.outputChannel.show()),
     vscode.commands.registerCommand('piwi.refresh', async () => {
       await lc.sendRequest(REFRESH_REQUEST);
       await updateStatus();
@@ -983,9 +1048,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         },
       },
     ),
-    // The settings and the key the connection reads; a burst of changes, such as Connect's, is handed once.
+    // The settings and the key the connection reads; a burst of changes, such as Connect's, is handed once. The
+    // editor's proxy settings start the service again.
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('piwi.serverUrl') || e.affectsConfiguration('piwi.project')) credentialsChanged();
+      if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
     }),
     context.secrets.onDidChange((e) => {
       if (e.key.startsWith(API_KEY_SECRET_PREFIX)) credentialsChanged();
@@ -1011,7 +1078,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   context.subscriptions.push(
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
-      await vscode.env.clipboard.writeText(await pairing());
+      await vscode.env.clipboard.writeText(await pickerPairing());
       void vscode.window.showInformationMessage(
         "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor.",
       );

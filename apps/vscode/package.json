@@ -8,6 +8,10 @@
   "license": "SEE LICENSE IN LICENSE",
   "icon": "icon.png",
   "homepage": "https://piwitests.dev",
+  "bugs": {
+    "url": "https://github.com/PiwiTests/platform/issues"
+  },
+  "qna": "https://github.com/PiwiTests/platform/issues",
   "repository": {
     "type": "git",
     "url": "https://github.com/PiwiTests/platform",
@@ -15,6 +19,16 @@
   },
   "engines": {
     "vscode": "^1.91.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The Piwi editor service reads the workspace's files from disk and runs its Playwright."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "The Piwi editor service reads the files from disk and runs Playwright; a virtual workspace has neither."
+    }
   },
   "categories": [
     "Testing",
@@ -63,7 +77,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "The Piwi editor service is not answering. It starts with the first file of a Playwright workspace opened; refresh once it runs.\n[Refresh](command:piwi.refresh)",
+        "contents": "The Piwi editor service is not answering. It starts with the extension, on a workspace that holds a Playwright config; Refresh asks it again, and the log says what it did.\n[Refresh](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == unavailable"
       }
     ],
@@ -81,6 +95,11 @@
       {
         "command": "piwi.openSettings",
         "title": "Open settings",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.openLog",
+        "title": "Open the log",
         "category": "Piwi"
       },
       {
@@ -438,6 +457,30 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "piwi.record",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r",
+        "when": "editorTextFocus && !piwi.recording && editorLangId =~ /^(typescript|javascript)(react)?$/"
+      },
+      {
+        "command": "piwi.stopRecording",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r",
+        "when": "piwi.recording"
+      },
+      {
+        "command": "piwi.rerunFailing",
+        "key": "ctrl+shift+alt+t",
+        "mac": "cmd+shift+alt+t"
+      },
+      {
+        "command": "piwi.failures.focus",
+        "key": "ctrl+shift+alt+f",
+        "mac": "cmd+shift+alt+f"
+      }
+    ],
     "configuration": {
       "title": "Piwi",
       "properties": {
@@ -470,6 +513,22 @@
           ],
           "default": "always",
           "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
+        },
+        "piwi.trace.server": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "enumDescriptions": [
+            "Nothing.",
+            "Each request, answer and notification.",
+            "Each one with its contents."
+          ],
+          "default": "off",
+          "description": "Traces the traffic with the Piwi editor service in the Piwi output channel, which Piwi: Open the log shows."
         }
       }
     },

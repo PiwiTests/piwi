@@ -110,20 +110,26 @@ clipboard; it holds your API key, so paste it into your user settings, not into 
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) |
-| Piwi: Refresh | Fetch the indexes and the latest run again |
-| Piwi: Refresh the latest run | Read the latest run again, as a click on the status bar does |
-| Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would |
-| Piwi: Open in dashboard | Open this file's test, or the latest run |
-| Piwi: Run selection… | Run a saved [selection](/features/test-selection) |
-| Piwi: Open the latest run | Open the run the status bar shows |
-| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-runs#compare-with-another-run) |
-| Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
-| Piwi: Record here, Record a new test file | Record through your project's own Playwright, at the cursor or into a new spec: [Record tests from the editor](./editor-recording) |
-| Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
-| Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) |
+| Command | What it does | Shortcut in VS Code |
+|---|---|---|
+| Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) | |
+| Piwi: Refresh | Fetch the indexes and the latest run again | |
+| Piwi: Refresh the latest run | Read the latest run again, as a click on the status bar does | |
+| Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would | |
+| Piwi: Re-run the failing tests | Run every test still failing, one run per Playwright config: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) | `Ctrl+Shift+Alt+T` (`Cmd+Shift+Alt+T` on macOS) |
+| Piwi: Focus on Failures View | Open [the failures view](./editor-runs#the-failures-view) in the Piwi panel | `Ctrl+Shift+Alt+F` (`Cmd+Shift+Alt+F`) |
+| Piwi: Open in dashboard | Open this file's test, or the latest run | |
+| Piwi: Run selection… | Run a saved [selection](/features/test-selection) | |
+| Piwi: Open the latest run | Open the run the status bar shows | |
+| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-runs#compare-with-another-run) | |
+| Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) | |
+| Piwi: Record here, Record a new test file | Record through your project's own Playwright, at the cursor or into a new spec: [Record tests from the editor](./editor-recording) | `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R`) records at the cursor |
+| Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress | `Ctrl+Shift+Alt+R` (`Cmd+Shift+Alt+R`) stops it |
+| Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) | |
+| Piwi: Open the log | Show the Piwi output channel, where the editor service logs; the `piwi.trace.server` setting adds the traffic with it | |
+
+The shortcuts are free in VS Code's default keymap on Windows, Linux and macOS; **Preferences: Open Keyboard
+Shortcuts** changes them (search `piwi`). The JetBrains plugin's are under [JetBrains IDEs](#jetbrains-ides).
 
 ## JetBrains IDEs
 
