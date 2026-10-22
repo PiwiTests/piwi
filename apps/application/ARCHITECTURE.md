@@ -306,7 +306,8 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
 (`useRunStream`, `useNotificationStream`), diagnosis (`useClusterDiagnosis`, `useStreamingDiagnosis`,
 `useDiagnosisNotification`), timeline (`useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline`, an
 execution's failure timeline under one key for its Timeline and Network tabs), fold/tree state
-(`useFoldedState`, `useFoldableSummary`, `useTreeViewCookie`), settings derivation (`useSettingsNav`,
+(`useFoldedState`, `useFoldableSummary`, `useTreeViewCookie`), a page's view state (`useViewState` — search,
+filters, sort and open groups kept per page path until a reload — and `useViewScroll`, its scroll position), settings derivation (`useSettingsNav`,
 `useSettingsEnvState`), analytics scope, the run page's retry command (`useRunRetryCommand` — one failing set and one
 shared mode for every copy button on the page), IDE preferences (`useOpenInIde`), desktop detection (`useIsDesktop`,
 `useTauri`), demo helpers (`useDemoTour`, the guided tour's state and its driver.js run), and small utilities
@@ -315,7 +316,8 @@ shared mode for every copy button on the page), IDE preferences (`useOpenInIde`)
 `app/utils/` holds pure helpers: `index.ts` (`formatDuration`, `splitDuration`, `getStatusColor`, `getFileApiPath`,
 `formatRelativeTime`, `createSortHeader`, `formatBytes`, `errorMessage`, patch/commit helpers, cluster colour maps),
 `page-error.ts` (`showPageLoadError`: a detail page whose entity does not load shows `app/error.vue`, inside the
-dashboard layout, and answers with the API's 404 or 403),
+dashboard layout, and answers with the API's 404 or 403), `route-query.ts` (`replaceQuery` — query changes made in the
+same tick, such as a tab switch and the list the tab mounts, add up instead of the last one dropping the others),
 `performance-hints.ts`, `ide-links.ts`, `help-content.ts`, `settings-metadata.ts`, `openapi.ts` / `openapi-console.ts`,
 `status-palette.ts` (`STATUS_PALETTE` / `statusPalette` — the test outcome colors every bar, chart, history cell,
 timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`), `pass-rate.ts`

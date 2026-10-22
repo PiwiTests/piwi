@@ -21,8 +21,8 @@ const { can } = useAuth();
 const canQuarantine = computed(() => can('quarantine:write', props.projectId));
 const quarantiningId = ref<number | null>(null);
 
-const runsWindow = ref(50);
-const rootCauseFilter = ref<string[]>([]);
+const runsWindow = useViewState('failures:flaky-runs-window', () => 50);
+const rootCauseFilter = useViewState<string[]>('failures:flaky-root-causes', () => []);
 
 const { data: flaky, status } = await useFetch(
   () => {

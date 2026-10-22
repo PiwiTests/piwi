@@ -14,7 +14,7 @@ type Row = ProjectOverview;
 
 const TENDENCY_ORDER: Record<Row['tendency'], number> = { failing: 0, flaky: 1, passing: 2, unknown: 3 };
 
-const tableExpanded = ref(false);
+const tableExpanded = useViewState('project-health-expanded', () => false);
 const hasMoreProjects = computed(() => props.projects.length > props.limit);
 
 const sortedProjects = computed(() => {

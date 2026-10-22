@@ -17,7 +17,7 @@ const SPANS = [
   { label: 'Last 90 days', value: 90 },
   { label: 'Last 365 days', value: 365 },
 ];
-const days = ref(90);
+const days = useViewState('stability-trend-days', () => 90);
 const trend = ref<TestCaseStabilityTrend | null>(null);
 const pending = ref(false);
 const error = ref<unknown>(null);

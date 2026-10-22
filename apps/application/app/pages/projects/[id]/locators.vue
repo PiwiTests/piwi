@@ -110,6 +110,8 @@ function inspect(locator: string) {
   };
   drawerOpen.value = true;
 }
+
+useViewScroll(() => dashboardPanelBody('project-locators'));
 </script>
 
 <template>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, watch, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, watch, ref } from 'vue';
+import type { CacheSnapshot } from 'vue-virtual-scroller';
 import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { summarizeRunCases } from '#shared/utils/test-counts';
@@ -65,8 +66,10 @@ function liveStep(tc: TestCaseResult): LiveStepInfo | null {
 const testCaseSearch = defineModel<string>('search', { default: '' });
 const activeStatuses = defineModel<string[]>('activeStatuses', { default: () => [] });
 
-const showNewRegressionsOnly = ref(false);
-const showNewFlakyOnly = ref(false);
+// The list's own view state is kept for the page (`useViewState`), so going
+// back to the run shows the list as it was left.
+const showNewRegressionsOnly = useViewState('run-tests:new-regressions', () => false);
+const showNewFlakyOnly = useViewState('run-tests:new-flaky', () => false);
 
 /** True when at least one execution in the run carries a lock. */
 const hasAnyLocks = computed(() => props.testCases.some((tc) => (tc.locks?.length ?? 0) > 0));
@@ -240,8 +243,8 @@ const SORT_OPTIONS: Array<{ label: string; value: SortKey }> = [
   { label: 'Retries', value: 'retries' },
   { label: 'Wasted', value: 'wastedTimeMs' },
 ];
-const chosenSort = ref<SortKey | null>(null);
-const sortDir = ref<'asc' | 'desc'>('asc');
+const chosenSort = useViewState<SortKey | null>('run-tests:sort', () => null);
+const sortDir = useViewState<'asc' | 'desc'>('run-tests:sort-dir', () => 'asc');
 const sortKey = computed<SortKey>({
   get: () => chosenSort.value ?? (groupedByFile.value ? 'file' : 'run'),
   set: (value) => {
@@ -308,7 +311,8 @@ const DEFAULT_COLLAPSED_BUCKETS = new Set([
   'bucket:didnotrun',
   'lock:none',
 ]);
-const userToggled = ref(new Set<string>());
+const toggledGroups = useViewState<string[]>('run-tests:toggled-groups', () => []);
+const userToggled = computed(() => new Set(toggledGroups.value));
 const hasFilter = computed(
   () =>
     parsedSearch.value.terms.length > 0 ||
@@ -333,7 +337,7 @@ function toggleGroup(key: string) {
   const next = new Set(userToggled.value);
   if (next.has(key)) next.delete(key);
   else next.add(key);
-  userToggled.value = next;
+  toggledGroups.value = [...next];
 }
 
 interface GroupHeaderItem {
@@ -652,17 +656,44 @@ function onBulkQuarantine() {
 // ── Virtualized scroller ─────────────────────────────────────────────────────
 const scrollerRef = ref<{
   scrollToItem: (index: number, options?: ScrollToOptions) => void;
+  scrollToPosition: (position: number) => void;
   scrollToBottom: () => void;
+  cacheSnapshot: CacheSnapshot;
 } | null>(null);
 const userScrolledAway = ref(false);
 const highlightedCaseId = ref<number | null>(null);
+
+// Where the list was scrolled to, with the row heights it had measured, so
+// coming back to the run opens the list on the same rows. A list whose rows
+// changed meanwhile (a count-bar filter picked from another tab) opens at the top.
+const savedScroll = useViewState<{ top: number; cache: CacheSnapshot } | null>('run-tests:scroll', () => null);
+const restoredScroll = savedScroll.value;
+let scrollTop = 0;
+function showsSameRows(keys: CacheSnapshot['keys']): boolean {
+  return keys.length === rows.value.length && rows.value.every((row, index) => row.key === keys[index]);
+}
+watch(
+  scrollerRef,
+  (scroller) => {
+    if (!scroller || !restoredScroll || !showsSameRows(restoredScroll.cache.keys)) return;
+    scrollTop = restoredScroll.top;
+    nextTick(() => scroller.scrollToPosition(restoredScroll.top));
+  },
+  { once: true },
+);
+onBeforeUnmount(() => {
+  const scroller = scrollerRef.value;
+  savedScroll.value = scroller ? { top: scrollTop, cache: scroller.cacheSnapshot } : null;
+});
 
 function isAtBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 50;
 }
 function onScrollerScroll(event: Event) {
   const el = event.target as HTMLElement | null;
-  if (el) userScrolledAway.value = !isAtBottom(el);
+  if (!el) return;
+  scrollTop = el.scrollTop;
+  userScrolledAway.value = !isAtBottom(el);
 }
 watch(
   () => props.isLive,
@@ -689,7 +720,7 @@ function scrollToCase(id: number) {
     if (defaultOpen(groupKey)) next.delete(groupKey);
     else next.add(groupKey);
   }
-  userToggled.value = next;
+  toggledGroups.value = [...next];
   highlightedCaseId.value = id;
   const doScroll = () => {
     const index = rows.value.findIndex((r) => r.kind === 'test' && r.tc.executionId === id);
@@ -871,6 +902,7 @@ defineExpose({ scrollToCase });
           ref="scrollerRef"
           :items="rows"
           :min-item-size="44"
+          :cache="restoredScroll?.cache"
           key-field="key"
           class="flex-1 min-h-0"
           @scroll.passive="onScrollerScroll"

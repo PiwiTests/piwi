@@ -170,7 +170,7 @@ const overviewStats = computed(() => {
 const RUNNING_STATUSES = new Set(['running', 'initializing', 'finalizing']);
 const ACTIVITY_PREVIEW_LIMIT = 6;
 
-const activityExpanded = ref(false);
+const activityExpanded = useViewState('activity-expanded', () => false);
 
 const allActivity = computed(() => {
   const runs = [...filteredRecentRuns.value];
@@ -197,7 +197,7 @@ const hasProjects = computed(() => (overview.value?.length ?? 0) > 0);
 // "runs today" expands the Recent activity card. Both are in-page filters, so
 // they set state rather than navigate.
 
-const healthFilter = ref<'all' | 'failing'>('all');
+const healthFilter = useViewState<'all' | 'failing'>('health-filter', () => 'all');
 
 const healthProjects = computed(() =>
   healthFilter.value === 'failing'
@@ -260,6 +260,9 @@ function statusBorderClass(status: string): string {
       return 'border-l-status-skipped';
   }
 }
+
+// Coming back to Home scrolls it to where the user left it.
+useViewScroll(() => dashboardPanelBody('home'));
 </script>
 
 <template>

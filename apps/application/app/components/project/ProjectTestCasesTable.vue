@@ -96,7 +96,16 @@ const SORT_OPTIONS: { label: string; value: TestCasesSort }[] = [
 // window would render the catalog empty there — default to all time instead.
 const defaultAge = useRuntimeConfig().public.demoMode ? 0 : 30;
 
-const init = props.syncQuery ? route.query : {};
+// With `syncQuery` the URL holds the search, filters, sort and page. A URL that
+// names none of them (the project page reached from a breadcrumb or a link)
+// takes the ones the catalog last had, kept for the page (`useViewState`).
+const CATALOG_QUERY_KEYS = ['q', 'status', 'tags', 'locks', 'owner', 'age', 'sort', 'dir', 'page', 'pageSize'];
+const savedQuery = useViewState<Record<string, string>>('catalog:query', () => ({}));
+const restoringSavedQuery =
+  props.syncQuery &&
+  !CATALOG_QUERY_KEYS.some((key) => route.query[key] != null) &&
+  Object.keys(savedQuery.value).length > 0;
+const init: Record<string, unknown> = props.syncQuery ? (restoringSavedQuery ? savedQuery.value : route.query) : {};
 
 /**
  * The `tags`, `locks` and `owner` URL parameters, as search qualifiers: links
@@ -170,28 +179,35 @@ watch(
 );
 
 if (props.syncQuery) {
-  const syncUrl = () => {
-    router.replace({
-      query: {
-        ...route.query,
-        q: q.value || undefined,
-        status: statuses.value.length > 0 ? statuses.value.join(',') : undefined,
-        // Folded into the search above.
-        tags: undefined,
-        locks: undefined,
-        owner: undefined,
-        age: age.value !== defaultAge ? String(age.value) : undefined,
-        sort: sort.value !== DEFAULT_SORT ? sort.value : undefined,
-        dir: dir.value !== SORT_DIRECTIONS[sort.value] ? dir.value : undefined,
-        page: page.value > 1 ? String(page.value) : undefined,
-        pageSize: pageSize.value !== DEFAULT_PAGE_SIZE ? String(pageSize.value) : undefined,
-      },
-    });
+  /** The catalog's state as URL keys; a key at its default is left out. */
+  const catalogQuery = () => ({
+    q: q.value || undefined,
+    status: statuses.value.length > 0 ? statuses.value.join(',') : undefined,
+    age: age.value !== defaultAge ? String(age.value) : undefined,
+    sort: sort.value !== DEFAULT_SORT ? sort.value : undefined,
+    dir: dir.value !== SORT_DIRECTIONS[sort.value] ? dir.value : undefined,
+    page: page.value > 1 ? String(page.value) : undefined,
+    pageSize: pageSize.value !== DEFAULT_PAGE_SIZE ? String(pageSize.value) : undefined,
+  });
+  const keepQuery = (query: ReturnType<typeof catalogQuery>) => {
+    savedQuery.value = Object.fromEntries(
+      Object.entries(query).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    );
   };
+  const syncUrl = () => {
+    const query = catalogQuery();
+    keepQuery(query);
+    // `tags`, `locks` and `owner` are folded into the search.
+    void replaceQuery(router, { ...query, tags: undefined, locks: undefined, owner: undefined });
+  };
+  // What the catalog opened with is what the user last saw, link or not.
+  keepQuery(catalogQuery());
   watch([q, statuses, age, sort, dir, page, pageSize], syncUrl);
-  // A link that filtered by tags, locks or owner shows them as search terms, in the URL too.
+  // A link that filtered by tags, locks or owner shows them as search terms, and
+  // a catalog restored from the page's view state shows its filters, in the URL too.
   onMounted(() => {
-    if (route.query.tags != null || route.query.locks != null || route.query.owner != null) syncUrl();
+    if (restoringSavedQuery || route.query.tags != null || route.query.locks != null || route.query.owner != null)
+      syncUrl();
   });
 }
 
@@ -317,12 +333,13 @@ function groupMetrics(rows: TestCaseWithStats[]) {
   ];
 }
 
-const collapsedGroups = ref<Set<string>>(new Set());
+const collapsedGroupKeys = useViewState<string[]>('catalog:collapsed-groups', () => []);
+const collapsedGroups = computed(() => new Set(collapsedGroupKeys.value));
 function toggleGroup(key: string) {
   const next = new Set(collapsedGroups.value);
   if (next.has(key)) next.delete(key);
   else next.add(key);
-  collapsedGroups.value = next;
+  collapsedGroupKeys.value = [...next];
 }
 
 const hasSearchOrStatusFilter = computed(() => q.value !== '' || statuses.value.length > 0);

@@ -97,6 +97,12 @@ const tabNavItems = computed(() =>
 );
 const tabSelectItems = computed(() => visibleTabs.value.map((t) => ({ label: t.label, value: t.value })));
 const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.value)?.icon);
+
+// Each tab keeps its scroll position for when the user comes back to the test.
+useViewScroll(
+  () => dashboardPanelBody('test-case-evolution'),
+  () => activeTab.value,
+);
 </script>
 
 <template>
