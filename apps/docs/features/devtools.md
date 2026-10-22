@@ -150,7 +150,9 @@ test id beside it when it has one. Two marks point at the elements a test will s
 - **Amber**: its `getByRole` finds other elements too, two buttons both named "Show popup", or "Save" beside "Save
   draft". A test needs `exact: true`, a scope or `.nth()`.
 
-The labels follow scrolling and come back after the page changes. The panel in the corner counts each kind, and
-**Role** shows the labels of one role only. Hidden elements get no label, as `getByRole` does not find them. Press
+The labels follow scrolling and come back after the page changes. Labels of elements side by side never cover one
+another: each sits above its element, or a row or a few lower or higher when that place is taken. Where elements crowd
+too closely for that, the labels left over are not drawn and the panel says how many. The panel in the corner counts
+each kind, and **Role** shows the labels of one role only. Hidden elements get no label, as `getByRole` does not find them. Press
 **Esc** or `V` again to turn it off. The [lint overlay](./extension#lint-overlay) stays for suggesting the test ids to
 add.

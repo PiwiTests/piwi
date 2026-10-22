@@ -5104,6 +5104,24 @@
       }
     }
   },
+  "view_crowded_one": {
+    "message": "$count$ etiqueta omitida, demasiado cerca de otras: elija un rol para verla",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "view_crowded_other": {
+    "message": "$count$ etiquetas omitidas, demasiado cerca de otras: elija un rol para verlas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
   "devtools_tabRecord": {
     "message": "Grabar"
   },

@@ -5104,6 +5104,24 @@
       }
     }
   },
+  "view_crowded_one": {
+    "message": "$count$ rótulo omitido, perto demais de outros: escolha um papel para vê-lo",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "view_crowded_other": {
+    "message": "$count$ rótulos omitidos, perto demais de outros: escolha um papel para vê-los",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
   "devtools_tabRecord": {
     "message": "Gravar"
   },

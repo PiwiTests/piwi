@@ -39,6 +39,37 @@ async function openView(page: Page): Promise<ViewSummary[]> {
   return page.evaluate(() => (globalThis as unknown as { __piwiPlaywrightView: ViewSummary[] }).__piwiPlaywrightView);
 }
 
+interface LabelRect {
+  text: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** The boxes of the labels drawn, in page order. */
+function labelBoxes(page: Page): Promise<LabelRect[]> {
+  return page.locator('#piwi-playwright-view-host .tag').evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const r = node.getBoundingClientRect();
+      return { text: node.textContent ?? '', left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    }),
+  );
+}
+
+/** Every pair of labels whose boxes intersect. */
+function overlaps(boxes: LabelRect[]): string[] {
+  const pairs: string[] = [];
+  for (const [i, a] of boxes.entries()) {
+    for (const b of boxes.slice(i + 1)) {
+      if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) {
+        pairs.push(`${a.text} / ${b.text}`);
+      }
+    }
+  }
+  return pairs;
+}
+
 test.describe('Playwright view', () => {
   test.beforeEach(async ({ context }) => {
     await context.addInitScript(() => {
@@ -144,6 +175,62 @@ test.describe('Playwright view', () => {
       Math.max(0, ...(globalThis as unknown as { __longTasks: number[] }).__longTasks),
     );
     expect(longest).toBeLessThan(500);
+  });
+
+  test('lays the labels of adjacent elements out so that none overlaps another', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1000, height: 700 });
+    const stars = Array.from(
+      { length: 5 },
+      (_, i) => `<button aria-label="Rate ${i + 1} stars" style="width:20px;height:20px;padding:0">★</button>`,
+    ).join('');
+    await page.setContent(`<!doctype html><html><body style="margin:0;padding:40px 8px">
+      <div style="display:flex;gap:4px"><a href="/products">Products</a><a href="/deals">Deals</a><a href="/account">Account</a></div>
+      <div style="display:flex;gap:2px;margin-top:6px">${stars}</div>
+      <form style="display:flex;gap:0;margin-top:2px"><input aria-label="Quantity" style="width:40px"><button>Add to cart</button><button>Save for later</button></form>
+    </body></html>`);
+    const labels = await openView(page);
+    expect(labels).toHaveLength(11);
+
+    const host = page.locator('#piwi-playwright-view-host');
+    const tags = host.locator('.tag');
+    await expect(tags).toHaveCount(11);
+    await expect(host.locator('.crowded')).toBeHidden();
+    const boxes = await labelBoxes(page);
+    expect(overlaps(boxes)).toEqual([]);
+    // The first label keeps its place above its element; the others stay within a few rows of theirs.
+    const products = (await page.getByRole('link', { name: 'Products' }).boundingBox())!;
+    expect(boxes[0]!.text).toBe('link · Products');
+    expect(boxes[0]!.left).toBeCloseTo(products.x, 1);
+    expect(boxes[0]!.bottom).toBeCloseTo(products.y, 1);
+    const anchors = await page
+      .locator('a, button, input')
+      .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
+    for (const [i, box] of boxes.entries()) expect(Math.abs(box.top - anchors[i]!)).toBeLessThan(120);
+  });
+
+  test('leaves out the labels with no free place near their element, and says how many', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1000, height: 700 });
+    const cells = Array.from(
+      { length: 400 },
+      (_, i) => `<button aria-label="Seat ${i + 1}" style="width:10px;height:10px;padding:0;border:0"></button>`,
+    ).join('');
+    await page.setContent(`<!doctype html><html><body style="margin:0;padding:200px">
+      <div style="display:grid;grid-template-columns:repeat(20,10px);gap:0">${cells}</div>
+    </body></html>`);
+    await openView(page);
+
+    const host = page.locator('#piwi-playwright-view-host');
+    await expect(host.locator('.crowded')).toBeVisible();
+    const drawn = await host.locator('.tag').count();
+    const crowded = Number((await host.locator('.crowded').textContent())!.match(/\d+/)![0]);
+    expect(drawn).toBeGreaterThan(0);
+    expect(drawn + crowded).toBe(400);
+    await expect(host.locator('.crowded')).toHaveText(
+      `${crowded} labels left out, too close to others: choose a role to see them`,
+    );
+    expect(overlaps(await labelBoxes(page))).toEqual([]);
   });
 
   test('filters by role, follows scrolling, scans again after a change, and toggles off', async ({ context }) => {

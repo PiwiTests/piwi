@@ -611,7 +611,10 @@ contents alone, into the editor's `dist/`; neither is part of `dist/` or `dist-f
 **ambiguous** (its `getByRole(role, { name })` finds other elements on the engine). The pure half is
 `playwright-view-scan.ts`, one engine per scan, in time slices; it counts what each `getByRole` would find from the
 elements grouped by role once (the name a case-insensitive substring, as Playwright matches it), not with a query per
-element. The overlay redraws on scroll, scans again once the page has been still for a moment after a change to its
+element. No two labels overlap: a draw adds every label hidden, reads their sizes in one layout, and `placeLabels`
+(`label-layout.ts`, pure and unit-tested) puts each above its element or shifts it a row at a time below or above, clear of the labels
+placed before it in page order; one with no free place within a few rows is left out, and the panel counts those. The
+overlay redraws on scroll, scans again once the page has been still for a moment after a change to its
 elements or to an attribute that can change a label (`observed-attributes.ts`, the list Tested elements follows too),
 and bridges its labels to `globalThis.__piwiPlaywrightView` for `playwright-view.spec.ts`, which also checks the counts
 against real Playwright.

@@ -5104,6 +5104,24 @@
       }
     }
   },
+  "view_crowded_one": {
+    "message": "$count$ étiquette omise, trop près des autres : choisissez un rôle pour la voir",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "view_crowded_other": {
+    "message": "$count$ étiquettes omises, trop près des autres : choisissez un rôle pour les voir",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
   "devtools_tabRecord": {
     "message": "Enregistrer"
   },

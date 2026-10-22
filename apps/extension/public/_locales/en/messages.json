@@ -6043,6 +6043,26 @@
       }
     }
   },
+  "view_crowded_one": {
+    "message": "$count$ label left out, too close to others: choose a role to see it",
+    "description": "Playwright view panel: shown when some labels have no free place near their element because elements crowd together, so they are not drawn. Choosing one role in the Role select shows fewer labels. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "view_crowded_other": {
+    "message": "$count$ labels left out, too close to others: choose a role to see them",
+    "description": "Playwright view panel: shown when some labels have no free place near their element because elements crowd together, so they are not drawn. Choosing one role in the Role select shows fewer labels. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
   "devtools_tabRecord": {
     "message": "Record",
     "description": "DevTools, Piwi panel: tab showing the running recording. One word."
