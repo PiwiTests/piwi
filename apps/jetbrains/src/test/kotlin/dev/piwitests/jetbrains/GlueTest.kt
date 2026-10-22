@@ -876,6 +876,30 @@ class GlueTest {
     }
 
     @Test
+    fun `a recorded line's warning offers the step's other verified locators in place of the written one`() {
+        val written = "locator('form > button.btn-3')"
+        val step = RecordingStep(locators = listOf("getByTestId('pay')", "getByRole('button', { name: 'Pay' })", written), chosen = 2)
+        val line = "await page.$written.click();"
+        assertEquals(
+            listOf(
+                Glue.LocatorChoice("Use getByTestId('pay')", "getByTestId('pay')", 11, 41),
+                Glue.LocatorChoice("Use getByRole('button', { name: 'Pay' })", "getByRole('button', { name: 'Pay' })", 11, 41),
+            ),
+            Glue.locatorChoices(line, step),
+        )
+        // After any page expression, and inside a call.
+        assertEquals(2, Glue.locatorChoices("await adminPage.$written.fill(process.env.E2E_PASSWORD ?? '');", step).size)
+        assertEquals(18, Glue.locatorChoices("await expect(page.$written).toBeVisible();", step).first().start)
+        // A single locator, none written, or the written one not on the line exactly once: nothing.
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices(line, RecordingStep(locators = listOf(written), chosen = 0)))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices(line, step.copy(chosen = null)))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices(line, null))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices("await cartPage.pay();", step))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices("await page.$written.dragTo(page.$written);", step))
+        assertEquals(emptyList<Glue.LocatorChoice>(), Glue.locatorChoices("await page.locator('form > button.btn-4').click();", step))
+    }
+
+    @Test
     fun `the banner says what the recording does and offers what applies`() {
         assertEquals(
             Glue.RecordingBanner("Piwi: opening the browser to record into this file…", listOf(Glue.RecordingAction.STOP)),
@@ -1226,6 +1250,34 @@ class GlueTest {
         assertEquals(null, Glue.runVerdict(passing, "failures"))
         assertEquals(true, Glue.runVerdict(ended, "failures")?.warning)
         assertEquals(null, Glue.runVerdict(ended, "never"))
+    }
+
+    @Test
+    fun `a run of each test three times says how many of its runs passed, whatever the setting`() {
+        assertEquals(
+            Glue.RunVerdict(true, "Run #124 · Failed 1 of 3", listOf("Open the Failures", "Open in Dashboard")),
+            Glue.runVerdict(ended.copy(repeat = RepeatVerdict("Failed 1 of 3", failed = true)), "never"),
+        )
+        val passed = ended.copy(failed = 0, repeat = RepeatVerdict("Passed 3 of 3", failed = false))
+        assertEquals(Glue.RunVerdict(false, "Run #124 · Passed 3 of 3", listOf("Open the Failures", "Open in Dashboard")), Glue.runVerdict(passed, "failures"))
+    }
+
+    @Test
+    fun `the test at a line runs by its id when Piwi knows it, else by its location, and by its location to verify it`() {
+        val uri = "file:///w/tests/checkout.spec.ts"
+        val known = TestAtResult(EditorTest(7, "pays"), SpecTests(uri, listOf(7)), "tests/checkout.spec.ts:3")
+        assertEquals(RunTestsArgs(uri, listOf(7)), Glue.testAtRun(uri, known))
+        assertEquals(
+            RunTestsArgs(uri, emptyList(), locations = listOf("tests/checkout.spec.ts:3"), repeat = 3),
+            Glue.testAtRun(uri, known, Glue.VERIFY_REPEAT),
+        )
+        val recorded = TestAtResult(location = "tests/checkout.spec.ts:12")
+        assertEquals(RunTestsArgs(uri, emptyList(), locations = listOf("tests/checkout.spec.ts:12")), Glue.testAtRun(uri, recorded))
+        assertEquals(null, Glue.testAtRun(uri, TestAtResult()))
+        assertEquals(null, Glue.testAtRun(uri, null))
+        // An older service gives no location: a test it knows still runs, but cannot be verified.
+        assertEquals(RunTestsArgs(uri, listOf(7)), Glue.testAtRun(uri, known.copy(location = null)))
+        assertEquals(null, Glue.testAtRun(uri, known.copy(location = null), 3))
     }
 
     @Test

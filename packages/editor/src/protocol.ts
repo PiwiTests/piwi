@@ -133,6 +133,13 @@ export interface TestAtResult {
   test: EditorTest | null;
   /** The spec's tests Piwi knows, which `piwi/runArgs` runs; null for a file that is not a spec or holds none of them. */
   spec: { uri: string; testIds: number[] } | null;
+  /**
+   * Where the `test(…)` call spanning `line` starts, as Playwright's location filter takes it: the spec relative to its
+   * Playwright config's folder and the call's 1-based line (`tests/checkout.spec.ts:42`), in the text as it stands,
+   * whether Piwi knows the test or not. `piwi/runArgs` runs it (`RunTestsArgs.locations`). Null outside every
+   * `test(…)` call of a spec under a Playwright config's folder; absent from an older service.
+   */
+  location?: string | null;
 }
 
 export const TEST_AT_REQUEST = 'piwi/testAt';
@@ -220,6 +227,18 @@ export interface RunTestsArgs {
    * Set by those lenses; absent otherwise.
    */
   coverage?: 'server' | 'browser';
+  /**
+   * Tests by where their `test(…)` call starts (`TestAtResult.location`, relative to the folder of the Playwright
+   * config `uri` or `root` names), run in place of `testIds`: a test the instance does not know yet, such as one just
+   * recorded, runs too, and the command needs no instance. The spec runs as saved.
+   */
+  locations?: string[];
+  /**
+   * Runs each test this many times (1 to 100) without retries (`--repeat-each=3 --retries=0`), headless: the
+   * breakpoints are not passed. Once it ended, `RunEnded.repeat` says how many of those runs passed, or, when its run
+   * did not reach an instance, a `piwi/notice` from its exit code.
+   */
+  repeat?: number;
 }
 
 export interface RunCommand {
@@ -542,7 +561,8 @@ export const COMMAND_STARTED_NOTIFICATION = 'piwi/commandStarted';
 /**
  * `piwi/commandEnded` (notification, client to server): the command of a `RunCommand` with a `ref` ended, with its exit
  * code when the client knows it. The service reads the run once more, and says in `piwi/notice` when no run carries
- * the ref.
+ * the ref; for a command built with `RunTestsArgs.repeat` whose run reached no instance, a `piwi/notice` says how it
+ * went from the exit code.
  */
 export interface CommandEndedParams {
   ref: string;
@@ -571,6 +591,19 @@ export interface RunEnded {
   newFailures: string[];
   stillFailingCount: number;
   newFailureCount: number;
+  /**
+   * For a run of each test several times (`RunTestsArgs.repeat`): how many of those runs passed, `Passed 3 of 3` or
+   * `Failed 1 of 3` (`Failed at least 1 of 3` when the run's stream did not bring every result), which a client shows
+   * in place of what the run changed, whatever its run notifications setting, and whether one of them failed. Absent
+   * otherwise.
+   */
+  repeat?: RepeatVerdict;
+}
+
+/** How a run of each test several times went: `Passed 3 of 3`, `Failed 1 of 3`. */
+export interface RepeatVerdict {
+  verdict: string;
+  failed: boolean;
 }
 
 export const RUN_ENDED_NOTIFICATION = 'piwi/runEnded';

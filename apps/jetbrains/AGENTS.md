@@ -141,13 +141,17 @@ problem; three times in five minutes at most (`PiwiProjectService.watchServer`, 
   (`PiwiCommands.notify`), and so is `piwi/runEnded` (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the
   Failures**, **Open in Dashboard** and, when something fails, **Re-run Failing**, as
   `PiwiLocalSettings.runNotifications` allows (**Settings → Tools → Piwi**: `always`, `failures`, `never`, in
-  `.idea/workspace.xml`, on this machine only). The severity of a failure's diagnostic is
+  `.idea/workspace.xml`, on this machine only); a run's `repeat` (**Verify ×3**) is said whatever the setting,
+  `Run #124 · Failed 1 of 3`, a warning when one of the runs failed. The severity of a failure's diagnostic is
   `PiwiLocalSettings.failureSeverity` (`Glue.FAILURE_SEVERITIES`, the same page's Runs group), sent in `credentials()`;
   the LSP client shows an information as a weak warning.
-- **Run the Test at the Caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`) and **Run This Spec** (`Piwi.RunSpec`),
-  under **Tools → Piwi** and in the editor's menu of a spec (`Glue.isSpecFile`) in a project with a Playwright config
-  (`RunInSpecAction`), ask `piwi/testAt` for the caret on a pooled thread, then run as `PiwiCommands.runTests` does
-  (`PiwiCommands.runTestAt`), or say in a balloon that none is known. The gutter icon's click stays Open in Dashboard.
+- **Run the Test at the Caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`), **Verify the Test at the Caret ×3**
+  (`Piwi.VerifyTestAtCursor`) and **Run This Spec** (`Piwi.RunSpec`), under **Tools → Piwi** and in the editor's menu
+  of a spec (`Glue.isSpecFile`) in a project with a Playwright config (`RunInSpecAction`), ask `piwi/testAt` for the
+  caret on a pooled thread, save the spec's document when it has unsaved changes (on the event thread), then run as
+  `PiwiCommands.runTests` does (`PiwiCommands.runTestAt`) the test by its id when Piwi knows it, else by its location
+  (`Glue.testAtRun`), and to verify it by its location three times (`Glue.VERIFY_REPEAT`); or say in a balloon that
+  there is none. The gutter icon's click stays Open in Dashboard.
 - Breakpoints: `PiwiCommands.runTests` (every test run: Code Vision, **Run this test**, **Run the Test at the
   Caret**, **Run This Spec**, **Run the Tests That Reach This File**, **Re-run the Failing Tests**) and **Run Selection…** pass the IDE's breakpoints to the service
   (`PiwiProjectService.breakpoints`: `XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints`, the
@@ -185,14 +189,23 @@ problem; three times in five minutes at most (`PiwiProjectService.watchServer`, 
   command (`RecordingUpdate.importEdit`, placed by the service in the text as it stands: `Glue.importWrite` makes it
   before the block's write or after it, above the block), and range markers follow it; Enter at the end of its last line is below it. The
   block is tinted with `PIWI_RECORDING_BLOCK`, with a gutter mark offering Stop, Pause and Resume; its warnings are
-  weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes; the banner over
+  weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes. Once the recording
+  stopped, a warning on a step with other verified locators (`RecordingStep.locators`, kept with the warning in
+  `RecordingWarningMark`) offers each as a quick fix (`UseRecordedLocatorFix`, through `newAnnotation(…).withFix`,
+  `Glue.locatorChoices`): **Use getByTestId('pay')** puts it in place of the written one, found on the line exactly
+  once, in one command, and the line it changes shows the warning no more; none while it records, since the next update
+  writes the block again. The banner over
   the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step count and the
   actions, and the status bar item shows them too, its menu going to the block first (`Glue.recordingStatus`). The service
   says `paused` in an update for a pause from here or from the browser's bar; the client shows one from here at once.
   An edit inside the block pauses the recording
   (`piwi/recordingCommand`) with **Resume** (the service sends the block again) or **Keep My Edits** (Stop: nothing
   more is written). Closing the file or the project stops its sessions; a service that stops ends them with a last
-  update, and Stop ends one at once when the service does not answer. One undo step: a `StartMarkAction` in a command
+  update, and Stop ends one at once when the service does not answer. The balloon after Stop says what was written
+  (`Glue.recordingSummary`); while the service runs, when `piwi/testAt` finds a test holding the block's last line, it
+  offers **Run** and **Verify ×3** (`Glue.RUN_RECORDED`, `Glue.VERIFY_RECORDED`), which run that test through
+  `PiwiCommands.runTestAt` from a range marker at the block's end, so at the line the block ends on when clicked. No
+  Code Vision offers them. One undo step: a `StartMarkAction` in a command
   of its own just before the first write, a `FinishMarkAction` at the end, so one Undo after Stop goes back to before
   the recording, edits made in the file meanwhile included; `PiwiRecordingTest` drives it with synthetic updates, the
   caret moving between writes.

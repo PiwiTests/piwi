@@ -78,10 +78,12 @@ clients stay thin and both editors give the same answers.
   On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`), the test's id (`testCaseId`, which
   VS Code's gutter hover runs) and the line its
   call ends on (`endLine`, `callEndLine`), which the clients draw in the gutter and as a background over a failing test.
-  `piwi/testAt` answers the catalog test whose `test(…)` call spans a position's line (`TEST_CALL`, `callEndLine`,
-  matched by title like the summary) and the spec's tests (`casesOf`), which **Run the test at the cursor** and **Run
-  this spec** run; a file that is not a spec under a context's folder, or a spec of which Piwi knows no test, answers
-  nulls.
+  `piwi/testAt` answers where the `test(…)` call spanning a position's line starts (`testCallAt`: `TEST_CALL`,
+  `callEndLine`), as Playwright's location filter takes it (`location`: `tests/checkout.spec.ts:42`, relative to the
+  config's folder, in the text as it stands), the catalog test of that title (matched like the summary) and the spec's
+  tests (`casesOf`), which **Run the test at the cursor**, **Verify the test at the cursor ×3** and **Run this spec**
+  run; a file that is not a spec under a context's folder answers nulls, and a test Piwi does not know a location
+  alone.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
   the frames and the message in `branch-failures`), above which the reason, **Run this test** (`piwi.runTests` with the
   test's id), **Screenshot** and **Trace** are ordinary summary lines; the hover on any line of that stack shows the message and the call chain.
@@ -112,7 +114,15 @@ clients stay thin and both editors give the same answers.
   `piwi/refresh` reads.
 - The editor's own run: `piwi/runArgs` and `piwi/runSelection` give each command a ref (`ed-` and 8 hex characters),
   in its environment as `PIWI_ORIGIN_REF` beside `PIWI_ORIGIN=editor` and in `RunCommand.ref`; the Flake Lab lines
-  and the fix plan's verification carry `PIWI_ORIGIN=editor` alone. The service looks for the run carrying it
+  and the fix plan's verification carry `PIWI_ORIGIN=editor` alone. `piwi/runArgs` runs tests by id, with the
+  instance's arguments, or by location (`RunTestsArgs.locations`: a spec under the context's folder and the line of
+  its `test(…)` call, `isTestLocation` and `specLocation`, which needs no instance: a test just recorded), and with
+  `repeat` each test that many times without retries and without the breakpoints (`repeatArgs`:
+  `--repeat-each=3 --retries=0`, for **Verify ×3**). The instance keeps one result of a test per attempt and project,
+  so a repeated command's run has the `test-completed` results of its stream counted, once per execution
+  (`RunWatch.tally`), and its `piwi/runEnded` carries `repeat` (`repeatVerdict`: `Passed 3 of 3`, `Failed 1 of 3`,
+  `Failed at least 1 of 3` when the stream missed some); when its run reached no instance, its `piwi/commandEnded`
+  brings a `piwi/notice` from the exit code (`exitVerdict`). The service looks for the run carrying it
   (`latest-run?origin=editor&ref=` for two minutes: every 2 s while the instance's stream is down, every 20 s while it
   is connected, since its `run-started` names the run, and once when the stream connects; or a `run-started` whose
   metadata names it) and keeps it in `PiwiContext.ownRuns` for its lifetime: its failures read `your run #N` and are
@@ -242,8 +252,9 @@ needs the extension's sources, and a change to the recorder there changes what t
   lands with both clients in the same change, and a renamed request or command is a breaking change.
 - **A command is built here, never taken from the instance** (`src/commands.ts`): a test run is `npx playwright test`
   with the instance's arguments (`materialization.args`, else the words of its `npx playwright test` command line,
-  split as every shell splits plain words and double quotes), each checked (a test filter, or an option of
-  `PLAYWRIGHT_OPTIONS`: none that loads or writes a file) and quoted (`shellWord`); a fix plan's verification is its
+  split as every shell splits plain words and double quotes) or the locations a client names, each checked (a test
+  filter, or an option of `PLAYWRIGHT_OPTIONS`: none that loads or writes a file) and quoted (`shellWord`); a fix
+  plan's verification is its
   `npx playwright test` commands built again; a Flake Lab line is `npx @piwitests/reporter flake [verify] <id>`.
   An argument that is anything else refuses the whole command, and the clients run only what the service built.
 - **A command runs in the config's folder as the file system spells it** (`commandFolder`, `canonicalPath`): every

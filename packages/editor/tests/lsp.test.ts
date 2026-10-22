@@ -33,6 +33,7 @@ import type {
   RunCommand,
   RunEnded,
   RunStatusResult,
+  RunTestsArgs,
   ScreenshotResult,
   StatusResult,
   TestAtResult,
@@ -1354,14 +1355,18 @@ describe('the Piwi language server', () => {
           url: `${url}/test-cases/3`,
         },
         spec,
+        location: 'tests/rows.spec.ts:4',
       });
     }
-    expect(await at(rows, 1)).toEqual({ test: null, spec });
-    expect(await at(rows, 8)).toEqual({ test: null, spec });
-    expect(await at(uri('tests/checkout.spec.ts'), 2)).toMatchObject({ test: { id: 1, title: 'pays' } });
-    expect(await at(uri('tests/pages/checkout.page.ts'), 3)).toEqual({ test: null, spec: null });
+    expect(await at(rows, 1)).toEqual({ test: null, spec, location: null });
+    expect(await at(rows, 8)).toEqual({ test: null, spec, location: null });
+    expect(await at(uri('tests/checkout.spec.ts'), 2)).toMatchObject({
+      test: { id: 1, title: 'pays' },
+      location: 'tests/checkout.spec.ts:3',
+    });
+    expect(await at(uri('tests/pages/checkout.page.ts'), 3)).toEqual({ test: null, spec: null, location: null });
     const elsewhere = pathToFileURL(path.join(os.tmpdir(), 'piwi-elsewhere', 'a.spec.ts')).href;
-    expect(await at(elsewhere, 0)).toEqual({ test: null, spec: null });
+    expect(await at(elsewhere, 0)).toEqual({ test: null, spec: null, location: null });
   });
 });
 
@@ -2250,6 +2255,65 @@ describe('runs as they happen', () => {
     pushInstanceEvent({ type: 'run-finished', runId: 61, projectId: 7, status: 'failed' });
     await new Promise((resolve) => setTimeout(resolve, 800));
     expect(verdicts.filter((v) => v.runId === 61)).toHaveLength(1);
+  });
+
+  /** The command that runs `pays` three times, by its location. */
+  const verifyPays = async () =>
+    (await runsClient.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [],
+      locations: ['tests/checkout.spec.ts:3'],
+      repeat: 3,
+    })) as RunCommand;
+
+  test('a run of a test three times says how many of its runs passed, counted from its stream', async () => {
+    const command = await verifyPays();
+    expect(command.command).toBe('npx playwright test tests/checkout.spec.ts:3 --repeat-each=3 --retries=0');
+    expect(command.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref });
+    const startTime = '2026-09-27T16:00:00.000Z';
+    runDetails.set(62, editorRun(62, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 62, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 62));
+    await waitFor(() => (runStreams.get(62)?.size ? true : undefined));
+
+    // The instance keeps one result of a test per attempt and project: the stream brings each of the three runs, and
+    // a catch-up sends the kept one again.
+    const result = (status: string, executionId: number | null) => ({
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      testCaseId: executionId === null ? null : 1,
+      status,
+      retries: 0,
+      browser: 'chromium',
+      executionId,
+    });
+    pushRunEvent(62, 'test-completed', result('passed', 1201));
+    pushRunEvent(62, 'test-completed', result('failed', null));
+    pushRunEvent(62, 'test-completed', result('passed', null));
+    pushRunEvent(62, 'test-completed', result('passed', 1201));
+    runDetails.set(62, { ...runDetails.get(62), status: 'failed', totalTests: 1, passedTests: 0, failedTests: 1 });
+    pushRunEvent(62, 'run-finished', { status: 'failed', totalTests: 1, passedTests: 0, failedTests: 1 });
+    pushInstanceEvent({ type: 'run-finished', runId: 62, projectId: 7, status: 'failed' });
+    const verdict = await waitFor(() => verdicts.find((v) => v.runId === 62));
+    expect(verdict).toMatchObject({ runId: 62, failed: 1, repeat: { verdict: 'Failed 1 of 3', failed: true } });
+
+    // A run of each test once says what it changed alone.
+    expect(verdicts.find((v) => v.runId === 61)?.repeat).toBeUndefined();
+  });
+
+  test('a run of a test three times that reached no instance says from its exit code how it went', async () => {
+    const command = await verifyPays();
+    const seen = notices.length;
+    await runsClient.sendNotification('piwi/commandEnded', { ref: command.ref, exitCode: 0 });
+    await waitFor(() => (notices.length >= seen + 2 ? true : undefined));
+    expect(notices.slice(seen)).toEqual([
+      {
+        root: dir,
+        severity: 'warning',
+        message: `The run ended (exit code 0) but did not reach ${url}: is the Piwi reporter in the Playwright config?`,
+      },
+      { root: dir, severity: 'information', message: 'Passed 3 of 3: tests/checkout.spec.ts:3' },
+    ]);
   });
 
   test('piwi/refreshRun reads the latest run again and answers the status', async () => {
@@ -3570,6 +3634,123 @@ describe('recording from the editor', () => {
       ok: false,
       message: 'No Playwright config holds this file: open the folder of its playwright.config.ts.',
     });
+  });
+});
+
+describe('a test the instance does not know yet', () => {
+  /** A recorded test below the one the spec holds as saved, in the open file: Playwright runs the file once saved. */
+  const RECORDED = [
+    "import { test } from '@playwright/test';",
+    '',
+    "test('pays', async ({ page }) => {});",
+    '',
+    "test('recorded', async ({ page }) => {",
+    "  await page.goto('/checkout');",
+    "  await page.getByRole('button', { name: 'Pay now' }).click();",
+    '});',
+    '',
+  ].join('\n');
+
+  let repo = '';
+  let local: MessageConnection;
+  let stopLocal: () => void;
+  const notices: Notice[] = [];
+  const specUri = () => pathToFileURL(path.join(repo, 'tests/checkout.spec.ts')).href;
+  const at = (line: number) =>
+    local.sendRequest('piwi/testAt', { uri: specUri(), line, character: 0 }) as Promise<TestAtResult>;
+  const runArgs = (args: Partial<RunTestsArgs>) =>
+    local.sendRequest('piwi/runArgs', { uri: specUri(), testIds: [], ...args }) as Promise<RunCommand | null>;
+
+  beforeAll(async () => {
+    repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-editor-local-')));
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo, stdio: 'ignore' });
+    fs.writeFileSync(path.join(repo, 'playwright.config.ts'), 'export default {};\n');
+    fs.mkdirSync(path.join(repo, 'tests'));
+    fs.writeFileSync(path.join(repo, 'tests/checkout.spec.ts'), SPEC);
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    // No instance: nothing names one.
+    stopLocal = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+    });
+    local = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    local.onNotification('piwi/notice', (n: Notice) => {
+      notices.push(n);
+    });
+    local.listen();
+    await local.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(repo).href, name: 'shop' }],
+    });
+    await local.sendNotification('initialized', {});
+    await waitFor(async () => {
+      const s = (await local.sendRequest('piwi/status')) as StatusResult;
+      return s.contexts.length ? s : undefined;
+    });
+  });
+
+  afterAll(() => {
+    stopLocal?.();
+    local?.dispose();
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('is found by its location in the text as it stands, and run there', async () => {
+    await local.sendNotification('textDocument/didOpen', {
+      textDocument: { uri: specUri(), languageId: 'typescript', version: 1, text: RECORDED },
+    });
+    expect(await at(2)).toEqual({ test: null, spec: null, location: 'tests/checkout.spec.ts:3' });
+    for (const line of [4, 6, 7]) {
+      expect(await at(line)).toEqual({ test: null, spec: null, location: 'tests/checkout.spec.ts:5' });
+    }
+    expect(await at(1)).toEqual({ test: null, spec: null, location: null });
+    expect(await at(8)).toEqual({ test: null, spec: null, location: null });
+
+    const run = await runArgs({ locations: ['tests/checkout.spec.ts:5'] });
+    expect(run).toEqual({
+      cwd: repo,
+      args: ['tests/checkout.spec.ts:5'],
+      command: 'npx playwright test tests/checkout.spec.ts:5',
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: run?.ref },
+      ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+    });
+    // Without a location, a test is run by its id, which needs an instance.
+    expect(await runArgs({ testIds: [1] })).toBeNull();
+    // A location that is not a spec under the config's folder runs nothing.
+    for (const location of ['tests/missing.spec.ts:3', 'playwright.config.ts:1', '../checkout.spec.ts:3', 'x']) {
+      expect(await runArgs({ locations: ['tests/checkout.spec.ts:3', location] }), location).toBeNull();
+    }
+  });
+
+  test('three times: headless, without retries, and said from its exit code once it ended', async () => {
+    const verify = await runArgs({
+      locations: ['tests/checkout.spec.ts:5'],
+      repeat: 3,
+      breakpoints: [{ uri: specUri(), line: 6 }],
+    });
+    expect(verify).toEqual({
+      cwd: repo,
+      args: ['tests/checkout.spec.ts:5', '--repeat-each=3', '--retries=0'],
+      command: 'npx playwright test tests/checkout.spec.ts:5 --repeat-each=3 --retries=0',
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref },
+      ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+    });
+    expect(await runArgs({ locations: ['tests/checkout.spec.ts:5'], repeat: 0 })).toBeNull();
+
+    await local.sendNotification('piwi/commandEnded', { ref: verify!.ref, exitCode: 1 });
+    expect(await waitFor(() => notices[0])).toEqual({
+      root: repo,
+      severity: 'warning',
+      message: 'Failed at least 1 of 3: tests/checkout.spec.ts:5 (exit code 1)',
+    });
+    // A run of each test once says nothing of its own.
+    const once = await runArgs({ locations: ['tests/checkout.spec.ts:5'] });
+    await local.sendNotification('piwi/commandEnded', { ref: once!.ref, exitCode: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(notices).toHaveLength(1);
   });
 });
 

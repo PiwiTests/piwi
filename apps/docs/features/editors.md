@@ -129,6 +129,7 @@ clipboard; it holds your API key, so paste it into your user settings, not into 
 | Piwi: Refresh | Fetch the indexes and the latest run again | |
 | Piwi: Refresh the latest run | Read the latest run again, as a click on the status bar does | |
 | Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) | `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K`) |
+| Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed | |
 | Piwi: Run this spec | Run the tests of the spec Piwi knows | |
 | Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would | |
 | Piwi: Re-run the failing tests | Run every test still failing, one run per Playwright config: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) | `Ctrl+Shift+Alt+F` (`Cmd+Shift+Alt+F` on macOS) |
@@ -166,8 +167,9 @@ and hover in open files; the rest is native:
 - **[Open in IDE](./ide-integration)**: a path clicked in the dashboard or the desktop app opens at its line.
 - **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert, and **File → New →
   Record a New Test File…**; the controls are in a banner above the editor.
-- **Running a test**: **Run the Test at the Caret** (`Ctrl+Alt+Shift+K`) and **Run This Spec** are in the editor's
-  context menu of a spec and under **Tools → Piwi**; a click on a test's gutter icon opens it in the dashboard.
+- **Running a test**: **Run the Test at the Caret** (`Ctrl+Alt+Shift+K`), **Verify the Test at the Caret ×3** and
+  **Run This Spec** are in the editor's context menu of a spec and under **Tools → Piwi**; a click on a test's gutter
+  icon opens it in the dashboard.
 - **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it; an information shows as a weak
   warning.
 

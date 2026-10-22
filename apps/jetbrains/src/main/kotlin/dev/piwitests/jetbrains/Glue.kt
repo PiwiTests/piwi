@@ -34,6 +34,24 @@ object Glue {
 
     private val SPEC_FILE = Regex("\\.(spec|test)\\.[cm]?[jt]sx?$")
 
+    /** How many times **Verify ×3** runs a test. */
+    const val VERIFY_REPEAT = 3
+
+    /** The actions the notification after a recording offers for the test that holds the block. */
+    const val RUN_RECORDED = "Run"
+    const val VERIFY_RECORDED = "Verify ×3"
+
+    /**
+     * What runs the test `piwi/testAt` found at a line of the spec at `uri`: by its id when Piwi knows it, else by its
+     * location; with `repeat`, by its location, that many times. Null outside every test.
+     */
+    fun testAtRun(uri: String, found: TestAtResult?, repeat: Int? = null): RunTestsArgs? {
+        val test = found?.test
+        if (test != null && repeat == null) return RunTestsArgs(uri, listOf(test.id))
+        val location = found?.location ?: return null
+        return RunTestsArgs(uri, emptyList(), locations = listOf(location), repeat = repeat)
+    }
+
     /** Whether a path, with either separator, names a Playwright config. */
     fun isPlaywrightConfig(path: String?): Boolean =
         path != null && path.substringAfterLast('/').substringAfterLast('\\') in PLAYWRIGHT_CONFIGS
@@ -675,9 +693,14 @@ object Glue {
     /**
      * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
      * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
-     * **Re-run Failing** when something fails. Null when `setting` keeps it quiet.
+     * **Re-run Failing** when something fails. Null when `setting` keeps it quiet. A run of each test several times
+     * says how many of its runs passed, `Run #124 · Failed 1 of 3`, whatever the setting.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
+        val repeat = ended.repeat
+        if (repeat?.verdict != null) {
+            return RunVerdict(repeat.failed, "Run #${ended.runId} · ${repeat.verdict}", listOf(OPEN_FAILURES, OPEN_IN_DASHBOARD))
+        }
         val stillTitles = ended.stillFailing.orEmpty()
         val newTitles = ended.newFailures.orEmpty()
         val still = ended.stillFailingCount ?: stillTitles.size
@@ -1238,6 +1261,25 @@ object Glue {
             offset <= write.start -> ImportWrite(offset, text, first = false)
             else -> null
         }
+    }
+
+    /** A quick fix on a recorded line's warning: another locator of the step, for the written one at `[start, end)` of the line. */
+    data class LocatorChoice(val title: String, val locator: String, val start: Int, val end: Int)
+
+    /**
+     * The other locators the recorder verified for a step, best first, as quick fixes on `line`, the text of the line the
+     * step is written on: each puts its locator in place of the written one (`RecordingStep.chosen`), which is found on
+     * the line as it is written, after a page expression or inside a call. None when the step has a single locator, or
+     * when the written one is not on the line exactly once.
+     */
+    fun locatorChoices(line: String, step: RecordingStep?): List<LocatorChoice> {
+        val locators = step?.locators.orEmpty()
+        val written = step?.chosen?.let { locators.getOrNull(it) }
+        if (written.isNullOrEmpty() || locators.size < 2) return emptyList()
+        val start = line.indexOf(written)
+        if (start < 0 || line.indexOf(written, start + 1) >= 0) return emptyList()
+        return locators.filter { it.isNotEmpty() && it != written }
+            .map { LocatorChoice("Use $it", it, start, start + written.length) }
     }
 
     /** "1 step", "3 steps". */

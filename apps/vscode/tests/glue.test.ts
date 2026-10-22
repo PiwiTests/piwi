@@ -11,6 +11,7 @@ import type {
   RunEnded,
   RunStatusResult,
   StatusResult,
+  TestAtResult,
 } from '@piwitests/editor/protocol';
 import {
   DOCUMENT_PATTERN,
@@ -23,11 +24,13 @@ import {
   connectChoices,
   desktopJobNotice,
   disconnectQuestion,
+  editedLine,
   failingRuns,
   failureNodes,
   followBlock,
   followEdit,
   importChange,
+  locatorChoices,
   recordInto,
   mcpConfiguration,
   newTestFileName,
@@ -50,8 +53,10 @@ import {
   sourceLabel,
   statusBarView,
   statusContext,
+  testAtRun,
   testDecorations,
   testHoverMarkdown,
+  testLineArg,
   TEST_HOVER_COMMANDS,
   withBaseline,
   writeBlock,
@@ -895,6 +900,54 @@ describe('following the recorded block', () => {
   });
 });
 
+describe('a recorded line’s warning', () => {
+  const step = {
+    locators: ["getByTestId('pay')", "getByRole('button', { name: 'Pay' })", "locator('form > button.btn-3')"],
+    chosen: 2,
+  };
+  const written = "locator('form > button.btn-3')";
+
+  test('offers each other verified locator of its step, best first, in place of the written one', () => {
+    const line = `    await page.${written}.click();`;
+    const start = line.indexOf(written);
+    const end = start + written.length;
+    expect(locatorChoices(line, step)).toEqual([
+      { title: "Use getByTestId('pay')", locator: "getByTestId('pay')", start, end },
+      {
+        title: "Use getByRole('button', { name: 'Pay' })",
+        locator: "getByRole('button', { name: 'Pay' })",
+        start,
+        end,
+      },
+    ]);
+  });
+
+  test('finds the written locator after any page expression and inside a call', () => {
+    expect(locatorChoices(`await adminPage.${written}.click();`, step)).toHaveLength(2);
+    expect(locatorChoices(`await this.page.${written}.fill(process.env.E2E_PASSWORD ?? '');`, step)).toHaveLength(2);
+    expect(locatorChoices(`await expect(page.${written}).toBeVisible();`, step)[0]).toMatchObject({
+      start: 18,
+      end: 48,
+    });
+  });
+
+  test('offers nothing for a single locator, none written, or one not on the line exactly once', () => {
+    const line = `await page.${written}.click();`;
+    expect(locatorChoices(line, { locators: [written], chosen: 0 })).toEqual([]);
+    expect(locatorChoices(line, { ...step, chosen: null })).toEqual([]);
+    expect(locatorChoices('await cartPage.pay();', step)).toEqual([]);
+    expect(locatorChoices(`await page.${written}.dragTo(page.${written});`, step)).toEqual([]);
+    expect(locatorChoices("await page.locator('form > button.btn-4').click();", step)).toEqual([]);
+  });
+
+  test('goes once its line is edited in place; an edit that adds or removes a line edits none in place', () => {
+    expect(editedLine(change(span(4, 12, 4, 42), "getByTestId('pay')"))).toBe(4);
+    expect(editedLine(change(span(4, 12, 4, 12), 'x'))).toBe(4);
+    expect(editedLine(change(span(4, 12, 5, 0), ''))).toBeNull();
+    expect(editedLine(change(span(4, 12, 4, 12), '\n  '))).toBeNull();
+  });
+});
+
 describe('where a recording writes', () => {
   test('outside every test, function and class, a new test; anywhere else, the steps there', () => {
     expect(recordInto('test')).toBe('steps');
@@ -1083,15 +1136,52 @@ describe('the recording’s controls', () => {
   test('once stopped, a notification counts the steps and the warnings', () => {
     const step = { words: 'Click Pay', line: 0, locators: [], chosen: null };
     const warning = { step: 0, line: 0, message: 'Brittle locator' };
-    expect(recordingSummary({ steps: [step, step], warnings: [warning], message: null }, false)).toBe(
-      'Piwi: recording stopped, 2 steps written, 1 warning to check.',
-    );
-    expect(recordingSummary({ steps: [step], warnings: [], message: 'The browser was closed' }, false)).toBe(
-      'Piwi: The browser was closed. 1 step written.',
-    );
-    expect(recordingSummary({ steps: [step], warnings: [], message: null }, true)).toBe(
+    expect(
+      recordingSummary({ steps: [step, step], warnings: [warning], message: null }, false, 'checkout.spec.ts'),
+    ).toBe('Piwi: recorded 2 steps into checkout.spec.ts, 1 warning to check.');
+    expect(
+      recordingSummary({ steps: [step], warnings: [], message: 'The browser was closed' }, false, 'checkout.spec.ts'),
+    ).toBe('Piwi: The browser was closed. Recorded 1 step into checkout.spec.ts.');
+    expect(recordingSummary({ steps: [step], warnings: [], message: null }, true, 'checkout.spec.ts')).toBe(
       'Piwi: recording stopped. The recorded block keeps your edits.',
     );
+    expect(recordingSummary({ steps: [], warnings: [], message: null }, false, 'checkout.spec.ts')).toBe(
+      'Piwi: nothing was recorded into checkout.spec.ts.',
+    );
+  });
+});
+
+describe('the test at a line', () => {
+  const uri = 'file:///w/tests/checkout.spec.ts';
+  const known: TestAtResult = {
+    test: { id: 7, title: 'pays', file: 'tests/checkout.spec.ts', status: 'passed', url: 'http://piwi/test-cases/7' },
+    spec: { uri, testIds: [7] },
+    location: 'tests/checkout.spec.ts:3',
+  };
+  const recorded: TestAtResult = { test: null, spec: null, location: 'tests/checkout.spec.ts:12' };
+
+  test('runs by its id when Piwi knows it, else by its location', () => {
+    expect(testAtRun(uri, known)).toEqual({ uri, testIds: [7] });
+    expect(testAtRun(uri, recorded)).toEqual({ uri, testIds: [], locations: ['tests/checkout.spec.ts:12'] });
+  });
+
+  test('runs by its location several times to verify it', () => {
+    expect(testAtRun(uri, known, 3)).toEqual({ uri, testIds: [], locations: ['tests/checkout.spec.ts:3'], repeat: 3 });
+  });
+
+  test('runs nothing outside every test, or by an id alone to verify', () => {
+    expect(testAtRun(uri, { test: null, spec: null, location: null })).toBeNull();
+    expect(testAtRun(uri, null)).toBeNull();
+    // An older service gives no location.
+    expect(testAtRun(uri, { test: known.test, spec: known.spec })).toEqual({ uri, testIds: [7] });
+    expect(testAtRun(uri, { test: known.test, spec: known.spec }, 3)).toBeNull();
+  });
+
+  test('is the line a command names, else none: the file a context menu passes is not one', () => {
+    expect(testLineArg({ uri, line: 11 })).toEqual({ uri, line: 11 });
+    expect(testLineArg({ scheme: 'file', path: '/w/tests/checkout.spec.ts' })).toBeNull();
+    expect(testLineArg({ uri, line: -1 })).toBeNull();
+    expect(testLineArg(undefined)).toBeNull();
   });
 });
 
@@ -1389,6 +1479,19 @@ describe('the verdict of a run started from the editor', () => {
     expect(runVerdict(passing, 'failures')).toBeNull();
     expect(runVerdict(ended, 'failures')).not.toBeNull();
     expect(runVerdict(ended, 'never')).toBeNull();
+  });
+
+  test('a run of each test three times says how many of its runs passed, whatever the setting', () => {
+    expect(runVerdict({ ...ended, repeat: { verdict: 'Failed 1 of 3', failed: true } }, 'never')).toEqual({
+      severity: 'warning',
+      text: 'Piwi: run #124 · Failed 1 of 3',
+      actions: ['Open the failures', 'Open in dashboard'],
+    });
+    const passed = { ...ended, failed: 0, repeat: { verdict: 'Passed 3 of 3', failed: false } };
+    expect(runVerdict(passed, 'failures')).toMatchObject({
+      severity: 'information',
+      text: 'Piwi: run #124 · Passed 3 of 3',
+    });
   });
 });
 

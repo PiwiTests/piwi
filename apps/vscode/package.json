@@ -125,6 +125,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.verifyTestAtCursor",
+        "title": "Verify the test at the cursor ×3",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.runSpec",
         "title": "Run this spec",
         "category": "Piwi"
@@ -326,7 +331,11 @@
         },
         {
           "command": "piwi.runTestAtCursor",
-          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.verifyTestAtCursor",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
           "command": "piwi.runSpec",
@@ -353,7 +362,12 @@
         {
           "command": "piwi.runTestAtCursor",
           "group": "piwi@1",
-          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.verifyTestAtCursor",
+          "group": "piwi@1",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
           "command": "piwi.runSpec",

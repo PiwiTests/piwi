@@ -129,6 +129,9 @@ import {
   failureRunArgs,
   runVerdict,
   VERDICT_ACTIONS,
+  VERIFY_REPEAT,
+  testAtRun,
+  testLineArg,
   type RunNotifications,
   sourceLabel,
   STATUS_TOOLTIP_COMMANDS,
@@ -792,26 +795,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
 
-  /**
-   * Run the test whose `test(…)` call holds the cursor, or with `wholeSpec` the tests of the spec (`target`, else the
-   * active one) Piwi knows, as every test run does.
-   */
-  const runInSpec = async (wholeSpec: boolean, target?: vscode.Uri) => {
-    const editor = vscode.window.activeTextEditor;
-    const uri = target?.toString() ?? editor?.document.uri.toString();
+  /** Saves the open document at `uri` when it has unsaved changes: a run reads its spec as saved. */
+  const saveSpec = async (uri: string) => {
+    const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri);
+    return !document?.isDirty || document.save();
+  };
+
+  /** Run the tests Piwi knows of the spec (`target`, else the active one) as every test run does, saved first. */
+  const runSpec = async (target?: vscode.Uri) => {
+    const uri = target?.toString() ?? activeUri();
     if (!uri) return;
-    const cursor = editor?.document.uri.toString() === uri ? editor.selection.active : null;
-    const found = await lc
-      .sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri, line: cursor?.line ?? 0, character: cursor?.character ?? 0 })
-      .catch(() => null);
-    const testIds = wholeSpec ? (found?.spec?.testIds ?? []) : found?.test ? [found.test.id] : [];
+    const found = await lc.sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri, line: 0, character: 0 }).catch(() => null);
+    const testIds = found?.spec?.testIds ?? [];
     if (!testIds.length) {
-      void vscode.window.showInformationMessage(
-        wholeSpec ? 'Piwi: no test of this spec is known yet.' : 'Piwi: the cursor is in no test Piwi knows.',
-      );
+      void vscode.window.showInformationMessage('Piwi: no test of this spec is known yet.');
       return;
     }
-    await runTests({ uri, testIds });
+    if (await saveSpec(uri)) await runTests({ uri, testIds });
+  };
+
+  /**
+   * Run the test whose `test(…)` call spans a line of a spec, the spec saved first: the line `at` names (the
+   * notification after a recording names the line its block ends on), else the cursor's. By its id when Piwi knows it,
+   * else by its location; with `repeat`, by its location, that many times.
+   */
+  const runTestAt = async (at: unknown, repeat?: number) => {
+    const editor = vscode.window.activeTextEditor;
+    const target =
+      testLineArg(at) ?? (editor && { uri: editor.document.uri.toString(), line: editor.selection.active.line });
+    if (!target) return;
+    const found = await lc
+      .sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri: target.uri, line: target.line, character: 0 })
+      .catch(() => null);
+    const args = testAtRun(target.uri, found, repeat);
+    if (!args) {
+      void vscode.window.showInformationMessage('Piwi: the cursor is in no test.');
+      return;
+    }
+    if (await saveSpec(target.uri)) await runTests(args);
   };
 
   /** The execution a trace or a screenshot command names: its arguments, or a failure of the failures view. */
@@ -966,8 +987,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       }
       await runTests({ uri, testIds: found.tests.map((t) => t.id) });
     }),
-    vscode.commands.registerCommand('piwi.runTestAtCursor', () => runInSpec(false)),
-    vscode.commands.registerCommand('piwi.runSpec', (target?: vscode.Uri) => runInSpec(true, target)),
+    vscode.commands.registerCommand('piwi.runTestAtCursor', (at?: unknown) => runTestAt(at)),
+    vscode.commands.registerCommand('piwi.verifyTestAtCursor', (at?: unknown) => runTestAt(at, VERIFY_REPEAT)),
+    vscode.commands.registerCommand('piwi.runSpec', (target?: vscode.Uri) => runSpec(target)),
     vscode.commands.registerCommand('piwi.openInDashboard', async (target?: string | FailureNode) => {
       const url = typeof target === 'string' ? target : target?.url;
       if (typeof url === 'string' && url) {

@@ -100,6 +100,12 @@
                 <override-text place="EditorPopup" text="Piwi: Run the Test at the Caret"/>
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
             </action>
+            <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
+                    text="Verify the Test at the Caret ×3"
+                    description="Run the test whose test(…) call holds the caret 3 times without retries, headless, and say how many runs passed">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Verify the Test at the Caret ×3"/>
+            </action>
             <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run This Spec"
                     description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>

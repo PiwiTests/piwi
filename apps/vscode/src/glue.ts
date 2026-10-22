@@ -21,6 +21,7 @@ import type {
   LiveRun,
   McpServerDefinition,
   RecordingPlacement,
+  RecordingStep,
   RecordingUpdate,
   RunStatus,
   RunEnded,
@@ -28,6 +29,7 @@ import type {
   RunTestsArgs,
   StatusResult,
   SummaryLine,
+  TestAtResult,
   TestLineStatus,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
@@ -613,12 +615,21 @@ function titleList(titles: string[], count: number): string {
 /**
  * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
  * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
- * fails, with **Re-run failing**; an information otherwise. Null when `setting` keeps it quiet.
+ * fails, with **Re-run failing**; an information otherwise. Null when `setting` keeps it quiet. A run of each test
+ * several times says how many of its runs passed, `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
  */
 export function runVerdict(
   ended: RunEnded,
   setting: RunNotifications = 'always',
 ): { severity: 'information' | 'warning'; text: string; actions: string[] } | null {
+  if (ended.repeat) {
+    const { verdict, failed } = ended.repeat;
+    return {
+      severity: failed ? 'warning' : 'information',
+      text: `Piwi: run #${ended.runId} · ${verdict}`,
+      actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard],
+    };
+  }
   const still = ended.stillFailingCount ?? ended.stillFailing.length;
   const added = ended.newFailureCount ?? ended.newFailures.length;
   const parts: string[] = [];
@@ -849,6 +860,38 @@ export function followEdit(edit: FileEdit, changes: TextChange[]): FileEdit {
   return { range: { start: at.start, end: at.start }, newText: edit.newText };
 }
 
+/** The line a change edits without adding or removing a line: its range and its text on that line alone; else null. */
+export function editedLine(change: TextChange): number | null {
+  const { start, end } = change.range;
+  return start.line === end.line && !LINE_BREAK.test(change.text) ? start.line : null;
+}
+
+/** A quick fix on a recorded line's warning: another locator of the step, for the written one at `[start, end)`. */
+export interface LocatorChoice {
+  /** `Use getByTestId('pay')`. */
+  title: string;
+  locator: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * The other locators the recorder verified for a step, best first, as quick fixes on `line`, the text of the line the
+ * step is written on: each puts its locator in place of the written one (`RecordingStep.chosen`), which is found on the
+ * line as it is written, after a page expression or inside a call. None when the step has a single locator, or when
+ * the written one is not on the line exactly once.
+ */
+export function locatorChoices(line: string, step: Pick<RecordingStep, 'locators' | 'chosen'>): LocatorChoice[] {
+  const locators = step.locators ?? [];
+  const written = step.chosen == null ? undefined : locators[step.chosen];
+  if (!written || locators.length < 2) return [];
+  const start = line.indexOf(written);
+  if (start < 0 || line.includes(written, start + 1)) return [];
+  return locators
+    .filter((locator) => locator && locator !== written)
+    .map((locator) => ({ title: `Use ${locator}`, locator, start, end: start + written.length }));
+}
+
 /** The service's import edit as a change of the document; null without one. */
 export function importChange(edit: FileEdit | null | undefined): TextChange | null {
   return edit ? { range: edit.range, text: edit.newText } : null;
@@ -981,17 +1024,55 @@ export function recordInto(context: string): 'steps' | 'test' {
   return context === 'file' ? 'test' : 'steps';
 }
 
-/** The notification after a recording stopped: what was written, or that the block keeps the edits made in it. */
+/**
+ * The notification after a recording stopped: what was written into `file`, or that the block keeps the edits made
+ * in it.
+ */
 export function recordingSummary(
   update: Pick<RecordingUpdate, 'steps' | 'warnings' | 'message'>,
   keptEdits: boolean,
+  file: string,
 ): string {
   if (keptEdits) return 'Piwi: recording stopped. The recorded block keeps your edits.';
   const warnings = update.warnings.length;
-  const counts = `${plural(update.steps.length, 'step')} written${warnings ? `, ${plural(warnings, 'warning')} to check` : ''}`;
+  const check = warnings ? `, ${plural(warnings, 'warning')} to check` : '';
+  const written = update.steps.length
+    ? `recorded ${plural(update.steps.length, 'step')} into ${file}${check}`
+    : `nothing was recorded into ${file}`;
   const message = update.message?.trim();
-  if (!message) return `Piwi: recording stopped, ${counts}.`;
-  return `Piwi: ${/[.!?]$/.test(message) ? message : `${message}.`} ${counts}.`;
+  if (!message) return `Piwi: ${written}.`;
+  return `Piwi: ${/[.!?]$/.test(message) ? message : `${message}.`} ${written[0]!.toUpperCase()}${written.slice(1)}.`;
+}
+
+/** The actions the notification after a recording offers for the test that holds the block. */
+export const RECORDED_ACTIONS = { run: 'Run', verify: 'Verify ×3' } as const;
+
+/** How many times **Verify ×3** runs a test. */
+export const VERIFY_REPEAT = 3;
+
+/** A line of a spec: the argument the notification after a recording gives the run commands. */
+export interface TestLine {
+  uri: string;
+  /** 0-based. */
+  line: number;
+}
+
+/** The line a run command's argument names; null for anything else, such as the file a context menu passes. */
+export function testLineArg(arg: unknown): TestLine | null {
+  const at = arg as Partial<TestLine> | null | undefined;
+  return typeof at?.uri === 'string' && typeof at.line === 'number' && at.line >= 0
+    ? { uri: at.uri, line: at.line }
+    : null;
+}
+
+/**
+ * What runs the test `piwi/testAt` found at a line of the spec at `uri`: by its id when Piwi knows it, else by its
+ * location; with `repeat`, by its location, that many times. Null outside every test.
+ */
+export function testAtRun(uri: string, found: TestAtResult | null, repeat?: number): RunTestsArgs | null {
+  if (found?.test && !repeat) return { uri, testIds: [found.test.id] };
+  if (!found?.location) return null;
+  return { uri, testIds: [], locations: [found.location], ...(repeat ? { repeat } : {}) };
 }
 
 /** A Playwright test file's name: `.spec` or `.test`, then a JavaScript or TypeScript extension. */

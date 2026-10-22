@@ -45,7 +45,7 @@ writes a whole spec into it.
 - **Typing in the block** pauses the recording. **Resume** writes the block again from the recorded steps, over your
   edits; **Keep my edits** stops the recording and keeps the code as you changed it.
 - **Warnings** (a brittle locator, a password read from the environment, a file to upload) are on their lines. They stay
-  after the recording, until the code they describe is edited.
+  after the recording, each until its line is edited.
 
 ## Stop and undo
 
@@ -53,6 +53,34 @@ writes a whole spec into it.
 Closing the file ends it too. One **Undo** then removes the whole recording, imports included. In VS Code, a save or an
 edit of the file during the recording starts a new undo step, so your own changes stay undoable on their own; in a
 JetBrains IDE, that Undo also takes back the edits you made in the file meanwhile, and Redo brings everything back.
+
+### Run it, or verify it three times
+
+Once the recording stopped, a notification says what it wrote, `Recorded 6 steps into checkout.spec.ts.`, with two
+actions for the test that holds the block: the new test, or the test you recorded steps into.
+
+- **Run** runs that test, with your breakpoints, as **Piwi: Run the test at the cursor** does.
+- **Verify ×3** runs it three times, without retries and without the breakpoints
+  (`npx playwright test tests/checkout.spec.ts:42 --repeat-each=3 --retries=0`), and says how it went once it ended:
+  `Passed 3 of 3`, or `Failed 1 of 3` with **Open the failures** and **Open in dashboard**.
+
+A test the instance does not know yet is run by the line of its `test(…)` call, so neither needs an instance; the
+editor saves the file first, since Playwright runs it as saved. With an instance, the run is the editor's own, followed
+live, and the count comes from the results it streams; without one, from the exit code alone:
+`Passed 3 of 3: tests/checkout.spec.ts:42`, or `Failed at least 1 of 3`. Steps recorded into a page object or a helper
+offer neither action: no test holds them. Later, **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the
+Caret ×3** in a JetBrains IDE) verifies any test the same way; see [Runs from the editor](./editor-runs#run-tests).
+
+### Choose another locator
+
+The recorder keeps up to five locators for each element it acts on, each verified to find that element alone on the
+page, and writes the best one. Once the recording stopped, a warning on a step that has other locators offers each of
+them as a quick fix, best first: **Use getByTestId('pay')** in the light bulb menu in VS Code, with **Alt+Enter** in a
+JetBrains IDE. It puts that locator in place of the one written on the line, as one edit that **Undo** takes back, and
+the line's warning goes. While the recording runs, none is offered: each step writes the block again.
+
+The quick fix replaces the locator only where the line holds it once, as it was written: a line that calls your own
+page object or helper has none of its own, and offers none.
 
 ## The code
 

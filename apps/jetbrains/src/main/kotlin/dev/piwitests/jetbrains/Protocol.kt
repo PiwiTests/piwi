@@ -61,10 +61,12 @@ data class TestAtParams(val uri: String, val line: Int, val character: Int)
 data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null)
 
 /**
- * `piwi/testAt`: the test whose `test(…)` call spans the line, null outside every test Piwi knows; and the spec's
- * tests, null for a file that is not a spec or holds none of them.
+ * `piwi/testAt`: the test whose `test(…)` call spans the line, null outside every test Piwi knows; the spec's tests,
+ * null for a file that is not a spec or holds none of them; and where that `test(…)` call starts, as Playwright's
+ * location filter takes it (`tests/checkout.spec.ts:42`, relative to the Playwright config's folder), whether Piwi
+ * knows the test or not, null outside every `test(…)` call and from an older service.
  */
-data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null)
+data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null, val location: String? = null)
 
 /** Lines `start` to `end`, 0-based and inclusive; for lines the tests ran, `tests` is how many ran each. */
 data class LineSpan(val start: Int = 0, val end: Int = 0, val tests: Int? = null)
@@ -97,7 +99,10 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * action or assertion on their line, headed, with Piwi's pause bar, when their file is under the Playwright config's
  * folder. `root` names the Playwright config's folder to run them with; without it, the config of `uri`. `coverage`
  * `server`, set by a server file's coverage lens, has the run record the backend's coverage by line; `browser`, set by
- * a browser file's, the browser's coverage by function.
+ * a browser file's, the browser's coverage by function. `locations` names tests by where their `test(…)` call starts
+ * (`TestAtResult.location`), in place of `testIds`: a test the instance does not know yet runs too, without an
+ * instance. `repeat` runs each test that many times without retries (`--repeat-each=3 --retries=0`), headless, and
+ * the run's end says how many of those runs passed.
  */
 data class RunTestsArgs(
     val uri: String,
@@ -105,6 +110,8 @@ data class RunTestsArgs(
     val breakpoints: List<EditorBreakpoint>? = null,
     val root: String? = null,
     val coverage: String? = null,
+    val locations: List<String>? = null,
+    val repeat: Int? = null,
 )
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
@@ -245,7 +252,8 @@ data class RunStatusResult(val contexts: List<RunStatus>? = null)
 /**
  * `piwi/runEnded`: a run the editor started ended and the latest run was read again with it: its counts, `fixed` the
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
- * most five) of the tests it failed again and of those that were not failing before, with their counts.
+ * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
+ * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed.
  */
 data class RunEnded(
     val root: String? = null,
@@ -260,7 +268,11 @@ data class RunEnded(
     val newFailures: List<String>? = null,
     val stillFailingCount: Int? = null,
     val newFailureCount: Int? = null,
+    val repeat: RepeatVerdict? = null,
 )
+
+/** How a run of each test several times went: `Passed 3 of 3`, `Failed 1 of 3`, and whether one of the runs failed. */
+data class RepeatVerdict(val verdict: String? = null, val failed: Boolean = false)
 
 /**
  * A failure of the latest run where it shows, its line followed through the edits since the run, or, with `state`

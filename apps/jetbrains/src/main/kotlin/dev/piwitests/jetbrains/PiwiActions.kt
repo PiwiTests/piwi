@@ -107,10 +107,11 @@ class RunTestsForFileAction : AnAction(), DumbAware {
 }
 
 /**
- * Piwi: Run the Test at the Caret (`wholeSpec` false) or Run This Spec, through `piwi/testAt`, in the Run tool window
- * with the IDE's breakpoints. Offered in a spec file of a project with a Playwright config.
+ * Piwi: Run the Test at the Caret (`wholeSpec` false), Verify the Test at the Caret ×3 (`repeat`) or Run This Spec,
+ * through `piwi/testAt`, in the Run tool window with the IDE's breakpoints, which a verification leaves out. Offered in
+ * a spec file of a project with a Playwright config.
  */
-abstract class RunInSpecAction(private val wholeSpec: Boolean) : AnAction(), DumbAware {
+abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repeat: Int? = null) : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -125,11 +126,13 @@ abstract class RunInSpecAction(private val wholeSpec: Boolean) : AnAction(), Dum
         val project = e.project ?: return
         val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) } ?: return
         val caret = e.getData(CommonDataKeys.EDITOR)?.caretModel?.logicalPosition
-        PiwiCommands.runTestAt(project, uri, caret?.line ?: 0, caret?.column ?: 0, wholeSpec)
+        PiwiCommands.runTestAt(project, uri, caret?.line ?: 0, caret?.column ?: 0, wholeSpec, repeat)
     }
 }
 
 class RunTestAtCursorAction : RunInSpecAction(wholeSpec = false)
+
+class VerifyTestAtCursorAction : RunInSpecAction(wholeSpec = false, repeat = Glue.VERIFY_REPEAT)
 
 class RunSpecAction : RunInSpecAction(wholeSpec = true)
 

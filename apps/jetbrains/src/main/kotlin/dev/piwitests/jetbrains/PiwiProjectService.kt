@@ -560,6 +560,10 @@ class PiwiProjectService(private val project: Project) : Disposable {
         }
     }
 
+    /** Whether the editor service started, without asking it anything. */
+    fun serverStarted(): Boolean =
+        LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java).isNotEmpty()
+
     /** The running editor service, if any. */
     fun server(): PiwiLanguageServer? =
         LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java)

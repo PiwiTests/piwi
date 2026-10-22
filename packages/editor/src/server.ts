@@ -118,9 +118,15 @@ import {
   type FixPlan,
   type FlakeLabEntry,
 } from './piwi-client.js';
-import { playwrightArgsOf, playwrightTestCommand, verificationCommand } from './commands.js';
+import {
+  isTestLocation,
+  playwrightArgsOf,
+  playwrightTestCommand,
+  repeatArgs,
+  verificationCommand,
+} from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
-import { RunWatch, newRunRef } from './run-watch.js';
+import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
@@ -198,6 +204,7 @@ import {
   type FileSummary,
   type FileSummaryParams,
   type McpServersResult,
+  type Notice,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RecordParams,
@@ -265,6 +272,8 @@ const OPTIONS_WAIT_MS = 3_000;
  * fetch goes on, so the next ask has it.
  */
 const LOOKUP_WAIT_MS = 1_500;
+/** The latest commands that run each test several times whose end the service says, at most. */
+const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
 const TEST_CALL =
   /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
@@ -361,6 +370,19 @@ interface PlacerSeed {
   texts: ReadonlyMap<string, string | null>;
   diffed: ReadonlySet<string>;
   placed: ReadonlyMap<Placeable, Placement | null>;
+}
+
+/** The `test(…)` call spanning a 0-based line of a file's lines: the line it starts on and its title; else null. */
+function testCallAt(lines: string[], line: number): { line: number; title: string } | null {
+  for (let i = 0; i <= Math.min(line, lines.length - 1); i++) {
+    const m = TEST_CALL.exec(lines[i]!);
+    if (!m) continue;
+    const open = lines[i]!.indexOf('(', m.index);
+    const end = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
+    if (end >= line) return { line: i, title: m[2]! };
+    i = end;
+  }
+  return null;
 }
 
 /** The titles of the `test(…)` calls of a file's text. */
@@ -2597,31 +2619,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(TEST_AT_REQUEST, async (params: TestAtParams): Promise<TestAtResult> => {
-    const none: TestAtResult = { test: null, spec: null };
+    const none: TestAtResult = { test: null, spec: null, location: null };
     const file = uriToPath(params.uri);
     const context = file ? contextFor(file) : null;
     const relative = file && context ? relativeTo(context.root, file) : null;
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
+    const call = testCallAt((readText(file) ?? '').split(/\r?\n/), params.line);
     const cases = await context.casesOf(relative);
-    if (!cases.length) return none;
-    const byTitle = new Map(cases.map((c) => [c.title, c]));
-    const lines = (readText(file) ?? '').split(/\r?\n/);
-    let found: CatalogCase | undefined;
-    for (let i = 0; i <= Math.min(params.line, lines.length - 1); i++) {
-      const m = TEST_CALL.exec(lines[i]!);
-      const known = m ? byTitle.get(m[2]!) : undefined;
-      if (!known) continue;
-      const open = lines[i]!.indexOf('(', m!.index);
-      const end = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
-      if (end >= params.line) {
-        found = known;
-        break;
-      }
-      i = end;
-    }
+    const found = call ? new Map(cases.map((c) => [c.title, c])).get(call.title) : undefined;
     return {
       test: found ? caseToEditorTest(context, found) : null,
-      spec: { uri: params.uri, testIds: cases.map((c) => c.id) },
+      spec: cases.length ? { uri: params.uri, testIds: cases.map((c) => c.id) } : null,
+      location: call ? `${relative}:${call.line + 1}` : null,
     };
   });
 
@@ -2663,16 +2672,37 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   };
 
+  /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
+  const specLocation = (context: PiwiContext, location: unknown): location is string => {
+    if (!isTestLocation(location)) return false;
+    const spec = location.slice(0, location.lastIndexOf(':'));
+    return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
+  };
+
+  /** The Playwright arguments that run the tests `params` names: by location, else by id from the instance. */
+  const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
+    if (Array.isArray(params.locations) && params.locations.length) {
+      return params.locations.every((l) => specLocation(context, l)) ? [...params.locations] : null;
+    }
+    if (!context.client || !context.project || !params.testIds?.length) return null;
+    const answer = await context.client.runArgs(context.project.id, params.testIds);
+    return Array.isArray(answer.args) && answer.args.length ? answer.args : playwrightArgsOf(answer.command);
+  };
+
+  /** The commands that run each test several times, by ref: what their end says when their run reaches no instance. */
+  const repeatedCommands = new Map<string, { root: string; repeat: number; target: string }>();
+
   connection.onRequest(RUN_ARGS_REQUEST, async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
-    if (!context?.client || !context.project || !params.testIds.length) return null;
-    const answer = await context.client.runArgs(context.project.id, params.testIds);
-    const args = Array.isArray(answer.args) && answer.args.length ? answer.args : playwrightArgsOf(answer.command);
+    if (!context) return null;
+    const repeat = params.repeat ?? null;
+    const tests = await testArgs(context, params);
+    const args = tests && repeat !== null ? repeatArgs(tests, repeat) : tests;
     const command = args?.length ? playwrightTestCommand(args) : null;
     if (!args || !command) return null;
     const ref = newRunRef();
-    runWatch.watch(context, ref);
+    runWatch.watch(context, ref, repeat);
     const run: RunCommand = {
       cwd: commandFolder(context),
       args,
@@ -2680,7 +2710,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
-    return withBreakpoints(context, run, params.breakpoints);
+    if (repeat === null) return withBreakpoints(context, run, params.breakpoints);
+    repeatedCommands.set(ref, { root: context.root, repeat, target: tests!.join(' ') });
+    for (const oldest of repeatedCommands.keys()) {
+      if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
+      repeatedCommands.delete(oldest);
+    }
+    return run;
   });
 
   // An answer is what the client holds from then on: a change is pushed against it, so a client that read the state
@@ -2935,8 +2971,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (typeof params?.ref === 'string') runWatch.commandStarted(params.ref, params.terminalRef);
   });
 
+  // A command that runs each test several times says how it went: from its run when the instance holds it
+  // (`piwi/runEnded`), else from its exit code.
   connection.onNotification(COMMAND_ENDED_NOTIFICATION, (params: CommandEndedParams) => {
-    if (typeof params?.ref === 'string') void runWatch.commandEnded(params.ref, params.exitCode ?? null);
+    if (typeof params?.ref !== 'string') return;
+    const { ref } = params;
+    const exitCode = typeof params.exitCode === 'number' ? params.exitCode : null;
+    void runWatch.commandEnded(ref, exitCode).then((reached) => {
+      const repeated = repeatedCommands.get(ref);
+      if (!repeated || reached) return;
+      const verdict = exitVerdict(repeated.repeat, exitCode, repeated.target);
+      void connection.sendNotification(NOTICE_NOTIFICATION, { root: repeated.root, ...verdict } satisfies Notice);
+    });
   });
 
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {

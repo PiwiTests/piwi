@@ -69,7 +69,9 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   config (`root`). The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 - `piwi/runEnded` is a notification (`runVerdict` in `src/glue.ts`): a warning with **Re-run failing** when something
   fails, an information otherwise, with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**, as
-  the `piwi.runNotifications` setting allows (`always`, `failures`, `never`). A test the run in progress runs has the
+  the `piwi.runNotifications` setting allows (`always`, `failures`, `never`); a run's `repeat` (**Verify ×3**) is
+  said whatever the setting, `Piwi: run #124 · Failed 1 of 3`, a warning when one of the runs failed. A test the run
+  in progress runs has the
   `running` gutter icon (`media/test-running.svg`), then that run's result; `runsInFiles` keeps the run's `liveTests`,
   so the files are drawn again as its tests begin and end, at most once a second (`filesRedraw`, `drawFiles` in
   `src/extension.ts`), and at once when the latest run changes.
@@ -106,9 +108,13 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   under `root` when it lies in a workspace folder, the Playwright configs' folders, then the workspace folders; never a
   file outside them) and opens it at the 1-based line and column; when this window holds no such file, a warning says
   so (VS Code hands the link to the window focused last).
-- **Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`) and **Piwi: Run this spec** (`piwi.runSpec`), in the
-  palette and the editor's context menu of a spec while `piwi.active`, ask `piwi/testAt` for the cursor, then run the
-  test or the spec's tests through `runTests` (`runInSpec`), or say that none is known.
+- **Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`), **Piwi: Verify the test at the cursor ×3**
+  (`piwi.verifyTestAtCursor`) and **Piwi: Run this spec** (`piwi.runSpec`, while `piwi.active`), in the palette and
+  the editor's context menu of a spec, ask `piwi/testAt` for the cursor, save the spec when it has unsaved changes,
+  then run through `runTests` (`runTestAt`, `runSpec`) the test by its id when Piwi knows it, else by its location
+  (`testAtRun` in `src/glue.ts`), and to verify it by its location three times (`VERIFY_REPEAT`); or say that there is
+  none. The first two take a `{ uri, line }` argument (`testLineArg`) for the test at another line: the notification
+  after a recording names the line its block ends on.
 - Every test run (`runTests`: the lenses, the gutter hover's **Run**, **Run this test**, **Run the test at the
   cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing tests**; and **Run
   selection…**) passes the editor's breakpoints to the service (`breakpoints`), as the
@@ -135,12 +141,22 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   recorded block (first at `RecordResult.placement`), with the service's import edit (`importEdit`) in the same edit,
   tinted
   with `piwi.recordingBlockBackground`, a CodeLens above it (the state, the step count, Stop, Pause or Resume), the
-  recording in the status bar and its warnings as diagnostics, which stay after Stop until the block is edited. The
+  recording in the status bar and its warnings as diagnostics, each staying after Stop until its line is edited in
+  place (`editedLine`; an edit that adds or removes a line of the block removes them all). Once the recording stopped,
+  a warning on a step with other verified locators (`RecordingStep.locators`) offers each as a quick fix (a
+  `CodeActionProvider` on the diagnostic, `locatorChoices` in `src/glue.ts`): **Use getByTestId('pay')** puts it in
+  place of the written one, found on the line exactly once, as one workspace edit; none while it records, since the
+  next update writes the block again. The
   block is followed through the edits around it; typing inside it pauses the recording (Resume writes it again, Keep my
-  edits stops). Closing the file or the window stops its recording.
+  edits stops). Closing the file or the window stops its recording. The notification after Stop says what was
+  written (`recordingSummary`: `Piwi: recorded 6 steps into checkout.spec.ts.`) and, when `piwi/testAt` finds a test
+  holding the block's last line, offers **Run** and **Verify ×3** (`RECORDED_ACTIONS`), which run
+  `piwi.runTestAtCursor` and `piwi.verifyTestAtCursor` at that line as the block stands when clicked. No CodeLens
+  offers them: the recording's lens goes with Stop.
 - `src/glue.ts` is the pure half (the status bar item, the failures view's nodes, the MCP configuration to paste, the
   file an open link names, the recorded block's text and writes with the service's import edit, and following them through a change: `writeBlock`,
-  `followBlock`, `followEdit`), tested without an editor.
+  `followBlock`, `followEdit`, and the quick fixes of a recorded line's warning: `locatorChoices`; what runs the test at
+  a line: `testAtRun`), tested without an editor.
 
 ## Rules
 

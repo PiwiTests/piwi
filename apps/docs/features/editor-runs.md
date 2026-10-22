@@ -22,7 +22,12 @@ in the status bar while it executes, and its results over the latest CI run's fa
 - **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose
   `test(…)` call holds the cursor, and **Piwi: Run this spec** the spec's tests Piwi knows; both in the editor's
   context menu of a spec (**Run the Test at the Caret** and **Run This Spec** in a JetBrains IDE). In VS Code, **Run**
-  in the hover of a test's gutter icon runs that test.
+  in the hover of a test's gutter icon runs that test. A test the instance does not know yet, such as one you just
+  [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call
+  (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance. Both save the spec first.
+- **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the Caret ×3**) runs that test three times, without
+  retries and without the breakpoints (`--repeat-each=3 --retries=0`), and says once it ended how many of the runs
+  passed: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
   [code reach](/features/code-reach); also in the editor's context menu.
 - **Piwi: Run selection…** runs a saved [selection](/features/test-selection).
@@ -60,6 +65,12 @@ says what it changed: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still faili
 checkout.spec.ts › pays)`, then the tests it failed that were not failing before. It offers **Open the failures**,
 **Open in dashboard** and, when something fails, **Re-run failing**. The `piwi.runNotifications` setting (**Settings →
 Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails, or never.
+
+A verification (**Verify ×3**) says how many of its runs passed instead, whatever the setting: `Piwi: run #124 ·
+Failed 1 of 3`. The instance keeps one result of a test per attempt and Playwright project, so the editor counts the
+runs from the results the run streams as it executes; when it missed some, a failing verification says
+`Failed at least 1 of 3`. When its run never reached an instance, the exit code says it: `Passed 3 of 3:
+tests/checkout.spec.ts:42`, or `Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`.
 
 While the run executes, the gutter shows each test as running, then its result.
 
