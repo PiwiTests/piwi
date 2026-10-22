@@ -44,7 +44,8 @@
   ],
   "main": "./dist/extension.cjs",
   "activationEvents": [
-    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs,mts,cts}"
+    "workspaceContains:**/playwright.config.{ts,js,mjs,cjs,mts,cts}",
+    "onUri"
   ],
   "contributes": {
     "viewsContainers": {
@@ -116,6 +117,16 @@
       {
         "command": "piwi.runTestsForFile",
         "title": "Run the tests that reach this file",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.runTestAtCursor",
+        "title": "Run the test at the cursor",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.runSpec",
+        "title": "Run this spec",
         "category": "Piwi"
       },
       {
@@ -314,6 +325,14 @@
           "when": "piwi.hasCoverage"
         },
         {
+          "command": "piwi.runTestAtCursor",
+          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runSpec",
+          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
           "command": "piwi.record",
           "when": "editorLangId =~ /^(typescript|javascript)(react)?$/"
         },
@@ -331,6 +350,16 @@
         }
       ],
       "editor/context": [
+        {
+          "command": "piwi.runTestAtCursor",
+          "group": "piwi@1",
+          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runSpec",
+          "group": "piwi@1",
+          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
         {
           "command": "piwi.runTestsForFile",
           "group": "piwi@1",
@@ -474,6 +503,12 @@
         "command": "piwi.rerunFailing",
         "key": "ctrl+shift+alt+f",
         "mac": "cmd+shift+alt+f"
+      },
+      {
+        "command": "piwi.runTestAtCursor",
+        "key": "ctrl+shift+alt+k",
+        "mac": "cmd+shift+alt+k",
+        "when": "editorTextFocus"
       }
     ],
     "configuration": {
@@ -508,6 +543,23 @@
           ],
           "default": "always",
           "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
+        },
+        "piwi.failureSeverity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "off"
+          ],
+          "enumDescriptions": [
+            "An error, in the Problems panel and on the line.",
+            "A warning.",
+            "An information.",
+            "None: the failures view, the gutter and the lines above the tests still show it."
+          ],
+          "default": "error",
+          "markdownDescription": "How a failure of the latest run shows at its line in the editor and the Problems panel. A failure of a run on another branch, such as the default branch's while yours has no run, is a warning at most; one whose line you changed since the run, an information."
         },
         "piwi.trace.server": {
           "type": "string",
@@ -593,6 +645,20 @@
       {
         "id": "piwi.mcp",
         "label": "Piwi"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "piwi",
+        "required": [
+          "ref"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "The ref of the test run: the `PIWI_ORIGIN_REF` its command sets, by which Piwi follows the run."
+          }
+        }
       }
     ]
   },

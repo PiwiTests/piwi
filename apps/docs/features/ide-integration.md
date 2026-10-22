@@ -58,14 +58,38 @@ included, gets no answer whatever the IDE's built-in server settings allow, and
 the first address refused in an IDE session is named in a notification. When the dashboard you use is the project's instance under another
 address, connect the project to that address.
 
+## VS Code: the Piwi extension
+
+With the [Piwi extension](./editors#install-and-connect) installed in VS Code, Cursor or
+VSCodium, a path opens there with **no workspace root**: the dashboard hands the
+editor a `vscode://piwitests.piwi/open` link with the path as the run reported
+it, and the extension looks for it as it does for a failure's file: under the
+folder of each Playwright config in the window, then the workspace folders. It
+opens the file at its line and column, and never a file outside the workspace
+folders.
+
+- The editor hands the link to its window **focused last**. When that window
+  holds no such file, a warning there says so: focus the window of the project
+  and click the path again.
+- Like any URL scheme, the link reports nothing back to the dashboard: it shows
+  **Asked the Piwi extension in VS Code**, and if nothing opens, the extension
+  is not installed in the flavor you chose.
+- **Auto** uses it when no workspace root and no JetBrains project name is set,
+  while **The Piwi extension is installed in VS Code** is ticked (the default).
+- With a workspace root, or a project's linked folder in the desktop app, the
+  absolute path opens instead, through `vscode://file` or the desktop app's
+  launcher (below).
+
 ## Set it up
 
 1. Hover any source path and click the **⌄** caret, then **Configure…** — or open
    it from the user menu (bottom-left) → **Open in IDE…**.
-2. For VS Code, or a JetBrains IDE without the Piwi plugin, set your **workspace
-   root**: the absolute path of the folder the tests run from, e.g.
-   `/home/me/my-repo` (or `C:\Users\me\my-repo` on Windows). Repo-relative paths
-   are joined onto it, which is what VS Code needs to resolve a file.
+2. For VS Code without the Piwi extension, or a JetBrains IDE without the Piwi
+   plugin, set your **workspace root**: the absolute path of the folder the
+   tests run from, e.g. `/home/me/my-repo` (or `C:\Users\me\my-repo` on
+   Windows). Repo-relative paths are joined onto it, which is what VS Code needs
+   to resolve a file. With the Piwi extension, leave it empty and keep **The Piwi
+   extension is installed in VS Code** ticked.
 3. Pick a **method** (or leave it on **Auto**), then hit **Test** to open
    `package.json` and confirm it lands in your editor. Close the dialog —
    clicking any path now opens it there.
@@ -74,7 +98,7 @@ address, connect the project to that address.
 
 | Method | How it opens | Needs |
 |--------|--------------|-------|
-| **VS Code** | `vscode://file/<abs-path>:<line>` URL scheme | A workspace root (for the absolute path). Flavors: VS Code, Insiders, VSCodium, Cursor. |
+| **VS Code** | `vscode://file/<abs-path>:<line>` URL scheme with a workspace root; without one, the Piwi extension: `vscode://piwitests.piwi/open?file=<path>&line=<line>&column=<column>` | A workspace root (for the absolute path), or the [Piwi extension](./editors#install-and-connect) in the editor. Flavors: VS Code, Insiders, VSCodium, Cursor. |
 | **JetBrains (URL)** | The Piwi plugin, then `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | Without the plugin: [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/), the IDE product tag (e.g. `idea`, `rider`) and the open project name (in Rider, the solution's name). |
 | **JetBrains (local server)** | The Piwi plugin, then `http://localhost:63342/api/file/<path>:<line>` | Without the plugin: the IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled, which lets any page reach the IDE's local server. It cannot confirm the file opened. |
 | **Auto** | The Piwi plugin, then the other methods in turn (see below) | Whatever the method that answers needs. |
@@ -132,7 +156,9 @@ So **Auto** goes, stopping at the first that works:
 3. The IDE Remote Control local server, reported as **Sent to JetBrains**, not
    as opened.
 4. A single URL scheme: VS Code when a workspace root is set, otherwise
-   `jetbrains://`, reported as "opening…".
+   `jetbrains://` when a JetBrains project name is set, otherwise the Piwi
+   extension in VS Code while **The Piwi extension is installed in VS Code** is
+   ticked, reported as "opening…" or "asked".
 
 If you only ever use one editor, set the method explicitly to skip the other
 rungs.
@@ -170,4 +196,6 @@ All of this — the method, workspace root(s), editor flavor and JetBrains
 product/port — lives in your browser's `localStorage` under `piwi-ide-prefs`.
 Nothing about your local filesystem is sent to the Piwi server. The Piwi plugin
 is asked from your browser directly, on your own machine: the file path, the
-workspace root and the Piwi project's name go to the IDE, nowhere else.
+workspace root and the Piwi project's name go to the IDE, nowhere else. The
+Piwi extension's link carries the file path and line to VS Code through your
+operating system, nowhere else.

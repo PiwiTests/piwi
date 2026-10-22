@@ -2,8 +2,9 @@
  * What the extension shows, computed from the editor service's answers with
  * no VS Code API, so it is tested without an editor: the status bar item, the
  * failures view's tree, the file patterns the service reads, the MCP
- * configuration editors without the MCP provider API are given to paste, and
- * the recorded block a recording writes and follows through the edits around it.
+ * configuration editors without the MCP provider API are given to paste, the
+ * file a dashboard's open link names, and the recorded block a recording
+ * writes and follows through the edits around it.
  */
 import type {
   BaselineChoice,
@@ -30,6 +31,8 @@ import type {
   TestLineStatus,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
+import * as path from 'node:path';
+import { isUnder } from './breakpoints';
 
 /** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
 export const DOCUMENT_PATTERN =
@@ -448,6 +451,24 @@ export interface TestDecoration {
   failingLine: number | null;
   hover: string;
   dashboardUrl: string | null;
+  /** The test's id, which **Run** in its hover runs; null from a service that does not give it. */
+  testCaseId: number | null;
+}
+
+/** The commands a test's gutter hover runs: `enabledCommands` of its trusted `MarkdownString`. */
+export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests'];
+
+/** A test's gutter hover in the file at `uri`: its result, then **Run** and **Open in dashboard** when it has them. */
+export function testHoverMarkdown(test: TestDecoration, uri: string): string {
+  const link = (title: string, command: string, args: unknown[]) =>
+    `[${title}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
+  const links = [
+    test.testCaseId !== null
+      ? link('Run', 'piwi.runTests', [{ uri, testIds: [test.testCaseId] } satisfies RunTestsArgs])
+      : '',
+    test.dashboardUrl ? link('Open in dashboard', 'piwi.openInDashboard', [test.dashboardUrl]) : '',
+  ].filter(Boolean);
+  return links.length ? `${test.hover}\n\n${links.join(' · ')}` : test.hover;
 }
 
 /** The decorations of a file's tests: the summary lines that carry a result. */
@@ -465,6 +486,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
               l.command?.command === 'piwi.openInDashboard' && typeof l.command.arguments?.[0] === 'string'
                 ? (l.command.arguments[0] as string)
                 : null,
+            testCaseId: l.testCaseId ?? null,
           },
         ]
       : [],
@@ -948,6 +970,86 @@ export function coalesced(fn: () => void, schedule: (run: () => void) => void): 
       fn();
     });
   };
+}
+
+/** The longest name a test run's task gets: the start of `playwright test` and its arguments. */
+const TASK_NAME_LENGTH = 80;
+
+/** The name of a test run's task: `playwright test` and its arguments, cut at `TASK_NAME_LENGTH` characters. */
+export function runTaskName(args: readonly string[]): string {
+  const name = ['playwright test', ...args].join(' ');
+  return name.length > TASK_NAME_LENGTH ? `${name.slice(0, TASK_NAME_LENGTH - 1)}…` : name;
+}
+
+/**
+ * What a `vscode://piwitests.piwi/open` link names: the file as the run reported it, its 1-based line and column, and
+ * the folder the file is relative to, when the dashboard knows it.
+ */
+export interface OpenLink {
+  file: string;
+  line: number;
+  column: number;
+  root: string | null;
+}
+
+/**
+ * An open link's query as `vscode.Uri.query` gives it, decoded: `file=…&line=…&column=…&root=…`, each value taken as
+ * written up to the next `&` that starts one of these keys, so a path may hold an `&`. A line or column missing or
+ * below 1 is 1. Null without a file.
+ */
+export function openLink(query: string): OpenLink | null {
+  const params = new Map<string, string>();
+  for (const pair of query.split(/&(?=(?:file|line|column|root)=)/)) {
+    const eq = pair.indexOf('=');
+    if (eq > 0) params.set(pair.slice(0, eq), pair.slice(eq + 1));
+  }
+  const file = params.get('file')?.trim();
+  if (!file) return null;
+  const position = (name: string) => {
+    const n = Number.parseInt(params.get(name) ?? '', 10);
+    return Number.isInteger(n) && n >= 1 ? n : 1;
+  };
+  return { file, line: position('line'), column: position('column'), root: params.get('root')?.trim() || null };
+}
+
+/** Whether `file` is `folder` or inside it. */
+function within(folder: string, file: string): boolean {
+  return path.relative(folder, file) === '' || isUnder(folder, file);
+}
+
+/**
+ * The file an open link names, found as the editor service finds a run's path: an absolute path as given, else joined
+ * to each folder, then by ever shorter suffixes (at least the file and its directory). The folders are the link's
+ * `root` when it lies in a workspace folder, then the Playwright configs' folders, then the workspace folders. Only a
+ * file inside a workspace folder is returned; null when none exists. `exists` says whether a path is a file.
+ */
+export function resolveOpenFile(
+  link: Pick<OpenLink, 'file' | 'root'>,
+  places: { workspaceFolders: readonly string[]; configRoots: readonly string[] },
+  exists: (file: string) => boolean,
+): string | null {
+  const found = (file: string) => places.workspaceFolders.some((folder) => within(folder, file)) && exists(file);
+  const reported = link.file.replace(/\\/g, '/');
+  if (path.isAbsolute(reported) && found(path.resolve(reported))) return path.resolve(reported);
+  const root = link.root ? path.resolve(link.root) : null;
+  const roots = [
+    ...(root && places.workspaceFolders.some((folder) => within(folder, root)) ? [root] : []),
+    ...places.configRoots,
+    ...places.workspaceFolders,
+  ];
+  const parts = reported.split('/').filter((p) => p && p !== '.');
+  for (const folder of new Set(roots)) {
+    for (let from = 0; parts.length - from >= Math.min(2, parts.length); from++) {
+      const candidate = path.join(folder, ...parts.slice(from));
+      if (found(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/** The message shown when an open link names no file of this window. */
+export function openLinkMissing(file: string): string {
+  return `Piwi: no file of this window matches ${file}. VS Code opens a link in the window focused last: focus the window of the project that holds it, then open the link again.`;
 }
 
 /** The editor's proxy settings, `http.*` in VS Code's configuration, which the editor service follows. */

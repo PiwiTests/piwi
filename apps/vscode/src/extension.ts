@@ -8,6 +8,7 @@
  * agent, inserts what Piwi Picker sends, and records tests (`recording.ts`).
  */
 import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import {
   LanguageClient,
@@ -68,6 +69,7 @@ import {
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
+  TEST_AT_REQUEST,
   SCREENSHOT_REQUEST,
   TRACE_REQUEST,
   type DesktopResult,
@@ -75,6 +77,7 @@ import {
   type RunIdParams,
   type RunIdResult,
   type EditorCredentials,
+  type FailureSeverity,
   type SetBaselineParams,
   type FileSummary,
   type McpServersResult,
@@ -86,6 +89,7 @@ import {
   type SelectionsResult,
   type StatusResult,
   type SummaryLine,
+  type TestAtResult,
   type TestsForFile,
   type ScreenshotParams,
   type ScreenshotResult,
@@ -113,6 +117,8 @@ import {
   hasCoverageMarks,
   desktopJobNotice,
   testDecorations,
+  testHoverMarkdown,
+  TEST_HOVER_COMMANDS,
   type TestDecoration,
   disconnectQuestion,
   filesRedraw,
@@ -130,10 +136,14 @@ import {
   baselinePicks,
   withBaseline,
   serviceEnvironment,
+  openLink,
+  openLinkMissing,
+  resolveOpenFile,
+  runTaskName,
   type FailureNode,
   type ProxySettings,
 } from './glue';
-import { isUnder, runBreakpoints, terminalEnvKey } from './breakpoints';
+import { isUnder, runBreakpoints } from './breakpoints';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
@@ -152,8 +162,8 @@ const PROXY_WAIT_MS = 250;
 const FILES_DRAW_WAIT_MS = 50;
 /** The editor's settings the service's environment follows (`serviceEnvironment`); a change starts it again. */
 const PROXY_SETTINGS = ['http.proxy', 'http.proxyStrictSSL', 'http.proxyAuthorization', 'http.noProxy'];
-/** A terminal whose shell has not activated shell integration this long after it opened never will. */
-const SHELL_INTEGRATION_WAIT_MS = 10_000;
+/** The type of a test run's task (`taskDefinitions` in `package.json`), told apart by its ref. */
+const RUN_TASK_TYPE = 'piwi';
 /** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
 const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
@@ -184,18 +194,6 @@ interface McpApi {
 }
 type McpHttpServerDefinitionClass = new (label: string, uri: vscode.Uri, headers?: Record<string, string>) => unknown;
 
-/** A command's start and end in a terminal, from shell integration (VS Code 1.93 and later), read at runtime. */
-interface ShellExecutionEvent {
-  terminal: vscode.Terminal;
-  execution?: { commandLine?: { value?: string } };
-  /** Set on the end; undefined when the shell does not report it. */
-  exitCode?: number;
-}
-interface ShellIntegrationApi {
-  onDidStartTerminalShellExecution?: vscode.Event<ShellExecutionEvent>;
-  onDidEndTerminalShellExecution?: vscode.Event<ShellExecutionEvent>;
-}
-
 let client: LanguageClient | null = null;
 /** The connection last handed to the service, which each start of the service begins with. */
 let handed: EditorCredentials | null = null;
@@ -208,7 +206,7 @@ export interface PiwiApi {
   pageCandidates(params: PageCandidatesParams): Promise<PageCandidatesResult>;
   /** The failures view's nodes under `node`, or its roots, once the failures are read again. */
   failureChildren(node?: FailureNode): Promise<FailureNode[]>;
-  /** The command of the latest test run started from the editor, as sent to its terminal; null before the first. */
+  /** The command of the latest test run started from the editor, as run in its task; null before the first. */
   lastRun(): RunCommand | null;
   /** The tests last drawn in the gutter of a file, by its URI. */
   gutter(uri: string): TestDecoration[];
@@ -223,7 +221,7 @@ function failureOf(target: unknown): FailureNode['failure'] | null {
 
 /**
  * The connection saved in the editor: the workspace's instance and project, that instance's key,
- * and whether this machine reads the desktop app first.
+ * whether this machine reads the desktop app first, and the severity of a failure's diagnostic.
  */
 async function credentials(context: vscode.ExtensionContext): Promise<EditorCredentials> {
   const settings = vscode.workspace.getConfiguration('piwi');
@@ -235,6 +233,7 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     desktop: context.workspaceState.get<boolean>(DESKTOP_CHOSEN) ?? false,
     desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
     baselines: context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES) ?? {},
+    failureSeverity: settings.get<FailureSeverity>('failureSeverity') ?? 'error',
   };
 }
 
@@ -361,12 +360,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           tests
             .filter((t) => t.status === status && t.line < document.lineCount)
             .map((t) => {
-              const hover = new vscode.MarkdownString(
-                t.dashboardUrl
-                  ? `${t.hover}\n\n[Open in dashboard](command:piwi.openInDashboard?${encodeURIComponent(JSON.stringify([t.dashboardUrl]))})`
-                  : t.hover,
-              );
-              hover.isTrusted = { enabledCommands: ['piwi.openInDashboard'] };
+              const hover = new vscode.MarkdownString(testHoverMarkdown(t, document.uri.toString()));
+              hover.isTrusted = { enabledCommands: TEST_HOVER_COMMANDS };
               return { range: document.lineAt(t.line).range, hoverMessage: hover };
             }),
         );
@@ -607,103 +602,105 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   );
   context.subscriptions.push(failuresView);
 
-  // The terminal of each directory and environment commands run in, reused while it is open. A test run carries the
-  // ref of its own run in its environment. Where shell integration reports the commands of the directory's run
-  // terminal, a test run opens a terminal of its own, which replaces the previous run's once that run's command ended.
-  // Without shell integration, or in a shell that never activates it, the test runs of a directory share one terminal,
-  // whose environment keeps the first run's ref: the service is told so (`piwi/commandStarted`), and recognizes the
-  // later runs as the editor's own by that ref, through the instance's event stream. A run terminal whose command has
-  // not ended is never reused while its shell may still activate integration and report that end.
+  // A command without a ref (the Flake Lab, a trace viewer) runs in the terminal of its directory and environment,
+  // reused while it is open.
   const terminals = new Map<string, vscode.Terminal>();
-  const runTerminals = new Map<string, vscode.Terminal>();
-  /** The ref of each run terminal's environment: the ref of the first command sent to it. */
-  const terminalRefs = new Map<vscode.Terminal, string>();
-  /** The rest of each run terminal's environment (`terminalEnvKey`): a run with other breakpoints needs another. */
-  const terminalEnvs = new Map<vscode.Terminal, string>();
-  /** The command of a test run sent to a terminal, until shell integration sees it end: `piwi/commandEnded` names it. */
-  const running = new Map<vscode.Terminal, { ref: string; command: string }>();
-  /** The terminals whose last command ended. */
-  const idle = new WeakSet<vscode.Terminal>();
-  /** When each run terminal opened. */
-  const openedAt = new WeakMap<vscode.Terminal, number>();
-  const shell = vscode.window as unknown as ShellIntegrationApi;
-  const shellIntegration = !!shell.onDidStartTerminalShellExecution && !!shell.onDidEndTerminalShellExecution;
-  /** Whether a terminal's shell activated shell integration (VS Code 1.93 and later, read at runtime). */
-  const integrated = (t: vscode.Terminal) =>
-    (t as unknown as { shellIntegration?: unknown }).shellIntegration !== undefined;
-  const runInTerminal = (cwd: string, command: string, env?: Record<string, string>, ref?: string) => {
-    let terminal: vscode.Terminal | undefined;
-    if (ref) {
-      const previous = runTerminals.get(cwd);
-      const envKey = terminalEnvKey(env);
-      // A shell that has not activated integration this long after its terminal opened never reports the end of the
-      // command sent to it.
-      if (
-        previous &&
-        running.has(previous) &&
-        !integrated(previous) &&
-        Date.now() - (openedAt.get(previous) ?? 0) >= SHELL_INTEGRATION_WAIT_MS
-      ) {
-        running.delete(previous);
-      }
-      if (
-        previous &&
-        !previous.exitStatus &&
-        !running.has(previous) &&
-        (!shellIntegration || !integrated(previous)) &&
-        terminalEnvs.get(previous) === envKey
-      ) {
-        terminal = previous;
-      } else {
-        if (previous && idle.has(previous)) previous.dispose();
-        terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
-        runTerminals.set(cwd, terminal);
-        openedAt.set(terminal, Date.now());
-        terminalRefs.set(terminal, ref);
-        terminalEnvs.set(terminal, envKey);
-        if (shellIntegration) running.set(terminal, { ref, command });
-      }
-    } else {
-      const key = `${cwd}\0${JSON.stringify(env ?? {})}`;
-      terminal = terminals.get(key);
-      if (!terminal || terminal.exitStatus) {
-        terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
-        terminals.set(key, terminal);
-      }
+  const runInTerminal = (cwd: string, command: string, env?: Record<string, string>) => {
+    const key = `${cwd}\0${JSON.stringify(env ?? {})}`;
+    let terminal = terminals.get(key);
+    if (!terminal || terminal.exitStatus) {
+      terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
+      terminals.set(key, terminal);
     }
     terminal.show();
     terminal.sendText(command);
-    if (ref) {
-      const terminalRef = terminalRefs.get(terminal);
-      void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, {
-        ref,
-        ...(terminalRef && terminalRef !== ref ? { terminalRef } : {}),
-      } satisfies CommandStartedParams);
-    }
   };
-  if (shell.onDidStartTerminalShellExecution && shell.onDidEndTerminalShellExecution) {
-    context.subscriptions.push(
-      shell.onDidStartTerminalShellExecution((e) => idle.delete(e.terminal)),
-      shell.onDidEndTerminalShellExecution((e) => {
-        idle.add(e.terminal);
-        const sent = running.get(e.terminal);
-        const line = e.execution?.commandLine?.value;
-        if (!sent || (line && !line.includes(sent.command))) return;
-        running.delete(e.terminal);
-        void lc.sendNotification(COMMAND_ENDED_NOTIFICATION, {
-          ref: sent.ref,
-          exitCode: e.exitCode ?? null,
-        } satisfies CommandEndedParams);
-      }),
-    );
-  }
   context.subscriptions.push(
     vscode.window.onDidCloseTerminal((t) => {
       for (const [key, terminal] of terminals) if (terminal === t) terminals.delete(key);
-      for (const [cwd, terminal] of runTerminals) if (terminal === t) runTerminals.delete(cwd);
-      terminalRefs.delete(t);
-      terminalEnvs.delete(t);
-      running.delete(t);
+    }),
+  );
+
+  // A test run is a task of its own, `{ type: 'piwi', ref }`, in a terminal of its own: the start of its process sends
+  // `piwi/commandStarted` and its end `piwi/commandEnded` with the exit code. **Tasks: Rerun Last Task** runs the same
+  // command with the same ref, which the service follows as a rerun of a run it knows.
+  /** The refs of the tasks started from Piwi whose process has not started yet: their start was already sent. */
+  const pendingStarts = new Set<string>();
+  const runAsTask = async (command: RunCommand & { ref: string }, env: Record<string, string> | undefined) => {
+    const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(command.cwd));
+    const task = new vscode.Task(
+      { type: RUN_TASK_TYPE, ref: command.ref },
+      folder ?? vscode.TaskScope.Workspace,
+      runTaskName(command.args),
+      'Piwi',
+      new vscode.ShellExecution(command.command, { cwd: command.cwd, env }),
+    );
+    task.presentationOptions = {
+      reveal: vscode.TaskRevealKind.Always,
+      panel: vscode.TaskPanelKind.Dedicated,
+      clear: true,
+    };
+    pendingStarts.add(command.ref);
+    void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, { ref: command.ref } satisfies CommandStartedParams);
+    try {
+      await vscode.tasks.executeTask(task);
+    } catch (err) {
+      pendingStarts.delete(command.ref);
+      void vscode.window.showErrorMessage(`Piwi: could not run the tests: ${(err as Error).message}`);
+    }
+  };
+  /** The ref of a test run's task; null for another task. */
+  const taskRef = (execution: vscode.TaskExecution): string | null => {
+    const definition = execution.task.definition;
+    return definition.type === RUN_TASK_TYPE && typeof definition.ref === 'string' ? definition.ref : null;
+  };
+  context.subscriptions.push(
+    vscode.tasks.onDidStartTaskProcess((e) => {
+      const ref = taskRef(e.execution);
+      if (!ref || pendingStarts.delete(ref)) return;
+      void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, { ref } satisfies CommandStartedParams);
+    }),
+    vscode.tasks.onDidEndTaskProcess((e) => {
+      const ref = taskRef(e.execution);
+      if (!ref) return;
+      void lc.sendNotification(COMMAND_ENDED_NOTIFICATION, {
+        ref,
+        exitCode: e.exitCode ?? null,
+      } satisfies CommandEndedParams);
+    }),
+  );
+
+  // The dashboard's Open in IDE: `vscode://piwitests.piwi/open?file=…&line=…&column=…&root=…` opens the file the run
+  // reported, found under the link's root, the Playwright configs' folders and the workspace folders, and never
+  // outside the workspace folders. VS Code hands the link to the window focused last.
+  context.subscriptions.push(
+    vscode.window.registerUriHandler({
+      handleUri: async (uri) => {
+        const link = uri.path === '/open' ? openLink(uri.query) : null;
+        if (!link) return;
+        const isFile = (file: string) => {
+          try {
+            return fs.statSync(file).isFile();
+          } catch {
+            return false;
+          }
+        };
+        const file = resolveOpenFile(
+          link,
+          {
+            workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+            configRoots: status?.contexts.map((c) => c.root) ?? [],
+          },
+          isFile,
+        );
+        if (!file) {
+          void vscode.window.showWarningMessage(openLinkMissing(link.file));
+          return;
+        }
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+        const at = document.validatePosition(new vscode.Position(link.line - 1, link.column - 1));
+        await vscode.window.showTextDocument(document, { selection: new vscode.Range(at, at), preview: false });
+      },
     }),
   );
 
@@ -767,7 +764,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (address) env = { ...env, PIWI_EDITOR_SEND: address };
     }
     lastRun = { ...command, env };
-    runInTerminal(command.cwd, command.command, env, command.ref);
+    if (command.ref) await runAsTask({ ...command, ref: command.ref }, env);
+    else runInTerminal(command.cwd, command.command, env);
   };
 
   const runTests = async (args: RunTestsArgs) => {
@@ -784,6 +782,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
+
+  /**
+   * Run the test whose `test(…)` call holds the cursor, or with `wholeSpec` the tests of the spec (`target`, else the
+   * active one) Piwi knows, as every test run does.
+   */
+  const runInSpec = async (wholeSpec: boolean, target?: vscode.Uri) => {
+    const editor = vscode.window.activeTextEditor;
+    const uri = target?.toString() ?? editor?.document.uri.toString();
+    if (!uri) return;
+    const cursor = editor?.document.uri.toString() === uri ? editor.selection.active : null;
+    const found = await lc
+      .sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri, line: cursor?.line ?? 0, character: cursor?.character ?? 0 })
+      .catch(() => null);
+    const testIds = wholeSpec ? (found?.spec?.testIds ?? []) : found?.test ? [found.test.id] : [];
+    if (!testIds.length) {
+      void vscode.window.showInformationMessage(
+        wholeSpec ? 'Piwi: no test of this spec is known yet.' : 'Piwi: the cursor is in no test Piwi knows.',
+      );
+      return;
+    }
+    await runTests({ uri, testIds });
+  };
 
   /** The execution a trace or a screenshot command names: its arguments, or a failure of the failures view. */
   const evidenceParams = (target: TraceParams | FailureNode): TraceParams => {
@@ -933,6 +953,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       }
       await runTests({ uri, testIds: found.tests.map((t) => t.id) });
     }),
+    vscode.commands.registerCommand('piwi.runTestAtCursor', () => runInSpec(false)),
+    vscode.commands.registerCommand('piwi.runSpec', (target?: vscode.Uri) => runInSpec(true, target)),
     vscode.commands.registerCommand('piwi.openInDashboard', async (target?: string | FailureNode) => {
       const url = typeof target === 'string' ? target : target?.url;
       if (typeof url === 'string' && url) {
@@ -1051,7 +1073,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     // The settings and the key the connection reads; a burst of changes, such as Connect's, is handed once. The
     // editor's proxy settings start the service again.
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('piwi.serverUrl') || e.affectsConfiguration('piwi.project')) credentialsChanged();
+      if (
+        e.affectsConfiguration('piwi.serverUrl') ||
+        e.affectsConfiguration('piwi.project') ||
+        e.affectsConfiguration('piwi.failureSeverity')
+      )
+        credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
     }),
     context.secrets.onDidChange((e) => {

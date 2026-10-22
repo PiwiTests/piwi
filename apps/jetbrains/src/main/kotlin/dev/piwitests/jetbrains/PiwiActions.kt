@@ -106,6 +106,33 @@ class RunTestsForFileAction : AnAction(), DumbAware {
     }
 }
 
+/**
+ * Piwi: Run the Test at the Caret (`wholeSpec` false) or Run This Spec, through `piwi/testAt`, in the Run tool window
+ * with the IDE's breakpoints. Offered in a spec file of a project with a Playwright config.
+ */
+abstract class RunInSpecAction(private val wholeSpec: Boolean) : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
+        val project = e.project
+        e.presentation.isEnabledAndVisible = project != null && file != null && Glue.isSpecFile(file.name) &&
+            (wholeSpec || e.getData(CommonDataKeys.EDITOR) != null) &&
+            project.service<PiwiProjectService>().hasPlaywrightConfig()
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) } ?: return
+        val caret = e.getData(CommonDataKeys.EDITOR)?.caretModel?.logicalPosition
+        PiwiCommands.runTestAt(project, uri, caret?.line ?: 0, caret?.column ?: 0, wholeSpec)
+    }
+}
+
+class RunTestAtCursorAction : RunInSpecAction(wholeSpec = false)
+
+class RunSpecAction : RunInSpecAction(wholeSpec = true)
+
 /** Piwi: Open in dashboard — this file's test, or the latest run. */
 class OpenInDashboardAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT

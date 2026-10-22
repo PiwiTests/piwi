@@ -112,6 +112,7 @@ import {
   type ResponseCache,
   type BranchFailure,
   type BranchResolved,
+  type CatalogCase,
   type FileCoverage,
   type FixPlan,
   type FlakeLabEntry,
@@ -176,6 +177,7 @@ import {
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
+  TEST_AT_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
@@ -188,6 +190,7 @@ import {
   type EditorBreakpoint,
   type EditorCredentials,
   type EditorTest,
+  type FailureSeverity,
   type FailuresGrouping,
   type FailuresParams,
   type FailuresResult,
@@ -216,6 +219,8 @@ import {
   type StatusResult,
   type StopRecordingParams,
   type SummaryLine,
+  type TestAtParams,
+  type TestAtResult,
   type TestFailure,
   type TestLineStatus,
   type TestsForFile,
@@ -366,8 +371,35 @@ function testTitles(text: string): Set<string> {
   return titles;
 }
 
+/**
+ * The severity of a failure's diagnostic as the client's setting chooses it (`error` when unset): a warning at most for
+ * a run on another branch, an information for a line edited since the run; null with `off`.
+ */
+function failureSeverity(
+  setting: FailureSeverity | null | undefined,
+  otherBranch: boolean,
+  edited: boolean,
+): DiagnosticSeverity | null {
+  if (setting === 'off') return null;
+  if (edited || setting === 'information') return DiagnosticSeverity.Information;
+  if (setting === 'warning' || otherBranch) return DiagnosticSeverity.Warning;
+  return DiagnosticSeverity.Error;
+}
+
 function toEditorTest(context: PiwiContext, t: LocatorIndexTest): EditorTest {
   return { id: t.id, title: t.title, file: t.file, status: t.status, url: context.client?.testUrl(t.id) ?? '' };
+}
+
+function caseToEditorTest(context: PiwiContext, c: CatalogCase): EditorTest {
+  return {
+    id: c.id,
+    title: c.title,
+    file: c.filePath,
+    status: (['passed', 'failed', 'flaky', 'skipped'].includes(c.status ?? '')
+      ? c.status
+      : null) as EditorTest['status'],
+    url: context.client?.testUrl(c.id) ?? '',
+  };
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -1032,8 +1064,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /**
    * Place every context's failures on the files as they stand, publish the files whose failure diagnostics changed,
    * and send `piwi/failuresChanged` when the failures' list did. A failure whose test left its spec publishes nothing;
-   * one whose line changed since its run is an information. With `edited`, a document's text as it stands, only the
-   * failures it holds are placed again, on the texts the latest pass read for the other files.
+   * the others publish with the severity the credentials choose (`failureSeverity`), none with `off`. With `edited`, a
+   * document's text as it stands, only the failures it holds are placed again, on the texts the latest pass read for
+   * the other files.
    */
   const publishFailures = (edited?: { file: string; text: string }) => {
     const pass = edited && lastPass ? placer(edited, seedWithout(lastPass, edited.file)) : placer();
@@ -1047,17 +1080,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const start = text.length - text.trimStart().length;
         const uri = pathToFileURL(at.file).href;
         const edited = at.state === 'edited';
+        const otherBranch = context.runBranch !== context.checkedOutBranch;
+        const severity = failureSeverity(credentials.failureSeverity, otherBranch, edited);
+        if (severity === null) continue;
         const run = runLabel(context, f);
-        const where = `${f.title}, ${run}${
-          context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : ''
-        }`;
+        const where = `${f.title}, ${run}${otherBranch ? ` on ${context.runBranch ?? 'another branch'}` : ''}`;
         const headline = f.headline ?? 'Failed';
         (next.get(uri) ?? next.set(uri, []).get(uri)!).push({
           range: {
             start: { line: at.line - 1, character: start },
             end: { line: at.line - 1, character: Math.max(start, text.trimEnd().length) },
           },
-          severity: edited ? DiagnosticSeverity.Information : DiagnosticSeverity.Error,
+          severity,
           source: 'Piwi',
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
@@ -2411,6 +2445,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status)),
           endLine,
           ...(failure ? { failure } : {}),
+          testCaseId: found.id,
         });
         out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
         if (!failed || !failure) return;
@@ -2536,18 +2571,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const relative = relativeTo(context.root, file);
     if (relative && SPEC_FILE.test(relative)) {
       const cases = await context.casesOf(relative);
-      return {
-        basis: 'defined',
-        tests: cases.map((c) => ({
-          id: c.id,
-          title: c.title,
-          file: c.filePath,
-          status: (['passed', 'failed', 'flaky', 'skipped'].includes(c.status ?? '')
-            ? c.status
-            : null) as EditorTest['status'],
-          url: context.client?.testUrl(c.id) ?? '',
-        })),
-      };
+      return { basis: 'defined', tests: cases.map((c) => caseToEditorTest(context, c)) };
     }
     if (isTestCode(context, relative)) {
       const tests = new Map<number, LocatorIndexTest>();
@@ -2564,6 +2588,35 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return {
       basis: reached.size ? 'reach' : 'none',
       tests: [...reached.values()].map((t) => toEditorTest(context, t)),
+    };
+  });
+
+  connection.onRequest(TEST_AT_REQUEST, async (params: TestAtParams): Promise<TestAtResult> => {
+    const none: TestAtResult = { test: null, spec: null };
+    const file = uriToPath(params.uri);
+    const context = file ? contextFor(file) : null;
+    const relative = file && context ? relativeTo(context.root, file) : null;
+    if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
+    const cases = await context.casesOf(relative);
+    if (!cases.length) return none;
+    const byTitle = new Map(cases.map((c) => [c.title, c]));
+    const lines = (readText(file) ?? '').split(/\r?\n/);
+    let found: CatalogCase | undefined;
+    for (let i = 0; i <= Math.min(params.line, lines.length - 1); i++) {
+      const m = TEST_CALL.exec(lines[i]!);
+      const known = m ? byTitle.get(m[2]!) : undefined;
+      if (!known) continue;
+      const open = lines[i]!.indexOf('(', m!.index);
+      const end = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
+      if (end >= params.line) {
+        found = known;
+        break;
+      }
+      i = end;
+    }
+    return {
+      test: found ? caseToEditorTest(context, found) : null,
+      spec: { uri: params.uri, testIds: cases.map((c) => c.id) },
     };
   });
 
@@ -2918,6 +2971,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onNotification(SET_CREDENTIALS_NOTIFICATION, (next: EditorCredentials) => {
     credentials = next ?? {};
     applyBaselines();
+    // The failures read so far take the severity these credentials choose.
+    publishFailures();
     // The refresh opens the streams the instance refused again, with these credentials.
     void refreshAll();
   });

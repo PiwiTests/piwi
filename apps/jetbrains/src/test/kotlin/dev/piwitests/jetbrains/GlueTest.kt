@@ -1155,6 +1155,16 @@ class GlueTest {
         assertEquals(false, Glue.isPlaywrightConfig(null))
     }
 
+    @Test
+    fun `a spec is named as the editor service reads specs`() {
+        for (name in listOf("checkout.spec.ts", "cart.test.mjs", "row.spec.tsx", "login.test.cjs", "a.spec.js")) {
+            assertEquals(true, Glue.isSpecFile(name))
+        }
+        assertEquals(false, Glue.isSpecFile("checkout.page.ts"))
+        assertEquals(false, Glue.isSpecFile("checkout.spec.ts.bak"))
+        assertEquals(false, Glue.isSpecFile("spec.ts"))
+    }
+
     private val mappedCoverage = CoverageResult(
         uri = "file:///w/src/Web/Services/BasketService.cs",
         state = "mapped",

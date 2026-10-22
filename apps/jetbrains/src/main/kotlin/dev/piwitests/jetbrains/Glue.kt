@@ -29,6 +29,11 @@ object Glue {
         "playwright.config.mts", "playwright.config.cts",
     )
 
+    /** Whether a file name is a spec's, as the editor service reads specs (`checkout.spec.ts`, `cart.test.mjs`). */
+    fun isSpecFile(name: String): Boolean = SPEC_FILE.containsMatchIn(name)
+
+    private val SPEC_FILE = Regex("\\.(spec|test)\\.[cm]?[jt]sx?$")
+
     /** Whether a path, with either separator, names a Playwright config. */
     fun isPlaywrightConfig(path: String?): Boolean =
         path != null && path.substringAfterLast('/').substringAfterLast('\\') in PLAYWRIGHT_CONFIGS
@@ -548,6 +553,12 @@ object Glue {
 
     /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
+
+    /**
+     * The severity of a failure's diagnostic (`EditorCredentials.failureSeverity`): `error`, `warning`, `information`,
+     * or `off`, which leaves the failures to the tool window and the gutter.
+     */
+    val FAILURE_SEVERITIES = listOf("error", "warning", "information", "off")
 
     const val OPEN_FAILURES = "Open the Failures"
     const val OPEN_IN_DASHBOARD = "Open in Dashboard"

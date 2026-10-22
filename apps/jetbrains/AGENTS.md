@@ -120,9 +120,15 @@ service's `src/http.ts` reads.
   (`PiwiCommands.notify`), and so is `piwi/runEnded` (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the
   Failures**, **Open in Dashboard** and, when something fails, **Re-run Failing**, as
   `PiwiLocalSettings.runNotifications` allows (**Settings → Tools → Piwi**: `always`, `failures`, `never`, in
-  `.idea/workspace.xml`, on this machine only).
-- Breakpoints: `PiwiCommands.runTests` (every test run: Code Vision, **Run this test**, **Run the Tests That Reach
-  This File**, **Re-run the Failing Tests**) and **Run Selection…** pass the IDE's breakpoints to the service
+  `.idea/workspace.xml`, on this machine only). The severity of a failure's diagnostic is
+  `PiwiLocalSettings.failureSeverity` (`Glue.FAILURE_SEVERITIES`, the same page's Runs group), sent in `credentials()`;
+  the LSP client shows an information as a weak warning.
+- **Run the Test at the Caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`) and **Run This Spec** (`Piwi.RunSpec`),
+  under **Tools → Piwi** and in the editor's menu of a spec (`Glue.isSpecFile`) in a project with a Playwright config
+  (`RunInSpecAction`), ask `piwi/testAt` for the caret on a pooled thread, then run as `PiwiCommands.runTests` does
+  (`PiwiCommands.runTestAt`), or say in a balloon that none is known. The gutter icon's click stays Open in Dashboard.
+- Breakpoints: `PiwiCommands.runTests` (every test run: Code Vision, **Run this test**, **Run the Test at the
+  Caret**, **Run This Spec**, **Run the Tests That Reach This File**, **Re-run the Failing Tests**) and **Run Selection…** pass the IDE's breakpoints to the service
   (`PiwiProjectService.breakpoints`: `XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints`, the
   enabled `XLineBreakpoint`s in local files, in a read action, then `Glue.runBreakpoints`: script files under a
   Playwright config's folder), unless the checkbox under **Settings → Tools → Piwi** (`PiwiLocalSettings.breakpoints`,
@@ -143,7 +149,8 @@ service's `src/http.ts` reads.
   steps there, which the service refuses where they cannot go (`Glue.recordInto`); without an answer, nothing starts.
   They are offered only in a script file under one of the project's Playwright config folders (`Glue.inConfigDirs`),
   and `Ctrl+Alt+Shift+R` (`$default` keymap, the command key on macOS) records, and stops a recording, as
-  `Ctrl+Alt+Shift+F` re-runs the failing tests: the VS Code extension's chords.
+  `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret: the VS Code
+  extension's chords, which no bundled keymap uses.
   **Record a New Test File…** (also under **New**) creates the spec first, in a config folder; its name dialog says
   why a name is refused (`InputValidatorEx`). A tab closed while `piwi/record` is pending cancels the recording, in a
   balloon. A dialog asks for the start page and the
@@ -205,8 +212,8 @@ service's `src/http.ts` reads.
 - The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
   choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
-  (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting, the run notifications and the
-  baselines), on this machine only;
+  (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting, the run notifications, the
+  failure severity and the baselines), on this machine only;
   choosing the app never touches the instance, its project or its key.
 
 ## Rules

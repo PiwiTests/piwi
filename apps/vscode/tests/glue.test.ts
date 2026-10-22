@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type {
   CoverageResult,
@@ -29,6 +30,10 @@ import {
   recordInto,
   mcpConfiguration,
   newTestFileName,
+  openLink,
+  openLinkMissing,
+  resolveOpenFile,
+  runTaskName,
   placedBlock,
   recordedBlockText,
   recordingSummary,
@@ -44,6 +49,8 @@ import {
   sourceLabel,
   statusBarView,
   testDecorations,
+  testHoverMarkdown,
+  TEST_HOVER_COMMANDS,
   withBaseline,
   writeBlock,
   type RecordedBlock,
@@ -481,6 +488,7 @@ describe('the tests of a file', () => {
             command: 'piwi.openInDashboard',
             arguments: ['http://piwi/test-cases/9'],
           },
+          testCaseId: 9,
         },
         { line: 8, title: 'passed 4/4', status: 'passed', endLine: 10 },
       ]),
@@ -492,6 +500,7 @@ describe('the tests of a file', () => {
         failingLine: 5,
         hover: '**Piwi**: failing · passed 1/4 · failed',
         dashboardUrl: 'http://piwi/test-cases/9',
+        testCaseId: 9,
       },
       {
         status: 'passed',
@@ -500,6 +509,7 @@ describe('the tests of a file', () => {
         failingLine: null,
         hover: '**Piwi**: passing · passed 4/4',
         dashboardUrl: null,
+        testCaseId: null,
       },
     ]);
   });
@@ -513,8 +523,34 @@ describe('the tests of a file', () => {
         failingLine: null,
         hover: '**Piwi**: running · passed 4/4',
         dashboardUrl: null,
+        testCaseId: null,
       },
     ]);
+  });
+
+  test('a test’s gutter hover runs it and opens it in the dashboard, with the commands it is trusted with', () => {
+    const [test] = testDecorations([
+      {
+        line: 3,
+        title: 'passed 4/4',
+        status: 'passed',
+        command: {
+          title: 'Open in dashboard',
+          command: 'piwi.openInDashboard',
+          arguments: ['http://piwi/test-cases/9'],
+        },
+        testCaseId: 9,
+      },
+    ]);
+    const run = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', testIds: [9] }]));
+    const open = encodeURIComponent(JSON.stringify(['http://piwi/test-cases/9']));
+    expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts')).toBe(
+      `**Piwi**: passing · passed 4/4\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open})`,
+    );
+    expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests']);
+    // A service that gives neither: the result alone.
+    const [bare] = testDecorations([{ line: 3, title: 'passed 4/4', status: 'passed' }]);
+    expect(testHoverMarkdown(bare!, 'file:///w/a.spec.ts')).toBe('**Piwi**: passing · passed 4/4');
   });
 
   test('a failing test whose failing line changed since the run keeps its tint, and its hover says so', () => {
@@ -1305,5 +1341,76 @@ describe('the environment the editor service starts with', () => {
     expect(made.no_proxy).toBeUndefined();
     expect(made.NODE_TLS_REJECT_UNAUTHORIZED).toBe('0');
     expect(serviceEnvironment({ proxyStrictSSL: true }, env).NODE_TLS_REJECT_UNAUTHORIZED).toBeUndefined();
+  });
+});
+
+describe('the task a test run is', () => {
+  test('is named after its command, cut when long', () => {
+    expect(runTaskName(['tests/login.spec.ts:12'])).toBe('playwright test tests/login.spec.ts:12');
+    expect(runTaskName([])).toBe('playwright test');
+    const long = runTaskName(['--grep', 'x'.repeat(200)]);
+    expect(long).toHaveLength(80);
+    expect(long.endsWith('…')).toBe(true);
+  });
+});
+
+describe('an open link from the dashboard', () => {
+  test('names the file, its 1-based line and column, and the folder it is relative to', () => {
+    expect(openLink('file=tests/a b+c&d.spec.ts&line=12&column=5&root=/work/shop')).toEqual({
+      file: 'tests/a b+c&d.spec.ts',
+      line: 12,
+      column: 5,
+      root: '/work/shop',
+    });
+    expect(openLink('file=tests/a.spec.ts&line=0&column=x')).toEqual({
+      file: 'tests/a.spec.ts',
+      line: 1,
+      column: 1,
+      root: null,
+    });
+    expect(openLink('line=3')).toBeNull();
+    expect(openLink('')).toBeNull();
+  });
+
+  const folder = path.resolve('/work/shop');
+  const e2e = path.join(folder, 'e2e');
+  const other = path.resolve('/work/other');
+  const files = new Set([
+    path.join(e2e, 'tests', 'login.spec.ts'),
+    path.join(folder, 'package.json'),
+    path.join(folder, 'apps', 'web', 'tests', 'cart.spec.ts'),
+    path.join(other, 'tests', 'secret.spec.ts'),
+  ]);
+  const exists = (file: string) => files.has(file);
+  const places = { workspaceFolders: [folder], configRoots: [e2e] };
+  const resolve = (file: string, root: string | null = null) => resolveOpenFile({ file, root }, places, exists);
+
+  test('finds the run’s path under a Playwright config’s folder, then the workspace folders', () => {
+    expect(resolve('tests/login.spec.ts')).toBe(path.join(e2e, 'tests', 'login.spec.ts'));
+    expect(resolve('tests\\login.spec.ts')).toBe(path.join(e2e, 'tests', 'login.spec.ts'));
+    expect(resolve('package.json')).toBe(path.join(folder, 'package.json'));
+  });
+
+  test('takes an absolute path inside a workspace folder as given, and a CI path by its suffix', () => {
+    expect(resolve(path.join(folder, 'package.json'))).toBe(path.join(folder, 'package.json'));
+    expect(resolve('/home/runner/work/shop/e2e/tests/login.spec.ts')).toBe(path.join(e2e, 'tests', 'login.spec.ts'));
+  });
+
+  test('looks under the link’s root first when it lies in a workspace folder', () => {
+    const web = path.join(folder, 'apps', 'web');
+    expect(resolve('tests/cart.spec.ts', web)).toBe(path.join(web, 'tests', 'cart.spec.ts'));
+    expect(resolve('tests/cart.spec.ts')).toBeNull();
+    expect(resolve('tests/secret.spec.ts', other)).toBeNull();
+  });
+
+  test('never names a file outside the workspace folders', () => {
+    expect(resolve(path.join(other, 'tests', 'secret.spec.ts'))).toBeNull();
+    expect(resolve('../other/tests/secret.spec.ts')).toBeNull();
+    const noFolder = { workspaceFolders: [], configRoots: [e2e] };
+    expect(resolveOpenFile({ file: 'tests/login.spec.ts', root: null }, noFolder, exists)).toBeNull();
+  });
+
+  test('says which window to open it from when this one holds no such file', () => {
+    expect(openLinkMissing('tests/a.spec.ts')).toContain('tests/a.spec.ts');
   });
 });

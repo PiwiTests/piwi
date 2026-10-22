@@ -19,13 +19,17 @@ in the status bar while it executes, and its results over the latest CI run's fa
 - The lines above a locator line, an application file or a page file (CodeLens in VS Code, Code Vision in a JetBrains
   IDE) run the tests they name when clicked; those of a server file record its
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
+- **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose
+  `test(…)` call holds the cursor, and **Piwi: Run this spec** the spec's tests Piwi knows; both in the editor's
+  context menu of a spec (**Run the Test at the Caret** and **Run This Spec** in a JetBrains IDE). In VS Code, **Run**
+  in the hover of a test's gutter icon runs that test.
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
   [code reach](/features/code-reach); also in the editor's context menu.
 - **Piwi: Run selection…** runs a saved [selection](/features/test-selection).
 
 The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
-folder: in a terminal in VS Code, in the Run tool window in a JetBrains IDE (**Rerun** starts it again), or in the
-IDE's Playwright runner (test tree, Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF` ([run origin](/reference/test-metadata#run-origin)),
+folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** starts it again), in the Run tool
+window in a JetBrains IDE (**Rerun** starts it again), or in the IDE's Playwright runner (test tree, Debug, **Rerun Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF` ([run origin](/reference/test-metadata#run-origin)),
 by which the editor finds its run. Breakpoints pause it in the browser, with Piwi's picker one click away:
 [Breakpoints in the browser](./editor-breakpoints).
 
@@ -46,8 +50,8 @@ files with the new `HEAD`.
 A run started from the editor is its own wherever it runs: the status bar follows it as it runs, and its failures
 read *your run #124* once it ends. When the command ends and no run on the instance carries its ref, the editor says
 so: `The run ended (exit code 1) but did not reach https://piwi.example.com: is the Piwi reporter in the Playwright
-config?` VS Code learns a command ended through shell integration (1.93 and later), and gives each run a terminal
-of its own; without it, a folder's runs share one terminal, and a run that never arrived goes unmentioned.
+config?` Both editors learn the end of the command and its exit code from the process they started, in every shell,
+a rerun included.
 
 ## When your run ends
 

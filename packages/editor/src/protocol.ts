@@ -47,6 +47,8 @@ export interface SummaryLine {
   endLine?: number;
   /** On the line of a test that failed in the latest run the service reads: where and why. */
   failure?: TestFailure;
+  /** On a test's line: the test's id, for a client's own **Run** (`RunTestsArgs.testIds`). Absent on other lines. */
+  testCaseId?: number;
 }
 
 /**
@@ -117,6 +119,23 @@ export interface TestsForFile {
 }
 
 export const TESTS_FOR_FILE_REQUEST = 'piwi/testsForFile';
+
+/** `piwi/testAt`: the test whose `test(…)` call holds a position of a spec, and the spec's tests. */
+export interface TestAtParams {
+  uri: string;
+  /** 0-based position. */
+  line: number;
+  character: number;
+}
+
+export interface TestAtResult {
+  /** The test whose `test(…)` call spans `line`; null outside every test Piwi knows. */
+  test: EditorTest | null;
+  /** The spec's tests Piwi knows, which `piwi/runArgs` runs; null for a file that is not a spec or holds none of them. */
+  spec: { uri: string; testIds: number[] } | null;
+}
+
+export const TEST_AT_REQUEST = 'piwi/testAt';
 
 /** `piwi/coverage`: the lines of an application file the project's tests ran, placed on the file as it stands. */
 export interface CoverageParams {
@@ -331,7 +350,16 @@ export interface EditorCredentials {
    * choices stay.
    */
   baselines?: Record<string, BaselineChoice> | null;
+  /**
+   * The severity of a `ci-failure` diagnostic: a failure of a run on the checked-out branch gets it, one of a run on
+   * another branch is a warning at most, one whose line changed since its run an information; `off` publishes none,
+   * while `piwi/failures` and `piwi/fileSummary` still give the failures. `error` when absent.
+   */
+  failureSeverity?: FailureSeverity | null;
 }
+
+/** The severity of a failure's diagnostic, as the editor's setting chooses it. */
+export type FailureSeverity = 'error' | 'warning' | 'information' | 'off';
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
 
@@ -496,7 +524,7 @@ export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
 
 /**
  * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with
- * `ref` to a terminal. `terminalRef` is the ref of that terminal's environment when it is another one, which the run
+ * `ref` to a terminal or a task. `terminalRef` is the ref of that terminal's environment when it is another one, which the run
  * carries instead: the service does not look for `ref`, and recognizes the run by `terminalRef`.
  */
 export interface CommandStartedParams {

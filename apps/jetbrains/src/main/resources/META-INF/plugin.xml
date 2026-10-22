@@ -92,6 +92,18 @@
                     text="Run the Tests That Reach This File" description="Run them in the Run tool window">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             </action>
+            <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
+                    text="Run the Test at the Caret" icon="AllIcons.Actions.Execute"
+                    description="Run the test whose test(…) call holds the caret, in the Run tool window, with the breakpoints">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Run the Test at the Caret"/>
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
+            </action>
+            <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run This Spec"
+                    description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Run This Spec"/>
+            </action>
             <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
                     description="Run one of the project's saved selections"/>
             <action id="Piwi.RerunFailing" class="dev.piwitests.jetbrains.RerunFailingAction"

@@ -177,6 +177,22 @@ object PiwiCommands {
      * Run a test command of the service: its notice shown once, and, with breakpoints (`PIWI_PAUSE_AT`), the Send to
      * editor pairing a locator picked while paused is posted to (`PIWI_EDITOR_SEND`). Call it off the event thread.
      */
+    /**
+     * Run the test whose `test(…)` call holds the 0-based position of the spec at `uri`, or with `wholeSpec` the
+     * spec's tests Piwi knows (`piwi/testAt`), as [runTests] does; a balloon says when there is none.
+     */
+    fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean) {
+        background(project, "Piwi: finding the test") {
+            val found = project.service<PiwiProjectService>().server()?.testAt(TestAtParams(uri, line, character))?.orNull()
+            val ids = if (wholeSpec) found?.spec?.testIds.orEmpty() else listOfNotNull(found?.test?.id)
+            if (ids.isNotEmpty()) {
+                runTests(project, RunTestsArgs(uri, ids))
+            } else {
+                notify(project, if (wholeSpec) "No test of this spec is known yet." else "The caret is in no test Piwi knows.")
+            }
+        }
+    }
+
     fun startRun(project: Project, command: RunCommand) {
         val cwd = command.cwd ?: return
         val line = command.command?.takeIf { it.isNotBlank() } ?: return

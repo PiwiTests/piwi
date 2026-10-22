@@ -10,7 +10,7 @@ ships and starts over stdio: the VS Code extension and the JetBrains plugin. All
 clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
-  `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
+  `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
   `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
@@ -46,7 +46,9 @@ clients stay thin and both editors give the same answers.
   feature/x`, `your local runs only`, `release (no run)`) and `branches` (the default branch, then those of the
   locator index), and `piwi/failures` the `baseline` of the context it shows.
   Its failures are published as `ci-failure` diagnostics in every file they point to, merged with the analysis of
-  open documents. The instance lays over that run the runs of its branch finished since, whole or partial (a test
+  open documents, with the severity `EditorCredentials.failureSeverity` chooses (`error` when absent; `failureSeverity`
+  in `src/server.ts`): a run on another branch than the checked-out one is a warning at most, an edited line an
+  information, and `off` publishes none, while `piwi/failures`, `piwi/fileSummary` and the hover still give them. The instance lays over that run the runs of its branch finished since, whole or partial (a test
   re-run from the editor, `piwi run`, the desktop app: `branch-failures?overlays=1`), per test and Playwright project,
   the newest result winning: a failure may be listed from a later run (`source: 'overlay'`, labeled `local run #N`
   when it did not run in CI, like a failure of a baseline that did not, `your run #N` when the editor started it),
@@ -67,8 +69,13 @@ clients stay thin and both editors give the same answers.
   run #120 · …` above the line; a failure whose test's `test(…)` call left its spec (it was in the spec the run saw, and
   is not in the spec as it stands) publishes nothing. The failures are placed again on the timer that analyzes an edited document,
   and when a commit's file arrives; `piwi/failuresChanged` carries `piwi/failures` whenever a line or a state changed.
-  On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`) and the line its
+  On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`), the test's id (`testCaseId`, which
+  VS Code's gutter hover runs) and the line its
   call ends on (`endLine`, `callEndLine`), which the clients draw in the gutter and as a background over a failing test.
+  `piwi/testAt` answers the catalog test whose `test(…)` call spans a position's line (`TEST_CALL`, `callEndLine`,
+  matched by title like the summary) and the spec's tests (`casesOf`), which **Run the test at the cursor** and **Run
+  this spec** run; a file that is not a spec under a context's folder, or a spec of which Piwi knows no test, answers
+  nulls.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
   the frames and the message in `branch-failures`), above which the reason, **Run this test** (`piwi.runTests` with the
   test's id), **Screenshot** and **Trace** are ordinary summary lines; the hover on any line of that stack shows the message and the call chain.
@@ -106,8 +113,8 @@ clients stay thin and both editors give the same answers.
   `source: 'own'` in
   `piwi/failures`. A client says when the command ended (`piwi/commandEnded`, with its exit code): the service reads
   the run once more and, when no run carries the ref 5 s later, sends `piwi/notice`; the instance is not asked for the
-  ref again. A later run carrying it, a rerun of the command (the Run tool window's Rerun, a VS Code terminal reused
-  without shell integration), is the editor's own once the instance's stream announces it, whatever was found before;
+  ref again. A later run carrying it, a rerun of the command (the Run tool window's Rerun, VS Code's **Tasks: Rerun
+  Last Task**), is the editor's own once the instance's stream announces it, whatever was found before;
   the service keeps the refs of the 50 latest commands. A command sent to a terminal whose environment holds another
   ref (`piwi/commandStarted` with `terminalRef`) is not looked for by its own: its run carries the terminal's ref.
 - Breakpoints: `piwi/runArgs` and `piwi/runSelection` take the editor's enabled line breakpoints (`breakpoints`,

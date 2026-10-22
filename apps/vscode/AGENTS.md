@@ -15,7 +15,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
 - `src/extension.ts` starts the service with `vscode-languageclient`, draws `piwi/fileSummary` as CodeLens (a test's
   line as a gutter icon from `media/`, its details in a hover, the `piwi.failingTestBackground` color over a
   failing test and `piwi.failingLineBackground` on the line it failed at, still drawn once that line changed since
-  the run, which the hover says: `testDecorations` in `src/glue.ts`; `piwi/failuresChanged` and
+  the run, which the hover says, with **Run** (`piwi.runTests` with `SummaryLine.testCaseId`) and **Open in
+  dashboard**: `testDecorations`, `testHoverMarkdown` and `TEST_HOVER_COMMANDS` in `src/glue.ts`; `piwi/failuresChanged` and
   `piwi/coverageChanged` draw them again, once for the notifications of a 50 ms burst (`filesChanged`, `coalesced`
   in `src/glue.ts`); the gutter is drawn with CodeLens turned off too, from the same `piwi/fileSummary`, asked once
   per text version and drawing of the files: `summaryOf`, `decorateVisible`) and
@@ -26,7 +27,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   fix or a flaky test's lens, which shows `piwi/desktopJobChanged` as notifications with the share button), keeps the
   API key in `SecretStorage`, hands the connection to the service with `piwi/setCredentials` and as the initialization
   options of each of its starts (`handed`: the client starts the service again after it stops unexpectedly): a change
-  of `piwi.serverUrl`, `piwi.project` or a key is handed 250 ms after the last of a burst, and only when the
+  of `piwi.serverUrl`, `piwi.project`, `piwi.failureSeverity` (`error`, `warning`, `information`, `off`: the severity
+  of a failure's diagnostic, sent as `failureSeverity`) or a key is handed 250 ms after the last of a burst, and only when the
   connection differs from the one handed (`handChangedCredentials`), since each one reads everything again; and
   provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
@@ -82,20 +84,27 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   (`piwi.baseline`, by root, the ladder as no entry: `withBaseline`), sends it with `piwi/setBaseline`, and sends the
   whole map in the credentials (`baselines`). The tooltip and the view's root node name it (`baselineLine`); with the
   local runs alone, the root is `Your local runs`.
-- Commands run in a terminal (`runInTerminal`), reused per folder and environment. A test run carries its own ref
-  (`RunCommand.ref`, also in its environment). Where shell integration reports commands
-  (`window.onDidStartTerminalShellExecution` and `onDidEndTerminalShellExecution`, VS Code 1.93 and later, read at
-  runtime like the MCP API), a test run opens a terminal of its own, which replaces the previous run's terminal of that
-  folder once its command ended, and the end of its command sends `piwi/commandEnded` with the exit code; a run
-  terminal whose command has not ended is not reused. Without it, and in a shell without integration (the folder's run
-  terminal has no `shellIntegration` 10 s after it opened: `SHELL_INTEGRATION_WAIT_MS`), the test runs of a folder
-  share one terminal, whose environment keeps the first run's ref, by which the service recognizes the later runs as
-  the editor's own through the instance's event stream, and no end is sent. Every test run's command sends
-  `piwi/commandStarted`, with the terminal's ref as `terminalRef` when it is not the command's own; a run terminal is
-  reused only for the same environment but the ref (`terminalEnvKey` in `src/breakpoints.ts`), so a run with other
-  breakpoints gets a terminal of its own. A `piwi/notice` is shown once, as a warning or an information message.
-- Every test run (`runTests`: the lenses, **Run this test**, **Run the tests that reach this file**, **Re-run the
-  failing tests**; and **Run selection…**) passes the editor's breakpoints to the service (`breakpoints`), as the
+- A test run, which carries its own ref (`RunCommand.ref`, also in its environment), is a task (`runAsTask`): a
+  `vscode.Task` of the `piwi` type (`taskDefinitions` in `package.json`, `{ type: 'piwi', ref }`), its command a
+  `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments (`runTaskName` in
+  `src/glue.ts`), in a dedicated terminal that is shown and cleared. Its start sends `piwi/commandStarted`, and
+  `tasks.onDidEndTaskProcess` sends `piwi/commandEnded` with the exit code, on every VS Code version and in every
+  shell. **Tasks: Rerun Last Task** runs the same command with the same ref: `tasks.onDidStartTaskProcess` sends
+  `piwi/commandStarted` for it, which the service follows as a rerun of a ref it knows. A command without a ref
+  (`piwi.runCommand`: the Flake Lab, a trace viewer) runs in a terminal (`runInTerminal`), reused per folder and
+  environment. A `piwi/notice` is shown once, as a warning or an information message.
+- **Open in IDE** from the dashboard: a URI handler (`vscode.window.registerUriHandler`, the `onUri` activation event)
+  takes `vscode://piwitests.piwi/open?file=<path as the run reported it>&line=&column=&root=` (the dashboard's
+  `buildVscodeExtensionUrl`), finds the file as the service finds a run's path (`resolveOpenFile` in `src/glue.ts`:
+  under `root` when it lies in a workspace folder, the Playwright configs' folders, then the workspace folders; never a
+  file outside them) and opens it at the 1-based line and column; when this window holds no such file, a warning says
+  so (VS Code hands the link to the window focused last).
+- **Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`) and **Piwi: Run this spec** (`piwi.runSpec`), in the
+  palette and the editor's context menu of a spec while `piwi.active`, ask `piwi/testAt` for the cursor, then run the
+  test or the spec's tests through `runTests` (`runInSpec`), or say that none is known.
+- Every test run (`runTests`: the lenses, the gutter hover's **Run**, **Run this test**, **Run the test at the
+  cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing tests**; and **Run
+  selection…**) passes the editor's breakpoints to the service (`breakpoints`), as the
   `piwi.breakpoints` setting allows (default on): the enabled `vscode.SourceBreakpoint`s in script files under a
   Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). When the answer carries `PIWI_PAUSE_AT`,
   `startRun` starts the send listener if it is not running, minting its token as **Pair with Piwi Picker** does,
@@ -123,7 +132,7 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   block is followed through the edits around it; typing inside it pauses the recording (Resume writes it again, Keep my
   edits stops). Closing the file or the window stops its recording.
 - `src/glue.ts` is the pure half (the status bar item, the failures view's nodes, the MCP configuration to paste, the
-  recorded block's text and writes with the service's import edit, and following them through a change: `writeBlock`,
+  file an open link names, the recorded block's text and writes with the service's import edit, and following them through a change: `writeBlock`,
   `followBlock`, `followEdit`), tested without an editor.
 
 ## Rules
@@ -141,9 +150,11 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   one pick.
 - Command ids are part of the protocol: renaming one is a breaking change for the service.
 - The default keybindings (`contributes.keybindings`: `ctrl+shift+alt+r`, `cmd` on macOS, records at the caret and
-  stops the recording; `ctrl+shift+alt+f` re-runs the failing tests, the JetBrains plugin's chords for the same
-  actions) stay free in VS Code's default keymap on Windows, Linux and macOS: `ctrl+shift+alt+<letter>` is, `ctrl+alt+<key>`
-  and the `ctrl+k` chords are not. The extension declares no support for untrusted and virtual workspaces
+  stops the recording; `ctrl+shift+alt+f` re-runs the failing tests; `ctrl+shift+alt+k`, in a focused editor, runs the
+  test at the cursor: the JetBrains plugin's chords for the same actions) stay free in VS Code's default keymap on
+  Windows, Linux and macOS, and in the JetBrains IDEs' bundled keymaps. VS Code binds `ctrl+shift+alt` (`cmd` on
+  macOS) with `a`, `c`, `g`, `i`, `l`, `n` and `o`, the JetBrains keymaps with `c`, `d`, `e`, `h`, `i`, `j`, `l`, `m`,
+  `n`, `p`, `s`, `t`, `u`, `v`, `w`, `x` and `y`; `ctrl+alt+<key>` and the `ctrl+k` chords are taken too. The extension declares no support for untrusted and virtual workspaces
   (`capabilities` in `package.json`): the service reads the files from disk and runs Playwright.
 - **One undo step per recording.** The block's writes go through the editor that shows the file: the first one opens
   an undo stop and the later ones join it (`undoStopBefore: false`; the one Stop brings closes it), so one Undo after

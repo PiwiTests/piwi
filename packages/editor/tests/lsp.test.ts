@@ -35,6 +35,7 @@ import type {
   RunStatusResult,
   ScreenshotResult,
   StatusResult,
+  TestAtResult,
   TestsForFile,
   TraceResult,
 } from '../src/protocol';
@@ -1151,6 +1152,7 @@ describe('the Piwi language server', () => {
         // The document as the earlier tests left it: the test's body spans two more lines.
         status: 'passed',
         endLine: 4,
+        testCaseId: 1,
       },
       {
         line: 2,
@@ -1200,6 +1202,7 @@ describe('the Piwi language server', () => {
         line: 3,
         status: 'failed',
         endLine: 7,
+        testCaseId: 3,
         failure: {
           line: 6,
           headline: "locator('.cart-row').nth(2) was not found",
@@ -1282,6 +1285,32 @@ describe('the Piwi language server', () => {
       env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
+  });
+
+  test('finds the test at the cursor, and the tests of its spec', async () => {
+    const at = (file: string, line: number) =>
+      client.sendRequest('piwi/testAt', { uri: file, line, character: 2 }) as Promise<TestAtResult>;
+    const rows = uri('tests/rows.spec.ts');
+    const spec = { uri: rows, testIds: [3] };
+    // Anywhere from its `test(` line to the line its call ends on.
+    for (const line of [3, 6, 7]) {
+      expect(await at(rows, line)).toEqual({
+        test: {
+          id: 3,
+          title: 'removes a row',
+          file: 'tests/rows.spec.ts',
+          status: 'failed',
+          url: `${url}/test-cases/3`,
+        },
+        spec,
+      });
+    }
+    expect(await at(rows, 1)).toEqual({ test: null, spec });
+    expect(await at(rows, 8)).toEqual({ test: null, spec });
+    expect(await at(uri('tests/checkout.spec.ts'), 2)).toMatchObject({ test: { id: 1, title: 'pays' } });
+    expect(await at(uri('tests/pages/checkout.page.ts'), 3)).toEqual({ test: null, spec: null });
+    const elsewhere = pathToFileURL(path.join(os.tmpdir(), 'piwi-elsewhere', 'a.spec.ts')).href;
+    expect(await at(elsewhere, 0)).toEqual({ test: null, spec: null });
   });
 });
 
@@ -2603,7 +2632,7 @@ describe('a branch with no run yet', () => {
       debounceMs: 10,
     });
     const branchClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
-    const published = new Map<string, Array<{ message: string }>>();
+    const published = new Map<string, Array<{ message: string; severity?: number }>>();
     branchClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
       published.set(p.uri, p.diagnostics);
     });
@@ -2621,14 +2650,70 @@ describe('a branch with no run yet', () => {
         return s.contexts[0]?.run ? s : undefined;
       });
       expect(status.contexts[0]).toMatchObject({ branch: 'main', checkedOut: 'feature/new-cart', run: { id: 41 } });
-      const onPage = await waitFor(() =>
-        published.get(pathToFileURL(path.join(other, 'tests/pages/checkout.page.ts')).href),
-      );
+      const page = pathToFileURL(path.join(other, 'tests/pages/checkout.page.ts')).href;
+      const onPage = await waitFor(() => published.get(page));
       expect(onPage[0]?.message).toContain('run #41 on main');
+      // Another branch's failure is a warning at most, and an information when the setting says so.
+      expect(onPage[0]?.severity).toBe(2);
+      const severityAfter = async (failureSeverity: string, severity: number) => {
+        await branchClient.sendNotification('piwi/setCredentials', { failureSeverity });
+        await waitFor(() => (published.get(page)?.[0]?.severity === severity ? true : undefined));
+      };
+      await severityAfter('information', 3);
+      await severityAfter('error', 2);
     } finally {
       stopBranch();
       branchClient.dispose();
       fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the severity of a failure', () => {
+  test('follows the setting, and off publishes no diagnostic while the failure is still listed and drawn', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopSeverity = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+    });
+    const severityClient = createMessageConnection(
+      new StreamMessageReader(toClient),
+      new StreamMessageWriter(toServer),
+    );
+    const published = new Map<string, Array<{ code?: string; severity?: number }>>();
+    severityClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      published.set(p.uri, p.diagnostics);
+    });
+    severityClient.listen();
+    const page = uri('tests/pages/checkout.page.ts');
+    const failure = () => published.get(page)?.find((d) => d.code === 'ci-failure');
+    try {
+      await severityClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+        initializationOptions: { credentials: { failureSeverity: 'warning' } },
+      });
+      await severityClient.sendNotification('initialized', {});
+      expect((await waitFor(failure)).severity).toBe(2);
+
+      await severityClient.sendNotification('piwi/setCredentials', { failureSeverity: 'off' });
+      await waitFor(() => (published.has(page) && !failure() ? true : undefined));
+      const listed = (await severityClient.sendRequest('piwi/failures', null)) as FailuresResult;
+      expect(listed.items.map((i) => i.title)).toEqual(['removes a row']);
+      const spec = (await severityClient.sendRequest('piwi/fileSummary', {
+        uri: uri('tests/rows.spec.ts'),
+      })) as FileSummary;
+      expect(spec.lines.find((l) => l.line === 3)).toMatchObject({ status: 'failed', failure: { line: 6 } });
+
+      // Credentials without the setting: an error, as for a run on the checked-out branch.
+      await severityClient.sendNotification('piwi/setCredentials', {});
+      await waitFor(() => (failure()?.severity === 1 ? true : undefined));
+    } finally {
+      stopSeverity();
+      severityClient.dispose();
     }
   });
 });

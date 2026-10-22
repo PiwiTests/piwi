@@ -17,7 +17,7 @@ data class PiwiCommand(val title: String? = null, val command: String? = null, v
 /**
  * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
  * `skipped`, `running` while the run in progress runs it, or `unknown`), shown in the gutter with `title` as its
- * tooltip, `endLine` where its call ends, and `failure` where and why it failed.
+ * tooltip, `endLine` where its call ends, `failure` where and why it failed, and `testCaseId` the test's id.
  */
 data class SummaryLine(
     val line: Int = 0,
@@ -26,6 +26,7 @@ data class SummaryLine(
     val status: String? = null,
     val endLine: Int? = null,
     val failure: TestFailure? = null,
+    val testCaseId: Int? = null,
 )
 
 /**
@@ -52,6 +53,18 @@ data class EditorTest(
 )
 
 data class TestsForFile(val tests: List<EditorTest>? = null, val basis: String? = null)
+
+/** `piwi/testAt`: a 0-based position of a spec. */
+data class TestAtParams(val uri: String, val line: Int, val character: Int)
+
+/** The tests of a spec, by id, which `piwi/runArgs` runs. */
+data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null)
+
+/**
+ * `piwi/testAt`: the test whose `test(…)` call spans the line, null outside every test Piwi knows; and the spec's
+ * tests, null for a file that is not a spec or holds none of them.
+ */
+data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null)
 
 /** Lines `start` to `end`, 0-based and inclusive; for lines the tests ran, `tests` is how many ran each. */
 data class LineSpan(val start: Int = 0, val end: Int = 0, val tests: Int? = null)
@@ -509,7 +522,9 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
 /**
  * `piwi/setCredentials`: the instance saved in the IDE, and, with `desktop`, the desktop app first while it runs,
  * on the project `desktopProject` names, else the one linked there to the folder. `baselines` are the baselines chosen
- * per context root, kept on this machine; when sent, a context they leave out reads the ladder.
+ * per context root, kept on this machine; when sent, a context they leave out reads the ladder. `failureSeverity` is the
+ * severity of a failure's diagnostic (`error`, `warning`, `information` or `off`; `error` when null): a run on another
+ * branch is a warning at most, and `off` publishes none while the tool window and the gutter still show the failures.
  */
 data class EditorCredentials(
     val serverUrl: String? = null,
@@ -518,6 +533,7 @@ data class EditorCredentials(
     val desktop: Boolean = false,
     val desktopProject: String? = null,
     val baselines: Map<String, BaselineChoice>? = null,
+    val failureSeverity: String? = null,
 )
 
 /**
@@ -559,6 +575,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/testsForFile")
     fun testsForFile(params: UriParams): CompletableFuture<TestsForFile?>
+
+    @JsonRequest("piwi/testAt")
+    fun testAt(params: TestAtParams): CompletableFuture<TestAtResult?>
 
     @JsonRequest("piwi/coverage")
     fun coverage(params: UriParams): CompletableFuture<CoverageResult?>

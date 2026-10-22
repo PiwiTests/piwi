@@ -25,6 +25,8 @@ in the extensions view) or the **[JetBrains Marketplace ↗](https://plugins.jet
 the reporter already uses: the `PIWI_*` variables in the environment or the workspace `.env`, or the
 [desktop app](/features/desktop). Otherwise, run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE)
 and sign in with the browser: [Editor connection](./editor-connection) has the steps.
+In VS Code, the extension also opens a path clicked in the dashboard, with no workspace root to set:
+[Open in IDE](./ide-integration#vs-code-the-piwi-extension).
 
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
@@ -33,7 +35,7 @@ your files locally.
 ## CI failures in the Problems panel
 
 The failures of the latest complete [CI run](/reference/test-metadata#run-origin) on the checked-out branch, else the
-default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
+default branch, are in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. Your local runs
 since are laid over it, read again as soon as a run ends: [Runs from the editor](./editor-runs)
 covers runs, the failures view and the status bar. Each failure follows your edits until a run covers its
@@ -56,6 +58,12 @@ On a failure, the quick fixes are:
 
 Hover for the error message, its call chain, the failure screenshot, and the tickets linked to its cluster or
 test. Without one, **File an issue** opens the cluster in the dashboard.
+
+A failure of a run on the checked-out branch is an error; one the editor shows from another branch, such as the
+default branch's while yours has no run yet, is a warning; one whose line you changed since the run is an
+information. The `piwi.failureSeverity` setting (**Settings → Tools → Piwi → Runs** in a JetBrains IDE) chooses
+`warning` or `information` in place of the error, or `off`: nothing in the Problems panel, while the failures view,
+the gutter and the lines above the tests still show the failures.
 
 ## The tests behind each line
 
@@ -115,6 +123,8 @@ clipboard; it holds your API key, so paste it into your user settings, not into 
 | Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) | |
 | Piwi: Refresh | Fetch the indexes and the latest run again | |
 | Piwi: Refresh the latest run | Read the latest run again, as a click on the status bar does | |
+| Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) | `Ctrl+Shift+Alt+K` (`Cmd+Shift+Alt+K`) |
+| Piwi: Run this spec | Run the tests of the spec Piwi knows | |
 | Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would | |
 | Piwi: Re-run the failing tests | Run every test still failing, one run per Playwright config: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) | `Ctrl+Shift+Alt+F` (`Cmd+Shift+Alt+F` on macOS) |
 | Piwi: Open in dashboard | Open this file's test, or the latest run | |
@@ -149,6 +159,10 @@ and hover in open files; the rest is native:
 - **[Open in IDE](./ide-integration)**: a path clicked in the dashboard or the desktop app opens at its line.
 - **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert, and **File → New →
   Record a New Test File…**; the controls are in a banner above the editor.
+- **Running a test**: **Run the Test at the Caret** (`Ctrl+Alt+Shift+K`) and **Run This Spec** are in the editor's
+  context menu of a spec and under **Tools → Piwi**; a click on a test's gutter icon opens it in the dashboard.
+- **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it; an information shows as a weak
+  warning.
 
 <figure>
   <img src="/screenshots/jetbrains-failures.png" alt="WebStorm: the failing tests tinted in the spec, the Piwi tool window below with the run's failures">

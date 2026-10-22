@@ -79,7 +79,8 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
  * at the IDE's breakpoints, and whether they run in the IDE's Playwright runner; when a run started from the IDE says what it changed (`always`,
  * `failures`, `never`); the baseline chosen with **Compare With…** for each Playwright
- * config folder (`Glue.encodeBaseline`; the ladder is no entry); and whether the coverage marks are shown.
+ * config folder (`Glue.encodeBaseline`; the ladder is no entry); whether the coverage marks are shown; and the severity
+ * of a failure's diagnostic (`Glue.FAILURE_SEVERITIES`).
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -97,6 +98,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var runNotifications: String = "always",
         var baselines: MutableMap<String, String> = mutableMapOf(),
         var coverageMarks: Boolean = true,
+        var failureSeverity: String = "error",
     )
 
     private var state = State()
@@ -377,6 +379,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             desktop = local.desktop,
             desktopProject = local.desktopProject.ifBlank { null },
             baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
+            failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
         )
     }
 
