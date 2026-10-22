@@ -67,10 +67,10 @@ checkout.spec.ts › pays)`, then the tests it failed that were not failing befo
 Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails, or never.
 
 A verification (**Verify ×3**) says how many of its runs passed instead, whatever the setting: `Piwi: run #124 ·
-Failed 1 of 3`. The instance keeps one result of a test per attempt and Playwright project, so the editor counts the
-runs from the results the run streams as it executes; when it missed some, a failing verification says
-`Failed at least 1 of 3`. When its run never reached an instance, the exit code says it: `Passed 3 of 3:
-tests/checkout.spec.ts:42`, or `Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`.
+Failed 1 of 3`. Each run is a result of its own on the instance, and the editor counts them from the results the run
+streams as it executes; when it missed some, a failing verification says `Failed at least 1 of 3`. When its run never
+reached an instance, the exit code says it: `Passed 3 of 3: tests/checkout.spec.ts:42`, or `Failed at least 1 of 3:
+tests/checkout.spec.ts:42 (exit code 1)`.
 
 While the run executes, the gutter shows each test as running, then its result.
 

@@ -78,12 +78,13 @@ let eventSource: EventSource | null = null;
 const displayTestCases = ref<TestCaseResult[]>([]);
 
 /**
- * One entry per test — the final attempt (highest retry count) — so a retried
- * test is a single row whose outcome is its last attempt. Keyed by the
- * persisted test-case id + browser once known, else the streaming key (title +
- * location + browser), so it collapses live placeholder rows and finished
- * attempt rows alike. Feeds the header counts, the count bar and the grouped
- * list; the timeline keeps the full attempt list.
+ * One entry per test result, its final attempt (highest retry count), so a
+ * retried test is a single row whose outcome is its last attempt, and each
+ * `--repeat-each` repetition is a row of its own. Keyed by `testAttemptKey`
+ * (the persisted test-case id, browser and repetition once known, else the
+ * streaming key), so it collapses live placeholder rows and finished attempt
+ * rows alike. Feeds the header counts, the count bar and the grouped list; the
+ * timeline keeps the full attempt list.
  */
 function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
   const byKey = new Map<string, TestCaseResult>();
@@ -114,7 +115,7 @@ watch(
 // Initialise liveTestCases from persisted data when SSE connects
 function seedLiveFromPersisted(cases: TestCaseResult[]) {
   for (const tc of cases) {
-    const key = `${tc.title}@@${tc.location}@@${JSON.stringify(tc.browser)}`;
+    const key = liveCaseKey(tc);
     if (!liveTestCaseKeys.has(key)) {
       liveTestCaseKeys.set(key, true);
       liveTestCases.value = [...liveTestCases.value, tc];
@@ -145,6 +146,7 @@ function flushPendingEvents() {
         workerIndex?: number;
         startedAt?: number;
         browser?: { projectName?: string } | null;
+        repeatEachIndex?: number;
         stepCategory?: string | null;
       };
       // Hook/fixture step-begin events are published as `test-begin` with a
@@ -152,7 +154,7 @@ function flushPendingEvents() {
       // create phantom rows (which left orphaned "running" dots on the
       // timeline). Hooks render from `stepEvents` once their test completes.
       if (d.stepCategory) continue;
-      const key = `${d.title}@@${d.location}@@${JSON.stringify(d.browser)}`;
+      const key = liveCaseKey(d);
       if (!liveTestCaseKeys.has(key)) {
         liveTestCaseKeys.set(key, true);
         liveTestCases.value = [
@@ -171,6 +173,7 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? null,
             startedAt: d.startedAt ?? Date.now(),
             browser: d.browser ?? null,
+            repeatEachIndex: d.repeatEachIndex ?? 0,
           },
         ];
         displayTestCases.value = [...liveTestCases.value];
@@ -193,6 +196,7 @@ function flushPendingEvents() {
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
         retries?: number | null;
+        repeatEachIndex?: number;
         executionId?: number | null;
         testCaseId?: number | null;
       };
@@ -200,11 +204,9 @@ function flushPendingEvents() {
       // with a `stepCategory`) — they are not test cases. The hook segments
       // arrive via the owning test's `stepEvents` below.
       if (d.stepCategory) continue;
-      const key = `${d.title}@@${d.location}@@${JSON.stringify(d.browser)}`;
+      const key = liveCaseKey(d);
       if (liveTestCaseKeys.has(key)) {
-        const idx = liveTestCases.value.findIndex(
-          (tc) => `${tc.title}@@${tc.location}@@${JSON.stringify(tc.browser)}` === key,
-        );
+        const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
         if (idx >= 0) {
           const existing = liveTestCases.value[idx]!;
           const copy = [...liveTestCases.value];
@@ -255,6 +257,7 @@ function flushPendingEvents() {
             startedAt: d.startedAt ?? undefined,
             browser: d.browser ?? null,
             retries: d.retries ?? null,
+            repeatEachIndex: d.repeatEachIndex ?? 0,
           },
         ];
         displayTestCases.value = [...liveTestCases.value];

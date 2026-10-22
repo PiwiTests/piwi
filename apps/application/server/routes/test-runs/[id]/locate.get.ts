@@ -8,14 +8,16 @@ import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 
 /**
  * Resolve an execution from what the reporter knows before the server assigns
- * ids — the run id plus the test's spec file, title, retry and Playwright
- * project — and redirect to its page. The reporter prints these links the
- * moment a test fails, in streaming and batch mode alike, so the link has to
- * be computable without waiting for an execution id.
+ * ids, and redirect to its page: the run id plus the test's spec file, title,
+ * retry, Playwright project and `--repeat-each` repetition (`repeat`, absent
+ * for the first). The reporter prints these links the moment a test fails, in
+ * streaming and batch mode alike, so the link has to be computable without
+ * waiting for an execution id.
  *
- * `retry` and `browser` are preferences, not filters: when the exact attempt
- * is missing (a retry that was never persisted, a project name that changed)
- * the closest execution of the same test still resolves rather than 404ing.
+ * `retry`, `browser` and `repeat` are preferences, not filters: when the exact
+ * attempt is missing (a retry that was never persisted, a project name that
+ * changed) the closest execution of the same test still resolves rather than
+ * 404ing.
  */
 export default eventHandler(async (event) => {
   setResponseHeader(event, 'Cache-Control', 'no-store');
@@ -27,7 +29,9 @@ export default eventHandler(async (event) => {
   const title = queryString(query.title);
   const retry = queryString(query.retry);
   const browser = queryString(query.browser);
+  const repeat = queryString(query.repeat);
   const wantedRetry = retry !== null && /^\d+$/.test(retry) ? Number(retry) : null;
+  const wantedRepeat = repeat !== null && /^\d+$/.test(repeat) ? Number(repeat) : 0;
 
   if (!Number.isInteger(runId) || runId <= 0 || !file || !title) {
     return notFoundPage(event, 'This link is missing the run, spec file or test title it should point at.', null);
@@ -50,13 +54,14 @@ export default eventHandler(async (event) => {
       id: testRunsCases.id,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(and(eq(testRunsCases.testRunId, runId), eq(testCases.filePath, file), eq(testCases.title, title)));
 
-  const match = pickExecution(candidates, wantedRetry, browser);
+  const match = pickExecution(candidates, wantedRetry, browser, wantedRepeat);
   if (!match) {
     return notFoundPage(event, `Run #${runId} has no execution of "${title}" in ${file}.`, runId);
   }
@@ -68,17 +73,25 @@ interface Candidate {
   id: number;
   status: string;
   retries: number | null;
+  repeatEachIndex?: number;
   browserName: string | null;
 }
 
 /**
- * The best execution for the requested attempt: the exact project and retry
- * when persisted, otherwise the failing one, otherwise the latest attempt.
+ * The best execution for the requested attempt: the exact project, repetition
+ * and retry when persisted, otherwise the failing one, otherwise the latest
+ * attempt.
  */
-export function pickExecution(candidates: Candidate[], retry: number | null, browser: string | null): Candidate | null {
+export function pickExecution(
+  candidates: Candidate[],
+  retry: number | null,
+  browser: string | null,
+  repeat = 0,
+): Candidate | null {
   const failed = new Set<string>(FAILED_STATUS_KEYS);
   const score = (c: Candidate): number[] => [
     browser !== null && c.browserName === browser ? 1 : 0,
+    (c.repeatEachIndex ?? 0) === repeat ? 1 : 0,
     retry !== null && (c.retries ?? 0) === retry ? 1 : 0,
     failed.has(c.status) ? 1 : 0,
     c.retries ?? 0,

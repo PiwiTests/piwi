@@ -56,6 +56,7 @@ import { eligibleRunSql } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
+import { latestRunStatusSql } from './latest-run-status';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
 import type { DrizzleDB } from './db';
@@ -891,8 +892,9 @@ function toEpochMs(value: Date | null): number | null {
  * (passed + failed; skipped/didnotrun excluded) and is null when nothing ran.
  * The derived `status` category is what the status filter and sort operate on:
  * `flaky` when any of the last 10 executions is a retry-pass, otherwise the
- * latest run's status (timeouts shown as failed), or `never-run`. Executions
- * of lab runs (probes, flake experiments) stay out of every aggregate.
+ * latest run's status (timeouts shown as failed, and failed when one of the
+ * test's repetitions failed there), or `never-run`. Executions of lab runs
+ * (probes, flake experiments) stay out of every aggregate.
  */
 export async function getProjectTestCases(db: DrizzleDB, projectId: number, options: Partial<TestCasesQuery> = {}) {
   const {
@@ -932,14 +934,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
     )`.mapWith(Number);
-  const lastStatus = sql<string | null>`(
-      SELECT ${testRunsCases.status}
-      FROM ${testRunsCases}
-      WHERE ${testRunsCases.testCaseId} = ${testCases.id}
-        AND ${realExecution}
-      ORDER BY ${testRunsCases.createdAt} DESC
-      LIMIT 1
-    )`;
+  // The latest run's status: failed when one of the test's repetitions failed there.
+  const lastStatus = latestRunStatusSql(realExecution);
   const category = sql<string>`CASE
       WHEN ${recentFlaky} > 0 THEN 'flaky'
       WHEN ${lastStatus} IN ('timedOut', 'timedout') THEN 'failed'
@@ -1833,6 +1829,7 @@ export async function getProjectFlakyTestsWithVerified(
       testCaseId: testRunsCases.testCaseId,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       duration: testRunsCases.duration,
       browser: testRunsCases.browser,
     })
@@ -1844,14 +1841,15 @@ export async function getProjectFlakyTestsWithVerified(
       ),
     );
 
-  // Step 3: Per (testCaseId, runId, browserKey): group rows
+  // Step 3: Per (testCaseId, runId, browserKey): group rows. The key holds the
+  // `--repeat-each` repetition too: each repetition retries on its own.
   type BrowserGroup = { rows: any[]; finalStatus: string; retryPass: boolean };
   const runDataMap = new Map<number, Map<number, Map<string, BrowserGroup>>>();
 
   for (const row of allRows) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const b = row.browser as any;
-    const browserKey: string = b?.projectName ?? b?.browserName ?? '';
+    const browserKey = `${b?.projectName ?? b?.browserName ?? ''}\x00${row.repeatEachIndex ?? 0}`;
 
     let byRun = runDataMap.get(row.testCaseId);
     if (!byRun) {

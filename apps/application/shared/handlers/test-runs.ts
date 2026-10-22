@@ -137,6 +137,7 @@ export async function getTestRun(
       error: testRunsCases.error,
       failureClusterId: testRunsCases.failureClusterId,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       attempts: testRunsCases.attempts,
       line: testRunsCases.line,
       column: testRunsCases.column,
@@ -195,6 +196,7 @@ export async function getTestRun(
     error: tc.error,
     failureClusterId: tc.failureClusterId,
     retries: tc.retries,
+    repeatEachIndex: tc.repeatEachIndex,
     attempts: tc.attempts ?? null,
     slowestStep: tc.slowestStep,
     slowestStepDuration: tc.slowestStepDuration,
@@ -593,6 +595,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
   const allRows = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,
@@ -600,13 +603,18 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));
 
-  const passedCaseIds = new Set(allRows.filter((r: any) => r.status === 'passed').map((r: any) => r.testCaseId));
+  // A failed attempt passed on a retry when an attempt of the same `--repeat-each`
+  // repetition of the test passed: each repetition retries on its own.
+  const repetitionKey = (row: { testCaseId: number; repeatEachIndex: number }) =>
+    `${row.testCaseId}\x00${row.repeatEachIndex}`;
+  const passedRepetitions = new Set(allRows.filter((r: any) => r.status === 'passed').map(repetitionKey));
   const runWorkers = new Set(allRows.map((r: any) => r.workerIndex).filter((w: any) => w !== null));
 
   const clusteredRows = await db
     .select({
       executionId: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,
       title: testCases.title,
@@ -664,7 +672,9 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
 
     const g = group;
     const existing = g.caseById.get(row.testCaseId);
+    const passedOnRetry = passedRepetitions.has(repetitionKey(row));
     if (existing) {
+      existing.passedOnRetry ||= passedOnRetry;
       if ((row.retries ?? 0) > existing.retries) {
         existing.retries = row.retries ?? 0;
         existing.executionId = row.executionId;
@@ -678,7 +688,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
         filePath: row.filePath,
         retries: row.retries ?? 0,
         workerIndex: row.workerIndex,
-        passedOnRetry: passedCaseIds.has(row.testCaseId),
+        passedOnRetry,
       });
     }
   }

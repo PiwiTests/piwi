@@ -251,6 +251,7 @@ interface ExecutionRow {
   executionId: number;
   runId: number;
   testCaseId: number;
+  repeatEachIndex: number;
   retries: number | null;
   browserName: string | null;
   clusterId: number | null;
@@ -271,6 +272,7 @@ interface OverlayAttempt {
   executionId: number;
   runId: number;
   testCaseId: number;
+  repeatEachIndex: number;
   retries: number | null;
   browserName: string | null;
   status: string;
@@ -404,6 +406,7 @@ export async function getBranchFailures(
         executionId: testRunsCases.id,
         runId: testRunsCases.testRunId,
         testCaseId: testRunsCases.testCaseId,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
         retries: testRunsCases.retries,
         browserName: testRunsCases.browserName,
         clusterId: testRunsCases.failureClusterId,
@@ -439,9 +442,12 @@ export async function getBranchFailures(
         ),
       )
     : [];
-  const baseline = lastAttempts(attempts.map((a) => ({ ...a, id: a.executionId }))).filter((r) =>
-    FAIL_STATUSES.includes(r.status),
-  );
+  // A test failed on a project when one of its repetitions' last attempts failed: one failure per test and project.
+  const baselineByTest = new Map<string, ExecutionRow>();
+  for (const r of lastAttempts(attempts.map((a) => ({ ...a, id: a.executionId })))) {
+    if (FAIL_STATUSES.includes(r.status) && !baselineByTest.has(testKey(r))) baselineByTest.set(testKey(r), r);
+  }
+  const baseline = [...baselineByTest.values()];
 
   // The last attempt of each test on each project in each overlay; the newest run that passed or failed it wins.
   const overlayIds = overlayRuns.map((o) => o.id);
@@ -460,6 +466,7 @@ export async function getBranchFailures(
         executionId: testRunsCases.id,
         runId: testRunsCases.testRunId,
         testCaseId: testRunsCases.testCaseId,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
         retries: testRunsCases.retries,
         browserName: testRunsCases.browserName,
         status: testRunsCases.status,
@@ -482,7 +489,11 @@ export async function getBranchFailures(
     for (const attempt of lastAttempts(ofRun)) {
       if (attempt.status !== 'passed' && !FAIL_STATUSES.includes(attempt.status)) continue;
       const key = testKey(attempt);
-      if (!newer.has(key)) newer.set(key, attempt);
+      const seen = newer.get(key);
+      // Within a run, a repetition that failed decides over one that passed.
+      if (!seen || (seen.runId === id && seen.status === 'passed' && attempt.status !== 'passed')) {
+        newer.set(key, attempt);
+      }
     }
   }
   const overlayRank = new Map(overlayIds.map((id, rank) => [id, rank]));

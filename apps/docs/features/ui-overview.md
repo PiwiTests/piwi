@@ -100,7 +100,7 @@ evidence rebuilt from a trace, and the fallback the reporter took to send the ru
     process shutting down and the new one starting. A dashed line is time the worker ran no test; hover either for
     the details.
   - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
-    them with arrows.
+    them with arrows. Each `--repeat-each` repetition retries on its own.
   - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
     workers are drawn above the worker rows, on the same axis, and one metric of your choice under each worker row.
     Hover a track for its values at that moment; turn each one off from the **Resources** menu. See

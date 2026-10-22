@@ -151,6 +151,8 @@ interface PlannedTest {
   annotations: TestAnnotation[];
   tags: string[];
   timeout: number | null;
+  /** Playwright's `repeatEachIndex`: each `--repeat-each` repetition is a test of its own. */
+  repeatEachIndex: number;
   projectName: string;
   browser: Record<string, unknown>;
 }
@@ -261,6 +263,7 @@ function collectPlannedTests(
           annotations: Array.isArray(child.annotations) ? (child.annotations as TestAnnotation[]) : [],
           tags: normalizeTestTags(child.tags),
           timeout: typeof child.timeout === 'number' ? child.timeout : projectTimeout,
+          repeatEachIndex: typeof child.repeatEachIndex === 'number' ? child.repeatEachIndex : 0,
           projectName,
           browser,
         });
@@ -488,6 +491,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           error: expectedFailureError(rawStatus, annotations) ?? buildErrorText(result.errors, resolver),
           expectedStatus: typeof test.expectedStatus === 'string' ? test.expectedStatus : null,
           retries: acc?.retry ?? 0,
+          repeatEachIndex: plan?.repeatEachIndex ?? 0,
           line: plan?.line ?? null,
           column: plan?.column ?? null,
           steps: metrics.steps.length ? metrics.steps : null,
@@ -536,6 +540,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         timeout: plan.timeout,
         error: null,
         retries: 0,
+        repeatEachIndex: plan.repeatEachIndex,
         line: plan.line,
         column: plan.column,
         browser: plan.browser,

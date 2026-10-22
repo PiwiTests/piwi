@@ -48,6 +48,7 @@ import {
 import { isLabRun } from '#shared/handlers/probes';
 import { escapeLikePattern } from '#shared/utils/tag-filter';
 import { foldedContains } from '#shared/utils/fold-text-sql';
+import { decidesOutcome, testOutcomes } from '#shared/utils/test-counts';
 import type { DrizzleDB } from '#shared/handlers/db';
 import type {
   ExecutionLocatorUse,
@@ -823,17 +824,38 @@ export async function indexTests(db: DrizzleDB, testIds: number[], view: BranchV
       latestExecutions(db, chunk, view),
     ]);
     const latestIds = [...latest.values()];
-    const outcomes = latestIds.length
+    const latestRuns = latestIds.length
+      ? await db
+          .select({ testCaseId: testRunsCases.testCaseId, testRunId: testRunsCases.testRunId })
+          .from(testRunsCases)
+          .where(inArray(testRunsCases.id, latestIds))
+      : [];
+    // Each test's outcome in the run of its latest execution, over every repetition and project
+    // (`decidesOutcome`): a failed one first, then a pass after a retry.
+    const latestRunOf = new Map(latestRuns.map((r) => [r.testCaseId, r.testRunId]));
+    const attempts = latestRuns.length
       ? await db
           .select({
             testCaseId: testRunsCases.testCaseId,
+            testRunId: testRunsCases.testRunId,
+            browserName: testRunsCases.browserName,
+            repeatEachIndex: testRunsCases.repeatEachIndex,
             status: testRunsCases.status,
             retries: testRunsCases.retries,
           })
           .from(testRunsCases)
-          .where(inArray(testRunsCases.id, latestIds))
+          .where(
+            and(
+              inArray(testRunsCases.testRunId, [...new Set(latestRunOf.values())]),
+              inArray(testRunsCases.testCaseId, [...latestRunOf.keys()]),
+            ),
+          )
       : [];
-    const statusOf = new Map(outcomes.map((o) => [o.testCaseId, indexTestStatus(o.status, o.retries)]));
+    const outcomes = new Map<number, (typeof attempts)[number]>();
+    for (const o of testOutcomes(attempts.filter((a) => latestRunOf.get(a.testCaseId) === a.testRunId))) {
+      if (decidesOutcome(o, outcomes.get(o.testCaseId))) outcomes.set(o.testCaseId, o);
+    }
+    const statusOf = new Map([...outcomes].map(([id, o]) => [id, indexTestStatus(o.status, o.retries)]));
     for (const c of cases) {
       tests.push({
         id: c.id,

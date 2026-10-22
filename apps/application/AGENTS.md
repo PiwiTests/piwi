@@ -597,6 +597,18 @@ reconciles and matches the UI. **Every ingest site MUST use the helpers in `shar
 demo `app/demo/api/reporter.ts` mirror) or `countFailedFromTally(insertedStatusCounts)` for per-status-tally sites
 (`events` + its demo mirror). Never write `failedTests: body.failedTests` directly.
 
+### One row per attempt, project and repetition
+
+`test_runs_cases` holds one row per attempt of a test, per Playwright project and per `--repeat-each` repetition: its
+unique key is `(test_run_id, test_case_id, repeat_each_index, retries, browser_name)`. A repetition is a test result of
+its own with its own retries, as in Playwright, and a row without one reads `repeat_each_index` 0. Read the rows
+through `shared/utils/test-counts.ts`: a run's counters with `distinctRunCountsFromAttempts` (each repetition counts
+once), each repetition's last attempt with `finalAttempts`, a test's outcome in a run with `testOutcomes` or
+`decidesOutcome` (failed when one of its repetitions failed). A test's attempts are the rows of one repetition: never
+take the highest retry across repetitions as its last attempt, nor a pass in one repetition as a retry pass of another.
+`lastAttempts` (`@piwitests/core/status-classify`) and the SQL of `latestRunStatusSql`
+(`shared/handlers/latest-run-status.ts`) follow the same rule.
+
 ### Locator healing
 
 Ranked replacement locators for a broken selector. Pure generation/scoring/fingerprint logic lives in

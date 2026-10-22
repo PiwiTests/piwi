@@ -1685,6 +1685,7 @@ async function loadPassedWithErrors(
       testRunId: testRunsCases.testRunId,
       testCaseId: testRunsCases.testCaseId,
       browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       status: testRunsCases.status,
     })
@@ -1701,7 +1702,7 @@ async function loadPassedWithErrors(
         a.testCaseId != null && newestRun.get(a.testCaseId) === a.testRunId,
     ),
   );
-  // A test that fails on any browser is a failure, not a pass with errors; a skip is neither.
+  // A test that fails on any browser or in any repetition is a failure, not a pass with errors; a skip is neither.
   const failedTests = new Set(
     finals.filter((a) => !['passed', 'skipped', 'didnotrun'].includes(a.status.toLowerCase())).map((a) => a.testCaseId),
   );

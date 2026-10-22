@@ -91,7 +91,7 @@ reported as not importable and skipped; the rest of the batch is unaffected.
 
 Everything Playwright itself recorded comes across:
 
-- Test results — status, duration, timeout, retries, worker, start time, annotations
+- Test results — status, duration, timeout, retries, `--repeat-each` repetition, worker, start time, annotations
 - Suite structure — spec file, `describe` nesting, Playwright project (browser) name
 - Errors, with full call logs, so failures **cluster exactly like reported ones**
 - Steps, including their subtitles and capped, masked params (Playwright 1.63+), the slowest step and wasted-time totals

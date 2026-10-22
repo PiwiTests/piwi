@@ -59,8 +59,8 @@ async function countFromExecutions(
 }
 
 /**
- * Per project and day totals of executions, final attempt per test and
- * browser: a run counts once, and passed when none of its executions failed.
+ * Per project and day totals of executions, final attempt per test, browser and
+ * repetition: a run counts once, and passed when none of its executions failed.
  */
 export function rowsFromExecutions(
   runs: Array<{ id: number; projectId: number; startTime: Date | string | number }>,

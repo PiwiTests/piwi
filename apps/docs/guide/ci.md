@@ -185,8 +185,8 @@ e2e:
 - run: cat piwi-run.json   # { runUrl, runId, projectId, projectName, status, ciBuildUrl, failedCount, failures }
 ```
 
-`failures` lists every test whose final attempt failed as `{ title, file, retry, browser, headline, url }`, with
-`url` the same per-test link the log prints.
+`failures` lists every test whose final attempt failed as `{ title, file, retry, browser, repeatEachIndex, headline,
+url }`, with `url` the per-test link the log prints.
 
 ## Pull-request feedback
 

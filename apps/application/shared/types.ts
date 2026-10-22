@@ -71,6 +71,11 @@ export interface TestCasePayload {
   timeout?: number | null;
   error?: string | null;
   retries?: number | null;
+  /**
+   * Playwright's `repeatEachIndex`: which `--repeat-each` repetition the result belongs to, each its own test result.
+   * Absent from older reporters, read as 0.
+   */
+  repeatEachIndex?: number | null;
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   steps?: unknown;
@@ -187,6 +192,11 @@ export interface StreamEventPayload {
   timeout?: number | null;
   error?: string | null;
   retries?: number | null;
+  /**
+   * Playwright's `repeatEachIndex`: which `--repeat-each` repetition the result belongs to, each its own test result.
+   * Absent from older reporters, read as 0.
+   */
+  repeatEachIndex?: number | null;
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;

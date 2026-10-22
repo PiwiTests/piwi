@@ -203,6 +203,26 @@ describe('parseBlobReport', () => {
     expect(entry.traces[0]!.entry).toMatch(/^resources\//);
   });
 
+  test('keeps each `--repeat-each` repetition as an execution of its own', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        runStatus: 'failed',
+        tests: [0, 1, 2].map((repeatEachIndex) => ({
+          testId: `pays-${repeatEachIndex}`,
+          title: 'pays',
+          line: 9,
+          repeatEachIndex,
+          attempts: [repeatEachIndex === 1 ? { status: 'failed', errorMessage: 'Error: boom' } : { status: 'passed' }],
+        })),
+      }),
+    );
+    expect(parsed.cases.map((c) => [c.case.title, c.case.repeatEachIndex, c.case.retries, c.case.status])).toEqual([
+      ['pays', 0, 0, 'passed'],
+      ['pays', 1, 0, 'failed'],
+      ['pays', 2, 0, 'passed'],
+    ]);
+  });
+
   test('tags every execution with the shard the archive covers', async () => {
     const parsed = await parse(
       buildBlobReport({

@@ -444,6 +444,7 @@ export class PiwiDashboardReporter {
       type: 'begin',
       title: test.title,
       location: testLocation(test, this.testPathBase),
+      repeatEachIndex: test.repeatEachIndex,
       workerIndex: workerIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
@@ -573,6 +574,8 @@ export class PiwiDashboardReporter {
       // Playwright reports the same line, so synthesize it.
       error: expectedFailureError(result.status, annotations) ?? buildErrorText(result, this.testPathBase),
       retries: result.retry,
+      // Each `--repeat-each` repetition is a test of its own, with its own attempts.
+      repeatEachIndex: test.repeatEachIndex,
       attempts: attempts.map((a) => ({ ...a })),
       workerIndex: workerIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
@@ -693,6 +696,7 @@ export class PiwiDashboardReporter {
         file: testFile(test, this.testPathBase),
         retry: result.retry,
         browser: typeof testCase.browser?.projectName === 'string' ? testCase.browser.projectName : null,
+        repeatEachIndex: test.repeatEachIndex,
         headline: failureHeadline(testCase.error, testCase.performanceMetrics?.steps),
       });
     }
@@ -827,6 +831,7 @@ export class PiwiDashboardReporter {
         timeout: test.timeout ?? null,
         error: null,
         retries: 0,
+        repeatEachIndex: test.repeatEachIndex,
         workerIndex: null,
         shardIndex: this.shardInfo?.current ?? null,
         startedAt: null,

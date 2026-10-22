@@ -69,6 +69,11 @@ This is the object at `/test-cases/:id` — pass rate, duration trend, and the l
 field on one: a test that failed twice and passed on the third attempt contributes three executions to
 the same run. So is each browser in a project matrix.
 
+So is each `--repeat-each` repetition, which Playwright runs as a test of its own, with its own retries:
+`--repeat-each=3` contributes three executions of the test, more with retries. The run counts each
+repetition once, as Playwright's summary does, and a test failed in a run when one of its repetitions
+failed, whatever the others did.
+
 This is the object at `/test-run-cases/:id` — the error, steps, trace, screenshots, console, network,
 Web Vitals, and (for a failure) the diagnosis view. When the docs say *execution* or *test-run case*,
 this is what they mean; when they say *test case*, they mean the identity above it.

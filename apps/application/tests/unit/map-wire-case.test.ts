@@ -16,6 +16,7 @@ const wireCase = {
   timeout: 30_000,
   error: 'Error: expect(locator).toBeVisible() failed',
   retries: 1,
+  repeatEachIndex: 2,
   attempts: [{ retry: 0, status: 'failed', duration: 1100, startedAt: 1_700_000_000_000 }],
   steps: [{ title: 'click Pay', duration: 40 }],
   stepEvents: [{ title: 'click', category: 'expect', startedAt: 1, duration: 2 }],
@@ -74,6 +75,7 @@ const expected = {
   timeout: wireCase.timeout,
   error: wireCase.error,
   retries: wireCase.retries,
+  repeatEachIndex: wireCase.repeatEachIndex,
   attempts: wireCase.attempts,
   steps: wireCase.steps,
   stepEvents: wireCase.stepEvents,
@@ -137,6 +139,7 @@ describe('mapWireCaseToRunCase', () => {
       'workerIndex',
       'browser',
       'blockedBy',
+      'repeatEachIndex',
     ] as const) {
       expect(mapped[key], key).toBeNull();
     }

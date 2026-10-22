@@ -46,6 +46,7 @@ export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<
       status: testRunsCases.status,
       expectedStatus: testRunsCases.expectedStatus,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
     })
     .from(testRunsCases)
