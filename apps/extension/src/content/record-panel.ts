@@ -56,6 +56,7 @@ import {
   copyToClipboard,
   fileStamp,
   mountSurface,
+  startReplayHere,
 } from './record-ui.js';
 import { downloadBlob } from '../shared/download.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
@@ -686,9 +687,12 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .actions .discard { margin-inline-start: auto; }
     .empty { color: #9ca3af; font-size: 12.5px; padding: 16px; text-align: center; }
+    .message { color: #fca5a5; font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; }
+    .message:empty { display: none; }
     @media (prefers-color-scheme: light) {
       .sub, .step-idx, .empty { color: #6b7280; }
       .step-fn { color: #6d28d9; }
+      .message { color: #b91c1c; }
     }
   `;
   root.appendChild(style);
@@ -764,6 +768,9 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
 
   const actions = document.createElement('div');
   actions.className = 'actions';
+  const message = document.createElement('div');
+  message.className = 'message';
+  message.setAttribute('role', 'alert');
 
   if (steps.length > 0) {
     const copyPrimary = makeButton(
@@ -799,6 +806,21 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
       );
       actions.appendChild(sendBtn);
     }
+
+    // Played again before export: the one check that every recorded locator still finds its element.
+    const replayBtn = makeButton(
+      t('record_replay'),
+      () => {
+        replayBtn.disabled = true;
+        void startReplayHere(toStepsDocument(session)).then((response) => {
+          if (response.ok) return closePanel();
+          replayBtn.disabled = false;
+          message.textContent = response.error ?? t('common_replayStartFailed');
+        });
+      },
+      { icon: 'play', title: t('record_replayHint') },
+    );
+    actions.appendChild(replayBtn);
   }
 
   actions.appendChild(
@@ -809,6 +831,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     }),
   );
   panel.appendChild(actions);
+  panel.appendChild(message);
 
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) closePanel();

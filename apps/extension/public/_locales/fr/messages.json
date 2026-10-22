@@ -2136,6 +2136,12 @@
   "record_sendToEditor": {
     "message": "Envoyer à l’éditeur"
   },
+  "record_replay": {
+    "message": "Rejouer"
+  },
+  "record_replayHint": {
+    "message": "Rejouez les étapes sur ce site, avec un curseur, et voyez si chaque étape trouve encore son élément"
+  },
   "bug_reportLabel": {
     "message": "Rapport de bug Piwi Picker"
   },
@@ -3321,6 +3327,9 @@
   },
   "replay_useRecorded": {
     "message": "Utiliser le rapport de bug enregistré dans ce navigateur"
+  },
+  "replay_useRecordedActions": {
+    "message": "Utiliser les actions enregistrées dans ce navigateur"
   },
   "replay_chooseFile": {
     "message": "Ou choisissez le .piwibug du rapport, ou son steps.json, enregistré par Piwi Picker :"

@@ -49,6 +49,7 @@ import {
   hideSurfaces,
   isOwnHost,
   mountSurface,
+  startReplayHere,
 } from './record-ui.js';
 import { downloadBlob } from '../shared/download.js';
 import {
@@ -1173,24 +1174,15 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   action(t('bug_replay'), { icon: 'play', title: t('bug_replayHint') }, (b) => {
     b.disabled = true;
     void (async () => {
-      let response: { ok: boolean; error?: string } | undefined;
-      try {
-        response = await chrome.runtime.sendMessage({
-          type: 'piwi-start-replay',
-          steps: report().steps,
-          origin: location.origin,
-          stepMode: false,
-          inject: true,
-          // The replay shows a step it hands to the person as the recording saw it.
-          recordingViews: stepViews(sessionFromEvents(state.events, startedAt).steps),
-        });
-      } catch (e) {
-        response = { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
-      if (response?.ok) closePanel();
+      // The replay shows a step it hands to the person as the recording saw it.
+      const response = await startReplayHere(
+        report().steps,
+        stepViews(sessionFromEvents(state.events, startedAt).steps),
+      );
+      if (response.ok) closePanel();
       else {
         b.disabled = false;
-        replayMessage.textContent = response?.error ?? t('common_replayStartFailed');
+        replayMessage.textContent = response.error ?? t('common_replayStartFailed');
       }
     })();
   });

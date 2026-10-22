@@ -2577,6 +2577,14 @@
     "message": "Send to editor",
     "description": "Button in the recording review: the paired editor renders the recorded steps as the body of a test, with the project’s functions, and inserts it at the cursor."
   },
+  "record_replay": {
+    "message": "Replay",
+    "description": "Recorder review panel: button that plays the recorded steps again on the site, before they are exported. Short."
+  },
+  "record_replayHint": {
+    "message": "Play the steps again on this site, with a cursor, and see that each step still finds its element",
+    "description": "Recorder review panel: tooltip of “Replay”."
+  },
   "bug_reportLabel": {
     "message": "Piwi Picker bug report",
     "description": "Report a bug: aria-label of the HUD shown while a bug is recorded, and of the finished report panel."
@@ -3970,6 +3978,10 @@
   "replay_useRecorded": {
     "message": "Use the bug report recorded in this browser",
     "description": "Replay dialog button: replays the last bug report recorded with Piwi Picker in this browser."
+  },
+  "replay_useRecordedActions": {
+    "message": "Use the actions recorded in this browser",
+    "description": "Replay dialog button: replays the last recording of actions (Record actions, not a bug report) made with Piwi Picker in this browser."
   },
   "replay_chooseFile": {
     "message": "Or choose the report’s .piwibug, or its steps.json, saved by Piwi Picker:",

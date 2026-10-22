@@ -450,6 +450,10 @@ queued behind the document's appends), which each page reads as the recorder att
 `piwi-recording-paused`, which the worker passes on to the recording's other tabs (`notifyRecorderTabs`); in the IDE
 bundle the launcher keeps it and tells the editor. The DevTools Record tab says the recording is paused.
 
+The review panel after Stop has **Replay**, as the bug report's finish panel has: both start the replay in the tab
+through `startReplayHere` (`record-ui.ts`, `piwi-start-replay`). The replay dialog offers the last recording not
+discarded, either mode (`lastRecordedReport`), each under its own label.
+
 ## Report a bug
 
 A bug recording is a recording with `mode: 'bug'` (`recording-storage.ts`): the same capture,

@@ -137,7 +137,8 @@ hover shows, across pages. **Check an element** and **Check the address** add an
 now. **Pause** stops capturing without ending the recording, on every page and tab of it, so signing in or closing a
 banner stays out of the spec, until **Resume**. **Stop** opens the review: **Copy as TypeScript** for a runnable spec that waits for each page it opens,
 **Download steps** for a [steps file](/reference/steps-format) to share or render with
-[`piwi codegen`](/reference/cli#codegen), [**Send to editor**](./editor-recording#send-from-piwi-picker), or
+[`piwi codegen`](/reference/cli#codegen), [**Send to editor**](./editor-recording#send-from-piwi-picker),
+[**Replay**](./replay-a-bug-report) to play the steps again in the tab and see that each still finds its element, or
 **Discard**. Passwords are never captured, nor a card number, its security code or a one-time code in a field whose
 `autocomplete` names it: the spec reads them from `process.env`.
 

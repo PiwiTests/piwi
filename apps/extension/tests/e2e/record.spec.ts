@@ -815,6 +815,74 @@ test.describe('record-panel.js', () => {
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('addToCart(page)');
   });
 
+  test('Replay on the review panel replays the recorded steps here, and says why when it cannot start', async ({
+    context,
+  }) => {
+    const events: RawCaptureEvent[] = [
+      {
+        kind: 'navigate',
+        target: null,
+        value: `${ORIGIN}/login`,
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: `${ORIGIN}/login`,
+        timestamp: 1,
+      },
+      {
+        kind: 'click',
+        target: {
+          tagName: 'button',
+          role: 'button',
+          accessibleName: 'Log in',
+          testId: 'login-submit',
+          text: 'Log in',
+          alternatives: [{ locator: `getByTestId('login-submit')`, method: 'getByTestId', score: 100 }],
+        },
+        value: null,
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: `${ORIGIN}/login`,
+        timestamp: 2,
+      },
+    ];
+    await routePages(context);
+    await openShadowRoots(context);
+    await stubChromeStorage(context, {
+      session: { piwiRecording: { active: false, events, startedAt: 1, grantedOriginPattern: `${ORIGIN}/*` } },
+    });
+    // The worker refuses the first start, then starts the replay.
+    await context.addInitScript(() => {
+      const runtime = (globalThis as any).chrome.runtime;
+      const starts: unknown[] = [];
+      (globalThis as any).__piwiStarts = starts;
+      const send = runtime.sendMessage;
+      runtime.sendMessage = async (message: { type?: string }) => {
+        if (message?.type !== 'piwi-start-replay') return send(message);
+        starts.push(message);
+        return starts.length === 1 ? { ok: false, error: 'Piwi Picker has no access to this site.' } : { ok: true };
+      };
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    const review = page.locator('#piwi-record-review-host');
+
+    await review.getByRole('button', { name: 'Replay' }).click();
+    await expect(review.getByRole('alert')).toHaveText('Piwi Picker has no access to this site.');
+    await review.getByRole('button', { name: 'Replay' }).click();
+    await expect(review).toHaveCount(0);
+    const starts = await page.evaluate(() => (globalThis as any).__piwiStarts);
+    expect(starts).toHaveLength(2);
+    expect(starts[1]).toMatchObject({ origin: ORIGIN, stepMode: false, inject: true });
+    expect(starts[1].steps.origin).toBe(ORIGIN);
+    expect(starts[1].steps.steps.map((s: { action: string; pageUrl: string }) => [s.action, s.pageUrl])).toEqual([
+      ['goto', '/login'],
+      ['click', '/login'],
+    ]);
+  });
+
   test('Download steps saves a steps file whose rendered spec replays the flow in a real browser', async ({
     context,
   }) => {

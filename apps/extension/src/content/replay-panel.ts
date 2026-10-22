@@ -1564,21 +1564,28 @@ interface ChosenReport {
   views: ReplayViews | null;
 }
 
-/** The bug report recorded in this browser and not discarded yet, as steps, with its step screenshots. */
-async function lastRecordedReport(): Promise<ChosenReport | null> {
+/**
+ * The recording made in this browser and not discarded yet, a bug report or a
+ * plain recording, as steps, with its step screenshots and which of the two it is.
+ */
+async function lastRecordedReport(): Promise<(ChosenReport & { bug: boolean }) | null> {
   try {
     const recording = await getRecordingState();
-    if (recording.active || recording.events.length === 0 || recordingMode(recording) !== 'bug') return null;
+    if (recording.active || recording.events.length === 0) return null;
     const steps = normalizeSteps(recording.events);
     if (steps.length === 0) return null;
     const session = sessionFromEvents(recording.events, recording.startedAt ?? steps[0]!.timestamp);
-    return { steps: toStepsDocument(session), views: { recordingViews: stepViews(session.steps) } };
+    return {
+      steps: toStepsDocument(session),
+      views: { recordingViews: stepViews(session.steps) },
+      bug: recordingMode(recording) === 'bug',
+    };
   } catch {
     return null;
   }
 }
 
-function openChooser(lastReport: ChosenReport | null): void {
+function openChooser(lastReport: (ChosenReport & { bug: boolean }) | null): void {
   document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = REPLAY_DIALOG_HOST_ID;
@@ -1660,13 +1667,13 @@ function openChooser(lastReport: ChosenReport | null): void {
 
   if (lastReport) {
     const use = button(
-      t('replay_useRecorded'),
+      lastReport.bug ? t('replay_useRecorded') : t('replay_useRecordedActions'),
       () => {
         asked++;
         reports.value = '';
         describe(lastReport.steps, null, lastReport.views);
       },
-      { icon: 'bug' },
+      { icon: lastReport.bug ? 'bug' : 'record' },
     );
     use.style.marginTop = '10px';
     panel.appendChild(use);
