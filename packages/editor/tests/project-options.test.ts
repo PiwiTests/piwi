@@ -4,7 +4,13 @@ import * as path from 'node:path';
 import { build } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import type { FullConfig } from '@playwright/test/reporter';
-import { parseUseLine, readProjectOptions, ProjectOptionsError } from '../src/recorder/project-options';
+import {
+  configFingerprint,
+  configInputs,
+  parseUseLine,
+  readProjectOptions,
+  ProjectOptionsError,
+} from '../src/recorder/project-options';
 import UseReporter from '../src/recorder/use-reporter';
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'record-project', 'playwright.config.ts');
@@ -113,6 +119,84 @@ describe('the reporter', () => {
   });
 });
 
+describe('configInputs', () => {
+  test('the config, the .env files up to the repository’s folder, and the local modules the config loads', () => {
+    const repo = path.join(dir, 'inputs-repo');
+    const e2e = path.join(repo, 'apps', 'e2e');
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(e2e, 'support'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'shared'), { recursive: true });
+    for (const file of [
+      '.env',
+      'apps/e2e/.env',
+      'apps/e2e/.env.local',
+      'apps/e2e/.envrc',
+      'apps/e2e/base.ts',
+      'apps/e2e/support/index.ts',
+      'apps/e2e/users.json',
+      'shared/config.ts',
+    ]) {
+      fs.writeFileSync(path.join(repo, file), '');
+    }
+    const config = path.join(e2e, 'playwright.config.ts');
+    const text = [
+      "import { defineConfig } from '@playwright/test';",
+      "import base from './base';",
+      "import { shared } from '../../shared/config.js';",
+      "import './support';",
+      "const users = require('./users.json');",
+      "export { devices } from './missing';",
+    ].join('\n');
+    expect(configInputs(config, text)).toEqual([
+      config,
+      path.join(e2e, '.env'),
+      path.join(e2e, '.env.local'),
+      path.join(repo, '.env'),
+      path.join(e2e, 'base.ts'),
+      path.join(repo, 'shared', 'config.ts'),
+      path.join(e2e, 'support', 'index.ts'),
+      path.join(e2e, 'users.json'),
+      path.join(e2e, 'missing'),
+    ]);
+  });
+
+  test('the config’s folder alone outside a repository', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-outside-'));
+    const nested = path.join(outside, 'e2e');
+    fs.mkdirSync(nested);
+    fs.writeFileSync(path.join(outside, '.env'), '');
+    fs.writeFileSync(path.join(nested, '.env'), '');
+    const config = path.join(nested, 'playwright.config.ts');
+    expect(configInputs(config, 'export default {};')).toEqual([config, path.join(nested, '.env')]);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+});
+
+describe('configFingerprint', () => {
+  test('changes when a .env file appears, changes its size or its time, or goes', () => {
+    const root = path.join(dir, 'fingerprint');
+    fs.mkdirSync(root);
+    const config = path.join(root, 'playwright.config.ts');
+    fs.writeFileSync(config, 'export default {};\n');
+    const first = configFingerprint(config);
+    expect(configFingerprint(config)).toBe(first);
+    fs.writeFileSync(path.join(root, '.env'), 'BASE_URL=http://localhost:3000\n');
+    const withEnv = configFingerprint(config);
+    expect(withEnv).not.toBe(first);
+    const env = path.join(root, '.env');
+    const when = fs.statSync(env).mtime;
+    fs.writeFileSync(env, 'BASE_URL=http://localhost:40000\n');
+    fs.utimesSync(env, when, when);
+    const longer = configFingerprint(config);
+    expect(longer).not.toBe(withEnv);
+    fs.utimesSync(env, when, new Date(when.getTime() + 5_000));
+    expect(configFingerprint(config)).not.toBe(longer);
+    fs.rmSync(path.join(root, '.env'));
+    expect(configFingerprint(config)).toBe(first);
+    expect(configFingerprint(path.join(root, 'none.config.ts'))).toBeNull();
+  });
+});
+
 describe('readProjectOptions', () => {
   test('runs the project’s own Playwright and reads each project’s resolved options', async () => {
     const options = await readProjectOptions(FIXTURE, reporter);
@@ -163,6 +247,37 @@ describe('readProjectOptions', () => {
     fs.writeFileSync(config, "export default { projects: [{ name: 'one' }, { name: 'two' }] };\n");
     fs.utimesSync(config, new Date(), new Date(Date.now() + 5_000));
     expect((await readProjectOptions(config, reporter)).projects.map((p) => p.name)).toEqual(['one', 'two']);
+  });
+
+  test('reads a config again once a module it imports changes', async () => {
+    const config = project('importing', "import base from './base';\nexport default base;\n");
+    const base = path.join(path.dirname(config), 'base.ts');
+    fs.writeFileSync(base, "export default { projects: [{ name: 'one' }] };\n");
+    const first = readProjectOptions(config, reporter);
+    expect((await first).projects.map((p) => p.name)).toEqual(['one']);
+    expect(readProjectOptions(config, reporter)).toBe(first);
+    fs.writeFileSync(base, "export default { projects: [{ name: 'one' }, { name: 'two' }] };\n");
+    expect((await readProjectOptions(config, reporter)).projects.map((p) => p.name)).toEqual(['one', 'two']);
+  });
+
+  test('reads a config once whatever the spelling of its path, and again after five minutes', async () => {
+    const config = project('spellings', 'export default {};\n');
+    const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-spelling-')), 'project');
+    fs.symlinkSync(path.dirname(config), link, 'dir');
+    const first = readProjectOptions(config, reporter);
+    expect(readProjectOptions(path.join(link, 'playwright.config.ts'), reporter)).toBe(first);
+    await first;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + 5 * 60_000 - 1_000);
+      expect(readProjectOptions(config, reporter)).toBe(first);
+      vi.setSystemTime(Date.now() + 2_000);
+      const again = readProjectOptions(config, reporter);
+      expect(again).not.toBe(first);
+      expect(readProjectOptions(config, reporter)).toBe(again);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('fails with one sentence when Playwright is not installed', async () => {

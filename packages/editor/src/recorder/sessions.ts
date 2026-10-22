@@ -46,6 +46,7 @@ import {
   testImportOf,
   type ImportBindings,
 } from './imports.js';
+import { projectNode, projectNodeEnv } from './node.js';
 import { declaredNamesAt, fileFixtures, pageCandidates, recordingPlacement } from './page-candidates.js';
 import { canonicalPath } from './playwright.js';
 import type { ProjectOptions } from './project-options.js';
@@ -85,11 +86,21 @@ export interface LauncherEvents {
 /** Starts a launcher in the config's folder. Throws when it cannot. */
 export type LauncherFactory = (cwd: string, events: LauncherEvents) => LauncherHandle;
 
-/** Forks the bundled launcher, with an IPC channel and its error output kept for a failure's message. */
+/**
+ * Forks the bundled launcher with the project's Node (`projectNode`), with an IPC channel and its error output kept
+ * for a failure's message.
+ */
 export function forkLauncher(file: string): LauncherFactory {
   return (cwd, events) => {
     if (!fs.existsSync(file)) throw new Error(`The recorder is missing from this installation: ${file} was not found.`);
-    const child = fork(file, [], { cwd, execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    const node = projectNode();
+    const child = fork(file, [], {
+      cwd,
+      env: projectNodeEnv(node),
+      execArgv: [],
+      execPath: node.execPath,
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    });
     let detail: string | null = null;
     let ended = false;
     const end = (code: number | null) => {

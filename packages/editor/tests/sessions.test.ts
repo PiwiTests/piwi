@@ -10,6 +10,7 @@ import type { ProjectOptions, ProjectUse } from '../src/recorder/project-options
 import {
   RecordingSessions,
   blockImports,
+  forkLauncher,
   indentBlock,
   UPDATE_INTERVAL_MS,
   recorderLanguage,
@@ -1022,6 +1023,31 @@ describe('the spacing of updates', () => {
     expect(updates).toHaveLength(1);
     vi.advanceTimersByTime(1);
     expect(updates).toHaveLength(2);
+  });
+});
+
+describe('forkLauncher', () => {
+  test('runs the launcher in the config’s folder with the project’s Node, as a Node', async () => {
+    const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-sessions-fork-')));
+    const launcher = path.join(folder, 'launcher.cjs');
+    fs.writeFileSync(
+      launcher,
+      'process.send({ execPath: process.execPath, cwd: process.cwd(), electron: process.env.ELECTRON_RUN_AS_NODE ?? null });\n',
+    );
+    vi.stubEnv('ELECTRON_RUN_AS_NODE', '1');
+    try {
+      const said = await new Promise<unknown>((resolve, reject) => {
+        let message: unknown;
+        forkLauncher(launcher)(folder, {
+          message: (m) => (message = m),
+          exit: (code, detail) => (code === 0 ? resolve(message) : reject(new Error(detail ?? `exit ${code}`))),
+        });
+      });
+      expect(said).toEqual({ execPath: process.execPath, cwd: folder, electron: null });
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
   });
 });
 

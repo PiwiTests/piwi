@@ -1,11 +1,13 @@
 /**
  * The `use` options Playwright resolves for each project of a config, read by running the project's own Playwright
  * CLI with the editor service's reporter (`piwi-use-reporter.cjs`): `playwright test --list` with a filter no spec
- * file matches, so Playwright reads the config and loads no test. Cached per config file until it changes.
+ * file matches, so Playwright reads the config and loads no test, with the project's Node (`projectNode`). Cached per
+ * config file until it or a file it reads changes (`configFingerprint`), for five minutes at most.
  */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { projectNode, projectNodeEnv } from './node.js';
 import { canonicalPath, resolvePlaywrightCli } from './playwright.js';
 import { USE_LINE } from './use-reporter.js';
 
@@ -45,6 +47,15 @@ const NO_SPEC = '__piwi_no_such_spec__';
 
 /** The most output kept from Playwright. */
 const MAX_OUTPUT = 8 * 1024 * 1024;
+
+/** How long a config's options are kept, whatever changes. */
+const CACHE_TTL_MS = 5 * 60_000;
+
+/** The extensions a relative import without one is resolved with, in order. */
+const IMPORT_EXTENSIONS = ['.ts', '.mts', '.cts', '.tsx', '.js', '.mjs', '.cjs', '.jsx', '.json'];
+
+/** A relative module a config loads: `import … from`, `export … from`, `import(…)`, a bare `import` or `require(…)`. */
+const RELATIVE_IMPORT = /(?:\bfrom|\bimport\s*\(?|\brequire\s*\()\s*(['"])(\.{1,2}\/[^'"\r\n]*)\1/g;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -86,8 +97,92 @@ function firstLine(output: string): string {
   return /[.!?…]$/.test(short) ? short : `${short}.`;
 }
 
-function run(given: string, reporter: string, timeoutMs: number): Promise<ProjectOptions> {
-  const configFile = canonicalPath(given);
+function isFile(file: string): boolean {
+  try {
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The file a relative import names, as Node and Playwright resolve it: the path itself, with one of
+ * `IMPORT_EXTENSIONS`, a `.ts` for a `.js`, or the folder's `index`; the path as written when none exists.
+ */
+function resolveImport(dir: string, specifier: string): string {
+  const base = path.resolve(dir, specifier);
+  const typed = base.replace(/\.([mc]?)js$/, '.$1ts');
+  const candidates = [
+    base,
+    ...(typed === base ? [] : [typed]),
+    ...IMPORT_EXTENSIONS.map((ext) => base + ext),
+    ...IMPORT_EXTENSIONS.map((ext) => path.join(base, `index${ext}`)),
+  ];
+  return candidates.find(isFile) ?? base;
+}
+
+/** The folder of `dir`'s repository (the first folder up from it holding `.git`); null outside a repository. */
+function repositoryOf(dir: string): string | null {
+  for (let folder = dir; ; folder = path.dirname(folder)) {
+    if (fs.existsSync(path.join(folder, '.git'))) return folder;
+    if (path.dirname(folder) === folder) return null;
+  }
+}
+
+/** The `.env` files (`.env`, `.env.local`, …) of `dir`, sorted. */
+function envFiles(dir: string): string[] {
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((name) => name === '.env' || name.startsWith('.env.'))
+      .sort()
+      .map((name) => path.join(dir, name));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The files a config's options may depend on: the config, the `.env` files of its folder and of each folder above it
+ * up to the repository's (its folder alone outside a repository), and the local modules the config imports or
+ * requires, by a relative path.
+ */
+export function configInputs(configFile: string, text: string): string[] {
+  const dir = path.dirname(configFile);
+  const repository = repositoryOf(dir);
+  const folders = [dir];
+  if (repository) {
+    for (let folder = dir; folder !== repository; folder = path.dirname(folder)) folders.push(path.dirname(folder));
+  }
+  const imports = new Set<string>();
+  for (const match of text.matchAll(RELATIVE_IMPORT)) imports.add(resolveImport(dir, match[2]!));
+  return [configFile, ...folders.flatMap(envFiles), ...imports];
+}
+
+/**
+ * The modification time and size of each of a config's {@link configInputs}, in one string that changes when one of
+ * them does or the list does; null when the config cannot be read.
+ */
+export function configFingerprint(configFile: string): string | null {
+  let text: string;
+  try {
+    text = fs.readFileSync(configFile, 'utf8');
+  } catch {
+    return null;
+  }
+  return configInputs(configFile, text)
+    .map((file) => {
+      try {
+        const stat = fs.statSync(file);
+        return `${file}\0${stat.mtimeMs}\0${stat.size}`;
+      } catch {
+        return `${file}\0-`;
+      }
+    })
+    .join('\n');
+}
+
+function run(configFile: string, reporter: string, timeoutMs: number): Promise<ProjectOptions> {
   const cwd = path.dirname(configFile);
   const name = path.basename(configFile);
   const cli = resolvePlaywrightCli(cwd);
@@ -100,10 +195,16 @@ function run(given: string, reporter: string, timeoutMs: number): Promise<Projec
     return Promise.reject(new ProjectOptionsError('failed', `The editor service's reporter is missing: ${reporter}.`));
   }
   return new Promise((resolve, reject) => {
+    const node = projectNode();
     const child = spawn(
-      process.execPath,
+      node.execPath,
       [cli, 'test', '--list', '--pass-with-no-tests', `--reporter=${reporter}`, '-c', configFile, NO_SPEC],
-      { cwd, env: { ...process.env, FORCE_COLOR: '0' }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+      {
+        cwd,
+        env: projectNodeEnv(node, { ...process.env, FORCE_COLOR: '0' }),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      },
     );
     let stdout = '';
     let stderr = '';
@@ -146,30 +247,29 @@ function run(given: string, reporter: string, timeoutMs: number): Promise<Projec
   });
 }
 
-const cache = new Map<string, { mtimeMs: number; options: Promise<ProjectOptions> }>();
+const cache = new Map<string, { fingerprint: string; expires: number; options: Promise<ProjectOptions> }>();
 
 /**
  * The resolved options of a config's projects, read by its own Playwright (resolved from the config's folder, run
- * there with the current Node), with `reporter` (the path of `piwi-use-reporter.cjs`). Kept until the config file
- * changes; a failure is not kept. Rejects with a {@link ProjectOptionsError}.
+ * there with the project's Node), with `reporter` (the path of `piwi-use-reporter.cjs`). Kept per config, as the file
+ * system spells its path, until its {@link configFingerprint} changes or for five minutes; a failure is not kept.
+ * Rejects with a {@link ProjectOptionsError}.
  */
 export function readProjectOptions(
   configFile: string,
   reporter: string,
   timeoutMs = READ_TIMEOUT_MS,
 ): Promise<ProjectOptions> {
-  let mtimeMs: number;
-  try {
-    mtimeMs = fs.statSync(configFile).mtimeMs;
-  } catch {
-    return Promise.reject(new ProjectOptionsError('failed', `${configFile} cannot be read.`));
-  }
-  const cached = cache.get(configFile);
-  if (cached?.mtimeMs === mtimeMs) return cached.options;
-  const entry = { mtimeMs, options: run(configFile, reporter, timeoutMs) };
-  cache.set(configFile, entry);
+  const file = canonicalPath(configFile);
+  const fingerprint = configFingerprint(file);
+  if (fingerprint === null) return Promise.reject(new ProjectOptionsError('failed', `${configFile} cannot be read.`));
+  const now = Date.now();
+  const cached = cache.get(file);
+  if (cached && cached.fingerprint === fingerprint && now < cached.expires) return cached.options;
+  const entry = { fingerprint, expires: now + CACHE_TTL_MS, options: run(file, reporter, timeoutMs) };
+  cache.set(file, entry);
   entry.options.catch(() => {
-    if (cache.get(configFile) === entry) cache.delete(configFile);
+    if (cache.get(file) === entry) cache.delete(file);
   });
   return entry.options;
 }

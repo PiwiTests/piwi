@@ -164,9 +164,13 @@ clients stay thin and both editors give the same answers.
   tests and lab conditions, never code; the app runs it only after a click in its window.
 - `src/recorder/` records a test from the editor. `piwi/record` reads the `use` options Playwright resolves for the
   file's config (`project-options.ts`: the project's own Playwright CLI, `playwright test --list` with
-  `piwi-use-reporter.cjs` and a filter no spec matches, cached until the config changes), picks the project (a config
+  `piwi-use-reporter.cjs` and a filter no spec matches, cached per canonical config path until the modification time
+  or size of the config, of the `.env*` files of its folder and of each folder above it up to the repository's, or of a
+  local module the config imports changes, five minutes at most: `configFingerprint`), picks the project (a config
   with several asks, through `projects`), the start page and the page expression, and forks the launcher in the
-  config's folder (`sessions.ts`). The launcher (`launcher.ts`) resolves the project's Playwright at run time (never
+  config's folder (`sessions.ts`). Both run with the project's Node (`node.ts`): under an editor's Electron, the first
+  `node` on the service's `PATH` when it is Node 20 or later, without `ELECTRON_RUN_AS_NODE`; else the service's own
+  runtime. The launcher (`launcher.ts`) resolves the project's Playwright at run time (never
   bundled; `playwright.ts`: in the project's own `node_modules`, the test runner's package first, as for the CLI),
   opens the browser with the project's options (`context-options.ts`: `headless: false` unless
   `PIWI_RECORDER_HEADLESS=1`, Chromium's translation feature disabled, an explicit allowlist of context options, a

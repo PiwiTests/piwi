@@ -1,5 +1,5 @@
 import * as http from 'node:http';
-import type { AddressInfo } from 'node:net';
+import type { AddressInfo, Socket } from 'node:net';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { hasProxy, instanceFetch, isLoopback } from '../src/http.js';
 
@@ -32,7 +32,7 @@ describe('the requests to an instance', () => {
         res.statusCode = 403;
         res.end();
       });
-      proxy.on('connect', (req: http.IncomingMessage, socket: import('node:net').Socket) => {
+      proxy.on('connect', (req: http.IncomingMessage, socket: Socket) => {
         proxied.push(req.url ?? '');
         socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
       });
