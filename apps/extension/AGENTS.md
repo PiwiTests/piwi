@@ -136,7 +136,9 @@ Skipping this is what made the recorder's HUD appear only sometimes.
 content scripts at all, so there `sessionArea()` sends each get/set/remove to the background
 script (`piwi-session-storage`), and the recorder's appends go as one `piwi-append-recording-event`
 message each (see `appendRecordingEvent`) so a click that navigates away is not lost between a
-read and a write. A module reaching `chrome.storage.session` itself works in Chrome and breaks
+read and a write. Its Pause and title changes go as one `piwi-update-recording` message each
+(`updateRecording`), which the background applies through the same queue as the appends: a change
+read and written back over two messages would drop an append the background finished in between. A module reaching `chrome.storage.session` itself works in Chrome and breaks
 only in Firefox, which no CI run exercises.
 
 ## The debugging protocol (`debugger`, Chrome and Edge)
@@ -490,7 +492,7 @@ the project's test id attribute applies. Both buttons are disabled while the rec
 
 **Pause** in the bar (both builds) stops capture without ending the recording, until **Resume**: one guard,
 `capturePaused()`, at every capture listener. The extension keeps it in `RecordingState.paused` (`updateRecording`,
-queued behind the document's appends), which each page reads as the recorder attaches, and sends
+queued behind the appends: the document's, or in Firefox the background's), which each page reads as the recorder attaches, and sends
 `piwi-recording-paused`, which the worker passes on to the recording's other tabs (`notifyRecorderTabs`); in the IDE
 bundle the launcher keeps it and tells the editor. The DevTools Record tab says the recording is paused.
 

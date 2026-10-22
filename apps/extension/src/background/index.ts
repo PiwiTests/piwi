@@ -6,6 +6,7 @@ import {
   clearRecordIntent,
   decideRecordIntent,
   serveAppendRecordingEvent,
+  serveUpdateRecording,
   type RecordingMode,
 } from '../shared/recording-storage.js';
 import {
@@ -1006,6 +1007,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'piwi-append-recording-event') {
     // The recorder in Firefox — see `appendRecordingEvent`.
     void serveAppendRecordingEvent(message.event).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-update-recording') {
+    // The recorder's Pause and title in Firefox, in the same queue as its appends — see `updateRecording`.
+    void serveUpdateRecording(message.change).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-start-recording') {

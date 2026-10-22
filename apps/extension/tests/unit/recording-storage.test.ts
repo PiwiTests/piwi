@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  RECORDING_KEY,
   getRecordingState,
   startRecording,
   stopRecording,
@@ -10,10 +11,12 @@ import {
   clearRecordIntent,
   decideRecordIntent,
   serveAppendRecordingEvent,
+  serveUpdateRecording,
   updateRecording,
   RECORD_INTENT_TTL_MS,
   type RecordIntent,
 } from '../../src/shared/recording-storage.js';
+import { serveSessionStorage } from '../../src/shared/session-area.js';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
 
 function fakeChromeStorage() {
@@ -176,6 +179,57 @@ describe('recording state', () => {
       runtime: { sendMessage: async () => ({ ok: false, error: 'QUOTA_BYTES quota exceeded' }) },
     };
     await expect(appendRecordingEvent(clickEvent)).rejects.toThrow(/quota/i);
+  });
+
+  it('in a Firefox content script, an append and a Pause sent together both reach the stored recording', async () => {
+    // The content script and the background are separate instances of this module, each with its own queue.
+    const store: Record<string, unknown> = {
+      [RECORDING_KEY]: { active: true, events: [], startedAt: 5, grantedOriginPattern: 'https://x.test/*' },
+    };
+    const session = {
+      get: async (key: string) => ({ [key]: store[key] }),
+      set: async (values: Record<string, unknown>) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        Object.assign(store, values);
+      },
+      remove: async (key: string) => {
+        delete store[key];
+      },
+    };
+    const inbox: Array<{ message: any; answer: (response: unknown) => void }> = [];
+    (globalThis as any).chrome = {
+      storage: { local: {} },
+      runtime: {
+        sendMessage: (message: unknown) => new Promise((answer) => inbox.push({ message, answer })),
+      },
+    };
+    const typed: RawCaptureEvent = { ...clickEvent, kind: 'change', value: 'alice' };
+    const append = appendRecordingEvent(typed);
+    const pause = updateRecording({ paused: true });
+
+    vi.resetModules();
+    const background = await import('../../src/shared/recording-storage.js');
+    const serve = (message: any): Promise<unknown> => {
+      if (message.type === 'piwi-append-recording-event') return background.serveAppendRecordingEvent(message.event);
+      if (message.type === 'piwi-update-recording') return background.serveUpdateRecording(message.change);
+      return serveSessionStorage(message);
+    };
+    (globalThis as any).chrome = { storage: { session }, runtime: { sendMessage: serve } };
+    // Each message is served as it arrives, without waiting for the one before.
+    for (const { message, answer } of inbox.splice(0)) void serve(message).then(answer);
+    await Promise.all([append, pause]);
+
+    expect(store[RECORDING_KEY]).toMatchObject({ paused: true, events: [typed] });
+  });
+
+  it('the background takes a field change of the right types only', async () => {
+    await startRecording('https://x.test/*');
+    expect(await serveUpdateRecording({ title: 'Checkout', active: false, events: [] })).toMatchObject({
+      ok: true,
+      state: { active: true, title: 'Checkout' },
+    });
+    expect(await serveUpdateRecording({ paused: 'yes' })).toEqual({ ok: false, error: 'Malformed recording change.' });
+    expect(await serveUpdateRecording(null)).toEqual({ ok: false, error: 'Malformed recording change.' });
   });
 
   it('the background serves appends from content scripts in order, and refuses a malformed one', async () => {

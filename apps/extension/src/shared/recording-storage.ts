@@ -197,7 +197,7 @@ export function decideRecordIntent(
  * storage only through the background script (see `session-area.ts`) — so
  * there every append *is* routed through it, as one message: the background
  * runs this same function, where this queue then serializes every tab's
- * appends.
+ * appends, and the field changes of {@link updateRecording} with them.
  */
 let appendQueue: Promise<unknown> = Promise.resolve();
 
@@ -226,14 +226,18 @@ export async function appendRecordingEvent(event: RawCaptureEvent): Promise<Reco
   return run;
 }
 
+/** The fields of a recording that change while it runs or is reviewed, without touching its events. */
+export type RecordingChange = Partial<Pick<RecordingState, 'paused' | 'title'>>;
+
 /**
- * Changes the recording's own fields, on the stored state, behind the appends
- * this document has queued: an append that read the state before the change
- * is written first, then the change on top of it.
+ * Changes the recording's own fields, on the stored state, in the order of the
+ * appends: behind the ones this document has queued, or, in a Firefox content
+ * script, behind the ones it has sent the background script, which applies both
+ * kinds through one queue. An append that read the state before the change is
+ * written first, then the change on top of it.
  */
-export async function updateRecording(
-  change: Partial<Pick<RecordingState, 'paused' | 'title'>>,
-): Promise<RecordingState> {
+export async function updateRecording(change: RecordingChange): Promise<RecordingState> {
+  if (!hasSessionArea()) return updateViaBackground(change);
   const run = appendQueue.then(async () => {
     const state: RecordingState = { ...(await getRecordingState()), ...change };
     await setRecordingState(state);
@@ -261,11 +265,39 @@ async function appendViaBackground(event: RawCaptureEvent): Promise<RecordingSta
   return response.state;
 }
 
+/**
+ * A Firefox content script's field change: one message, which the background
+ * applies after the appends this document sent before it. A get and a set sent
+ * separately would write back the events the get read, dropping an append the
+ * background finished in between.
+ */
+async function updateViaBackground(change: RecordingChange): Promise<RecordingState> {
+  const response = (await chrome.runtime.sendMessage({ type: 'piwi-update-recording', change })) as
+    | AppendRecordingEventResponse
+    | undefined;
+  if (!response?.ok) throw new Error(response?.error ?? t('common_workerNoAnswer'));
+  return response.state;
+}
+
 /** The background script's half of {@link appendViaBackground}. */
 export async function serveAppendRecordingEvent(event: unknown): Promise<AppendRecordingEventResponse> {
   if (!event || typeof event !== 'object') return { ok: false, error: 'Malformed recording event.' };
   try {
     return { ok: true, state: await appendRecordingEvent(event as RawCaptureEvent) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** The background script's half of {@link updateViaBackground}: `paused` and `title` only, each of its own type. */
+export async function serveUpdateRecording(change: unknown): Promise<AppendRecordingEventResponse> {
+  const { paused, title } = change && typeof change === 'object' ? (change as Record<string, unknown>) : {};
+  const valid: RecordingChange = {};
+  if (typeof paused === 'boolean') valid.paused = paused;
+  if (typeof title === 'string' || title === null) valid.title = title;
+  if (Object.keys(valid).length === 0) return { ok: false, error: 'Malformed recording change.' };
+  try {
+    return { ok: true, state: await updateRecording(valid) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
