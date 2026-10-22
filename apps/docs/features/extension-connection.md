@@ -55,6 +55,11 @@ click fills in the app's address and its token as the API key, checks them and c
 Should the app refuse the token (it was installed again since you paired it), its address stays filled in and the API
 key field waits: paste the token from the app's **Connect Piwi Picker**, or pair again.
 
+The token goes to that address only once the program answering there proves it holds it, before every request, as for
+**Run with Playwright**. Should the app quit and another program take its port, the extension sends nothing and says
+so. This holds after **Unpair** too, and when the token is typed under **Use an API key instead**, where the address
+must be written with `127.0.0.1`: `localhost` may reach another program, so the token is not sent there.
+
 The other way round, while an instance is connected and no desktop app is paired, the settings point to the pairing.
 The app's address is then shared: **Disconnect** leaves it to the app, and **Unpair** to the instance.
 

@@ -13,7 +13,8 @@ import {
 } from '../../src/shared/connection-health';
 import { handleRefreshCatalog, handleRefreshLocatorIndex } from '../../src/background/project-refresh';
 import { handleListBugReports } from '../../src/background/bug-reports';
-import { setConnectionSettings, setInstanceApiKey } from '../../src/shared/connection-settings';
+import { markDesktopApiKey, setConnectionSettings, setInstanceApiKey } from '../../src/shared/connection-settings';
+import { desktopHealth } from './desktop-health';
 import { t } from '../../src/shared/i18n';
 import { memoryLocalStorage, memorySecretArea } from './memory-secret-area';
 import { setBrowserLanguage } from './setup-i18n';
@@ -45,6 +46,8 @@ describe('the outcome a request’s error stands for', () => {
   it('reads nothing answering, a refused key and any other answer from the sentence thrown', () => {
     expect(healthOutcome(new Error(t('common_instanceUnreachable')))).toBe('unreachable');
     expect(healthOutcome(new Error(t('common_instanceRedirects')))).toBe('unreachable');
+    expect(healthOutcome(new Error(t('common_desktopUnreachable')))).toBe('unreachable');
+    expect(healthOutcome(new Error(t('common_desktopNotProven')))).toBe('unauthorized');
     expect(healthOutcome(new Error(t('common_apiKeyRejected')))).toBe('unauthorized');
     expect(healthOutcome(new Error(t('common_projectKeyRejected')))).toBe('unauthorized');
     expect(healthOutcome(new Error(t('common_catalogFailed', { status: 401 })))).toBe('unauthorized');
@@ -197,6 +200,42 @@ describe('the worker’s requests', () => {
       vi.fn(async () => new Response(JSON.stringify({ items: [] }), { status: 200 })),
     );
     expect(await handleListBugReports(shopTab.tab as chrome.tabs.Tab)).toMatchObject({ ok: true, items: [] });
+    expect(local.store[CONNECTION_HEALTH_KEY]).toMatchObject({ outcome: 'ok' });
+  });
+
+  it('send the desktop app kept as the instance its token only once the program there proves it holds it', async () => {
+    const app = 'http://127.0.0.1:4318';
+    await setConnectionSettings({
+      instanceUrl: app,
+      projectMappings: [{ urlPattern: 'https://staging.shop.test/**', projectId: 1, projectLabel: 'Shop' }],
+      serverMappings: [],
+      serverProjects: [],
+      serverSyncedAt: 0,
+      connectedAs: '',
+    });
+    await setInstanceApiKey(app, 'pd_desktop');
+    await markDesktopApiKey({ url: app, token: 'pd_desktop' });
+    const program = (token: string) => {
+      const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+        url.endsWith('/api/health') ? desktopHealth(url, init, token) : new Response('{"items":[]}', { status: 200 }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      return fetchMock;
+    };
+    let fetchMock = program('pd_other');
+    const refused = await handleRefreshCatalog({ projectId: 1, force: true }, shopTab as chrome.runtime.MessageSender);
+    expect(refused).toEqual({ ok: false, error: t('common_desktopNotProven') });
+    expect(await handleListBugReports(shopTab.tab as chrome.tabs.Tab)).toMatchObject({ ok: false });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([`${app}/api/health`, `${app}/api/health`]);
+    expect(local.store[CONNECTION_HEALTH_KEY]).toMatchObject({ instanceUrl: app, outcome: 'unauthorized' });
+
+    fetchMock = program('pd_desktop');
+    const answer = await handleRefreshCatalog({ projectId: 1, force: true }, shopTab as chrome.runtime.MessageSender);
+    expect(answer).toMatchObject({ ok: true, refreshed: true });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `${app}/api/health`,
+      `${app}/api/projects/1/test-functions`,
+    ]);
     expect(local.store[CONNECTION_HEALTH_KEY]).toMatchObject({ outcome: 'ok' });
   });
 });

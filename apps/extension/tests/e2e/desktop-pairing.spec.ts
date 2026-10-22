@@ -24,6 +24,10 @@ let starts: Array<{ origin: string | undefined; contentType: string; body: strin
 let tokenHandedOut = 0;
 /** The key the app's own instance takes as an API key: its token, unless a test makes it refuse it. */
 let instanceKey = TOKEN;
+/** The token the program at the address proves it holds: another program that took the port holds another. */
+let provenToken = TOKEN;
+/** The instance requests that carried an API key, as `path key`. */
+let keyed: string[] = [];
 
 test.beforeAll(async () => {
   server = createServer((req, res) => {
@@ -43,7 +47,7 @@ test.beforeAll(async () => {
       if (req.method === 'GET' && req.url === '/api/health') {
         const challenge = String(req.headers[DESKTOP_CHALLENGE_HEADER] ?? '');
         const port = (server.address() as AddressInfo).port;
-        res.setHeader(DESKTOP_PROOF_HEADER, await desktopTokenProof(TOKEN, port, challenge));
+        res.setHeader(DESKTOP_PROOF_HEADER, await desktopTokenProof(provenToken, port, challenge));
         return json(200, { status: 'ok' });
       }
       if (req.method === 'POST' && req.url === '/api/desktop/picker-pairings') {
@@ -67,6 +71,7 @@ test.beforeAll(async () => {
         return req.headers['x-piwi-token'] === TOKEN ? json(200, { url: desktop, token: TOKEN }) : json(401, {});
       }
       // The app's server is a Piwi instance too, answering requests that carry its token as an API key.
+      if (req.headers['x-api-key']) keyed.push(`${req.url} ${String(req.headers['x-api-key'])}`);
       if (req.method === 'GET' && (req.url === '/api/projects/menu' || req.url === '/api/extension/url-patterns')) {
         if (req.headers['x-api-key'] !== instanceKey) return json(401, { message: 'Desktop access token required' });
         return req.url === '/api/projects/menu'
@@ -87,6 +92,8 @@ test.afterAll(async () => {
 test.beforeEach(() => {
   answer = null;
   instanceKey = TOKEN;
+  provenToken = TOKEN;
+  keyed = [];
   starts = [];
   tokenHandedOut = 0;
 });
@@ -265,7 +272,7 @@ test.describe('the desktop app as the instance', () => {
     await expect(page.getByLabel('Address of your Piwi instance')).toHaveValue(desktop);
     await expect(offer).toBeHidden();
     await expect(page.locator('#desktop-pair-hint')).toBeHidden();
-    expect(await storedSecret(page, 'instance')).toEqual({ apiKey: TOKEN, origin: desktop });
+    expect(await storedSecret(page, 'instance')).toEqual({ apiKey: TOKEN, origin: desktop, desktop: true });
 
     // Disconnect leaves the app its address, which Unpair gives back.
     await page.getByRole('button', { name: 'Disconnect' }).click();
@@ -291,6 +298,41 @@ test.describe('the desktop app as the instance', () => {
     await page.getByRole('button', { name: 'Disconnect' }).click();
     await expect(page.locator('#instance-pill')).toHaveText('Not connected');
     expect(await removals(page)).toEqual([`${desktop}/*`]);
+  });
+
+  test('its token goes only to a program at the address that proves it holds it, paired or not', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await recordRemovals(page);
+    await pairByHand(page);
+    await page.locator('#desktop-offer').getByRole('button', { name: 'Use the desktop app as your instance' }).click();
+    await expect(page.locator('#status')).toHaveText('Connected: 1 project found.');
+    expect(keyed.length).toBeGreaterThan(0);
+    const notProven =
+      'The program at this address did not prove it is the paired desktop app, so the token was not sent.';
+    const refresh = page.locator('#refresh-server');
+
+    // The app quit and another program took its port.
+    provenToken = 'pd_other';
+    keyed = [];
+    await refresh.click();
+    await expect(page.locator('#mappings-status')).toContainText(notProven);
+    // Unpaired, the instance kept at the address still sends it to no other program.
+    await page.locator('#desktop-card').getByRole('button', { name: 'Unpair' }).click();
+    await expect(page.locator('#desktop-status')).toHaveText('The desktop app is no longer paired.');
+    await openSettings(page, extensionId);
+    await refresh.click();
+    await expect(page.locator('#mappings-status')).toContainText(notProven);
+    expect(keyed).toEqual([]);
+
+    // The app is back: the request goes through.
+    provenToken = TOKEN;
+    await refresh.click();
+    await expect(page.locator('#mappings-status')).toHaveText('0 URL patterns from your instance.');
+    expect(keyed).toContain(`/api/extension/url-patterns ${TOKEN}`);
   });
 
   test('a token the app refuses leaves its address filled in and the key field waiting', async ({

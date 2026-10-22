@@ -295,7 +295,11 @@ app's address and token; a refused token leaves the address in place and the key
 pairing while an instance is kept and no app is paired. **Disconnect** leaves the address to a pairing there. Every request that carries the token (`testDesktop`, `sendReproRequest`,
 `fetchReproRequest`) first has `/api/health` answer a new random challenge with the proof only the token's holder can
 compute, for the address's port (`proveDesktop`, `@piwitests/core/desktop-proof`): an app that moved, an older app or
-another program on the port never receives the token, and the user is asked to pair again. The dialog shows the payload before **Send**. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
+another program on the port never receives the token, and the user is asked to pair again. The same holds for the
+token kept as an instance's key: `authHeaders` runs `proveDesktopKey` before every instance request whose key is the
+app's token (marked so in the secret area by `markDesktopApiKey` as the connection is kept and as a pairing is replaced
+or removed, so Unpair keeps it; or matching the paired address and token), refuses at a loopback name other than
+127.0.0.1, and throws `common_desktopNotProven`, which `healthOutcome` reads as `unauthorized`. The dialog shows the payload before **Send**. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
 before the developer confirms it in its window; the dialog then polls the request for the verdict, read field by field
 (`reproStatus`, `asReplayVerdict`): a status or a verdict it does not know says so in one line.
 

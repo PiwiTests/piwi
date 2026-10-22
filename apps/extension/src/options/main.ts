@@ -10,6 +10,7 @@ import {
   getInstanceApiKey,
   setInstanceApiKey,
   clearInstanceApiKey,
+  markDesktopApiKey,
   type ConnectionSettings,
 } from '../shared/connection-settings.js';
 import {
@@ -989,6 +990,9 @@ async function connectWithKey(
   const restored = stored.instanceUrl.trim() ? null : await takeKeptMappings(settings.instanceUrl);
   const kept = ++connectionEpoch;
   await setInstanceApiKey(settings.instanceUrl, typed.apiKey);
+  // The paired app's token, kept as the key, is marked so: Unpair leaves it sent only to the app that proves it.
+  const paired = await getDesktopSettings().catch(() => null);
+  if (paired) await markDesktopApiKey(paired);
   if (kept !== connectionEpoch) return false;
   stored = restored ? { ...settings, projectMappings: restored } : settings;
   await setConnectionSettings(stored);
@@ -1265,7 +1269,11 @@ async function keepDesktopPairing(url: string, token: string): Promise<void> {
     setDesktopStatus(check.error, 'error');
     return;
   }
+  // The instance kept with the earlier pairing's token, or with this one, goes on proving it.
+  const previous = await getDesktopSettings().catch(() => null);
+  if (previous) await markDesktopApiKey(previous);
   await setDesktopSettings({ url, token });
+  await markDesktopApiKey({ url, token });
   desktopUrlEl.value = url;
   desktopTokenEl.value = '';
   desktopManual.open = false;
@@ -1370,6 +1378,8 @@ desktopSaveBtn.addEventListener('click', () => {
 desktopForgetBtn.addEventListener('click', () => {
   void (async () => {
     const desktop = await getDesktopSettings();
+    // The instance kept at the app's address with its token goes on sending it only to a program that proves it.
+    if (desktop) await markDesktopApiKey(desktop).catch(() => undefined);
     await clearDesktopSettings();
     // The instance kept at the app's address goes on using it; Disconnect gives it back.
     const pattern = desktop ? hostPattern(desktop.url) : null;

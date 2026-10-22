@@ -68,7 +68,10 @@ function fillsIn(message: string, template: string): boolean {
  */
 export function healthOutcome(error: unknown): HealthOutcome {
   const message = error instanceof Error ? error.message : String(error);
-  if ([t('common_instanceUnreachable'), t('common_instanceRedirects')].includes(message)) return 'unreachable';
+  const unreachable = [t('common_instanceUnreachable'), t('common_instanceRedirects'), t('common_desktopUnreachable')];
+  if (unreachable.includes(message)) return 'unreachable';
+  // The desktop app kept as the instance: the program at its address did not prove it holds the token.
+  if (message === t('common_desktopNotProven')) return 'unauthorized';
   const refused = [401, 403].flatMap((status) => [
     t('common_catalogFailed', { status }),
     t('common_instanceStatus', { status }),
