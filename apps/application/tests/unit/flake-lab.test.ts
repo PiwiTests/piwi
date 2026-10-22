@@ -486,9 +486,16 @@ describe('recording results', () => {
     const [next] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, results: demoted });
     expect(next!.suspect!.id).not.toBe(cart);
 
-    // The list reads each test's lab results: the cart suspect reproduced earlier, so it leads.
-    const [item] = await lab.getFlakyListSuspects(db as never, 1, [FLAKY]);
-    expect(item!.suspect!.id).toBe('slow-route:GET /api/cart');
+    // The list reads each test's lab results: the cart suspect reproduced earlier, so it leads. It reads the profiles
+    // of the current day's window, so the clock is set to the fixture's.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    try {
+      const [item] = await lab.getFlakyListSuspects(db as never, 1, [FLAKY]);
+      expect(item!.suspect!.id).toBe('slow-route:GET /api/cart');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
