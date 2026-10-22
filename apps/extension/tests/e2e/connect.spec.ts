@@ -214,6 +214,8 @@ test.describe.serial('connect in one step', () => {
 
     await expect(options.locator('#connected-as')).toHaveText('Connected as Ada Lovelace.');
     await expect(options.locator('#status')).toContainText('1 URL pattern from your instance.');
+    // Beside the address: the instance answered the read of its patterns.
+    await expect(options.locator('#instance-health')).toHaveText('Answered now');
     const serverRow = options.locator('#server-mappings .server-row');
     await expect(serverRow).toHaveCount(1);
     await expect(serverRow).toContainText(`${baseUrl}/shop/**`);
@@ -480,6 +482,7 @@ test.describe.serial('connect in one step', () => {
       expect(await storedConnection(options)).toBeUndefined();
       expect(await storedSecret(options, 'instance')).toBeNull();
       await expect(options.locator('#instance-pill')).toHaveText('Not connected');
+      await expect(options.locator('#instance-health')).toBeHidden();
       await options.reload();
       await optionsReady(options);
       await expect(options.locator('#instance-pill')).toHaveText('Not connected');

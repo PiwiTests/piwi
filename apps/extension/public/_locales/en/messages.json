@@ -31,6 +31,82 @@
     "message": "Piwi Picker is not connected to a Piwi instance.",
     "description": "Error when data from a Piwi instance is needed and none is set up in Options."
   },
+  "common_healthOk": {
+    "message": "Connected to $host$, checked $time$.",
+    "description": "Popup, one line under the Active project row: the last request to the connected instance worked. $host$ is the instance's host name, $time$ how long ago, formatted by the browser (“5 minutes ago”, “yesterday”). One line.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "time": {
+        "content": "$2",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "common_healthUnreachable": {
+    "message": "$host$ has not answered since $time$, $settings$.",
+    "description": "Popup, one line under the Active project row: nothing has answered at the instance's address since $time$ (a clock time, or a date and a time). $settings$ is a link that opens the settings, common_healthCheck. One line.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthUnauthorized": {
+    "message": "$host$ has refused the API key since $time$, $settings$.",
+    "description": "Popup, one line under the Active project row: the instance has refused Piwi Picker's API key since $time$ (revoked, or the instance moved). $settings$ is a link that opens the settings, common_healthReconnect. One line.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "connect again in the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthError": {
+    "message": "$host$ has answered with errors since $time$, $settings$.",
+    "description": "Popup, one line under the Active project row: the instance has answered with an error since $time$. $settings$ is a link that opens the settings, common_healthCheck. One line.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthCheck": {
+    "message": "check the settings",
+    "description": "The link at the end of common_healthUnreachable and common_healthError, which opens the settings. Lower case: it ends a sentence."
+  },
+  "common_healthReconnect": {
+    "message": "connect again in the settings",
+    "description": "The link at the end of common_healthUnauthorized, which opens the settings. Lower case: it ends a sentence."
+  },
   "common_catalogRefreshFailed": {
     "message": "The function catalog could not be refreshed.",
     "description": "Error when the list of test functions could not be downloaded again from Piwi."
@@ -662,6 +738,46 @@
   "options_stateNotConnected": {
     "message": "Not connected",
     "description": "Settings page: badge beside the Connect to Piwi heading before connecting. Short."
+  },
+  "options_healthOk": {
+    "message": "Answered $time$",
+    "description": "Settings page, a pill beside the instance's address: the last request to the instance worked. $time$ is how long ago, formatted by the browser (“5 minutes ago”). A few words.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "options_healthUnreachable": {
+    "message": "No answer since $time$",
+    "description": "Settings page, a pill beside the instance's address: nothing has answered there since $time$ (a clock time, or a date and a time). A few words.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthUnauthorized": {
+    "message": "Key refused since $time$",
+    "description": "Settings page, a pill beside the instance's address: the instance has refused the API key since $time$. A few words.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthError": {
+    "message": "Errors since $time$",
+    "description": "Settings page, a pill beside the instance's address: the instance has answered with errors since $time$. A few words.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
   },
   "options_statePaired": {
     "message": "Paired",

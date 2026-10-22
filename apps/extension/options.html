@@ -136,6 +136,15 @@
       .pill[hidden] {
         display: none;
       }
+      /* The instance's last request failed: refused, unanswered or answered with an error. */
+      .pill.failing {
+        color: var(--error);
+        border-color: color-mix(in srgb, var(--error) 45%, transparent);
+        background: color-mix(in srgb, var(--error) 8%, transparent);
+      }
+      .pill.failing::before {
+        opacity: 1;
+      }
       p.lead {
         color: var(--muted);
         font-size: 13px;
@@ -595,6 +604,8 @@
             data-i18n-placeholder="options_instanceUrlPlaceholder"
             autocomplete="off"
           />
+          <!-- Whether the instance kept answered its last request: filled from chrome.storage.local. -->
+          <span id="instance-health" class="pill" hidden></span>
           <button id="connect" class="primary" type="button" data-i18n="options_connect" data-icon="plug">
             Connect
           </button>

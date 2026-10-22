@@ -165,6 +165,36 @@
         height: 12px;
         color: var(--accent-fg);
       }
+      /* One line under the project row: the instance answered, or since when it has not, with a link to the settings. */
+      .connection-health {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: -2px 0 8px;
+        font-size: 11.5px;
+        line-height: 16px;
+        color: var(--muted);
+      }
+      .connection-health > svg {
+        width: 12px;
+        height: 12px;
+        color: var(--ok);
+      }
+      .connection-health > span {
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .connection-health.failing {
+        color: var(--fg);
+      }
+      .connection-health.failing > svg {
+        color: #d97706;
+      }
+      .connection-health a {
+        color: var(--accent-fg);
+      }
       .grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -459,6 +489,9 @@
           </button>
         </div>
       </div>
+
+      <!-- Whether the connected instance answered its last request, and when: filled from chrome.storage.local. -->
+      <p id="connection-health" class="connection-health" role="status" hidden></p>
 
       <div class="grid actions">
         <button id="record" class="tile" type="button" aria-keyshortcuts="1">

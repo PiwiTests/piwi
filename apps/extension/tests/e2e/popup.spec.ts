@@ -294,6 +294,54 @@ test.describe('popup.html', () => {
   });
 });
 
+test.describe('the connection’s line', () => {
+  test('says since when the instance refuses the key, on one line, with a link to the settings', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 480, height: 600 });
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await seedRefusedConnection(page);
+    await page.reload();
+    const line = page.locator('#connection-health');
+    await expect(line).toHaveText(/^piwi\.test has refused the API key since .+, connect again in the settings\.$/);
+    await expect(line).toHaveClass(/failing/);
+    expect(await line.evaluate((el) => el.getBoundingClientRect().height)).toBe(16);
+    const [options] = await Promise.all([
+      context.waitForEvent('page'),
+      line.getByRole('link', { name: 'connect again in the settings' }).click(),
+    ]);
+    await expect(options).toHaveURL(new RegExp(`chrome-extension://${extensionId}/options.html`));
+  });
+
+  test('says nothing of a record kept for another instance, nor without a connection', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.evaluate(() =>
+      chrome.storage.local.set({
+        piwiConnectionHealth: { instanceUrl: 'https://piwi.test', outcome: 'ok', checkedAt: Date.now() },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#connection-health')).toBeHidden();
+    await page.evaluate(() =>
+      chrome.storage.local.set({
+        piwiConnection: {
+          instanceUrl: 'https://elsewhere.test',
+          projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Shop' }],
+        },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator('#active-project-row')).toBeVisible();
+    await expect(page.locator('#connection-health')).toBeHidden();
+  });
+});
+
 test.describe('Tested elements tile', () => {
   test('answers to T', async ({ context, extensionId }) => {
     const page = await context.newPage();
@@ -390,11 +438,9 @@ test.describe('Report a bug tile', () => {
   });
 });
 
-/** The popup with a connection kept, its project row shown: the tallest it is without a recording. */
-async function connectedPopupHeight(page: Page, extensionId: string): Promise<number> {
-  await page.setViewportSize({ width: 480, height: 600 });
-  await page.goto(`chrome-extension://${extensionId}/popup.html`);
-  await page.evaluate(() =>
+/** A connection kept, and the instance refusing its key since an hour ago: the longest line the popup says of it. */
+function seedRefusedConnection(page: Page): Promise<void> {
+  return page.evaluate(() =>
     chrome.storage.local.set({
       piwiConnection: {
         instanceUrl: 'https://piwi.test',
@@ -402,10 +448,24 @@ async function connectedPopupHeight(page: Page, extensionId: string): Promise<nu
         projectMappings: [{ urlPattern: 'https://elsewhere.test/**', projectId: 1, projectLabel: 'Shop' }],
         serverSyncedAt: 1,
       },
+      piwiConnectionHealth: {
+        instanceUrl: 'https://piwi.test',
+        outcome: 'unauthorized',
+        checkedAt: Date.now(),
+        since: Date.now() - 3_600_000,
+      },
     }),
   );
+}
+
+/** The popup with a connection kept, its project row and the connection's line shown: the tallest it is without a recording. */
+async function connectedPopupHeight(page: Page, extensionId: string): Promise<number> {
+  await page.setViewportSize({ width: 480, height: 600 });
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await seedRefusedConnection(page);
   await page.reload();
   await expect(page.locator('#active-project-row')).toBeVisible();
+  await expect(page.locator('#connection-health')).toBeVisible();
   return page.locator('.popup').evaluate((el) => el.getBoundingClientRect().height);
 }
 
@@ -433,19 +493,11 @@ test.describe('the developer tools in DevTools', () => {
     await expect(page.getByRole('combobox', { name: 'Open this page at a viewport' })).toHaveCount(0);
     await expect(page.getByText(/are in DevTools, in the Piwi panel/)).toBeVisible();
 
-    // Connected: the project row shows too.
-    await page.evaluate(() =>
-      chrome.storage.local.set({
-        piwiConnection: {
-          instanceUrl: 'https://piwi.test',
-          apiKey: 'k',
-          projectMappings: [{ urlPattern: 'https://elsewhere.test/**', projectId: 1, projectLabel: 'Shop' }],
-          serverSyncedAt: 1,
-        },
-      }),
-    );
+    // Connected: the project row shows too, and the line saying how the instance answered.
+    await seedRefusedConnection(page);
     await page.reload();
     await expect(page.locator('#active-project-row')).toBeVisible();
+    await expect(page.locator('#connection-health')).toBeVisible();
     const height = await page.locator('.popup').evaluate((el) => el.getBoundingClientRect().height);
     expect(height).toBeLessThanOrEqual(600);
   });

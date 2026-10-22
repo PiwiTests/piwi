@@ -23,6 +23,76 @@
   "common_notConnected": {
     "message": "O Piwi Picker não está conectado a nenhuma instância do Piwi."
   },
+  "common_healthOk": {
+    "message": "Conectado a $host$, verificado $time$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "time": {
+        "content": "$2",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "common_healthUnreachable": {
+    "message": "$host$ não responde desde $time$, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthUnauthorized": {
+    "message": "$host$ recusa a chave de API desde $time$, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "connect again in the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthError": {
+    "message": "$host$ responde com erros desde $time$, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthCheck": {
+    "message": "verifique as configurações"
+  },
+  "common_healthReconnect": {
+    "message": "conecte-se de novo nas configurações"
+  },
   "common_catalogRefreshFailed": {
     "message": "Não foi possível atualizar o catálogo de funções."
   },
@@ -531,6 +601,42 @@
   },
   "options_stateNotConnected": {
     "message": "Não conectado"
+  },
+  "options_healthOk": {
+    "message": "Respondeu $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "options_healthUnreachable": {
+    "message": "Sem resposta desde $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthUnauthorized": {
+    "message": "Chave recusada desde $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthError": {
+    "message": "Com erros desde $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
   },
   "options_statePaired": {
     "message": "Pareado"

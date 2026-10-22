@@ -32,6 +32,15 @@ disconnected at its next request. **Deny**, or ten minutes without an answer, cr
 With [authentication](/operate/authentication) off, **Allow** only confirms the connection: there is no account to
 own a key, and none is needed.
 
+### Is the connection working?
+
+Each time Piwi Picker asks your instance for something (a function catalog, the elements your tests reach, the bug
+reports, the URL patterns as the settings open), it keeps how the request went. The popup says it in one line under
+**Active project**: "Connected to piwi.example.com, checked 5 minutes ago", or, once requests fail, since when
+nothing answers, the key is refused or the instance answers with errors, with a link to the settings. The settings
+show the same beside your instance's address. A key revoked in your API key settings therefore shows in the popup at
+the next request, before a tool fails on it: click **Connect** again.
+
 ### Use an API key instead
 
 Under **Use an API key instead**, paste a key created in your account's [API key settings](/operate/api-keys) and

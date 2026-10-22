@@ -78,12 +78,14 @@ and the Edge Add-ons listing that is still outstanding.
   that have a home in DevTools are there, not here (see "DevTools"), and Pick, Lint and Tested elements are in the Piwi
   panel's toolbar as well: the popup ends with a line saying so. It has a
   config (gear) button (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that
-  shows/overrides which mapped project applies to the current tab's site. **It must fit Chrome's 600-pixel popup height** in
+  shows/overrides which mapped project applies to the current tab's site, with the connection's line under it
+  (`#connection-health`, see "Connected mode"). **It must fit Chrome's 600-pixel popup height** in
   every shipped language (German is the longest); `popup.spec.ts` checks the English height, and a new tile goes under
   More tools or into DevTools rather than below the fold.
 - `src/options/` + `options.html` — the settings page, one card per setting, each with its own actions and its own
   status line (`#language-status`, `#status`, `#mappings-status`, `#desktop-status`, `#editor-status`) and a badge
-  saying whether it is connected or paired: **Language**; **Connect to Piwi** (instance URL and a **Connect** button,
+  saying whether it is connected or paired: **Language**; **Connect to Piwi** (instance URL with the pill saying how
+  the instance answered its last request, `#instance-health`, and a **Connect** button,
   an RFC 8628 device authorization, below; a folded **Use an API key instead** with its own **Save and test**;
   **Disconnect**); **Project mappings**, shown once an instance is kept (the instance's URL patterns, read-only, marked
   **Piwi**; the patterns kept in this browser, a table whose **Save** keeps only them; a folded **Add a site** form);
@@ -302,6 +304,16 @@ and `piwi-replay-step-view`, for the stored replay's report) and the desktop app
 the worker via `catalog-refresh.ts` / `locator-index-refresh.ts` rather than fetching themselves, and build their links
 into the dashboard with `instance-links.ts`, which fetches nothing; `piwi-client.test.ts` fails on a content script
 importing `piwi-client.ts`. Keep it that way.
+
+**Whether the instance answers** is kept by `src/shared/connection-health.ts` (`piwiConnectionHealth` in
+`chrome.storage.local`, no secret): every request `project-refresh.ts` and `bug-reports.ts` make, and the settings
+page's read of the URL patterns, goes through `withConnectionHealth`, which records `ok`, `unauthorized`,
+`unreachable` or `error` with the time and the instance address, and passes the answer or the error on unchanged.
+`piwi-client.ts` throws sentences, so `healthOutcome` tells them apart by the catalog's own messages; an answer that
+shows the instance works and the key is accepted (no locator index, a role that cannot send) is `ok`. The popup's
+line under the project row and the settings page's pill beside the address read it for the instance kept only, and
+redraw on `chrome.storage.onChanged`; Disconnect clears it. A new request to the instance goes through the same
+wrapper.
 
 Staleness matters here: a function added in the dashboard reaches the extension without the options page saving again.
 The panels render from cache first (instant, and fine with the instance unreachable) and

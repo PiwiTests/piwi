@@ -1,5 +1,6 @@
 import { parseBugReport } from '@piwitests/core/bug-report';
 import { parseSteps, type PiwiSteps } from '@piwitests/core/steps';
+import { withConnectionHealth } from '../shared/connection-health.js';
 import { getConnectionSettings, type ConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
 import {
@@ -21,7 +22,8 @@ import { desktopRunReports } from './desktop-repro.js';
  * The bug-report requests to the connected instance, made here for the tab's
  * content scripts: they never hold the API key and never reach the network.
  * The project is always resolved again from the sending tab's URL, with the
- * Active project chosen for that tab's site.
+ * Active project chosen for that tab's site. Each request's outcome is
+ * recorded for the popup and the settings (`connection-health.ts`).
  */
 
 /** Set once a report has been sent from this browser profile, so the preview explains sending only the first time. */
@@ -86,7 +88,8 @@ export async function handleSendBugReport(
 ): Promise<SendBugReportAnswer> {
   const target = await targetFor(tab);
   if (!target) return { ok: false, error: t('common_notConnected') };
-  if (!target.project) return { ok: false, error: t('bug_sendNoProject') };
+  const project = target.project;
+  if (!project) return { ok: false, error: t('bug_sendNoProject') };
   const parsed = parseBugReport(message.report);
   if (!parsed.ok) return { ok: false, error: parsed.errors[0] ?? '' };
   const screenshots = (Array.isArray(message.screenshots) ? message.screenshots : []).flatMap((shot: unknown) => {
@@ -105,13 +108,15 @@ export async function handleSendBugReport(
       : [];
   });
   try {
-    const sent = await sendBugReport(target.settings, target.project.projectId, {
-      report: parsed.report,
-      language: typeof message.language === 'string' ? message.language : null,
-      createIssue: message.createIssue === true,
-      screenshots,
-      stepShots,
-    });
+    const sent = await withConnectionHealth(target.settings.instanceUrl, () =>
+      sendBugReport(target.settings, project.projectId, {
+        report: parsed.report,
+        language: typeof message.language === 'string' ? message.language : null,
+        createIssue: message.createIssue === true,
+        screenshots,
+        stepShots,
+      }),
+    );
     await chrome.storage.local.set({ [SEND_EXPLAINED_KEY]: true });
     return { ok: true, ...sent };
   } catch (err) {
@@ -128,7 +133,10 @@ export async function handleListBugReports(tab: chrome.tabs.Tab | undefined): Pr
   const target = await targetFor(tab);
   if (!target || !target.project) return { ok: true, project: null, items: [] };
   try {
-    const items = await fetchBugReports(target.settings, target.project.projectId);
+    const project = target.project;
+    const items = await withConnectionHealth(target.settings.instanceUrl, () =>
+      fetchBugReports(target.settings, project.projectId),
+    );
     return { ok: true, project: { id: target.project.projectId, label: target.project.projectLabel }, items };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -145,7 +153,9 @@ export async function handleGetBugReport(id: unknown, tab: chrome.tabs.Tab | und
     return { ok: false, error: t('common_noProject') };
   }
   try {
-    const report = await fetchBugReportSteps(target.settings, id);
+    const report = await withConnectionHealth(target.settings.instanceUrl, () =>
+      fetchBugReportSteps(target.settings, id),
+    );
     if (report.projectId !== target.project.projectId) return { ok: false, error: t('common_noProject') };
     const parsed = parseSteps(report.steps);
     if (!parsed.ok) return { ok: false, error: t('common_replayNotSteps', { error: parsed.errors[0] ?? '' }) };
@@ -195,13 +205,15 @@ export async function handleShareReproduction(message: {
   const origin =
     typeof message.origin === 'string' && /^https?:\/\/[^/\s]+$/.test(message.origin) ? message.origin : null;
   try {
-    await sendReproduction(settings, id, {
-      source: message.source === 'desktop' ? 'desktop' : 'replay',
-      verdict,
-      divergedAt: verdict === 'diverged' && typeof message.divergedAt === 'number' ? message.divergedAt : null,
-      origin,
-      userAgent: navigator.userAgent,
-    });
+    await withConnectionHealth(settings.instanceUrl, () =>
+      sendReproduction(settings, id, {
+        source: message.source === 'desktop' ? 'desktop' : 'replay',
+        verdict,
+        divergedAt: verdict === 'diverged' && typeof message.divergedAt === 'number' ? message.divergedAt : null,
+        origin,
+        userAgent: navigator.userAgent,
+      }),
+    );
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

@@ -23,6 +23,76 @@
   "common_notConnected": {
     "message": "Piwi Picker n’est connecté à aucune instance Piwi."
   },
+  "common_healthOk": {
+    "message": "Connecté à $host$, vérifié $time$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "time": {
+        "content": "$2",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "common_healthUnreachable": {
+    "message": "$host$ ne répond plus depuis $time$, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthUnauthorized": {
+    "message": "$host$ refuse la clé d’API depuis $time$, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "connect again in the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthError": {
+    "message": "$host$ répond par des erreurs depuis $time$, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthCheck": {
+    "message": "vérifiez les réglages"
+  },
+  "common_healthReconnect": {
+    "message": "reconnectez-vous dans les réglages"
+  },
   "common_catalogRefreshFailed": {
     "message": "Le catalogue de fonctions n’a pas pu être actualisé."
   },
@@ -531,6 +601,42 @@
   },
   "options_stateNotConnected": {
     "message": "Non connecté"
+  },
+  "options_healthOk": {
+    "message": "A répondu $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "options_healthUnreachable": {
+    "message": "Sans réponse depuis $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthUnauthorized": {
+    "message": "Clé refusée depuis $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthError": {
+    "message": "En erreur depuis $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
   },
   "options_statePaired": {
     "message": "Associé"

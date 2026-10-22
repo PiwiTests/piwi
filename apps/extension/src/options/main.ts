@@ -33,6 +33,13 @@ import {
 } from '../shared/desktop-settings.js';
 import { normalizePathPrefix, parsePathPrefix } from '@piwitests/core/page-key';
 import { waitForApproval } from '../shared/connect-flow.js';
+import {
+  CONNECTION_HEALTH_KEY,
+  clearConnectionHealth,
+  getConnectionHealth,
+  healthPill,
+  withConnectionHealth,
+} from '../shared/connection-health.js';
 import { describeClient } from '../shared/client-info.js';
 import { setCachedCatalog, pruneCachedCatalogs } from '../shared/catalog-cache.js';
 import { clearActiveProjectOverrides } from '../shared/active-project.js';
@@ -95,6 +102,7 @@ const statusEl = document.getElementById('status')!;
 const mappingsStatusEl = document.getElementById('mappings-status')!;
 const languageStatusEl = document.getElementById('language-status')!;
 const instancePill = document.getElementById('instance-pill') as HTMLElement;
+const instanceHealthPill = document.getElementById('instance-health') as HTMLElement;
 const sitesConnectFirst = document.getElementById('sites-connect-first') as HTMLElement;
 const sitesBody = document.getElementById('sites-body') as HTMLElement;
 const mappingHead = document.getElementById('mapping-head') as HTMLElement;
@@ -429,7 +437,24 @@ function renderInstanceState(): void {
   }
   sitesConnectFirst.hidden = kept;
   sitesBody.hidden = !kept;
+  void renderInstanceHealth();
 }
+
+/** The pill beside the instance's address: whether it answered the last request made to it, and when. */
+async function renderInstanceHealth(): Promise<void> {
+  const health = await getConnectionHealth(stored.instanceUrl).catch(() => null);
+  instanceHealthPill.hidden = !health;
+  if (!health) return;
+  instanceHealthPill.classList.toggle('on', health.outcome === 'ok');
+  instanceHealthPill.classList.toggle('failing', health.outcome !== 'ok');
+  instanceHealthPill.textContent = healthPill(health);
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && CONNECTION_HEALTH_KEY in changes) void renderInstanceHealth();
+});
+// "Answered 5 minutes ago" stays true while the page stays open.
+setInterval(() => void renderInstanceHealth(), 30_000);
 
 /** The instance's patterns, read-only, each marked as coming from the instance. */
 function renderServerMappings(): void {
@@ -505,7 +530,7 @@ function renderAddSite(): void {
  */
 async function syncServerPatterns(settings: ConnectionSettings, epoch: number): Promise<boolean> {
   try {
-    const answer = await fetchServerPatterns(settings);
+    const answer = await withConnectionHealth(settings.instanceUrl, () => fetchServerPatterns(settings));
     const written = await writeConnection(epoch, settings.instanceUrl, (current) =>
       applyServerSync(current, answer, Date.now()),
     );
@@ -982,6 +1007,7 @@ disconnectBtn.addEventListener('click', () => {
     const previousUrl = stored.instanceUrl;
     await clearConnectionSettings();
     await clearInstanceApiKey().catch(() => undefined);
+    await clearConnectionHealth().catch(() => undefined);
     stored = await getConnectionSettings();
     serverSyncError = '';
     await forgetInstanceData();

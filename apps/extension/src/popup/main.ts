@@ -6,7 +6,8 @@ import {
   recordingMode,
   type RecordingMode,
 } from '../shared/recording-storage.js';
-import { getConnectionSettings, isConnected, mappedProjects } from '../shared/connection-settings.js';
+import { CONNECTION_KEY, getConnectionSettings, isConnected, mappedProjects } from '../shared/connection-settings.js';
+import { CONNECTION_HEALTH_KEY, getConnectionHealth, healthSentence } from '../shared/connection-health.js';
 import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { workerState } from '../shared/worker-status.js';
 import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shared/i18n.js';
@@ -39,6 +40,7 @@ const bugBtn = document.getElementById('report-bug') as HTMLButtonElement;
 const bugLabel = document.getElementById('report-bug-label')!;
 const bugHint = document.getElementById('report-bug-hint')!;
 const replayBtn = document.getElementById('replay-bug') as HTMLButtonElement;
+const healthLine = document.getElementById('connection-health') as HTMLElement;
 /** The status line, filled only when a tool cannot run here: why, after a warning icon. */
 function showStatus(text: string): void {
   iconText(statusEl, 'alert', text);
@@ -253,6 +255,40 @@ function renderAddSite(url: string | undefined, unmatched: boolean): void {
     void chrome.tabs.create({ url: target }).then(() => window.close());
   };
 }
+
+/**
+ * The line under the connection: whether the instance answered the last request the extension made to it, and when;
+ * after a failure, since when, with a link to the settings. Hidden until a request has gone to the instance kept.
+ */
+async function renderConnectionHealth(): Promise<void> {
+  const connection = await getConnectionSettings();
+  const health = await getConnectionHealth(connection.instanceUrl);
+  healthLine.hidden = !health;
+  if (!health) {
+    healthLine.replaceChildren();
+    return;
+  }
+  const failing = health.outcome !== 'ok';
+  healthLine.classList.toggle('failing', failing);
+  const settingsLink = (text: string) => {
+    const link = document.createElement('a');
+    link.href = '#';
+    link.textContent = text;
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.runtime.openOptionsPage();
+    });
+    return link;
+  };
+  iconText(healthLine, failing ? 'alert' : 'check-circle', ...healthSentence(health, Date.now(), settingsLink));
+  healthLine.title = healthLine.textContent ?? '';
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && (CONNECTION_HEALTH_KEY in changes || CONNECTION_KEY in changes)) {
+    void renderConnectionHealth().catch(() => undefined);
+  }
+});
 
 type RecordUiState = 'idle' | 'recording' | 'stopped';
 
@@ -530,5 +566,6 @@ void refreshActiveProjectSelect()
     coverageButton.disabled = false;
   });
 void renderPickShortcutHint();
+void renderConnectionHealth().catch(() => undefined);
 void highlightActiveTool();
 void showOutdatedWorkerNotice();
