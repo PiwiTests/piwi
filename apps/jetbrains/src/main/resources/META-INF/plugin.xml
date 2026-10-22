@@ -30,7 +30,8 @@
       <li><b>Tests recorded at the caret.</b> <b>Record Here</b> opens a browser through your project's own
           Playwright and writes what you do there into the test, calling your page objects when connected. No
           instance needed.</li>
-      <li><b>The status bar.</b> The latest run, the run you started as it runs, and what it changed once it ended.</li>
+      <li><b>The status bar.</b> The latest run of the Playwright config you are editing in, the run you started as it
+          runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions.</li>
     </ul>
 
     <p><b>Connect</b></p>

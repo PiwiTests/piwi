@@ -125,6 +125,7 @@ import {
   mcpConfiguration,
   ownLiveRun,
   refreshingText,
+  failingRuns,
   failureRunArgs,
   runVerdict,
   VERDICT_ACTIONS,
@@ -543,8 +544,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     runsShown = runs;
     filesChanged();
   };
+  /** The active editor's file on disk, whose Playwright config the status bar item speaks for. */
+  const activeFile = () => {
+    const uri = vscode.window.activeTextEditor?.document.uri;
+    return uri?.scheme === 'file' ? uri.fsPath : null;
+  };
   const render = () => {
-    const view = statusBarView(status, runs, !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN));
+    const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
+    const view = statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
     statusItem.text = refreshing ? refreshingText(view.text) : view.text;
     const tooltip = new vscode.MarkdownString(view.tooltip);
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
@@ -559,6 +566,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     statusItem.show();
   };
+  // The item speaks for the active file's Playwright config: drawn again from the answers it holds.
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => render()));
 
   /**
    * Render the runs a `piwi/runStatusChanged` brought; without them, read the connection, the runs and the failures
@@ -859,8 +868,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (args) await runTests(args);
       else if ((target as RunTestsArgs)?.testIds) await runTests(target as RunTestsArgs);
     }),
-    vscode.commands.registerCommand('piwi.rerunFailing', async () => {
-      const runs = (await failuresView.read())?.rerun ?? [];
+    // From a Playwright config's node of the failures view, that config's; from elsewhere, every config's.
+    vscode.commands.registerCommand('piwi.rerunFailing', async (node?: FailureNode) => {
+      const runs = failingRuns(await failuresView.read(), node?.root);
       if (!runs.length) {
         void vscode.window.showInformationMessage('Piwi: no failing test to re-run.');
         return;
@@ -868,19 +878,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       for (const args of runs) await runTests(args);
     }),
     vscode.commands.registerCommand('piwi.groupFailuresBy', () => failuresView.pickGrouping()),
-    vscode.commands.registerCommand('piwi.compareWith', async () => {
+    // From a Playwright config's node or a run's node of the failures view, that config's baseline.
+    vscode.commands.registerCommand('piwi.compareWith', async (node?: FailureNode) => {
       const contexts = runs?.contexts ?? [];
       const file = vscode.window.activeTextEditor?.document.uri.fsPath;
       // The context of the active file: the deepest config folder holding it.
       const inFile = file
         ? contexts.filter((c) => isUnder(c.root, file)).sort((a, b) => b.root.length - a.root.length)
         : [];
+      const labelOf = (root: string) => status?.contexts.find((c) => c.root === root)?.label ?? root;
       const target =
+        (node?.root ? contexts.find((c) => c.root === node.root) : undefined) ??
         inFile[0] ??
         (contexts.length > 1
           ? await vscode.window
               .showQuickPick(
-                contexts.map((c) => ({ label: c.root, c })),
+                contexts.map((c) => ({ label: labelOf(c.root), description: c.root, c })),
                 { placeHolder: 'Compare which Playwright config?' },
               )
               .then((p) => p?.c)

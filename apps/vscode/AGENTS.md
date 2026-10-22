@@ -55,14 +55,17 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   extension starts or a `piwi/statusChanged`, and when the grouping changes, and drawn again when a
   `piwi/runStatusChanged` moves the editor's own run in progress (`ownLiveRun`); a push is never answered with a read.
   Its nodes are the tree the service grouped (`FailuresResult.tree`), drawn by `failureNodes` in `src/glue.ts` with a
-  run's age, or the editor's own run in progress: the run, **Your runs since**, then the failures by file, cluster,
-  owner or flat (`piwi.groupFailuresBy`, kept in `workspaceState` as `piwi.failuresGrouping`). A failure's `contextValue` (`piwi.failure.<state>` and `trace`, `screenshot`, `agent`,
-  `desktop`) decides its inline actions and context menu in `package.json`; **Copy context for agent** asks
+  run's age, or the editor's own run in progress on the run of its Playwright config (`liveRoot`): the run, **Your
+  runs since**, then the failures by file, cluster, owner or flat (`piwi.groupFailuresBy`, kept in `workspaceState` as
+  `piwi.failuresGrouping`), under a node per config (`root-folder`) when several have something to show. A failure's `contextValue` (`piwi.failure.<state>` and `trace`, `screenshot`, `agent`,
+  `desktop`) decides its inline actions and context menu in `package.json`, and a config's (`piwi.context` with
+  `failing` and `run`) runs **Re-run the failing tests**, **Open in dashboard** and **Compare with…** for that config,
+  as a run's node does **Compare with…** (`FailureNode.root`); **Copy context for agent** asks
   `piwi/agentContext`. The badge counts the failing tests; **Follow the active editor** (`piwi.toggleFollowEditor`,
   `piwi.stopFollowingEditor`, kept as `piwi.followEditor`) reveals the active file's first failure; the welcome
   content follows the `piwi.failuresView` context key. The badge is `FailuresResult.failing`. **Re-run the failing
-  tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, and **Run this test**
-  `failureRunArgs`: both name the failure's
+  tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, or a config's alone from
+  its node (`failingRuns`), and **Run this test** `failureRunArgs`: both name the failure's
   config (`root`). The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 - `piwi/runEnded` is a notification (`runVerdict` in `src/glue.ts`): a warning with **Re-run failing** when something
   fails, an information otherwise, with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**, as
@@ -70,20 +73,24 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   `running` gutter icon (`media/test-running.svg`), then that run's result; `runsInFiles` keeps the run's `liveTests`,
   so the files are drawn again as its tests begin and end, at most once a second (`filesRedraw`, `drawFiles` in
   `src/extension.ts`), and at once when the latest run changes.
-- The status bar item (`statusBarView` in `src/glue.ts`): a click runs `piwi.refreshRun` (`piwi/refreshRun`, the
+- The status bar item (`statusBarView` in `src/glue.ts`) speaks for the Playwright config of the active editor's file
+  (`statusContext`: the deepest config folder holding it, else the first connected config), and is drawn again from
+  the answers it holds on `window.onDidChangeActiveTextEditor`: a click runs `piwi.refreshRun` (`piwi/refreshRun`, the
   item's icon spinning meanwhile: `refreshingText`), **Piwi: Refresh** while the instance does not answer
   (`problemKind: 'unreachable'`, the `retry` action), and **Piwi: Connect** while not connected. Its tooltip is a
-  trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the local runs,
+  trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the config it
+  speaks for when there are several (`StatusResult.contexts[].label`), the local runs,
   the run in progress, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every 30 s),
   the reporter version the project installs (`reporter 0.47.0`), then links to `piwi.openRun`,
   `piwi.openInDashboard`, `piwi.compareWith`, `piwi.connect` and `piwi.refresh`; **Piwi: Open the latest run**
   (`piwi.openRun`) is in the palette too.
 - **Piwi: Compare with…** (`piwi.compareWith`, also in the failures view's title bar and the tooltip) picks the
-  baseline of the active file's context (`baselinePicks` in `src/glue.ts`: the ladder, each of `RunStatus.branches`, a
-  run by its id through an input box, which `piwi/runId` reads, and the local runs only), keeps it in `workspaceState`
+  baseline of the config's or the run's node it runs from, else of the active file's context (`baselinePicks` in
+  `src/glue.ts`: the ladder, each of `RunStatus.branches`, a run by its id through an input box, which `piwi/runId`
+  reads, and the local runs only), keeps it in `workspaceState`
   (`piwi.baseline`, by root, the ladder as no entry: `withBaseline`), sends it with `piwi/setBaseline`, and sends the
-  whole map in the credentials (`baselines`). The tooltip and the view's root node name it (`baselineLine`); with the
-  local runs alone, the root is `Your local runs`.
+  whole map in the credentials (`baselines`). The tooltip and the view's run node name it (`baselineLine`); with the
+  local runs alone, the run node is `Your local runs`.
 - A test run, which carries its own ref (`RunCommand.ref`, also in its environment), is a task (`runAsTask`): a
   `vscode.Task` of the `piwi` type (`taskDefinitions` in `package.json`, `{ type: 'piwi', ref }`), its command a
   `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments (`runTaskName` in

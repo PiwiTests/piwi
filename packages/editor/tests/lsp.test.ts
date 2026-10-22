@@ -3126,6 +3126,29 @@ describe('the configs of one repository reading one project', () => {
     ]);
   });
 
+  test('list the failures under a node per config, each with its own run, named by its folder', async () => {
+    const admin = path.join(repo, 'admin');
+    const status = (await twoClient.sendRequest('piwi/status')) as StatusResult;
+    expect(status.contexts.map((c) => [c.root, c.label])).toEqual([
+      [repo, path.basename(repo)],
+      [admin, 'admin'],
+    ]);
+    const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(failures.tree.map((n) => [n.key, n.kind, n.label, n.description, n.root])).toEqual([
+      [`context:${repo}`, 'context', path.basename(repo), 'Acme Mugs · 1 failing', repo],
+      [`context:${admin}`, 'context', 'admin', 'Acme Mugs · 0 failing', admin],
+    ]);
+    const leaves = (nodes: FailuresResult['tree']): FailuresResult['tree'] =>
+      nodes.flatMap((n) => (n.kind === 'failure' ? [n] : leaves(n.children)));
+    const [shop, other] = failures.tree;
+    expect(leaves([shop!]).map((n) => n.label)).toEqual(['removes a row']);
+    // The admin config holds none of the run's failures: its run alone.
+    expect(other!.children.map((n) => [n.key, n.kind, n.root])).toEqual([[`context:${admin}\nrun`, 'run', admin]]);
+    expect(leaves([other!])).toEqual([]);
+    expect(failures).toMatchObject({ runLabel: null, failing: 1 });
+    expect(failures).not.toHaveProperty('run');
+  });
+
   test('read its latest run and its flaky tests once for the refresh they make together', async () => {
     await waitFor(() => reads.get('flaky-tests'));
     // The other config's read, on its way or answered a moment before, is the same one.

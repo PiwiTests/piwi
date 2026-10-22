@@ -157,6 +157,11 @@ data class ContextStatus(
     val problemKind: String? = null,
     /** The instance the environment, the `.env` or the settings name, in use or not; Connect offers it beside the desktop app. */
     val instance: NamedInstance? = null,
+    /**
+     * `root` as the editor names it: relative to the workspace folder holding it, after the folder's name when the
+     * workspace has several; the folder's name for a config at its root. Null from an older service.
+     */
+    val label: String? = null,
 )
 
 data class NamedInstance(val serverUrl: String? = null, val source: String? = null)
@@ -326,11 +331,15 @@ data class FailuresOverlay(
 
 /**
  * A node of the failures tree the service groups (`FailuresResult.tree`): the run, the runs laid over it, the groups and
- * the failures. `kind` is `run`, `runs`, `overlay`, `group` or `failure`; `key` stays the same across answers;
- * `description` is a group's counts or a failure's place, after which a client adds the age of `startTime` (a run's);
- * `tooltip` its lines, plain text; `note` what a failure says about its run when that is not the tree's run failing as it
- * stands; `icon` one of `run`, `history`, `failed`, `passed`, `file`, `cluster`, `owner`, `failing`, `edited`, `fixed`;
- * `expanded` whether a node with children opens expanded; `executionId` a failure's item in `FailuresResult.items`.
+ * the failures, under a `context` node per Playwright config when several have a run, runs laid over none or failures.
+ * `kind` is `context`, `run`, `runs`, `overlay`, `group` or `failure`; `key` stays the same across answers;
+ * `description` is a context's project and counts, a group's counts or a failure's place, after which a client adds the
+ * age of `startTime` (a run's); `tooltip` its lines, plain text; `note` what a failure says about its run when that is
+ * not the tree's run failing as it stands; `icon` one of `context`, `run`, `history`, `failed`, `passed`, `file`,
+ * `cluster`, `owner`, `failing`, `edited`, `fixed`; `expanded` whether a node with children opens expanded; `url` the
+ * page a run opens (a context's run too); `executionId` a failure's item in `FailuresResult.items`; `root`, on a
+ * `context` node and a `run` node, the Playwright config's folder whose failures Re-run the Failing Tests runs from them
+ * and whose baseline Compare With… chooses.
  */
 data class FailureTreeNode(
     val key: String = "",
@@ -345,16 +354,19 @@ data class FailureTreeNode(
     val url: String? = null,
     val executionId: Int? = null,
     val children: List<FailureTreeNode>? = null,
+    val root: String? = null,
 )
 
 /** `piwi/failures`: `grouping` (`file`, `cluster`, `owner` or `flat`) is kept by the service for what it pushes after. */
 data class FailuresParams(val grouping: String? = null)
 
 /**
- * `piwi/failures`: the failures, the baseline run of the first context that has one (`run`, null when a developer's
- * own runs are read alone), the runs laid over it, newest first, when they were read (ISO 8601) and the baseline
- * chosen; then the tree in `grouping`, the run as its root names it (`runLabel`, with or without a failure), how many
- * tests still fail (`failing`) and what Re-run the Failing Tests runs (`rerun`, one run per Playwright config).
+ * `piwi/failures`: the failures, the baseline run of the one context that has a run, runs laid over none or failures
+ * (`run`, null when a developer's own runs are read alone), the runs laid over it, newest first, when they were read
+ * (ISO 8601) and the baseline chosen; then the tree in `grouping`, the run as its root names it (`runLabel`, with or
+ * without a failure), how many tests still fail (`failing`) and what Re-run the Failing Tests runs (`rerun`, one run
+ * per Playwright config). When several contexts have one, the tree holds a `context` node each, which carries its run,
+ * and `run`, `overlays`, `baseline` and `runLabel` are null.
  */
 data class FailuresResult(
     val items: List<WorkspaceFailure>? = null,

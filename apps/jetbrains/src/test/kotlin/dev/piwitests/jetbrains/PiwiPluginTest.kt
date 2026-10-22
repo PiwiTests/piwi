@@ -311,6 +311,92 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /**
+     * The status bar item speaks for the Playwright config of the selected file, its text in the error color while that
+     * config's tests fail, and its popup holds what its state calls for first, then Piwi's actions.
+     */
+    fun testTheStatusBarItemFollowsTheSelectedFile() {
+        val service = project.getService(PiwiProjectService::class.java)
+        val shop = File(project.basePath!!, "shop")
+        val admin = File(shop, "admin")
+        val cart = File(shop, "cart.spec.ts")
+        val users = File(admin, "users.spec.ts")
+        admin.mkdirs()
+        cart.writeText("test('pays', async () => {});\n")
+        users.writeText("test('lists', async () => {});\n")
+        val files = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        val editors = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+        val error = com.intellij.util.ui.NamedColorUtil.getErrorForeground()
+        val widget = PiwiStatusBarWidget(project)
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, widget)
+        val label = widget.component as javax.swing.JLabel
+        var told = 0
+        service.onChange(widget) { told++ }
+        fun waitUntil(condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (!condition() && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+            }
+            assertTrue(condition())
+        }
+        try {
+            editors.openFiles.forEach { editors.closeFile(it) }
+            widget.install(com.intellij.openapi.wm.WindowManager.getInstance().getStatusBar(project)!!)
+            // The read the item asks for once installed ends before the answers are pushed: no service runs here.
+            waitUntil { told > 0 }
+            Thread.sleep(200)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            service.statusChanged(
+                StatusResult(
+                    listOf(
+                        ContextStatus(root = shop.path, connected = true, projectName = "Shop"),
+                        ContextStatus(root = admin.path, connected = true, projectName = "Admin"),
+                    ),
+                ),
+            )
+            service.runStatusChanged(
+                RunStatusResult(
+                    listOf(
+                        RunStatus(root = shop.path, run = RunInfo(id = 41, status = "failed", totalTests = 3, passedTests = 1, failedTests = 2)),
+                        RunStatus(root = admin.path, run = RunInfo(id = 12, status = "passed", totalTests = 5, passedTests = 5)),
+                    ),
+                ),
+            )
+            waitUntil { label.text == "Piwi: 2 failing" }
+            // Without an editor, the first connected config.
+            assertEquals(error.rgb, label.foreground.rgb)
+            editors.openFile(files.refreshAndFindFileByIoFile(users)!!, true)
+            assertEquals("Piwi: 5 passed", label.text)
+            assertTrue(error.rgb != label.foreground.rgb)
+            assertTrue(label.toolTipText, label.toolTipText.contains("The active file's Playwright config, in admin (one of 2)"))
+            assertNotNull(label.icon)
+            val manager = ActionManager.getInstance()
+            val entries = widget.actions().getChildren(null)
+                .map { if (it is com.intellij.openapi.actionSystem.Separator) "-" else manager.getId(it) ?: it.templateText }
+            assertEquals(
+                listOf(
+                    "Read the Latest Run Again", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
+                    "Piwi.RerunFailing", "Open the Failures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
+                    "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
+                    "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
+                ),
+                entries,
+            )
+            editors.openFile(files.refreshAndFindFileByIoFile(cart)!!, true)
+            assertEquals("Piwi: 2 failing", label.text)
+            assertEquals(error.rgb, label.foreground.rgb)
+        } finally {
+            editors.openFiles.forEach { editors.closeFile(it) }
+            shop.deleteRecursively()
+            // No service runs here: a read leaves nothing of the pushed answers to the next tests.
+            service.refreshStatus()
+            val deadline = System.currentTimeMillis() + 10_000
+            while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
     /** A file's coverage answer is drawn as marks in the gutter, one per span, hidden and shown again with the action. */
     fun testCoverageMarksAreDrawnAndHidden() {
         val base = File(project.basePath!!)

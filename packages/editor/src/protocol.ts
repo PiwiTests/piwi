@@ -267,6 +267,11 @@ export interface StatusResult {
   contexts: Array<{
     /** The Playwright config's directory. */
     root: string;
+    /**
+     * That directory as the editor names it: relative to the workspace folder holding it, after the folder's name when
+     * the workspace has several; the folder's name for a config at its root. Absent from an older service.
+     */
+    label?: string;
     connected: boolean;
     serverUrl: string | null;
     /**
@@ -716,10 +721,12 @@ export interface FailuresOverlay {
 export type FailuresGrouping = 'file' | 'cluster' | 'owner' | 'flat';
 
 /**
- * What a node of the failures tree shows as its icon: `run` the run, `history` the runs laid over it, `failed` and
- * `passed` one of those runs, `file`, `cluster` and `owner` a group, `failing`, `edited` and `fixed` a failure's state.
+ * What a node of the failures tree shows as its icon: `context` a Playwright config, `run` the run, `history` the runs
+ * laid over it, `failed` and `passed` one of those runs, `file`, `cluster` and `owner` a group, `failing`, `edited` and
+ * `fixed` a failure's state.
  */
 export type FailureTreeIcon =
+  | 'context'
   | 'run'
   | 'history'
   | 'failed'
@@ -734,16 +741,20 @@ export type FailureTreeIcon =
 /**
  * A node of the failures tree both clients draw: the run (`Run #120 · CI · feature/x · 3 failing · 1 fixed locally`,
  * or `Your local runs · 1 failing` with a developer's own runs alone), the runs laid over it under `Your runs since`,
- * then the failures grouped as `FailuresResult.grouping` says, failing first, then edited, then fixed locally.
+ * then the failures grouped as `FailuresResult.grouping` says, failing first, then edited, then fixed locally. When
+ * several Playwright configs have a run, runs laid over none or failures, each has a `context` node at the root
+ * (`apps/admin`, its project and its counts beside it) holding that tree for its config alone, or its run alone without
+ * a failure.
  */
 export interface FailureTreeNode {
   /** Stable across answers: a client keeps a node's expansion and selection by it. */
   key: string;
-  kind: 'run' | 'runs' | 'overlay' | 'group' | 'failure';
+  kind: 'context' | 'run' | 'runs' | 'overlay' | 'group' | 'failure';
   label: string;
   /**
-   * Beside the label: a group's counts, a failure's place (`tests/login.spec.ts:42 · chromium · new`). A client adds
-   * the age of `startTime`, and on the `run` node shows the editor's own run in progress instead.
+   * Beside the label: a context's project and counts, a group's counts, a failure's place (`tests/login.spec.ts:42 ·
+   * chromium · new`). A client adds the age of `startTime`, and on the `run` node of the context running the editor's
+   * own run shows that run in progress instead.
    */
   description: string;
   /** When the run a `run` or `overlay` node stands for started (ISO 8601). */
@@ -758,8 +769,14 @@ export interface FailureTreeNode {
   icon: FailureTreeIcon;
   /** Whether a node with children opens expanded. */
   expanded: boolean;
-  /** The page a run opens, a failure's execution page. */
+  /** The page a run opens (a `context` node's run too), a failure's execution page. */
   url: string | null;
+  /**
+   * On a `context` node and a `run` node: the folder of the Playwright config they stand for, whose failures **Re-run
+   * the failing tests** runs from them (`FailuresResult.rerun` with this `root`) and whose baseline **Compare with…**
+   * chooses. Absent from an older service.
+   */
+  root?: string;
   /** On a failure: the `executionId` of its item in `FailuresResult.items`. */
   executionId?: number;
   children: FailureTreeNode[];
@@ -782,23 +799,27 @@ export interface FailuresParams {
 export interface FailuresResult {
   items: WorkspaceFailure[];
   /**
-   * The baseline of the first context that has one, or runs laid over none (a developer's own runs only); null when
-   * only overlays are read. Absent from an older service.
+   * The baseline run of the one context that has a run, runs laid over none (a developer's own runs only) or failures;
+   * null when only overlays are read. Absent when several contexts do, each `context` node of the tree carrying its
+   * own, and from an older service.
    */
   run?: FailuresRun | null;
-  /** The runs of its branch laid over it, newest first. */
+  /** The runs of its branch laid over it, newest first; absent with `run`. */
   overlays?: FailuresOverlay[];
-  /** The baseline chosen for that context and what it found; absent from an older service. */
+  /** The baseline chosen for that context and what it found; absent with `run`. */
   baseline?: Baseline;
-  /** When it was last read (ISO 8601). */
+  /** When it was last read (ISO 8601); with several contexts, the latest of their reads. */
   updatedAt?: string;
   /** How `tree` groups the failures. */
   grouping: FailuresGrouping;
-  /** The failures as a tree: empty without a failure; the groups alone without a run. */
+  /**
+   * The failures as a tree: with one context, empty without a failure, the groups alone without a run; with several,
+   * one `context` node each.
+   */
   tree: FailureTreeNode[];
   /**
    * The run in a few words, as the tree's `run` node names it, with or without a failure: `Run #120 · CI · feature/x ·
-   * 0 failing`, `Your local runs · 1 failing`; null without a run.
+   * 0 failing`, `Your local runs · 1 failing`; null without a run, and with several contexts.
    */
   runLabel: string | null;
   /** How many tests still fail, edited since their run or not; a test failing on several projects counts once. */

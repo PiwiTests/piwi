@@ -23,6 +23,7 @@ import {
   connectChoices,
   desktopJobNotice,
   disconnectQuestion,
+  failingRuns,
   failureNodes,
   followBlock,
   followEdit,
@@ -48,6 +49,7 @@ import {
   serviceEnvironment,
   sourceLabel,
   statusBarView,
+  statusContext,
   testDecorations,
   testHoverMarkdown,
   TEST_HOVER_COMMANDS,
@@ -305,6 +307,75 @@ describe('statusBarView', () => {
   test('while a click reads the run again, the item’s icon spins', () => {
     expect(refreshingText('$(error) Piwi: 2 failing')).toBe('$(sync~spin) Piwi: 2 failing');
     expect(refreshingText('Piwi')).toBe('$(sync~spin) Piwi');
+  });
+
+  describe('with several Playwright configs', () => {
+    const shop = connected.contexts[0]!;
+    const admin = { ...shop, root: '/w/apps/admin', label: 'apps/admin', projectName: 'Admin' };
+    const several: StatusResult = { contexts: [{ ...shop, label: 'w' }, admin] };
+    const runs: RunStatusResult = {
+      contexts: [
+        run({}).contexts[0]!,
+        {
+          ...run({ id: 300, status: 'failed', failedTests: 2, passedTests: 10, url: 'http://piwi/test-runs/300' })
+            .contexts[0]!,
+          root: '/w/apps/admin',
+          branch: 'main',
+        },
+      ],
+    };
+
+    test('speaks for the config of the active file, the deepest that holds it', () => {
+      const view = statusBarView(several, runs, false, Date.now(), '/w/apps/admin/tests/users.spec.ts');
+      expect(view).toMatchObject({
+        text: '$(error) Piwi: 2 failing · 2 flaky',
+        url: 'http://piwi/test-runs/300',
+        error: true,
+      });
+      expect(view.tooltip.split('\n\n').slice(0, 2)).toEqual([
+        'Run #300 of Admin on main: 10 passed, 2 failed, 2 flaky, 0 skipped',
+        "The active file's Playwright config, in apps/admin (one of 2)",
+      ]);
+      expect(statusBarView(several, runs, false, Date.now(), '/w/tests/login.spec.ts')).toMatchObject({
+        text: '$(pass) Piwi: 118 passed · 2 flaky',
+        url: 'http://piwi/test-runs/41',
+      });
+    });
+
+    test('without an active file in a config, the first connected one, and says how to see another', () => {
+      for (const file of [null, '/elsewhere/notes.md']) {
+        const view = statusBarView(several, runs, false, Date.now(), file);
+        expect(view.url).toBe('http://piwi/test-runs/41');
+        expect(view.tooltip.split('\n\n')[1]).toBe(
+          'The Playwright config in w (one of 2): open a file of another one to see its run',
+        );
+      }
+      const first = statusBarView({ contexts: [{ ...shop, connected: false, problem: 'No project.' }, admin] }, runs);
+      expect(first.url).toBe('http://piwi/test-runs/300');
+      expect(statusContext(several.contexts, null)?.root).toBe('/w');
+      expect(statusContext([], '/w/a.ts')).toBeNull();
+    });
+
+    test('a config that is not connected says so for its files, whatever the others read', () => {
+      const unlinked = { ...admin, connected: false, problem: 'No project is linked to apps/admin.' };
+      const view = statusBarView({ contexts: [shop, unlinked] }, runs, false, Date.now(), '/w/apps/admin/a.spec.ts');
+      expect(view).toMatchObject({ text: '$(plug) Piwi: connect', action: 'connect', url: null });
+      expect(view.tooltip.split('\n\n').slice(0, 2)).toEqual([
+        'No project is linked to apps/admin.',
+        "The active file's Playwright config, in apps/admin (one of 2)",
+      ]);
+      const down = { ...admin, connected: false, problem: 'Down.', problemKind: 'unreachable' as const };
+      expect(statusBarView({ contexts: [shop, down] }, runs, false, Date.now(), '/w/apps/admin/a.ts').action).toBe(
+        'retry',
+      );
+    });
+
+    test('without the label of an older service, the folder’s name', () => {
+      const older: StatusResult = { contexts: [shop, { ...admin, label: undefined }] };
+      expect(statusBarView(older, runs, false, Date.now(), '/w/apps/admin/a.ts').tooltip).toContain(
+        "The active file's Playwright config, in admin (one of 2)",
+      );
+    });
   });
 });
 
@@ -1192,6 +1263,66 @@ describe('the failures view', () => {
   test('without a tree, nothing', () => {
     expect(failureNodes(null)).toEqual([]);
     expect(failureNodes({ ...result, tree: [] })).toEqual([]);
+  });
+
+  test('a Playwright config’s node: its folder and codicon, over its run, which alone counts the editor’s own run', () => {
+    const live: LiveRun = {
+      runId: 125,
+      status: 'running',
+      done: 4,
+      total: 9,
+      failed: 1,
+      startedAt: '2026-09-27T10:03:00.000Z',
+      own: true,
+    };
+    const run = result.tree[0]!;
+    const config = (root: string, label: string, url: string): FailureTreeNode => ({
+      key: `context:${root}`,
+      kind: 'context',
+      label,
+      description: 'Shop · 2 failing',
+      tooltip: [`Playwright config in ${root}`, 'Project: Shop'],
+      icon: 'context',
+      expanded: true,
+      url,
+      root,
+      children: [{ ...run, key: `context:${root}/run`, url, root }],
+    });
+    const two: FailuresResult = {
+      ...result,
+      runLabel: null,
+      tree: [
+        config('/w/apps/shop', 'apps/shop', 'http://piwi/test-runs/120'),
+        config('/w/apps/admin', 'apps/admin', 'http://piwi/test-runs/300'),
+      ],
+    };
+    const [shop, admin] = failureNodes(two, { now, live, liveRoot: '/w/apps/admin' });
+    expect(shop).toMatchObject({
+      key: 'context:/w/apps/shop',
+      kind: 'context',
+      label: 'apps/shop',
+      description: 'Shop · 2 failing',
+      tooltip: 'Playwright config in /w/apps/shop\n\nProject: Shop',
+      icon: 'root-folder',
+      state: 'expanded',
+      url: 'http://piwi/test-runs/120',
+      root: '/w/apps/shop',
+    });
+    expect(shop!.children[0]).toMatchObject({ kind: 'run', root: '/w/apps/shop', description: '4 min ago' });
+    expect(admin!.children[0]).toMatchObject({ root: '/w/apps/admin', description: 'running 4/9' });
+    // The run's node of an older service names no config: the editor's own run shows on it.
+    expect(failureNodes(result, { now, live, liveRoot: '/w/apps/admin' })[0]!.description).toBe('running 4/9');
+  });
+
+  test('Re-run the failing tests runs every config’s, or one config’s from its node', () => {
+    const rerun = [
+      { uri: 'file:///w/apps/shop/tests/a.spec.ts', root: '/w/apps/shop', testIds: [7] },
+      { uri: 'file:///w/apps/admin/tests/b.spec.ts', root: '/w/apps/admin', testIds: [8] },
+    ];
+    expect(failingRuns({ ...result, rerun })).toEqual(rerun);
+    expect(failingRuns({ ...result, rerun }, '/w/apps/admin')).toEqual([rerun[1]]);
+    expect(failingRuns({ ...result, rerun }, '/w/apps/docs')).toEqual([]);
+    expect(failingRuns(null)).toEqual([]);
   });
 
   test('Run this test names the failure’s config', () => {

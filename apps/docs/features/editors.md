@@ -157,8 +157,10 @@ and hover in open files; the rest is native:
 - **The Piwi tool window** names the connection and holds the latest run's failures as a tree, since the IDE
   highlights open files only: [the failures view](./editor-runs#the-failures-view).
 - **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter.
-- **The status bar** shows the latest run, or the run in progress, and reads it again on a click
-  ([the status bar](./editor-runs#the-status-bar)); the actions are under **Tools → Piwi**.
+- **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
+  icon for its state and the error color while its tests fail; a click opens a menu of the actions, led by what the
+  item calls for, such as reading the run again ([the status bar](./editor-runs#the-status-bar)). They are also under
+  **Tools → Piwi**.
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry, running `mcp-remote` with the key, on
   the clipboard for the AI Assistant's MCP settings.
 - **[Open in IDE](./ide-integration)**: a path clicked in the dashboard or the desktop app opens at its line.

@@ -129,31 +129,69 @@ export function refreshingText(text: string): string {
   return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
 }
 
+type StatusContext = StatusResult['contexts'][number];
+
 /**
- * The status bar item: the latest run on the checked-out branch, with what the runs laid over it fixed or still fail,
- * or what keeps the service from reading it. While a run is in progress, the editor's own or one on the branch, the
- * item counts it, and the tooltip has both. A click reads the latest run again; the tooltip says when it was read and
- * links to the run, the dashboard and Connect.
+ * The context the status bar item speaks for: the one whose Playwright config folder holds the active file, the
+ * deepest when several do; else the first connected one, else the first the instance did not answer, else the first.
+ */
+export function statusContext(contexts: readonly StatusContext[], activeFile: string | null): StatusContext | null {
+  const holding = activeFile
+    ? contexts.filter((c) => isUnder(c.root, activeFile)).sort((a, b) => b.root.length - a.root.length)[0]
+    : undefined;
+  return (
+    holding ??
+    contexts.find((c) => c.connected) ??
+    contexts.find((c) => c.problemKind === 'unreachable') ??
+    contexts[0] ??
+    null
+  );
+}
+
+/**
+ * With several Playwright configs, which one the item speaks for: `The active file's Playwright config, in apps/admin
+ * (one of 3)`.
+ */
+function configLine(
+  contexts: readonly StatusContext[],
+  shown: StatusContext,
+  activeFile: string | null,
+): string | null {
+  if (contexts.length < 2) return null;
+  const where = shown.label ?? path.basename(shown.root);
+  return activeFile && isUnder(shown.root, activeFile)
+    ? md(`The active file's Playwright config, in ${where} (one of ${contexts.length})`)
+    : md(`The Playwright config in ${where} (one of ${contexts.length}): open a file of another one to see its run`);
+}
+
+/**
+ * The status bar item, for the Playwright config of the active file (`statusContext`): the latest run on the
+ * checked-out branch, with what the runs laid over it fixed or still fail, or what keeps the service from reading it.
+ * While a run is in progress, the editor's own or one on the branch, the item counts it, and the tooltip has both. A
+ * click reads the latest run again; the tooltip names the config when there are several, says when the run was read
+ * and links to the run, the dashboard and Connect.
  */
 export function statusBarView(
   status: StatusResult | null,
   runs: RunStatusResult | null,
   desktopChosen = false,
   now = Date.now(),
+  activeFile: string | null = null,
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
-  if (!contexts.length) {
+  const shown = statusContext(contexts, activeFile);
+  if (!shown) {
     return { text: '$(beaker) Piwi', tooltip: 'No Playwright config found', action: 'none', url: null, error: false };
   }
   const hint = desktopHint(status, desktopChosen);
   const connect = '[Connect](command:piwi.connect)';
-  const connected = contexts.find((c) => c.connected);
-  const unreachable = contexts.find((c) => c.problemKind === 'unreachable');
-  if (!connected && unreachable) {
+  const which = configLine(contexts, shown, activeFile);
+  if (!shown.connected && shown.problemKind === 'unreachable') {
     return {
       text: '$(debug-disconnect) Piwi: unreachable',
       tooltip: lines(
-        md(unreachable.problem ?? 'The instance did not answer'),
+        md(shown.problem ?? 'The instance did not answer'),
+        which,
         'Piwi reads it again on its own.',
         hint,
         `[Retry](command:piwi.refresh) · ${connect}`,
@@ -163,16 +201,18 @@ export function statusBarView(
       error: false,
     };
   }
-  if (!connected) {
+  if (!shown.connected) {
     return {
       text: '$(plug) Piwi: connect',
-      tooltip: lines(md(contexts[0]!.problem ?? 'Not connected'), hint, connect),
+      tooltip: lines(md(shown.problem ?? 'Not connected'), which, hint, connect),
       action: 'connect',
       url: null,
       error: false,
     };
   }
-  const run = runs?.contexts.find((c) => c.root === connected.root) ?? runs?.contexts[0];
+  const connected = shown;
+  const run =
+    runs?.contexts.find((c) => c.root === connected.root) ?? (contexts.length === 1 ? runs?.contexts[0] : undefined);
   // On the ladder, the checked-out branch has no run yet: another branch's is shown.
   const ladder = !run?.baseline || run.baseline.choice.kind === 'ladder';
   const fallback =
@@ -195,6 +235,7 @@ export function statusBarView(
         text: live ? liveText(live) : failing ? `$(error) Piwi: ${failing} failing` : '$(pass) Piwi: no failure',
         tooltip: lines(
           `${plural(run.overlays, 'local run')} of ${where}, ${plural(failing, 'test')} failing`,
+          which,
           baseline,
           progress,
           updated,
@@ -210,7 +251,7 @@ export function statusBarView(
     }
     return {
       text: live ? liveText(live) : '$(beaker) Piwi: no run',
-      tooltip: lines(`No run of ${where} yet`, baseline, progress, updated, from, reporter, hint, links),
+      tooltip: lines(`No run of ${where} yet`, which, baseline, progress, updated, from, reporter, hint, links),
       action: 'refresh',
       url: null,
       error: false,
@@ -222,6 +263,7 @@ export function statusBarView(
   const fixed = run.resolved ?? 0;
   const tooltip = lines(
     `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
+    which,
     baseline,
     run.overlays ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally` : null,
     progress,
@@ -311,6 +353,8 @@ export interface FailureNode {
   state: 'expanded' | 'collapsed' | 'none';
   /** The page a click on a run opens; a failure's execution page. */
   url: string | null;
+  /** On a Playwright config's node and a run's: that config's folder, which their actions act on. */
+  root?: string;
   /** The failure a leaf stands for. */
   failure?: WorkspaceFailure;
   children: FailureNode[];
@@ -318,6 +362,7 @@ export interface FailureNode {
 
 /** The codicon of each icon of the service's tree. */
 const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
+  context: 'root-folder',
   run: 'beaker',
   history: 'history',
   failed: 'error',
@@ -332,18 +377,19 @@ const FAILURE_ICONS: Record<FailureTreeIcon, string> = {
 
 /**
  * The failures view's nodes, from the tree the service grouped: a run's age after its description (`4 min ago`), and,
- * while the editor's own run is `live`, that run on the run's node (`running 4/9`), whose tooltip says it too.
+ * while the editor's own run is `live`, that run on the node of the run of its Playwright config (`liveRoot`; any run's
+ * node when either does not say which: `running 4/9`), whose tooltip says it too.
  */
 export function failureNodes(
   result: FailuresResult | null,
-  options: { now?: number; live?: LiveRun | null } = {},
+  options: { now?: number; live?: LiveRun | null; liveRoot?: string | null } = {},
 ): FailureNode[] {
   const now = options.now ?? Date.now();
   const live = options.live?.own ? options.live : null;
   const failures = new Map((result?.items ?? []).map((f) => [f.executionId, f]));
   const draw = (node: FailureTreeNode): FailureNode => {
     const age = node.startTime ? relativeTime(node.startTime, now) : null;
-    const running = live && node.kind === 'run';
+    const running = live && node.kind === 'run' && (!options.liveRoot || !node.root || node.root === options.liveRoot);
     const [first, ...rest] = node.tooltip.map(md);
     return {
       key: node.key,
@@ -358,6 +404,7 @@ export function failureNodes(
       icon: FAILURE_ICONS[node.icon] ?? 'circle-outline',
       state: node.children.length ? (node.expanded ? 'expanded' : 'collapsed') : 'none',
       url: node.url,
+      ...(node.root ? { root: node.root } : {}),
       ...(node.executionId !== undefined && failures.has(node.executionId)
         ? { failure: failures.get(node.executionId)! }
         : {}),
@@ -365,6 +412,15 @@ export function failureNodes(
     };
   };
   return (result?.tree ?? []).map(draw);
+}
+
+/**
+ * What **Re-run the failing tests** runs: the tests still failing of every Playwright config, one run each
+ * (`FailuresResult.rerun`), or of the config at `root` alone, run from its node in the failures view.
+ */
+export function failingRuns(result: FailuresResult | null, root?: string): RunTestsArgs[] {
+  const runs = result?.rerun ?? [];
+  return root ? runs.filter((r) => r.root === root) : runs;
 }
 
 /** An entry of **Compare with…**: a baseline, or `run-by-id`, which asks for the run's id first. */

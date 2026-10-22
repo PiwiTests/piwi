@@ -428,12 +428,16 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         send(update("s9", "await page.goto('/');"))
         val statusBar = PiwiStatusBarWidget(project)
-        assertEquals("Piwi: ● recording · 1 step", statusBar.getText())
+        fun statusText(): String {
+            statusBar.update()
+            return (statusBar.component as javax.swing.JLabel).text
+        }
+        assertEquals("Piwi: ● recording · 1 step", statusText())
         // The service sends nothing for a pause: the banner says so at once.
         assertTrue(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertEquals(listOf("pause s9"), sent)
         assertEquals("Piwi: recording paused · 1 step", session.view.text)
-        assertEquals("Piwi: recording paused · 1 step", statusBar.getText())
+        assertEquals("Piwi: recording paused · 1 step", statusText())
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertTrue(myFixture.testAction(actions.getAction("Piwi.ResumeRecording")).isEnabled)
         assertEquals(listOf("pause s9", "resume s9"), sent)
@@ -444,6 +448,6 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals(listOf("pause s9", "resume s9", "stop s9"), sent)
         send(update("s9", "await page.goto('/');", state = "stopped"))
         assertNull(recordings.only())
-        assertFalse(statusBar.getText().contains("recording"))
+        assertFalse(statusText().contains("recording"))
     }
 }

@@ -159,6 +159,22 @@ export function relativeTo(root: string, file: string): string | null {
 }
 
 /**
+ * A Playwright config's folder as the editor names it: relative to the deepest workspace folder holding it, with
+ * forward slashes, after that folder's name when the workspace has several (`shop/e2e`); the workspace folder's name
+ * for a config at its root; the whole path outside every workspace folder.
+ */
+export function contextLabel(root: string, folders: readonly string[]): string {
+  const folder = folders
+    .filter((f) => path.relative(f, root) === '' || relativeTo(f, root) !== null)
+    .sort((a, b) => b.length - a.length)[0];
+  if (!folder) return root;
+  const name = path.basename(folder) || folder;
+  const rel = relativeTo(folder, root);
+  if (!rel) return name;
+  return folders.length > 1 ? `${name}/${rel}` : rel;
+}
+
+/**
  * Translation values by key for one side of a change: the working tree
  * (`new`) or `HEAD` (`old`). Built once per side and repository state; the
  * files of `locale` come first.

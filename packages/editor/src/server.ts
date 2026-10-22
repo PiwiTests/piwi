@@ -106,7 +106,7 @@ import {
   runIdOf,
   withServerUrl,
 } from './context.js';
-import { failuresDrawn, parseFailuresGrouping } from './failure-tree.js';
+import { failuresAnswer, parseFailuresGrouping, type ContextFailures } from './failure-tree.js';
 import {
   PiwiClient,
   forgetShared,
@@ -232,6 +232,7 @@ import {
   type WorkspaceFailure,
 } from './protocol.js';
 import {
+  contextLabel,
   findPlaywrightRoots,
   headFiles,
   playwrightConfigFile,
@@ -952,11 +953,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /**
-   * Each context's failures where they show, then the failures a later run passed, at their `test(…)` line; the latest
-   * complete run of the first context that has one, and the runs laid over it.
+   * Each context's failures where they show, then the failures a later run passed, at their `test(…)` line, with its
+   * latest complete run, the runs laid over it and its baseline: one context's as the answer's, several under a node
+   * each (`failuresAnswer`).
    */
   const failuresResult = (pass: Placer): FailuresResult => {
-    const items = contexts.flatMap((context): WorkspaceFailure[] => {
+    const views = contexts.flatMap((context): ContextFailures[] => {
       const client = context.client;
       if (!client) return [];
       const failing = (context.failures?.failures ?? []).flatMap((f): WorkspaceFailure[] => {
@@ -1017,50 +1019,49 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           },
         ];
       });
-      return [...failing, ...fixed];
+      const run = context.failures?.run;
+      return [
+        {
+          root: context.root,
+          label: contextLabel(context.root, folders),
+          projectName: context.project?.name ?? null,
+          items: [...failing, ...fixed],
+          run: run
+            ? {
+                id: run.id,
+                branch: run.branch,
+                status: run.status,
+                startTime: run.startTime,
+                totalTests: run.totalTests,
+                passedTests: run.passedTests,
+                failedTests: run.failedTests,
+                flakyTests: run.flakyTests,
+                skippedTests: run.skippedTests,
+                url: client.runUrl(run.id),
+                ...(run.origin ? { origin: run.origin } : {}),
+                own: isOwnRun(context, run.id),
+              }
+            : null,
+          overlays: (context.failures?.overlays ?? []).map((o) => ({
+            id: o.id,
+            origin: o.origin,
+            startTime: o.startTime,
+            status: o.status,
+            totalTests: o.totalTests,
+            passedTests: o.passedTests,
+            failedTests: o.failedTests,
+            url: client.runUrl(o.id),
+            own: isOwnRun(context, o.id),
+          })),
+          baseline: { choice: context.baseline, label: context.baselineLabel },
+          ...(context.runReadAt !== null ? { updatedAt: new Date(context.runReadAt).toISOString() } : {}),
+        },
+      ];
     });
-    const shown =
-      contexts.find((c) => c.client && c.failures?.run) ??
-      contexts.find((c) => c.client && c.failures?.overlays?.length);
-    if (!shown) return { items, ...failuresDrawn({ items }, failuresGrouping) };
-    const run = shown.failures?.run;
-    const client = shown.client!;
-    const view = {
-      items,
-      run: run
-        ? {
-            id: run.id,
-            branch: run.branch,
-            status: run.status,
-            startTime: run.startTime,
-            totalTests: run.totalTests,
-            passedTests: run.passedTests,
-            failedTests: run.failedTests,
-            flakyTests: run.flakyTests,
-            skippedTests: run.skippedTests,
-            url: client.runUrl(run.id),
-            ...(run.origin ? { origin: run.origin } : {}),
-            own: isOwnRun(shown, run.id),
-          }
-        : null,
-      overlays: (shown.failures?.overlays ?? []).map((o) => ({
-        id: o.id,
-        origin: o.origin,
-        startTime: o.startTime,
-        status: o.status,
-        totalTests: o.totalTests,
-        passedTests: o.passedTests,
-        failedTests: o.failedTests,
-        url: client.runUrl(o.id),
-        own: isOwnRun(shown, o.id),
-      })),
-      baseline: { choice: shown.baseline, label: shown.baselineLabel },
-      ...(shown.runReadAt !== null ? { updatedAt: new Date(shown.runReadAt).toISOString() } : {}),
-    } satisfies Omit<FailuresResult, keyof ReturnType<typeof failuresDrawn>>;
-    return { ...view, ...failuresDrawn(view, failuresGrouping) };
+    return failuresAnswer(views, failuresGrouping);
   };
   /** The failures last sent in `piwi/failuresChanged`. */
-  let failuresSent = JSON.stringify({ items: [], ...failuresDrawn({ items: [] }, 'file') } satisfies FailuresResult);
+  let failuresSent = JSON.stringify(failuresAnswer([], 'file'));
 
   /**
    * Place every context's failures on the files as they stand, publish the files whose failure diagnostics changed,
@@ -1697,6 +1698,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const currentStatus = (): StatusResult => ({
     contexts: contexts.map((c) => ({
       root: c.root,
+      label: contextLabel(c.root, folders),
       connected: !!c.index && !c.problem,
       serverUrl: c.client?.connection.serverUrl ?? null,
       source: c.source,

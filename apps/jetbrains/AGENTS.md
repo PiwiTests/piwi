@@ -18,8 +18,8 @@ the service through the platform's LSP API with the project's Node.js interprete
 platform passes no process id, and the service exits within seconds of the IDE's end, however it ends), once
 `node --version` says 20 or
 later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `PiwiProjectService.startFailed` keeps
-(`startProblem`) and says once, the status bar item reads `Piwi: Node.js` and opens the Node.js settings
-(`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
+(`startProblem`) and says once, the status bar item reads `Piwi: Node.js` and its menu opens the Node.js settings
+first (`openNodeSettings`, `settings.nodejs`), after which the service starts again (`restartServer`), as on **Refresh**
 while it does not run. The service's process gets the IDE's HTTP proxy for the instance the project names
 (`PiwiLspServerDescriptor.proxyEnvironment`: the default `ProxySelector`, which holds the IDE's proxy settings, asked
 for that address, else for a public one), as `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` with this machine's names (`Glue.proxyEnvironment`), which the
@@ -81,7 +81,9 @@ problem; three times in five minutes at most (`PiwiProjectService.watchServer`, 
   service grouped (`FailuresResult.tree`) with a run's age, the nodes VS Code's view has: the run, **Your runs since**,
   then the failures grouped by file, cluster, owner or flat (the toolbar's `ToggleAction`s, kept in
   `PiwiLocalSettings.failuresGrouping`, sent with every `piwi/failures`, and read again at once by
-  `PiwiProjectService.regroup`, the service keeping it for what it pushes). A `ColoredTreeCellRenderer` draws a
+  `PiwiProjectService.regroup`, the service keeping it for what it pushes), under a node per Playwright config
+  (`AllIcons.Nodes.Module`) when several have something to show; the editor's own run in progress shows on the run of
+  its config (`liveRoot`), and the header line names no run then. A `ColoredTreeCellRenderer` draws a
   failure's title, headline, run (`Glue.failureRunNote`: `your run #N`, `edited since run #N` with the information
   icon, fixed with the passed icon) and place; `TreeSpeedSearch` finds a title. The tree is built again only when
   its nodes changed, from `piwi/failuresChanged` as the edits move them too, keeping the expanded and selected nodes
@@ -91,21 +93,37 @@ problem; three times in five minutes at most (`PiwiProjectService.watchServer`, 
   or a run's page; the right-click menu
   (`PopupHandler.installPopupMenu`) runs the test, opens the trace, the screenshot or the page, copies the context for
   an agent (`piwi/agentContext`) and, on a CI failure while the desktop app runs, passes it to the app, through
-  `PiwiCommands`. **Re-run the Failing Tests** (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs
-  `FailuresResult.rerun`, one run per Playwright config, and **Run This Test** `Glue.failureRunArgs`: both name the
-  failure's config (`WorkspaceFailure.root`). **Compare With…** (`Piwi.CompareWith`, **Tools → Piwi** and the toolbar) is a popup of
-  `Glue.baselineEntries` (the ladder, each of `RunStatus.branches`, a run by its id through `Messages.showInputDialog`,
-  which `piwi/runId` reads on a pooled thread, a balloon saying when the text is not one, the local runs only) for the context of the file at hand; `PiwiProjectService.setBaseline` keeps the choice in
+  `PiwiCommands`; on a config's node, it re-runs that config's failing tests, chooses its baseline and opens its run
+  (`ConfigAction`, `Glue.FailureNode.root`), on a run's node the last two. **Re-run the Failing Tests**
+  (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs `FailuresResult.rerun`, one run per Playwright config
+  (`PiwiCommands.rerunFailing`, a config's alone from its node: `Glue.failingRuns`), and **Run This Test**
+  `Glue.failureRunArgs`: both name the failure's config (`WorkspaceFailure.root`). **Compare With…**
+  (`Piwi.CompareWith`, **Tools → Piwi** and the toolbar) is a popup of `Glue.baselineEntries` (the ladder, each of
+  `RunStatus.branches`, a run by its id through `Messages.showInputDialog`, which `piwi/runId` reads on a pooled thread,
+  a balloon saying when the text is not one, the local runs only) for the context of the file at hand, or of the node
+  it runs from (`CompareWithAction.choose`); `PiwiProjectService.setBaseline` keeps the choice in
   `PiwiLocalSettings.baselines` (by root, `Glue.encodeBaseline`, the ladder as no entry), sends `piwi/setBaseline`, and
   `credentials()` sends them all as `baselines`. The header line names it (`Glue.runHeader`). The service
   starts with the first supported file opened (2024.1 has no way to start it without one): until then the status is
   null, and the status bar and tool window say so.
-- The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`): a click runs `PiwiProjectService.refreshRun`
-  (`piwi/refreshRun` then `refreshStatus`, on a pooled thread, `Piwi: refreshing…` meanwhile), **Refresh** while the
-  instance does not answer (`Piwi: unreachable`, `problemKind`, `StatusAction.RETRY`), and Connect while not
-  connected. Its tooltip says the same as VS Code's in plain text: the counts, the local runs, the run in progress and
-  when the run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project
-  installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
+- The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`) is a `CustomStatusBarWidget` around a `JBLabel` (the
+  platform's text presentations take no color): an icon (`Glue.StatusIcon`: the plugin's, `AllIcons` for the
+  connection and for a failing or passed run, `AnimatedIcon.Default` for a run in progress or a read), the text, and the
+  theme's error foreground (`NamedColorUtil.getErrorForeground`, else `JBUI.CurrentTheme.StatusBar.Widget.FOREGROUND`)
+  while tests of the run it counts fail, a run in progress by its own failures (`StatusView.error`). It speaks for the
+  context of the selected editor's file (`Glue.statusContext`: the deepest config folder holding it, else the first
+  connected; `PiwiStatusBarWidget.shownFile`), drawn again on `FileEditorManagerListener.selectionChanged`; with
+  several contexts the tooltip names that config (`ContextStatus.label`, else its folder's name), and another
+  context's run is never shown for it. A click opens `PiwiStatusBarWidget.actions()` (`createActionGroupPopup`, with
+  the selected editor's data context, the disabled actions left out): first what the state calls for
+  (`Glue.StatusAction`: **Read the Latest Run Again**, `PiwiProjectService.refreshRun`, `piwi/refreshRun` then
+  `refreshStatus` on a pooled thread, `Piwi: refreshing…` meanwhile; **Refresh** while the instance does not answer,
+  `Piwi: unreachable`, `problemKind`; Connect while not connected; the Node.js settings; while a recording runs, its
+  block and its controls), then the registered actions by id: Re-run the Failing Tests, Open the Failures (the tool
+  window), Open the Latest Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record
+  Here, Refresh, Connect and Settings. Its tooltip says the same as VS Code's in plain text: the counts, the local
+  runs, the run in progress and when the run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and
+  the reporter version the project installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
   **Tools → Piwi** and in the tool window's toolbar) opens the run the status bar shows.
 - With **Run the tests in the IDE's Playwright runner** (`PiwiLocalSettings.playwrightRunner`, off by default), a test
   run whose command is `npx playwright test …` (`Glue.playwrightTestArgs`) starts as a temporary Playwright run
@@ -169,7 +187,7 @@ problem; three times in five minutes at most (`PiwiProjectService.watchServer`, 
   block is tinted with `PIWI_RECORDING_BLOCK`, with a gutter mark offering Stop, Pause and Resume; its warnings are
   weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes; the banner over
   the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step count and the
-  actions, and the status bar item shows them too, a click going to the block (`Glue.recordingStatus`). The service
+  actions, and the status bar item shows them too, its menu going to the block first (`Glue.recordingStatus`). The service
   says `paused` in an update for a pause from here or from the browser's bar; the client shows one from here at once.
   An edit inside the block pauses the recording
   (`piwi/recordingCommand`) with **Resume** (the service sends the block again) or **Keep My Edits** (Stop: nothing

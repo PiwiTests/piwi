@@ -18,14 +18,20 @@ clients stay thin and both editors give the same answers.
   `piwi/desktopJobChanged`, `piwi/recordingChanged` and `piwi/coverageChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
-  owner, project, duration and whether it is new, and the answer the latest complete run of the first context that has
-  one (`run`), the runs laid over it (`overlays`) and when they were read (`updatedAt`, which alone changing sends no
-  `piwi/failuresChanged`). Each item names the folder of its Playwright config (`root`), which a run of its test takes
-  (`RunTestsArgs.root`), whatever file the failure shows in. The answer also holds the tree both clients draw
-  (`tree`, `src/failure-tree.ts`: the run, the runs laid over it, the failures grouped as the last `piwi/failures`
-  asked, `grouping`, which the service keeps for what it pushes), the run as its root names it (`runLabel`), the tests
-  still failing (`failing`) and what **Re-run the failing tests** runs (`rerun`); a client adds a run's age and its own
-  run in progress. `piwi/runId` reads a run id typed for **A run by id…** (1 to 2147483647, the run ids of an
+  owner, project, duration and whether it is new, and, when one context alone has a run, runs laid over none or
+  failures, the answer its latest complete run (`run`), the runs laid over it (`overlays`), its baseline and when they
+  were read (`updatedAt`, which alone changing sends no `piwi/failuresChanged`). Each item names the folder of its
+  Playwright config (`root`), which a run of its test takes (`RunTestsArgs.root`), whatever file the failure shows in.
+  The answer also holds the tree both clients draw (`tree`, `src/failure-tree.ts`, `failuresAnswer`: the run, the
+  runs laid over it, the failures grouped as the last `piwi/failures` asked, `grouping`, which the service keeps for
+  what it pushes), the run as its root names it (`runLabel`), the tests still failing (`failing`) and what **Re-run the
+  failing tests** runs (`rerun`); a client adds a run's age and its own run in progress. When several contexts have
+  one of those, the tree holds a `context` node each, in the contexts' order (its folder as `contextLabel` in
+  `src/workspace.ts` names it, also `label` in `piwi/status`, its project and counts, `root`, its run's `url`), over
+  that context's tree, or its run alone without a failure; the key of a node under it is the context node's and its
+  own, on two lines. `run`, `overlays` and `baseline` are then left out, `runLabel` is null, and `updatedAt` is the
+  latest read. The `run` node names its context too (`root`), so a client runs a context's failing tests (`rerun` with
+  that `root`), chooses its baseline and shows the editor's own run in progress on the right run. `piwi/runId` reads a run id typed for **A run by id…** (1 to 2147483647, the run ids of an
   instance). `piwi/agentContext` answers the block **Copy context for
   agent** copies, for a failure the view names or the quick fix (`piwi.copyAgentContext`) names once it is picked.
 - `piwi/status` says what keeps a context from the instance's data (`problemKind`: `not-configured`, `no-project`,

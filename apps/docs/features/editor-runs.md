@@ -94,15 +94,22 @@ the progress of the run you started (`running 4/9`). Under it:
 - A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
   edited since the run, or fixed locally, with the headline and its run (`your run #124`, `edited since run #120`).
 
+In a workspace with several Playwright configs, each config with a run, your runs or failures has a node of its own,
+named by its folder (`apps/admin`), with its project and counts beside it (`Admin · 2 failing`). Its run and failures
+are under it, as above, or its run alone when it fails nothing. Its row in VS Code, and its context menu in both
+editors, re-run that config's failing tests (**Re-run the failing tests**) and open its run in the dashboard; the
+context menu adds **Compare with…** for that config. With one config, the run is the first node.
+
 Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) to open its line. **Run this test**,
 **Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Open the screenshot**,
 **Copy context for agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs,
 **Reproduce in the desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the
 line.
 
-The title bar, or the toolbar, holds Refresh, **Re-run the failing tests**, **Open the run in the dashboard**,
-**Compare with…** and the grouping. In VS Code, **Follow the active editor** selects the first failure of the file you
-switch to, and the badge counts the failing tests, as the tool window's title does. The tree is read again when a run
+The title bar, or the toolbar, holds Refresh, **Re-run the failing tests** (every config's), **Open the run in the
+dashboard** (the run the status bar shows), **Compare with…** (for the active file's config) and the grouping. In VS
+Code, **Follow the active editor** selects the first failure of the file you switch to, and the badge counts the
+failing tests, as the tool window's title does. The tree is read again when a run
 ends or an edit moves a failure. The Problems panel keeps its errors.
 
 ## Compare with another run
@@ -117,7 +124,8 @@ kept on this machine, per Playwright config.
 ## Re-run the failing tests
 
 **Piwi: Re-run the failing tests** (**Tools → Piwi → Re-run the Failing Tests**) runs every test still failing, or
-edited since its run, one command per Playwright config; when none fails, it says so. **Run this test** also sits above the reason line of
+edited since its run, one command per Playwright config, or those of one config from its node in the failures view;
+when none fails, it says so. **Run this test** also sits above the reason line of
 a failing test, beside **Screenshot** and **Trace**.
 
 ## The status bar
@@ -126,13 +134,27 @@ The latest complete run on the branch: how many tests passed, failed and were fl
 local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or another run of the branch,
 is in progress, the item counts it instead (`4/9 · 1 failing · your run`) and returns to the latest run when it ends.
 
-Click it to read the latest run and its failures again (**Piwi: Refresh the latest run**), without the indexes **Piwi:
+With several Playwright configs, the item in VS Code speaks for the config of the file you are editing, the deepest
+config folder that holds it, and follows you from file to file; outside every config folder, it shows the first
+connected config. Its tooltip names the config (`The active file's Playwright config, in apps/admin (one of 3)`).
+In a JetBrains IDE, the item follows the file of the selected editor the same way, with the same tooltip line.
+
+In VS Code, click it to read the latest run and its failures again (**Piwi: Refresh the latest run**), without the indexes **Piwi:
 Refresh** fetches. The tooltip holds the run's counts, the baseline, your local runs since, the run in progress, and
 when the run was read (`Updated 12 s ago · live` while the event stream is connected, `· read every minute` without it).
-In VS Code it ends with **Open run #120**, **Open in dashboard**, **Compare with…** and **Connect**; in a JetBrains IDE,
-**Tools → Piwi → Open the Latest Run in the Dashboard**, also in the Piwi tool window's toolbar, opens the run. When the
+In VS Code it ends with **Open run #120**, **Open in dashboard**, **Compare with…** and **Connect**. When the
 extension is not connected, the item says why, and a click runs **Piwi: Connect**, or retries an
 [unreachable instance](./editor-connection#an-unreachable-instance).
+
+In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed) or
+of the connection, and the text takes the theme's error color while tests of that run fail, a run in progress
+included. A click opens a menu of Piwi's actions. Its first entry is what the item calls for: **Read the Latest Run
+Again**, **Refresh** for an unreachable instance, **Connect…** while not connected, **Node.js Settings…** when Node.js
+is missing or too old, or **Go to the Recorded Lines** while a recording runs, beside **Pause Recording**, **Resume
+Recording** and **Stop Recording**. Then come **Re-run the Failing Tests**, **Open the Failures**, **Open the Latest Run
+in the Dashboard** (also in the Piwi tool window's toolbar), **Open in Dashboard**, **Compare With…**, **Run the Test at
+the Caret** and **Record Here** in a spec, **Refresh**, **Connect…** and **Settings…**; an action that does not apply is
+left out.
 
 ## Related
 
