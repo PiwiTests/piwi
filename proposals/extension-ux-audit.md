@@ -2,7 +2,7 @@
 
 An audit of the Piwi Picker extension (`apps/extension/`) at v0.58.0: the toolbar popup, the dialogs and bars it draws on the page, the overlays, the DevTools pane and panel, the settings page, and how all of it connects to a Piwi instance, the desktop app and the editors. It records what a tester and a developer meet today, finding by finding with the file behind each, and ranks the changes by what they buy.
 
-**Status.** Proposed 2026-10-21, against `main` at v0.58.0. Partly built by the pull request that adds this audit: the quick wins 1 to 15, item 16 (container narrowing and the multi-pick pattern), item 17 (open shadow roots), item 22 (lint suggestions), Enter of item 25 and item 28 (labels placed without overlap), and the nine defects of §11. Left out of those items: the by-position row ranked among the ambiguous ones (item 3), Send to editor from the Session tab and the mock code, which needs a code payload the VS Code and JetBrains clients insert (item 7), the press-to-pick variant (item 25) and the merged count badges (item 28). Items 18 to 21, 23, 24, 26, 27 and 29 to 33 are open. A pull request that builds part of §12 updates this paragraph.
+**Status.** Proposed 2026-10-21, against `main` at v0.58.0. Partly built by the pull request that adds this audit: the quick wins 1 to 15, item 16 (container narrowing and the multi-pick pattern), item 17 (open shadow roots), item 22 (lint suggestions), Enter of item 25 and item 28 (labels placed without overlap), and the nine defects of §11. Left out of those items: the by-position row ranked among the ambiguous ones (item 3), Send to editor from the Session tab and the mock code, which needs a code payload the VS Code and JetBrains clients insert (item 7), the press-to-pick variant (item 25) and the merged count badges (item 28). Items 18 to 21, 23, 24, 26, 27 and 29 to 33 are open; §14 lists the follow-ups of the built items. A pull request that builds part of §12 updates this paragraph.
 
 **Summary.** Ten findings lead (§0): an element inside an open shadow root cannot be picked; on a grid of cards the best locator offered is `.first()`, because the ranking never scopes to a repeated container by its text; one element needs four tools and four picks, with two vocabularies for one ranking; the common pick costs two dismissals and copies `.click()` whatever the element; a recording cannot be paused, titled, edited or replayed before export; the dashboard cannot hand the extension a task; site grants accumulate unseen; nothing introduces the extension on install; the bars are pinned to one corner; Firefox ships untested. §12 ranks 33 changes: fifteen one-file quick wins, then container narrowing and shadow DOM picking, then one element card for the pick results dialog and the Elements sidebar, then a request channel from the dashboard.
 
@@ -416,6 +416,47 @@ Items 1 to 8 first: they are each a day, touch one file each, and remove the fri
 3. **Does Firefox stay a first-class target?** The AMO listing says yes; CI says nothing. A job is a spike plus maintenance; the alternative is a release checklist run by hand and stated in `PUBLISHING.md`. Either is better than the current silence.
 4. **Is multi-pick a tool or a mode?** Folded under Pick (§4.2) it loses its key and tile; kept apart it keeps asking for two picks of leaves. The container derivation (item 16) may make it a row of the card ("the pattern of this list: 4 cards") and the question moot.
 5. **Where does the welcome page live after install?** Opening a tab on install is the Chrome convention and a one-time interruption; the popup's `?` must open the same page afterwards, and the docs site is where it ends up for everyone else.
+
+---
+
+## 14. Left open after the first pass
+
+The pull request that built most of §12 left these out. Each line names where the work goes; the open items of §12
+(18 to 21, 23, 24, 26, 27, 29 to 33) are not repeated here.
+
+### Parts of built items
+
+| Item | Left open | Where |
+|---|---|---|
+| 3 | The row found by position ranked among the ambiguous ones, with its warning, rather than first | `checkLocators`, `verified-locators.ts` |
+| 7 | **Send to editor** from the Session tab (the page object) and from the mock code. The editor protocol takes a locator line or a steps document only. A `code` payload kind is needed: in `EditorSendPayload` and `parseSendPayload` (`packages/core/src/editor-send.ts`, with a size limit that allows a mock body of about 100 kB within `MAX_SEND_BYTES`); in the VS Code extension's `insertFromPicker`, which today treats anything that is not a locator as steps; and in the JetBrains plugin's `parseSendPayload`, `SendPayload`, `PiwiSendHandler.insert` and `GlueTest` | `packages/core`, `apps/vscode`, `apps/jetbrains`, then two buttons in `panel-session.ts` and `panel-network.ts` |
+| 25 | The press-to-pick variant that keeps hover menus open; the outline following the keyboard focus as Tab moves, so Enter has a preview | `overlay-element.ts` |
+| 25 | Enter while the focus is on one of the extension's own panels picks that panel's host element: the hosts need a mark the overlay skips | `panel-root.ts`, `overlay-element.ts` |
+| 28 | Count badges that merge on dense rows; a label with no free place is left out and counted in the panel instead | `playwright-view.ts`, `coverage-layer.ts` |
+| 2, 26 | `toBeDisabled`, `toBeEnabled`, `toHaveURL` and `toHaveTitle`; `uncheck()` for a box already checked (Action always writes `check()`); a copy row and `toHaveCount` for the shared locator of a multi-pick | `assertion-suggest.ts`, `copy-modes.ts`, `multi-pick.ts` |
+| 22 | The project's test id attribute for the suggestions, which use `data-testid` until item 29 passes it to `scanForLintIssues`; a line in the panel saying headings and regions are not linted | `lint-scan.ts`, `lint-overlay.ts` |
+| 6 | **Download steps** names the file by time (`piwi-steps-<stamp>.json`), not by the test title | `record-panel.ts` |
+| 4 | Between a click on Pause and the message reaching the recording's other tabs, a click there can still be recorded: no guard in the stored state | `record-panel.ts`, `recording-storage.ts` |
+| 15 | Console errors and requests collected by the worker through the debugging protocol reach the bug report bar only at its next redraw: the worker needs to tell the page when it stores them | `background/`, `bug-panel.ts` |
+| 10 | The connection health is read from the error's text, because `piwi-client.ts` throws translated sentences; its errors should carry the HTTP status. Not recorded yet: `fetchBugReportIntake`, `fetchBugReportStepShot`, and the settings page's own project and catalog requests | `piwi-client.ts`, `connection-health.ts` |
+| 11 | One-click connection to the desktop app uses the app's own token, which opens every route of its API and MCP server. The desktop side should expose a key scoped to what the extension calls, a flag in the pairing answer saying it is an instance (with its version), an account name, and a way to learn that the token changed | `apps/desktop`, `src/options/main.ts` |
+| 14 | The Test functions panel's "no project" message has no button to open the settings, because it is drawn by a content script | `test-function-panel.ts` |
+| 17 | The reporter's and the dashboard's pickers rank with estimated counts that ignore shadow roots, and their structural parents stop at a shadow root (`probe.ts`); the dashboard's snapshot picker forwards the arrows to its frame but not Enter (`SnapshotLocatorPicker.vue`, one line, then its keys hint) | `packages/picker-dom/src/probe.ts`, `apps/application` |
+
+### Checks and upkeep
+
+- **Firefox:** the Piwi panel toolbar's access request inside the click, and the other in-click requests, are untested
+  in Firefox until the job of item 27 exists.
+- **Translations:** the German, Spanish and Brazilian Portuguese texts added by the pull request are unreviewed drafts.
+- **Store listings:** `picker-pick.png`, `picker-popup.png`, `picker-lint.png` and `picker-record.png` changed; they
+  are uploaded to the Chrome Web Store and Firefox Add-ons listings at the next release (`PUBLISHING.md`).
+- **Popup height:** with the connection health line, French is the tallest at about 574 of 600 pixels; a new line in
+  the popup has about 25 pixels left.
+- **Duplicate code:** the Elements sidebar keeps its own Add to session form, while the Locators console and the pick
+  results use `session-form.ts`; the sidebar can use it too.
+- **Tests:** no test checks the "give it a test id" text of the Tested elements panel's At risk tab any more, since the
+  sample shop's cards now get a scoped replacement; multi-pick now takes roles from the engine, which may give a
+  different shared locator where the engine and the old role table disagree (a `th`, for example).
 
 ---
 
