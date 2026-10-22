@@ -521,9 +521,10 @@ function buildRunSummary(): string {
   ].join('\n');
 }
 
-// Test-cases filter state — lifted here so it survives tab switches
-const testCaseSearch = ref('');
-const testCaseActiveStatuses = ref<string[]>([]);
+// Test-cases filter state — lifted here so it survives tab switches, and kept
+// for the page so it is still there when the user comes back to the run.
+const testCaseSearch = useViewState('run-tests:search', () => '');
+const testCaseActiveStatuses = useViewState<string[]>('run-tests:statuses', () => []);
 
 // The count-bar segments toggle into the same set the Tests list chips use, and
 // switch to the Tests tab so the filtered rows are on screen.

@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { test, expect, openOptions } from './fixtures.js';
+import { test, expect, openOptions, optionsReady } from './fixtures.js';
 import { localStorageText, storedSecret } from './secrets.js';
 
 /**
@@ -221,6 +221,63 @@ test.describe.serial('catalog refresh', () => {
     } finally {
       await new Promise<void>((resolve) => other.close(() => resolve()));
     }
+  });
+
+  test('the popup and the settings say whether the instance answered the worker’s last request', async ({
+    context,
+    extensionId,
+  }) => {
+    catalog = [entry(1, 'login')];
+    const host = new URL(baseUrl).host;
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.evaluate(async (url) => {
+      await chrome.storage.local.set({
+        piwiConnection: {
+          instanceUrl: url,
+          apiKey: 'pd_test',
+          projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Demo' }],
+        },
+      });
+    }, baseUrl);
+    await page.reload();
+    const line = page.locator('#connection-health');
+    // Nothing has asked the instance yet.
+    await expect(line).toBeHidden();
+    const refresh = () =>
+      page.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-refresh-catalog', projectId: 1, force: true }));
+
+    expect(await refresh()).toMatchObject({ ok: true, refreshed: true });
+    // The open popup follows the record as it changes.
+    await expect(line).toHaveText(`Connected to ${host}, checked now.`);
+    await expect(line).not.toHaveClass(/failing/);
+
+    // The instance moves: nothing answers at the address kept.
+    const closed = createServer();
+    await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
+    const gone = `http://127.0.0.1:${(closed.address() as AddressInfo).port}`;
+    await new Promise<void>((resolve) => closed.close(() => resolve()));
+    await page.evaluate(async (url) => {
+      const stored = (await chrome.storage.local.get('piwiConnection')).piwiConnection as object;
+      await chrome.storage.local.set({ piwiConnection: { ...stored, instanceUrl: url } });
+    }, gone);
+    // The record is of the other address: nothing is said of this one.
+    await expect(line).toBeHidden();
+    expect(await refresh()).toMatchObject({ ok: false });
+    await expect(line).toHaveText(
+      new RegExp(`^${new URL(gone).host.replace(/\./g, '\\.')} has not answered since .+, check the settings\\.$`),
+    );
+    await expect(line).toHaveClass(/failing/);
+
+    // The settings say so beside the address, and the line's link opens them.
+    const [options] = await Promise.all([
+      context.waitForEvent('page'),
+      line.getByRole('link', { name: 'check the settings' }).click(),
+    ]);
+    await expect(options).toHaveURL(new RegExp(`chrome-extension://${extensionId}/options.html`));
+    await optionsReady(options);
+    await expect(options.locator('#instance-health')).toHaveText(/^No answer since /);
+    await expect(options.locator('#instance-health')).toHaveClass(/failing/);
   });
 
   test('a refresh with no connection configured fails cleanly rather than throwing', async ({

@@ -25,7 +25,7 @@ import { pickerOverlayStrings } from './picker-strings.js';
 import { holdFocus } from './modal-panel.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { ICON_CSS, iconText } from '../shared/icons.js';
-import { COPY_MODE_CSS, copyModeButtons } from './copy-mode-row.js';
+import { COPY_MODE_CSS, copyFacts, copyModeButtons } from './copy-mode-row.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 const MIN_PICKS = 2;
@@ -260,10 +260,13 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
   base.className = 'piwi-loc';
   base.innerHTML = highlightLocator(result.baseLocator ?? '');
   title.append(...titleNodes(result.rows.length, base));
+  const count = document.createElement('div');
+  count.className = 'sub count';
+  count.textContent = tn('multipick_count', result.count);
   const sub = document.createElement('div');
   sub.className = 'sub';
   sub.textContent = t('common_escToClose');
-  titleWrap.append(title, sub);
+  titleWrap.append(title, count, sub);
   header.append(titleWrap);
   panel.appendChild(header);
 
@@ -305,7 +308,7 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
         rowEl.appendChild(warn);
       }
 
-      rowEl.appendChild(copyModeButtons(row.locator, panel, activeMode));
+      rowEl.appendChild(copyModeButtons({ locator: row.locator, facts: copyFacts(row.element) }, panel, activeMode));
       panel.appendChild(rowEl);
     }
 
@@ -352,6 +355,10 @@ async function runMultiPick(): Promise<void> {
     const result = derivePattern(picked, ROLE_MAPS, {
       elements: engine.elements(),
       isHidden: (el) => engine.model.isHiddenForAria(el),
+      roleOf: (el) => engine.model.role(el),
+      nameOf: (el) => engine.model.normalizedAccessibleName(el, false),
+      textOf: (el) => engine.model.text(el).normalized,
+      testIdAttributes: engine.testIdAttributes,
     });
     if (result.rows.length === 0) {
       await showMessage(t('multipick_noPattern'), toolEpoch);

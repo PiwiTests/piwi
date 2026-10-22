@@ -449,6 +449,29 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/extension',
       },
       {
+        title: 'Pick an element',
+        summary:
+          'The ranked Playwright locators of one element of the live page, each checked against it, with the action, the assertion and a block of context for a coding agent.',
+        needs: ['extension'],
+        where: 'Browser extension → Pick an element',
+        doc: 'features/pick-an-element',
+      },
+      {
+        title: 'Record actions',
+        summary:
+          'Clicks and fills across a site recorded into a runnable Playwright spec, paused, titled and replayed before you export it.',
+        needs: ['extension'],
+        where: 'Browser extension → Record actions',
+        doc: 'features/record-actions',
+      },
+      {
+        title: 'Lint overlay',
+        summary: 'The buttons, links and fields of a page no stable locator finds alone, each with the test id to add.',
+        needs: ['extension'],
+        where: 'Browser extension → More tools → Lint overlay',
+        doc: 'features/lint-overlay',
+      },
+      {
         title: 'Extension connection',
         summary:
           'Connect Piwi Picker to your instance in one click, and keep the URL patterns that tell it which project a page belongs to on the instance, for the whole team.',
@@ -495,6 +518,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['extension'],
         where: 'DevTools → Elements → Piwi',
         doc: 'features/devtools',
+      },
+      {
+        title: 'Mock and slow down requests',
+        summary:
+          'A request the page made written as a page.route mock for a test, or slowed down or failed in your own tab, from DevTools.',
+        needs: ['extension'],
+        where: 'DevTools → Piwi → Network',
+        doc: 'features/mock-requests',
       },
       {
         title: 'Test functions catalog',

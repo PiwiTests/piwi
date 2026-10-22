@@ -3,14 +3,16 @@ import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { playwrightLocator } from './playwright-locator.js';
+import type { CopyAssertion } from '../../src/shared/copy-modes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
 
 interface ExposedCandidate {
-  method: 'toHaveValue' | 'toHaveValues' | 'toHaveText' | 'toHaveAccessibleName' | 'toBeVisible';
+  method: CopyAssertion['method'];
   detail: string | null;
   values?: string[];
+  assertion: CopyAssertion;
   expectLine: string;
 }
 
@@ -65,11 +67,13 @@ test.describe('suggestAssertions (via the real built assertion-panel.js)', () =>
     expect(candidates[0]).toEqual({
       method: 'toHaveText',
       detail: 'Submit',
+      assertion: { method: 'toHaveText', value: 'Submit' },
       expectLine: `await expect(page.getByTestId('submit-btn')).toHaveText('Submit');`,
     });
     expect(candidates[2]).toEqual({
       method: 'toBeVisible',
       detail: null,
+      assertion: { method: 'toBeVisible' },
       expectLine: `await expect(page.getByTestId('submit-btn')).toBeVisible();`,
     });
   });
@@ -88,6 +92,30 @@ test.describe('suggestAssertions (via the real built assertion-panel.js)', () =>
     await expect(playwrightLocator(page, locator!)).toHaveAccessibleName('Regressions 5');
     // toHaveText compares the element's text, which has no space.
     await expect(playwrightLocator(page, locator!)).toHaveText('Regressions5');
+  });
+
+  test('a paragraph, which takes no name from its text, gets no toHaveAccessibleName', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <p>Free shipping from 30 €.</p>
+    </body></html>`);
+    const { locator, candidates } = await suggestFor(page, 'p');
+
+    expect(locator).not.toBeNull();
+    expect(candidates.map((c) => c.method)).toEqual(['toHaveText', 'toBeVisible']);
+    await expect(playwrightLocator(page, locator!)).toHaveAccessibleName('');
+  });
+
+  test('a field named by its label asserts that name, as Playwright computes it', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <label for="city">Delivery city</label> <input id="city" />
+    </body></html>`);
+    const { locator, candidates } = await suggestFor(page, 'input');
+
+    expect(candidates.map((c) => c.method)).toEqual(['toHaveAccessibleName', 'toBeVisible']);
+    expect(candidates[0]!.expectLine).toBe(`await expect(page.${locator}).toHaveAccessibleName('Delivery city');`);
+    await expect(playwrightLocator(page, locator!)).toHaveAccessibleName('Delivery city');
   });
 
   test('whitespace in text content is normalized (collapsed and trimmed)', async ({ context }) => {
@@ -117,16 +145,33 @@ test.describe('suggestAssertions (via the real built assertion-panel.js)', () =>
     expect(candidates[1]).toMatchObject({ detail: 'Email' });
   });
 
-  test('a checkbox does not get toHaveValue (checked state, not value, is the relevant signal)', async ({
-    context,
-  }) => {
+  test('a checkbox asserts its checked state, not its value, and the line holds in Playwright', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>
-      <input type="checkbox" data-testid="agree-checkbox" checked />
+      <label><input type="checkbox" data-testid="agree-checkbox" checked /> I agree</label>
+      <label><input type="checkbox" data-testid="news-checkbox" /> Send me news</label>
     </body></html>`);
-    const { candidates } = await pickAndSuggest(page, '[data-testid="agree-checkbox"]');
+    const agree = await suggestFor(page, '[data-testid="agree-checkbox"]');
+    expect(agree.candidates.map((c) => c.method)).toEqual(['toBeChecked', 'toHaveAccessibleName', 'toBeVisible']);
+    expect(agree.candidates[0]!.expectLine).toBe(`await expect(page.${agree.locator}).toBeChecked();`);
+    await expect(playwrightLocator(page, agree.locator!)).toBeChecked();
 
-    expect(candidates.map((c) => c.method)).not.toContain('toHaveValue');
+    const news = await suggestFor(page, '[data-testid="news-checkbox"]');
+    expect(news.candidates[0]!.expectLine).toBe(`await expect(page.${news.locator}).not.toBeChecked();`);
+    await expect(playwrightLocator(page, news.locator!)).not.toBeChecked();
+  });
+
+  test('a long text asserts its start with toContainText first, then the whole of it', async ({ context }) => {
+    const page = await context.newPage();
+    const text =
+      'Orders placed before noon ship the same day from our warehouse, and every parcel is tracked until it reaches you.';
+    await page.setContent(`<!doctype html><html><body><p data-testid="shipping">${text}</p></body></html>`);
+    const { locator, candidates } = await suggestFor(page, 'p');
+
+    expect(candidates.map((c) => c.method)).toEqual(['toContainText', 'toHaveText', 'toBeVisible']);
+    expect(candidates[0]!.detail).toBe('Orders placed before noon ship the same day from our warehouse, and every');
+    expect(candidates[1]!.detail).toBe(text);
+    await expect(playwrightLocator(page, locator!)).toContainText(candidates[0]!.detail!);
   });
 
   test('a password field, one shown in clear, and a card number never offer their value', async ({ context }) => {
@@ -177,6 +222,7 @@ test.describe('suggestAssertions (via the real built assertion-panel.js)', () =>
       method: 'toHaveValues',
       detail: null,
       values: ['a', "it's"],
+      assertion: { method: 'toHaveValues', values: ['a', "it's"] },
       expectLine: "await expect(page.getByTestId('tags')).toHaveValues(['a', 'it\\'s']);",
     });
     await expect(playwrightLocator(page, tags.locator!)).toHaveValues(['a', "it's"]);

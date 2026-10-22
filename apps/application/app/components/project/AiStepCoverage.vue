@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
+import type { SortingState } from '@tanstack/vue-table';
 
 const props = defineProps<{
   projectId: string | number;
@@ -16,7 +17,8 @@ interface AiStepCoverage {
   artifacts: AiStepArtifact[];
 }
 
-const days = ref(30);
+const days = useViewState('performance:ai-steps-days', () => 30);
+const sorting = useViewState<SortingState>('performance:ai-steps-sorting', () => []);
 const { data, pending } = await useFetch<AiStepCoverage>(
   () => `/api/projects/${props.projectId}/ai-steps?days=${days.value}`,
   { lazy: true, server: false, watch: [days] },
@@ -96,7 +98,7 @@ const columns: TableColumn<AiStepArtifact>[] = [
       </div>
 
       <TableScroller min-width="40rem" :bleed="false">
-        <UTable :data="artifacts" :columns="columns" sticky class="max-h-[32rem]">
+        <UTable v-model:sorting="sorting" :data="artifacts" :columns="columns" sticky class="max-h-[32rem]">
           <template #entry-cell="{ row }">
             <span class="font-mono text-xs truncate block max-w-[28rem]" :title="row.original.entry">
               {{ entryName(row.original.entry) }}

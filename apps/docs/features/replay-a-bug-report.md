@@ -15,11 +15,12 @@ hand.
 
 ## Choosing a report
 
-- From the finished report, **Replay** plays it at once on the same site.
+- From the finished report, **Replay** plays it at once on the same site. The review of a
+  [recording of actions](./record-actions) has the same **Replay**, to check its steps before you export them.
 - From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the
   [`.piwibug` file](/reference/bug-report-file) (or the same file named `.zip`) or its `steps.json`, the text of a
-  `steps.json` pasted in, the report just recorded in this browser, or, connected, one of the project's reports on
-  Piwi.
+  `steps.json` pasted in, the report or the recording of actions just made in this browser (**Use the actions recorded
+  in this browser**), or, connected, one of the project's reports on Piwi.
 - From a failed execution on the dashboard, **Export → Bug report (.piwibug)** makes a report from the test run
   ([below](#a-report-made-from-a-test-run)), and **Steps (steps.json)** copies its steps to paste.
 
@@ -40,7 +41,8 @@ visible, enabled and still. The replay ends with one of three answers:
   the one the test failed at.
 
 Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
-"POST /api/cart/coupon answered 500". For a report from Piwi, **Share result…** records the answer on the report, with
+"POST /api/cart/coupon answered 500": from the moment the replay started, never those of the recording, even when you
+replay on the page you just recorded the report on. For a report from Piwi, **Share result…** records the answer on the report, with
 the site it ran on, after showing what it sends.
 
 **Step by step** waits for **Next** before each step, with the element outlined, so you can set a breakpoint first.

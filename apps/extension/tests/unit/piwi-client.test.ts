@@ -9,7 +9,8 @@ import {
   testDesktop,
 } from '../../src/shared/piwi-client';
 import { normalizeBaseUrl, projectCatalogUrl, projectLocatorsUrl, testCaseUrl } from '../../src/shared/instance-links';
-import { setInstanceApiKey } from '../../src/shared/connection-settings';
+import { markDesktopApiKey, setInstanceApiKey } from '../../src/shared/connection-settings';
+import { clearDesktopSettings, setDesktopSettings } from '../../src/shared/desktop-settings';
 import { memoryLocalStorage, memorySecretArea } from './memory-secret-area';
 import { desktopHealth } from './desktop-health';
 import type * as SecretStore from '../../src/shared/secret-store';
@@ -246,6 +247,99 @@ describe('responses as the dashboard sends them', () => {
       ok: false,
       error: expect.stringContaining('could not reach the instance'),
     });
+  });
+});
+
+describe('the desktop app kept as the instance', () => {
+  const APP = 'http://127.0.0.1:4318';
+  const TOKEN = 'pd_desktop';
+  const settings = {
+    instanceUrl: APP,
+    projectMappings: [],
+    serverMappings: [],
+    serverProjects: [],
+    serverSyncedAt: 0,
+    connectedAs: '',
+  };
+  /** The program at the app's address: it answers the challenge as the holder of `token`, and anything else with JSON. */
+  const programHolding = (token: string) => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+      url.endsWith('/api/health')
+        ? desktopHealth(url, init, token)
+        : new Response('{"items":[]}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return () => fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+  };
+  const tokenSent = (calls: Array<[string, RequestInit]>) =>
+    calls.some(([, init]) => JSON.stringify(init.headers).includes(TOKEN));
+
+  beforeEach(async () => {
+    (globalThis as any).chrome = { storage: { local: memoryLocalStorage().local } };
+    secrets.data.clear();
+    await setDesktopSettings({ url: APP, token: TOKEN });
+    await setInstanceApiKey(APP, TOKEN);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('sends its token as the key only once the program at the address proves it holds it', async () => {
+    let calls = programHolding(TOKEN);
+    expect(await fetchCatalog(settings, 1)).toEqual([]);
+    expect(calls().map(([url]) => url)).toEqual([`${APP}/api/health`, `${APP}/api/projects/1/test-functions`]);
+    expect(calls()[1]![1].headers).toEqual({ 'X-API-Key': TOKEN });
+    // Every request proves it again, a key typed and not kept yet too.
+    calls = programHolding(TOKEN);
+    expect(await testConnection(settings, TOKEN)).toEqual({ ok: true });
+    expect(calls().map(([url]) => url)).toEqual([`${APP}/api/health`, `${APP}/api/projects/menu`]);
+  });
+
+  test('never sends it to another program that took the address', async () => {
+    const calls = programHolding('pd_other');
+    const notProven = 'did not prove';
+    await expect(fetchCatalog(settings, 1)).rejects.toThrow(notProven);
+    await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow(notProven);
+    await expect(fetchProjects(settings)).rejects.toThrow(notProven);
+    expect(await testConnection(settings, TOKEN)).toEqual({ ok: false, error: expect.stringContaining(notProven) });
+    expect(calls().length).toBe(4);
+    expect(calls().every(([url]) => url === `${APP}/api/health`)).toBe(true);
+    expect(tokenSent(calls())).toBe(false);
+  });
+
+  test('still proves it once the app is unpaired, or paired again with another token', async () => {
+    await markDesktopApiKey({ url: APP, token: TOKEN });
+    await clearDesktopSettings();
+    let calls = programHolding('pd_other');
+    await expect(fetchCatalog(settings, 1)).rejects.toThrow('did not prove');
+    expect(tokenSent(calls())).toBe(false);
+    await setDesktopSettings({ url: APP, token: 'pd_new' });
+    calls = programHolding('pd_new');
+    await expect(fetchCatalog(settings, 1)).rejects.toThrow('did not prove');
+    expect(tokenSent(calls())).toBe(false);
+    // The app still holds the token the instance was kept with.
+    calls = programHolding(TOKEN);
+    expect(await fetchCatalog(settings, 1)).toEqual([]);
+    expect(calls().map(([url]) => url)).toEqual([`${APP}/api/health`, `${APP}/api/projects/1/test-functions`]);
+  });
+
+  test('is refused at a loopback name other than the app own address', async () => {
+    const calls = programHolding(TOKEN);
+    const localhost = { ...settings, instanceUrl: 'http://localhost:4318' };
+    expect(await testConnection(localhost, TOKEN)).toEqual({
+      ok: false,
+      error: expect.stringContaining('did not prove'),
+    });
+    expect(calls()).toEqual([]);
+  });
+
+  test('leaves any other key on a loopback instance as it is', async () => {
+    await setInstanceApiKey(APP, 'pd_key');
+    const calls = programHolding('pd_other');
+    expect(await fetchCatalog(settings, 1)).toEqual([]);
+    expect(calls().map(([url]) => url)).toEqual([`${APP}/api/projects/1/test-functions`]);
+    expect(calls()[0]![1].headers).toEqual({ 'X-API-Key': 'pd_key' });
   });
 });
 

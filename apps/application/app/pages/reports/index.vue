@@ -61,6 +61,8 @@ const schedulesSubtitle = computed(() => {
   if (isDesktop) return 'A schedule fires while the desktop app is running.';
   return 'Each schedule sends a quality report to its channels and keeps it as a snapshot.';
 });
+
+useViewScroll(() => dashboardPanelBody('reports'));
 </script>
 
 <template>

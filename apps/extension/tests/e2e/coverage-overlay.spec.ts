@@ -429,6 +429,17 @@ test.describe('coverage overlay on a page', () => {
     expect(box!.x).toBeLessThan(20);
   });
 
+  test('the panel is a named region, not a dialog, and its × closes the overlay', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const region = page.locator(HOST).getByRole('region', { name: 'Piwi: tested elements' });
+    await expect(region).toBeVisible();
+    await expect(page.locator(HOST).getByRole('dialog')).toHaveCount(0);
+    await region.getByRole('button', { name: 'Close (Esc)' }).click();
+    await expect(page.locator(HOST)).not.toBeAttached();
+  });
+
   test('injecting it again turns it off', async ({ page, context }) => {
     await stubCoverageChrome(context);
     await openShop(page, '?nodialog');
@@ -509,7 +520,7 @@ test.describe('coverage overlay states', () => {
     await openShop(page, '?nodialog');
     await injectCoverage(page, 'not-connected');
     const panel = page.locator(`${HOST} .panel`);
-    await expect(panel).toContainText('Connect Piwi Picker to your Piwi instance');
+    await expect(panel).toContainText('Piwi Picker is not connected to your Piwi instance yet. Open the settings');
     await panel.getByRole('button', { name: 'Open Piwi Picker settings' }).click();
     const sent = await page.evaluate(
       () => (globalThis as unknown as { __piwiTestSent: Array<{ type: string }> }).__piwiTestSent,
@@ -905,8 +916,12 @@ test.describe('coverage overlay: locators at risk', () => {
       count: 1,
       tests: ['adds the red mug'],
       callSites: ['tests/legacy.spec.ts:12:5'],
-      // Every stable locator for it also finds the other cards' buttons.
-      replacement: 'add-test-id',
+      // Its name finds every card's button: the card showing "Red mug" sets it apart.
+      replacement: {
+        recommended:
+          "getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button', { name: 'Add to cart' })",
+        durable: null,
+      },
     });
     // The card holding "Blue mug" sets it apart from the other prices, and its role, paragraph, from the card's other texts.
     expect(price).toMatchObject({
@@ -942,9 +957,10 @@ test.describe('coverage overlay: locators at risk', () => {
         [string, string[], number]
       >,
     }));
+    // Cards that no text tells apart: every stable locator also finds the other cards' buttons.
     const cards = Array.from(
       { length: products },
-      (_, i) => `<article class="card" id="product-${i}"><h3>Product ${i}</h3>
+      (_, i) => `<article class="card" id="product-${i}"><h3>Mug</h3>
         <div><button class="primary">Add to cart</button><button>Details</button></div></article>`,
     ).join('');
     await servePages(page, 'https://brittle.test', {
@@ -995,8 +1011,10 @@ test.describe('coverage overlay: locators at risk', () => {
       "tests/legacy.spec.ts:20:5\n- locator('aside.cart > button')\n+ getByRole('button', { name: 'Checkout' })",
     );
     await expect(
-      panel.locator('li.row', { hasText: "locator('.grid .primary').nth(1)" }).locator('.detail').last(),
-    ).toHaveText('No stable locator finds only this element: give it a test id.');
+      panel.locator('li.row', { hasText: "locator('.grid .primary').nth(1)" }).locator('code.suggestion'),
+    ).toHaveText(
+      "→ getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button', { name: 'Add to cart' })",
+    );
     await expect(panel.locator('li.row', { hasText: "locator('.card .primary')" })).toContainText(
       'Finds 4 elements here, so no replacement is offered.',
     );
@@ -1323,7 +1341,7 @@ test.describe('coverage overlay in French', () => {
     await openShop(page, '?nodialog');
     await injectCoverage(page, 'not-connected');
     const panel = page.locator(`${HOST} .panel`);
-    await expect(panel).toContainText('Connectez Piwi Picker à votre instance Piwi');
+    await expect(panel).toContainText('Piwi Picker n’est pas encore connecté à votre instance Piwi');
     await expect(panel.getByRole('button', { name: 'Ouvrir les réglages de Piwi Picker' })).toBeVisible();
     expect(await clippedInShadows(page)).toEqual([]);
   });

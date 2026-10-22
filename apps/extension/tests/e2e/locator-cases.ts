@@ -682,3 +682,92 @@ export const SCOPING_CASES: Record<string, string[]> = {
     "locator('#scope span', { hasText: /[BC]/y })",
   ],
 };
+
+/** Expressions run against `pages/locator-containers.html`: rows, cards and tiles that repeat, found by a text they show. */
+export const CONTAINER_CASES: Record<string, string[]> = {
+  'repeated containers filtered by their text': [
+    "getByRole('row').filter({ hasText: 'Carol' }).getByRole('button', { name: 'Delete' })",
+    "getByRole('row').filter({ hasText: 'carol' })",
+    "getByRole('row').filter({ hasText: 'Editor' }).getByRole('button', { name: 'Delete' })",
+    "getByRole('cell').filter({ hasText: 'Carol' }).getByRole('button', { name: 'Delete' })",
+    "getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button', { name: 'Add to cart' })",
+    "getByTestId('product-card').getByRole('button', { name: 'Add to cart' })",
+    "getByRole('article').filter({ hasText: 'mug' }).getByRole('button', { name: 'Add to cart' })",
+    "locator('.lamp-tile').filter({ hasText: 'Floor lamp' }).getByRole('button', { name: 'Reserve' })",
+    "locator('.lamp-tile').getByRole('button', { name: 'Reserve' })",
+    "getByRole('row', { name: 'Order 1002', exact: true }).getByRole('button', { name: 'Refund' })",
+    "getByRole('row', { name: 'Order 100' }).getByRole('button', { name: 'Refund' })",
+    "getByRole('listitem').filter({ hasText: 'Untitled draft' }).getByRole('button', { name: 'Open' })",
+    "getByRole('button', { name: 'Open' }).nth(1)",
+    "getByRole('button', { name: 'Edit' }).nth(1)",
+  ],
+};
+
+/**
+ * What `checkLocators` makes of an ambiguous candidate on `pages/locator-containers.html`: narrowed inside the
+ * repeated container by a text no sibling shows, or by the container's own name, and `.nth()` when no text tells
+ * the containers apart or the element sits in none.
+ */
+export const CONTAINER_NARROWING: Array<{
+  name: string;
+  target: string;
+  candidate: string;
+  locator: string;
+  verdict: 'narrowed' | 'position';
+  narrowedBy?: 'container';
+}> = [
+  {
+    name: 'a table row, by the text of a cell',
+    target: '#delete-carol',
+    candidate: "getByRole('button', { name: 'Delete' })",
+    locator: "getByRole('row').filter({ hasText: 'Carol' }).getByRole('button', { name: 'Delete' })",
+    verdict: 'narrowed',
+    narrowedBy: 'container',
+  },
+  {
+    name: 'a card sharing a test id, by its heading',
+    target: '#add-red-mug',
+    candidate: "getByRole('button', { name: 'Add to cart' })",
+    locator: "getByTestId('product-card').filter({ hasText: 'Red mug' }).getByRole('button', { name: 'Add to cart' })",
+    verdict: 'narrowed',
+    narrowedBy: 'container',
+  },
+  {
+    name: 'a tile sharing a class, by its text',
+    target: '#reserve-floor',
+    candidate: "getByRole('button', { name: 'Reserve' })",
+    locator: "locator('.lamp-tile').filter({ hasText: 'Floor lamp' }).getByRole('button', { name: 'Reserve' })",
+    verdict: 'narrowed',
+    narrowedBy: 'container',
+  },
+  {
+    name: 'a row with an accessible name of its own, by that name',
+    target: '#refund-1002',
+    candidate: "getByRole('button', { name: 'Refund' })",
+    locator: "getByRole('row', { name: 'Order 1002', exact: true }).getByRole('button', { name: 'Refund' })",
+    verdict: 'narrowed',
+    narrowedBy: 'container',
+  },
+  {
+    name: 'a list item, by a text it shows rather than a shorter hidden one',
+    target: '#share-packing',
+    candidate: "getByRole('button', { name: 'Share' })",
+    locator: "getByRole('listitem').filter({ hasText: 'Packing list' }).getByRole('button', { name: 'Share' })",
+    verdict: 'narrowed',
+    narrowedBy: 'container',
+  },
+  {
+    name: 'rows showing the same text, by position',
+    target: '#open-second-draft',
+    candidate: "getByRole('button', { name: 'Open' })",
+    locator: "getByRole('button', { name: 'Open' }).nth(1)",
+    verdict: 'position',
+  },
+  {
+    name: 'no repeated container, by position',
+    target: '#edit-notes',
+    candidate: "getByRole('button', { name: 'Edit' })",
+    locator: "getByRole('button', { name: 'Edit' }).nth(1)",
+    verdict: 'position',
+  },
+];

@@ -172,7 +172,7 @@ export class CoveragePanel {
     private readonly callbacks: PanelCallbacks,
   ) {
     this.panel = el('aside', 'panel');
-    this.panel.setAttribute('role', 'dialog');
+    this.panel.setAttribute('role', 'region');
     this.panel.lang = uiLanguage();
     this.panel.setAttribute('aria-label', t('coverage_panelLabel'));
 

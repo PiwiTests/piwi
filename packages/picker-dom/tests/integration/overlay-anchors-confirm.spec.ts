@@ -177,6 +177,52 @@ test.describe('showAnchorPicker', () => {
     await expect(row).toContainText('contains 0 matching elements');
   });
 
+  test('walks out of an open shadow root through its host, and counts inside open shadow roots', async ({ page }) => {
+    await page.setContent(`<!doctype html><html><body>
+      <main data-testid="shop">
+        <x-card data-testid="card-1"></x-card>
+        <x-card data-testid="card-2"></x-card>
+      </main>
+      <script>
+        for (const card of document.querySelectorAll('x-card')) {
+          card.attachShadow({ mode: 'open' }).innerHTML = '<div class="body"><button>Add</button></div>';
+        }
+      </script>
+    </body></html>`);
+    await page.evaluate(() => {
+      (globalThis as any).__piwiPickedElement = document
+        .querySelector('[data-testid="card-1"]')!
+        .shadowRoot!.querySelector('button');
+    });
+    await page.evaluate(showAnchorPicker, {
+      tagRoles: { button: 'button', main: 'main' },
+      inputRoles: {},
+      roleSources: 'button,main',
+      leafRole: 'button',
+      leafLevel: null,
+      leafTestId: null,
+    });
+
+    const rows = page.locator('label');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText('<div> no stable hook');
+    await expect(rows.nth(1)).toContainText('<x-card> data-testid="card-1"');
+    await expect(rows.nth(1)).toContainText('contains exactly 1 matching element');
+    await expect(rows.nth(2)).toContainText('<main> data-testid="shop"');
+    await expect(rows.nth(2)).toContainText('contains 2 matching elements');
+    await rows.nth(2).locator('input[type="checkbox"]').check();
+    await expect(page.getByText('Selection matches 2 elements')).toBeVisible();
+    await rows.nth(1).locator('input[type="checkbox"]').check();
+    await expect(page.getByText('Selection matches exactly 1 element')).toBeVisible();
+    await page.getByRole('button', { name: 'Use selected parents' }).click();
+
+    const anchors = await page.evaluate(() => (globalThis as any).__piwiPickAnchors);
+    expect(anchors).toEqual([
+      expect.objectContaining({ tag: 'x-card', depth: 2, testId: 'card-1', testIdCount: 1 }),
+      expect.objectContaining({ tag: 'main', depth: 3, testId: 'shop', testIdCount: 1, roleCount: 1 }),
+    ]);
+  });
+
   test('Escape resolves as skipped', async ({ page }) => {
     await page.setContent(`<!doctype html><html><body>
       <form data-testid="signup-form"><button id="target">Join</button></form>

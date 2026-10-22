@@ -56,7 +56,8 @@ import {
   type ReplayVerdict,
 } from './replay-core.js';
 import { relayEvidence } from '../shared/bug-relay.js';
-import { storeAsPageLeaves } from '../shared/bug-storage.js';
+import { getBugEvidence, storeAsPageLeaves } from '../shared/bug-storage.js';
+import { recordingTitle } from '../shared/recording-title.js';
 import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
@@ -1332,10 +1333,14 @@ async function stopEvidence(): Promise<void> {
  * Listens to the main-world evidence script (registered by the background
  * script while a replay runs) with the replay's token, and keeps its entries in
  * batches (`relayEvidence`), handing them to the worker as the page is left.
- * Returns the disposer, which stores what is still pending and stops listening.
+ * Only what the page showed from `since`, the replay's start, is the replay's:
+ * the script in a page a bug recording ran on still holds what the recording's
+ * debugging session collected. Returns the disposer, which stores what is still
+ * pending and stops listening.
  */
-function startReplayEvidence(token: string): () => Promise<void> {
+function startReplayEvidence(token: string, since: number): () => Promise<void> {
   return relayEvidence(token, (entries) => appendReplayEvidence(token, entries), {
+    since,
     leave: (entries) => storeAsPageLeaves(token, entries),
   });
 }
@@ -1355,7 +1360,7 @@ async function runReplay(): Promise<void> {
     if (state.evidenceToken && state.evidenceToken !== evidenceToken) {
       void stopEvidence();
       evidenceToken = state.evidenceToken;
-      evidenceStop = startReplayEvidence(state.evidenceToken);
+      evidenceStop = startReplayEvidence(state.evidenceToken, state.startedAt);
     }
     cursor?.remove();
     cursor = createCursor(state.cursor);
@@ -1560,21 +1565,32 @@ interface ChosenReport {
   views: ReplayViews | null;
 }
 
-/** The bug report recorded in this browser and not discarded yet, as steps, with its step screenshots. */
-async function lastRecordedReport(): Promise<ChosenReport | null> {
+/**
+ * The recording made in this browser and not discarded yet, a bug report or a
+ * plain recording, as steps, with its step screenshots and which of the two it is.
+ */
+async function lastRecordedReport(): Promise<(ChosenReport & { bug: boolean }) | null> {
   try {
     const recording = await getRecordingState();
-    if (recording.active || recording.events.length === 0 || recordingMode(recording) !== 'bug') return null;
+    if (recording.active || recording.events.length === 0) return null;
     const steps = normalizeSteps(recording.events);
     if (steps.length === 0) return null;
     const session = sessionFromEvents(recording.events, recording.startedAt ?? steps[0]!.timestamp);
-    return { steps: toStepsDocument(session), views: { recordingViews: stepViews(session.steps) } };
+    const bug = recordingMode(recording) === 'bug';
+    const title = bug
+      ? ((await getBugEvidence().catch(() => null))?.title?.trim() ?? null)
+      : recordingTitle(recording, steps);
+    return {
+      steps: toStepsDocument(session, { title: title || null }),
+      views: { recordingViews: stepViews(session.steps) },
+      bug,
+    };
   } catch {
     return null;
   }
 }
 
-function openChooser(lastReport: ChosenReport | null): void {
+function openChooser(lastReport: (ChosenReport & { bug: boolean }) | null): void {
   document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = REPLAY_DIALOG_HOST_ID;
@@ -1656,13 +1672,13 @@ function openChooser(lastReport: ChosenReport | null): void {
 
   if (lastReport) {
     const use = button(
-      t('replay_useRecorded'),
+      lastReport.bug ? t('replay_useRecorded') : t('replay_useRecordedActions'),
       () => {
         asked++;
         reports.value = '';
         describe(lastReport.steps, null, lastReport.views);
       },
-      { icon: 'bug' },
+      { icon: lastReport.bug ? 'bug' : 'record' },
     );
     use.style.marginTop = '10px';
     panel.appendChild(use);

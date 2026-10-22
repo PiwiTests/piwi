@@ -8,6 +8,7 @@ import { getActiveProjectOverride, resolveActiveProject } from '../shared/active
 import { pageHere } from '../shared/page-here.js';
 import type { PathPrefixes } from '@piwitests/core/page-key';
 import { ensureSessionAccess } from '../shared/session-access.js';
+import { addNamedPick } from '../shared/session-add.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locator-branch.js';
 import { ALL_BRANCHES } from '@piwitests/core/locator-index';
@@ -25,9 +26,18 @@ import { bindToTool, toolIsCurrent } from '../shared/tool-session.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { BUTTON_CSS, makeButton, styleButton } from '../shared/buttons.js';
 import { iconText, type IconName } from '../shared/icons.js';
-import { COPY_MODE_CSS, copyModeButtons } from './copy-mode-row.js';
+import { COPY_MODE_CSS, copyFacts, copyModeButtons } from './copy-mode-row.js';
+import { locatorStability, verdictWords } from '../shared/verdict-words.js';
 
 const HOST_ID = 'piwi-picker-results-host';
+
+export interface ResultsOptions {
+  /** Offer Scope to a parent, which reopens the anchors step for the element. */
+  canScope?: boolean;
+}
+
+/** How the panel ended: dismissed, with a request for the anchors step, or with one to pick another element. */
+export type ResultsOutcome = 'closed' | 'scope' | 'pick-another';
 
 /** How many tests the Piwi section lists before pointing at the full view. */
 const PIWI_TESTS_SHOWN = 6;
@@ -47,17 +57,22 @@ const PIWI_TESTS_SHOWN = 6;
  * section lists the project's tests whose locators reach that element.
  *
  * Resolves once the user dismisses the panel (Escape, the close button, a
- * click outside it, or handing the element over to Tested elements), or once
- * the tool started as `toolEpoch` ends. The caller has run `initI18n()`.
+ * click outside it, or handing the element over to Tested elements), with
+ * `closed`; asks for the anchors step (Scope to a parent, offered with
+ * `canScope`), with `scope`; or for another pick (Pick another), with
+ * `pick-another`; `closed` too once the tool started as `toolEpoch` ends.
+ * While it is open, `target` stays outlined on the page. The caller has run
+ * `initI18n()`.
  */
 export async function renderResultsPanel(
   ranked: CheckedLocator[],
   target: Element | null,
   toolEpoch: number,
-): Promise<void> {
+  options: ResultsOptions = {},
+): Promise<ResultsOutcome> {
   let activeMode = await getLastCopyMode().catch(() => 'bare' as const);
   const paired = (await getEditorPairing().catch(() => null)) !== null;
-  if (!toolIsCurrent(toolEpoch)) return;
+  if (!toolIsCurrent(toolEpoch)) return 'closed';
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -78,7 +93,15 @@ export async function renderResultsPanel(
       position: fixed; inset: 0; background: rgba(0,0,0,.35);
       display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh;
     }
+    .backdrop.spotlit { background: transparent; }
+    .backdrop[data-side="start"] { justify-content: flex-start; padding-inline: 16px; }
+    .backdrop[data-side="end"] { justify-content: flex-end; padding-inline: 16px; }
+    .spotlight {
+      position: fixed; pointer-events: none; border: 2px solid #a78bfa; border-radius: 4px;
+      box-shadow: 0 0 0 1px rgba(17,24,39,.6), 0 0 0 100vmax rgba(0,0,0,.35);
+    }
     .panel {
+      position: relative;
       background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px;
       width: min(640px, 92vw); max-height: 78vh; overflow: auto;
       box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5;
@@ -95,19 +118,35 @@ export async function renderResultsPanel(
     .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
     .sub { color: #9ca3af; font-size: 12px; }
     .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 12px; }
     .row {
       display: flex; flex-direction: column; gap: 7px;
       border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px;
     }
     .row.best { border-color: rgba(167,139,250,.55); background: rgba(124,58,237,.07); }
     .row-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
-    .score {
-      color: #c4b5fd; font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 600; flex-shrink: 0;
-      border: 1px solid #c4b5fd66; border-radius: 999px; padding: 0 7px; margin-top: 1px;
+    .word {
+      font-size: 11px; font-weight: 600; flex-shrink: 0; white-space: nowrap;
+      border: 1px solid currentColor; border-radius: 999px; padding: 0 7px; margin-top: 1px;
     }
+    .word.good { color: #4ade80; }
+    .word.warn { color: #fbbf24; }
+    .order { color: #9ca3af; font-size: 12px; }
+    .why { font-size: 11.5px; line-height: 16px; color: #9ca3af; }
+    .why summary { cursor: pointer; width: max-content; }
+    .why div { margin-top: 3px; overflow-wrap: anywhere; }
     .row code { font-size: 13px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; }
     .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .row-actions .send { margin-inline-start: auto; }
+    .session-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .session-form input {
+      flex: 1 1 180px; min-width: 0; font: inherit; font-size: 12.5px; color: inherit; background: transparent;
+      border: 1px solid rgba(128,128,128,.45); border-radius: 6px; padding: 3px 8px;
+    }
+    .form-message { flex-basis: 100%; color: #fbbf24; font-size: 11.5px; }
+    .form-message:empty { display: none; }
+    .confirm { display: flex; align-items: flex-start; gap: 5px; font-size: 11.5px; line-height: 16px; color: #4ade80; }
+    .confirm .piwi-icon { width: 14px; height: 14px; margin-top: 1px; }
     .unique, .ambiguous, .footer { display: flex; align-items: flex-start; gap: 5px; font-size: 11.5px; line-height: 16px; }
     .unique .piwi-icon, .ambiguous .piwi-icon, .footer .piwi-icon { width: 14px; height: 14px; margin-top: 1px; }
     .unique { color: #4ade80; }
@@ -139,7 +178,11 @@ export async function renderResultsPanel(
     @media (prefers-color-scheme: light) {
       .piwi .muted { color: #6b7280; }
       .sub { color: #6b7280; }
-      .score { color: #6d28d9; border-color: #6d28d966; }
+      .word.good { color: #15803d; }
+      .word.warn { color: #b45309; }
+      .order, .why { color: #6b7280; }
+      .form-message { color: #b45309; }
+      .confirm { color: #15803d; }
       .unique { color: #15803d; }
       .ambiguous { color: #b45309; }
       .footer, .piwi .lead .piwi-icon { color: #6d28d9; }
@@ -164,10 +207,13 @@ export async function renderResultsPanel(
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = tn('pick_title', ranked.length);
+  const order = document.createElement('div');
+  order.className = 'order';
+  order.textContent = t('pick_order');
   const sub = document.createElement('div');
   sub.className = 'sub';
   sub.textContent = `${t('common_escToClose')} · ${t('pick_tabHint')}`;
-  titleWrap.append(title, sub);
+  titleWrap.append(title, order, sub);
   const headerActions = document.createElement('div');
   headerActions.className = 'header-actions';
   const copyAll = makeButton(
@@ -178,14 +224,22 @@ export async function renderResultsPanel(
   headerActions.append(copyAll);
   header.append(titleWrap, headerActions);
   panel.appendChild(header);
+  const tools = document.createElement('div');
+  tools.className = 'tools';
 
   const piwiSection = document.createElement('div');
   piwiSection.className = 'piwi';
   piwiSection.hidden = true;
   panel.appendChild(piwiSection);
 
-  return new Promise<void>((resolve) => {
+  return new Promise<ResultsOutcome>((resolve) => {
     let done = false;
+    let outcome: ResultsOutcome = 'closed';
+    const endWith = (ending: ResultsOutcome) => () => {
+      outcome = ending;
+      finish();
+    };
+    const stopSpotlight = target ? spotlight(backdrop, panel, target) : () => {};
     let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -194,13 +248,24 @@ export async function renderResultsPanel(
         finish();
       }
     };
+    // Escape in an Add to session form closes that form alone, before the tool's own Escape hears it.
+    const onFormKeyDown = (e: KeyboardEvent) => {
+      const form = e.key === 'Escape' ? root.activeElement?.closest('form.session-form') : null;
+      if (!(form instanceof HTMLFormElement)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      form.reset();
+    };
     document.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keydown', onFormKeyDown, true);
     const finish = bindToTool(toolEpoch, () => {
       done = true;
       document.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keydown', onFormKeyDown, true);
+      stopSpotlight();
       host.remove();
       releaseFocus();
-      resolve();
+      resolve(outcome);
     });
     headerActions.append(
       makeButton(t('common_close'), finish, { icon: 'close', iconOnly: true, tone: 'ghost', className: 'close' }),
@@ -208,41 +273,70 @@ export async function renderResultsPanel(
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
     });
+    tools.appendChild(
+      makeButton(t('pick_pickAnother'), endWith('pick-another'), {
+        icon: 'pick',
+        small: true,
+        title: t('pick_pickAnotherHint'),
+        className: 'pick-another',
+      }),
+    );
+    if (options.canScope) {
+      tools.appendChild(
+        makeButton(t('pick_scopeToParent'), endWith('scope'), {
+          icon: 'layers',
+          small: true,
+          title: t('pick_scopeToParentHint'),
+          className: 'scope',
+        }),
+      );
+    }
+    header.after(tools);
 
+    // The element's facts, read once for every row and every Send to editor of the panel.
+    const facts = copyFacts(target);
     for (const [i, alt] of ranked.entries()) {
       const best = i === 0 && (alt.verdict === 'unique' || alt.verdict === 'narrowed');
       const row = document.createElement('div');
       row.className = best ? 'row best' : 'row';
       const top = document.createElement('div');
       top.className = 'row-top';
-      const score = document.createElement('span');
-      score.className = 'score';
-      score.textContent = formatNumber(alt.score);
-      score.title = t('pick_score');
+      const verdict = verdictWords({ ...alt, ...locatorStability(alt.locator) });
+      const word = document.createElement('span');
+      word.className = `word ${verdict.tone}`;
+      word.textContent = verdict.word;
+      word.title = verdict.explanation;
       const code = document.createElement('code');
       code.className = 'piwi-loc';
       code.innerHTML = highlightLocator(alt.locator);
-      top.append(score, code);
+      top.append(word, code);
       row.appendChild(top);
 
       const badge = verdictBadge(alt);
       if (badge) row.appendChild(badge);
+      row.appendChild(reasons(verdict.explanation, alt.score));
       if (best)
         row.appendChild(withLeadingIcon(document.createElement('div'), 'sparkles', 'footer', t('pick_topPick')));
 
       const actions = document.createElement('div');
       actions.className = 'row-actions';
       actions.appendChild(
-        copyModeButtons(alt.locator, panel, activeMode, (mode) => {
+        copyModeButtons({ ...alt, facts }, panel, activeMode, (mode) => {
           activeMode = mode;
         }),
       );
+      const addToSession = makeButton(
+        t('devtools_addToSession'),
+        () => openSessionForm(row, addToSession, alt.locator),
+        { icon: 'plus', small: true, className: 'add-to-session' },
+      );
+      actions.appendChild(addToSession);
       if (paired) {
         // The mode is the panel's: each row's Send to editor sends the one chosen last.
         const send = makeButton(
           t('pick_sendToEditor'),
           () => {
-            void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode) }).then((result) =>
+            void sendToEditor({ kind: 'locator', text: renderCopyMode(alt, activeMode, facts) }).then((result) =>
               showSendResult(send, result),
             );
           },
@@ -492,6 +586,137 @@ async function fillPiwiSection(
 function withLeadingIcon<T extends HTMLElement>(el: T, name: IconName, className: string, text: string): T {
   el.className = className;
   return iconText(el, name, text);
+}
+
+/**
+ * Rings `target` on the page under the panel, the rest of the page dimmed
+ * around it, drawn again when the page or a container in it scrolls, the
+ * window resizes, or the element or the panel changes size; the backdrop dims
+ * everything while it is off screen or gone. The first time the ring falls
+ * under `panel`, the panel moves to the side of the page away from it, and
+ * stays there. Returns the function that stops following it.
+ */
+function spotlight(backdrop: HTMLElement, panel: HTMLElement, target: Element): () => void {
+  const ring = document.createElement('div');
+  ring.className = 'spotlight';
+  ring.hidden = true;
+  backdrop.prepend(ring);
+  let placed = '';
+  const place = () => {
+    const box = target.isConnected ? target.getBoundingClientRect() : null;
+    const onScreen =
+      box !== null &&
+      box.width + box.height > 0 &&
+      box.bottom > 0 &&
+      box.right > 0 &&
+      box.top < innerHeight &&
+      box.left < innerWidth;
+    const key = onScreen ? `${box.left} ${box.top} ${box.width} ${box.height}` : '';
+    if (key !== placed) {
+      placed = key;
+      ring.hidden = !onScreen;
+      backdrop.classList.toggle('spotlit', onScreen);
+      if (onScreen) {
+        ring.style.left = `${box.left - 3}px`;
+        ring.style.top = `${box.top - 3}px`;
+        ring.style.width = `${box.width + 6}px`;
+        ring.style.height = `${box.height + 6}px`;
+      }
+    }
+    if (onScreen && !backdrop.dataset.side) {
+      const over = panel.getBoundingClientRect();
+      const covered =
+        over.width > 0 &&
+        box.left < over.right &&
+        box.right > over.left &&
+        box.top < over.bottom &&
+        box.bottom > over.top;
+      if (covered) backdrop.dataset.side = box.left + box.width / 2 < innerWidth / 2 ? 'end' : 'start';
+    }
+  };
+  // Scroll events do not bubble: the capture phase hears those of every scrolling container too.
+  addEventListener('scroll', place, { capture: true, passive: true });
+  addEventListener('resize', place);
+  const sizes = new ResizeObserver(place);
+  sizes.observe(target);
+  sizes.observe(panel);
+  place();
+  return () => {
+    removeEventListener('scroll', place, { capture: true });
+    removeEventListener('resize', place);
+    sizes.disconnect();
+  };
+}
+
+/**
+ * Under `row`, a form naming `locator` for the pick session the DevTools
+ * panel's Session tab lists, kept by `addNamedPick` as the DevTools pages keep
+ * it: the name a page object field takes, the locator, and this page's
+ * address. It is drawn here, in the panel's shadow root, with the panel's
+ * buttons. Cancel and Escape (the form's reset) close it and give the focus
+ * back to `opener`.
+ */
+function openSessionForm(row: HTMLElement, opener: HTMLElement, locator: string): void {
+  row.querySelector('.session-form')?.remove();
+  row.querySelector('.confirm')?.remove();
+  const form = document.createElement('form');
+  form.className = 'session-form';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = t('session_namePlaceholder');
+  input.setAttribute('aria-label', t('session_nameLabel'));
+  // Save submits the form, which checks the name.
+  const save = makeButton(t('common_save'), () => undefined, { icon: 'save', tone: 'primary', small: true });
+  save.type = 'submit';
+  const cancel = makeButton(t('common_cancel'), () => undefined, { icon: 'close', small: true });
+  cancel.type = 'reset';
+  const message = document.createElement('div');
+  message.className = 'form-message';
+  message.setAttribute('role', 'status');
+  form.append(input, save, cancel, message);
+  form.addEventListener('reset', () => {
+    form.remove();
+    opener.focus();
+  });
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void (async () => {
+      const name = input.value.trim();
+      await ensureSessionAccess();
+      const refused = await addNamedPick(name, locator, () => location.href);
+      if (refused !== null) {
+        message.textContent = refused;
+        return;
+      }
+      form.remove();
+      const added = document.createElement('code');
+      added.textContent = name;
+      const confirm = document.createElement('div');
+      confirm.className = 'confirm';
+      confirm.setAttribute('role', 'status');
+      row.appendChild(iconText(confirm, 'check-circle', ...tNodes('devtools_addedToSession', { name: added })));
+      opener.focus();
+    })();
+  });
+  row.appendChild(form);
+  input.focus();
+}
+
+/** The row's details: the verdict and the stability rules in full, and the engine's score. */
+function reasons(explanation: string, score: number): HTMLElement {
+  const details = document.createElement('details');
+  details.className = 'why';
+  const summary = document.createElement('summary');
+  summary.textContent = t('pick_reasons');
+  const words = document.createElement('div');
+  words.className = 'explanation';
+  words.textContent = explanation;
+  const value = document.createElement('div');
+  value.className = 'score';
+  value.textContent = t('pick_scoreValue', { score: formatNumber(score) });
+  value.title = t('pick_score');
+  details.append(summary, words, value);
+  return details;
 }
 
 /** What the engine found for a locator, under it; nothing for one it could not evaluate. */

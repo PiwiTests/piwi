@@ -207,6 +207,47 @@ test.describe('pick results in connected mode', () => {
     expect(lines).toContain("getByRole('button', { name: 'Subscribe' })");
   });
 
+  test('Add to session keeps the locator as the Session tab lists it', async ({ page, context }) => {
+    await stubCoverageChrome(context, { connection: null, cached: null });
+    await openShop(page, '?nodialog');
+    await pick(page, 'form.newsletter button');
+    const row = page.locator(`${RESULTS} .row`).first();
+    const locator = (await row.locator('code').first().textContent())!;
+    const stored = () =>
+      page.evaluate(async () => {
+        const area = (globalThis as unknown as { chrome: typeof chrome }).chrome.storage.session;
+        return (await area.get('piwiPickSession')).piwiPickSession ?? null;
+      });
+
+    const add = row.getByRole('button', { name: 'Add to session' });
+    await add.click();
+    const name = row.getByRole('textbox', { name: 'Name for this element' });
+    await expect(name).toBeFocused();
+    // Escape closes the form alone: the results stay open.
+    await page.keyboard.press('Escape');
+    await expect(name).toHaveCount(0);
+    await expect(add).toBeFocused();
+    await expect(page.locator(`${RESULTS} .panel`)).toBeVisible();
+
+    await add.click();
+    await name.fill('2fast');
+    await name.press('Enter');
+    await expect(row.locator('.form-message')).toHaveText(
+      'Use only letters without accents, digits, _ or $, and do not start with a digit.',
+    );
+    await name.fill('subscribeButton');
+    await name.press('Enter');
+    await expect(row.locator('.confirm')).toHaveText('Added to the session as subscribeButton.');
+    expect(await stored()).toEqual([{ name: 'subscribeButton', locator, pageUrl: page.url() }]);
+
+    // A name already in the list is refused.
+    await add.click();
+    await name.fill('subscribeButton');
+    await name.press('Enter');
+    await expect(row.locator('.form-message')).toHaveText('"subscribeButton" is already in the list.');
+    expect(await stored()).toHaveLength(1);
+  });
+
   test('stays out of the way when the extension is not connected', async ({ page, context }) => {
     await stubCoverageChrome(context, { connection: null, cached: null });
     await openShop(page, '?nodialog');
@@ -225,7 +266,13 @@ test.describe('pick results in connected mode', () => {
 
     const panel = page.locator(`${RESULTS} .panel`);
     await expect(panel).toHaveAttribute('lang', 'fr');
-    await expect(panel.locator('.title')).toHaveText(/^\d+ locators, du plus stable au moins stable$/);
+    await expect(panel.locator('.title')).toHaveText(/^\d+ locators$/);
+    await expect(panel.locator('.order')).toHaveText(
+      'Classés du plus stable au moins stable, ceux qui trouvent cet élément seul en premier',
+    );
+    await expect(panel.locator('.row .word').first()).toHaveText(
+      /^(stable|peut casser|fragile|unique par sa position|\d+ correspondances?|non vérifié)$/,
+    );
     await expect(panel.getByRole('button', { name: /^Tout copier \(\d+\)$/ })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Locator', exact: true }).first()).toBeVisible();
     const section = page.locator(`${RESULTS} .piwi`);

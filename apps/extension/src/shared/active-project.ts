@@ -20,7 +20,7 @@ export interface ActiveProject {
   source?: ActiveProjectSource;
 }
 
-const OVERRIDE_KEY = 'piwiActiveProjectOverride';
+export const OVERRIDE_KEY = 'piwiActiveProjectOverride';
 
 /** The origin a choice is kept under; null for an address with none (`about:blank`, a file). */
 function overrideOrigin(url: string): string | null {

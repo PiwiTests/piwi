@@ -1,6 +1,7 @@
 import { parsePairing } from '@piwitests/core/editor-send';
 import { editorOriginPattern, getEditorPairing, setEditorPairing } from '../shared/editor-pairing.js';
 import {
+  CONNECTION_KEY,
   getConnectionSettings,
   setConnectionSettings,
   clearConnectionSettings,
@@ -9,6 +10,7 @@ import {
   getInstanceApiKey,
   setInstanceApiKey,
   clearInstanceApiKey,
+  markDesktopApiKey,
   type ConnectionSettings,
 } from '../shared/connection-settings.js';
 import {
@@ -30,17 +32,28 @@ import {
   desktopOrigin,
   getDesktopSettings,
   setDesktopSettings,
+  type DesktopSettings,
 } from '../shared/desktop-settings.js';
 import { normalizePathPrefix, parsePathPrefix } from '@piwitests/core/page-key';
 import { waitForApproval } from '../shared/connect-flow.js';
+import {
+  CONNECTION_HEALTH_KEY,
+  clearConnectionHealth,
+  getConnectionHealth,
+  healthPill,
+  withConnectionHealth,
+} from '../shared/connection-health.js';
 import { describeClient } from '../shared/client-info.js';
 import { setCachedCatalog, pruneCachedCatalogs } from '../shared/catalog-cache.js';
 import { clearActiveProjectOverrides } from '../shared/active-project.js';
 import { clearCachedLocatorIndexes } from '../shared/locator-index-cache.js';
 import { clearLocatorBranchOverrides } from '../shared/locator-branch.js';
 import { moveLegacySecrets } from '../shared/legacy-secrets.js';
-import { clearRecordIntent } from '../shared/recording-storage.js';
-import { hostPattern } from '../shared/web-origin.js';
+import { RECORDING_KEY, clearRecordIntent, getRecordingState } from '../shared/recording-storage.js';
+import { REPLAY_KEY, getReplayState } from '../shared/replay-storage.js';
+import { hostPattern, originPattern } from '../shared/web-origin.js';
+import { canRevoke, siteGrants, type GrantHolders, type GrantUse } from './site-grants.js';
+import { dropKeptMappings, keepMappings, readKeptMappings } from './kept-mappings.js';
 import {
   LANGUAGES,
   browserCatalogLanguage,
@@ -56,7 +69,7 @@ import {
   type MessageKey,
 } from '../shared/i18n.js';
 import { isDraftLanguage, TRANSLATION_ISSUE_URL } from '../shared/languages.js';
-import { decorateIcons, icon, iconText } from '../shared/icons.js';
+import { decorateIcons, icon, iconText, withIcon } from '../shared/icons.js';
 import { STEP_CSS } from '../shared/step-view.js';
 import { PATTERN_CSS, patternView } from '../shared/pattern-view.js';
 
@@ -95,12 +108,16 @@ const statusEl = document.getElementById('status')!;
 const mappingsStatusEl = document.getElementById('mappings-status')!;
 const languageStatusEl = document.getElementById('language-status')!;
 const instancePill = document.getElementById('instance-pill') as HTMLElement;
+const instanceHealthPill = document.getElementById('instance-health') as HTMLElement;
 const sitesConnectFirst = document.getElementById('sites-connect-first') as HTMLElement;
 const sitesBody = document.getElementById('sites-body') as HTMLElement;
 const mappingHead = document.getElementById('mapping-head') as HTMLElement;
 const apiKeySaveBtn = document.getElementById('api-key-save') as HTMLButtonElement;
 const saveBtn = document.getElementById('save') as HTMLButtonElement;
 const disconnectBtn = document.getElementById('disconnect') as HTMLButtonElement;
+const desktopOffer = document.getElementById('desktop-offer') as HTMLElement;
+const useDesktopBtn = document.getElementById('use-desktop') as HTMLButtonElement;
+const desktopPairHint = document.getElementById('desktop-pair-hint') as HTMLElement;
 const languageSelect = document.getElementById('language') as HTMLSelectElement;
 const draftNote = document.getElementById('language-draft') as HTMLElement;
 
@@ -429,7 +446,77 @@ function renderInstanceState(): void {
   }
   sitesConnectFirst.hidden = kept;
   sitesBody.hidden = !kept;
+  void renderInstanceHealth();
+  renderDesktopAsInstance();
 }
+
+/** The desktop app paired, as the Desktop app card last read it; null when none is. */
+let pairedDesktop: DesktopSettings | null = null;
+
+/**
+ * The desktop app runs a Piwi instance on this computer, so the two cards
+ * offer each other: with the app paired and no instance kept, Use the desktop
+ * app as your instance; with an instance kept and no app paired, a line
+ * pointing to the pairing.
+ */
+function renderDesktopAsInstance(): void {
+  const kept = stored.instanceUrl.trim() !== '';
+  desktopOffer.hidden = kept || !pairedDesktop;
+  desktopPairHint.hidden = !kept || !!pairedDesktop;
+  if (desktopPairHint.hidden) {
+    desktopPairHint.replaceChildren();
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = '#desktop-card';
+  link.textContent = t('options_desktopPairHintLink');
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    // An instance on this computer's loopback is likely the app itself: Pair asks it there.
+    const local = desktopOrigin(stored.instanceUrl);
+    if (local && desktopUrlEl.value === DESKTOP_DEFAULT_URL) desktopUrlEl.value = local;
+    showField(desktopPairBtn);
+  });
+  desktopPairHint.replaceChildren(...tNodes('options_desktopPairHint', { link }));
+}
+
+/**
+ * Use the desktop app as your instance: its address and the token the pairing
+ * holds, which its server takes as an API key, kept and checked as Save and
+ * test does. Should the app refuse the token, the address stays filled in and
+ * the key field waits for one.
+ */
+useDesktopBtn.addEventListener('click', () => {
+  const desktop = pairedDesktop;
+  if (!desktop) return;
+  // Before any await, so the click still counts as the user gesture.
+  const permission = requestInstanceHostPermission(desktop.url);
+  const epoch = connectionEpoch;
+  instanceUrlEl.value = desktop.url;
+  apiKeyEl.value = desktop.token;
+  whileRunning(useDesktopBtn, async () => {
+    if (await connectWithKey({ instanceUrl: desktop.url, apiKey: desktop.token }, permission, epoch, true)) return;
+    apiKeyEl.value = '';
+    apiKeyFallback.open = true;
+    showField(apiKeyEl);
+  });
+});
+
+/** The pill beside the instance's address: whether it answered the last request made to it, and when. */
+async function renderInstanceHealth(): Promise<void> {
+  const health = await getConnectionHealth(stored.instanceUrl).catch(() => null);
+  instanceHealthPill.hidden = !health;
+  if (!health) return;
+  instanceHealthPill.classList.toggle('on', health.outcome === 'ok');
+  instanceHealthPill.classList.toggle('failing', health.outcome !== 'ok');
+  instanceHealthPill.textContent = healthPill(health);
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && CONNECTION_HEALTH_KEY in changes) void renderInstanceHealth();
+});
+// "Answered 5 minutes ago" stays true while the page stays open.
+setInterval(() => void renderInstanceHealth(), 30_000);
 
 /** The instance's patterns, read-only, each marked as coming from the instance. */
 function renderServerMappings(): void {
@@ -505,7 +592,7 @@ function renderAddSite(): void {
  */
 async function syncServerPatterns(settings: ConnectionSettings, epoch: number): Promise<boolean> {
   try {
-    const answer = await fetchServerPatterns(settings);
+    const answer = await withConnectionHealth(settings.instanceUrl, () => fetchServerPatterns(settings));
     const written = await writeConnection(epoch, settings.instanceUrl, (current) =>
       applyServerSync(current, answer, Date.now()),
     );
@@ -551,14 +638,9 @@ function syncedProjectOptions(): ProjectOption[] {
   return stored.serverProjects.map((p) => ({ id: p.id, name: p.label, label: p.label }));
 }
 
-async function loadInitial(): Promise<void> {
-  const settings = stored;
-  const epoch = connectionEpoch;
-  instanceUrlEl.value = settings.instanceUrl;
-  apiKeyEl.value = storedApiKey;
-  // A key typed by hand stays visible where it was typed.
-  apiKeyFallback.open = storedApiKey !== '' && settings.serverSyncedAt === 0;
-  mappings = settings.projectMappings.map((m) => ({
+/** The lines of this browser as the table edits them. */
+function editableMappings(settings: ConnectionSettings): EditableMapping[] {
+  return settings.projectMappings.map((m) => ({
     urlPattern: m.urlPattern,
     projectId: m.projectId,
     projectLabel: m.projectLabel,
@@ -566,6 +648,16 @@ async function loadInitial(): Promise<void> {
     pathPrefix: m.pathPrefix ?? '',
     testPathPrefix: m.testPathPrefix ?? '',
   }));
+}
+
+async function loadInitial(): Promise<void> {
+  const settings = stored;
+  const epoch = connectionEpoch;
+  instanceUrlEl.value = settings.instanceUrl;
+  apiKeyEl.value = storedApiKey;
+  // A key typed by hand stays visible where it was typed.
+  apiKeyFallback.open = storedApiKey !== '' && settings.serverSyncedAt === 0;
+  mappings = editableMappings(settings);
   projectOptions = syncedProjectOptions();
   renderMappings();
   renderServerMappings();
@@ -713,19 +805,23 @@ async function connect(instanceUrl: string): Promise<void> {
     // Disconnected while the answer was on its way: nothing is kept.
     if (epoch !== connectionEpoch) return;
     const sameInstance = previous.instanceUrl === instanceUrl;
+    const restore = !previous.instanceUrl.trim();
     const next: ConnectionSettings = {
       ...previous,
       instanceUrl,
       connectedAs: outcome.user?.name ?? '',
       // Another instance's patterns and projects do not apply to this one.
       ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0 }),
+      ...(restore ? { projectMappings: await readKeptMappings(instanceUrl) } : {}),
     };
     const kept = ++connectionEpoch;
     await setInstanceApiKey(instanceUrl, outcome.apiKey);
     if (kept !== connectionEpoch) return;
     stored = next;
     await setConnectionSettings(next);
+    if (restore && kept === connectionEpoch) await dropKeptMappings();
     if (!sameInstance) await forgetInstanceData();
+    mappings = editableMappings(next);
     apiKeyEl.value = outcome.apiKey;
     apiKeyFallback.open = false;
     await syncServerPatterns(next, kept);
@@ -856,53 +952,76 @@ apiKeySaveBtn.addEventListener('click', () => {
   const permission = requestInstanceHostPermission(typed.instanceUrl);
   const epoch = connectionEpoch;
   whileRunning(apiKeySaveBtn, async () => {
-    if (!typed.instanceUrl) {
-      setStatus(t('common_enterInstanceUrl'), 'error');
-      return;
-    }
-    setStatus(t('options_testing'));
-    if (!(await permission)) {
-      setStatus(t('options_accessDenied'), 'error');
-      return;
-    }
-    const sameInstance = stored.instanceUrl === typed.instanceUrl;
-    const settings: ConnectionSettings = {
-      ...stored,
-      instanceUrl: typed.instanceUrl,
-      ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0, connectedAs: '' }),
-    };
-    const result = await testConnection(settings, typed.apiKey);
-    if (!result.ok) {
-      setStatus(result.error, 'error');
-      return;
-    }
-    // Disconnected while the instance was tested: nothing is kept.
-    if (epoch !== connectionEpoch) return;
-    const kept = ++connectionEpoch;
-    await setInstanceApiKey(settings.instanceUrl, typed.apiKey);
-    if (kept !== connectionEpoch) return;
-    stored = settings;
-    await setConnectionSettings(settings);
-    if (!sameInstance) await forgetInstanceData();
-    await syncServerPatterns(settings, kept);
-    try {
-      projectOptions = await fetchProjects(settings);
-    } catch {
-      projectOptions = syncedProjectOptions();
-    }
-    if (kept !== connectionEpoch) return;
-    renderMappings();
-    const catalogs = await refreshCatalogs(stored, kept);
-    if (kept !== connectionEpoch) return;
-    const parts = [tn('options_connected', projectOptions.length)];
-    // The API key travels on every catalog fetch; over plain HTTP it travels in
-    // the clear. Worth saying once, at the moment the choice is made — not a
-    // reason to refuse a local instance on `http://localhost`.
-    if (/^http:\/\//i.test(settings.instanceUrl) && typed.apiKey) parts.push(t('options_plainHttp'));
-    if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
-    setStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
+    await connectWithKey(typed, permission, epoch);
   });
 });
+
+/**
+ * Checks `typed`'s address and key against the instance, keeps them, then reads its patterns and catalogs as Connect
+ * does. `permission` is the host permission asked for inside the click; `desktop` says the address and the key are
+ * the paired desktop app's. Answers whether the connection was kept.
+ */
+async function connectWithKey(
+  typed: { instanceUrl: string; apiKey: string },
+  permission: Promise<boolean>,
+  epoch: number,
+  desktop = false,
+): Promise<boolean> {
+  if (!typed.instanceUrl) {
+    setStatus(t('common_enterInstanceUrl'), 'error');
+    return false;
+  }
+  setStatus(t('options_testing'));
+  if (!(await permission)) {
+    setStatus(t('options_accessDenied'), 'error');
+    return false;
+  }
+  const sameInstance = stored.instanceUrl === typed.instanceUrl;
+  const settings: ConnectionSettings = {
+    ...stored,
+    instanceUrl: typed.instanceUrl,
+    ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0, connectedAs: '' }),
+  };
+  const result = await testConnection(settings, typed.apiKey);
+  if (!result.ok) {
+    setStatus(result.error, 'error');
+    return false;
+  }
+  // Disconnected while the instance was tested: nothing is kept.
+  if (epoch !== connectionEpoch) return false;
+  const restored = stored.instanceUrl.trim() ? null : await readKeptMappings(settings.instanceUrl);
+  const kept = ++connectionEpoch;
+  await setInstanceApiKey(settings.instanceUrl, typed.apiKey);
+  // The paired app's token, kept as the key, is marked so: Unpair leaves it sent only to the app that proves it.
+  const paired = await getDesktopSettings().catch(() => null);
+  if (paired) await markDesktopApiKey(paired);
+  if (kept !== connectionEpoch) return false;
+  stored = restored ? { ...settings, projectMappings: restored } : settings;
+  await setConnectionSettings(stored);
+  if (restored && kept === connectionEpoch) await dropKeptMappings();
+  if (!sameInstance) await forgetInstanceData();
+  mappings = editableMappings(stored);
+  renderInstanceState();
+  await syncServerPatterns(settings, kept);
+  try {
+    projectOptions = await fetchProjects(settings);
+  } catch {
+    projectOptions = syncedProjectOptions();
+  }
+  if (kept !== connectionEpoch) return true;
+  renderMappings();
+  const catalogs = await refreshCatalogs(stored, kept);
+  if (kept !== connectionEpoch) return true;
+  const parts = [tn('options_connected', projectOptions.length)];
+  // The API key travels on every catalog fetch; over plain HTTP it travels in
+  // the clear. Worth saying once, at the moment the choice is made — not a
+  // reason to refuse a local instance on `http://localhost`. The desktop app
+  // answers on this computer's loopback alone, which its token never leaves.
+  if (/^http:\/\//i.test(settings.instanceUrl) && typed.apiKey && !desktop) parts.push(t('options_plainHttp'));
+  if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
+  setStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
+  return true;
+}
 
 /** Save keeps the lines of this browser, then fetches the catalogs of the projects they map. */
 saveBtn.addEventListener('click', () => {
@@ -964,14 +1083,12 @@ saveBtn.addEventListener('click', () => {
  * recording's own granted site is a separate grant with its own lifetime.
  */
 async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> {
-  if (!instanceUrl.trim()) return;
-  let origin: string;
-  try {
-    origin = new URL(instanceUrl).origin;
-  } catch {
-    return;
-  }
-  await chrome.permissions.remove({ origins: [hostPattern(origin)] }).catch(() => undefined);
+  const pattern = originPattern(instanceUrl);
+  if (!pattern) return;
+  // The desktop app paired at the same address keeps it for Run with Playwright; Unpair gives it back.
+  const desktop = await getDesktopSettings().catch(() => null);
+  if (desktop && hostPattern(desktop.url) === pattern) return;
+  await chrome.permissions.remove({ origins: [pattern] }).catch(() => undefined);
 }
 
 disconnectBtn.addEventListener('click', () => {
@@ -980,8 +1097,13 @@ disconnectBtn.addEventListener('click', () => {
   pendingConnect?.abort();
   void (async () => {
     const previousUrl = stored.instanceUrl;
+    // With no instance kept, the lines an earlier Disconnect set aside stay for the next connection.
+    const keptLines = previousUrl.trim()
+      ? await keepMappings(previousUrl, (await getConnectionSettings()).projectMappings).catch(() => 0)
+      : 0;
     await clearConnectionSettings();
     await clearInstanceApiKey().catch(() => undefined);
+    await clearConnectionHealth().catch(() => undefined);
     stored = await getConnectionSettings();
     serverSyncError = '';
     await forgetInstanceData();
@@ -993,7 +1115,7 @@ disconnectBtn.addEventListener('click', () => {
     renderMappings();
     renderServerMappings();
     renderInstanceState();
-    setStatus(t('options_disconnected'), 'ok');
+    setStatus(keptLines > 0 ? tn('options_disconnectedKept', keptLines) : t('options_disconnected'), 'ok');
   })();
 });
 
@@ -1083,6 +1205,7 @@ async function renderEditorPairing(): Promise<void> {
   editorUnpairBtn.hidden = !pairing;
   editorPairBtn.classList.toggle('primary', !pairing);
   renderEditorPill();
+  void renderSiteAccess();
 }
 
 editorPairBtn.addEventListener('click', () => {
@@ -1135,11 +1258,14 @@ function setDesktopStatus(text: StatusText, kind: StatusKind = ''): void {
 /** The card as the stored pairing says: its badge, its address, and Unpair. */
 async function renderDesktopState(): Promise<void> {
   const desktop = await getDesktopSettings();
+  pairedDesktop = desktop;
+  renderDesktopAsInstance();
   setPill(desktopPill, !!desktop, 'options_statePaired', 'options_stateNotPaired');
   desktopPairBtn.classList.toggle('primary', !desktop);
   desktopForgetBtn.hidden = !desktop;
   if (desktop && !desktopUrlEl.value) desktopUrlEl.value = desktop.url;
   if (!desktop && !desktopUrlEl.value) desktopUrlEl.value = DESKTOP_DEFAULT_URL;
+  void renderSiteAccess();
 }
 
 /** Keeps a pairing that works: checked against the app first, then stored and said. */
@@ -1149,7 +1275,11 @@ async function keepDesktopPairing(url: string, token: string): Promise<void> {
     setDesktopStatus(check.error, 'error');
     return;
   }
+  // The instance kept with the earlier pairing's token, or with this one, goes on proving it.
+  const previous = await getDesktopSettings().catch(() => null);
+  if (previous) await markDesktopApiKey(previous);
   await setDesktopSettings({ url, token });
+  await markDesktopApiKey({ url, token });
   desktopUrlEl.value = url;
   desktopTokenEl.value = '';
   desktopManual.open = false;
@@ -1254,8 +1384,14 @@ desktopSaveBtn.addEventListener('click', () => {
 desktopForgetBtn.addEventListener('click', () => {
   void (async () => {
     const desktop = await getDesktopSettings();
+    // The instance kept at the app's address with its token goes on sending it only to a program that proves it.
+    if (desktop) await markDesktopApiKey(desktop).catch(() => undefined);
     await clearDesktopSettings();
-    if (desktop) await chrome.permissions.remove({ origins: [hostPattern(desktop.url)] }).catch(() => false);
+    // The instance kept at the app's address goes on using it; Disconnect gives it back.
+    const pattern = desktop ? hostPattern(desktop.url) : null;
+    if (pattern && pattern !== originPattern(stored.instanceUrl)) {
+      await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
+    }
     desktopTokenEl.value = '';
     setDesktopStatus(t('options_desktopForgotten'), 'ok');
     await renderDesktopState();
@@ -1267,8 +1403,114 @@ void getDesktopSettings().then((desktop) => {
   return renderDesktopState();
 });
 
+// ---------------------------------------------------------------------------
+// The sites Piwi Picker may run on
+
+const siteAccessEl = document.getElementById('site-access') as HTMLElement;
+const siteAccessStatusEl = document.getElementById('site-access-status') as HTMLElement;
+
+/** What a grant held by the instance or a pairing says, and where it is given back. */
+const GRANT_USE_NOTES: Record<GrantUse, MessageKey> = {
+  instance: 'options_siteUseInstance',
+  desktop: 'options_siteUseDesktop',
+  editor: 'options_siteUseEditor',
+};
+
+/** The grant each use and each running tool holds now. */
+async function grantHolders(): Promise<GrantHolders> {
+  const [desktop, editor, recording, replay] = await Promise.all([
+    getDesktopSettings().catch(() => null),
+    getEditorPairing().catch(() => null),
+    getRecordingState().catch(() => null),
+    getReplayState().catch(() => null),
+  ]);
+  const replaying = !!replay && !replay.finished && (replay.status === 'running' || replay.status === 'paused');
+  return {
+    instance: originPattern(stored.instanceUrl),
+    desktop: desktop ? hostPattern(desktop.url) : null,
+    editor: editor ? editorOriginPattern(editor) : null,
+    recording: recording?.active ? recording.grantedOriginPattern : null,
+    replay: replaying ? originPattern(replay.origin) : null,
+  };
+}
+
+/** Bumped by each render, so the last one started is the one the card shows. */
+let siteAccessRender = 0;
+
+/**
+ * The card lists every site granted, with Revoke; a site a recording or a
+ * replay runs on, or the instance or a pairing uses, says so instead.
+ */
+async function renderSiteAccess(): Promise<void> {
+  const render = ++siteAccessRender;
+  const [granted, holders] = await Promise.all([
+    chrome.permissions.getAll().catch((): chrome.permissions.Permissions => ({ origins: [] })),
+    grantHolders(),
+  ]);
+  if (render !== siteAccessRender) return;
+  const grants = siteGrants(granted.origins ?? [], holders);
+  siteAccessEl.replaceChildren();
+  if (grants.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-mappings';
+    empty.textContent = t('options_siteAccessEmpty');
+    siteAccessEl.appendChild(empty);
+    return;
+  }
+  for (const grant of grants) {
+    const row = document.createElement('div');
+    row.className = 'grant-row';
+    const pattern = document.createElement('span');
+    pattern.className = 'pattern';
+    pattern.appendChild(patternView(grant.pattern));
+    const notes = [
+      ...grant.uses.map((use) => t(GRANT_USE_NOTES[use])),
+      ...(grant.busy ? [t(grant.busy === 'recording' ? 'options_siteBusyRecording' : 'options_siteBusyReplay')] : []),
+    ];
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = notes.join(' ');
+    const revoke = document.createElement('button');
+    revoke.type = 'button';
+    revoke.className = 'danger small';
+    revoke.textContent = t('options_siteRevoke');
+    revoke.setAttribute('aria-label', t('options_siteRevokeLabel', { site: grant.pattern }));
+    withIcon(revoke, 'unlink');
+    revoke.disabled = !canRevoke(grant);
+    revoke.addEventListener('click', () => {
+      whileRunning(revoke, () => revokeSite(grant.pattern));
+    });
+    row.append(pattern, ...(notes.length ? [meta] : []), revoke);
+    siteAccessEl.appendChild(row);
+  }
+}
+
+/** Takes the grant of `pattern` back, unless a recording, a replay, the instance or a pairing has come to hold it. */
+async function revokeSite(pattern: string): Promise<void> {
+  const [grant] = siteGrants([pattern], await grantHolders());
+  if (!grant || !canRevoke(grant)) {
+    await renderSiteAccess();
+    return;
+  }
+  const removed = await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
+  writeStatus(
+    siteAccessStatusEl,
+    tNodes(removed ? 'options_siteRevoked' : 'options_siteRevokeFailed', { site: patternView(pattern) }),
+    removed ? 'ok' : 'error',
+  );
+  await renderSiteAccess();
+}
+
+chrome.permissions.onAdded.addListener(() => void renderSiteAccess());
+chrome.permissions.onRemoved.addListener(() => void renderSiteAccess());
+chrome.storage.onChanged.addListener((changes, area) => {
+  const recordingOrReplay = area === 'session' && (RECORDING_KEY in changes || REPLAY_KEY in changes);
+  if (recordingOrReplay || (area === 'local' && CONNECTION_KEY in changes)) void renderSiteAccess();
+});
+
 renderLanguageSelect();
 void loadInitial();
+void renderSiteAccess();
 void renderEditorPairing();
 
 // Every listener is attached from here on; the e2e specs wait for `html[data-ready]` before they interact.

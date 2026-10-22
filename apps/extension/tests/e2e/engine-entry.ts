@@ -56,15 +56,18 @@ interface EngineResult {
   return { role, locator: top?.locator ?? null };
 };
 
-/** Test-only: `checkLocators` on the given candidates for the element matching `selector`, with an engine reading `testIdAttributes`. */
+/**
+ * Test-only: `checkLocators` on the given candidates for the element matching `selector`, with an engine reading
+ * `testIdAttributes`; `narrowedBy` is there for a narrowed locator only.
+ */
 (globalThis as unknown as Record<string, unknown>).__piwiCheckLocators = (
   selector: string,
   locators: string[],
   testIdAttributes?: string[],
-): Array<{ locator: string; verdict: string }> => {
+): Array<{ locator: string; verdict: string; narrowedBy?: string }> => {
   const element = document.querySelector(selector)!;
   const ranked = locators.map((locator, i) => ({ locator, method: 'getByRole', args: {}, score: 90 - i }));
   return checkLocators(element, ranked, { engine: createPageEngine(document, testIdAttributes) }).map(
-    ({ locator, verdict }) => ({ locator, verdict }),
+    ({ locator, verdict, narrowedBy }) => ({ locator, verdict, ...(narrowedBy ? { narrowedBy } : {}) }),
   );
 };

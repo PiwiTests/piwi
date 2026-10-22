@@ -23,6 +23,76 @@
   "common_notConnected": {
     "message": "Piwi Picker ist mit keiner Piwi-Instanz verbunden."
   },
+  "common_healthOk": {
+    "message": "Mit $host$ verbunden, geprüft $time$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "time": {
+        "content": "$2",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "common_healthUnreachable": {
+    "message": "$host$ antwortet seit $time$ nicht, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthUnauthorized": {
+    "message": "$host$ lehnt den API-Schlüssel seit $time$ ab, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "connect again in the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthError": {
+    "message": "$host$ antwortet seit $time$ mit Fehlern, $settings$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthCheck": {
+    "message": "prüfen Sie die Einstellungen"
+  },
+  "common_healthReconnect": {
+    "message": "verbinden Sie sich in den Einstellungen neu"
+  },
   "common_catalogRefreshFailed": {
     "message": "Der Funktionskatalog konnte nicht aktualisiert werden."
   },
@@ -199,6 +269,24 @@
   },
   "devtools_playwrightView": {
     "message": "Playwright-Ansicht"
+  },
+  "devtools_pick": {
+    "message": "Wählen"
+  },
+  "devtools_pickTitle": {
+    "message": "Ein Element auf der Seite wählen, für seine geordneten, stabilen Locators"
+  },
+  "devtools_lint": {
+    "message": "Prüfung"
+  },
+  "devtools_lintTitle": {
+    "message": "Die schwer testbaren Elemente der Seite markieren"
+  },
+  "devtools_testedElements": {
+    "message": "Getestete Elemente"
+  },
+  "devtools_testedElementsTitle": {
+    "message": "Was Ihre Tests auf dieser Seite erreichen und was nicht"
   },
   "devtools_saveLogin": {
     "message": "Anmeldung für Tests speichern"
@@ -513,6 +601,60 @@
   },
   "options_stateNotConnected": {
     "message": "Nicht verbunden"
+  },
+  "options_desktopOffer": {
+    "message": "Die gekoppelte Desktop-App führt Piwi auf diesem Computer aus: Nutzen Sie sie als Ihre Instanz, mit ihrer Adresse und ihrem Token."
+  },
+  "options_useDesktop": {
+    "message": "Desktop-App als Instanz nutzen"
+  },
+  "options_desktopPairHint": {
+    "message": "Um Fehlerberichte mit Playwright auf diesem Computer auszuführen, $link$.",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "pair the desktop app"
+      }
+    }
+  },
+  "options_desktopPairHintLink": {
+    "message": "koppeln Sie die Desktop-App"
+  },
+  "options_healthOk": {
+    "message": "Antwortete $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "options_healthUnreachable": {
+    "message": "Keine Antwort seit $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthUnauthorized": {
+    "message": "Schlüssel abgelehnt seit $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthError": {
+    "message": "Fehler seit $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
   },
   "options_statePaired": {
     "message": "Gekoppelt"
@@ -862,6 +1004,24 @@
   "options_disconnected": {
     "message": "Getrennt."
   },
+  "options_disconnectedKept_one": {
+    "message": "Getrennt. $count$ Zeile dieses Browsers kommt zurück, wenn Sie sich wieder mit dieser Instanz verbinden.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_disconnectedKept_other": {
+    "message": "Getrennt. $count$ Zeilen dieses Browsers kommen zurück, wenn Sie sich wieder mit dieser Instanz verbinden.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "options_connect": {
     "message": "Verbinden"
   },
@@ -1052,6 +1212,60 @@
   "options_editorUnpair": {
     "message": "Entkoppeln"
   },
+  "options_siteAccessHeading": {
+    "message": "Websites, auf denen Piwi Picker laufen darf"
+  },
+  "options_siteAccessHint": {
+    "message": "Auf einer Website, die Sie erlauben, kann Piwi Picker ohne Klick auf sein Symbol laufen, sodass eine Aufzeichnung oder eine Wiedergabe Ihnen über ihre Seiten folgt. Es fragt nach jeder Website, wenn ein Werkzeug sie zum ersten Mal braucht."
+  },
+  "options_siteAccessEmpty": {
+    "message": "Noch keine Website: Piwi Picker fragt danach, wenn Sie dort zum ersten Mal aufzeichnen oder wiedergeben."
+  },
+  "options_siteRevoke": {
+    "message": "Entziehen"
+  },
+  "options_siteRevokeLabel": {
+    "message": "Piwi Picker den Zugriff auf $site$ entziehen",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteUseInstance": {
+    "message": "Von Ihrer Piwi-Instanz genutzt: Trennen entfernt diesen Zugriff."
+  },
+  "options_siteUseDesktop": {
+    "message": "Von der Desktop-App genutzt: Entkoppeln entfernt diesen Zugriff."
+  },
+  "options_siteUseEditor": {
+    "message": "Von Ihrem Editor genutzt: Entkoppeln entfernt diesen Zugriff."
+  },
+  "options_siteBusyRecording": {
+    "message": "Dort läuft eine Aufzeichnung: Beenden Sie sie zuerst."
+  },
+  "options_siteBusyReplay": {
+    "message": "Dort läuft eine Wiedergabe: Beenden Sie sie zuerst."
+  },
+  "options_siteRevoked": {
+    "message": "Piwi Picker läuft auf $site$ nur noch nach einem Klick auf sein Symbol.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteRevokeFailed": {
+    "message": "Der Browser hat den Zugriff auf $site$ behalten: Entfernen Sie ihn in den Erweiterungseinstellungen des Browsers.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
   "options_editorPaired": {
     "message": "Mit dem Editor unter $url$ gekoppelt.",
     "placeholders": {
@@ -1163,6 +1377,25 @@
   "common_copyModeExpect": {
     "message": "Assertion"
   },
+  "common_copyModeWithMethod": {
+    "message": "$mode$ ($method$)",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "fill"
+      },
+      "mode": {
+        "content": "$2",
+        "example": "Action"
+      }
+    }
+  },
+  "common_verdictBrittle": {
+    "message": "fragil"
+  },
+  "common_verdictWatch": {
+    "message": "kann brechen"
+  },
   "multipick_picked_one": {
     "message": "$count$ ähnlicher Eintrag gewählt",
     "placeholders": {
@@ -1225,6 +1458,24 @@
       "count": {
         "content": "$2",
         "example": "3"
+      }
+    }
+  },
+  "multipick_count_one": {
+    "message": "Der gemeinsame Locator findet jetzt $count$ Element auf der Seite",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "multipick_count_other": {
+    "message": "Der gemeinsame Locator findet jetzt $count$ Elemente auf der Seite",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
       }
     }
   },
@@ -1301,6 +1552,35 @@
         "example": "button"
       }
     }
+  },
+  "lint_onContainer": {
+    "message": "Am wiederholten $tag$ mit „$text$“",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<li>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_scopeBy": {
+    "message": "Über das wiederholte $tag$ mit „$text$“ eingrenzen: seine Kopien teilen schon eine Test-ID",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<article>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_thenLocator": {
+    "message": "Ein Test findet es dann mit"
   },
   "assert_dialog": {
     "message": "Vorgeschlagene Assertions"
@@ -1395,14 +1675,23 @@
       }
     }
   },
+  "session_addFailed": {
+    "message": "Nicht zur Sitzung hinzugefügt: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Session storage quota exceeded."
+      }
+    }
+  },
   "pick_overlayBanner": {
     "message": "Piwi-Inspektor: Klicken Sie auf ein Element, um Locators dafür zu erzeugen"
   },
   "pick_overlayKeys": {
-    "message": "↑ Elternelement · ↓ Kind · Esc überspringen"
+    "message": "Enter wählt das fokussierte Element · ↑ Elternelement · ↓ Kind · Esc überspringen"
   },
   "pick_overlayKeysHovering": {
-    "message": "Klicken zum Wählen · ↑ Elternelement · ↓ Kind · Esc überspringen"
+    "message": "Klicken oder Enter zum Wählen · ↑ Elternelement · ↓ Kind · Esc überspringen"
   },
   "pick_overlayAnalyzing": {
     "message": "Element wird analysiert…"
@@ -1468,13 +1757,16 @@
     }
   },
   "pick_title_other": {
-    "message": "$count$ Locators, die stabilsten zuerst",
+    "message": "$count$ Locators",
     "placeholders": {
       "count": {
         "content": "$1",
         "example": "4"
       }
     }
+  },
+  "pick_order": {
+    "message": "Vom stabilsten an geordnet, die nur dieses Element findenden zuerst"
   },
   "pick_tabHint": {
     "message": "Tab wechselt die Zeile"
@@ -1502,6 +1794,18 @@
   },
   "pick_score": {
     "message": "Stabilitätswert: Je höher, desto seltener bricht der Locator, wenn sich die Seite ändert"
+  },
+  "pick_reasons": {
+    "message": "Details"
+  },
+  "pick_scoreValue": {
+    "message": "Stabilitätswert: $score$",
+    "placeholders": {
+      "score": {
+        "content": "$1",
+        "example": "90"
+      }
+    }
   },
   "pick_unique": {
     "message": "Findet jetzt genau ein Element auf der Seite"
@@ -1772,6 +2076,18 @@
   "pick_sendToEditor": {
     "message": "An den Editor senden"
   },
+  "pick_scopeToParent": {
+    "message": "Auf ein Elternelement begrenzen…"
+  },
+  "pick_scopeToParentHint": {
+    "message": "Das Formular, den Dialog oder die Zeile um das Element wählen, an die seine Locators gebunden werden"
+  },
+  "pick_pickAnother": {
+    "message": "Weiteres wählen"
+  },
+  "pick_pickAnotherHint": {
+    "message": "Diese Ergebnisse schließen und ein weiteres Element der Seite wählen"
+  },
   "functions_title": {
     "message": "Testfunktionen auf dieser Seite"
   },
@@ -1788,7 +2104,7 @@
     "message": "Die Funktionen dieses Projekts erneut von Piwi herunterladen"
   },
   "functions_noProject": {
-    "message": "Für diese Website ist kein Piwi-Projekt festgelegt. Fügen Sie es unter Projekte je Website in den Einstellungen von Piwi Picker hinzu oder wählen Sie ein Projekt im Menü von Piwi Picker."
+    "message": "Dieser Website ist noch kein Piwi-Projekt zugeordnet. Öffnen Sie die Einstellungen von Piwi Picker und fügen Sie die Website unter Projekte je Website hinzu, oder wählen Sie ein Projekt unter Aktives Projekt im Menü von Piwi Picker."
   },
   "functions_empty": {
     "message": "$project$ hat noch keine Testfunktionen. Fügen Sie im Piwi-Dashboard eine hinzu, von Hand oder indem Sie den Code einer Funktion einfügen.",
@@ -1908,6 +2224,9 @@
       }
     }
   },
+  "record_hudLabel": {
+    "message": "Aufzeichnung"
+  },
   "record_pause": {
     "message": "Pause"
   },
@@ -1992,6 +2311,12 @@
   "record_reviewLabel": {
     "message": "Ihre Aufzeichnung"
   },
+  "record_testTitle": {
+    "message": "Titel des Tests"
+  },
+  "record_testTitlePlaceholder": {
+    "message": "Name des Tests"
+  },
   "record_nothingRecorded": {
     "message": "Nichts aufgezeichnet"
   },
@@ -2057,6 +2382,12 @@
   },
   "record_sendToEditor": {
     "message": "An den Editor senden"
+  },
+  "record_replay": {
+    "message": "Abspielen"
+  },
+  "record_replayHint": {
+    "message": "Die Schritte auf dieser Website mit einem Cursor erneut abspielen und sehen, ob jeder Schritt sein Element noch findet"
   },
   "bug_reportLabel": {
     "message": "Bug-Report von Piwi Picker"
@@ -3244,6 +3575,9 @@
   "replay_useRecorded": {
     "message": "Den in diesem Browser aufgezeichneten Bug-Report verwenden"
   },
+  "replay_useRecordedActions": {
+    "message": "Die in diesem Browser aufgezeichneten Aktionen verwenden"
+  },
   "replay_chooseFile": {
     "message": "Oder wählen Sie die .piwibug-Datei des Berichts oder seine steps.json, von Piwi Picker gespeichert:"
   },
@@ -3664,7 +3998,7 @@
     }
   },
   "coverage_notConnected": {
-    "message": "Verbinden Sie Piwi Picker mit Ihrer Piwi-Instanz, um zu sehen, welche Elemente dieser Seite Ihre Tests verwenden: Fügen Sie in den Einstellungen die Adresse Ihrer Instanz, einen API-Schlüssel und ein Adressmuster für diese Website hinzu."
+    "message": "Piwi Picker ist noch nicht mit Ihrer Piwi-Instanz verbunden. Öffnen Sie die Einstellungen, geben Sie die Adresse Ihrer Instanz ein und klicken Sie auf Verbinden: Dieses Feld zeigt dann, welche Elemente der Seite Ihre Tests erreichen."
   },
   "coverage_noProject": {
     "message": "Für diese Seite ist kein Projekt festgelegt. Fügen Sie in den Einstellungen ein Adressmuster dafür hinzu oder wählen Sie ein Projekt im Menü von Piwi Picker."
@@ -4963,6 +5297,9 @@
   "devtools_addToSession": {
     "message": "Zur Session hinzufügen"
   },
+  "devtools_sendToEditor": {
+    "message": "An den Editor senden"
+  },
   "devtools_addedToSession": {
     "message": "Zur Session als $name$ hinzugefügt.",
     "placeholders": {
@@ -4974,6 +5311,9 @@
   },
   "view_title": {
     "message": "Playwright-Ansicht"
+  },
+  "view_close": {
+    "message": "Playwright-Ansicht schließen"
   },
   "view_noRole": {
     "message": "(keine Rolle)"
@@ -5041,6 +5381,24 @@
       }
     }
   },
+  "view_crowded_one": {
+    "message": "$count$ Beschriftung ausgelassen, zu nah an anderen: wählen Sie eine Rolle, um sie zu sehen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "view_crowded_other": {
+    "message": "$count$ Beschriftungen ausgelassen, zu nah an anderen: wählen Sie eine Rolle, um sie zu sehen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
   "devtools_tabRecord": {
     "message": "Aufzeichnen"
   },
@@ -5065,6 +5423,32 @@
   },
   "devtools_recordingOn_other": {
     "message": "Aufzeichnung auf $site$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingPaused_one": {
+    "message": "Pausiert auf $site$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingPaused_other": {
+    "message": "Pausiert auf $site$: $count$ Schritte",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -5517,7 +5901,7 @@
     "message": "getByLabel('E-Mail')"
   },
   "devtools_locatorsHint": {
-    "message": "Geben Sie einen Locator ein: Die Elemente, die er auf dieser Seite findet, werden aufgelistet, wie Playwright sie findet. Fahren Sie über eines, um es auf der Seite zu umranden; Anzeigen wählt es im Elemente-Bereich aus."
+    "message": "Geben Sie einen Locator ein: Die Elemente, die er auf dieser Seite findet, werden aufgelistet, wie Playwright sie findet. Fahren Sie über eines, um es auf der Seite zu umranden; Anzeigen wählt es im Elemente-Bereich aus. Die Eingabetaste behält den Locator im Verlauf, den die Pfeiltasten nach oben und unten durchgehen."
   },
   "devtools_matches": {
     "message": "Gefundene Elemente"

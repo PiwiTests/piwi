@@ -31,6 +31,82 @@
     "message": "Piwi Picker is not connected to a Piwi instance.",
     "description": "Error when data from a Piwi instance is needed and none is set up in Options."
   },
+  "common_healthOk": {
+    "message": "Connected to $host$, checked $time$.",
+    "description": "Popup, one line under the Active project row: the last request to the connected instance worked. $host$ is the instance's host name, $time$ how long ago, formatted by the browser (“5 minutes ago”, “yesterday”). One line.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "time": {
+        "content": "$2",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "common_healthUnreachable": {
+    "message": "$host$ has not answered since $time$, $settings$.",
+    "description": "Popup, one line under the Active project row: nothing has answered at the instance's address since $time$ (a clock time, or a date and a time). $settings$ is a link that opens the settings, common_healthCheck. One line.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthUnauthorized": {
+    "message": "$host$ has refused the API key since $time$, $settings$.",
+    "description": "Popup, one line under the Active project row: the instance has refused Piwi Picker's API key since $time$ (revoked, or the instance moved). $settings$ is a link that opens the settings, common_healthReconnect. One line.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "connect again in the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthError": {
+    "message": "$host$ has answered with errors since $time$, $settings$.",
+    "description": "Popup, one line under the Active project row: the instance has answered with an error since $time$. $settings$ is a link that opens the settings, common_healthCheck. One line.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "settings": {
+        "content": "$2",
+        "example": "check the settings"
+      },
+      "time": {
+        "content": "$3",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "common_healthCheck": {
+    "message": "check the settings",
+    "description": "The link at the end of common_healthUnreachable and common_healthError, which opens the settings. Lower case: it ends a sentence."
+  },
+  "common_healthReconnect": {
+    "message": "connect again in the settings",
+    "description": "The link at the end of common_healthUnauthorized, which opens the settings. Lower case: it ends a sentence."
+  },
   "common_catalogRefreshFailed": {
     "message": "The function catalog could not be refreshed.",
     "description": "Error when the list of test functions could not be downloaded again from Piwi."
@@ -252,6 +328,30 @@
   "devtools_playwrightView": {
     "message": "Playwright view",
     "description": "Button in the toolbar of the DevTools Piwi panel: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
+  },
+  "devtools_pick": {
+    "message": "Pick",
+    "description": "DevTools, Piwi panel toolbar: button that starts Pick an element in the inspected page. One short word; the tooltip is devtools_pickTitle."
+  },
+  "devtools_pickTitle": {
+    "message": "Pick an element on the page: its ranked, stable locators",
+    "description": "DevTools, Piwi panel toolbar: tooltip of devtools_pick. One line."
+  },
+  "devtools_lint": {
+    "message": "Lint",
+    "description": "DevTools, Piwi panel toolbar: button that turns the lint overlay on in the inspected page. One short word, as popup_lint; the tooltip is devtools_lintTitle."
+  },
+  "devtools_lintTitle": {
+    "message": "Mark the elements of the page that are hard to test",
+    "description": "DevTools, Piwi panel toolbar: tooltip of devtools_lint. One line."
+  },
+  "devtools_testedElements": {
+    "message": "Tested elements",
+    "description": "DevTools, Piwi panel toolbar: button that opens Tested elements in the inspected page, as popup_testedElements. Its tooltip is devtools_testedElementsTitle, or why it cannot run."
+  },
+  "devtools_testedElementsTitle": {
+    "message": "What your tests reach on this page, and what they miss",
+    "description": "DevTools, Piwi panel toolbar: tooltip of devtools_testedElements when it can run. One line."
   },
   "devtools_saveLogin": {
     "message": "Save login for tests",
@@ -638,6 +738,68 @@
   "options_stateNotConnected": {
     "message": "Not connected",
     "description": "Settings page: badge beside the Connect to Piwi heading before connecting. Short."
+  },
+  "options_desktopOffer": {
+    "message": "The desktop app you paired runs Piwi on this computer: use it as your instance, with its address and token.",
+    "description": "Settings page, Connect to Piwi card: shown when the desktop app is paired and no instance is connected, beside the options_useDesktop button."
+  },
+  "options_useDesktop": {
+    "message": "Use the desktop app as your instance",
+    "description": "Settings page, Connect to Piwi card: the button that connects to the paired desktop app's own Piwi instance in one click."
+  },
+  "options_desktopPairHint": {
+    "message": "To run bug reports with Playwright on this computer, $link$.",
+    "description": "Settings page, Connect to Piwi card: shown when an instance is connected and the desktop app is not paired. $link$ is options_desktopPairHintLink, a link to the Desktop app card.",
+    "placeholders": {
+      "link": {
+        "content": "$1",
+        "example": "pair the desktop app"
+      }
+    }
+  },
+  "options_desktopPairHintLink": {
+    "message": "pair the desktop app",
+    "description": "The link in options_desktopPairHint, which leads to the Desktop app card's Pair button. Lower case: it ends a sentence."
+  },
+  "options_healthOk": {
+    "message": "Answered $time$",
+    "description": "Settings page, a pill beside the instance's address: the last request to the instance worked. $time$ is how long ago, formatted by the browser (“5 minutes ago”). A few words.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "5 minutes ago"
+      }
+    }
+  },
+  "options_healthUnreachable": {
+    "message": "No answer since $time$",
+    "description": "Settings page, a pill beside the instance's address: nothing has answered there since $time$ (a clock time, or a date and a time). A few words.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthUnauthorized": {
+    "message": "Key refused since $time$",
+    "description": "Settings page, a pill beside the instance's address: the instance has refused the API key since $time$. A few words.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
+  },
+  "options_healthError": {
+    "message": "Errors since $time$",
+    "description": "Settings page, a pill beside the instance's address: the instance has answered with errors since $time$. A few words.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "10:42 AM"
+      }
+    }
   },
   "options_statePaired": {
     "message": "Paired",
@@ -1061,6 +1223,26 @@
     "message": "Disconnected.",
     "description": "Settings page: after Disconnect."
   },
+  "options_disconnectedKept_one": {
+    "message": "Disconnected. This browser’s $count$ line comes back when you connect to this instance again.",
+    "description": "Settings page: after Disconnect, when one line under This browser only is kept for the next connection to the same instance. $count$ is the number of lines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "options_disconnectedKept_other": {
+    "message": "Disconnected. This browser’s $count$ lines come back when you connect to this instance again.",
+    "description": "Settings page: after Disconnect, when several lines under This browser only are kept for the next connection to the same instance. $count$ is the number of lines.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
   "options_connect": {
     "message": "Connect",
     "description": "Settings page: button next to the instance address that starts connecting (opens the instance to allow Piwi Picker). Short."
@@ -1297,6 +1479,72 @@
     "message": "Unpair",
     "description": "Button that forgets the paired editor."
   },
+  "options_siteAccessHeading": {
+    "message": "Sites Piwi Picker may run on",
+    "description": "Settings page: heading of the card listing the sites Piwi Picker holds a host permission for."
+  },
+  "options_siteAccessHint": {
+    "message": "A site you allow is one Piwi Picker can run on without a click on its icon, so a recording or a replay follows you across its pages. It asks for each site the first time a tool needs it.",
+    "description": "Settings page, under options_siteAccessHeading: what allowing a site grants, and when Piwi Picker asks for one."
+  },
+  "options_siteAccessEmpty": {
+    "message": "No site yet: Piwi Picker asks for one the first time you record or replay there.",
+    "description": "Settings page, the sites card: shown when no site is allowed."
+  },
+  "options_siteRevoke": {
+    "message": "Revoke",
+    "description": "Settings page, the sites card: the button that takes a site's permission back. One word if possible."
+  },
+  "options_siteRevokeLabel": {
+    "message": "Revoke Piwi Picker’s access to $site$",
+    "description": "Settings page, the sites card: what a screen reader reads for the Revoke button of one site. $site$ is its pattern, such as https://shop.example/*.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteUseInstance": {
+    "message": "Used by your Piwi instance: Disconnect removes this access.",
+    "description": "Settings page, the sites card: beside the connected Piwi instance's address, whose Revoke is disabled. “Disconnect” is the Connect to Piwi card's button (options_disconnect)."
+  },
+  "options_siteUseDesktop": {
+    "message": "Used by the desktop app: Unpair removes this access.",
+    "description": "Settings page, the sites card: beside the paired desktop app's address, whose Revoke is disabled. “Unpair” is the Desktop app card's button (options_desktopForget)."
+  },
+  "options_siteUseEditor": {
+    "message": "Used by your editor: Unpair removes this access.",
+    "description": "Settings page, the sites card: beside the paired editor's address, whose Revoke is disabled. “Unpair” is the Send to editor card's button (options_editorUnpair)."
+  },
+  "options_siteBusyRecording": {
+    "message": "A recording is running there: stop it first.",
+    "description": "Settings page, the sites card: beside a site a recording runs on, whose Revoke is disabled until it ends."
+  },
+  "options_siteBusyReplay": {
+    "message": "A replay is running there: stop it first.",
+    "description": "Settings page, the sites card: beside a site a replay runs on, whose Revoke is disabled until it ends."
+  },
+  "options_siteRevoked": {
+    "message": "Piwi Picker no longer runs on $site$ unless you click its icon there.",
+    "description": "Settings page, the sites card's status line after Revoke. $site$ is the site's pattern.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
+  "options_siteRevokeFailed": {
+    "message": "The browser kept the access to $site$: remove it in the browser’s extension settings.",
+    "description": "Settings page, the sites card's status line when the browser refused to take a site's permission back. $site$ is the site's pattern.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example/*"
+      }
+    }
+  },
   "options_editorPaired": {
     "message": "Paired with the editor at $url$.",
     "description": "Status once paired. $url$ is the editor’s local address.",
@@ -1429,11 +1677,33 @@
   },
   "common_copyModeAction": {
     "message": "Action",
-    "description": "Copy button under a locator: copies it as an action line, `await page.….click();`. One word."
+    "description": "Copy button under a locator: copies it as an action line, `await page.….click();`, or `fill`, `check` or `selectOption` as the element calls for. One word."
   },
   "common_copyModeExpect": {
     "message": "Assertion",
-    "description": "Copy button under a locator: copies it as an assertion line, `await expect(page.…).toBeVisible();`. One word."
+    "description": "Copy button under a locator: copies it as an assertion line, `await expect(page.…).toHaveText(…);`, the element's top assertion, `toBeVisible()` when nothing better applies. One word."
+  },
+  "common_copyModeWithMethod": {
+    "message": "$mode$ ($method$)",
+    "description": "Copy button under a locator, once the element tells what the line calls: $mode$ is common_copyModeAction or common_copyModeExpect, $method$ the Playwright method it writes, e.g. `fill` or `toHaveText` (code, not translated). Reads “Action (fill)”.",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "fill"
+      },
+      "mode": {
+        "content": "$2",
+        "example": "Action"
+      }
+    }
+  },
+  "common_verdictBrittle": {
+    "message": "brittle",
+    "description": "Pick results and the DevTools sidebar: the word before a locator that finds the element alone but that the stability rules call brittle."
+  },
+  "common_verdictWatch": {
+    "message": "could break",
+    "description": "Pick results and the DevTools sidebar: the word before a locator that finds the element alone but could break when the page changes."
   },
   "multipick_picked_one": {
     "message": "$count$ similar item picked",
@@ -1506,6 +1776,26 @@
       "count": {
         "content": "$2",
         "example": "3"
+      }
+    }
+  },
+  "multipick_count_one": {
+    "message": "The shared locator finds $count$ element on the page right now",
+    "description": "Multi-pick results: line under the title. $count$ is how many elements the shared locator shown in the title finds on the page as it is now.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "multipick_count_other": {
+    "message": "The shared locator finds $count$ elements on the page right now",
+    "description": "Multi-pick results: line under the title. $count$ is how many elements the shared locator shown in the title finds on the page as it is now.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
       }
     }
   },
@@ -1594,6 +1884,38 @@
         "example": "button"
       }
     }
+  },
+  "lint_onContainer": {
+    "message": "On the repeated $tag$ holding \"$text$\"",
+    "description": "Lint overlay: above a suggested test id that goes on the element’s container (a row, a card, a list item repeated on the page) rather than on the element. $tag$ is the container’s HTML tag as code, kept as it is; $text$ is the page’s own text that tells this container apart from its copies.",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<li>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_scopeBy": {
+    "message": "Scope by the repeated $tag$ holding \"$text$\": its copies share a test id already",
+    "description": "Lint overlay: above a locator to use instead of adding a test id, when the element sits in a repeated container (row, card, list item) whose copies all carry the same test id. $tag$ is the container’s HTML tag as code, kept as it is; $text$ is the page’s own text that tells this container apart.",
+    "placeholders": {
+      "tag": {
+        "content": "$1",
+        "example": "<article>"
+      },
+      "text": {
+        "content": "$2",
+        "example": "Blue mug"
+      }
+    }
+  },
+  "lint_thenLocator": {
+    "message": "A test then finds it with",
+    "description": "Lint overlay: before the locator a test uses once the suggested test id is added to the element’s container."
   },
   "assert_dialog": {
     "message": "Suggested assertions",
@@ -1707,17 +2029,27 @@
       }
     }
   },
+  "session_addFailed": {
+    "message": "Not added to the session: $error$",
+    "description": "Piwi sidebar in DevTools and the Pick results, Add to session: error under the name field when the browser could not keep the element in the session. $error$ is the browser’s reason, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Session storage quota exceeded."
+      }
+    }
+  },
   "pick_overlayBanner": {
     "message": "Piwi inspector — click any element to generate locators for it",
     "description": "Picking overlay: the banner at the top of the page while an element is picked (Pick an element, Multi-pick, Assertions, Context for an AI agent)."
   },
   "pick_overlayKeys": {
-    "message": "↑ parent · ↓ child · Esc skip",
-    "description": "Picking overlay: the line under the banner before the pointer is on an element. ↑ and ↓ are the arrow keys, which move the pick to the element’s parent or child; Esc skips the pick. Short."
+    "message": "Enter picks the focused element · ↑ parent · ↓ child · Esc skip",
+    "description": "Picking overlay: the line under the banner before the pointer is on an element. Enter picks the element that has the keyboard focus; ↑ and ↓ are the arrow keys, which move the pick to the element’s parent or child; Esc skips the pick. Short."
   },
   "pick_overlayKeysHovering": {
-    "message": "click to pick · ↑ parent · ↓ child · Esc skip",
-    "description": "Picking overlay: the line under the banner while the pointer is on an element, as pick_overlayKeys with the click first. Short."
+    "message": "click or Enter to pick · ↑ parent · ↓ child · Esc skip",
+    "description": "Picking overlay: the line under the banner while the pointer is on an element: a click or Enter picks that element, then the keys of pick_overlayKeys. Short."
   },
   "pick_overlayAnalyzing": {
     "message": "Analyzing element…",
@@ -1798,14 +2130,18 @@
     }
   },
   "pick_title_other": {
-    "message": "$count$ locators, most stable first",
-    "description": "Pick results: the panel’s title. $count$ is how many locators were found for the picked element; they are listed from the most stable down.",
+    "message": "$count$ locators",
+    "description": "Pick results: the panel’s title. $count$ is how many locators were found for the picked element.",
     "placeholders": {
       "count": {
         "content": "$1",
         "example": "4"
       }
     }
+  },
+  "pick_order": {
+    "message": "Ranked from the most stable, the ones that find this element alone first",
+    "description": "Pick results: line under the title saying in which order the locators are listed."
   },
   "pick_tabHint": {
     "message": "Tab moves between rows",
@@ -1837,7 +2173,21 @@
   },
   "pick_score": {
     "message": "Stability score: the higher, the less likely the locator breaks when the page changes",
-    "description": "Pick results: tooltip of the number shown before each locator."
+    "description": "Pick results: tooltip of the stability score line in a locator’s details."
+  },
+  "pick_reasons": {
+    "message": "Details",
+    "description": "Pick results: the toggle under a locator that shows why it got its word (the verdict and the stability rules) and its stability score."
+  },
+  "pick_scoreValue": {
+    "message": "Stability score: $score$",
+    "description": "Pick results: in a locator’s details, the score the ranking engine gave it. $score$ is a number.",
+    "placeholders": {
+      "score": {
+        "content": "$1",
+        "example": "90"
+      }
+    }
   },
   "pick_unique": {
     "message": "Finds exactly one element on the page right now",
@@ -2143,6 +2493,22 @@
     "message": "Send to editor",
     "description": "Button on a picked locator: inserts it, in the chosen copy form, at the cursor of the editor paired with Piwi Picker (VS Code or a JetBrains IDE)."
   },
+  "pick_scopeToParent": {
+    "message": "Scope to a parent…",
+    "description": "Pick results: button that opens the anchors step for the picked element, to anchor its locators to a parent (a form, a dialog, a row), then shows the results again."
+  },
+  "pick_scopeToParentHint": {
+    "message": "Choose the form, dialog or row around the element to anchor its locators to",
+    "description": "Pick results: tooltip of the Scope to a parent button."
+  },
+  "pick_pickAnother": {
+    "message": "Pick another",
+    "description": "Pick results: button that closes the results and starts picking another element on the page."
+  },
+  "pick_pickAnotherHint": {
+    "message": "Close these results and pick another element on the page",
+    "description": "Pick results: tooltip of the Pick another button."
+  },
   "functions_title": {
     "message": "Test functions on this page",
     "description": "Test functions: the panel’s title and aria-label. The panel checks each test function of the project against the page open."
@@ -2162,8 +2528,8 @@
     "description": "Test functions: tooltip of the Refresh button."
   },
   "functions_noProject": {
-    "message": "No Piwi project is set for this site. Add it under Project mappings in Piwi Picker’s settings, or choose a project in Piwi Picker’s menu.",
-    "description": "Test functions: shown instead of the list when no project applies to the page. “Project mappings” is a section of the settings page (options_mappingsHeading)."
+    "message": "No Piwi project is mapped to this site yet. Open Piwi Picker’s settings and add the site under Project mappings, or choose a project under Active project in Piwi Picker’s menu.",
+    "description": "Test functions: shown instead of the list when no project applies to the page. “Project mappings” is a section of the settings page (options_mappingsHeading), “Active project” the popup’s select (popup_activeProject)."
   },
   "functions_empty": {
     "message": "$project$ has no test functions yet. Add one in the Piwi dashboard, by hand or by pasting a function’s code.",
@@ -2297,17 +2663,21 @@
       }
     }
   },
+  "record_hudLabel": {
+    "message": "Recording",
+    "description": "Recorder bar shown on the page while a recording runs: its accessible name, read by screen readers, not shown."
+  },
   "record_pause": {
     "message": "Pause",
-    "description": "Recorder bar in a browser the editor (VS Code, a JetBrains IDE) opened for a recording: button that pauses the recording, so nothing done in the page is recorded until Resume. Short."
+    "description": "Recorder bar, while a recording runs: button that pauses the recording, so nothing done in the page is recorded until Resume. Short."
   },
   "record_resume": {
     "message": "Resume",
-    "description": "Recorder bar in a browser the editor opened for a recording: button that resumes a paused recording. Short."
+    "description": "Recorder bar, while a recording is paused: button that resumes it. Short."
   },
   "record_pausedNote": {
     "message": "Paused: what you do here is not recorded until you resume.",
-    "description": "Recorder bar in a browser the editor opened for a recording, while it is paused: one line under the title."
+    "description": "Recorder bar, while the recording is paused: one line under the title."
   },
   "record_checkElement": {
     "message": "Check an element",
@@ -2407,6 +2777,14 @@
     "message": "Your recording",
     "description": "Recorder review panel: accessible name of the dialog that opens when a recording stops (read by screen readers, not shown)."
   },
+  "record_testTitle": {
+    "message": "Test title",
+    "description": "Recorder review panel: label of the text field at the top that names the test: the generated spec's test('…') and the steps file's title. Filled with the first page's title. Short."
+  },
+  "record_testTitlePlaceholder": {
+    "message": "Name of the test",
+    "description": "Recorder review panel: placeholder of the “Test title” field, shown only when no title can be made from the steps."
+  },
   "record_nothingRecorded": {
     "message": "Nothing recorded",
     "description": "Recorder review panel: title when the recording has no step."
@@ -2486,6 +2864,14 @@
   "record_sendToEditor": {
     "message": "Send to editor",
     "description": "Button in the recording review: the paired editor renders the recorded steps as the body of a test, with the project’s functions, and inserts it at the cursor."
+  },
+  "record_replay": {
+    "message": "Replay",
+    "description": "Recorder review panel: button that plays the recorded steps again on the site, before they are exported. Short."
+  },
+  "record_replayHint": {
+    "message": "Play the steps again on this site, with a cursor, and see that each step still finds its element",
+    "description": "Recorder review panel: tooltip of “Replay”."
   },
   "bug_reportLabel": {
     "message": "Piwi Picker bug report",
@@ -3881,6 +4267,10 @@
     "message": "Use the bug report recorded in this browser",
     "description": "Replay dialog button: replays the last bug report recorded with Piwi Picker in this browser."
   },
+  "replay_useRecordedActions": {
+    "message": "Use the actions recorded in this browser",
+    "description": "Replay dialog button: replays the last recording of actions (Record actions, not a bug report) made with Piwi Picker in this browser."
+  },
   "replay_chooseFile": {
     "message": "Or choose the report’s .piwibug, or its steps.json, saved by Piwi Picker:",
     "description": "Replay dialog, above the file field. “.piwibug” and “steps.json” are file names, kept as they are."
@@ -4366,8 +4756,8 @@
     }
   },
   "coverage_notConnected": {
-    "message": "Connect Piwi Picker to your Piwi instance to see which elements of this page your tests use: in the settings, add the address of your instance, an API key and an address pattern for this site.",
-    "description": "Tested elements panel: message when Piwi Picker is not connected to a Piwi instance."
+    "message": "Piwi Picker is not connected to your Piwi instance yet. Open the settings, enter your instance’s address and click Connect: this panel then shows which elements of the page your tests reach.",
+    "description": "Tested elements panel: message when Piwi Picker is not connected to a Piwi instance, followed by the Open settings button (coverage_openSettings). “Connect” is the settings page’s button (options_connect)."
   },
   "coverage_noProject": {
     "message": "No project is set for this page. Add an address pattern for it in the settings, or choose a project in Piwi Picker’s menu.",
@@ -5879,6 +6269,10 @@
     "message": "Add to session",
     "description": "DevTools, Piwi sidebar: button under a locator that adds it to the pick session under a name."
   },
+  "devtools_sendToEditor": {
+    "message": "Send to editor",
+    "description": "DevTools: button shown once an editor is paired, under the top locator of the Piwi sidebar and under the Locators console of the Piwi panel. Inserts the locator, in the copy form chosen last, at the cursor of the editor paired with Piwi Picker (VS Code or a JetBrains IDE)."
+  },
   "devtools_addedToSession": {
     "message": "Added to the session as $name$.",
     "description": "DevTools, Piwi sidebar: confirmation after adding a locator to the pick session. $name$ is the name the user typed.",
@@ -5892,6 +6286,10 @@
   "view_title": {
     "message": "Playwright view",
     "description": "Playwright view: title of the small panel over the page. “Playwright” is a product name."
+  },
+  "view_close": {
+    "message": "Close the Playwright view",
+    "description": "Playwright view: aria-label and tooltip of the × button of its panel, which turns the view off. “Playwright” is a product name."
   },
   "view_noRole": {
     "message": "(no role)",
@@ -5969,6 +6367,26 @@
       }
     }
   },
+  "view_crowded_one": {
+    "message": "$count$ label left out, too close to others: choose a role to see it",
+    "description": "Playwright view panel: shown when some labels have no free place near their element because elements crowd together, so they are not drawn. Choosing one role in the Role select shows fewer labels. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "view_crowded_other": {
+    "message": "$count$ labels left out, too close to others: choose a role to see them",
+    "description": "Playwright view panel: shown when some labels have no free place near their element because elements crowd together, so they are not drawn. Choosing one role in the Role select shows fewer labels. $count$ is the number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
   "devtools_tabRecord": {
     "message": "Record",
     "description": "DevTools, Piwi panel: tab showing the running recording. One word."
@@ -5998,6 +6416,34 @@
   "devtools_recordingOn_other": {
     "message": "Recording on $site$: $count$ steps",
     "description": "DevTools, Piwi panel, Record tab: a recording runs. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingPaused_one": {
+    "message": "Paused on $site$: $count$ step",
+    "description": "DevTools, Piwi panel, Record tab: a recording is paused from its bar on the page, so nothing is recorded until it resumes. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "site": {
+        "content": "$2",
+        "example": "https://shop.example"
+      }
+    }
+  },
+  "devtools_recordingPaused_other": {
+    "message": "Paused on $site$: $count$ steps",
+    "description": "DevTools, Piwi panel, Record tab: a recording is paused from its bar on the page, so nothing is recorded until it resumes. $count$ is the number of steps so far, $site$ the recorded site, like https://shop.example.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -6538,7 +6984,7 @@
     "description": "DevTools, Piwi panel, Locators tab: example in the empty locator field. Keep getByLabel('…') as it is; the field's label, Email, may be translated."
   },
   "devtools_locatorsHint": {
-    "message": "Type a locator: the elements it finds on this page are listed, as Playwright finds them. Hover one to outline it on the page; Reveal selects it in the Elements panel.",
+    "message": "Type a locator: the elements it finds on this page are listed, as Playwright finds them. Hover one to outline it on the page; Reveal selects it in the Elements panel. Enter keeps the locator in the history, which the up and down arrows go through.",
     "description": "DevTools, Piwi panel, Locators tab: shown while the field is empty."
   },
   "devtools_matches": {

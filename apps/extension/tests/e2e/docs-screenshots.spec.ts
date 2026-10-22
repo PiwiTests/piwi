@@ -233,6 +233,14 @@ test('picker-record', async ({ context }) => {
 test('picker-lint', async ({ context }) => {
   await stubChromeI18n(context);
   const page = await shopPage(context);
+  // Wishlist buttons drawn as an unnamed icon: the case the lint overlay exists for.
+  await page.evaluate(() => {
+    for (const button of document.querySelectorAll('button[aria-label$="to wishlist"]')) {
+      button.removeAttribute('aria-label');
+      button.innerHTML =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.5-9.5 9-9.5 9z"/></svg>';
+    }
+  });
   await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
   await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-lint-overlay-host'))).toBe(true);
   await page.waitForTimeout(500);

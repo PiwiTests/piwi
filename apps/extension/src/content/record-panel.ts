@@ -28,6 +28,7 @@ import {
   stopRecording,
   discardRecording,
   recordingMode,
+  updateRecording,
   type RecordingState,
 } from '../shared/recording-storage.js';
 import { appendBugEntries, getBugEvidence, setBugEvidenceFields, storeAsPageLeaves } from '../shared/bug-storage.js';
@@ -55,6 +56,7 @@ import {
   copyToClipboard,
   fileStamp,
   mountSurface,
+  startReplayHere,
 } from './record-ui.js';
 import { downloadBlob } from '../shared/download.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
@@ -68,6 +70,7 @@ import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 import { IDE_BUILD, getIdeSettings, ideHostInstalled } from '../shared/ide-build.js';
 import { runCheckAddressFlow, runCheckElementFlow } from './check-panel.js';
 import { webOrigin } from '../shared/web-origin.js';
+import { cleanTitle, RECORDING_TITLE_MAX, titleFromSteps } from '../shared/recording-title.js';
 
 /**
  * The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent
@@ -88,10 +91,14 @@ let testIdAttribute: string | null = null;
 let ideSettings: IdeRecorderSettings | null = null;
 
 /**
- * In the IDE bundle, whether the recording is paused, from the HUD's Pause or the editor's: nothing is captured until
- * it resumes. Read from the recording as each page starts, then kept up to date by the messages of both.
+ * Whether the recording is paused, from the HUD's Pause or, in the IDE bundle, the editor's: nothing is captured until
+ * it resumes. Read from the recording as each page starts, then kept up to date by the HUD and by
+ * `piwi-recording-paused`, which the worker passes on to the recording's other tabs and the launcher to every page.
  */
-let idePaused = false;
+let recordingPaused = false;
+
+/** The start time of the recording this page captures, read as it starts: Pause applies to that recording only. */
+let recordingStartedAt: number | null = null;
 
 /** {@link ACTIONABLE_SELECTOR} with the elements carrying the project's test id attribute. */
 function actionableSelector(): string {
@@ -391,14 +398,20 @@ function focusInClosedShadowRoot(el: Element): boolean {
 
 /** Whether capture is paused in this document: a bug report's pick or dialog is on screen, or the recording is paused. */
 function capturePaused(): boolean {
-  return recorderGlobals().__piwiRecordPaused === true || idePaused;
+  return recorderGlobals().__piwiRecordPaused === true || recordingPaused;
 }
 
-/** Pauses or resumes the recording from the HUD: the launcher keeps it for every page, and tells the editor. */
-async function setIdePaused(paused: boolean): Promise<void> {
-  idePaused = paused;
+/**
+ * Pauses or resumes the recording from the HUD. The extension keeps it in the
+ * recording, which each page reads as it starts, and the worker tells the
+ * recording's other tabs; in the IDE bundle the launcher keeps it for every
+ * page, and tells the editor.
+ */
+async function setRecordingPaused(paused: boolean): Promise<void> {
+  recordingPaused = paused;
   scheduleHudRefresh();
   try {
+    if (!IDE_BUILD) await updateRecording(recordingStartedAt, { paused });
     await chrome.runtime.sendMessage({ type: IDE_PAUSED_MESSAGE, paused });
   } catch {
     captureError = t('common_workerNoAnswer');
@@ -477,6 +490,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
     .dot.paused { background: #9ca3af; animation: none; }
     .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     .checks { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -505,8 +519,11 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   const matches = catalog.length > 0 ? rankFunctionMatches(steps, catalog).slice(0, 3) : [];
   const lastTarget = [...state.events].reverse().find((e) => e.target)?.target ?? null;
 
+  // A landmark, not a dialog: the page stays usable around it.
   const bar = document.createElement('div');
   bar.className = 'bar';
+  bar.setAttribute('role', 'region');
+  bar.setAttribute('aria-label', t('record_hudLabel'));
   bar.lang = uiLanguage();
 
   const topRow = document.createElement('div');
@@ -522,25 +539,21 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     small: true,
     className: 'stop',
   });
-  if (IDE_BUILD) {
-    dot.classList.toggle('paused', idePaused);
-    const pauseBtn = makeButton(
-      idePaused ? t('record_resume') : t('record_pause'),
-      () => void setIdePaused(!idePaused),
-      {
-        icon: idePaused ? 'play' : 'pause',
-        small: true,
-        className: 'pause',
-      },
-    );
-    pauseBtn.setAttribute('aria-pressed', String(idePaused));
-    topRow.append(dot, title, pauseBtn, stopBtn);
-  } else {
-    topRow.append(dot, title, stopBtn);
-  }
+  dot.classList.toggle('paused', recordingPaused);
+  const pauseBtn = makeButton(
+    recordingPaused ? t('record_resume') : t('record_pause'),
+    () => void setRecordingPaused(!recordingPaused),
+    {
+      icon: recordingPaused ? 'play' : 'pause',
+      small: true,
+      className: 'pause',
+    },
+  );
+  pauseBtn.setAttribute('aria-pressed', String(recordingPaused));
+  topRow.append(dot, title, pauseBtn, stopBtn);
   bar.appendChild(topRow);
 
-  if (IDE_BUILD && idePaused) {
+  if (recordingPaused) {
     const note = document.createElement('div');
     note.className = 'empty';
     note.textContent = t('record_pausedNote');
@@ -555,7 +568,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     ['record_checkAddress', 'globe', runCheckAddressFlow],
   ] as const) {
     const button = makeButton(t(label), () => void run(bugHooks), { icon: glyph, small: true });
-    button.disabled = IDE_BUILD && idePaused;
+    button.disabled = recordingPaused;
     checks.appendChild(button);
   }
   bar.appendChild(checks);
@@ -625,6 +638,52 @@ function downloadSteps(doc: PiwiSteps): void {
   );
 }
 
+/** How long after the last keystroke the review panel stores its title. */
+const TITLE_WRITE_MS = 300;
+
+interface TitleWriter {
+  /** Stores `title` once {@link TITLE_WRITE_MS} pass without another. */
+  schedule(title: string): void;
+  /** Stores the pending title now; resolves once no write is in flight. */
+  flush(): Promise<void>;
+  /** Forgets the pending title; resolves once no write is in flight. */
+  drop(): Promise<void>;
+}
+
+/** The review panel's title, stored on the recording the panel reviews and on no other (see `updateRecording`). */
+function titleWriter(startedAt: number | null): TitleWriter {
+  let pending: { title: string } | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let writing: Promise<unknown> = Promise.resolve();
+  const cancel = (): void => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  const idle = (): Promise<void> => writing.then(() => undefined);
+  const flush = (): Promise<void> => {
+    cancel();
+    if (pending) {
+      const { title } = pending;
+      pending = null;
+      writing = writing.then(() => updateRecording(startedAt, { title })).catch(() => undefined);
+    }
+    return idle();
+  };
+  return {
+    schedule(title) {
+      pending = { title };
+      cancel();
+      timer = setTimeout(() => void flush(), TITLE_WRITE_MS);
+    },
+    flush,
+    drop() {
+      cancel();
+      pending = null;
+      return idle();
+    },
+  };
+}
+
 async function renderReviewPanel(state: RecordingState): Promise<void> {
   if (recordingMode(state) === 'bug') {
     await renderBugFinishPanel(state, discardRecording);
@@ -639,6 +698,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
 
   const steps = normalizeSteps(events);
   const session = buildSession(steps, events[0]?.timestamp ?? Date.now());
+  const fallbackTitle = titleFromSteps(steps);
   const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride()]);
   const activeProject = resolveActiveProject(connection, override, location.href);
   // Worth waiting for here, unlike in the live HUD: this is the one-shot that
@@ -650,7 +710,6 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   // URL checks: after a step that leads to another page, the spec waits for
   // it, and for the next element as the only match, before acting.
   const withCatalog = renderSpec(session, { catalog, urlChecks: true });
-  const raw = renderSpec(session, { urlChecks: true });
 
   const host = document.createElement('div');
   host.id = PANEL_HOST_ID;
@@ -679,12 +738,21 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     .step:last-child { border-bottom: none; }
     .step-idx { color: #9ca3af; flex-shrink: 0; min-width: 18px; text-align: end; font-variant-numeric: tabular-nums; font-size: 11px; padding-top: 3px; }
     .step-fn { margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(124,58,237,.2); color: #a78bfa; flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12px; color: #9ca3af; }
+    .field input { font: inherit; font-size: 13px; color: inherit; background: rgba(148,163,184,.12);
+      border: 1px solid rgba(148,163,184,.35); border-radius: 6px; padding: 6px 8px; width: 100%; }
+    .field input:focus { outline: 2px solid #7c3aed; outline-offset: 0; }
+    .panel .field input { color: #f9fafb; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .actions .discard { margin-inline-start: auto; }
     .empty { color: #9ca3af; font-size: 12.5px; padding: 16px; text-align: center; }
+    .message { color: #fca5a5; font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; }
+    .message:empty { display: none; }
     @media (prefers-color-scheme: light) {
-      .sub, .step-idx, .empty { color: #6b7280; }
+      .sub, .step-idx, .empty, .field { color: #6b7280; }
+      .panel .field input { color: #111827; }
       .step-fn { color: #6d28d9; }
+      .message { color: #b91c1c; }
     }
   `;
   root.appendChild(style);
@@ -714,9 +782,12 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
         : t('record_notConnected');
   titleWrap.append(title, sub);
   // Every close path (the ×, the backdrop, Discard, Escape) goes through one
-  // function, which detaches the document-level Escape listener below with the panel.
+  // function, which stores the title still pending and detaches the
+  // document-level listeners below with the panel.
+  const titles = titleWriter(state.startedAt);
   const closeController = new AbortController();
   const closePanel = (): void => {
+    void titles.flush();
     closeController.abort();
     host.remove();
   };
@@ -728,6 +799,23 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   });
   header.append(titleWrap, closeBtn);
   panel.appendChild(header);
+
+  // The test's title, which the spec and the steps file take: the first page's own title unless changed, and the
+  // first action's words when the field is left empty.
+  const titleField = document.createElement('label');
+  titleField.className = 'field';
+  const titleLabel = document.createElement('span');
+  titleLabel.textContent = t('record_testTitle');
+  const titleInput = document.createElement('input');
+  titleInput.type = 'text';
+  titleInput.maxLength = RECORDING_TITLE_MAX;
+  titleInput.value = state.title ?? '';
+  titleInput.placeholder = fallbackTitle ?? t('record_testTitlePlaceholder');
+  titleInput.addEventListener('input', () => titles.schedule(titleInput.value));
+  titleField.append(titleLabel, titleInput);
+  const specTitle = (): string | undefined => cleanTitle(titleInput.value) ?? fallbackTitle ?? undefined;
+  const stepsDocument = (): PiwiSteps => toStepsDocument(session, { title: specTitle() ?? null });
+  if (steps.length > 0) panel.appendChild(titleField);
 
   if (steps.length === 0) {
     const empty = document.createElement('div');
@@ -760,34 +848,53 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
 
   const actions = document.createElement('div');
   actions.className = 'actions';
+  const message = document.createElement('div');
+  message.className = 'message';
+  message.setAttribute('role', 'alert');
 
   if (steps.length > 0) {
     const copyPrimary = makeButton(
       catalog.length > 0 ? t('record_copyCodeWithFunctions') : t('record_copyCode'),
-      () => void copyToClipboard(withCatalog.code, copyPrimary),
+      () => {
+        void titles.flush();
+        void copyToClipboard(renderSpec(session, { catalog, urlChecks: true, title: specTitle() }).code, copyPrimary);
+      },
       { icon: 'copy', tone: 'primary' },
     );
     actions.appendChild(copyPrimary);
 
     if (catalog.length > 0 && withCatalog.matchedSpans.length > 0) {
-      const copyRaw = makeButton(t('record_copyCodeWithoutFunctions'), () => void copyToClipboard(raw.code, copyRaw), {
-        icon: 'code',
-      });
+      const copyRaw = makeButton(
+        t('record_copyCodeWithoutFunctions'),
+        () => {
+          void titles.flush();
+          void copyToClipboard(renderSpec(session, { urlChecks: true, title: specTitle() }).code, copyRaw);
+        },
+        { icon: 'code' },
+      );
       actions.appendChild(copyRaw);
     }
 
     actions.appendChild(
-      makeButton(t('record_downloadSteps'), () => downloadSteps(toStepsDocument(session)), {
-        icon: 'download',
-        title: t('record_downloadStepsTitle'),
-      }),
+      makeButton(
+        t('record_downloadSteps'),
+        () => {
+          void titles.flush();
+          downloadSteps(stepsDocument());
+        },
+        {
+          icon: 'download',
+          title: t('record_downloadStepsTitle'),
+        },
+      ),
     );
 
     if (await getEditorPairing().catch(() => null)) {
       const sendBtn = makeButton(
         t('record_sendToEditor'),
         () => {
-          void sendToEditor({ kind: 'steps', steps: toStepsDocument(session) }).then((result) =>
+          void titles.flush();
+          void sendToEditor({ kind: 'steps', steps: stepsDocument() }).then((result) =>
             showSendResult(sendBtn, result),
           );
         },
@@ -795,16 +902,35 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
       );
       actions.appendChild(sendBtn);
     }
+
+    // Played again before export: the one check that every recorded locator still finds its element.
+    const replayBtn = makeButton(
+      t('record_replay'),
+      () => {
+        replayBtn.disabled = true;
+        void titles
+          .flush()
+          .then(() => startReplayHere(stepsDocument()))
+          .then((response) => {
+            if (response.ok) return closePanel();
+            replayBtn.disabled = false;
+            message.textContent = response.error ?? t('common_replayStartFailed');
+          });
+      },
+      { icon: 'play', title: t('record_replayHint') },
+    );
+    actions.appendChild(replayBtn);
   }
 
   actions.appendChild(
-    makeButton(t('common_discard'), () => void discardRecording().then(closePanel, closePanel), {
+    makeButton(t('common_discard'), () => void titles.drop().then(discardRecording).then(closePanel, closePanel), {
       icon: 'trash',
       tone: 'remove',
       className: 'discard',
     }),
   );
   panel.appendChild(actions);
+  panel.appendChild(message);
 
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) closePanel();
@@ -816,6 +942,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
     },
     { capture: true, signal: closeController.signal },
   );
+  window.addEventListener('pagehide', () => void titles.flush(), { signal: closeController.signal });
 
   backdrop.appendChild(panel);
   root.appendChild(backdrop);
@@ -1379,9 +1506,9 @@ function installStopListener(): void {
   g.__piwiRecordStopListener = true;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
-    if (IDE_BUILD && message?.type === IDE_PAUSED_MESSAGE && typeof message.paused === 'boolean') {
-      // The editor's Pause or Resume.
-      idePaused = message.paused;
+    if (message?.type === IDE_PAUSED_MESSAGE && typeof message.paused === 'boolean') {
+      // Pause or Resume from another tab of the recording, or from the editor.
+      recordingPaused = message.paused;
       scheduleHudRefresh();
     }
     if (message?.type === 'piwi-bug-debugger-lost') {
@@ -1591,7 +1718,8 @@ async function initRecordPanel(restored: boolean): Promise<void> {
     initI18n(),
     loadRecorderSettings(),
   ]);
-  if (IDE_BUILD) idePaused = state.paused === true;
+  recordingPaused = state.paused === true;
+  recordingStartedAt = state.startedAt;
 
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down
@@ -1610,6 +1738,10 @@ async function initRecordPanel(restored: boolean): Promise<void> {
     return;
   }
 
+  // A recording of actions takes its first page's own title, which the review panel offers as the test's.
+  if (!IDE_BUILD && recordingMode(state) === 'actions' && state.title === undefined) {
+    await updateRecording(state.startedAt, { title: cleanTitle(document.title) });
+  }
   // The size comes before the page, so the first one is the size of the first step.
   const viewport = recordingMode(state) === 'bug' ? await recordPageViewport(state) : null;
   // Seed this page's own URL so a mid-recording navigation's `RecordedStep`s

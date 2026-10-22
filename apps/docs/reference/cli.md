@@ -314,7 +314,7 @@ npx @piwitests/reporter ai resolve --grep "checkout"
 ## `codegen`
 
 Turn a [steps file](/reference/steps-format) into a Playwright spec. Piwi Picker saves one with
-[**Download steps**](/features/extension#record-actions). The spec is written for a test project: URLs on the recorded
+[**Download steps**](/features/record-actions). The spec is written for a test project: URLs on the recorded
 site become paths, so your config's `baseURL` applies; each element uses the first of its recorded locators that the
 [stability rules](/reference/locator-stability) call stable; and after each step that leads to another page, the spec
 waits for that page's URL. Nothing is sent anywhere unless a project is configured.

@@ -18,8 +18,8 @@ const stability = defineModel<LocatorStabilityFilter>('stability', { default: 'a
 const page = defineModel<string>('page', { default: ALL_PAGES });
 
 const PAGE = 50;
-const search = ref('');
-const shown = ref(PAGE);
+const search = useViewState('locators:search', () => '');
+const shown = useViewState('locators:shown', () => PAGE);
 watch([search, stability, page], () => (shown.value = PAGE));
 
 const assessed = computed(() =>

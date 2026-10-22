@@ -1,6 +1,7 @@
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { isCatalogStale, setCachedCatalog } from '../shared/catalog-cache.js';
 import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
+import { withConnectionHealth } from '../shared/connection-health.js';
 import { getConnectionSettings, type ConnectionSettings } from '../shared/connection-settings.js';
 import { t } from '../shared/i18n.js';
 import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
@@ -15,7 +16,8 @@ import { fromExtensionPage } from './senders.js';
  * context. Content scripts ask over `chrome.runtime.sendMessage`
  * (`catalog-refresh.ts`, `locator-index-refresh.ts`) and read the cache the
  * worker writes, so a function added in the dashboard reaches the extension
- * without saving the options page again.
+ * without saving the options page again. Each request's outcome is recorded
+ * for the popup and the settings (`connection-health.ts`).
  */
 
 /**
@@ -52,7 +54,7 @@ export async function handleRefreshCatalog(
   if (message.force !== true && !(await isCatalogStale(projectId))) return { ok: true, refreshed: false, count: null };
 
   try {
-    const entries = await fetchCatalog(settings, projectId);
+    const entries = await withConnectionHealth(settings.instanceUrl, () => fetchCatalog(settings, projectId));
     await setCachedCatalog(projectId, entries);
     return { ok: true, refreshed: true, count: entries.length };
   } catch (err) {
@@ -81,7 +83,9 @@ export async function handleRefreshLocatorIndex(
     return { ok: true, refreshed: false, index: null };
   }
   try {
-    const index = await fetchLocatorIndex(settings, projectId, branch);
+    const index = await withConnectionHealth(settings.instanceUrl, () =>
+      fetchLocatorIndex(settings, projectId, branch),
+    );
     await setCachedLocatorIndex(projectId, index, branch);
     return { ok: true, refreshed: true, index };
   } catch (err) {

@@ -1,21 +1,44 @@
-import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, renderCopyMode, type CopyMode } from '../shared/copy-modes.js';
+import {
+  COPY_MODE_ICONS,
+  COPY_MODES,
+  copyModeLabel,
+  copyModeMethod,
+  renderCopyMode,
+  type CopyMode,
+  type CopySource,
+  type ElementFacts,
+} from '../shared/copy-modes.js';
 import { setLastCopyMode } from '../shared/storage.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { makeButton } from '../shared/buttons.js';
 import { icon } from '../shared/icons.js';
 import { t } from '../shared/i18n.js';
+import { elementFacts } from './element-facts.js';
+
+/** A row's locator, with what its Action and Assertion write for the element it was built for. */
+export interface CopyRowSource extends CopySource {
+  facts?: ElementFacts | null;
+}
+
+/** The copy modes' facts about `el` as it is now; null without an element. */
+export function copyFacts(el: Element | null | undefined): ElementFacts | null {
+  return el ? elementFacts(el) : null;
+}
 
 /**
  * The copy buttons under a locator, one per copy mode, joined as one control
- * after a Copy label. A click copies the locator in that mode and makes it the
- * panel's mode: every copy button of `panel` marks it, and `onChoose` hears it.
+ * after a Copy label. Each names the method it writes once the element is
+ * known ("Action (fill)", "Assertion (toHaveText)"). A click copies the locator
+ * in that mode and makes it the panel's mode: every copy button of `panel`
+ * marks it, and `onChoose` hears it.
  */
 export function copyModeButtons(
-  locator: string,
+  locator: string | CopyRowSource,
   panel: HTMLElement,
   active: CopyMode,
   onChoose?: (mode: CopyMode) => void,
 ): HTMLElement {
+  const source: CopyRowSource = typeof locator === 'string' ? { locator } : locator;
   const group = document.createElement('div');
   group.className = 'copy-modes';
   group.setAttribute('role', 'group');
@@ -27,9 +50,9 @@ export function copyModeButtons(
   group.appendChild(lead);
   for (const mode of COPY_MODES) {
     const button = makeButton(
-      copyModeLabel(mode),
+      copyModeLabel(mode, copyModeMethod(source, mode, source.facts)),
       () => {
-        void copyWithFeedback(renderCopyMode({ locator }, mode), button);
+        void copyWithFeedback(renderCopyMode(source, mode, source.facts), button);
         void setLastCopyMode(mode);
         for (const other of panel.querySelectorAll<HTMLElement>('button.copy[data-mode]')) {
           other.dataset.active = String(other.dataset.mode === mode);

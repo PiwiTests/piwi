@@ -2,6 +2,7 @@ import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
 import { attachPanelShadow } from './panel-root.js';
 import { LOCATOR_ATTRIBUTES } from './observed-attributes.js';
+import { placeLabels } from './label-layout.js';
 import { scanPlaywrightView, type ViewLabel } from './playwright-view-scan.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 
@@ -32,6 +33,26 @@ function shorten(text: string): string {
 function labelText(label: ViewLabel): string {
   if (!label.role) return `${label.tag} · ${t('view_noRole')}`;
   return `${label.role} · ${label.name ? shorten(label.name) : t('view_noName')}`;
+}
+
+/** A label, hidden at the top left corner until it is placed. */
+function labelNode(label: ViewLabel): HTMLDivElement {
+  const tag = document.createElement('div');
+  tag.className = `tag ${label.mark ?? ''}`;
+  tag.style.left = '0px';
+  tag.style.top = '0px';
+  tag.style.visibility = 'hidden';
+  const roleChip = document.createElement('span');
+  roleChip.className = 'role';
+  roleChip.textContent = labelText(label);
+  tag.appendChild(roleChip);
+  if (label.testId) {
+    const chip = document.createElement('span');
+    chip.className = 'testid';
+    chip.textContent = label.testId;
+    tag.appendChild(chip);
+  }
+  return tag;
 }
 
 /**
@@ -98,6 +119,10 @@ function togglePlaywrightView(): void {
       .counts .red { color: #b91c1c; }
       .counts .amber { color: #b45309; }
     }
+    .crowded { margin: -4px 0 10px; color: #9ca3af; line-height: 17px; }
+    @media (prefers-color-scheme: light) {
+      .crowded { color: #6b7280; }
+    }
     label { display: flex; gap: 6px; align-items: center; }
     select {
       flex: 1; font: inherit; color: inherit; background: rgba(128,128,128,.12); border-radius: 6px;
@@ -111,7 +136,7 @@ function togglePlaywrightView(): void {
 
   const panel = document.createElement('div');
   panel.className = 'panel';
-  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('role', 'region');
   panel.setAttribute('aria-label', t('view_title'));
   panel.lang = uiLanguage();
   const header = document.createElement('div');
@@ -119,7 +144,7 @@ function togglePlaywrightView(): void {
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = t('view_title');
-  const closeBtn = makeButton(t('common_close'), () => off(), {
+  const closeBtn = makeButton(t('view_close'), () => off(), {
     icon: 'close',
     iconOnly: true,
     tone: 'ghost',
@@ -129,12 +154,15 @@ function togglePlaywrightView(): void {
   header.append(title, closeBtn);
   const counts = document.createElement('div');
   counts.className = 'counts';
+  const crowdedLine = document.createElement('div');
+  crowdedLine.className = 'crowded';
+  crowdedLine.hidden = true;
   const filterLabel = document.createElement('label');
   const filterText = document.createElement('span');
   filterText.textContent = t('view_filterRole');
   const filter = document.createElement('select');
   filterLabel.append(filterText, filter);
-  panel.append(header, counts, filterLabel);
+  panel.append(header, counts, crowdedLine, filterLabel);
   root.appendChild(panel);
 
   let labels: ViewLabel[] = [];
@@ -182,37 +210,51 @@ function togglePlaywrightView(): void {
     g.__piwiPlaywrightView = summary;
   };
 
+  /**
+   * Draws the labels of the elements in view, in page order: the boxes and the labels are added, every label's size
+   * is read in one layout, then `placeLabels` moves each one clear of those before it. A label with no free place
+   * near its element is left out, and the panel counts those.
+   */
   const draw = (): void => {
-    const nodes: HTMLElement[] = [];
+    const shown: Array<{ label: ViewLabel; rect: DOMRect }> = [];
     const width = window.innerWidth;
     const height = window.innerHeight;
     for (const label of labels) {
-      if (nodes.length >= MAX_DRAWN * 2) break;
+      if (shown.length >= MAX_DRAWN) break;
       if (role && label.role !== role) continue;
       if (!label.element.isConnected) continue;
       const r = label.element.getBoundingClientRect();
       if (r.bottom < 0 || r.right < 0 || r.top > height || r.left > width || (r.width === 0 && r.height === 0))
         continue;
+      shown.push({ label, rect: r });
+    }
+    const boxes = shown.map(({ label, rect: r }) => {
       const box = document.createElement('div');
       box.className = `box ${label.mark ?? ''}`;
       box.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;`;
-      const tag = document.createElement('div');
-      tag.className = `tag ${label.mark ?? ''}`;
-      tag.style.left = `${Math.max(0, r.left)}px`;
-      tag.style.top = `${r.top >= 16 ? r.top - 16 : Math.max(0, r.top)}px`;
-      const roleChip = document.createElement('span');
-      roleChip.className = 'role';
-      roleChip.textContent = labelText(label);
-      tag.appendChild(roleChip);
-      if (label.testId) {
-        const chip = document.createElement('span');
-        chip.className = 'testid';
-        chip.textContent = label.testId;
-        tag.appendChild(chip);
+      return box;
+    });
+    const tags = shown.map(({ label }) => labelNode(label));
+    layer.replaceChildren(...boxes, ...tags);
+    const sizes = tags.map((tag) => tag.getBoundingClientRect());
+    const places = placeLabels(
+      shown.map(({ rect }, i) => ({ anchor: rect, width: sizes[i]!.width, height: sizes[i]!.height })),
+      { width, height },
+    );
+    let crowded = 0;
+    places.forEach((place, i) => {
+      const tag = tags[i]!;
+      if (!place) {
+        tag.remove();
+        crowded++;
+        return;
       }
-      nodes.push(box, tag);
-    }
-    layer.replaceChildren(...nodes);
+      tag.style.left = `${place.left}px`;
+      tag.style.top = `${place.top}px`;
+      tag.style.visibility = '';
+    });
+    crowdedLine.hidden = crowded === 0;
+    if (crowded) crowdedLine.textContent = tn('view_crowded', crowded);
   };
 
   let rescanTimer: ReturnType<typeof setTimeout> | undefined;

@@ -8,8 +8,9 @@ lang: en-US
 
 This page is a **map of the dashboard**: where each view lives and which page of these docs explains it.
 
-Pages refresh on their own when runs start or finish. Blocks that need it carry a help icon with a short explanation
-and a **Learn more** link into these docs, and every source path [opens in your IDE](./ide-integration).
+Pages refresh on their own when runs start or finish, and keep their lists as you left them until a reload. Blocks
+that need it carry a help icon with a short explanation and a **Learn more** link into these docs, and every source
+path [opens in your IDE](./ide-integration).
 
 ## Home
 
@@ -51,7 +52,7 @@ note counts the runs it hides. The **More** menu holds Edit, [Test functions](./
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
   25 runs to a page; select two runs and **Compare** to see [what changed](./run-changes) between them, or select any
-  number, page by page (the header box selects the page's runs), and [delete them](/operate/storage#storage-management).
+  number, page by page, and [delete them](/operate/storage#storage-management).
 - **Tests**: every test case with its pass rate and last run, in file order, with the
   [test search](/reference/test-search) (title, describe block, file, tag, lock, owner, priority, feature) and a status
   filter, and groupable by file, or by file and describe block.
@@ -100,7 +101,7 @@ evidence rebuilt from a trace, and the fallback the reporter took to send the ru
     process shutting down and the new one starting. A dashed line is time the worker ran no test; hover either for
     the details.
   - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
-    them with arrows. Each `--repeat-each` repetition retries on its own.
+    them with arrows.
   - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
     workers are drawn above the worker rows, on the same axis, and one metric of your choice under each worker row.
     Hover a track for its values at that moment; turn each one off from the **Resources** menu. See

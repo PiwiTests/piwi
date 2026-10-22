@@ -3,6 +3,7 @@ import { describeCluster } from '#shared/describe-cluster';
 import { getProviderIcon } from '#shared/link-detect';
 import { isCurrentlySnoozed } from '#shared/inbox-queues';
 import type { TableColumn } from '@nuxt/ui';
+import type { SortingState } from '@tanstack/vue-table';
 import type { ProjectFailureCluster } from '~~/types/api';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { projectRunScopeQuery, type ProjectRunScope } from '#shared/project-run-scope';
@@ -18,14 +19,19 @@ const props = defineProps<{
 const emit = defineEmits<{ count: [total: number] }>();
 
 // 'all' is a real select value so the control shows its current choice; the API
-// takes no status param for it.
-const statusFilter = ref<'all' | 'open' | 'resolved' | 'ignored'>(props.initialStatus ?? 'all');
+// takes no status param for it. A status the page passes (an analytics
+// drill-down) sets it when it is new; a choice made after it is kept.
+const statusFilter = useViewState<'all' | 'open' | 'resolved' | 'ignored'>('failures:clusters-status', () => 'all');
+const appliedInitialStatus = useViewState<string | null>('failures:clusters-initial-status', () => null);
 watch(
   () => props.initialStatus,
   (status) => {
-    if (status) statusFilter.value = status;
+    if (status && status !== appliedInitialStatus.value) statusFilter.value = status;
+    appliedInitialStatus.value = status ?? null;
   },
+  { immediate: true },
 );
+const sorting = useViewState<SortingState>('failures:clusters-sorting', () => []);
 const {
   data: clusters,
   status: clustersStatus,
@@ -194,6 +200,7 @@ const columns = computed<TableColumn<ProjectFailureCluster>[]>(() => [
     <!-- md+ : one row per cluster, sized to fit without a horizontal scroll -->
     <div class="hidden md:block">
       <UTable
+        v-model:sorting="sorting"
         :data="clusters ?? []"
         :columns="columns"
         :loading="loading"

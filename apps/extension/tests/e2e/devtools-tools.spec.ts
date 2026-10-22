@@ -97,6 +97,172 @@ test.describe('the Piwi panel’s Locators tab', () => {
   });
 });
 
+test.describe('the Piwi panel’s Locators console', () => {
+  test('evaluates on Enter, keeps a history the arrow keys walk, and recalls it when the panel opens again', async ({
+    context,
+    extensionId,
+  }) => {
+    const shop = await openShop(context);
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    await panel.getByRole('tab', { name: 'Locators' }).click();
+    const input = panel.getByRole('textbox', { name: 'Locator to try' });
+
+    await input.fill("getByTestId('apply-coupon')");
+    await input.press('Enter');
+    await expect(panel.getByRole('status')).toHaveText('One element: strict mode passes');
+    await input.fill("getByRole('button', { name: 'Show popup' })");
+    await input.press('Enter');
+    await expect(panel.getByRole('status')).toHaveText('2 elements: strict mode fails');
+    await expect
+      .poll(() =>
+        panel.evaluate(async () => (await chrome.storage.session.get('piwiLocatorHistory')).piwiLocatorHistory),
+      )
+      .toEqual(["getByTestId('apply-coupon')", "getByRole('button', { name: 'Show popup' })"]);
+
+    // Like a shell: Up goes back, and Down past the newest gives back what was being typed.
+    await input.fill("getByRole('button', { name: 'Gift");
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue("getByRole('button', { name: 'Show popup' })");
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue("getByTestId('apply-coupon')");
+    // An entry recalled is evaluated at once.
+    await expect(panel.getByRole('status')).toHaveText('One element: strict mode passes');
+    await input.press('ArrowDown');
+    await input.press('ArrowDown');
+    await expect(input).toHaveValue("getByRole('button', { name: 'Gift");
+
+    // Closed and opened again, the panel shows the newest expression, evaluated.
+    await panel.close();
+    const again = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    await again.getByRole('tab', { name: 'Locators' }).click();
+    const field = again.getByRole('textbox', { name: 'Locator to try' });
+    await expect(field).toHaveValue("getByRole('button', { name: 'Show popup' })");
+    await expect(again.getByRole('status')).toHaveText('2 elements: strict mode fails');
+    await field.press('ArrowUp');
+    await expect(field).toHaveValue("getByTestId('apply-coupon')");
+  });
+
+  test('copies the locator in each copy mode and adds it to the session', async ({ context, extensionId }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const shop = await openShop(context);
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    await panel.getByRole('tab', { name: 'Locators' }).click();
+    const input = panel.getByRole('textbox', { name: 'Locator to try' });
+    // Typed as in a test, with the page in front: the copies hold the locator once.
+    await input.fill("page.getByTestId('apply-coupon')");
+    await expect(panel.getByRole('status')).toHaveText('One element: strict mode passes');
+
+    await panel.getByRole('button', { name: 'Action' }).click();
+    expect(await panel.evaluate(() => navigator.clipboard.readText())).toBe(
+      "await page.getByTestId('apply-coupon').click();",
+    );
+    await panel.getByRole('button', { name: 'Locator', exact: true }).click();
+    expect(await panel.evaluate(() => navigator.clipboard.readText())).toBe("page.getByTestId('apply-coupon')");
+    // A copy keeps the expression in the history as Enter does.
+    await expect
+      .poll(() =>
+        panel.evaluate(async () => (await chrome.storage.session.get('piwiLocatorHistory')).piwiLocatorHistory),
+      )
+      .toEqual(["page.getByTestId('apply-coupon')"]);
+
+    await panel.getByRole('button', { name: 'Add to session' }).click();
+    const name = panel.getByRole('textbox', { name: 'Name for this element' });
+    await expect(name).toBeFocused();
+    await name.fill('page');
+    await panel.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(panel.getByText('The page object already uses the name page')).toBeVisible();
+    await name.fill('applyCoupon');
+    await name.press('Enter');
+    await expect(panel.getByText('Added to the session as applyCoupon.')).toBeVisible();
+    expect(
+      await panel.evaluate(async () => (await chrome.storage.session.get('piwiPickSession')).piwiPickSession),
+    ).toEqual([{ name: 'applyCoupon', locator: "getByTestId('apply-coupon')", pageUrl: `${ORIGIN}/cart` }]);
+
+    await panel.getByRole('tab', { name: 'Session' }).click();
+    await expect(panel.getByRole('status')).toHaveText('1 named element');
+
+    // An expression that does not read offers nothing to copy.
+    await panel.getByRole('tab', { name: 'Locators' }).click();
+    await input.fill("getByRole('button', {");
+    await expect(panel.getByRole('status')).toContainText('The console can’t read this locator');
+    await expect(panel.getByRole('button', { name: 'Add to session' })).toBeHidden();
+    // No editor is paired: nothing to send to.
+    await input.fill("getByTestId('apply-coupon')");
+    await expect(panel.getByRole('button', { name: 'Add to session' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Send to editor' })).toHaveCount(0);
+  });
+
+  test('copies the assertion the matches call for: a count for several, the element’s own for one', async ({
+    context,
+    extensionId,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const shop = await openShop(context);
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    await panel.getByRole('tab', { name: 'Locators' }).click();
+    const input = panel.getByRole('textbox', { name: 'Locator to try' });
+    const copied = async (name: string): Promise<string> => {
+      await panel.getByRole('button', { name, exact: true }).click();
+      return panel.evaluate(() => navigator.clipboard.readText());
+    };
+
+    await input.fill("getByRole('button', { name: 'Show popup' })");
+    await expect(panel.getByRole('status')).toHaveText('2 elements: strict mode fails');
+    const many = await copied('Assertion (toHaveCount)');
+    expect(many).toBe("await expect(page.getByRole('button', { name: 'Show popup' })).toHaveCount(2);");
+    await expect(shop.getByRole('button', { name: 'Show popup' })).toHaveCount(2);
+
+    await input.fill("getByTestId('apply-coupon')");
+    await expect(panel.getByRole('status')).toHaveText('One element: strict mode passes');
+    expect(await copied('Assertion (toHaveText)')).toBe(
+      "await expect(page.getByTestId('apply-coupon')).toHaveText('Apply coupon');",
+    );
+    expect(await copied('Action (click)')).toBe("await page.getByTestId('apply-coupon').click();");
+  });
+
+  test('sends the locator to the paired editor in the copy mode chosen last', async ({ context, extensionId }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const shop = await openShop(context);
+    const setup = await context.newPage();
+    await setup.goto(`chrome-extension://${extensionId}/popup.html`);
+    // Kept as an earlier version kept it: the panel reads it through the worker's secret area, which moves it there.
+    await setup.evaluate(() =>
+      chrome.storage.local.set({
+        piwiEditorPairing: { url: 'http://127.0.0.1:47211/piwi/send', token: 'editor_token_0123456789' },
+      }),
+    );
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    // What the panel asks the worker to send, answered as a paired editor answers.
+    await panel.evaluate(() => {
+      const sent: unknown[] = [];
+      (globalThis as { __sent?: unknown[] }).__sent = sent;
+      const real = chrome.runtime.sendMessage.bind(chrome.runtime);
+      chrome.runtime.sendMessage = ((message: { type?: string; payload?: unknown }) => {
+        if (message?.type !== 'piwi-send-to-editor') return real(message);
+        sent.push(message.payload);
+        return Promise.resolve({ ok: true, file: null });
+      }) as typeof chrome.runtime.sendMessage;
+    });
+    const sent = () => panel.evaluate(() => (globalThis as { __sent?: unknown[] }).__sent);
+    await panel.getByRole('tab', { name: 'Locators' }).click();
+    await panel.getByRole('textbox', { name: 'Locator to try' }).fill("getByTestId('apply-coupon')");
+    const send = panel.getByRole('button', { name: 'Send to editor' });
+    await expect(send).toHaveAttribute('title', "page.getByTestId('apply-coupon')");
+    await send.click();
+    await expect(panel.getByRole('button', { name: 'Sent' })).toBeVisible();
+    await panel.getByRole('button', { name: 'Assertion' }).click();
+    await expect(send).toHaveAttribute(
+      'title',
+      "await expect(page.getByTestId('apply-coupon')).toHaveText('Apply coupon');",
+    );
+    await send.click();
+    await expect.poll(sent).toEqual([
+      { kind: 'locator', text: "page.getByTestId('apply-coupon')" },
+      { kind: 'locator', text: "await expect(page.getByTestId('apply-coupon')).toHaveText('Apply coupon');" },
+    ]);
+  });
+});
+
 test.describe('the Piwi panel’s Session tab', () => {
   test('lists the named elements, copies them and removes them', async ({ context, extensionId }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
