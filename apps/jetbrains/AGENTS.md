@@ -23,7 +23,10 @@ later (`Glue.nodeProblem`): otherwise the start fails with that reason, which `P
 while it does not run. The service's process gets the IDE's HTTP proxy for the instance the project names
 (`PiwiLspServerDescriptor.proxyEnvironment`: the default `ProxySelector`, which holds the IDE's proxy settings, asked
 for that address, else for a public one), as `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` with this machine's names (`Glue.proxyEnvironment`), which the
-service's `src/http.ts` reads.
+service's `src/http.ts` reads. The platform stops a service whose start failed: it sends the open files on a pooled
+thread, and a tab opened or closed meanwhile throws a `ConcurrentModificationException` there. A service that stops
+within 30 s of its start is started again two seconds later, unless another one starts or runs, or Node.js is the
+problem; three times in five minutes at most (`PiwiProjectService.watchServer`, `Glue.restartsService`).
 
 - **Nothing starts in an untrusted project.** In a project opened in safe mode (`PiwiProjectService.trusted`, the
   platform's `isTrusted`), the plugin starts no editor service, runs no command (`PiwiCommands.run`, `startRun`) and

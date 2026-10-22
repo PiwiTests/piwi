@@ -350,6 +350,18 @@ class GlueTest {
     }
 
     @Test
+    fun `a service that stopped while starting is started again, a few times only`() {
+        val start = 1_000_000L
+        assertEquals(true, Glue.restartsService(start, start + 2_000, emptyList()))
+        assertEquals(false, Glue.restartsService(start, start + Glue.SERVICE_START_MILLIS + 1, emptyList()))
+        assertEquals(false, Glue.restartsService(null, start, emptyList()))
+        val recent = listOf(start - 60_000, start - 30_000, start - 10_000)
+        assertEquals(false, Glue.restartsService(start, start + 2_000, recent))
+        val old = recent.map { it - Glue.SERVICE_RESTART_PERIOD_MILLIS }
+        assertEquals(true, Glue.restartsService(start, start + 2_000, old))
+    }
+
+    @Test
     fun `the IDE's proxy reaches the service as the variables it reads, this machine left direct`() {
         assertEquals(
             mapOf(

@@ -261,6 +261,22 @@ object Glue {
     /** The oldest Node.js major version the editor service runs on. */
     const val NODE_MAJOR = 20
 
+    /** A service that stops this soon after it started failed to start. */
+    const val SERVICE_START_MILLIS = 30_000L
+
+    /** How many times a service that failed to start is started again, within [SERVICE_RESTART_PERIOD_MILLIS]. */
+    const val SERVICE_RESTARTS = 3
+    const val SERVICE_RESTART_PERIOD_MILLIS = 300_000L
+
+    /**
+     * Whether the editor service, started at `startedAt` and stopped at `stoppedAt`, is started again: it stopped while
+     * starting, and fewer than [SERVICE_RESTARTS] of `restarts`, when it was started again before, are recent. The IDE
+     * stops a service whose start failed, for instance when a tab opened or closed while it sent the open files.
+     */
+    fun restartsService(startedAt: Long?, stoppedAt: Long, restarts: List<Long>): Boolean =
+        startedAt != null && stoppedAt - startedAt in 0..SERVICE_START_MILLIS &&
+            restarts.count { stoppedAt - it < SERVICE_RESTART_PERIOD_MILLIS } < SERVICE_RESTARTS
+
     /**
      * Why the editor service cannot start with the Node.js interpreter `node`, from what `node --version` printed (null
      * when it did not run); null when it can.

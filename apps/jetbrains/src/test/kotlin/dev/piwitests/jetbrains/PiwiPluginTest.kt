@@ -79,25 +79,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val service = project.getService(PiwiProjectService::class.java)
         try {
             service.saveCredentials("https://a.example/", "Shop", "pd_a")
-            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop", baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop", baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             service.settings().serverUrl = "https://b.example"
             assertEquals(null, service.credentials().apiKey)
             service.saveCredentials("https://b.example", "Shop", "pd_b")
             service.settings().serverUrl = "https://a.example"
             assertEquals("pd_a", service.credentials().apiKey)
             service.disconnect()
-            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             // A project only, no address and no key.
             service.saveCredentials("", "Shop", "pd_ignored")
-            assertEquals(EditorCredentials(null, null, "Shop", baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             // The desktop app, chosen on this machine: what is saved for the instance stays.
             service.useDesktop("Mugs")
-            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs", baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             service.useInstance()
-            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs", baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             service.useDesktop(null)
             service.disconnect()
-            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap()), service.credentials())
+            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error"), service.credentials())
             assertFalse(service.hasApiKey("https://a.example"))
             assertTrue(service.hasApiKey("https://b.example"))
         } finally {
@@ -413,7 +413,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         fun drawn() = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
             .count { it.textAttributesKey?.externalName?.startsWith("PIWI_COVERAGE_") == true }
         fun uri() = file.toNioPath().toUri().toString()
-        fun dispatch() = com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val dispatch = { com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue() }
         val result = CoverageResult(uri = uri(), state = "exact", executed = listOf(LineSpan(0, 1, 1)), tests = 1)
         try {
             marks.shown = true

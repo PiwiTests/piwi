@@ -37,7 +37,10 @@ import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
+import com.intellij.platform.lsp.api.LspServer
 import com.intellij.platform.lsp.api.LspServerManager
+import com.intellij.platform.lsp.api.LspServerManagerListener
+import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.psi.PsiManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.xdebugger.XDebuggerManager
@@ -266,6 +269,47 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 manager.stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
             !runningOnly -> manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
         }
+    }
+
+    /** When each editor service was first seen starting, by server; and when one that failed to start was started again. */
+    private val serverStarts = ConcurrentHashMap<LspServer, Long>()
+    private val serverRestarts = CopyOnWriteArrayList<Long>()
+
+    /**
+     * Start the editor service again, two seconds later, when it stops while starting and none other runs: the IDE stops
+     * a service whose start failed. A few times only (`Glue.restartsService`), and never while Node.js is the problem.
+     */
+    fun watchServer() {
+        LspServerManager.getInstance(project).addLspServerManagerListener(
+            object : LspServerManagerListener {
+                override fun serverStateChanged(lspServer: LspServer) {
+                    if (lspServer.descriptor !is PiwiLspServerDescriptor) return
+                    val now = System.currentTimeMillis()
+                    when (lspServer.state) {
+                        LspServerState.Initializing, LspServerState.Running -> serverStarts.putIfAbsent(lspServer, now)
+                        LspServerState.ShutdownNormally, LspServerState.ShutdownUnexpectedly -> {
+                            val startedAt = serverStarts.remove(lspServer)
+                            if (gone.value(null) || startProblem != null) return
+                            if (!Glue.restartsService(startedAt, now, serverRestarts)) return
+                            AppExecutorUtil.getAppScheduledExecutorService().schedule(::restartIfStopped, 2, TimeUnit.SECONDS)
+                        }
+                    }
+                }
+            },
+            this,
+            false,
+        )
+    }
+
+    /** Start the editor service again unless another one starts or runs. */
+    private fun restartIfStopped() {
+        if (gone.value(null)) return
+        val servers = LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java)
+        if (servers.any { it.state == LspServerState.Initializing || it.state == LspServerState.Running }) return
+        val now = System.currentTimeMillis()
+        serverRestarts.removeIf { now - it >= Glue.SERVICE_RESTART_PERIOD_MILLIS }
+        serverRestarts.add(now)
+        restartServer()
     }
 
     /**
@@ -771,6 +815,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
 class PiwiStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         val service = project.service<PiwiProjectService>()
+        service.watchServer()
         service.findPlaywright()
         service.watchConfigs()
         project.service<PiwiCoverageMarks>().start()
