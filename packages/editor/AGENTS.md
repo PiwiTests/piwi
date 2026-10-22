@@ -282,21 +282,25 @@ needs the extension's sources, and a change to the recorder there changes what t
   `piwi/failuresChanged` are sent when the answer differs from the last one sent or answered to `piwi/status`,
   `piwi/runStatus` or `piwi/failures`, and `piwi/coverageChanged` when a document's marks differ from the last ones
   sent or answered to `piwi/coverage` for it, so a client keeps the pushed answers and never reads one again on a push.
-- **An index the instance says did not change is not read again**: the locator and code indexes are asked with the
-  `ETag` they came with (`If-None-Match`), and a 304 keeps the same object, so what is computed once per index stays.
-  The contexts of one service share these answers (`ResponseCache`, created in `startServer`), the same request on its
-  way included: a repository with eight Playwright configs reading one project holds and downloads its index once, not
-  eight times. The plain reads share the same map for 2 s (`SHARED_MS`, `PiwiClient.get`): the request on its way and
-  its answer, by instance, key and path, so the project's latest run, flaky tests, Flake Lab, quarantine, selections,
-  timeout opportunities, function catalog and vocabulary are read once per refresh and once per poll for all the
-  configs reading one project, each context getting its own copy of the answer (`structuredClone`), as when it parses
-  its own: nothing keyed by a failure's identity crosses contexts. Each wave of reads the server starts reads afresh
-  (`forgetShared`: a refresh, a poll, `piwi/refreshRun`, a move of `HEAD`), its contexts sharing within it. A read that
-  failed is shared by the callers that joined it alone; a run as it moves (`runDetails`, `latestRunByRef`, a desktop
-  job) keeps no answer, and the read after a run ended takes none (`refreshRun(true)`). The map keeps 16 indexes and 64
-  plain answers at most, those past their time dropped first (`trim`). A file's coverage is asked the same way, kept
-  by the context that reads the file rather than in the shared answers, and its marks are computed once per coverage
-  and text.
+- **What the instance says did not change is not read again**: the locator and code indexes are asked with the `ETag`
+  they came with (`If-None-Match`), and a 304 keeps the same object, so what is computed once per index stays. The
+  contexts of one service share these answers (`ResponseCache`, created in `startServer`), the same request on its way
+  included: a repository with eight Playwright configs reading one project holds and downloads its index once, not eight
+  times. The plain reads share the same map for 2 s (`SHARED_MS`, `PiwiClient.get`): the request on its way and its
+  answer, by instance, key and path, so the project's latest run, flaky tests, Flake Lab, quarantine, selections,
+  timeout opportunities, function catalog and vocabulary are read once per refresh and once per poll for all the configs
+  reading one project, each context getting its own copy of the answer (`structuredClone`), as when it parses its own:
+  nothing keyed by a failure's identity crosses contexts. A plain answer the instance gives an `ETag` (the project's
+  latest run, `branch-failures`) is kept past that time and asked again with it: a 304 gives each context a copy of the
+  answer kept, which may be newer than the one it holds (another context read it), and `refreshRun` compares the two
+  (`JSON.stringify`), so a poll that finds nothing new downloads nothing, and the instance answers it without computing
+  the failures. Each wave of reads the server starts reads afresh (`forgetShared`: a refresh, a poll, `piwi/refreshRun`,
+  a move of `HEAD`), its contexts sharing within it, an answer with an `ETag` asked with it. A read that failed is
+  shared by the callers that joined it alone; a run as it moves (`runDetails`, `latestRunByRef`, a desktop job) keeps no
+  answer, and the read after a run ended takes none (`refreshRun(true)`), an answer with an `ETag` asked with it all the
+  same. The map keeps 16 indexes and 64 plain answers at most, those past their time without an `ETag` dropped first
+  (`trim`). A file's coverage is asked the same way, kept by the context that reads the file rather than in the shared
+  answers, and its marks are computed once per coverage and text.
 - **A failure shows once, from the config its spec belongs to**: the configs of a repository that read one project each
   list all its failures, and each would find their files from the repository's root; a context places a failure only
   when its config folder holds the failure's spec, or when no config folder does (`placedElsewhere`). So a failure's

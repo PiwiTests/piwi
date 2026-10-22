@@ -3221,6 +3221,95 @@ describe('the configs of one repository reading one project', () => {
   });
 });
 
+describe('a latest run the instance says did not change', () => {
+  /** The `If-None-Match` of each `branch-failures` read, empty when it named none. */
+  const asked: string[] = [];
+  let gate: http.Server;
+  let gateUrl = '';
+
+  beforeAll(async () => {
+    // The stub with an ETag on the project's latest run: a read naming it is a 304.
+    gate = http.createServer((req, res) => {
+      if ((req.url ?? '').startsWith('/api/projects/7/branch-failures?')) {
+        const etag = String(req.headers['if-none-match'] ?? '');
+        asked.push(etag);
+        if (etag === '"failures-1"') {
+          res.statusCode = 304;
+          return res.end();
+        }
+        res.setHeader('ETag', '"failures-1"');
+      }
+      server.emit('request', req, res);
+    });
+    await new Promise<void>((resolve) => gate.listen(0, '127.0.0.1', resolve));
+    gateUrl = `http://127.0.0.1:${(gate.address() as AddressInfo).port}`;
+  });
+
+  afterAll(() => {
+    gate.close();
+  });
+
+  /** A service reading the stub through the gate, polling every `runPollMs`, and the titles of its failures. */
+  async function connect(runPollMs: number) {
+    asked.length = 0;
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stop = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: gateUrl, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+      runPollMs,
+    });
+    const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    client.listen();
+    const failing = async () =>
+      ((await client.sendRequest('piwi/failures')) as FailuresResult).items.map((f) => f.title);
+    await client.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+    });
+    await client.sendNotification('initialized', {});
+    await waitFor(async () => ((await failing()).includes('removes a row') ? true : undefined));
+    return {
+      client,
+      failing,
+      stop: () => {
+        stop();
+        client.dispose();
+      },
+    };
+  }
+
+  test('is asked with its ETag on the next poll, and a 304 keeps its failures', async () => {
+    const { client, failing, stop } = await connect(200);
+    try {
+      expect(asked[0]).toBe('');
+      const first = asked.length;
+      await waitFor(() => (asked.length > first + 1 ? true : undefined));
+      expect(asked.slice(1).every((etag) => etag === '"failures-1"')).toBe(true);
+      expect(await failing()).toContain('removes a row');
+      const status = (await client.sendRequest('piwi/runStatus')) as RunStatusResult;
+      expect(status.contexts[0]?.run?.id).toBe(MAIN_RUN.id);
+    } finally {
+      stop();
+    }
+  });
+
+  test('is asked with its ETag on piwi/refreshRun, which reads the instance again', async () => {
+    const { client, failing, stop } = await connect(60 * 60_000);
+    try {
+      expect(asked).toEqual(['']);
+      const status = (await client.sendRequest('piwi/refreshRun')) as RunStatusResult;
+      expect(asked).toEqual(['', '"failures-1"']);
+      expect(status.contexts[0]?.run?.id).toBe(MAIN_RUN.id);
+      expect(await failing()).toContain('removes a row');
+    } finally {
+      stop();
+    }
+  });
+});
+
 describe('a change pushed to the client', () => {
   test('is a change from what the client read: a desktop app a read saw, gone since, is said gone', async () => {
     const desktopFile = path.join(dir, '.desktop-seen.json');

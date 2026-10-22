@@ -6,7 +6,7 @@
  * per test and Playwright project: the newest result wins. The editor may
  * choose another baseline: a run by its id, or a developer's own runs only.
  */
-import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNull, max, notInArray, or, sql, sum, type SQL } from 'drizzle-orm';
 import { extractStackFrames, stripAnsi, withoutStackFrames } from '@piwitests/core/error-parse';
 import { failureClusters, files, testCases, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -37,6 +37,9 @@ const MESSAGE_MAX_CHARS = 1000;
 const MAX_FRAMES = 10;
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
+
+/** The stored files a failure lists its traces and screenshot from. */
+const EVIDENCE_TYPES = ['trace', 'screenshot', 'attachment'];
 
 export interface BranchRun {
   id: number;
@@ -190,24 +193,50 @@ export function parseBranchFailuresQuery(
   return { ok: true, branch: branch || null, options };
 }
 
+/** `GET /api/projects/:id/branch-failures` once its runs are read: what its answer is computed from, and the answer. */
+export interface BranchFailuresRead {
+  /**
+   * What the answer is computed from, read without computing it: the same version gives the same answer. Read before
+   * the answer, it is never newer than the answer.
+   */
+  version(): Promise<unknown>;
+  answer(): Promise<BranchFailures>;
+}
+
 /**
- * `GET /api/projects/:id/branch-failures` from its query, answered the same way by the server and the demo: a query
- * it refuses and a chosen run the project does not hold are thrown as `toHttpError` builds the HTTP error.
+ * `GET /api/projects/:id/branch-failures` from its query, read the same way by the server and the demo: its runs
+ * first, then its version or its answer. A query it refuses and a chosen run the project does not hold are thrown as
+ * `toHttpError` builds the HTTP error.
  */
+export async function readBranchFailures(
+  db: DrizzleDB,
+  projectId: number,
+  rawQuery: Record<string, unknown>,
+  toHttpError: (statusCode: 400 | 404, message: string) => Error,
+): Promise<BranchFailuresRead> {
+  const query = parseBranchFailuresQuery(rawQuery);
+  if (!query.ok) throw toHttpError(400, query.message);
+  let runs: BranchFailuresRuns;
+  try {
+    runs = await branchFailuresRuns(db, projectId, query.branch, query.options);
+  } catch (error) {
+    if (error instanceof BranchFailuresRunError) throw toHttpError(error.statusCode, error.message);
+    throw error;
+  }
+  return {
+    version: () => branchFailuresVersion(db, { projectId, branch: query.branch, ...query.options }, runs),
+    answer: () => failuresOfRuns(db, runs),
+  };
+}
+
+/** {@link readBranchFailures}'s answer. */
 export async function branchFailuresOrError(
   db: DrizzleDB,
   projectId: number,
   rawQuery: Record<string, unknown>,
   toHttpError: (statusCode: 400 | 404, message: string) => Error,
 ): Promise<BranchFailures> {
-  const query = parseBranchFailuresQuery(rawQuery);
-  if (!query.ok) throw toHttpError(400, query.message);
-  try {
-    return await getBranchFailures(db, projectId, query.branch, query.options);
-  } catch (error) {
-    if (error instanceof BranchFailuresRunError) throw toHttpError(error.statusCode, error.message);
-    throw error;
-  }
+  return (await readBranchFailures(db, projectId, rawQuery, toHttpError)).answer();
 }
 
 /** An error as an editor quotes it: without ANSI codes and stack frames, at most {@link MESSAGE_MAX_LINES} lines. */
@@ -321,7 +350,12 @@ export async function getBranchFailures(
   branch: string | null,
   options: BranchFailuresOptions = {},
 ): Promise<BranchFailures> {
-  const runColumns = {
+  return failuresOfRuns(db, await branchFailuresRuns(db, projectId, branch, options));
+}
+
+/** The columns of a run the answer reads. */
+function runColumns() {
+  return {
     id: testRuns.id,
     status: testRuns.status,
     branch: testRuns.branch,
@@ -334,9 +368,25 @@ export async function getBranchFailures(
     flakyTests: testRuns.flakyTests,
     skippedTests: testRuns.skippedTests,
   };
+}
+
+/** The runs {@link getBranchFailures} reads: the baseline, null when none, and the runs laid over it, newest first. */
+type BranchFailuresRuns = Awaited<ReturnType<typeof branchFailuresRuns>>;
+
+/**
+ * The baseline and the runs laid over it, as {@link getBranchFailures} chooses them: small queries on the runs of the
+ * project (`idx_test_runs_project_branch_start`, `idx_test_runs_project_start`), at most
+ * {@link MAX_BRANCH_OVERLAYS} + 1 rows.
+ */
+async function branchFailuresRuns(
+  db: DrizzleDB,
+  projectId: number,
+  branch: string | null,
+  options: BranchFailuresOptions,
+) {
   const newest = (origins: readonly RunOriginKind[] | null) =>
     db
-      .select(runColumns)
+      .select(runColumns())
       .from(testRuns)
       .where(
         and(
@@ -352,7 +402,7 @@ export async function getBranchFailures(
   let run: Awaited<ReturnType<typeof newest>>[number] | undefined;
   if (options.run !== undefined) {
     const [found] = await db
-      .select({ ...runColumns, projectId: testRuns.projectId })
+      .select({ ...runColumns(), projectId: testRuns.projectId })
       .from(testRuns)
       .where(eq(testRuns.id, options.run))
       .limit(1);
@@ -368,7 +418,7 @@ export async function getBranchFailures(
     const ciRuns = await newest(CI_RUN_ORIGINS);
     [run] = ciRuns.length ? ciRuns : await newest(null);
   }
-  if (!run && !(local && options.overlays)) return { run: null, overlays: [], failures: [], resolved: [] };
+  if (!run && !(local && options.overlays)) return { run: null, overlays: [] };
 
   const overlayBranch = run
     ? run.branch
@@ -377,9 +427,9 @@ export async function getBranchFailures(
     : branch
       ? eq(testRuns.branch, branch)
       : undefined;
-  const overlayRuns = options.overlays
+  const overlays = options.overlays
     ? await db
-        .select({ ...runColumns, isFullRun: testRuns.isFullRun })
+        .select({ ...runColumns(), isFullRun: testRuns.isFullRun })
         .from(testRuns)
         .where(
           and(
@@ -399,6 +449,123 @@ export async function getBranchFailures(
         .orderBy(desc(testRuns.startTime), desc(testRuns.id))
         .limit(MAX_BRANCH_OVERLAYS)
     : [];
+  return { run: run ?? null, overlays };
+}
+
+/** A baseline run as the answer shows it. */
+function branchRun(run: NonNullable<BranchFailuresRuns['run']>): BranchRun {
+  return {
+    id: run.id,
+    status: run.status,
+    branch: run.branch ?? null,
+    startTime: iso(run.startTime),
+    origin: run.origin,
+    commit: commitOf(run.metadata),
+    totalTests: run.totalTests,
+    passedTests: run.passedTests,
+    failedTests: run.failedTests,
+    flakyTests: run.flakyTests,
+    skippedTests: run.skippedTests,
+  };
+}
+
+/** A run laid over the baseline as the answer shows it. */
+function branchOverlay(o: BranchFailuresRuns['overlays'][number]): BranchOverlay {
+  return {
+    id: o.id,
+    status: o.status,
+    origin: o.origin,
+    isFullRun: Boolean(o.isFullRun),
+    startTime: iso(o.startTime),
+    commit: commitOf(o.metadata),
+    totalTests: o.totalTests,
+    passedTests: o.passedTests,
+    failedTests: o.failedTests,
+    flakyTests: o.flakyTests,
+    skippedTests: o.skippedTests,
+  };
+}
+
+/**
+ * What the answer for `runs` is computed from, read without computing it: the request (`query`), the runs as the
+ * answer shows them, then, for those runs, two small queries on `idx_test_runs_cases_test_run_id`:
+ * - each run's executions: how many, the newest (a result stored since: another test, attempt, project or
+ *   repetition) and the sum of their test ids (an execution moved to another test by a merge);
+ * - each failed execution, with what may change once it is stored: its test, failure cluster and whether it is a new
+ *   regression, the cluster's title, its test's title, file and owner, and its stored files (how many, the newest,
+ *   on `idx_files_test_runs_case_id`).
+ *
+ * The rest of an execution (its status, error, steps, line, duration, attempt, project, repetition) never changes
+ * once stored. Never reads an error, steps or a file's content.
+ */
+async function branchFailuresVersion(
+  db: DrizzleDB,
+  query: { projectId: number; branch: string | null } & BranchFailuresOptions,
+  runs: BranchFailuresRuns,
+): Promise<unknown> {
+  const shown = {
+    query,
+    run: runs.run ? branchRun(runs.run) : null,
+    overlays: runs.overlays.map(branchOverlay),
+  };
+  const runIds = [...(runs.run ? [runs.run.id] : []), ...runs.overlays.map((o) => o.id)];
+  if (!runIds.length) return shown;
+  const ofRuns = inArray(testRunsCases.testRunId, runIds);
+  const executions = await db
+    .select({
+      runId: testRunsCases.testRunId,
+      count: count(),
+      newest: max(testRunsCases.id),
+      tests: sum(testRunsCases.testCaseId),
+    })
+    .from(testRunsCases)
+    .where(ofRuns)
+    .groupBy(testRunsCases.testRunId)
+    .orderBy(asc(testRunsCases.testRunId));
+  const evidenceOf = (aggregate: SQL) =>
+    sql`(select ${aggregate} from ${files} where ${files.testRunsCaseId} = ${testRunsCases.id} and ${inArray(files.type, EVIDENCE_TYPES)})`;
+  const failed = await db
+    .select({
+      id: testRunsCases.id,
+      testCaseId: testRunsCases.testCaseId,
+      clusterId: testRunsCases.failureClusterId,
+      isNewRegression: testRunsCases.isNewRegression,
+      clusterTitle: failureClusters.title,
+      title: testCases.title,
+      file: testCases.filePath,
+      owner: testCases.owner,
+      files: evidenceOf(sql`count(*)`).mapWith(Number),
+      newestFile: evidenceOf(sql`max(${files.id})`).mapWith(Number),
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
+    .leftJoin(failureClusters, eq(failureClusters.id, testRunsCases.failureClusterId))
+    .where(and(ofRuns, inArray(testRunsCases.status, FAIL_STATUSES)))
+    .orderBy(asc(testRunsCases.id));
+  return {
+    ...shown,
+    executions: executions.map((e) => [e.runId, e.count, e.newest, e.tests]),
+    failed: failed.map((f) => [
+      f.id,
+      f.testCaseId,
+      f.clusterId,
+      f.isNewRegression,
+      f.clusterTitle,
+      f.title,
+      f.file,
+      f.owner,
+      f.files,
+      f.newestFile,
+    ]),
+  };
+}
+
+/** The answer for the runs {@link branchFailuresRuns} chose. */
+async function failuresOfRuns(
+  db: DrizzleDB,
+  { run, overlays: overlayRuns }: BranchFailuresRuns,
+): Promise<BranchFailures> {
+  if (!run && !overlayRuns.length) return { run: null, overlays: [], failures: [], resolved: [] };
 
   const executions = (where: SQL | undefined): Promise<ExecutionRow[]> =>
     db
@@ -569,7 +736,7 @@ export async function getBranchFailures(
             path: files.path,
           })
           .from(files)
-          .where(and(inArray(files.testRunsCaseId, ids), inArray(files.type, ['trace', 'screenshot', 'attachment'])))
+          .where(and(inArray(files.testRunsCaseId, ids), inArray(files.type, EVIDENCE_TYPES)))
           .orderBy(desc(files.id))
       : [];
   const traces = new Map<number, string[]>();
@@ -584,34 +751,8 @@ export async function getBranchFailures(
   for (const [caseId, shots] of caseShots) screenshots.set(caseId, failurePageFirst(shots, (f) => f.subtype)[0]!.path);
 
   return {
-    run: run
-      ? {
-          id: run.id,
-          status: run.status,
-          branch: run.branch ?? null,
-          startTime: iso(run.startTime),
-          origin: run.origin,
-          commit: commitOf(run.metadata),
-          totalTests: run.totalTests,
-          passedTests: run.passedTests,
-          failedTests: run.failedTests,
-          flakyTests: run.flakyTests,
-          skippedTests: run.skippedTests,
-        }
-      : null,
-    overlays: overlayRuns.map((o) => ({
-      id: o.id,
-      status: o.status,
-      origin: o.origin,
-      isFullRun: Boolean(o.isFullRun),
-      startTime: iso(o.startTime),
-      commit: commitOf(o.metadata),
-      totalTests: o.totalTests,
-      passedTests: o.passedTests,
-      failedTests: o.failedTests,
-      flakyTests: o.flakyTests,
-      skippedTests: o.skippedTests,
-    })),
+    run: run ? branchRun(run) : null,
+    overlays: overlayRuns.map(branchOverlay),
     failures: shown.map((l) => {
       const r = rowsById.get(l.executionId)!;
       return {

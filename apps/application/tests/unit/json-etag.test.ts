@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { H3Event } from 'h3';
-import { sendJsonWithEtag } from '../../server/utils/json-etag';
+import { etagMatches, sendJsonWithEtag } from '../../server/utils/json-etag';
 
 /** A minimal H3Event: the request headers it reads, and the response status and headers it writes. */
 function event(headers: Record<string, string> = {}) {
@@ -43,5 +43,25 @@ describe('sendJsonWithEtag', () => {
     const { e: changed, res: changedRes } = event({ 'if-none-match': written['etag']! });
     expect(sendJsonWithEtag(changed, { a: 2 })).toBe('{"a":2}');
     expect(changedRes.statusCode).toBe(200);
+  });
+});
+
+describe('etagMatches', () => {
+  test('compares weakly, as If-None-Match does, across a list of tags', () => {
+    expect(etagMatches('"abc"', '"abc"')).toBe(true);
+    expect(etagMatches('W/"abc"', '"abc"')).toBe(true);
+    expect(etagMatches('"x", W/"abc"', '"abc"')).toBe(true);
+    expect(etagMatches('*', '"abc"')).toBe(true);
+    expect(etagMatches('"abd"', '"abc"')).toBe(false);
+    expect(etagMatches('abc', '"abc"')).toBe(false);
+    expect(etagMatches(undefined, '"abc"')).toBe(false);
+  });
+
+  test('answers 304 to a tag a proxy made weak', () => {
+    const { e: first, written } = event();
+    sendJsonWithEtag(first, { a: 1 });
+    const { e: weak, res } = event({ 'if-none-match': `W/${written['etag']}` });
+    expect(sendJsonWithEtag(weak, { a: 1 })).toBeNull();
+    expect(res.statusCode).toBe(304);
   });
 });

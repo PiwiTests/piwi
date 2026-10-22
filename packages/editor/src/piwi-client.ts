@@ -307,9 +307,9 @@ export interface DesktopJobState {
 
 /**
  * The instance's answers, by instance, key and path: for a conditional request, the `ETag` the instance gave and the
- * value read with it; for a plain one, the value for a moment (`until`); for either, the request on its way. The
- * contexts of one service share it: the configs of a repository reading the same project share one index, read once,
- * and read the project's lists once per refresh.
+ * value read with it; for a plain one, the value for a moment (`until`), with its `ETag` when the instance gave one;
+ * for either, the request on its way. The contexts of one service share it: the configs of a repository reading the
+ * same project share one index, read once, and read the project's lists once per refresh.
  */
 export type ResponseCache = Map<
   string,
@@ -317,7 +317,10 @@ export type ResponseCache = Map<
     etag?: string;
     value?: unknown;
     pending?: Promise<unknown>;
-    /** Until when a plain answer is shared (ms since the epoch); absent from an index, kept by its `ETag`. */
+    /**
+     * Until when a plain answer is shared (ms since the epoch), past for one kept to be asked again with its `ETag`;
+     * absent from an index, kept by its `ETag`.
+     */
     until?: number;
   }
 >;
@@ -329,8 +332,8 @@ const SHARED_MS = 2_000;
 const MAX_SHARED = 64;
 
 /**
- * Drop the plain answers past their time, then the least recently used beyond what is kept of each kind, the indexes
- * and the plain answers; a request on its way stays.
+ * Drop the plain answers past their time but those with an `ETag`, then the least recently used beyond what is kept
+ * of each kind, the indexes and the plain answers; a request on its way stays.
  */
 function trim(answers: ResponseCache): void {
   const now = Date.now();
@@ -341,15 +344,22 @@ function trim(answers: ResponseCache): void {
     if (entry.pending) continue;
     if (entry.until === undefined) {
       if (++indexes > MAX_ANSWERS) answers.delete(key);
-    } else if (entry.until <= now || ++shared > MAX_SHARED) {
+    } else if ((entry.until <= now && entry.etag === undefined) || ++shared > MAX_SHARED) {
       answers.delete(key);
     }
   }
 }
 
-/** Drop the plain answers shared for a moment: the reads that follow, together, read the instance as it stands. */
+/**
+ * Drop the plain answers shared for a moment: the reads that follow, together, read the instance as it stands, those
+ * with an `ETag` asking with it.
+ */
 export function forgetShared(answers: ResponseCache): void {
-  for (const [key, entry] of answers) if (entry.until !== undefined) answers.delete(key);
+  for (const [key, entry] of answers) {
+    if (entry.until === undefined) continue;
+    if (entry.etag === undefined) answers.delete(key);
+    else entry.until = 0;
+  }
 }
 
 export class PiwiClient {
@@ -379,8 +389,10 @@ export class PiwiClient {
   /**
    * A GET whose request on its way, and its answer for `SHARED_MS`, the clients sharing `answers` reuse: the configs
    * of a repository reading one project read it once per refresh, each getting its own copy of the answer, as if it
-   * had parsed it itself. `fresh`, for a run as it moves, shares the request on its way and keeps no answer. A request
-   * that failed is shared by the callers that joined it alone. A plain GET without `answers`.
+   * had parsed it itself. An answer the instance gave an `ETag` (`branch-failures`) is kept past that time and asked
+   * again with it (`If-None-Match`): a 304 gives a copy of the answer kept. `fresh`, for a run as it moves, shares the
+   * request on its way and keeps no answer to share, only one with an `ETag`, to ask with. A request that failed is
+   * shared by the callers that joined it alone. A plain GET without `answers`.
    */
   private async get<T>(path: string, fresh = false): Promise<T> {
     const answers = this.answers;
@@ -389,21 +401,29 @@ export class PiwiClient {
     const known = answers.get(key);
     if (known?.pending) return (known.pending as Promise<T>).then((value) => structuredClone(value));
     if (!fresh && known?.until !== undefined && known.until > Date.now()) return structuredClone(known.value as T);
-    const pending = this.fetchJson<T>(path);
+    const kept = known?.etag ? { etag: known.etag, value: known.value as T } : null;
+    const asked = this.askKnown<T>(path, kept);
+    const pending = asked.then((answer) => answer.value);
     // Awaited by the clients that share it, if any.
     pending.catch(() => {});
     answers.delete(key);
     answers.set(key, { pending });
     try {
-      const value = await pending;
+      const answer = await asked;
       if (answers.get(key)?.pending === pending) {
-        if (fresh) answers.delete(key);
-        else answers.set(key, { value, until: Date.now() + SHARED_MS });
+        const until = fresh ? 0 : Date.now() + SHARED_MS;
+        if (answer.etag) answers.set(key, { etag: answer.etag, value: answer.value, until });
+        else if (fresh) answers.delete(key);
+        else answers.set(key, { value: answer.value, until });
       }
       trim(answers);
-      return value;
+      // The answer kept may be another client's.
+      return answer === kept ? structuredClone(answer.value) : answer.value;
     } catch (e) {
-      if (answers.get(key)?.pending === pending) answers.delete(key);
+      if (answers.get(key)?.pending === pending) {
+        if (kept) answers.set(key, { ...kept, until: 0 });
+        else answers.delete(key);
+      }
       throw e;
     }
   }
@@ -531,8 +551,9 @@ export class PiwiClient {
   /**
    * The latest complete run on `branch` (any branch when null), with the later runs of its branch laid over it; with
    * `run`, that run instead; with `origin: 'local'`, a developer's own runs only, laid over none when no complete one
-   * exists. An instance older than these answers as if they were absent. `fresh` reads the instance rather than the
-   * answer shared for a moment.
+   * exists. An instance older than these answers as if they were absent. Asked with the `ETag` of the answer kept,
+   * when the instance gave one: a 304 is that answer. `fresh` reads the instance rather than the answer shared for a
+   * moment.
    */
   branchFailures(
     projectId: number,
