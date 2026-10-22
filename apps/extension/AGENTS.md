@@ -74,7 +74,8 @@ and the Edge Add-ons listing that is still outstanding.
   way unless the popup's own complexity genuinely outgrows it. It holds the tools that act on the page, for testers and
   developers alike: **Record actions** and **Pick an element** first, then **Report a bug** and **Replay a bug
   report**, **Tested elements**, and the other page tools as compact tiles under **More tools**. The developer tools
-  that have a home in DevTools are there, not here (see "DevTools"): the popup ends with a line saying so. It has a
+  that have a home in DevTools are there, not here (see "DevTools"), and Pick, Lint and Tested elements are in the Piwi
+  panel's toolbar as well: the popup ends with a line saying so. It has a
   config (gear) button (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that
   shows/overrides which mapped project applies to the current tab's site. **It must fit Chrome's 600-pixel popup height** in
   every shipped language (German is the longest); `popup.spec.ts` checks the English height, and a new tile goes under
@@ -652,6 +653,15 @@ style.
   keys; the panel opened again shows the newest entry. A locator that reads gets Copy as (each copy mode, through one
   `renderCopyMode` call) and Add to session (`session-form.ts`, the name checked by `pickNameProblem`), each keeping
   the expression in the history too. Session reads the pick session (`SESSION_KEY`) and redraws when it changes.
+- **The page tools in the toolbar** (`panel.ts`, `runPageTool`): Pick, Lint, Tested elements and the Playwright view
+  inject the popup's content scripts (`pick.js`, `lint-overlay.js`, `coverage-overlay.js`, `playwright-view.js`) into
+  `inspectedWindow.tabId` with `injectContentScript`. A DevTools page holds no `activeTab` grant, so the click asks
+  for the inspected origin (`requestSiteAccess`) before anything is awaited, from a pattern read ahead at open and on
+  `onNavigated`; a site already granted answers without a prompt. Refused, the notice offers Allow on this site; any
+  other failure says why (`injectionFailureText`). Tested elements is `aria-disabled` with the popup's words as its
+  tooltip until an instance is connected and the inspected page resolves to a project (`resolveActiveProject`, read
+  again on `piwiConnection`, the site's override and navigation). The panel sets `html[data-ready]` once the tools
+  know the page.
 - **Network and Mock this response** (`panel-network.ts`, pure half `src/shared/mock-code.ts`): requests come only
   from `chrome.devtools.network` (`getHAR` at open, then `onRequestFinished`), kept in the panel's memory, fetch and
   XHR only, and never leave the browser but through the user's copy or download. The list shows the inspected page's

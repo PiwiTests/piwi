@@ -3,6 +3,7 @@ import type { RawCaptureEvent } from '@piwitests/core/recording';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { test, expect } from './fixtures.js';
 import { openDevtoolsPage } from './devtools-stub.js';
+import { tabIdOf, test as trustedTest } from './trusted-site.js';
 
 const ORIGIN = 'http://piwi-panel.test';
 
@@ -62,6 +63,37 @@ async function openPanel(page: Page, extensionId: string, context: Parameters<ty
   );
   await page.goto(`${ORIGIN}/cart`);
   return openDevtoolsPage(context, extensionId, 'devtools-panel.html', page);
+}
+
+/**
+ * Answers the panel's site requests with `grant` (then with `globalThis.__grant`) and keeps them, and keeps the
+ * scripts it injects instead of injecting them: the inspected tab of the stub does not exist. Waits for the panel to
+ * have read the page.
+ */
+async function stubPageTools(panel: Page, grant: boolean): Promise<void> {
+  await expect(panel.locator('html')).toHaveAttribute('data-ready', 'true');
+  await panel.evaluate((granted) => {
+    const g = globalThis as unknown as { __grant: boolean; __asked: string[]; __injected: unknown[] };
+    g.__grant = granted;
+    g.__asked = [];
+    g.__injected = [];
+    chrome.permissions.request = ((request: { origins?: string[] }) => {
+      g.__asked.push(...(request.origins ?? []));
+      return Promise.resolve(g.__grant);
+    }) as typeof chrome.permissions.request;
+    chrome.scripting.executeScript = ((injection: { target: { tabId: number }; files: string[] }) => {
+      if (!g.__grant) return Promise.reject(new Error('Cannot access contents of the page.'));
+      g.__injected.push({ tabId: injection.target.tabId, files: injection.files });
+      return Promise.resolve([]);
+    }) as unknown as typeof chrome.scripting.executeScript;
+  }, grant);
+}
+
+function pageToolCalls(panel: Page): Promise<{ asked: string[]; injected: Array<{ tabId: number; files: string[] }> }> {
+  return panel.evaluate(() => {
+    const g = globalThis as unknown as { __asked: string[]; __injected: Array<{ tabId: number; files: string[] }> };
+    return { asked: g.__asked, injected: g.__injected };
+  });
 }
 
 function setSession(panel: Page, values: Record<string, unknown>): Promise<void> {
@@ -213,12 +245,84 @@ test.describe('the Piwi panel', () => {
     await expect.poll(sent).toEqual(['waiting', 'waiting', true, true]);
   });
 
-  test('turns the Playwright view on in the inspected tab, or asks for the site', async ({ context, extensionId }) => {
+  test('asks for the site inside the click, then runs Pick, Lint and the Playwright view in the inspected tab', async ({
+    context,
+    extensionId,
+  }) => {
     const shop = await context.newPage();
     const panel = await openPanel(shop, extensionId, context);
+    await stubPageTools(panel, true);
+    await panel.getByRole('button', { name: 'Pick', exact: true }).click();
+    await panel.getByRole('button', { name: 'Lint', exact: true }).click();
+    await panel.getByRole('button', { name: 'Playwright view' }).click();
+    await expect
+      .poll(() => pageToolCalls(panel))
+      .toEqual({
+        asked: [`${ORIGIN}/*`, `${ORIGIN}/*`, `${ORIGIN}/*`],
+        injected: [
+          { tabId: 987_654_321, files: ['pick.js'] },
+          { tabId: 987_654_321, files: ['lint-overlay.js'] },
+          { tabId: 987_654_321, files: ['playwright-view.js'] },
+        ],
+      });
+    await expect(panel.locator('#notice')).toBeEmpty();
+  });
+
+  test('says so when the site is refused, and asks again with Allow on this site', async ({ context, extensionId }) => {
+    const shop = await context.newPage();
+    const panel = await openPanel(shop, extensionId, context);
+    await stubPageTools(panel, false);
     await panel.getByRole('button', { name: 'Playwright view' }).click();
     await expect(panel.getByText(`Piwi Picker needs access to ${ORIGIN} to read this page.`)).toBeVisible();
-    await expect(panel.getByRole('button', { name: 'Allow on this site' })).toBeVisible();
+    await panel.evaluate(() => {
+      (globalThis as unknown as { __grant: boolean }).__grant = true;
+    });
+    await panel.getByRole('button', { name: 'Allow on this site' }).click();
+    await expect
+      .poll(async () => (await pageToolCalls(panel)).injected)
+      .toEqual([{ tabId: 987_654_321, files: ['playwright-view.js'] }]);
+    await expect(panel.locator('#notice')).toBeEmpty();
+  });
+
+  test('offers Tested elements once an instance is connected and the site mapped to a project', async ({
+    context,
+    extensionId,
+  }) => {
+    const shop = await context.newPage();
+    const panel = await openPanel(shop, extensionId, context);
+    await stubPageTools(panel, true);
+    const tested = panel.getByRole('button', { name: 'Tested elements' });
+    await expect(tested).toHaveAttribute('aria-disabled', 'true');
+    await expect(tested).toHaveAttribute('title', 'Connect to your Piwi instance to see what your tests reach');
+    // Marked disabled, it still answers a click with what is missing (Playwright waits for an enabled button).
+    await tested.click({ force: true });
+    await expect(panel.locator('#notice')).toContainText('Connect to your Piwi instance');
+    await expect(panel.getByRole('button', { name: 'Open Piwi Picker settings' })).toBeVisible();
+
+    // Connected, but no pattern covers the inspected site.
+    const connect = (urlPattern: string) =>
+      panel.evaluate(
+        (pattern) =>
+          chrome.storage.local.set({
+            piwiConnection: {
+              instanceUrl: 'http://piwi.test',
+              projectMappings: [{ urlPattern: pattern, projectId: 1, projectLabel: 'Shop' }],
+            },
+          }),
+        urlPattern,
+      );
+    await connect('http://elsewhere.test/**');
+    await expect(tested).toHaveAttribute('title', /^No project is set for this page\./);
+    await expect(tested).toHaveAttribute('aria-disabled', 'true');
+
+    await connect(`${ORIGIN}/**`);
+    await expect(tested).toHaveAttribute('aria-disabled', 'false');
+    await expect(tested).toHaveAttribute('title', 'What your tests reach on this page, and what they miss');
+    await panel.getByRole('button', { name: 'Close' }).click();
+    await tested.click();
+    await expect
+      .poll(async () => (await pageToolCalls(panel)).injected)
+      .toEqual([{ tabId: 987_654_321, files: ['coverage-overlay.js'] }]);
   });
 
   test('opens Save login for tests for the inspected tab', async ({ context, extensionId }) => {
@@ -230,5 +334,28 @@ test.describe('the Piwi panel', () => {
     await login.waitForLoadState();
     expect(login.url()).toContain('/login.html?tabId=987654321&url=');
     await expect(login.getByText(`Site: ${ORIGIN}`)).toBeVisible();
+  });
+});
+
+trustedTest.describe('the Piwi panel on a site the extension may run on', () => {
+  trustedTest.use({
+    pages: { '/shop': '<!doctype html><title>Shop</title><button data-testid="buy">Buy</button>' },
+  });
+
+  trustedTest('starts Pick and Lint in the inspected tab itself', async ({ context, worker, site }) => {
+    const shop = await context.newPage();
+    await shop.goto(`${site}/shop`);
+    const tabId = await tabIdOf(worker, `${site}/shop`);
+    const panel = await openDevtoolsPage(context, new URL(worker.url()).host, 'devtools-panel.html', shop, { tabId });
+    await expect(panel.locator('html')).toHaveAttribute('data-ready', 'true');
+    // The site is granted already: the request answers without a prompt, as Chrome answers it.
+    await panel.evaluate(() => {
+      chrome.permissions.request = (() => Promise.resolve(true)) as typeof chrome.permissions.request;
+    });
+    await panel.getByRole('button', { name: 'Lint', exact: true }).click();
+    await expect(shop.locator('#piwi-lint-overlay-host')).toBeAttached();
+    await panel.getByRole('button', { name: 'Pick', exact: true }).click();
+    await expect(shop.locator('#__piwi_picker_banner')).toHaveCount(1);
+    await expect(panel.locator('#notice')).toBeEmpty();
   });
 });

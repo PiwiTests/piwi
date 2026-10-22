@@ -200,6 +200,24 @@
   "devtools_playwrightView": {
     "message": "Visão do Playwright"
   },
+  "devtools_pick": {
+    "message": "Escolher"
+  },
+  "devtools_pickTitle": {
+    "message": "Escolher um elemento na página, para seus locators classificados e estáveis"
+  },
+  "devtools_lint": {
+    "message": "Verificação"
+  },
+  "devtools_lintTitle": {
+    "message": "Marcar os elementos da página difíceis de testar"
+  },
+  "devtools_testedElements": {
+    "message": "Elementos testados"
+  },
+  "devtools_testedElementsTitle": {
+    "message": "O que seus testes alcançam nesta página, e o que deixam de fora"
+  },
   "devtools_saveLogin": {
     "message": "Salvar o login para os testes"
   },

@@ -253,6 +253,30 @@
     "message": "Playwright view",
     "description": "Button in the toolbar of the DevTools Piwi panel: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
   },
+  "devtools_pick": {
+    "message": "Pick",
+    "description": "DevTools, Piwi panel toolbar: button that starts Pick an element in the inspected page. One short word; the tooltip is devtools_pickTitle."
+  },
+  "devtools_pickTitle": {
+    "message": "Pick an element on the page: its ranked, stable locators",
+    "description": "DevTools, Piwi panel toolbar: tooltip of devtools_pick. One line."
+  },
+  "devtools_lint": {
+    "message": "Lint",
+    "description": "DevTools, Piwi panel toolbar: button that turns the lint overlay on in the inspected page. One short word, as popup_lint; the tooltip is devtools_lintTitle."
+  },
+  "devtools_lintTitle": {
+    "message": "Mark the elements of the page that are hard to test",
+    "description": "DevTools, Piwi panel toolbar: tooltip of devtools_lint. One line."
+  },
+  "devtools_testedElements": {
+    "message": "Tested elements",
+    "description": "DevTools, Piwi panel toolbar: button that opens Tested elements in the inspected page, as popup_testedElements. Its tooltip is devtools_testedElementsTitle, or why it cannot run."
+  },
+  "devtools_testedElementsTitle": {
+    "message": "What your tests reach on this page, and what they miss",
+    "description": "DevTools, Piwi panel toolbar: tooltip of devtools_testedElements when it can run. One line."
+  },
   "devtools_saveLogin": {
     "message": "Save login for tests",
     "description": "Button in the toolbar of the DevTools Piwi panel: opens the page that saves the site's login as a Playwright storageState file."

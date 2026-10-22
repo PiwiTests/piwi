@@ -64,7 +64,11 @@ page navigates; the recording and replay panels on the page stay too, for when D
 - **Session** lists the elements named with **Add to session**, and copies them as a page object, a Markdown table or
   JSON.
 
-The toolbar's **Viewport**, **Playwright view** and **Save login for tests** set the page up for a test (below).
+The toolbar starts the popup's tools on the inspected page without leaving DevTools: **Pick** is
+[Pick an element](./extension#pick-an-element), **Lint** the [lint overlay](./extension#lint-overlay), and **Tested
+elements** shows what your tests reach, once Piwi Picker is connected to your instance and the site is mapped to a
+project (the button says what is missing until then). The first time on a site, the click asks for access to it, as
+recording does. Then **Viewport**, **Playwright view** and **Save login for tests** set the page up for a test (below).
 
 ## Mock this response
 
