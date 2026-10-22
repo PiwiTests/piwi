@@ -443,6 +443,17 @@ The pull request that built most of §12 left these out. Each line names where t
 | 14 | The Test functions panel's "no project" message has no button to open the settings, because it is drawn by a content script | `test-function-panel.ts` |
 | 17 | The reporter's and the dashboard's pickers rank with estimated counts that ignore shadow roots, and their structural parents stop at a shadow root (`probe.ts`); the dashboard's snapshot picker forwards the arrows to its frame but not Enter (`SnapshotLocatorPicker.vue`, one line, then its keys hint) | `packages/picker-dom/src/probe.ts`, `apps/application` |
 
+### From the code review of the first pass
+
+The review's ten findings are fixed in the same pull request. These parts stay open:
+
+| Left open | Where |
+|---|---|
+| **Stop** in Firefox reads the recording and writes it back over two messages, as Pause did before it went through the background's queue: a step flushed by the blur as Stop is clicked can be lost. Routing it the same way needs the editor launcher, which answers the recorder's storage messages, to take a message that changes one field | `recording-storage.ts`, `background/index.ts`, `packages/editor` |
+| A Discard from the DevTools Record tab while a review panel writes its title: the title write checks the recording's start time, then writes, so a very small window remains | `recording-storage.ts` |
+| The ring around the picked element follows scrolls, resizes and size changes; an element moved by an animation alone leaves it behind | `results-panel.ts` |
+| An instance written as `localhost` with the desktop app's token is refused: the token goes only to `127.0.0.1`, where the app proves it holds it | `piwi-client.ts`, documented |
+
 ### Checks and upkeep
 
 - **Firefox:** the Piwi panel toolbar's access request inside the click, and the other in-click requests, are untested
