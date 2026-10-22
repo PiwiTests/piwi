@@ -632,7 +632,9 @@ style.
 - **The selection reaches the ranking through `inspectedWindow.eval`.** The pane injects `devtools-rank.js` into the
   inspected tab (`src/devtools/selection.ts`) and calls `__piwiRankSelected($0)` with `useContentScriptContext`, so
   `$0` arrives in the extension's isolated world as the same element the engine finds. The answer is plain data
-  (`src/shared/devtools-selection.ts`), the element's copy facts included. Firefox has no `useContentScriptContext`: there `$0` is marked with an
+  (`src/shared/devtools-selection.ts`), the element's copy facts included. With an editor paired, the top locator's
+  **Send to editor** sends it in the last copy mode through `src/shared/editor-send.ts`, as the Pick results do; the
+  sidebar's copies set that mode too. Firefox has no `useContentScriptContext`: there `$0` is marked with an
   attribute in the page's world and the content script is asked by message (unverified in Firefox so far).
 - **Access** is the tab's `activeTab` grant or the origin's optional host permission. When injection fails on a web
   page, the pane offers **Allow on this site**, which requests that one origin inside the click. Reading the page's

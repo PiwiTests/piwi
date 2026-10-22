@@ -10,15 +10,18 @@ import { isReservedPickName, isValidPickName } from '../shared/session-export.js
 import { STEP_CSS } from '../shared/step-view.js';
 import { patternOrigin } from '../shared/web-origin.js';
 import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
+import { getEditorPairing } from '../shared/editor-pairing.js';
+import { sendToEditor, showSendResult } from '../shared/editor-send.js';
+import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { requestSiteAccess } from './inspected.js';
 import { button, el, emptyState, iconLine, noAccessText, type IconName } from './ui.js';
 import { rankDevtoolsSelection, type RankOutcome } from './selection.js';
 
 /**
  * The Piwi pane of the Elements panel: the ranked, verified locators of the
- * node selected in DevTools, with the Pick results' copy actions and Add to
- * session. It ranks again when the selection changes and after the page
- * navigates.
+ * node selected in DevTools, with the Pick results' copy actions, Add to
+ * session and, with an editor paired, Send to editor for the top locator. It
+ * ranks again when the selection changes and after the page navigates.
  */
 
 const content = document.getElementById('content') as HTMLElement;
@@ -26,15 +29,21 @@ const selection = document.getElementById('selection') as HTMLElement;
 const refreshBtn = document.getElementById('refresh') as HTMLButtonElement;
 
 let generation = 0;
+/** Whether an editor is paired, read again with each ranking. */
+let editorPaired = false;
 
 async function refresh(): Promise<void> {
   const current = ++generation;
   refreshBtn.disabled = true;
   content.setAttribute('aria-busy', 'true');
-  const outcome = await rankDevtoolsSelection().catch(
-    (err: unknown): RankOutcome => ({ kind: 'failed', message: err instanceof Error ? err.message : String(err) }),
-  );
+  const [outcome, pairing] = await Promise.all([
+    rankDevtoolsSelection().catch(
+      (err: unknown): RankOutcome => ({ kind: 'failed', message: err instanceof Error ? err.message : String(err) }),
+    ),
+    getEditorPairing().catch(() => null),
+  ]);
   if (current !== generation) return;
+  editorPaired = pairing !== null;
   refreshBtn.disabled = false;
   content.removeAttribute('aria-busy');
   render(outcome);
@@ -142,12 +151,29 @@ function locatorRow(
   for (const mode of COPY_MODES) {
     const text = renderCopyMode(locator, mode, ranking.facts);
     const label = copyModeLabel(mode, copyModeMethod(locator, mode, ranking.facts));
-    const copy = button(label, () => void copyWithFeedback(text, copy), {
-      icon: COPY_MODE_ICONS[mode],
-      tone: 'ghost',
-      title: text,
-    });
+    const copy = button(
+      label,
+      () => {
+        void copyWithFeedback(text, copy);
+        void setLastCopyMode(mode);
+      },
+      { icon: COPY_MODE_ICONS[mode], tone: 'ghost', title: text },
+    );
     actions.appendChild(copy);
+  }
+  // The top locator goes to the editor in the copy mode chosen last, as the Pick results send it.
+  if (best && editorPaired) {
+    const send = button(
+      t('devtools_sendToEditor'),
+      () => {
+        void getLastCopyMode()
+          .catch(() => 'bare' as const)
+          .then((mode) => sendToEditor({ kind: 'locator', text: renderCopyMode(locator, mode, ranking.facts) }))
+          .then((result) => showSendResult(send, result));
+      },
+      { icon: 'send', tone: 'ghost', className: 'send' },
+    );
+    actions.appendChild(send);
   }
   actions.appendChild(
     button(t('devtools_addToSession'), () => openSessionForm(row, locator.locator, ranking.pageUrl), {

@@ -4994,6 +4994,9 @@
   "devtools_addToSession": {
     "message": "Zur Session hinzufügen"
   },
+  "devtools_sendToEditor": {
+    "message": "An den Editor senden"
+  },
   "devtools_addedToSession": {
     "message": "Zur Session als $name$ hinzugefügt.",
     "placeholders": {
@@ -5002,9 +5005,6 @@
         "example": "applyCoupon"
       }
     }
-  },
-  "devtools_sendToEditor": {
-    "message": "An den Editor senden"
   },
   "view_title": {
     "message": "Playwright-Ansicht"

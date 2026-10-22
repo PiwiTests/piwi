@@ -5917,6 +5917,10 @@
     "message": "Add to session",
     "description": "DevTools, Piwi sidebar: button under a locator that adds it to the pick session under a name."
   },
+  "devtools_sendToEditor": {
+    "message": "Send to editor",
+    "description": "DevTools: button shown once an editor is paired, under the top locator of the Piwi sidebar and under the Locators console of the Piwi panel. Inserts the locator, in the copy form chosen last, at the cursor of the editor paired with Piwi Picker (VS Code or a JetBrains IDE)."
+  },
   "devtools_addedToSession": {
     "message": "Added to the session as $name$.",
     "description": "DevTools, Piwi sidebar: confirmation after adding a locator to the pick session. $name$ is the name the user typed.",
@@ -5926,10 +5930,6 @@
         "example": "applyCoupon"
       }
     }
-  },
-  "devtools_sendToEditor": {
-    "message": "Send to editor",
-    "description": "DevTools, Piwi panel, Locators tab: button under the locator console, shown while an editor is paired. Inserts the locator, in the copy form chosen last, at the cursor of the editor paired with Piwi Picker (VS Code or a JetBrains IDE)."
   },
   "view_title": {
     "message": "Playwright view",

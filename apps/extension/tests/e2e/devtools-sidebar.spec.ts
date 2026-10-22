@@ -130,6 +130,54 @@ test.describe('the Elements sidebar', () => {
     await runPasted(shop, count);
   });
 
+  test('sends the top locator to the paired editor, in the copy mode chosen last', async ({ context, extensionId }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const shop = await context.newPage();
+    await openShop(shop);
+    await shop.addScriptTag({ path: path.join(DIST, 'devtools-rank.js') });
+    const sidebar = await openDevtoolsPage(context, extensionId, 'devtools-sidebar.html', shop);
+    await selectElement(sidebar, shop, 'button:nth-of-type(1)');
+    const first = sidebar.getByRole('listitem').first();
+    await expect(first.locator('code')).toHaveText("getByRole('button', { name: 'Apply coupon' })");
+    // No editor paired: no button.
+    await expect(sidebar.getByRole('button', { name: 'Send to editor' })).toHaveCount(0);
+
+    // Kept as the settings page keeps a pairing; the address is the editor's, which nothing answers here.
+    await sidebar.evaluate(() =>
+      chrome.storage.local.set({
+        piwiEditorPairing: { url: 'http://127.0.0.1:47211/piwi/send', token: 'editor_token_0123456789' },
+      }),
+    );
+    await sidebar.getByRole('button', { name: 'Refresh' }).click();
+    const send = first.getByRole('button', { name: 'Send to editor' });
+    await expect(send).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Send to editor' })).toHaveCount(1);
+
+    // The worker answers why it did not send: the browser never granted the editor's address.
+    await send.click();
+    await expect(first.getByRole('button', { name: 'Not sent' })).toBeVisible();
+    await expect(send).toHaveAttribute('title', 'Piwi Picker needs permission to reach the editor on this computer.');
+
+    // What reaches the worker when it does send: the line the Action button copied last.
+    await sidebar.evaluate(() => {
+      const sent: unknown[] = [];
+      (globalThis as { __sent?: unknown[] }).__sent = sent;
+      chrome.runtime.sendMessage = (async (message: unknown) => {
+        sent.push(message);
+        return { ok: true, file: 'tests/cart.spec.ts' };
+      }) as typeof chrome.runtime.sendMessage;
+    });
+    await first.getByRole('button', { name: 'Action (click)' }).click();
+    await send.click();
+    await expect(first.getByRole('button', { name: 'Sent' })).toBeVisible();
+    expect(await sidebar.evaluate(() => (globalThis as { __sent?: unknown[] }).__sent)).toEqual([
+      {
+        type: 'piwi-send-to-editor',
+        payload: { kind: 'locator', text: "await page.getByRole('button', { name: 'Apply coupon' }).click();" },
+      },
+    ]);
+  });
+
   test('asks for the site when the ranking script cannot be injected', async ({ context, extensionId }) => {
     const shop = await context.newPage();
     await openShop(shop);
