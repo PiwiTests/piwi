@@ -1,24 +1,26 @@
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { copyWithFeedback } from '../shared/clipboard.js';
-import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
-import { stabilityRulesText } from '../shared/core-words.js';
+import { COPY_MODE_ICONS, COPY_MODES, copyModeLabel, copyModeMethod, renderCopyMode } from '../shared/copy-modes.js';
 import { describeSelection, type SelectionLocator, type SelectionRanking } from '../shared/devtools-selection.js';
-import { initI18n, localizeDocument, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
+import { initI18n, localizeDocument, t, uiLanguage } from '../shared/i18n.js';
 import { decorateIcons, icon } from '../shared/icons.js';
 import { PATTERN_CSS } from '../shared/pattern-view.js';
-import { isReservedPickName, isValidPickName } from '../shared/session-export.js';
 import { STEP_CSS } from '../shared/step-view.js';
+import { verdictWords } from '../shared/verdict-words.js';
 import { patternOrigin } from '../shared/web-origin.js';
-import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
+import { getEditorPairing } from '../shared/editor-pairing.js';
+import { sendToEditor, showSendResult } from '../shared/editor-send.js';
+import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { requestSiteAccess } from './inspected.js';
-import { button, el, emptyState, iconLine, noAccessText, type IconName } from './ui.js';
+import { openSessionForm } from './session-form.js';
+import { button, el, emptyState, noAccessText, type IconName } from './ui.js';
 import { rankDevtoolsSelection, type RankOutcome } from './selection.js';
 
 /**
  * The Piwi pane of the Elements panel: the ranked, verified locators of the
- * node selected in DevTools, with the Pick results' copy actions and Add to
- * session. It ranks again when the selection changes and after the page
- * navigates.
+ * node selected in DevTools, with the Pick results' copy actions, Add to
+ * session and, with an editor paired, Send to editor for the top locator. It
+ * ranks again when the selection changes and after the page navigates.
  */
 
 const content = document.getElementById('content') as HTMLElement;
@@ -26,15 +28,21 @@ const selection = document.getElementById('selection') as HTMLElement;
 const refreshBtn = document.getElementById('refresh') as HTMLButtonElement;
 
 let generation = 0;
+/** Whether an editor is paired, read again with each ranking. */
+let editorPaired = false;
 
 async function refresh(): Promise<void> {
   const current = ++generation;
   refreshBtn.disabled = true;
   content.setAttribute('aria-busy', 'true');
-  const outcome = await rankDevtoolsSelection().catch(
-    (err: unknown): RankOutcome => ({ kind: 'failed', message: err instanceof Error ? err.message : String(err) }),
-  );
+  const [outcome, pairing] = await Promise.all([
+    rankDevtoolsSelection().catch(
+      (err: unknown): RankOutcome => ({ kind: 'failed', message: err instanceof Error ? err.message : String(err) }),
+    ),
+    getEditorPairing().catch(() => null),
+  ]);
   if (current !== generation) return;
+  editorPaired = pairing !== null;
   refreshBtn.disabled = false;
   content.removeAttribute('aria-busy');
   render(outcome);
@@ -101,30 +109,6 @@ function renderRanking(ranking: SelectionRanking): void {
   show(ranking, list);
 }
 
-/** `unique · stable`, `3 matches · brittle: CSS class`, and whether it reads as good or as a warning. */
-function verdictText(locator: SelectionLocator): { text: string; tone: 'good' | 'warn' } {
-  const stability =
-    locator.stability === 'stable'
-      ? t('devtools_stable')
-      : locator.stability === 'brittle'
-        ? t('devtools_brittle', { rules: stabilityRulesText(locator.rules, ', ') })
-        : t('devtools_watch', { rules: stabilityRulesText(locator.rules, ', ') });
-  switch (locator.verdict) {
-    case 'unique':
-    case 'narrowed':
-      return {
-        text: `${t('devtools_unique')} · ${stability}`,
-        tone: locator.stability === 'brittle' ? 'warn' : 'good',
-      };
-    case 'position':
-      return { text: `${t('devtools_byPosition')} · ${stability}`, tone: 'warn' };
-    case 'ambiguous':
-      return { text: `${tn('devtools_matches', locator.count ?? 0)} · ${stability}`, tone: 'warn' };
-    case 'unchecked':
-      return { text: `${t('devtools_unchecked')} · ${stability}`, tone: 'warn' };
-  }
-}
-
 function locatorRow(
   locator: SelectionLocator,
   ranking: Extract<SelectionRanking, { status: 'ranked' }>,
@@ -133,22 +117,41 @@ function locatorRow(
   const row = el('li', best && locator.verdict !== 'ambiguous' ? 'locator best' : 'locator');
   const code = el('code', 'piwi-loc');
   code.innerHTML = highlightLocator(locator.locator);
-  const verdict = verdictText(locator);
+  const verdict = verdictWords(locator);
   const badge = el('div', `locator-verdict badge ${verdict.tone}`);
-  badge.append(icon(verdict.tone === 'good' ? 'check-circle' : 'alert'), verdict.text);
+  badge.append(icon(verdict.tone === 'good' ? 'check-circle' : 'alert'), verdict.explanation);
 
   const actions = el('div', 'row-actions');
   actions.appendChild(el('span', 'copy-label', t('devtools_copyAs')));
   for (const mode of COPY_MODES) {
-    const copy = button(copyModeLabel(mode), () => void copyWithFeedback(renderCopyMode(locator, mode), copy), {
-      icon: COPY_MODE_ICONS[mode],
-      tone: 'ghost',
-      title: renderCopyMode(locator, mode),
-    });
+    const text = renderCopyMode(locator, mode, ranking.facts);
+    const label = copyModeLabel(mode, copyModeMethod(locator, mode, ranking.facts));
+    const copy = button(
+      label,
+      () => {
+        void copyWithFeedback(text, copy);
+        void setLastCopyMode(mode);
+      },
+      { icon: COPY_MODE_ICONS[mode], tone: 'ghost', title: text },
+    );
     actions.appendChild(copy);
   }
+  // The top locator goes to the editor in the copy mode chosen last, as the Pick results send it.
+  if (best && editorPaired) {
+    const send = button(
+      t('devtools_sendToEditor'),
+      () => {
+        void getLastCopyMode()
+          .catch(() => 'bare' as const)
+          .then((mode) => sendToEditor({ kind: 'locator', text: renderCopyMode(locator, mode, ranking.facts) }))
+          .then((result) => showSendResult(send, result));
+      },
+      { icon: 'send', tone: 'ghost', className: 'send' },
+    );
+    actions.appendChild(send);
+  }
   actions.appendChild(
-    button(t('devtools_addToSession'), () => openSessionForm(row, locator.locator, ranking.pageUrl), {
+    button(t('devtools_addToSession'), () => openSessionForm(row, locator.locator, () => ranking.pageUrl), {
       icon: 'plus',
       tone: 'ghost',
       className: 'add-to-session',
@@ -157,44 +160,6 @@ function locatorRow(
 
   row.append(code, badge, actions);
   return row;
-}
-
-function openSessionForm(row: HTMLElement, locator: string, pageUrl: string): void {
-  row.querySelector('form')?.remove();
-  row.querySelector('.confirm')?.remove();
-  const form = el('form', 'session-form');
-  const input = el('input');
-  input.type = 'text';
-  input.placeholder = t('session_namePlaceholder');
-  input.setAttribute('aria-label', t('session_nameLabel'));
-  // Save submits the form, which checks the name.
-  const save = button(t('common_save'), () => undefined, { icon: 'save', tone: 'primary' });
-  save.type = 'submit';
-  const cancel = button(t('common_cancel'), () => form.remove(), { icon: 'close' });
-  const message = el('div', 'form-message');
-  message.setAttribute('role', 'status');
-  form.append(input, save, cancel, message);
-  form.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') form.remove();
-  });
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    void (async () => {
-      const name = input.value.trim();
-      if (!name) return void (message.textContent = t('session_nameRequired'));
-      if (isReservedPickName(name)) return void (message.textContent = t('session_nameReserved', { name }));
-      if (!isValidPickName(name)) return void (message.textContent = t('session_nameInvalid'));
-      const picks = await getSessionPicks();
-      if (picks.some((pick) => pick.name === name))
-        return void (message.textContent = t('session_nameTaken', { name }));
-      await addSessionPick({ name, locator, pageUrl });
-      form.remove();
-      const added = el('code', 'pick-name', name);
-      row.appendChild(iconLine('check-circle', 'confirm', ...tNodes('devtools_addedToSession', { name: added })));
-    })();
-  });
-  row.appendChild(form);
-  input.focus();
 }
 
 async function start(): Promise<void> {

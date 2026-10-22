@@ -214,6 +214,8 @@ test.describe.serial('connect in one step', () => {
 
     await expect(options.locator('#connected-as')).toHaveText('Connected as Ada Lovelace.');
     await expect(options.locator('#status')).toContainText('1 URL pattern from your instance.');
+    // Beside the address: the instance answered the read of its patterns.
+    await expect(options.locator('#instance-health')).toHaveText('Answered now');
     const serverRow = options.locator('#server-mappings .server-row');
     await expect(serverRow).toHaveCount(1);
     await expect(serverRow).toContainText(`${baseUrl}/shop/**`);
@@ -480,12 +482,110 @@ test.describe.serial('connect in one step', () => {
       expect(await storedConnection(options)).toBeUndefined();
       expect(await storedSecret(options, 'instance')).toBeNull();
       await expect(options.locator('#instance-pill')).toHaveText('Not connected');
+      await expect(options.locator('#instance-health')).toBeHidden();
       await options.reload();
       await optionsReady(options);
       await expect(options.locator('#instance-pill')).toHaveText('Not connected');
     } finally {
       patternsDelayMs = 0;
     }
+  });
+
+  test('Disconnect keeps the lines of this browser for the next connection to the same instance', async ({
+    context,
+    extensionId,
+  }) => {
+    patterns = [{ pattern: `${baseUrl}/shop/**`, environment: null }];
+    const local = { urlPattern: 'https://local.shop.test/**', projectId: 1, projectLabel: 'Shop', branch: 'develop' };
+    const options = await context.newPage();
+    await openOptions(options, extensionId);
+    await seedConnection(options, {
+      instanceUrl: baseUrl,
+      projectMappings: [local],
+      serverMappings: [],
+      serverProjects: [{ id: 1, label: 'Shop', canEdit: true }],
+      serverSyncedAt: 1,
+      connectedAs: 'Ada Lovelace',
+    });
+    await options.reload();
+    await optionsReady(options);
+    await grantPermissions(options);
+    await expect(options.locator('#mappings .mapping-pattern')).toHaveValue(local.urlPattern);
+
+    await options.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(options.locator('#status')).toHaveText(
+      'Disconnected. This browser’s 1 line comes back when you connect to this instance again.',
+    );
+    expect(await storedConnection(options)).toBeUndefined();
+
+    // Connected again to the same instance: the line is back, as it was.
+    await options.getByLabel('Address of your Piwi instance').fill(baseUrl);
+    await options.locator('#api-key-fallback summary').click();
+    await options.locator('#api-key').fill(API_KEY);
+    await options.getByRole('button', { name: 'Save and test' }).click();
+    await expect(options.locator('#status')).toContainText('Connected: 1 project found.');
+    await expect(options.locator('#mappings .mapping-pattern')).toHaveValue(local.urlPattern);
+    await expect(options.locator('#mappings .mapping-branch').first()).toHaveValue('develop');
+    expect(await storedConnection(options)).toMatchObject({ instanceUrl: baseUrl, projectMappings: [local] });
+
+    // Once given back, a Disconnect with no line keeps none, and says only that.
+    await options.locator('#mappings .remove-mapping').click();
+    await options.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(options.locator('#mappings-status')).toContainText('Saved 0 lines.');
+    await options.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(options.locator('#status')).toHaveText('Disconnected.');
+  });
+
+  test('a connection dropped while its key is stored leaves the lines kept for the next one', async ({
+    context,
+    extensionId,
+  }) => {
+    patterns = [];
+    const local = { urlPattern: 'https://local.shop.test/**', projectId: 1, projectLabel: 'Shop' };
+    const options = await context.newPage();
+    await openOptions(options, extensionId);
+    await seedConnection(options, {
+      instanceUrl: baseUrl,
+      projectMappings: [local],
+      serverMappings: [],
+      serverProjects: [],
+      serverSyncedAt: 1,
+      connectedAs: '',
+    });
+    await options.reload();
+    await optionsReady(options);
+    await grantPermissions(options);
+    await options.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(options.locator('#status')).toHaveText(
+      'Disconnected. This browser’s 1 line comes back when you connect to this instance again.',
+    );
+
+    // A Disconnect lands while the key is written: the connection is dropped, not kept.
+    await options.evaluate(() => {
+      const put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...args: Parameters<IDBObjectStore['put']>) {
+        IDBObjectStore.prototype.put = put;
+        (document.getElementById('disconnect') as HTMLButtonElement).click();
+        return put.apply(this, args);
+      };
+    });
+    await options.getByLabel('Address of your Piwi instance').fill(baseUrl);
+    await options.locator('#api-key-fallback summary').click();
+    await options.locator('#api-key').fill(API_KEY);
+    await options.getByRole('button', { name: 'Save and test' }).click();
+    await expect(options.locator('#status')).toHaveText('Disconnected.');
+    await expect(options.locator('#instance-pill')).toHaveText('Not connected');
+    await expect(options.getByRole('button', { name: 'Save and test' })).toBeEnabled();
+    expect(await storedConnection(options)).toBeUndefined();
+
+    // The next connection kept takes them.
+    await options.getByLabel('Address of your Piwi instance').fill(baseUrl);
+    await options.locator('#api-key').fill(API_KEY);
+    await options.getByRole('button', { name: 'Save and test' }).click();
+    await expect(options.locator('#status')).toContainText('Connected: 1 project found.');
+    await expect(options.locator('#mappings .mapping-pattern')).toHaveValue(local.urlPattern);
+    expect(await storedConnection(options)).toMatchObject({ instanceUrl: baseUrl, projectMappings: [local] });
+    expect(await options.evaluate(() => chrome.storage.local.get('piwiKeptMappings'))).toEqual({});
   });
 
   test('the Active project chosen on one site applies there only, and Disconnect forgets it with the branch chosen', async ({
@@ -632,4 +732,98 @@ test('Send to editor answers, rather than leaving the panel waiting, when the pa
     ]),
   );
   expect(answer).toEqual({ ok: false, error: expect.stringContaining('This is not a pairing address') });
+});
+
+/**
+ * Plays the browser's host permissions in a settings page: `getAll` answers the
+ * granted patterns, `remove` takes one back, and both fire the listeners the
+ * page added, as the browser's `onAdded` and `onRemoved` do. A spec cannot
+ * answer the browser's prompt, and the extension holds no grant by default.
+ */
+async function stubGrants(page: Page, granted: string[]): Promise<void> {
+  await page.addInitScript((initial) => {
+    const origins = new Set(initial);
+    const listeners = { added: [] as Array<(p: object) => void>, removed: [] as Array<(p: object) => void> };
+    const permissions = chrome.permissions;
+    permissions.getAll = (async () => ({ permissions: [], origins: [...origins] })) as typeof permissions.getAll;
+    permissions.remove = (async ({ origins: gone = [] }: chrome.permissions.Permissions) => {
+      for (const origin of gone) origins.delete(origin);
+      for (const listener of listeners.removed) listener({ origins: gone });
+      return true;
+    }) as typeof permissions.remove;
+    permissions.onAdded.addListener = ((listener: (p: object) => void) =>
+      listeners.added.push(listener)) as typeof permissions.onAdded.addListener;
+    permissions.onRemoved.addListener = ((listener: (p: object) => void) =>
+      listeners.removed.push(listener)) as typeof permissions.onRemoved.addListener;
+    (window as unknown as { __grant: (origin: string) => void }).__grant = (origin) => {
+      origins.add(origin);
+      for (const listener of listeners.added) listener({ origins: [origin] });
+    };
+  }, granted);
+}
+
+test.describe('the sites Piwi Picker may run on', () => {
+  test('none in a new profile', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openOptions(page, extensionId);
+    await expect(page.getByRole('heading', { name: 'Sites Piwi Picker may run on' })).toBeVisible();
+    await expect(page.locator('#site-access')).toHaveText(
+      'No site yet: Piwi Picker asks for one the first time you record or replay there.',
+    );
+  });
+
+  test('lists every site granted with Revoke, and keeps the ones a recording or the instance holds', async ({
+    context,
+    extensionId,
+  }) => {
+    const instance = 'http://127.0.0.1:9';
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.evaluate(async (instanceUrl) => {
+      await chrome.storage.local.set({ piwiConnection: { instanceUrl, projectMappings: [] } });
+      await chrome.storage.session.set({
+        piwiRecording: {
+          active: true,
+          events: [],
+          startedAt: 1,
+          grantedOriginPattern: 'https://rec.example/*',
+          mode: 'actions',
+        },
+      });
+    }, instance);
+    await stubGrants(page, ['https://shop.example/*', `${instance}/*`, 'https://rec.example/*']);
+    await openOptions(page, extensionId);
+
+    const rows = page.locator('#site-access .grant-row');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText(`${instance}/*`);
+    await expect(rows.nth(0)).toContainText('Used by your Piwi instance: Disconnect removes this access.');
+    await expect(
+      rows.nth(0).getByRole('button', { name: `Revoke Piwi Picker’s access to ${instance}/*` }),
+    ).toBeDisabled();
+    await expect(rows.nth(1)).toContainText('https://rec.example/*');
+    await expect(rows.nth(1)).toContainText('A recording is running there: stop it first.');
+    await expect(rows.nth(1).getByRole('button')).toBeDisabled();
+    await expect(rows.nth(2)).toContainText('https://shop.example/*');
+
+    await rows.nth(2).getByRole('button', { name: 'Revoke Piwi Picker’s access to https://shop.example/*' }).click();
+    await expect(page.locator('#site-access-status')).toHaveText(
+      'Piwi Picker no longer runs on https://shop.example/* unless you click its icon there.',
+    );
+    await expect(rows).toHaveCount(2);
+
+    // A site granted meanwhile shows; the recording's site can go once the recording ends.
+    await page.evaluate(() =>
+      (window as unknown as { __grant: (origin: string) => void }).__grant('https://new.example/*'),
+    );
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(1)).toContainText('https://new.example/*');
+    await page.evaluate(() =>
+      chrome.storage.session.set({
+        piwiRecording: { active: false, events: [], startedAt: null, grantedOriginPattern: null },
+      }),
+    );
+    await expect(rows.nth(2).getByRole('button')).toBeEnabled();
+    await expect(rows.nth(2)).not.toContainText('A recording is running there');
+  });
 });

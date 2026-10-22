@@ -10,6 +10,8 @@ import {
   getInstanceApiKey,
   setInstanceApiKey,
   clearInstanceApiKey,
+  isDesktopApiKey,
+  markDesktopApiKey,
   moveLegacyApiKey,
   type ConnectionSettings,
 } from '../../src/shared/connection-settings.js';
@@ -282,6 +284,27 @@ describe('the API key', () => {
     expect(await getInstanceApiKey('http://piwi.example.com', area)).toBe('');
     expect(await getInstanceApiKey('https://piwi.example.com:8443', area)).toBe('');
     expect(await getInstanceApiKey('', area)).toBe('');
+  });
+
+  it('is marked as the desktop app token only when it is that token, for the app address, until another key', async () => {
+    const app = { url: 'http://127.0.0.1:4318', token: 'pd_desktop' };
+    await setInstanceApiKey('http://127.0.0.1:4318', 'pd_key', area);
+    await markDesktopApiKey(app, area);
+    expect(await isDesktopApiKey(app.url, 'pd_key', area)).toBe(false);
+    await setInstanceApiKey('http://127.0.0.1:5000', 'pd_desktop', area);
+    await markDesktopApiKey(app, area);
+    expect(await isDesktopApiKey('http://127.0.0.1:5000', 'pd_desktop', area)).toBe(false);
+    await setInstanceApiKey('http://localhost:4318/', 'pd_desktop', area);
+    await markDesktopApiKey(app, area);
+    expect(await isDesktopApiKey('http://localhost:4318', 'pd_desktop', area)).toBe(true);
+    expect(await isDesktopApiKey('http://localhost:4318', 'pd_typed', area)).toBe(false);
+    expect(await getInstanceApiKey('http://localhost:4318', area)).toBe('pd_desktop');
+    // Kept again, by Save and test once the app is unpaired: still the app's token.
+    await setInstanceApiKey('http://localhost:4318', 'pd_desktop', area);
+    expect(await isDesktopApiKey('http://localhost:4318', 'pd_desktop', area)).toBe(true);
+    await setInstanceApiKey('http://localhost:4318', 'pd_key', area);
+    await setInstanceApiKey('http://localhost:4318', 'pd_desktop', area);
+    expect(await isDesktopApiKey('http://localhost:4318', 'pd_desktop', area)).toBe(false);
   });
 
   it('an empty key, or Disconnect, keeps none', async () => {

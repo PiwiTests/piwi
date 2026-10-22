@@ -77,7 +77,9 @@ test.describe('installPickerOverlay — global transport (live page)', () => {
     await install(page, { transport: 'global', failing: null });
     const banner = page.locator('#__piwi_picker_banner');
     await expect(banner).toContainText('Piwi inspector — click any element to generate locators for it');
-    await expect(page.locator('#__piwi_picker_foot')).toHaveText('↑ parent · ↓ child · Esc skip');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(
+      'Enter picks the focused element · ↑ parent · ↓ child · Esc skip',
+    );
     await dispatchKey(page, 'Escape');
 
     await page.evaluate(() => delete (globalThis as any).__piwiPickState);
@@ -118,6 +120,70 @@ test.describe('installPickerOverlay — global transport (live page)', () => {
   });
 });
 
+test.describe('installPickerOverlay — picking with the keyboard', () => {
+  const FORM = `<!doctype html><html><body style="margin-top:120px">
+    <form id="form" onsubmit="event.preventDefault(); window.__submits = (window.__submits || 0) + 1">
+      <input id="email" aria-label="Email">
+      <button id="send">Send</button>
+    </form>
+    <p id="note">Note</p>
+    <x-field id="host"></x-field>
+    <script>
+      document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<input id="inner-field">';
+    </script>
+  </body></html>`;
+  const pickState = (page: Page) => page.evaluate(() => (globalThis as any).__piwiPickState ?? null);
+  const pickedId = (page: Page) => page.evaluate(() => (globalThis as any).__piwiPickedElement?.id ?? null);
+
+  test('Enter with nothing outlined picks the focused element, and the page sees no Enter', async ({ page }) => {
+    await page.setContent(FORM);
+    await page.focus('#email');
+    await install(page, { transport: 'global', failing: null });
+    await page.keyboard.press('Enter');
+    expect(await pickState(page)).toBe('picked');
+    expect(await pickedId(page)).toBe('email');
+    expect(await page.evaluate(() => (window as any).__submits ?? 0)).toBe(0);
+  });
+
+  test('Enter picks the focused element inside an open shadow root', async ({ page }) => {
+    await page.setContent(FORM);
+    await page.locator('#host #inner-field').focus();
+    await install(page, { transport: 'global', failing: null });
+    await page.keyboard.press('Enter');
+    expect(await pickedId(page)).toBe('inner-field');
+  });
+
+  test('Enter picks the outlined element over the focused one, after the arrows', async ({ page }) => {
+    await page.setContent(FORM);
+    await page.focus('#email');
+    await install(page, { transport: 'global', failing: null });
+    await page.hover('#send');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(
+      'click or Enter to pick · ↑ parent · ↓ child · Esc skip',
+    );
+    await dispatchKey(page, 'ArrowUp');
+    await page.keyboard.press('Enter');
+    expect(await pickedId(page)).toBe('form');
+  });
+
+  test('Enter with nothing outlined and nothing focused picks nothing', async ({ page }) => {
+    await page.setContent(FORM);
+    await install(page, { transport: 'global', failing: null });
+    await page.keyboard.press('Enter');
+    expect(await pickState(page)).toBeNull();
+    await expect(page.locator('#__piwi_picker_banner')).toBeVisible();
+    // Over the overlay's own banner nothing is outlined either: the focus is what Enter picks.
+    await page.focus('#email');
+    await page.hover('#note');
+    await page.hover('#__piwi_picker_banner');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(
+      'Enter picks the focused element · ↑ parent · ↓ child · Esc skip',
+    );
+    await page.keyboard.press('Enter');
+    expect(await pickedId(page)).toBe('email');
+  });
+});
+
 test.describe('installPickerOverlay — postMessage transport (snapshot picker)', () => {
   test('click probes inline and posts elementPicked, staying inert afterward', async ({ page }) => {
     await page.setContent(FIXTURE);
@@ -144,6 +210,21 @@ test.describe('installPickerOverlay — postMessage transport (snapshot picker)'
     const clicksBefore = (await messagesOfType(page, 'elementPicked')).length;
     await page.click('#submit', { force: true });
     expect((await messagesOfType(page, 'elementPicked')).length).toBe(clicksBefore);
+  });
+
+  test('a forwarded Enter picks the outlined element; the keys leave Enter out', async ({ page }) => {
+    await page.setContent(FIXTURE);
+    await recordPostMessages(page);
+    await page.evaluate((probeSrc) => {
+      (globalThis as any).__piwiProbe = new Function(`return (${probeSrc})`)();
+    }, probeElementAttrs.toString());
+    await install(page, { transport: 'postMessage', probeArg: { keep: ['id'], includeStructural: false } });
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText('↑ parent · ↓ child · Esc skip');
+    await page.hover('#submit');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText('click to pick · ↑ parent · ↓ child · Esc skip');
+    await page.evaluate(() => window.postMessage({ type: 'piwiPickerKey', key: 'Enter' }, '*'));
+    await expect.poll(async () => (await messagesOfType(page, 'elementPicked')).length).toBe(1);
+    expect((await messagesOfType(page, 'elementPicked'))[0].attrs.attributes.id).toBe('submit');
   });
 
   test('Escape posts pickerClosed', async ({ page }) => {
@@ -210,5 +291,53 @@ test.describe('installPickerOverlay — the project’s test id attribute', () =
     await page.hover('#inner');
     await page.click('#inner', { force: true });
     expect(await page.evaluate(() => (globalThis as any).__piwiPickedElement.id)).toBe('inner');
+  });
+});
+
+test.describe('installPickerOverlay — shadow roots', () => {
+  // `<x-card>` holds a button in an open shadow root, `<x-sealed>` one in a closed root.
+  const SHADOW = `<!doctype html><html><body style="margin-top:120px">
+    <section id="list"><x-card id="card"></x-card></section>
+    <x-sealed id="sealed"></x-sealed>
+    <script>
+      const open = document.getElementById('card').attachShadow({ mode: 'open' });
+      open.innerHTML = '<div id="frame"><button id="buy"><span id="buy-text">Buy</span></button></div>';
+      const closed = document.getElementById('sealed').attachShadow({ mode: 'closed' });
+      closed.innerHTML = '<button id="hidden">Hidden</button>';
+    </script>
+  </body></html>`;
+  const inShadow = (page: Page, id: string) => page.locator('#card').locator(`#${id}`);
+  const pickedId = (page: Page) => page.evaluate(() => (globalThis as any).__piwiPickedElement?.id ?? null);
+
+  test('a control inside an open shadow root is outlined on hover and picked on click', async ({ page }) => {
+    await page.setContent(SHADOW);
+    await install(page, { transport: 'global', failing: null });
+    await inShadow(page, 'buy-text').hover();
+    await expect(page.locator('#__piwi_picker_label')).toContainText('<button>');
+    await expect(page.locator('#__piwi_picker_locator')).toContainText("locator('#buy')");
+    const outline = await page.locator('#__piwi_picker_highlight').boundingBox();
+    expect(outline).toEqual(await inShadow(page, 'buy').boundingBox());
+    await inShadow(page, 'buy-text').click();
+    expect(await pickedId(page)).toBe('buy');
+  });
+
+  test('the chain walks out of the shadow root through its host', async ({ page }) => {
+    await page.setContent(SHADOW);
+    await install(page, { transport: 'global', failing: null });
+    await inShadow(page, 'buy').hover();
+    for (let i = 0; i < 3; i++) await dispatchKey(page, 'ArrowUp');
+    await expect(page.locator('#__piwi_picker_locator')).toContainText("locator('#list')");
+    await dispatchKey(page, 'ArrowDown');
+    await expect(page.locator('#__piwi_picker_locator')).toContainText("locator('#card')");
+    await inShadow(page, 'buy').click({ force: true });
+    expect(await pickedId(page)).toBe('card');
+  });
+
+  test('a closed shadow root stays at its host', async ({ page }) => {
+    await page.setContent(SHADOW);
+    await install(page, { transport: 'global', failing: null });
+    await page.hover('#sealed');
+    await page.click('#sealed');
+    expect(await pickedId(page)).toBe('sealed');
   });
 });

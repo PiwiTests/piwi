@@ -215,9 +215,16 @@ export function nodeText(node: DomNode): string {
   return (node.nodeValue ?? '') + (node.children ?? []).map(nodeText).join('');
 }
 
+/** The button reading `label`, waited for: a panel draws its buttons after it reads the extension's storage. */
 async function buttonNode(page: Page, label: string): Promise<number> {
-  const backendNodeId = await panelNode(page, (node) => node.nodeName === 'BUTTON' && nodeText(node) === label);
-  expect(backendNodeId, `a button reading "${label}"`).not.toBeNull();
+  let backendNodeId: number | null = null;
+  await expect
+    .poll(
+      async () =>
+        (backendNodeId = await panelNode(page, (node) => node.nodeName === 'BUTTON' && nodeText(node) === label)),
+      { message: `a button reading "${label}"` },
+    )
+    .not.toBeNull();
   return backendNodeId!;
 }
 

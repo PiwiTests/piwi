@@ -135,7 +135,8 @@ summary:focus-visible {
   outline-offset: 1px;
 }
 
-button:disabled {
+button:disabled,
+button[aria-disabled='true'] {
   opacity: 0.5;
   cursor: default;
 }
@@ -587,8 +588,20 @@ body.panel {
   background: var(--hover);
 }
 
+.tools button[aria-disabled='true']:hover {
+  background: none;
+}
+
+/* Between the tools that act on the page and those that set it up. */
+.tools-separator {
+  align-self: stretch;
+  width: 1px;
+  margin: 5px 4px;
+  background: var(--divider);
+}
+
 /* A narrow panel: the tools show their icons alone, their labels kept for assistive technology and as tooltips. */
-@media (max-width: 860px) {
+@media (max-width: 1100px) {
   .toolbar {
     flex-wrap: wrap;
   }
@@ -945,6 +958,20 @@ ol.steps .piwi-step ~ .detail {
   max-width: 50%;
   font-weight: 500;
   overflow-wrap: anywhere;
+}
+
+/* What the console does with a locator that reads: Copy as, Add to session, and the name form it opens. */
+.console-actions {
+  padding: 4px 12px 6px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.console-actions[hidden] {
+  display: none;
+}
+
+.console-actions .row-actions {
+  margin-top: 0;
 }
 
 @media (max-width: 640px) {

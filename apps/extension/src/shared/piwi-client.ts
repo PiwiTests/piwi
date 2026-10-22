@@ -7,10 +7,15 @@ import {
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import { getInstanceApiKey, type ConnectionSettings, type ServerPatternsAnswer } from './connection-settings.js';
+import {
+  getInstanceApiKey,
+  isDesktopApiKey,
+  type ConnectionSettings,
+  type ServerPatternsAnswer,
+} from './connection-settings.js';
 import type { ClientInfo } from './client-info.js';
 import type { ConnectPoll } from './connect-flow.js';
-import type { DesktopSettings } from './desktop-settings.js';
+import { desktopOrigin, getDesktopSettings, type DesktopSettings } from './desktop-settings.js';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { bugReportUrl, normalizeBaseUrl } from './instance-links.js';
 import { t } from './i18n.js';
@@ -52,10 +57,17 @@ function listItems<T>(body: unknown): T[] {
   return Array.isArray(items) ? (items as T[]) : [];
 }
 
-/** The key header for the instance `settings` names: the key given for that origin, or `apiKey` when one is passed. */
+/**
+ * The key header for the instance `settings` names: the key given for that origin, or `apiKey` when one is passed.
+ * When that key is the paired desktop app's token, the program at the address proves it holds it first
+ * (`proveDesktopKey`), and a failed proof throws the message to show instead. Read before the request is sent, outside
+ * the `try` that turns a network error into "unreachable", so that message reaches the user.
+ */
 async function authHeaders(settings: ConnectionSettings, apiKey?: string): Promise<Record<string, string>> {
   const key = (apiKey ?? (await getInstanceApiKey(settings.instanceUrl))).trim();
-  return key ? { 'X-API-Key': key } : {};
+  if (!key) return {};
+  await proveDesktopKey(settings.instanceUrl, key);
+  return { 'X-API-Key': key };
 }
 
 /** `fetch` that refuses a redirect rather than following it with the request's headers. */
@@ -114,9 +126,15 @@ export type ConnectionCheckResult = { ok: true } | { ok: false; error: string };
 export async function testConnection(settings: ConnectionSettings, apiKey?: string): Promise<ConnectionCheckResult> {
   if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_enterInstanceUrl') };
   const url = `${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`;
+  let headers: Record<string, string>;
+  try {
+    headers = await authHeaders(settings, apiKey);
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
   let res: Response;
   try {
-    res = await request(url, { headers: await authHeaders(settings, apiKey), signal: timeout() });
+    res = await request(url, { headers, signal: timeout() });
   } catch (err) {
     return { ok: false, error: await unreachableReason(err, url) };
   }
@@ -149,10 +167,11 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
  */
 export async function fetchCatalog(settings: ConnectionSettings, projectId: number): Promise<TestFunctionEntry[]> {
   if (!settings.instanceUrl.trim()) return [];
+  const headers = await authHeaders(settings);
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/test-functions`, {
-      headers: await authHeaders(settings),
+      headers,
       signal: timeout(),
     });
   } catch {
@@ -184,10 +203,11 @@ export async function fetchLocatorIndex(
 ): Promise<LocatorIndex> {
   if (!settings.instanceUrl.trim()) throw new Error(t('common_notConnected'));
   const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
+  const headers = await authHeaders(settings);
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index${query}`, {
-      headers: await authHeaders(settings),
+      headers,
       signal: AbortSignal.timeout(LOCATOR_INDEX_TIMEOUT_MS),
     });
   } catch {
@@ -302,10 +322,11 @@ export async function pollConnect(instanceUrl: string, deviceCode: string): Prom
 /** Every URL pattern of the projects the key's user can see, with those projects and the user's name. */
 export async function fetchServerPatterns(settings: ConnectionSettings): Promise<ServerPatternsAnswer> {
   if (!settings.instanceUrl.trim()) throw new Error(t('common_enterInstanceUrl'));
+  const headers = await authHeaders(settings);
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/extension/url-patterns`, {
-      headers: await authHeaders(settings),
+      headers,
       signal: timeout(),
     });
   } catch {
@@ -334,11 +355,12 @@ export async function addServerPattern(
     testPathPrefix?: string | null;
   },
 ): Promise<void> {
+  const headers = await authHeaders(settings);
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/url-patterns`, {
       method: 'POST',
-      headers: { ...(await authHeaders(settings)), 'Content-Type': 'application/json' },
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
       signal: timeout(),
     });
@@ -430,11 +452,12 @@ export async function sendBugReport(
   for (const shot of send.stepShots ?? []) {
     form.append(BUG_REPORT_PARTS.stepShot, new Blob([shot.bytes as BlobPart], { type: 'image/jpeg' }), shot.name);
   }
+  const headers = await authHeaders(settings);
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
       method: 'POST',
-      headers: await authHeaders(settings),
+      headers,
       body: form,
       signal: AbortSignal.timeout(60_000),
     });
@@ -505,10 +528,11 @@ export interface BugReportSummary {
 
 /** A project's bug reports that are still to be fixed: open, test committed, or looking fixed. */
 export async function fetchBugReports(settings: ConnectionSettings, projectId: number): Promise<BugReportSummary[]> {
+  const headers = await authHeaders(settings);
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
-      headers: await authHeaders(settings),
+      headers,
       signal: timeout(),
     });
   } catch {
@@ -525,10 +549,11 @@ export async function fetchBugReportSteps(
   settings: ConnectionSettings,
   id: number,
 ): Promise<{ steps: unknown; projectId: number | null }> {
+  const headers = await authHeaders(settings);
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}`, {
-      headers: await authHeaders(settings),
+      headers,
       signal: timeout(),
     });
   } catch {
@@ -602,11 +627,12 @@ export async function sendReproduction(
   id: number,
   send: ReproductionSend,
 ): Promise<void> {
+  const headers = await authHeaders(settings);
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}/reproductions`, {
       method: 'POST',
-      headers: { ...(await authHeaders(settings)), 'Content-Type': 'application/json' },
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(send),
       signal: timeout(),
     });
@@ -661,6 +687,29 @@ async function proveDesktop(desktop: DesktopSettings): Promise<void> {
   if (!proof || proof !== (await desktopTokenProof(desktop.token, port, challenge))) {
     throw new Error(t('common_desktopNotProven'));
   }
+}
+
+/**
+ * Throws a message to show unless `key`, about to go to the instance at
+ * `instanceUrl`, is safe to send. The desktop app's token is its server's API
+ * key (Use the desktop app as your instance), so it goes out on an instance's
+ * request only after the program at that address proves it holds it, on every
+ * request, as on the app's own requests. A key is the app's token when the
+ * secret area marks it so (`isDesktopApiKey`), which outlives Unpair, or when
+ * the address and the key are the paired app's. The proof is asked of the
+ * address the request goes to, which must then be the app's own 127.0.0.1
+ * origin: `localhost` may reach another program on the IPv6 loopback. Any
+ * other key goes out as it is.
+ */
+async function proveDesktopKey(instanceUrl: string, key: string): Promise<void> {
+  const origin = desktopOrigin(instanceUrl);
+  if (!origin) return;
+  if (!(await isDesktopApiKey(instanceUrl, key))) {
+    const paired = await getDesktopSettings();
+    if (paired?.url !== origin || paired.token !== key) return;
+  }
+  if (new URL(instanceUrl.trim()).origin !== origin) throw new Error(t('common_desktopNotProven'));
+  await proveDesktop({ url: origin, token: key });
 }
 
 /**

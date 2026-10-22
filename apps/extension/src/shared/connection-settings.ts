@@ -1,4 +1,5 @@
 import { normalizePathPrefix } from '@piwitests/core/page-key';
+import { desktopOrigin, type DesktopSettings } from './desktop-settings.js';
 import { moveLegacySecret, secretArea, type SecretArea } from './secret-store.js';
 
 /**
@@ -208,6 +209,8 @@ export function isConnected(settings: ConnectionSettings): boolean {
 interface InstanceSecret {
   apiKey: string;
   origin: string;
+  /** Set when the key is the paired desktop app's token (`markDesktopApiKey`); a new key drops it. */
+  desktop?: true;
 }
 
 /** The origin of an http(s) instance address, or null. */
@@ -223,7 +226,7 @@ function instanceOrigin(instanceUrl: string): string | null {
 function coerceInstanceSecret(value: unknown): InstanceSecret | null {
   const v = value as Partial<InstanceSecret> | null;
   return v && typeof v.apiKey === 'string' && v.apiKey && typeof v.origin === 'string'
-    ? { apiKey: v.apiKey, origin: v.origin }
+    ? { apiKey: v.apiKey, origin: v.origin, ...(v.desktop === true ? { desktop: true } : {}) }
     : null;
 }
 
@@ -239,7 +242,10 @@ export async function getInstanceApiKey(instanceUrl: string, area: SecretArea = 
   return secret && secret.origin === instanceOrigin(instanceUrl) ? secret.apiKey : '';
 }
 
-/** Keeps `apiKey` for the instance at `instanceUrl`; an empty key keeps none. */
+/**
+ * Keeps `apiKey` for the instance at `instanceUrl`; an empty key keeps none. The same key kept again for the same
+ * origin keeps its desktop mark.
+ */
 export async function setInstanceApiKey(
   instanceUrl: string,
   apiKey: string,
@@ -247,8 +253,35 @@ export async function setInstanceApiKey(
 ): Promise<void> {
   const origin = instanceOrigin(instanceUrl);
   const key = apiKey.trim();
-  if (origin && key) await area.set('instance', { apiKey: key, origin } satisfies InstanceSecret);
-  else await area.remove('instance');
+  if (!origin || !key) {
+    await area.remove('instance');
+    return;
+  }
+  const previous = coerceInstanceSecret(await area.get('instance'));
+  const desktop = previous?.desktop && previous.apiKey === key && previous.origin === origin;
+  await area.set('instance', { apiKey: key, origin, ...(desktop ? { desktop } : {}) } satisfies InstanceSecret);
+}
+
+/**
+ * Marks the key kept for the instance as the desktop app's token when it is `desktop`'s token, given for the app's
+ * address, so it is still sent only to a program that proves it holds it once the pairing is gone. Called as a
+ * connection is kept and as a pairing is replaced or removed; any other key is left as it is.
+ */
+export async function markDesktopApiKey(desktop: DesktopSettings, area: SecretArea = secretArea()): Promise<void> {
+  const secret = coerceInstanceSecret(await area.get('instance'));
+  if (!secret || secret.desktop || secret.apiKey !== desktop.token) return;
+  if (desktopOrigin(secret.origin) !== desktopOrigin(desktop.url)) return;
+  await area.set('instance', { ...secret, desktop: true } satisfies InstanceSecret);
+}
+
+/** Whether `apiKey` is the key kept for the instance at `instanceUrl` and is marked as the desktop app's token. */
+export async function isDesktopApiKey(
+  instanceUrl: string,
+  apiKey: string,
+  area: SecretArea = secretArea(),
+): Promise<boolean> {
+  const secret = coerceInstanceSecret(await area.get('instance'));
+  return !!secret?.desktop && secret.apiKey === apiKey && secret.origin === instanceOrigin(instanceUrl);
 }
 
 export async function clearInstanceApiKey(area: SecretArea = secretArea()): Promise<void> {

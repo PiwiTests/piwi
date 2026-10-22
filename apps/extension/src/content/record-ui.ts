@@ -1,3 +1,5 @@
+import type { StepView } from '@piwitests/core/recording';
+import type { PiwiSteps } from '@piwitests/core/steps';
 import { copyWithFeedback } from '../shared/clipboard.js';
 
 /** The recorder's page surfaces, shared by `record-panel.ts` and `bug-panel.ts`. */
@@ -84,4 +86,29 @@ export async function copyToClipboard(text: string, btn: HTMLButtonElement): Pro
 /** `2026-09-27-14-03`, for file names. */
 export function fileStamp(time: number): string {
   return new Date(time || Date.now()).toISOString().slice(0, 16).replace(/[:T]/g, '-');
+}
+
+/**
+ * Asks the worker to replay `steps` in this tab, on this page's origin;
+ * `recordingViews` are the step screenshots a bug recording took, which the
+ * replay shows for a step it hands to the person. Answers why it could not
+ * start.
+ */
+export async function startReplayHere(
+  steps: PiwiSteps,
+  recordingViews?: Array<StepView & { step: number }>,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      type: 'piwi-start-replay',
+      steps,
+      origin: location.origin,
+      stepMode: false,
+      inject: true,
+      ...(recordingViews ? { recordingViews } : {}),
+    })) as { ok: boolean; error?: string } | undefined;
+    return response ?? { ok: false };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }

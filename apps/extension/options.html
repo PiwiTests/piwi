@@ -136,6 +136,15 @@
       .pill[hidden] {
         display: none;
       }
+      /* The instance's last request failed: refused, unanswered or answered with an error. */
+      .pill.failing {
+        color: var(--error);
+        border-color: color-mix(in srgb, var(--error) 45%, transparent);
+        background: color-mix(in srgb, var(--error) 8%, transparent);
+      }
+      .pill.failing::before {
+        opacity: 1;
+      }
       p.lead {
         color: var(--muted);
         font-size: 13px;
@@ -414,6 +423,27 @@
         color: var(--fg);
         font-weight: 600;
       }
+      /* A site Piwi Picker may run on: its pattern, what holds it, and Revoke at the end of the row. */
+      .grant-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 12.5px;
+      }
+      .grant-row:last-child {
+        border-bottom: none;
+      }
+      .grant-row .pattern {
+        flex: 1 1 220px;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .grant-row .meta {
+        color: var(--muted);
+      }
       .source {
         flex-shrink: 0;
         font-size: 11px;
@@ -461,6 +491,18 @@
         border-left: 3px solid var(--accent);
       }
       .code-panel[hidden] {
+        display: none;
+      }
+      /* An offer to act on in one click: a sentence, and its button at the end. */
+      .offer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 12.5px;
+        line-height: 18px;
+      }
+      .offer[hidden] {
         display: none;
       }
       .code-panel code {
@@ -595,12 +637,24 @@
             data-i18n-placeholder="options_instanceUrlPlaceholder"
             autocomplete="off"
           />
+          <!-- Whether the instance kept answered its last request: filled from chrome.storage.local. -->
+          <span id="instance-health" class="pill" hidden></span>
           <button id="connect" class="primary" type="button" data-i18n="options_connect" data-icon="plug">
             Connect
           </button>
         </div>
         <div class="hint" data-i18n="options_connectHint">
           Opens your instance in a new tab, where you allow Piwi Picker; it then receives its own API key.
+        </div>
+
+        <!-- The desktop app is paired and no instance is kept: it runs one on this computer. -->
+        <div id="desktop-offer" class="panel offer" hidden>
+          <span data-i18n="options_desktopOffer">
+            The desktop app you paired runs Piwi on this computer: use it as your instance, with its address and token.
+          </span>
+          <button id="use-desktop" type="button" class="small primary" data-i18n="options_useDesktop" data-icon="monitor">
+            Use the desktop app as your instance
+          </button>
         </div>
 
         <div id="connect-panel" class="panel code-panel" hidden>
@@ -610,6 +664,8 @@
           </button>
         </div>
         <div id="connected-as" class="connected" hidden></div>
+        <!-- An instance is kept and the desktop app is not paired: where to pair it. -->
+        <div id="desktop-pair-hint" class="hint" hidden></div>
 
         <details id="api-key-fallback">
           <summary data-i18n="options_useApiKey" data-icon="lock">Use an API key instead</summary>
@@ -844,6 +900,20 @@
             Unpair
           </button>
         </div>
+      </section>
+
+      <section class="card" id="site-access-card" aria-labelledby="site-access-heading">
+        <div class="card-head">
+          <h2 id="site-access-heading" data-i18n="options_siteAccessHeading" data-icon="globe">
+            Sites Piwi Picker may run on
+          </h2>
+        </div>
+        <p class="lead" data-i18n="options_siteAccessHint">
+          A site you allow is one Piwi Picker can run on without a click on its icon, so a recording or a replay
+          follows you across its pages. It asks for each site the first time a tool needs it.
+        </p>
+        <div id="site-access"></div>
+        <div class="card-foot"><div id="site-access-status" role="status"></div></div>
       </section>
 
       <div class="privacy" data-i18n="options_privacy" data-icon="lock">

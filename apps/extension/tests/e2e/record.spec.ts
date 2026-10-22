@@ -19,7 +19,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
 const ORIGIN = 'https://record-test.local';
 
-const LOGIN_PAGE = `<!doctype html><html><body>
+const LOGIN_PAGE = `<!doctype html><html><head><title>Sign in</title></head><body>
   <input id="username" data-testid="username-field" />
   <label><input type="checkbox" data-testid="remember-me" /> Remember me</label>
   <button id="submit" data-testid="login-submit" onclick="location.href='/dashboard'">Log in</button>
@@ -675,6 +675,68 @@ test.describe('record-panel.js', () => {
     expect((await readStoredEvents(page)).length).toBe(before);
   });
 
+  test('Pause in the bar records nothing until Resume, on the next page too, and a pause from another tab shows here', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    const page = await recordingInProgress(context);
+    const hud = page.locator('#piwi-record-hud-host');
+    const paused = () =>
+      page.evaluate(
+        async () => (await (globalThis as any).chrome.storage.session.get('piwiRecording')).piwiRecording.paused,
+      );
+    const steps = async () => normalizeSteps(await readStoredEvents(page)).map((s) => s.action);
+
+    await hud.getByRole('button', { name: 'Pause' }).click();
+    await expect.poll(paused).toBe(true);
+    await expect(hud.getByText('Paused: what you do here is not recorded until you resume.')).toBeVisible();
+    await expect(hud.getByRole('button', { name: 'Resume' })).toHaveAttribute('aria-pressed', 'true');
+    // Nothing is recorded meanwhile, so no check is offered either.
+    await expect(hud.getByRole('button', { name: 'Check an element' })).toBeDisabled();
+    await expect(hud.getByRole('button', { name: 'Check the address' })).toBeDisabled();
+    await page.fill('#username', 'alice');
+    await page.getByTestId('remember-me').click();
+
+    // Still paused on the next page, as the recording says.
+    await page.click('#submit');
+    await page.waitForURL('**/dashboard');
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect(hud.getByRole('button', { name: 'Resume' })).toBeVisible();
+    await page.click('#add');
+    await page.waitForTimeout(200);
+    expect(await steps()).toEqual(['goto']);
+
+    await hud.getByRole('button', { name: 'Resume' }).click();
+    await expect.poll(paused).toBe(false);
+    await expect(hud.getByRole('button', { name: 'Check an element' })).toBeEnabled();
+    await page.click('#add');
+    await expect.poll(steps).toEqual(['goto', 'click']);
+
+    // Paused from the recording's bar in another tab: the worker passes it on.
+    await dispatchRuntimeMessage(page, { type: 'piwi-recording-paused', paused: true });
+    await expect(hud.getByRole('button', { name: 'Resume' })).toBeVisible();
+    await page.click('#add');
+    await page.waitForTimeout(200);
+    expect(await steps()).toEqual(['goto', 'click']);
+  });
+
+  test('the bar is a labelled region, and its dot pulses only when motion is welcome', async ({ context }) => {
+    await openShadowRoots(context);
+    const page = await recordingInProgress(context);
+    const hud = page.locator('#piwi-record-hud-host');
+    await expect(hud.getByRole('region', { name: 'Recording' })).toBeVisible();
+    await expect(hud.getByRole('dialog')).toHaveCount(0);
+    const dotAnimation = () =>
+      page.evaluate(
+        () =>
+          getComputedStyle(document.getElementById('piwi-record-hud-host')!.shadowRoot!.querySelector('.dot')!)
+            .animationName,
+      );
+    expect(await dotAnimation()).toBe('pulse');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    expect(await dotAnimation()).toBe('none');
+  });
+
   test('a page restored from the back/forward cache records that the flow came back to it', async ({ context }) => {
     const page = await recordingInProgress(context);
     const navigations = async () => (await readStoredEvents(page)).filter((e) => e.kind === 'navigate').length;
@@ -762,12 +824,177 @@ test.describe('record-panel.js', () => {
     // The review panel is in a closed shadow root (deliberate, same reasoning
     // as session-panel.ts/results-panel.ts) — Tab/Enter reaches its buttons
     // the same way session-panel.spec.ts drives its name prompt. Tab order:
-    // close button, then "Copy as TypeScript".
+    // close button, the test's title, then "Copy as TypeScript".
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
 
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('addToCart(page)');
+    // No title was given and no page was recorded: the first action names the test.
+    const spec = await page.evaluate(() => navigator.clipboard.readText());
+    expect(spec).toContain(`test('Click button "Add to cart"', async ({ page }) => {`);
+    expect(spec).not.toContain('recorded flow');
+  });
+
+  test('Replay on the review panel replays the recorded steps here, and says why when it cannot start', async ({
+    context,
+  }) => {
+    const events: RawCaptureEvent[] = [
+      {
+        kind: 'navigate',
+        target: null,
+        value: `${ORIGIN}/login`,
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: `${ORIGIN}/login`,
+        timestamp: 1,
+      },
+      {
+        kind: 'click',
+        target: {
+          tagName: 'button',
+          role: 'button',
+          accessibleName: 'Log in',
+          testId: 'login-submit',
+          text: 'Log in',
+          alternatives: [{ locator: `getByTestId('login-submit')`, method: 'getByTestId', score: 100 }],
+        },
+        value: null,
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: `${ORIGIN}/login`,
+        timestamp: 2,
+      },
+    ];
+    await routePages(context);
+    await openShadowRoots(context);
+    await stubChromeStorage(context, {
+      session: { piwiRecording: { active: false, events, startedAt: 1, grantedOriginPattern: `${ORIGIN}/*` } },
+    });
+    // The worker refuses the first start, then starts the replay.
+    await context.addInitScript(() => {
+      const runtime = (globalThis as any).chrome.runtime;
+      const starts: unknown[] = [];
+      (globalThis as any).__piwiStarts = starts;
+      const send = runtime.sendMessage;
+      runtime.sendMessage = async (message: { type?: string }) => {
+        if (message?.type !== 'piwi-start-replay') return send(message);
+        starts.push(message);
+        return starts.length === 1 ? { ok: false, error: 'Piwi Picker has no access to this site.' } : { ok: true };
+      };
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    const review = page.locator('#piwi-record-review-host');
+
+    await review.getByRole('button', { name: 'Replay' }).click();
+    await expect(review.getByRole('alert')).toHaveText('Piwi Picker has no access to this site.');
+    await review.getByRole('button', { name: 'Replay' }).click();
+    await expect(review).toHaveCount(0);
+    const starts = await page.evaluate(() => (globalThis as any).__piwiStarts);
+    expect(starts).toHaveLength(2);
+    expect(starts[1]).toMatchObject({ origin: ORIGIN, stepMode: false, inject: true });
+    expect(starts[1].steps.origin).toBe(ORIGIN);
+    expect(starts[1].steps.steps.map((s: { action: string; pageUrl: string }) => [s.action, s.pageUrl])).toEqual([
+      ['goto', '/login'],
+      ['click', '/login'],
+    ]);
+  });
+
+  /** A stopped recording of one click on the login page, which the review panel opens on. */
+  const stoppedLogin = {
+    active: false,
+    startedAt: 1,
+    grantedOriginPattern: `${ORIGIN}/*`,
+    title: 'Sign in',
+    events: [
+      {
+        kind: 'navigate',
+        target: null,
+        value: `${ORIGIN}/login`,
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: `${ORIGIN}/login`,
+        timestamp: 1,
+      },
+      {
+        kind: 'click',
+        target: {
+          tagName: 'button',
+          role: 'button',
+          accessibleName: 'Log in',
+          testId: 'login-submit',
+          text: 'Log in',
+          alternatives: [{ locator: `getByTestId('login-submit')`, method: 'getByTestId', score: 100 }],
+        },
+        value: null,
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: `${ORIGIN}/login`,
+        timestamp: 2,
+      },
+    ],
+  };
+
+  const storedRecording = (page: Page) =>
+    page.evaluate(async () => (await (globalThis as any).chrome.storage.session.get('piwiRecording')).piwiRecording);
+
+  test('Discard right after typing a title leaves no recording behind', async ({ context }) => {
+    await routePages(context);
+    await openShadowRoots(context);
+    await stubChromeStorage(context, { session: { piwiRecording: stoppedLogin } });
+    // Every read answers late, as a busy worker does: a write that read the recording before Discard ends after it.
+    await context.addInitScript(() => {
+      const session = (globalThis as any).chrome.storage.session;
+      const get = session.get;
+      session.get = async (key: string) => {
+        const value = await get(key);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return value;
+      };
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    const review = page.locator('#piwi-record-review-host');
+
+    await review.getByRole('textbox', { name: 'Test title' }).pressSequentially(' then leave');
+    await review.getByRole('button', { name: 'Discard' }).click();
+    await expect(review).toHaveCount(0);
+    // Longer than any write the keystrokes could have started.
+    await page.waitForTimeout(1500);
+    expect(await storedRecording(page)).toBeUndefined();
+  });
+
+  test('a review panel’s title goes to the recording it reviews, never to a newer one', async ({ context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await routePages(context);
+    await openShadowRoots(context);
+    await stubChromeStorage(context, { session: { piwiRecording: stoppedLogin } });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    const review = page.locator('#piwi-record-review-host');
+    const titleField = review.getByRole('textbox', { name: 'Test title' });
+    await expect(titleField).toHaveValue('Sign in');
+
+    // A new recording starts in another tab while this review stays open.
+    const newer = { active: true, events: [], startedAt: 2, grantedOriginPattern: `${ORIGIN}/*`, title: 'Checkout' };
+    await page.evaluate(
+      (piwiRecording) => (globalThis as any).chrome.storage.session.set({ piwiRecording }),
+      newer as unknown,
+    );
+    await titleField.fill('Sign in again');
+    await review.getByRole('button', { name: 'Copy as TypeScript' }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`test('Sign in again'`);
+    await page.waitForTimeout(800);
+    expect(await storedRecording(page)).toEqual(newer);
   });
 
   test('Download steps saves a steps file whose rendered spec replays the flow in a real browser', async ({
@@ -798,9 +1025,20 @@ test.describe('record-panel.js', () => {
     await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
 
-    // Tab order in the closed shadow root: close, Copy as TypeScript, Download steps.
-    const download = page.waitForEvent('download');
+    // The first page's own title is the test's, until the field changes it.
+    const storedTitle = () =>
+      page.evaluate(
+        async () => (await (globalThis as any).chrome.storage.session.get('piwiRecording')).piwiRecording.title,
+      );
+    expect(await storedTitle()).toBe('Sign in');
+
+    // Tab order in the closed shadow root: close, the test's title, Copy as TypeScript, Download steps.
     await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('Log in and add to cart');
+    await expect.poll(storedTitle).toBe('Log in and add to cart');
+    const download = page.waitForEvent('download');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
@@ -809,6 +1047,7 @@ test.describe('record-panel.js', () => {
     const parsed = parseSteps(await readFile((await file.path())!, 'utf-8'));
     if (!parsed.ok) throw new Error(parsed.errors.join('\n'));
     const doc: PiwiSteps = parsed.steps;
+    expect(doc.title).toBe('Log in and add to cart');
     expect(doc.origin).toBe(ORIGIN);
     expect(doc.steps.map((s) => [s.action, s.pageUrl])).toEqual([
       ['goto', '/login'],

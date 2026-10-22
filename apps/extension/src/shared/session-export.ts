@@ -13,6 +13,18 @@ export function isReservedPickName(name: string): boolean {
   return RESERVED_PICK_NAMES.has(name);
 }
 
+/** Why a name cannot name a new pick: none typed, one the page object uses, not an identifier, or one in the list. */
+export type PickNameProblem = 'required' | 'reserved' | 'invalid' | 'taken';
+
+/** What keeps `name` from naming a new pick beside `picks`; null when it can. */
+export function pickNameProblem(name: string, picks: readonly SessionPick[]): PickNameProblem | null {
+  if (!name) return 'required';
+  if (isReservedPickName(name)) return 'reserved';
+  if (!isValidPickName(name)) return 'invalid';
+  if (picks.some((pick) => pick.name === name)) return 'taken';
+  return null;
+}
+
 /**
  * A Playwright POM-style class, as Playwright's docs write one: a `readonly`
  * field per named pick, set in the constructor from its `page`.

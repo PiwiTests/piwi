@@ -112,8 +112,9 @@ recorded, lands at the editor's cursor too:
    It copies a pairing address, `http://127.0.0.1:<port>/…#<token>`.
 2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
    that local address.
-3. A picked locator's row and the recording review then show **Send to editor**. A locator is inserted in the copy
-   form you chose; a recording is rendered as the body of a test, like
+3. A picked locator's row, the top locator of the [Elements sidebar](./devtools#the-elements-sidebar), the
+   [Locators console](./devtools#the-piwi-panel) in DevTools and the recording review then show **Send to editor**. A
+   locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
    [`piwi codegen --body`](/reference/cli#codegen).
 
 The editor listens on the loopback interface only, and accepts a request only with the token. With several VS Code

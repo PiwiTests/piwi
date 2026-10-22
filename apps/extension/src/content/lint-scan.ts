@@ -1,14 +1,50 @@
-import { checkLocators, createPageEngine, rankElement } from './verified-locators.js';
+import { parseLocatorChain, quoteJsString } from '@piwitests/core/locator-chain';
+import { normalizeWhiteSpace, parentElementOrShadowHost, tagNameOf, type DomModel } from './engine-aria.js';
+import type { LocatorEngine } from './locator-engine.js';
+import { repeatedContainers, type ContainerOptions } from './repeated-container.js';
+import { checkLocators, createPageEngine, engineContainerOptions, rankElement } from './verified-locators.js';
+
+/** Where an element's suggested test id comes from, the first of these it has. */
+export type SlugSource = 'name' | 'label' | 'placeholder' | 'heading' | 'role';
+
+/**
+ * What a developer changes so a stable locator finds the element:
+ *
+ * - `element`: add the test id to the element itself;
+ * - `container`: the element sits in a repeated container (a row, a card, a list item) whose copies hold the same
+ *   element, so the test id goes on the container, named after the text that tells it apart, and `locator` reaches the
+ *   element inside it;
+ * - `scope`: the repeated container already carries a test id its copies share, so `locator` scopes by it, filtered by
+ *   the container's own text, and nothing needs adding.
+ */
+export type LintSuggestion =
+  | {
+      kind: 'element';
+      attribute: string;
+      value: string;
+      source: SlugSource;
+      locator: string;
+    }
+  | {
+      kind: 'container' | 'scope';
+      /** The repeated container. */
+      container: Element;
+      attribute: string;
+      /** The test id to add (`container`), or the one the copies already share (`scope`). */
+      value: string;
+      /** The container's text no other copy holds. */
+      text: string;
+      locator: string;
+    };
 
 export interface LintFinding {
   element: Element;
   role: string;
   /** The name Playwright computes, when it has one: a name other elements share, which no locator tells apart but by position. */
   accessibleName: string | null;
-  /** `${role}-${n}`, numbered by discovery order within that role (e.g. `button-1`, `button-2`) — a starting point, not a guarantee of uniqueness on the page. */
-  suggestedTestId: string;
   /** The best score of a locator finding this element alone on the page (`checkLocators`), 0 when none does — below the bad-score threshold, meaning no test id, no telling name, and no stable structural anchor either. */
   bestScore: number;
+  suggestion: LintSuggestion;
 }
 
 export interface LintScan {
@@ -17,6 +53,8 @@ export interface LintScan {
   interactive: number;
   /** How many of them were checked: every one, or the first `MAX_CHECKED` in page order. */
   checked: number;
+  /** The attribute the suggestions name. */
+  testIdAttribute: string;
 }
 
 /** ARIA widget roles: the elements a test operates. Headings, regions and lists are not lint targets. */
@@ -46,11 +84,236 @@ const BAD_SCORE_THRESHOLD = 50;
 /** Interactive elements checked at most, so a page with thousands of them cannot hang the scan; the panel says when it stops. */
 const MAX_CHECKED = 800;
 
+/** Characters a suggested test id keeps at most, cut at a word. */
+const SLUG_CHARS = 40;
+
+const HEADING_SELECTOR = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
+
 export interface LintScanOptions {
   /** Checked between slices of work; returning false abandons the scan. */
   keepGoing?: () => boolean;
   /** Milliseconds of work between yields back to the page. */
   sliceMs?: number;
+  /** The attribute `getByTestId` reads in the project; `data-testid` when unset. */
+  testIdAttribute?: string | null;
+}
+
+/**
+ * A test id made of `text`: lower case, accents dropped, letters and digits joined by `-`, at most `SLUG_CHARS`
+ * characters cut at a word. Empty when the text has no letter or digit.
+ */
+export function slugify(text: string): string {
+  const slug = text
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
+  if (slug.length <= SLUG_CHARS) return slug;
+  const cut = slug.slice(0, SLUG_CHARS + 1);
+  const end = cut.lastIndexOf('-');
+  return (end >= SLUG_CHARS / 2 ? cut.slice(0, end) : slug.slice(0, SLUG_CHARS)).replace(/-+$/, '');
+}
+
+/** `slug`, or `slug-2`, `slug-3`… for the first one `used` does not hold yet, which it then holds. */
+export function claimTestId(slug: string, used: Set<string>): string {
+  let value = slug;
+  for (let n = 2; used.has(value); n++) value = `${slug}-${n}`;
+  used.add(value);
+  return value;
+}
+
+/** `getByRole('button', { name: 'Add to cart' })`, or `getByRole('button')` for an element with no name. */
+function roleLocator(role: string, name: string | null): string {
+  return name
+    ? `getByRole(${quoteJsString(role)}, { name: ${quoteJsString(name)} })`
+    : `getByRole(${quoteJsString(role)})`;
+}
+
+interface Heading {
+  heading: Element;
+  text: string;
+}
+
+/**
+ * The page's headings that a slug can be made of, each tree (the document, an open shadow root) in document order,
+ * with their texts: read once per scan rather than once per finding and ancestor.
+ */
+class HeadingIndex {
+  private readonly byRoot = new Map<Node, Heading[]>();
+
+  constructor(elements: readonly Element[], model: DomModel) {
+    for (const element of elements) {
+      if (!element.matches(HEADING_SELECTOR)) continue;
+      const text = model.text(element).normalized;
+      if (!slugify(text)) continue;
+      const root = element.getRootNode();
+      const list = this.byRoot.get(root);
+      if (list) list.push({ heading: element, text });
+      else this.byRoot.set(root, [{ heading: element, text }]);
+    }
+  }
+
+  /**
+   * The text of the heading nearest `element`: in its nearest ancestor below `<body>` that holds one, the last
+   * heading before it, else the first after it. A heading holding the element does not count. Past a shadow root,
+   * the host stands for the element.
+   */
+  nearest(element: Element): string | null {
+    let ref = element;
+    let [before, after] = this.around(ref);
+    for (let ancestor = parentElementOrShadowHost(element); ancestor; ancestor = parentElementOrShadowHost(ancestor)) {
+      if (tagNameOf(ancestor) === 'BODY') break;
+      if (ancestor.getRootNode() !== ref.getRootNode()) {
+        ref = ancestor;
+        [before, after] = this.around(ref);
+      }
+      // An ancestor's descendants follow one another in document order: when it holds any heading before `ref`,
+      // it holds the last one.
+      if (before && ancestor.contains(before.heading)) return before.text;
+      if (after && ancestor.contains(after.heading)) return after.text;
+    }
+    return null;
+  }
+
+  /** The last heading before `ref` in its tree and the first after it, neither holding it. */
+  private around(ref: Element): [Heading | undefined, Heading | undefined] {
+    const list = this.byRoot.get(ref.getRootNode()) ?? [];
+    // How many headings come before `ref`, the ones holding it included.
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (list[mid]!.heading.compareDocumentPosition(ref) & Node.DOCUMENT_POSITION_FOLLOWING) low = mid + 1;
+      else high = mid;
+    }
+    let before = low - 1;
+    while (before >= 0 && list[before]!.heading.contains(ref)) before--;
+    let after = low;
+    while (after < list.length && list[after]!.heading.contains(ref)) after++;
+    return [list[before], list[after]];
+  }
+}
+
+/** The text a slug is made from, and where it comes from: the name, a label, the placeholder, the nearest heading, the role. */
+function slugText(
+  element: Element,
+  role: string,
+  name: string | null,
+  model: DomModel,
+  headings: () => HeadingIndex,
+): [string, SlugSource] {
+  if (name && slugify(name)) return [name, 'name'];
+  const label = model.labels(element).find((l) => slugify(l.normalized));
+  if (label) return [label.normalized, 'label'];
+  const placeholder = normalizeWhiteSpace(element.getAttribute('placeholder') ?? '');
+  if (slugify(placeholder)) return [placeholder, 'placeholder'];
+  const heading = headings().nearest(element);
+  return heading ? [`${heading} ${role}`, 'heading'] : [role, 'role'];
+}
+
+/** Whether `locator`, evaluated inside `scope` (the page when unset), finds `element` and nothing else. */
+function findsAlone(engine: LocatorEngine, locator: string, element: Element, scope?: Element): boolean {
+  try {
+    const found = engine.queryAll(parseLocatorChain(locator), scope);
+    return found.length === 1 && found[0] === element;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The repeated container `element` sits in, found as the pick ladder finds its containers (`repeatedContainers`, with
+ * siblings sharing only their tag): the nearest whose siblings hold another of `twins` (the findings sharing its role
+ * and name), inside which `inner` finds the element alone, and which shows a text no sibling does. Null when none
+ * does.
+ */
+function repeatedContainer(
+  element: Element,
+  twins: readonly Element[],
+  inner: string,
+  engine: LocatorEngine,
+  options: ContainerOptions,
+): { container: Element; texts: string[] } | null {
+  if (twins.length < 2) return null;
+  const others = twins.filter((twin) => twin !== element);
+  for (const candidate of repeatedContainers(element, options)) {
+    if (!candidate.repeats(others) || !findsAlone(engine, inner, element, candidate.element)) continue;
+    const texts = candidate.textsAmong(candidate.siblings);
+    if (texts.length) return { container: candidate.element, texts };
+  }
+  return null;
+}
+
+type Unsuggested = Omit<LintFinding, 'suggestion'>;
+
+/**
+ * What each finding's developer adds. A finding in a repeated container gets the container's test id (or, when the
+ * copies already share one, a scope by it); the others get their own, from their name, label, placeholder or nearest
+ * heading, the role as the last resort. Every test id added is new on the page: a slug already taken gets `-2`, `-3`…
+ * Calls `pause` before each finding, and answers null once it answers false.
+ */
+async function suggest(
+  found: Unsuggested[],
+  engine: LocatorEngine,
+  attribute: string,
+  pause: () => Promise<boolean>,
+): Promise<LintSuggestion[] | null> {
+  const model = engine.model;
+  const used = new Set<string>();
+  for (const element of engine.elements()) {
+    const value = element.getAttribute(attribute);
+    if (value) used.add(value);
+  }
+  const twins = new Map<string, Element[]>();
+  const twinKey = (f: Unsuggested) => `${f.role}\u0000${f.accessibleName ?? ''}`;
+  for (const f of found) {
+    const group = twins.get(twinKey(f));
+    if (group) group.push(f.element);
+    else twins.set(twinKey(f), [f.element]);
+  }
+  let headingIndex: HeadingIndex | undefined;
+  const headings = (): HeadingIndex => (headingIndex ??= new HeadingIndex(engine.elements(), model));
+  const containerOptions = { ...engineContainerOptions(engine), sameTag: true };
+  /** The test id given to each container, which every finding inside it shares, and the text it is named after. */
+  const containerIds = new Map<Element, { value: string; text: string }>();
+
+  const suggestions: LintSuggestion[] = [];
+  for (const f of found) {
+    if (!(await pause())) return null;
+    const inner = roleLocator(f.role, f.accessibleName);
+    const repeated = repeatedContainer(f.element, twins.get(twinKey(f))!, inner, engine, containerOptions);
+    if (repeated) {
+      const { container, texts } = repeated;
+      const shared = container.getAttribute(attribute);
+      if (shared) {
+        const scoped = texts
+          .map((text) => ({
+            text,
+            locator: `getByTestId(${quoteJsString(shared)}).filter({ hasText: ${quoteJsString(text)} }).${inner}`,
+          }))
+          .find(({ locator }) => findsAlone(engine, locator, f.element));
+        if (scoped) {
+          suggestions.push({ kind: 'scope', container, attribute, value: shared, ...scoped });
+          continue;
+        }
+      } else {
+        let named = containerIds.get(container);
+        if (!named) {
+          named = { value: claimTestId(slugify(texts[0]!), used), text: texts[0]! };
+          containerIds.set(container, named);
+        }
+        const { value, text } = named;
+        const locator = `getByTestId(${quoteJsString(value)}).${inner}`;
+        suggestions.push({ kind: 'container', container, attribute, value, text, locator });
+        continue;
+      }
+    }
+    const [text, source] = slugText(f.element, f.role, f.accessibleName, model, headings);
+    const value = claimTestId(slugify(text) || slugify(f.role), used);
+    suggestions.push({ kind: 'element', attribute, value, source, locator: `getByTestId(${quoteJsString(value)})` });
+  }
+  return suggestions;
 }
 
 /**
@@ -62,7 +325,7 @@ export interface LintScanOptions {
  * the page are the Pick results' own (`rankElement`, `checkLocators`), read as
  * a pass/fail signal instead of a ranked list, with one engine for the whole
  * scan. Works in slices so the page stays responsive; answers null when
- * `keepGoing` stopped it.
+ * `keepGoing` stopped it. Each finding comes with what to add (`LintSuggestion`).
  *
  * Unlike `derivePattern`, this isn't re-serialized via
  * `Function.prototype.toString()` in tests: `generateAlternatives` and the
@@ -72,9 +335,9 @@ export interface LintScanOptions {
  */
 export async function scanForLintIssues(options: LintScanOptions = {}): Promise<LintScan | null> {
   const sliceMs = options.sliceMs ?? 12;
-  const findings: LintFinding[] = [];
-  const perRoleCount = new Map<string, number>();
-  const engine = createPageEngine(document);
+  const testIdAttribute = options.testIdAttribute || 'data-testid';
+  const found: Unsuggested[] = [];
+  const engine = createPageEngine(document, options.testIdAttribute ? [testIdAttribute] : undefined);
   const model = engine.model;
   const interactive: Array<{ element: Element; role: string }> = [];
   for (const element of engine.elements()) {
@@ -83,26 +346,27 @@ export async function scanForLintIssues(options: LintScanOptions = {}): Promise<
   }
   const checked = Math.min(interactive.length, MAX_CHECKED);
   let sliceStart = performance.now();
+  /** Yields to the page once a slice of work is done; false when the scan is to stop. */
+  const pause = async (): Promise<boolean> => {
+    if (performance.now() - sliceStart <= sliceMs) return true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (options.keepGoing && !options.keepGoing()) return false;
+    sliceStart = performance.now();
+    return true;
+  };
 
   for (let i = 0; i < checked; i++) {
-    if (performance.now() - sliceStart > sliceMs) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      if (options.keepGoing && !options.keepGoing()) return null;
-      sliceStart = performance.now();
-    }
+    if (!(await pause())) return null;
     const { element, role } = interactive[i]!;
-    const { accessibleName, ranked } = rankElement(element, { model });
+    const { accessibleName, ranked } = rankElement(element, { model, testIdAttribute: options.testIdAttribute });
     const [best] = checkLocators(element, ranked, { engine, limit: 1 });
     const bestScore = best?.score ?? 0;
     if (bestScore >= BAD_SCORE_THRESHOLD) continue;
-
-    // Numbered by discovery order within the role (button-1, button-2,
-    // link-1, ...): a name here is one other elements share, so no slug of
-    // it would be unique either.
-    const n = (perRoleCount.get(role) ?? 0) + 1;
-    perRoleCount.set(role, n);
-    findings.push({ element, role, accessibleName, suggestedTestId: `${role}-${n}`, bestScore });
+    found.push({ element, role, accessibleName, bestScore });
   }
 
-  return { findings, interactive: interactive.length, checked };
+  const suggestions = await suggest(found, engine, testIdAttribute, pause);
+  if (!suggestions) return null;
+  const findings = found.map((f, i) => ({ ...f, suggestion: suggestions[i]! }));
+  return { findings, interactive: interactive.length, checked, testIdAttribute };
 }

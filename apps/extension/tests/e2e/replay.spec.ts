@@ -1275,6 +1275,59 @@ test.describe('the replay dialog', () => {
     expect((await sentOf(page, 'piwi-start-replay'))[0]!.steps).toEqual(REPORT);
   });
 
+  for (const mode of ['actions', 'bug'] as const) {
+    test(`offers the ${mode === 'bug' ? 'bug report' : 'plain recording'} recorded in this browser, under its own name`, async ({
+      context,
+    }) => {
+      const events = [
+        {
+          kind: 'navigate',
+          target: null,
+          value: `${ORIGIN}/login`,
+          checked: null,
+          inputType: null,
+          isPasswordField: false,
+          pageUrl: `${ORIGIN}/login`,
+          timestamp: 1,
+        },
+        {
+          kind: 'click',
+          target: target('login-submit', 'button', 'Log in'),
+          value: null,
+          checked: null,
+          inputType: null,
+          isPasswordField: false,
+          pageUrl: `${ORIGIN}/login`,
+          timestamp: 2,
+        },
+      ];
+      await openShadowRoots(context);
+      await routePages(context, 'buggy');
+      await stubChrome(context, {
+        piwiRecording: { active: false, events, startedAt: 1, grantedOriginPattern: `${ORIGIN}/*`, mode },
+      });
+      await stubWorker(context, {});
+      const page = await context.newPage();
+      await page.goto(`${ORIGIN}/login`);
+
+      const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+      const own =
+        mode === 'bug' ? 'Use the bug report recorded in this browser' : 'Use the actions recorded in this browser';
+      const other =
+        mode === 'bug' ? 'Use the actions recorded in this browser' : 'Use the bug report recorded in this browser';
+      await expect(dialog.getByRole('button', { name: other })).toHaveCount(0);
+      await dialog.getByRole('button', { name: own }).click();
+      await expect(dialog).toContainText('2 steps');
+      // A recording of actions goes by its first action when it has no title of its own.
+      if (mode === 'actions') await expect(dialog).toContainText('Click');
+      else await expect(dialog).toContainText('Untitled report');
+      await dialog.getByRole('button', { name: 'Replay', exact: true }).click();
+      await expect.poll(() => sentOf(page, 'piwi-start-replay')).toHaveLength(1);
+      const [start] = await sentOf(page, 'piwi-start-replay');
+      expect((start!.steps as PiwiSteps).steps.map((s) => s.action)).toEqual(['goto', 'click']);
+    });
+  }
+
   test('takes the focus as it opens, and closes on Escape', async ({ context }) => {
     await openShadowRoots(context);
     await routePages(context, 'buggy');

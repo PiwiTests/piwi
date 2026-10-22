@@ -4,6 +4,7 @@ import { test, expect } from './fixtures.js';
 import type { Page } from '@playwright/test';
 import { openShadowRoots } from './shadow.js';
 import { stubChromeI18n } from './i18n-stub.js';
+import { playwrightLocator } from './playwright-locator.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -22,7 +23,7 @@ const DIST = path.join(here, '..', '..', 'dist');
 async function waitForFreshPickBanner(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => document.getElementById('__piwi_picker_foot')?.textContent))
-    .toBe('↑ parent · ↓ child · Esc skip');
+    .toBe('Enter picks the focused element · ↑ parent · ↓ child · Esc skip');
 }
 
 const activeTool = (page: Page) =>
@@ -245,10 +246,51 @@ test.describe('multi-pick.js', () => {
     await expect(panel).toHaveAttribute('aria-modal', 'true');
 
     const rows = panel.locator('.row');
-    await rows.nth(1).getByRole('button', { name: 'Action', exact: true }).click();
+    await rows
+      .nth(1)
+      .getByRole('button', { name: /^Action/ })
+      .click();
     for (const row of await rows.all()) {
-      await expect(row.getByRole('button', { name: 'Action', exact: true })).toHaveAttribute('data-active', 'true');
+      await expect(row.getByRole('button', { name: /^Action/ })).toHaveAttribute('data-active', 'true');
     }
+  });
+
+  test('two buttons of two cards derive the cards’ pattern, each card found by its heading, with the count', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px"><main>
+      <article data-testid="product-card"><h3>Blue mug</h3>
+        <button id="blue">Add to cart</button><button aria-label="Add Blue mug to wishlist">♡</button></article>
+      <article data-testid="product-card"><h3>Red mug</h3>
+        <button id="red">Add to cart</button><button aria-label="Add Red mug to wishlist">♡</button></article>
+      <article data-testid="product-card"><h3>Travel mug</h3>
+        <button id="travel">Add to cart</button><button aria-label="Add Travel mug to wishlist">♡</button></article>
+    </main></body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+    for (const button of ['#blue', '#travel']) {
+      await waitForFreshPickBanner(page);
+      await page.hover(button);
+      await page.click(button);
+    }
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toBeAttached();
+    await page.keyboard.press('Enter');
+
+    const panel = page.locator('#piwi-multi-pick-panel-host .panel');
+    await expect(panel.locator('.title .piwi-loc')).toHaveText(
+      "getByTestId('product-card').getByRole('button', { name: 'Add to cart' })",
+    );
+    await expect(panel.locator('.count')).toHaveText('The shared locator finds 3 elements on the page right now');
+    const rows = [
+      "getByTestId('product-card').filter({ hasText: 'Blue mug' }).getByRole('button', { name: 'Add to cart' })",
+      "getByTestId('product-card').filter({ hasText: 'Travel mug' }).getByRole('button', { name: 'Add to cart' })",
+    ];
+    await expect(panel.locator('.row code')).toHaveText(rows);
+    await expect(panel.locator('.row .warn')).toHaveCount(0);
+    await expect(playwrightLocator(page, rows[0]!)).toHaveAttribute('id', 'blue');
+    await expect(playwrightLocator(page, rows[1]!)).toHaveAttribute('id', 'travel');
   });
 
   test('re-injecting while a session is already in progress does not start a second one', async ({ context }) => {

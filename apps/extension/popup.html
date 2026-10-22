@@ -56,7 +56,7 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
         font-weight: 600;
       }
       header img {
@@ -101,7 +101,7 @@
         align-items: center;
         column-gap: 8px;
         row-gap: 4px;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
       }
       .active-project-row label {
         flex-shrink: 0;
@@ -165,11 +165,41 @@
         height: 12px;
         color: var(--accent-fg);
       }
+      /* One line under the project row: the instance answered, or since when it has not, with a link to the settings. */
+      .connection-health {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: -2px 0 8px;
+        font-size: 11.5px;
+        line-height: 16px;
+        color: var(--muted);
+      }
+      .connection-health > svg {
+        width: 12px;
+        height: 12px;
+        color: var(--ok);
+      }
+      .connection-health > span {
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .connection-health.failing {
+        color: var(--fg);
+      }
+      .connection-health.failing > svg {
+        color: #d97706;
+      }
+      .connection-health a {
+        color: var(--accent-fg);
+      }
       .grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-bottom: 8px;
+        gap: 6px;
+        margin-bottom: 6px;
       }
       /* Every tool is a tile: its icon, its label (and a hint under the ones
          that open a flow), and the key that runs it. */
@@ -210,12 +240,21 @@
       }
       /* Tested elements needs a Piwi instance: set apart from the standalone tools. */
       .tile.feature {
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         border-color: rgb(124 58 237 / 0.55);
         background: linear-gradient(120deg, rgb(124 58 237 / 0.1), rgb(16 185 129 / 0.1));
       }
+      /* A compact tile: its label and its one-line hint, on two tight lines. */
       .tile.compact {
-        padding: 6px 10px;
+        padding: 5px 10px;
+      }
+      .tile.compact .text {
+        gap: 0;
+      }
+      .tile.compact .hint {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
       /* Record and Report a bug while a recording runs: red to stop it, green to finish a bug report, the accent to
          review what was recorded. */
@@ -323,7 +362,7 @@
         color: #ffffffcc;
       }
       .section-label {
-        margin: 12px 0 6px;
+        margin: 10px 0 5px;
         font-size: 10.5px;
         font-weight: 600;
         letter-spacing: 0.04em;
@@ -336,7 +375,7 @@
         gap: 8px;
         align-items: flex-start;
         margin: 4px 0 0;
-        padding: 7px 9px;
+        padding: 6px 9px;
         border: 1px dashed var(--border);
         border-radius: 8px;
         font-size: 11px;
@@ -355,7 +394,7 @@
         fill: none;
       }
       footer {
-        margin-top: 10px;
+        margin-top: 8px;
         color: var(--muted);
         font-size: 11px;
       }
@@ -451,6 +490,9 @@
         </div>
       </div>
 
+      <!-- Whether the connected instance answered its last request, and when: filled from chrome.storage.local. -->
+      <p id="connection-health" class="connection-health" role="status" hidden></p>
+
       <div class="grid actions">
         <button id="record" class="tile" type="button" aria-keyshortcuts="1">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -516,45 +558,60 @@
 
       <div class="section-label" id="more-tools-label" data-i18n="popup_moreTools">More tools</div>
       <div class="grid actions" role="group" aria-labelledby="more-tools-label">
-        <button id="multi-pick" class="tile compact" type="button" aria-keyshortcuts="3" title="2–3 items → a list" data-i18n-title="popup_multiPickHint">
+        <button id="multi-pick" class="tile compact" type="button" aria-keyshortcuts="3">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <rect x="3" y="4" width="18" height="5" rx="1.5" />
             <rect x="3" y="12.5" width="18" height="5" rx="1.5" />
             <path d="M7 21h10" />
           </svg>
-          <span class="text"><span class="label" data-i18n="popup_multiPick">Multi-pick</span></span>
+          <span class="text">
+            <span class="label" data-i18n="popup_multiPick">Multi-pick</span>
+            <span class="hint" data-i18n="popup_multiPickHint">2–3 items → a list</span>
+          </span>
           <kbd class="key" aria-hidden="true">3</kbd>
         </button>
-        <button id="assertion-panel" class="tile compact" type="button" aria-keyshortcuts="4" title="Ranked expect(…) lines" data-i18n-title="popup_assertionsHint">
+        <button id="assertion-panel" class="tile compact" type="button" aria-keyshortcuts="4">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="8.5" />
             <path d="M8 12.2l2.8 2.8L16 9" />
           </svg>
-          <span class="text"><span class="label" data-i18n="popup_assertions">Assertions</span></span>
+          <span class="text">
+            <span class="label" data-i18n="popup_assertions">Assertions</span>
+            <span class="hint" data-i18n="popup_assertionsHint">Ranked expect(…) lines</span>
+          </span>
           <kbd class="key" aria-hidden="true">4</kbd>
         </button>
-        <button id="lint-overlay" class="tile compact" type="button" aria-keyshortcuts="5" title="Hard-to-test elements" data-i18n-title="popup_lintHint">
+        <button id="lint-overlay" class="tile compact" type="button" aria-keyshortcuts="5">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M12 3.5l9 16.5H3z" />
             <path d="M12 10v4M12 17h.01" />
           </svg>
-          <span class="text"><span class="label" data-i18n="popup_lint">Lint overlay</span></span>
+          <span class="text">
+            <span class="label" data-i18n="popup_lint">Lint overlay</span>
+            <span class="hint" data-i18n="popup_lintHint">Hard-to-test elements</span>
+          </span>
           <kbd class="key" aria-hidden="true">5</kbd>
         </button>
-        <button id="agent-context-panel" class="tile compact" type="button" aria-keyshortcuts="6" title="Summary for an AI" data-i18n-title="popup_agentContextHint">
+        <button id="agent-context-panel" class="tile compact" type="button" aria-keyshortcuts="6">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z" />
             <path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z" />
           </svg>
-          <span class="text"><span class="label" data-i18n="popup_agentContext">Agent context</span></span>
+          <span class="text">
+            <span class="label" data-i18n="popup_agentContext">Agent context</span>
+            <span class="hint" data-i18n="popup_agentContextHint">Summary for an AI</span>
+          </span>
           <kbd class="key" aria-hidden="true">6</kbd>
         </button>
-        <button id="test-function-panel" class="tile compact" type="button" aria-keyshortcuts="7" title="Check the catalog here" data-i18n-title="popup_testFunctionsHint">
+        <button id="test-function-panel" class="tile compact" type="button" aria-keyshortcuts="7">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M9 11l2.5 2.5L15 9" />
             <rect x="2.5" y="3.5" width="19" height="17" rx="2.5" />
           </svg>
-          <span class="text"><span class="label" data-i18n="popup_testFunctions">Test functions</span></span>
+          <span class="text">
+            <span class="label" data-i18n="popup_testFunctions">Test functions</span>
+            <span class="hint" data-i18n="popup_testFunctionsHint">Check the catalog here</span>
+          </span>
           <kbd class="key" aria-hidden="true">7</kbd>
         </button>
       </div>

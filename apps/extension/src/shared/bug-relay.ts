@@ -7,10 +7,10 @@ import { BUG_EVIDENCE_LIMITS, type BugConsoleEntry, type BugFailedRequest } from
  * The recorder announces the recording's token (`HELLO`); the evidence script
  * holds its entries until it has one, then sends each with it (`ENTRY`). An
  * evidence script that loads after the recorder asks for the token (`READY`).
- * A `HELLO` with a `since` time leaves out the entries held from before it,
- * which reached the report another way. The page sees these messages too: the
- * token keeps entries from another recording or from unrelated messages out,
- * not a page that means to add some.
+ * A `HELLO` with a `since` time leaves out the entries held from before it:
+ * they reached the report another way, or came before the replay listening
+ * now. The page sees these messages too: the token keeps entries from another
+ * recording or from unrelated messages out, not a page that means to add some.
  */
 export const BUG_RELAY = {
   HELLO: 'piwi-bug-evidence:hello',

@@ -3,6 +3,7 @@ import ts from 'typescript';
 import {
   isReservedPickName,
   isValidPickName,
+  pickNameProblem,
   renderFixture,
   renderMarkdown,
   renderJson,
@@ -132,5 +133,18 @@ describe('renderJson', () => {
     const out = JSON.parse(renderJson(PICKS));
     expect(out.exportedAt).toBe('2026-07-28T12:00:00.000Z');
     expect(out.picks).toEqual(PICKS);
+  });
+});
+
+describe('pickNameProblem', () => {
+  it('accepts a free identifier', () => {
+    expect(pickNameProblem('totalOutput', PICKS)).toBeNull();
+  });
+
+  it('says what is wrong with a name, in the order the form checks it', () => {
+    expect(pickNameProblem('', PICKS)).toBe('required');
+    expect(pickNameProblem('page', PICKS)).toBe('reserved');
+    expect(pickNameProblem('submit button', PICKS)).toBe('invalid');
+    expect(pickNameProblem('emailInput', PICKS)).toBe('taken');
   });
 });

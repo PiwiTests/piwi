@@ -22,6 +22,12 @@ let desktop: string;
 let answer: 'allow' | 'deny' | null = null;
 let starts: Array<{ origin: string | undefined; contentType: string; body: string }> = [];
 let tokenHandedOut = 0;
+/** The key the app's own instance takes as an API key: its token, unless a test makes it refuse it. */
+let instanceKey = TOKEN;
+/** The token the program at the address proves it holds: another program that took the port holds another. */
+let provenToken = TOKEN;
+/** The instance requests that carried an API key, as `path key`. */
+let keyed: string[] = [];
 
 test.beforeAll(async () => {
   server = createServer((req, res) => {
@@ -41,7 +47,7 @@ test.beforeAll(async () => {
       if (req.method === 'GET' && req.url === '/api/health') {
         const challenge = String(req.headers[DESKTOP_CHALLENGE_HEADER] ?? '');
         const port = (server.address() as AddressInfo).port;
-        res.setHeader(DESKTOP_PROOF_HEADER, await desktopTokenProof(TOKEN, port, challenge));
+        res.setHeader(DESKTOP_PROOF_HEADER, await desktopTokenProof(provenToken, port, challenge));
         return json(200, { status: 'ok' });
       }
       if (req.method === 'POST' && req.url === '/api/desktop/picker-pairings') {
@@ -64,6 +70,14 @@ test.beforeAll(async () => {
       if (req.method === 'GET' && req.url === '/api/desktop/reporter-config') {
         return req.headers['x-piwi-token'] === TOKEN ? json(200, { url: desktop, token: TOKEN }) : json(401, {});
       }
+      // The app's server is a Piwi instance too, answering requests that carry its token as an API key.
+      if (req.headers['x-api-key']) keyed.push(`${req.url} ${String(req.headers['x-api-key'])}`);
+      if (req.method === 'GET' && (req.url === '/api/projects/menu' || req.url === '/api/extension/url-patterns')) {
+        if (req.headers['x-api-key'] !== instanceKey) return json(401, { message: 'Desktop access token required' });
+        return req.url === '/api/projects/menu'
+          ? json(200, { items: [{ id: 1, name: 'shop', label: 'Shop' }] })
+          : json(200, { user: null, items: [], projects: [{ id: 1, label: 'Shop', canEdit: true }] });
+      }
       return json(404, {});
     });
   });
@@ -77,6 +91,9 @@ test.afterAll(async () => {
 
 test.beforeEach(() => {
   answer = null;
+  instanceKey = TOKEN;
+  provenToken = TOKEN;
+  keyed = [];
   starts = [];
   tokenHandedOut = 0;
 });
@@ -206,5 +223,151 @@ test.describe('Pair with the desktop app', () => {
     await page.locator('#desktop-save').click();
     await expect(page.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
     expect(await storedDesktop(page)).toEqual({ url: desktop, token: TOKEN });
+  });
+});
+
+/** Records the origins the settings page gives back, answered as removed. */
+async function recordRemovals(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const removed: string[] = [];
+    (window as unknown as { __removed: string[] }).__removed = removed;
+    chrome.permissions.remove = (async ({ origins = [] }: chrome.permissions.Permissions) => {
+      removed.push(...origins);
+      return true;
+    }) as typeof chrome.permissions.remove;
+  });
+}
+
+function removals(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { __removed: string[] }).__removed);
+}
+
+/** Pairs with the app by hand: its address and its token. */
+async function pairByHand(page: Page): Promise<void> {
+  await page.getByLabel('Address of the desktop app').fill(desktop);
+  await page.getByText('Pair by hand').click();
+  await page.getByLabel('Token').fill(TOKEN);
+  await page.locator('#desktop-save').click();
+  await expect(page.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
+}
+
+test.describe('the desktop app as the instance', () => {
+  test('paired with no instance connected, one click connects to the app’s own instance', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await recordRemovals(page);
+    const offer = page.locator('#desktop-offer');
+    await expect(offer).toBeHidden();
+    await pairByHand(page);
+    await expect(offer).toBeVisible();
+    await expect(page.locator('#desktop-pair-hint')).toBeHidden();
+
+    await offer.getByRole('button', { name: 'Use the desktop app as your instance' }).click();
+    // Its address is this computer's loopback: no word about plain HTTP.
+    await expect(page.locator('#status')).toHaveText('Connected: 1 project found.');
+    await expect(page.locator('#instance-pill')).toHaveText('Connected');
+    await expect(page.getByLabel('Address of your Piwi instance')).toHaveValue(desktop);
+    await expect(offer).toBeHidden();
+    await expect(page.locator('#desktop-pair-hint')).toBeHidden();
+    expect(await storedSecret(page, 'instance')).toEqual({ apiKey: TOKEN, origin: desktop, desktop: true });
+
+    // Disconnect leaves the app its address, which Unpair gives back.
+    await page.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(page.locator('#instance-pill')).toHaveText('Not connected');
+    expect(await removals(page)).toEqual([]);
+    await expect(offer).toBeVisible();
+    await page.locator('#desktop-card').getByRole('button', { name: 'Unpair' }).click();
+    await expect(page.locator('#desktop-status')).toHaveText('The desktop app is no longer paired.');
+    expect(await removals(page)).toEqual([`${desktop}/*`]);
+    await expect(offer).toBeHidden();
+  });
+
+  test('Unpair leaves the address to the instance connected there', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await recordRemovals(page);
+    await pairByHand(page);
+    await page.locator('#desktop-offer').getByRole('button', { name: 'Use the desktop app as your instance' }).click();
+    await expect(page.locator('#instance-pill')).toHaveText('Connected');
+    await page.locator('#desktop-card').getByRole('button', { name: 'Unpair' }).click();
+    await expect(page.locator('#desktop-status')).toHaveText('The desktop app is no longer paired.');
+    expect(await removals(page)).toEqual([]);
+    await page.getByRole('button', { name: 'Disconnect' }).click();
+    await expect(page.locator('#instance-pill')).toHaveText('Not connected');
+    expect(await removals(page)).toEqual([`${desktop}/*`]);
+  });
+
+  test('its token goes only to a program at the address that proves it holds it, paired or not', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await recordRemovals(page);
+    await pairByHand(page);
+    await page.locator('#desktop-offer').getByRole('button', { name: 'Use the desktop app as your instance' }).click();
+    await expect(page.locator('#status')).toHaveText('Connected: 1 project found.');
+    expect(keyed.length).toBeGreaterThan(0);
+    const notProven =
+      'The program at this address did not prove it is the paired desktop app, so the token was not sent.';
+    const refresh = page.locator('#refresh-server');
+
+    // The app quit and another program took its port.
+    provenToken = 'pd_other';
+    keyed = [];
+    await refresh.click();
+    await expect(page.locator('#mappings-status')).toContainText(notProven);
+    // Unpaired, the instance kept at the address still sends it to no other program.
+    await page.locator('#desktop-card').getByRole('button', { name: 'Unpair' }).click();
+    await expect(page.locator('#desktop-status')).toHaveText('The desktop app is no longer paired.');
+    await openSettings(page, extensionId);
+    await refresh.click();
+    await expect(page.locator('#mappings-status')).toContainText(notProven);
+    expect(keyed).toEqual([]);
+
+    // The app is back: the request goes through.
+    provenToken = TOKEN;
+    await refresh.click();
+    await expect(page.locator('#mappings-status')).toHaveText('0 URL patterns from your instance.');
+    expect(keyed).toContain(`/api/extension/url-patterns ${TOKEN}`);
+  });
+
+  test('a token the app refuses leaves its address filled in and the key field waiting', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await pairByHand(page);
+    instanceKey = 'pd_another';
+    await page.locator('#desktop-offer').getByRole('button', { name: 'Use the desktop app as your instance' }).click();
+    await expect(page.locator('#status')).toHaveText('The instance rejected the API key: check it.');
+    await expect(page.locator('#instance-pill')).toHaveText('Not connected');
+    await expect(page.getByLabel('Address of your Piwi instance')).toHaveValue(desktop);
+    await expect(page.locator('#api-key-fallback')).toHaveAttribute('open', '');
+    await expect(page.locator('#api-key')).toBeFocused();
+    await expect(page.locator('#api-key')).toHaveValue('');
+    expect(await storedSecret(page, 'instance')).toBeNull();
+  });
+
+  test('an instance connected with no app paired points to the pairing', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    // The instance kept is the app itself, on this computer's loopback.
+    await page.evaluate(
+      (instanceUrl) => chrome.storage.local.set({ piwiConnection: { instanceUrl, projectMappings: [] } }),
+      desktop,
+    );
+    await page.reload();
+    await optionsReady(page);
+    const hint = page.locator('#desktop-pair-hint');
+    await expect(hint).toHaveText('To run bug reports with Playwright on this computer, pair the desktop app.');
+    await expect(page.locator('#desktop-offer')).toBeHidden();
+    await hint.getByRole('link', { name: 'pair the desktop app' }).click();
+    await expect(page.getByLabel('Address of the desktop app')).toHaveValue(desktop);
+    await expect(page.locator('#desktop-card').getByRole('button', { name: 'Pair', exact: true })).toBeFocused();
   });
 });
