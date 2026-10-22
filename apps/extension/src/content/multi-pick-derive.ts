@@ -115,6 +115,7 @@ export function derivePattern(picked: Element[], maps: DomRoleMaps, page: Patter
       roleOf,
       testIdAttributes: page.testIdAttributes ?? ['data-testid'],
       textOf: page.textOf,
+      isVisible: (el: Element) => !page.isHidden(el),
     };
     const perPick = picked.map((el) => repeatedContainers(el, options));
     for (const nearest of perPick[0]!) {
