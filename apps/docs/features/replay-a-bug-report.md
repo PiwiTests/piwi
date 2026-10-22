@@ -40,7 +40,8 @@ visible, enabled and still. The replay ends with one of three answers:
   the one the test failed at.
 
 Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
-"POST /api/cart/coupon answered 500". For a report from Piwi, **Share result…** records the answer on the report, with
+"POST /api/cart/coupon answered 500": from the moment the replay started, never those of the recording, even when you
+replay on the page you just recorded the report on. For a report from Piwi, **Share result…** records the answer on the report, with
 the site it ran on, after showing what it sends.
 
 **Step by step** waits for **Next** before each step, with the element outlined, so you can set a breakpoint first.

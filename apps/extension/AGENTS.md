@@ -282,7 +282,9 @@ before the developer confirms it in its window; the dialog then polls the reques
 
 A replay registers `bug-evidence-main.js` in the page's main world beside `replay-panel.js`, for as long as it runs,
 under the replay's `evidenceToken`; the panel keeps the entries apart from the replay state (`piwiReplayEvidence`) and
-lists them under the verdict. **Share result** (`share-result.ts`, worker side `handleShareReproduction`) records a
+lists them under the verdict. Its relay sends `ReplayState.startedAt` as `since`: in the tab a bug recording's debugging
+session collected from, the page's script still holds the recording's entries, which its quiet relay never took, and a
+replay started on that page would otherwise count them as its own. **Share result** (`share-result.ts`, worker side `handleShareReproduction`) records a
 verdict on the report it came from (`bugReportId`, set only for a report chosen from the instance), after a preview:
 the verdict, the origin it ran on and the user agent, `POST /api/bug-reports/:id/reproductions`.
 Only `piwi-client.ts` makes those requests, from exactly two

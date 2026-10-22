@@ -1332,10 +1332,14 @@ async function stopEvidence(): Promise<void> {
  * Listens to the main-world evidence script (registered by the background
  * script while a replay runs) with the replay's token, and keeps its entries in
  * batches (`relayEvidence`), handing them to the worker as the page is left.
- * Returns the disposer, which stores what is still pending and stops listening.
+ * Only what the page showed from `since`, the replay's start, is the replay's:
+ * the script in a page a bug recording ran on still holds what the recording's
+ * debugging session collected. Returns the disposer, which stores what is still
+ * pending and stops listening.
  */
-function startReplayEvidence(token: string): () => Promise<void> {
+function startReplayEvidence(token: string, since: number): () => Promise<void> {
   return relayEvidence(token, (entries) => appendReplayEvidence(token, entries), {
+    since,
     leave: (entries) => storeAsPageLeaves(token, entries),
   });
 }
@@ -1355,7 +1359,7 @@ async function runReplay(): Promise<void> {
     if (state.evidenceToken && state.evidenceToken !== evidenceToken) {
       void stopEvidence();
       evidenceToken = state.evidenceToken;
-      evidenceStop = startReplayEvidence(state.evidenceToken);
+      evidenceStop = startReplayEvidence(state.evidenceToken, state.startedAt);
     }
     cursor?.remove();
     cursor = createCursor(state.cursor);
