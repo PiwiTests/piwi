@@ -697,6 +697,15 @@ function handleMarkerClick(id: number) {
   markersOpen.value = true;
 }
 
+// `?marker=<id>` (a marker clicked on a test case's history chart) opens that
+// marker in the panel, once.
+onMounted(() => {
+  const id = Number(route.query.marker);
+  if (!Number.isInteger(id) || id <= 0) return;
+  handleMarkerClick(id);
+  void replaceQuery(router, { marker: undefined });
+});
+
 // === PERFORMANCE TAB ===
 const RUNS_WINDOW_OPTIONS = [
   { label: 'Last 20 runs', value: 20 },
@@ -1454,7 +1463,7 @@ const moreMenuItems = computed(() => {
 
   <!-- Markers slide-over -->
   <ClientOnly>
-    <USlideover v-model:open="markersOpen" title="Timeline markers" :ui="{ content: 'max-w-2xl' }">
+    <USlideover v-model:open="markersOpen" title="Timeline markers" :ui="{ content: 'max-w-xl' }">
       <template #body>
         <ProjectTimeline
           :project-id="Number(projectId)"

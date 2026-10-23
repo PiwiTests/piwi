@@ -141,6 +141,7 @@ export const PROJECT = {
   LIST_VISIBLE: 'list-visible-project',
   LOCATORS_PAGE: 'locators-page-test',
   MALFORMED: 'malformed-project',
+  MARKERS_PANEL: 'markers-panel-test',
   MCP_TEST: 'mcp-test-project',
   METADATA_RETRIEVAL: 'metadata-retrieval-test',
   METADATA_TEST: 'metadata-test-project',

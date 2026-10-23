@@ -267,7 +267,7 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `HiddenRunsNote` (what the filters hide, with the action that shows it).
 - **Data display** — `StatTile` + `StatTileGrid` (auto-fitting, no per-page breakpoints), `TableScroller`,
   `FilterToolbar`, `ChartCard` (header + `legend`; `foldKey` folds it to one line), the SVG chart primitives `ChartFrame` (self-measuring plot area,
-  y-axis) / `ChartTooltip` / `ChartMarkerLines` / `ChartLegend` / `ChartMarkerTooltip`, `MiniRunBars`,
+  y-axis, and the tooltip of the `ChartMarkerLines` in its slot, kept outside the SVG) / `ChartTooltip` / `ChartMarkerLines` / `ChartLegend` / `ChartMarkerTooltip`, `MiniRunBars`,
   `DurationValue` (tight `210ms` via
   the pure `splitDuration`), `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`, `CoverageSourceView` (a source
   file with the lines a coverage ran and the executable lines it did not marked, the functions that ran linked above
@@ -289,7 +289,7 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
 - **Help & settings** — `HelpHint` (topic keys from `shared/help-content.ts`), `SettingsField`, `EnvManagedBadge`,
   `EnvManagedAlert`.
 - **Domain widgets** — `RunStatusBadge`, `StatusChip` (status icon + label in one badge, for detail summaries),
-  `TestStatusBar`, `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerFormModal`,
+  `TestStatusBar`, `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`,
   `ZoomableImage` (a click / keyboard-accessible image with a hover "Enlarge" affordance) driving
   `ScreenshotLightbox` (full-screen, keyboard-navigable, with an actual-size zoom toggle for large captures and a
   details panel naming the test, the step and the error raised on the page — `LightboxImage` in

@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import type { TableColumn } from '@nuxt/ui';
 import type { MarkerInfo } from '~~/types/api';
 import { getMarkerCategory } from '#shared/marker-categories';
 
+/**
+ * Body of the markers panel: the project's timeline markers as a vertical
+ * list, newest first, and the add / edit form, shown in place of the list.
+ */
 const props = defineProps<{
   projectId: number;
   markers: MarkerInfo[];
   environments: string[];
-  /** When set, open this marker in the editor (e.g. after clicking a chart line). */
+  /** When set, open this marker (e.g. after clicking a chart line). */
   focusMarkerId?: number | null;
 }>();
 
@@ -18,37 +21,52 @@ const toast = useToast();
 const { can } = useAuth();
 const canEdit = computed(() => can('marker:write', props.projectId));
 
-// Newest first for the management table.
 const rows = computed(() => [...props.markers].sort((a, b) => +new Date(b.occurredAt) - +new Date(a.occurredAt)));
 
-const columns: TableColumn<MarkerInfo>[] = [
-  { accessorKey: 'occurredAt', header: 'When' },
-  { accessorKey: 'category', header: 'Category' },
-  { accessorKey: 'label', header: 'Label' },
-  { accessorKey: 'environment', header: 'Environment' },
-  { id: 'actions', header: 'Actions' },
-];
-
-const isFormOpen = ref(false);
+// The panel shows either the list or the form; `editing` null in the form means "add".
+const view = ref<'list' | 'form'>('list');
 const editing = ref<MarkerInfo | null>(null);
+// The marker last opened or saved, outlined in the list so it is easy to find again.
+const highlightId = ref<number | null>(null);
 
 function openAdd() {
   editing.value = null;
-  isFormOpen.value = true;
+  view.value = 'form';
 }
 
 function openEdit(marker: MarkerInfo) {
   editing.value = marker;
-  isFormOpen.value = true;
+  highlightId.value = marker.id;
+  view.value = 'form';
 }
 
-// Open the editor when a chart line is clicked (focusMarkerId set by the page).
+async function backToList() {
+  view.value = 'list';
+  editing.value = null;
+  await nextTick();
+  if (highlightId.value != null) {
+    document.getElementById(`marker-${highlightId.value}`)?.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function onSaved(id: number) {
+  highlightId.value = id;
+  emit('changed');
+  backToList();
+}
+
+// A click on a chart line opens that marker: in the form for an editor, or
+// outlined in the list for a reader.
 watch(
   () => props.focusMarkerId,
   (id) => {
     if (id == null) return;
     const target = props.markers.find((m) => m.id === id);
-    if (target) openEdit(target);
+    if (target && canEdit.value) openEdit(target);
+    else if (target) {
+      highlightId.value = target.id;
+      backToList();
+    }
     emit('clear-focus');
   },
   { immediate: true },
@@ -71,6 +89,7 @@ async function handleDelete() {
     await $fetch(`/api/markers/${marker.id}`, { method: 'DELETE' });
     toast.add({ title: 'Marker deleted', color: 'success' });
     emit('changed');
+    if (editing.value?.id === marker.id) backToList();
   } catch (error: unknown) {
     toast.add({ title: 'Failed to delete marker', description: errorMessage(error), color: 'error' });
   }
@@ -78,108 +97,112 @@ async function handleDelete() {
 </script>
 
 <template>
-  <SectionCard
-    title="Timeline markers"
-    :count="markers.length"
-    icon="i-lucide-milestone"
-    help="project.timeline"
-    data-tour="project-timeline"
-    subtitle="Dated events overlaid on the analytics charts"
-  >
-    <template #actions>
-      <UButton v-if="canEdit" label="Add marker" icon="i-lucide-plus" size="sm" @click="openAdd" />
-    </template>
+  <div data-shot="markers-panel" data-tour="project-timeline">
+    <div v-if="view === 'form'" class="space-y-4">
+      <div class="flex items-center gap-2">
+        <UButton
+          icon="i-lucide-arrow-left"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-label="Back to the markers"
+          @click="backToList"
+        />
+        <h3 class="font-semibold text-highlighted">{{ editing ? 'Edit marker' : 'Add marker' }}</h3>
+      </div>
+      <MarkerForm
+        :key="editing?.id ?? 'new'"
+        :project-id="projectId"
+        :marker="editing"
+        :environments="environments"
+        @saved="onSaved"
+        @cancel="backToList"
+        @delete="confirmDelete"
+      />
+    </div>
 
-    <EmptyState
-      v-if="markers.length === 0"
-      icon="i-lucide-milestone"
-      text="No markers yet. Add a deploy, config change, or incident to see it on the charts."
-    />
-
-    <template v-else>
-      <!-- Mobile card list -->
-      <div class="md:hidden space-y-3">
-        <div v-for="m in rows" :key="m.id" class="rounded-lg border border-default p-3 space-y-2">
-          <div class="flex items-start justify-between gap-2">
-            <MarkerBadge :marker="m" />
-            <div v-if="canEdit" class="flex gap-1 shrink-0">
-              <UButton icon="i-lucide-pencil" color="neutral" variant="ghost" size="xs" @click="openEdit(m)" />
-              <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="xs" @click="confirmDelete(m)" />
-            </div>
-          </div>
-          <div class="text-sm text-muted"><ClientDate :date="m.occurredAt" /></div>
-          <div v-if="m.environment" class="text-xs">
-            <EnvironmentBadge :name="m.environment" />
-          </div>
-          <p v-if="m.description" class="text-sm text-muted">{{ m.description }}</p>
-        </div>
+    <div v-else class="space-y-4">
+      <div class="flex items-center justify-between gap-3">
+        <p class="flex items-center gap-1.5 text-sm text-muted">
+          {{ markers.length }} {{ markers.length === 1 ? 'marker' : 'markers' }}, newest first
+          <HelpHint topic="project.timeline" />
+        </p>
+        <UButton v-if="canEdit" label="Add marker" icon="i-lucide-plus" size="sm" @click="openAdd" />
       </div>
 
-      <!-- Desktop table -->
-      <UTable :data="rows" :columns="columns" class="hidden md:block">
-        <template #occurredAt-cell="{ row }">
-          <div class="whitespace-nowrap">
-            <ClientDate :date="row.original.occurredAt" class="text-sm" />
-            <div class="text-xs text-muted">
-              <ClientOnly>{{ formatRelativeTime(row.original.occurredAt) }}</ClientOnly>
-            </div>
+      <EmptyState
+        v-if="markers.length === 0"
+        icon="i-lucide-milestone"
+        text="No markers yet. Add a deploy, config change, or incident to see it on the charts."
+      />
+
+      <ol v-else data-testid="marker-list">
+        <li
+          v-for="(m, index) in rows"
+          :id="`marker-${m.id}`"
+          :key="m.id"
+          class="flex gap-3 scroll-mt-4"
+          :data-testid="`marker-item-${m.id}`"
+        >
+          <!-- Category icon on a vertical line joining the markers. -->
+          <div class="flex flex-col items-center">
+            <span
+              class="flex size-8 shrink-0 items-center justify-center rounded-full ring"
+              :class="MARKER_TONE_CLASSES[getMarkerCategory(m.category).color].soft"
+            >
+              <UIcon :name="getMarkerCategory(m.category).icon" class="size-4" />
+            </span>
+            <span v-if="index < rows.length - 1" class="w-px flex-1 bg-accented my-1" />
           </div>
-        </template>
 
-        <template #category-cell="{ row }">
-          <UBadge :color="getMarkerCategory(row.original.category).color" variant="subtle" size="sm" class="gap-1">
-            <UIcon :name="getMarkerCategory(row.original.category).icon" class="size-3" />
-            {{ getMarkerCategory(row.original.category).label }}
-          </UBadge>
-        </template>
-
-        <template #label-cell="{ row }">
-          <div>
-            <div class="font-medium flex items-center gap-1">
-              {{ row.original.label }}
-              <UIcon
-                v-if="row.original.source === 'auto'"
-                name="i-lucide-sparkles"
-                class="size-3 text-muted"
-                title="Automatically detected"
-              />
+          <div
+            class="min-w-0 flex-1 rounded-lg border p-3 mb-3 transition-colors"
+            :class="highlightId === m.id ? 'border-primary bg-primary/5' : 'border-default'"
+          >
+            <div class="flex items-start gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="font-medium text-highlighted break-words">{{ m.label }}</div>
+                <div class="mt-0.5 text-xs text-muted">
+                  <ClientDate :date="m.occurredAt" />
+                  <ClientOnly> · {{ formatRelativeTime(m.occurredAt) }}</ClientOnly>
+                </div>
+              </div>
+              <div v-if="canEdit" class="flex shrink-0 -me-1 -mt-1">
+                <UButton
+                  icon="i-lucide-pencil"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :aria-label="`Edit ${m.label}`"
+                  @click="openEdit(m)"
+                />
+                <UButton
+                  icon="i-lucide-trash-2"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :aria-label="`Delete ${m.label}`"
+                  @click="confirmDelete(m)"
+                />
+              </div>
             </div>
-            <div v-if="row.original.description" class="text-xs text-muted line-clamp-1">
-              {{ row.original.description }}
+
+            <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <MarkerBadge :marker="m" category-only size="sm" />
+              <EnvironmentBadge v-if="m.environment" :name="m.environment" />
+              <span v-else class="text-muted">All environments</span>
+              <NuxtLink v-if="m.runId" :to="`/test-runs/${m.runId}`" class="text-primary hover:underline">
+                Run #{{ m.runId }}
+              </NuxtLink>
             </div>
+
+            <p v-if="m.description" class="mt-2 text-sm text-muted whitespace-pre-line break-words">
+              {{ m.description }}
+            </p>
           </div>
-        </template>
-
-        <template #environment-cell="{ row }">
-          <EnvironmentBadge v-if="row.original.environment" :name="row.original.environment" class="text-xs" />
-          <span v-else class="text-xs text-muted">All</span>
-        </template>
-
-        <template #actions-header>
-          <span class="sr-only">Actions</span>
-        </template>
-        <template #actions-cell="{ row }">
-          <div v-if="canEdit" class="flex gap-1 justify-end">
-            <UButton icon="i-lucide-pencil" color="neutral" variant="ghost" size="sm" @click="openEdit(row.original)" />
-            <UButton
-              icon="i-lucide-trash-2"
-              color="error"
-              variant="ghost"
-              size="sm"
-              @click="confirmDelete(row.original)"
-            />
-          </div>
-        </template>
-      </UTable>
-    </template>
-
-    <MarkerFormModal
-      v-model:open="isFormOpen"
-      :project-id="projectId"
-      :marker="editing"
-      :environments="environments"
-      @saved="emit('changed')"
-    />
+        </li>
+      </ol>
+    </div>
 
     <ClientOnly>
       <UModal :open="isDeleteOpen" title="Delete marker" @update:open="isDeleteOpen = $event">
@@ -195,5 +218,5 @@ async function handleDelete() {
         </template>
       </UModal>
     </ClientOnly>
-  </SectionCard>
+  </div>
 </template>
