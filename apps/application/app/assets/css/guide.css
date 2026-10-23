@@ -234,16 +234,17 @@ body.piwi-guide-moving .driver-popover.piwi-guide {
 }
 
 /*
- * The overlay's black wash (`overlayColor` in useGuide): stronger over the
- * dark theme, whose page is dark already. driver.js writes its own opacity on
- * the path's `style`.
+ * The overlay's black wash (`overlayColor` in useGuide): light enough that the
+ * page around the stop stays readable, the ring and the popover marking the
+ * stop. A little stronger over the dark theme, where a lighter one would not
+ * show. driver.js writes its own opacity on the path's `style`.
  */
 :root {
-  --piwi-guide-wash-opacity: 0.55;
+  --piwi-guide-wash-opacity: 0.25;
 }
 
 .dark {
-  --piwi-guide-wash-opacity: 0.8;
+  --piwi-guide-wash-opacity: 0.35;
 }
 
 .driver-overlay path:not(.piwi-guide-ring) {
