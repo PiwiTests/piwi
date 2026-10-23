@@ -3,9 +3,9 @@
  * conversations kept in the in-browser database through the server's shared
  * handler, with the replies to questions, the checklist ticks and the
  * outcomes of proposed changes recorded on their blocks as the server records
- * them. The demo calls no model, so a
- * question is answered with {@link DEMO_ASSISTANT_ANSWER}, streamed in the
- * server's event format and stored like a real answer.
+ * them. The demo calls no model: a question gets its prepared answer
+ * (`assistant-answers.ts`), computed from the seed, streamed in the server's
+ * event format and stored like a real answer.
  */
 import {
   addAssistantMessage,
@@ -26,20 +26,35 @@ import {
   assistantFrame,
   assistantProposalOutcomeSchema,
   assistantQuestionSchema,
+  type AssistantBlock,
+  type AssistantEvent,
   type AssistantStatus,
 } from '#shared/assistant';
+import type { AccessSummary } from '#shared/permissions';
+import type { GuideApiGet } from '../../utils/guides/resolvers';
 import { getDemoDb } from '../db.client';
+import { answerDemoQuestion, type DemoAnswer, type DemoReply } from './assistant-answers';
 import { demoHttpError } from './http-error';
 
-/** The demo's reply to every question. */
-const DEMO_ASSISTANT_ANSWER =
-  'The live demo has no AI model behind it, so it answers a set of prepared questions about its sample data rather than free questions. On your own instance the assistant answers with the AI model you configure in **Settings → AI**, reading your runs, failures and setup with your access.';
+/** Who asks: the acting user's conversations, access and readable projects, and the demo's API as they read it. */
+export interface DemoAsker {
+  ownerId: number | null;
+  access: AccessSummary;
+  scope: 'all' | Set<number>;
+  get: GuideApiGet;
+}
 
 /** The model name the demo reports. */
 const DEMO_MODEL = 'demo';
 
-/** Pause between two streamed words, so the answer reads as it would arrive from a model. */
-const WORD_DELAY_MS = 30;
+/** Pause between two streamed chunks of words, so the answer reads as it would arrive from a model. */
+const CHUNK_DELAY_MS = 30;
+
+/** Words per streamed chunk. */
+const CHUNK_WORDS = 4;
+
+/** Pause after a tool's line and after a block, as a model's reads and block calls take a moment. */
+const STEP_DELAY_MS = 150;
 
 async function requireNotDeclined(): Promise<void> {
   if (await isAssistantDeclined(await getDemoDb())) {
@@ -86,19 +101,63 @@ export async function apiDeleteAssistantConversation(id: number, ownerId: number
   return { success: true };
 }
 
-/** POST /api/assistant/conversations/:id/messages — streams {@link DEMO_ASSISTANT_ANSWER}. */
-export async function apiAskAssistant(id: number, body: unknown, ownerId: number | null): Promise<Response> {
+/** The blocks an answer is stored with: its text parts joined as the panel joins streamed text, its blocks in order. */
+function storedBlocks(answer: DemoAnswer): AssistantBlock[] {
+  const blocks: AssistantBlock[] = [];
+  for (const part of answer.parts) {
+    const last = blocks.at(-1);
+    if (part.kind === 'text' && last?.kind === 'text') last.text += part.text;
+    else if (part.kind === 'text') blocks.push({ kind: 'text', text: part.text });
+    else if (part.kind === 'block') blocks.push(part.block);
+  }
+  return blocks;
+}
+
+/** The events that write an answer: its reads, its text a few words at a time, its blocks. */
+function answerEvents(answer: DemoAnswer): Array<{ event: AssistantEvent; delay: number }> {
+  const events: Array<{ event: AssistantEvent; delay: number }> = [];
+  for (const part of answer.parts) {
+    if (part.kind === 'tool') {
+      const { name, summary, entities } = part.call;
+      events.push({
+        event: { event: 'tool', data: { name, summary, ...(entities ? { entities } : {}) } },
+        delay: STEP_DELAY_MS,
+      });
+    } else if (part.kind === 'block') {
+      events.push({ event: { event: 'block', data: { block: part.block } }, delay: STEP_DELAY_MS });
+    } else {
+      const words = part.text.split(/(?<= )/);
+      for (let i = 0; i < words.length; i += CHUNK_WORDS) {
+        const text = words.slice(i, i + CHUNK_WORDS).join('');
+        events.push({ event: { event: 'text', data: { text } }, delay: CHUNK_DELAY_MS });
+      }
+    }
+  }
+  return events;
+}
+
+/** POST /api/assistant/conversations/:id/messages — streams the question's prepared answer. */
+export async function apiAskAssistant(id: number, body: unknown, asker: DemoAsker): Promise<Response> {
   await requireNotDeclined();
   const db = await getDemoDb();
-  const conversation = await findAssistantConversation(db, ownerId, id);
+  const conversation = await findAssistantConversation(db, asker.ownerId, id);
   if (!conversation) throw demoHttpError(404, 'Conversation not found');
   const parsed = assistantQuestionSchema.safeParse(body);
   if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+  const earlier = (await getAssistantConversation(db, asker.ownerId, id))?.messages ?? [];
+  let reply: DemoReply | null = null;
   if (parsed.data.reply) {
-    const recorded = await recordAssistantReply(db, ownerId, id, parsed.data.reply);
+    const recorded = await recordAssistantReply(db, asker.ownerId, id, parsed.data.reply);
     if (!recorded.ok) throw demoHttpError(recorded.status, recorded.message);
+    const answered = earlier.find((message) => message.id === parsed.data.reply!.messageId);
+    if (answered) reply = { blockId: parsed.data.reply.blockId, picked: recorded.reply.picked, answer: answered };
   }
 
+  const started = Date.now();
+  const answer = await answerDemoQuestion(
+    { text: parsed.data.text, context: parsed.data.context ?? null, reply, earlier },
+    { db, access: asker.access, scope: asker.scope, get: asker.get },
+  );
   await addAssistantMessage(db, conversation, {
     role: 'user',
     blocks: [{ kind: 'text', text: parsed.data.text }],
@@ -106,18 +165,20 @@ export async function apiAskAssistant(id: number, body: unknown, ownerId: number
   });
   const messageId = await addAssistantMessage(db, conversation, {
     role: 'assistant',
-    blocks: [{ kind: 'text', text: DEMO_ASSISTANT_ANSWER }],
+    blocks: storedBlocks(answer),
+    toolCalls: answer.parts.flatMap((part) => (part.kind === 'tool' ? [part.call] : [])),
     provider: 'demo',
     model: DEMO_MODEL,
+    durationMs: Date.now() - started,
   });
 
   const encoder = new TextEncoder();
-  const words = DEMO_ASSISTANT_ANSWER.split(/(?<= )/);
+  const events = answerEvents(answer);
   const stream = new ReadableStream({
     async start(controller) {
-      for (const word of words) {
-        controller.enqueue(encoder.encode(assistantFrame({ event: 'text', data: { text: word } })));
-        await new Promise((r) => setTimeout(r, WORD_DELAY_MS));
+      for (const { event, delay } of events) {
+        controller.enqueue(encoder.encode(assistantFrame(event)));
+        await new Promise((r) => setTimeout(r, delay));
       }
       controller.enqueue(
         encoder.encode(

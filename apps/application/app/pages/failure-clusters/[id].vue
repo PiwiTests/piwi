@@ -445,6 +445,9 @@ const gitLogCommand = computed(() =>
 );
 const { copy: copyGitLog } = useCopy();
 
+// What the nudge on a diagnosis without the code changes reads: the diagnosis and the commits its context could read.
+const nudgeFacts = computed(() => ({ diagnosed: Boolean(clusterDiagnosis.value), scm: contextCoverage.value?.scm }));
+
 // ── Bulk actions (More menu) ─────────────────────────────────────────────────
 const quarantineAll = ref<{ trigger: () => void } | null>(null);
 const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.quarantined));
@@ -829,6 +832,12 @@ const breadcrumbItems = computed(() => [
             <ClusterFactsLine ref="factsLine" :cluster="cluster" :signature-line="signatureLine" @refresh="refresh" />
           </template>
         </SituationBlock>
+
+        <AssistantNudge
+          page="/failure-clusters/[id]"
+          :facts="nudgeFacts"
+          class="max-sm:rounded-none max-sm:border-x-0"
+        />
 
         <!-- ── The fix the next step points at, then the context and the evidence, then More ways to fix ── -->
         <Toolbox ref="toolbox" lead :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">

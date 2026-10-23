@@ -19,6 +19,7 @@ export const PROJECT = {
   API_CREATED: 'api-created-project',
   API_KEY_SUBMIT: 'api-key-submit-test',
   ASSISTANT_CLAUDE_CODE: 'assistant-claude-code-test',
+  ASSISTANT_NUDGES: 'assistant-nudges-test',
   ASSISTANT_PANEL: 'assistant-panel-test',
   ASSISTANT_PROPOSALS: 'assistant-proposals-test',
   ASSISTANT: 'assistant-test',

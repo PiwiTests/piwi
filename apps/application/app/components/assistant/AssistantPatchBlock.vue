@@ -9,7 +9,7 @@ defineProps<{ patch: string; validation: PatchValidation | null; title?: string 
 </script>
 
 <template>
-  <div class="space-y-1.5 min-w-0">
+  <div class="space-y-1.5 min-w-0" data-assistant-block="patch">
     <p v-if="title" class="text-sm font-semibold text-highlighted">{{ title }}</p>
     <PatchBlock :patch="patch" :validation="validation" download-name="piwi-assistant-fix" />
   </div>

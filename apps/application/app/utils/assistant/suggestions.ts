@@ -1,8 +1,11 @@
 /**
  * The "Ask about this page" suggestions: questions the panel and the command
  * palette offer on a page, by its `app/pages` pattern, each answerable from the
- * assistant's read tools and the docs.
+ * assistant's read tools and the docs. The live demo, which has no model,
+ * offers its prepared questions instead (`shared/demo/assistant-questions.mjs`),
+ * so a suggestion always gets a real answer there.
  */
+import { demoQuestionsFor } from '#shared/demo/assistant-questions.mjs';
 
 /** Offered on every page, after the page's own. */
 const ANY_PAGE = 'What does this page show?';
@@ -25,7 +28,11 @@ export const ASSISTANT_PAGE_SUGGESTIONS: Readonly<Record<string, readonly string
   '/mcp': ['How do I connect a coding agent?'],
 };
 
-/** The suggestions of the page `page` (a pattern of `app/pages`, or null when no page matched). */
-export function assistantSuggestionsFor(page: string | null | undefined): readonly string[] {
+/**
+ * The suggestions of the page `page` (a pattern of `app/pages`, or null when no
+ * page matched); in the demo, the prepared questions offered there.
+ */
+export function assistantSuggestionsFor(page: string | null | undefined, demo = false): readonly string[] {
+  if (demo) return demoQuestionsFor(page).map((q) => q.question);
   return [...((page && ASSISTANT_PAGE_SUGGESTIONS[page]) || []), ANY_PAGE];
 }

@@ -54,7 +54,7 @@ export interface AssistantAction<P = Record<string, unknown>> {
   permission: Permission;
   /** The kind of entity it changes; null for an instance-wide change. */
   target: AssistantEntityType | null;
-  /** The capability it belongs to: not offered while the instance declines it. */
+  /** The capability it belongs to: not offered while the target's project, or the instance, declines it. */
   capability?: CapabilityId;
   params: z.ZodType<P>;
   /** The path it calls, from the app's root, with the query it needs. */

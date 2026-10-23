@@ -14,7 +14,7 @@ const listId = useId();
 </script>
 
 <template>
-  <div class="space-y-1.5" data-assistant-read>
+  <div class="space-y-1.5" data-assistant-read data-tour="assistant-what-it-read">
     <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted">
       <button
         v-if="toolCalls.length"

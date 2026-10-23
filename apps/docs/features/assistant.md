@@ -25,19 +25,22 @@ Each question carries the page it was asked on: its address, which page it is, i
 shows and the parts of it a guide can point at. "Why did this fail?" asked on an execution needs no ids. The clock
 icon lists your conversations, to reopen or delete one; the pen starts a new one.
 
-The answer streams in as it is written, with a line for each tool it calls. The same conversations can be asked over
-the API: the API reference (`/docs` in your instance, or the [demo's](https://piwitests.dev/demo/docs)) lists the
-routes under **Assistant**. The live demo has no model and answers with a fixed reply.
+The answer streams in as it is written, with a line for each tool it calls. The API reference (`/docs` in your
+instance, or the [demo's](https://piwitests.dev/demo/docs)) lists the conversations' routes under **Assistant**.
 
-When no AI provider is configured, the panel says so, with a link to Settings → AI for those who can change it.
+The [live demo](https://piwitests.dev/demo/) has no model: it answers the prepared questions **Ask about this page**
+lists, each computed from its sample data in your browser, and offers them and the authored guides for any other
+question.
+
+With no AI provider configured, the panel says so and links Settings → AI for those who can change it.
 
 ## What an answer contains
 
 An answer is text and blocks, each drawn by the dashboard's own components; the model sends no HTML.
 
-- **Text**: Markdown with headings, lists, tables and code. A link to a run, an execution, a failure cluster, a test or
-  a project opens its page, and only when a tool result of the conversation named that entity; any other name stays
-  plain text, so the model cannot link to something it never read.
+- **Text**: Markdown with headings, lists, tables and code. A run, execution, failure cluster, test or project links to
+  its page only when a tool result of the conversation named it; any other name stays plain text, so the model cannot
+  link to something it never read.
 - **Code and commands**: a snippet with a copy button, and a shell command in bash and, when it differs, PowerShell.
 - **A patch**: a unified diff with the badge its check against the files at the run's commit gave it, as on a
   [diagnosis](./ai-diagnosis), and its download, apply command and copy buttons.
@@ -48,8 +51,8 @@ An answer is text and blocks, each drawn by the dashboard's own components; the 
   by id, so the model reads exactly what you picked.
 - **A checklist**: steps to do in order, some with their command. Your ticks are saved with the conversation.
 - **Show me**: a guide on your own screens. The panel closes and a popover walks you through the parts of the
-  dashboard the answer is about, each with a link to its docs page. It points only at parts of the dashboard Piwi
-  lists and tests for guides, never at an element the model picked.
+  dashboard the answer is about, each linking its docs page: only parts Piwi lists and tests for guides, never an
+  element the model picked.
 - **A link** to the page to open next.
 - **A proposed change** to apply with a click ([below](#proposed-changes)).
 

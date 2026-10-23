@@ -189,7 +189,8 @@ test.describe('Assistant with the Claude Code CLI', () => {
     expect(endpoint.headers.Authorization).toMatch(/^Bearer pwt_[0-9a-f]{64}$/);
     expect(after('--tools')).toBe('');
     expect(record.args).toContain('--strict-mcp-config');
-    expect(after('--max-turns')).toBe('12');
+    // A turn for each of the 8 read calls the default limit allows, each of the 12 blocks an answer holds, and 2 more.
+    expect(after('--max-turns')).toBe('22');
     expect(after('--permission-mode')).toBe('dontAsk');
     const allowed = after('--allowedTools')!.split(',');
     expect(allowed).toEqual(

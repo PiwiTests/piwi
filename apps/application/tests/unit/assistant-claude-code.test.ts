@@ -14,6 +14,7 @@ import type { User } from '../../server/database/schema';
 import type { AssistantEvent } from '#shared/assistant';
 import type { ResolvedAiRole } from '../../types/api';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
+import { ASSISTANT_BLOCK_LIMITS } from '#shared/assistant-blocks';
 
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
@@ -505,9 +506,27 @@ describe("the CLI's arguments for a turn", () => {
     });
   });
 
-  test('the turn limit follows PIWI_AI_ASSISTANT_MAX_TOOL_CALLS', () => {
-    expect(claudeCodeMaxTurns(resolveAssistantLimits({}).maxToolCalls)).toBe(12);
-    expect(claudeCodeMaxTurns(resolveAssistantLimits({ PIWI_AI_ASSISTANT_MAX_TOOL_CALLS: '3' }).maxToolCalls)).toBe(7);
+  test('the turn limit leaves a turn for each read call PIWI_AI_ASSISTANT_MAX_TOOL_CALLS allows, each block and the answer', () => {
+    const turns = (value?: string) =>
+      claudeCodeMaxTurns(
+        resolveAssistantLimits(value === undefined ? {} : { PIWI_AI_ASSISTANT_MAX_TOOL_CALLS: value }).maxToolCalls,
+      );
+    const blocks = ASSISTANT_BLOCK_LIMITS.maxBlocks;
+    expect(blocks).toBe(12);
+    expect(turns()).toBe(8 + blocks + 2);
+    expect(turns('3')).toBe(3 + blocks + 2);
+    // The variable is clamped, so the turns stay finite.
+    expect(turns('100000')).toBe(30 + blocks + 2);
+    expect(turns('Infinity')).toBe(8 + blocks + 2);
+    expect(turns('0')).toBe(1 + blocks + 2);
+    // The CLI is handed that number.
+    const args = buildAgentArgs(
+      help(['--allowedTools']),
+      role,
+      { ...run, maxTurns: turns() },
+      '/tmp/piwi-claude-mcp-x/mcp.json',
+    );
+    expect(after(args, '--max-turns')).toBe('22');
   });
 
   test('a proxy never carries the calls to this server, and the prompt carries the conversation first', () => {
@@ -627,7 +646,8 @@ describe('runClaudeCodeTurn', () => {
     const [run] = runs;
     expect(run!.server.url).toBe(`${ORIGIN}/api/assistant/conversations/7/mcp`);
     expect(run!.server.token).toMatch(/^pwt_/);
-    expect(run!.maxTurns).toBe(12);
+    expect(run!.maxTurns).toBe(claudeCodeMaxTurns(8));
+    expect(run!.maxTurns).toBe(22);
     expect(run!.tools).toEqual(tools.assistantToolNames(readTools));
     expect(run!.tools).toEqual(expect.arrayContaining(['list_projects', 'get_coverage', 'find_tools', 'ask']));
     expect(run!.tools).not.toContain('set_cluster_status');

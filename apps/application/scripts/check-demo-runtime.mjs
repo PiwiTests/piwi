@@ -38,16 +38,17 @@
  * Exits non-zero on the first failed check.
  */
 
-import http from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, extname, dirname } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
 import { GUIDE_ANCHOR_BY_ID, GUIDE_ANCHORS, GUIDE_AREAS } from '../shared/guide-anchors/index.mjs';
+import { DEMO_ASSISTANT_QUESTIONS } from '../shared/demo/assistant-questions.mjs';
 import { waitForHydration } from './lib/page-waits.mjs';
 import { READY_INSPECTION, bridgeScript } from './lib/desktop-bridge.mjs';
+import { serveBuiltDemo } from './lib/built-demo.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..', '.output', 'public');
@@ -77,23 +78,6 @@ const ANCHORS_ONLY = flags['anchors-only'] || SERVER !== null;
 const BASE = SERVER ? SERVER.pathname.replace(/\/?$/, '/') : '/demo/';
 const ORIGIN = SERVER ? SERVER.origin : `http://localhost:${PORT}`;
 
-const CONTENT_TYPES = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.wasm': 'application/wasm',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.webm': 'video/webm',
-  '.zip': 'application/zip',
-  '.sql': 'text/plain',
-  '.svg': 'image/svg+xml',
-  '.woff2': 'font/woff2',
-  '.ico': 'image/x-icon',
-};
-
 const failures = [];
 function check(ok, label, detail = '') {
   console.log(`  ${ok ? '✓' : '✗'} ${label}${detail ? ` — ${detail}` : ''}`);
@@ -102,37 +86,7 @@ function check(ok, label, detail = '') {
 }
 
 function serve() {
-  return new Promise((resolve) => {
-    const server = http.createServer(async (req, res) => {
-      const path = decodeURIComponent(req.url.split('?')[0]);
-      if (!path.startsWith(BASE)) {
-        res.writeHead(404).end('outside the demo base path');
-        return;
-      }
-      let file = join(ROOT, path.slice(BASE.length) || 'index.html');
-      try {
-        if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
-      } catch {
-        // Deep links have no static file; the SPA shell resolves them client-side.
-        file = join(ROOT, 'index.html');
-      }
-      try {
-        const data = await readFile(file);
-        res.writeHead(200, {
-          'Content-Type': CONTENT_TYPES[extname(file)] ?? 'application/octet-stream',
-          'Service-Worker-Allowed': BASE,
-        });
-        res.end(data);
-      } catch {
-        // Headers are only written once the read succeeds, so a missing file
-        // can still answer 404 (on Windows a read can fail after a successful
-        // stat, e.g. a locked file, and a second writeHead would crash the server).
-        if (!res.headersSent) res.writeHead(404);
-        res.end('not found');
-      }
-    });
-    server.listen(PORT, () => resolve(server));
-  });
+  return serveBuiltDemo({ root: ROOT, base: BASE, port: PORT });
 }
 
 /** Wait until the service worker controls the page, reloading once if needed. */
@@ -340,8 +294,7 @@ async function listedGuides(page) {
       title: button.querySelector('span span')?.textContent?.trim() ?? '',
     })),
   );
-  // In the demo, the panel's header sits under the demo banner: Escape closes it.
-  await page.keyboard.press('Escape');
+  await panel.getByRole('button', { name: 'Close' }).click();
   await panel.waitFor({ state: 'hidden', timeout: 10000 });
   return guides;
 }
@@ -477,6 +430,315 @@ async function checkAuthoredGuides(browser, watch) {
     }
   } catch (error) {
     check(false, 'the authored guide checks completed', String(error).split('\n')[0].slice(0, 160));
+  } finally {
+    await context.close();
+  }
+}
+
+// ── A guide stop inside a popover ──────────────────────────────────────────
+// A composed guide, an answer's **Show me**, whose first stops sit in the run's
+// Details popover, which their reveal opens: the popover stays open while each
+// of them shows with Next focused, and closes once the guide moves to a stop
+// beside it. The answer is the check's own: a wrapped `fetch` in the page
+// streams it to the assistant panel as the server would, so the check reads
+// none of the demo's answers.
+
+/** The guide the answer carries: two stops in the run's Details popover, then one on the page. */
+const POPOVER_GUIDE = {
+  title: 'Where a run says it is kept',
+  stops: [
+    { anchor: 'run-retention', route: '/test-runs/63', title: 'Retention', body: 'Whether the run is kept.' },
+    { anchor: 'run-shards', route: '/test-runs/63', title: 'Shards', body: 'How many shards reported.' },
+    { anchor: 'run-header', route: '/test-runs/63', title: 'The run', body: 'Its status and facts.' },
+  ],
+};
+/** How long a stop stays up before it is read: a popover that focus leaving it closes would have closed by then. */
+const POPOVER_HOLD_MS = 1500;
+
+/**
+ * The stop on `anchor` once settled and held for {@link POPOVER_HOLD_MS}:
+ * whether its anchor is highlighted, still the element `marked` (set on the
+ * first stop: the popover holding it never closed), and Next has focus.
+ */
+async function heldStop(page, anchor, { mark = false } = {}) {
+  await page.locator(`${TOUR_SETTLED}[data-guide-anchor="${anchor}"]`).waitFor({ timeout: 60000 });
+  if (mark) {
+    await page.evaluate(() => {
+      const element = document.querySelector('[data-tour="run-retention"]');
+      if (element) element.dataset.checkHeld = '';
+    });
+  }
+  await page.waitForTimeout(POPOVER_HOLD_MS);
+  return page.evaluate((id) => {
+    const element = document.querySelector(`[data-tour="${id}"]`);
+    return {
+      shown: document.querySelector(`.driver-popover.piwi-guide[data-guide-anchor="${id}"]`) !== null,
+      highlighted: element?.classList.contains('driver-active-element') ?? false,
+      held: document.querySelector('[data-tour="run-retention"]')?.dataset.checkHeld === '',
+      nextFocused: document.activeElement?.classList.contains('driver-popover-next-btn') ?? false,
+    };
+  }, anchor);
+}
+
+/**
+ * Plays {@link POPOVER_GUIDE} from the assistant panel on a run of the demo:
+ * each stop in the Details popover keeps it open with Next focused, and the
+ * stop beside it closes it, as focus on Next does for any other stop.
+ */
+async function checkGuideStopInPopover(browser, watch) {
+  const context = await browser.newContext({ viewport: WIDE, locale: 'en-US' });
+  await context.addInitScript((guide) => {
+    if (window !== window.top) return;
+    localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() }));
+    const fetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (init?.method !== 'POST' || !/\/api\/assistant\/conversations\/\d+\/messages$/.test(url)) {
+        return fetch(input, init);
+      }
+      const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+      const done = {
+        messageId: 1,
+        provider: 'demo',
+        model: 'demo',
+        toolMode: null,
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+      };
+      const body = frame('block', { block: { kind: 'guide', id: 'kept', guide } }) + frame('done', done);
+      return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }));
+    };
+  }, POPOVER_GUIDE);
+  const page = await context.newPage();
+  watch(page);
+  try {
+    await page.goto(`${ORIGIN}${BASE}test-runs/63`, { waitUntil: 'domcontentloaded' });
+    await page.locator('[data-tour="run-header"]').waitFor({ timeout: 60000 });
+    const launcher = page.getByRole('button', { name: 'Ask Piwi' });
+    if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+    await launcher.click();
+    const panel = page.getByRole('dialog', { name: 'Ask Piwi' });
+    const input = panel.getByRole('textbox', { name: 'Your question' });
+    await input.fill('Where does a run say it is kept?');
+    await input.press('Enter');
+    await panel.locator('[data-assistant-block="guide"]').getByRole('button', { name: 'Show me' }).click();
+
+    for (const [index, anchor] of ['run-retention', 'run-shards'].entries()) {
+      const stop = await heldStop(page, anchor, { mark: index === 0 });
+      const problems = [];
+      if (!stop.shown) problems.push('its stop left');
+      if (!stop.highlighted) problems.push(`"${anchor}" is not highlighted`);
+      if (!stop.held) problems.push('the Details popover closed');
+      if (!stop.nextFocused) problems.push('Next has no focus');
+      check(
+        problems.length === 0,
+        `a guide stop on ${anchor}, in the run's Details popover, keeps the popover open with Next focused`,
+        problems.join('; '),
+      );
+      await page.locator('.driver-popover-next-btn').click();
+    }
+
+    const beside = await heldStop(page, 'run-header');
+    const closed = await page
+      .locator('[data-tour="run-retention"]')
+      .waitFor({ state: 'detached', timeout: 10000 })
+      .then(
+        () => true,
+        () => false,
+      );
+    check(
+      beside.highlighted && beside.nextFocused && closed,
+      'the stop beside the popover closes it, with Next focused',
+      [
+        !beside.highlighted && 'run-header is not highlighted',
+        !beside.nextFocused && 'Next has no focus',
+        !closed && 'the popover is still open',
+      ]
+        .filter(Boolean)
+        .join('; '),
+    );
+    await page.locator('.driver-popover-done-btn').click();
+  } catch (error) {
+    check(false, 'the guide stop in a popover check completed', String(error).split('\n')[0].slice(0, 160));
+  } finally {
+    await context.close();
+  }
+}
+
+// ── The demo's assistant ───────────────────────────────────────────────────
+// The demo has no model: its assistant answers prepared questions, each
+// computed from the seed (`shared/demo/assistant-questions.mjs`). One question
+// of each answer is asked from the panel's suggestions at its sample route,
+// and one typed question none of them matches; each answer must render its
+// blocks, a question block must take an answer, a proposed change must apply,
+// and the panel must sit under the demo banner with a Close button that
+// closes it, at 1280 and at 390 px.
+
+/** The blocks each answer must render at its sample, by their `data-assistant-block` (`entity` for a card). */
+const ANSWER_BLOCKS = {
+  failure: ['entity', 'patch', 'command', 'options'],
+  flaky: ['question'],
+  'run-changes': ['entity', 'navigate'],
+  ci: ['question'],
+  guide: ['guide'],
+  about: ['navigate'],
+};
+/** How long an answer has to finish streaming. */
+const ANSWER_WAIT_MS = 30000;
+
+/** Opens the assistant panel from the sidebar's launcher, the sidebar first at phone width. */
+async function openAssistant(page) {
+  const launcher = page.getByRole('button', { name: 'Ask Piwi' });
+  if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+  await launcher.click();
+  const panel = page.getByRole('dialog', { name: 'Ask Piwi' });
+  await panel.waitFor({ timeout: 30000 });
+  return panel;
+}
+
+/** The answer the panel shows last, once it has finished streaming. */
+async function lastAnswer(panel, count) {
+  const answers = panel.locator('[data-assistant-message="assistant"]');
+  await answers
+    .nth(count - 1)
+    .locator('[data-assistant-read]')
+    .waitFor({ timeout: ANSWER_WAIT_MS });
+  return answers.nth(count - 1);
+}
+
+/** The data-assistant-block kinds an answer rendered, with entity cards as `entity`. */
+async function renderedBlocks(answer) {
+  return answer.evaluate((node) => [
+    ...new Set([
+      ...[...node.querySelectorAll('[data-assistant-block]')].map((b) => b.getAttribute('data-assistant-block')),
+      ...(node.querySelector('[data-assistant-entity]') ? ['entity'] : []),
+    ]),
+  ]);
+}
+
+/** Whether the panel's top edge sits at or under the demo banner's bottom edge. */
+async function underBanner(page, panel) {
+  const banner = await page.locator('.demo-banner').boundingBox();
+  const box = await panel.boundingBox();
+  return Boolean(banner && box && box.y >= banner.y + banner.height - 1);
+}
+
+/** Asks the prepared question `q` from the panel's suggestions at its sample route; the answer once written. */
+async function askPrepared(page, q) {
+  await page.goto(`${ORIGIN}${BASE}${q.sample.replace(/^\//, '')}`, { waitUntil: 'domcontentloaded' });
+  await waitForHydration(page);
+  const panel = await openAssistant(page);
+  if (!(await panel.locator('[data-assistant-empty]').isVisible())) {
+    await panel.getByRole('button', { name: 'New conversation' }).click();
+  }
+  await panel.locator('[data-assistant-empty]').getByRole('button', { name: q.question, exact: true }).click();
+  return { panel, answer: await lastAnswer(panel, 1) };
+}
+
+/** Answers the question block of `answer` with its ticked choices, or `pick` (a choice's label); the next answer. */
+async function answerQuestion(panel, answer, pick) {
+  const block = answer.locator('[data-assistant-block="question"]');
+  if (pick) await block.getByText(pick, { exact: true }).click();
+  await block.getByRole('button', { name: 'Answer' }).click();
+  return lastAnswer(panel, 2);
+}
+
+async function checkDemoAssistant(browser, watch) {
+  const context = await browser.newContext({ viewport: WIDE, locale: 'en-US' });
+  await context.addInitScript(() => {
+    if (window !== window.top) return;
+    localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() }));
+  });
+  const page = await context.newPage();
+  watch(page);
+  try {
+    for (const [kind, expected] of Object.entries(ANSWER_BLOCKS)) {
+      const q = DEMO_ASSISTANT_QUESTIONS.find((question) => question.answer === kind);
+      const { panel, answer } = await askPrepared(page, q);
+      const blocks = await renderedBlocks(answer);
+      const missing = expected.filter((block) => !blocks.includes(block));
+      check(
+        missing.length === 0,
+        `the demo assistant answers "${q.question}" on ${q.sample}`,
+        missing.length ? `missing ${missing.join(', ')} (rendered ${blocks.join(', ') || 'none'})` : blocks.join(', '),
+      );
+
+      if (kind === 'failure') {
+        check(await underBanner(page, panel), 'the assistant panel sits under the demo banner at 1280 px');
+        await panel.getByRole('button', { name: 'Close' }).click();
+        check(
+          await panel.waitFor({ state: 'hidden', timeout: 10000 }).then(
+            () => true,
+            () => false,
+          ),
+          'the assistant panel’s Close button closes it at 1280 px',
+        );
+      }
+      if (kind === 'flaky') {
+        const cards = await answerQuestion(panel, answer);
+        const proposal = cards.locator('[data-assistant-block="proposal"]').first();
+        await proposal.getByRole('button', { name: 'Apply', exact: true }).click();
+        check(
+          await cards
+            .locator('[data-assistant-block="proposal"][data-proposal-status="applied"]')
+            .first()
+            .waitFor({ timeout: 30000 })
+            .then(
+              () => true,
+              () => false,
+            ),
+          'the flaky tests picked in the question block get quarantine cards, and one applies',
+        );
+      }
+      if (kind === 'ci') {
+        const steps = await answerQuestion(panel, answer);
+        const followUp = await renderedBlocks(steps);
+        const shells = await steps.getByRole('tab', { name: 'Windows (PowerShell)' }).count();
+        check(
+          followUp.includes('checklist') && followUp.includes('code') && shells > 0,
+          'the CI provider picked in the question block gets the steps, with commands in bash and PowerShell',
+          followUp.join(', '),
+        );
+      }
+    }
+
+    // A typed question none of the prepared answers matches, at phone width.
+    await page.setViewportSize(PHONE);
+    await page.goto(`${ORIGIN}${BASE}test-run-cases/37`, { waitUntil: 'domcontentloaded' });
+    await waitForHydration(page);
+    const panel = await openAssistant(page);
+    if (!(await panel.locator('[data-assistant-empty]').isVisible())) {
+      await panel.getByRole('button', { name: 'New conversation' }).click();
+    }
+    const input = panel.getByRole('textbox', { name: 'Your question' });
+    await input.fill('What is the weather tomorrow?');
+    await input.press('Enter');
+    const fallback = await lastAnswer(panel, 1);
+    const offered = await renderedBlocks(fallback);
+    check(
+      offered.includes('question') && offered.includes('guide'),
+      'an unmatched question gets the page’s prepared questions and the authored guides',
+      offered.join(', '),
+    );
+    const prepared = await answerQuestion(panel, fallback, 'Why did this test fail?');
+    const preparedBlocks = await renderedBlocks(prepared);
+    check(
+      preparedBlocks.includes('patch') && preparedBlocks.includes('options'),
+      'picking one of the offered questions gets its prepared answer',
+      preparedBlocks.join(', '),
+    );
+    check(await underBanner(page, panel), 'the assistant panel sits under the demo banner at 390 px');
+    await panel.getByRole('button', { name: 'Close' }).click();
+    check(
+      await panel.waitFor({ state: 'hidden', timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ),
+      'the assistant panel’s Close button closes it at 390 px',
+    );
+  } catch (error) {
+    check(false, 'the demo assistant checks completed', String(error).split('\n')[0].slice(0, 160));
   } finally {
     await context.close();
   }
@@ -921,6 +1183,8 @@ async function main() {
       await checkDemoFlows(page);
       await checkGuidedTour(browser, watch);
       await checkAuthoredGuides(browser, watch);
+      await checkGuideStopInPopover(browser, watch);
+      await checkDemoAssistant(browser, watch);
     }
     checkedAnchors = await checkGuideAnchors(browser, watch, anchors);
 
@@ -952,7 +1216,7 @@ async function main() {
     return;
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab, every guided tour, every authored guide and every guide anchor all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab, every guided tour, every authored guide, the assistant’s prepared answers and every guide anchor all work.',
   );
 }
 

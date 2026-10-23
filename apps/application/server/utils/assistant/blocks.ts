@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AssistantEntityType, AssistantPageContext } from '#shared/assistant';
 import { ASSISTANT_ACTIONS, ASSISTANT_ACTION_IDS } from '#shared/assistant-actions';
+import type { CapabilityState } from '#shared/capabilities';
 import {
   ASSISTANT_BLOCK_INPUTS,
   blockGuides,
@@ -35,12 +36,12 @@ import {
 import { validatePatchAtRun } from '../run-sources';
 import type { AssistantEntitySet } from './entities';
 import {
+  answerGuideCheckEnv,
   checkGuidePlan,
   checkNavigateRoute,
-  checkRouteEntities,
   projectExists,
-  type AnchorFacts,
-  type GuideCheckEnv,
+  readProjectStates,
+  type AnswerAnchorFacts,
 } from './guides';
 
 /** A zod schema's properties in one line for a tool description: `{ note?: string, decision: "a" | "b" }`. */
@@ -120,7 +121,7 @@ interface BlockToolEnv {
   /** The ids of the blocks this answer already sent. */
   usedIds: ReadonlySet<string>;
   /** The capability states and access anchors are checked against, loaded once per answer. */
-  anchorFacts: () => Promise<AnchorFacts>;
+  anchorFacts: () => Promise<AnswerAnchorFacts>;
 }
 
 /** The run whose commit a patch's files are read at, for its target; null when the target is missing or unreadable. */
@@ -160,9 +161,15 @@ const PROJECT_OF: Record<AssistantEntityType, (db: DbClient, id: number) => Prom
   'test-case': resolveCaseProjectId,
 };
 
+/** Whether a capability in this state is hidden: declined, or not applicable. */
+function isHiddenState(state: CapabilityState): boolean {
+  return state === 'declined' || state === 'not-applicable';
+}
+
 /**
- * Whether the user can apply a proposal here: its capability not declined on
- * the instance, its target readable, and the action's permission held on the
+ * Whether the user can apply a proposal here: its target readable, its
+ * capability declined neither for the target's project nor, for an action
+ * with no target, on the instance, and the action's permission held on the
  * target's project (on the instance for an action with no target). The
  * target's project, or why not.
  */
@@ -171,22 +178,27 @@ async function proposalProject(
   env: BlockToolEnv,
 ): Promise<{ projectId: number | null } | { error: string }> {
   const action = ASSISTANT_ACTIONS[block.action];
-  if (action.capability) {
-    const state = (await env.anchorFacts()).states[action.capability];
-    if (state === 'declined' || state === 'not-applicable') {
-      return { error: `action: ${block.action} needs the ${action.capability} capability, ${state} on this instance` };
+  let projectId: number | null = null;
+  if (block.target) {
+    const { type, id } = block.target;
+    projectId = await PROJECT_OF[type](env.db, id);
+    if (projectId === null || !scopeAllows(env.ctx.scope, projectId)) {
+      return { error: `target: ${type} ${id} is missing or not readable by the user` };
     }
   }
-  const lacks = (where: string) => ({
-    error: `action: ${block.action} needs the ${action.permission} permission${where}, which the user does not hold; do not propose it: say so, and that someone holding it can make the change`,
-  });
-  if (!block.target) return can(env.ctx.access, action.permission) ? { projectId: null } : lacks('');
-  const { type, id } = block.target;
-  const projectId = await PROJECT_OF[type](env.db, id);
-  if (projectId === null || !scopeAllows(env.ctx.scope, projectId)) {
-    return { error: `target: ${type} ${id} is missing or not readable by the user` };
+  if (action.capability) {
+    const facts = await env.anchorFacts();
+    const states = projectId === null ? facts.states : await readProjectStates(env.db, facts, projectId);
+    const state = states[action.capability];
+    if (isHiddenState(state)) {
+      const where = isHiddenState(facts.states[action.capability]) ? 'on this instance' : `for project ${projectId}`;
+      return { error: `action: ${block.action} needs the ${action.capability} capability, ${state} ${where}` };
+    }
   }
-  return can(env.ctx.access, action.permission, projectId) ? { projectId } : lacks(` on project ${projectId}`);
+  if (can(env.ctx.access, action.permission, projectId ?? undefined)) return { projectId };
+  return {
+    error: `action: ${block.action} needs the ${action.permission} permission${projectId === null ? '' : ` on project ${projectId}`}, which the user does not hold; do not propose it: say so, and that someone holding it can make the change`,
+  };
 }
 
 /** Run one block tool: the checked block, or why it was refused. */
@@ -212,11 +224,7 @@ export async function runBlockTool(
 
   const guides = blockGuides(block);
   if (guides.length > 0 || block.kind === 'navigate') {
-    const guideEnv: GuideCheckEnv = {
-      facts: await env.anchorFacts(),
-      context: env.context,
-      checkRoute: (route) => checkRouteEntities(env.db, env.ctx, route),
-    };
+    const guideEnv = await answerGuideCheckEnv(env.db, env.ctx, await env.anchorFacts(), env.context);
     for (const { where, guide } of guides) {
       const problem = await checkGuidePlan(guide, guideEnv, where);
       if (problem) return { error: problem };

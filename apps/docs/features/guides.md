@@ -57,6 +57,22 @@ the page appears.
 The guides walk the dashboard's own screens. For the work done elsewhere, in your Playwright project or your CI, a
 stop shows the screen with the command or the setting, and its docs link has the rest.
 
+## Suggested on a page
+
+Three pages suggest a guide, or a question for the [assistant](./assistant), when what they show calls for one:
+
+| Page | When | Offers |
+|---|---|---|
+| Setup | A capability is neither in use nor declined | **Ask**: which of them your runs would use, and what each one needs |
+| A failure cluster | Its diagnosis read no commits, and no SCM token is set for the project or the instance | **Show me**: Add the SCM token |
+| An execution | It timed out, or its leading clue comes from the network, the server logs or the console, and the project has not decided on the capture fixtures | **Show me**: Add the capture fixtures |
+
+A fixed rule over what the page already shows decides; no AI model is called. A page shows one suggestion at most,
+and a browser at most three a week. **Don't show again** hides one for good: the dismissal is kept on the server for
+your account, so it stays hidden in every browser, and with authentication off it is hidden for every visitor. A
+suggestion whose guide is not listed for you does not show, a question needs an AI model to answer it, and declining
+the assistant on the Setup page turns every suggestion off.
+
 ## Related
 
 - [Assistant](./assistant): answers questions, and shows its answer on your screens with **Show me**

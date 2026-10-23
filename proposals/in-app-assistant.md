@@ -31,9 +31,9 @@ failed run, a failure with a locator fix, the open cluster seen last, the flakie
 saved dashboard the user can edit), and one whose resolver finds nothing shows centered at once with its anchor's
 `shownWhen` (the engine's `absent` stop); `authored-guides.test.ts` checks every bold label against the source of the
 stop's component or page, and `check-demo-runtime.mjs` starts every guide from the palette in the built demo. As
-built, the demo's four tours keep their own format; a guide stays off anchors inside a popover, which the engine's
-focus on **Next** closes, and inside a modal; and the engine scrolls a stop's target back into view when content
-loading above pushes it out, until the user scrolls, clicks or types. **PR 4 built 2026-10-22**,
+built, the demo's four tours keep their own format; a guide stays off anchors inside a modal; and the engine
+scrolls a stop's target back into view when content loading above pushes it out, until the user scrolls, clicks or
+types. **PR 4 built 2026-10-22**,
 the server side with no panel yet: the `assistant` role; the loop with tool calling (native for Anthropic and
 OpenAI-compatible servers; a JSON action mode, one tool call or the answer per reply, for a server that refuses tools
 and for the Claude Code CLI until PR 7); the read tools routed per page with `find_tools` and `get_instance_config`;
@@ -60,12 +60,38 @@ rides on. **PR 7 built 2026-10-23**: with the Claude Code CLI, one run writes th
 (`/api/assistant/conversations/{id}/mcp`) serving exactly that answer's toolbox, behind a token minted for the user,
 the conversation and the answer, accepted from this machine only and revoked when the answer ends; the desktop guard
 lets that route through on that token alone, and the desktop token never reaches the CLI. On the desktop app the model
-may read source files, only inside the folder linked to a project the user reads. **PR 9 built 2026-10-23**: 150
+may read source files, only inside the folder linked to a project the user reads. **PR 8 built 2026-10-23**: the nudges,
+a registry in `app/utils/nudges/` of rules over facts their page already loaded, with no model call: Setup with
+undecided capabilities asks the assistant which of them the runs would use; a cluster diagnosis that read no commits,
+with no SCM token set, offers the SCM token guide; a failure leading with a timeout or a network clue while the capture
+fixtures are undecided offers their guide, in place of the execution page's line that offered to decline them. One
+inline card per page view, with **Show me** or **Ask** and **Don't show again**, and three a week per browser; the
+dismissals in `assistant_nudge_dismissals`, per user (null with authentication off), through their own routes (1.0
+register D58). As built, the fixtures nudge shows to everyone its guide is listed for, the evidence footer keeps its
+decline controls beside it, and a dismissal can be undone through the API. **PR 9 built 2026-10-23**: 150
 questions over the demo seed (`tests/live/assistant-questions.ts`), each with the tools a good answer calls, the facts
 it must state (each traced to the seed or the docs, which a zero-token unit test checks), the blocks and, for show-me
 questions, the anchors it should use; and a live spec that asks them all against a real model and scores each answer
 (`npm run app:test:assistant:live`, on demand only). It has run only against a scripted mock model so far: the pass
-threshold (0.6) is a starting point to tune on the first real run. Every question is
+threshold (0.6) is a starting point to tune on the first real run. **D6 built 2026-10-23**: the demo answers 11
+prepared questions (`shared/demo/assistant-questions.mjs`), which are its **Ask about this page** suggestions, each
+answer computed from the seed through the shared handlers and streamed in the real events: why a failure happened,
+with its patch or replacement line, the command reproducing it and the ways to fix it; the flakiest tests to tick, then
+a quarantine card each, applied through the demo's own route; what changed since a run's baseline; which CI, then the
+steps and the pipeline in shards; a guide to where something is; what Piwi is; and, for any other question, the page's
+prepared questions to pick from and the authored guides. As built, the demo's panel sits under its banner. **Fix-ups
+built 2026-10-23**: a stop revealed by an `open` step keeps its popover open, since the guide's popover counts as a
+layer opened from it and **Next** taking focus no longer closes it (`check-demo-runtime.mjs` plays a guide in the
+run's **Details** popover); a proposal card follows the capability decisions of its target's project, and an anchor
+those of the page's project and of each stop's, a project's enable winning over the instance's decline, in the demo's
+prepared answers too; the Claude Code CLI's turn budget counts a turn per block an answer can hold; the panel has its
+own six anchors, from the launcher to **What it read**, with a seeded conversation of the demo persona to open; and
+the live question set adds 8 changes to apply, each ending in a proposal card, 158 in all. Every planned piece is
+built, with two items left out: the demo's four tours keep their own format rather than becoming authored guides,
+since they speak four languages and open each role's seeded screens, where an authored guide is English and finds
+its pages with resolvers, and they already run on the guide engine and the anchor registry; and the demo does not
+search the bundled docs for a question no prepared answer matches, since the docs are server assets the demo does not
+ship, so it offers the page's prepared questions and the authored guides that fit instead. Every question is
 decided ([Decisions](#decisions), D1–D8): guides point only at a closed registry of anchors, every anchor tested;
 finding elements from the page's ARIA snapshot is deferred to
 [a later step](#later-finding-elements-from-the-pages-aria-snapshot), which keeps the measurements behind that choice;

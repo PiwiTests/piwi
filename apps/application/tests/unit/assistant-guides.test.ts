@@ -20,6 +20,8 @@ delete process.env.PIWI_DESKTOP_TOKEN;
 vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
 
 const guides = await import('../../server/utils/assistant/guides');
+const tools = await import('../../server/utils/assistant/tools');
+const { setInstanceDecisions, setProjectDecisions } = await import('#shared/handlers/capabilities');
 type McpContext = import('../../server/utils/mcp/tools').McpContext;
 type AnchorFacts = import('../../server/utils/assistant/guides').AnchorFacts;
 
@@ -37,6 +39,16 @@ const administrator: McpContext = { user: null, access: ADMIN_ACCESS, scope: 'al
 function facts(access: AccessSummary, states: Partial<Record<CapabilityId, CapabilityState>> = {}): AnchorFacts {
   const all = Object.fromEntries(CAPABILITIES.map((c) => [c.id, 'available'])) as Record<CapabilityId, CapabilityState>;
   return { states: { ...all, ...states }, access, desktop: false };
+}
+
+/** `f` with project `projectId`'s capability states read: every one available, but `states`. */
+function withProject(
+  f: AnchorFacts,
+  projectId: number,
+  states: Partial<Record<CapabilityId, CapabilityState>> = {},
+): AnchorFacts {
+  const all = Object.fromEntries(CAPABILITIES.map((c) => [c.id, 'available'])) as Record<CapabilityId, CapabilityState>;
+  return { ...f, projectStates: new Map([[projectId, { ...all, ...states }]]) };
 }
 
 const anchor = (id: string) => {
@@ -89,6 +101,33 @@ describe('anchorUnavailable', () => {
     expect(guides.anchorUnavailable(leaks, facts(ADMIN_ACCESS, { resources: 'undecided' }), null)).toBeNull();
   });
 
+  test("on a project's pages a capability follows the project's states, elsewhere the instance's", () => {
+    const leaks = anchor('run-leaks');
+    const declinedFor1 = withProject(facts(ADMIN_ACCESS), 1, { resources: 'declined' });
+    expect(guides.anchorUnavailable(leaks, declinedFor1, 1)).toBe(
+      'it needs the resources capability, declined for project 1',
+    );
+    expect(guides.anchorUnavailable(leaks, declinedFor1, 3)).toBeNull();
+    expect(guides.anchorUnavailable(leaks, declinedFor1, null)).toBeNull();
+    expect(
+      guides.anchorUnavailable(leaks, withProject(facts(ADMIN_ACCESS), 1, { resources: 'not-applicable' }), 1),
+    ).toContain('not-applicable for project 1');
+
+    // A page of no project, a dashboard or every project, follows the instance.
+    const coverageFor1 = withProject(facts(ADMIN_ACCESS), 1, { coverage: 'declined', 'flake-lab': 'declined' });
+    expect(anchor('analytics-coverage-trend').pages[0]).toBe('/analytics/d/[id]');
+    expect(guides.anchorUnavailable(anchor('analytics-coverage-trend'), coverageFor1, 1)).toBeNull();
+    expect(guides.anchorUnavailable(anchor('flake-lab-inbox'), coverageFor1, 1)).toBeNull();
+    expect(guides.anchorUnavailable(anchor('coverage-overview'), coverageFor1, 1)).toContain('coverage capability');
+
+    // A project enabling what the instance declined shows the anchor on its pages only.
+    const enabledFor1 = withProject(facts(ADMIN_ACCESS, { resources: 'declined' }), 1);
+    expect(guides.anchorUnavailable(leaks, enabledFor1, 1)).toBeNull();
+    expect(guides.anchorUnavailable(leaks, enabledFor1, 3)).toBe(
+      'it needs the resources capability, declined on this instance',
+    );
+  });
+
   test("a permission holds on the page's project when it shows one, on any project otherwise", () => {
     const schedules = anchor('report-schedules');
     expect(schedules.requires?.permission).toBe('report:write');
@@ -113,6 +152,15 @@ describe('findAnchors', () => {
     ).not.toContain('run-leaks');
     expect(ids(guides.findAnchors('setup ladder', facts(ADMIN_ACCESS), null))).toContain('setup-ladder');
     expect(ids(guides.findAnchors('setup ladder', facts(memberAccess), null))).not.toContain('setup-ladder');
+  });
+
+  test("leaves out an anchor of the user's project's pages when the project declines its capability", () => {
+    const declinedFor1 = withProject(facts(ADMIN_ACCESS), 1, { resources: 'declined' });
+    const onRun1: AssistantPageContext = { route: '/test-runs/1', page: '/test-runs/[id]', projectId: 1 };
+    const onProject3: AssistantPageContext = { route: '/projects/3', page: '/projects/[id]', projectId: 3 };
+    expect(ids(guides.findAnchors('resource leaks', declinedFor1, onRun1))).not.toContain('run-leaks');
+    expect(ids(guides.findAnchors('resource leaks', declinedFor1, onProject3))).toContain('run-leaks');
+    expect(ids(guides.findAnchors('resource leaks', declinedFor1, null))).toContain('run-leaks');
   });
 
   test('never returns a demo-only anchor', () => {
@@ -287,6 +335,57 @@ describe('checkGuidePlan', () => {
         'steps.2.guide',
       ),
     ).toMatch(/^steps\.2\.guide\.stops\.0\.anchor: /);
+  });
+});
+
+describe("a project's own capability decisions, read from the database", () => {
+  const onRun1: AssistantPageContext = { route: '/test-runs/1', page: '/test-runs/[id]', projectId: 1 };
+  const toolbox = (context: AssistantPageContext | null) =>
+    tools.createAssistantToolbox({ db: db as never, ctx: member, readTools: [], page: null, extraTools: [], context });
+  async function found(context: AssistantPageContext | null): Promise<string[]> {
+    const result = await toolbox(context).run({
+      id: 'f',
+      name: 'find_anchors',
+      arguments: { query: 'resource leaks' },
+    });
+    return (JSON.parse(result.content) as { anchors: { id: string }[] }).anchors.map((a) => a.id);
+  }
+  const leaksGuide = (route: string) => ({
+    id: 'leaks',
+    title: 'Where the leaks are',
+    stops: [{ anchor: 'run-leaks', route, title: 'Findings', body: 'The **Findings** of the run.' }],
+  });
+
+  test("find_anchors leaves out an anchor of the user's project's pages when the project declines it", async () => {
+    expect(await found(onRun1)).toContain('run-leaks');
+    await setProjectDecisions(db as never, 1, { resources: 'declined' });
+    expect(await found(onRun1)).not.toContain('run-leaks');
+    expect(await found({ route: '/projects/3', page: '/projects/[id]', projectId: 3 })).toContain('run-leaks');
+  });
+
+  test("a guide's stop is refused on the pages of a project that declines its anchor's capability", async () => {
+    await setProjectDecisions(db as never, 1, { resources: 'declined' });
+    const refused = await toolbox(null).run({ id: 'g', name: 'show_guide', arguments: leaksGuide('/test-runs/1') });
+    expect(refused).toMatchObject({ isError: true });
+    expect(refused.content).toContain(
+      'stops.0.anchor: "run-leaks" does not show for this user: it needs the resources capability, declined for project 1',
+    );
+    // Staying on the user's page, the stop follows that page's project too.
+    const here = await toolbox(onRun1).run({
+      id: 'g',
+      name: 'show_guide',
+      arguments: { ...leaksGuide('/test-runs/1'), stops: [{ ...leaksGuide('').stops[0]!, route: undefined }] },
+    });
+    expect(here.content).toContain('declined for project 1');
+  });
+
+  test('a project enabling what the instance declined shows the anchor on its pages', async () => {
+    await setInstanceDecisions(db as never, { resources: 'declined' });
+    expect(await found(onRun1)).not.toContain('run-leaks');
+    await setProjectDecisions(db as never, 1, { resources: 'enabled' });
+    expect(await found(onRun1)).toContain('run-leaks');
+    const shown = await toolbox(null).run({ id: 'g', name: 'show_guide', arguments: leaksGuide('/test-runs/1') });
+    expect(shown).toMatchObject({ isError: false, block: { kind: 'guide' } });
   });
 });
 

@@ -44,7 +44,7 @@ defineExpose({ focus });
 </script>
 
 <template>
-  <form class="w-full space-y-1.5" data-assistant-input @submit.prevent="submit">
+  <form class="w-full space-y-1.5" data-assistant-input data-tour="assistant-input" @submit.prevent="submit">
     <div class="flex items-end gap-2">
       <UTextarea
         ref="textarea"

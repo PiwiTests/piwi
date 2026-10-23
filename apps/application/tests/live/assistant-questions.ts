@@ -14,6 +14,7 @@
  *   setup    25  how to set something up: CI, sharding, SCM token, AI, notifications, Jira, roles
  *   piwi     15  what Piwi is and does
  *   show-me  22  a guide on the screens: where something is, how to do it
+ *   change    8  a change to apply: resolve a cluster, quarantine a test, keep a run, decline a capability
  *
  * Each question carries:
  *
@@ -31,14 +32,15 @@
  *   or the docs do not.
  * - `blocks`: when a block fits the question, the kinds of which the answer
  *   uses at least one: a question with checkboxes for "which tests should I
- *   quarantine", a checklist for a setup, a guide for "where is…".
+ *   quarantine", a checklist for a setup, a guide for "where is…", a
+ *   proposal card the user applies for a change asked for.
  * - `anchors`: for a guide, the registry anchors of which it stops on at
  *   least one.
  */
 import type { AssistantBlock, AssistantPageContext } from '#shared/assistant';
 import { assistantPageContext } from '../../app/utils/assistant/page-context';
 
-export const QUESTION_TOPICS = ['failure', 'flaky', 'run', 'setting', 'setup', 'piwi', 'show-me'] as const;
+export const QUESTION_TOPICS = ['failure', 'flaky', 'run', 'setting', 'setup', 'piwi', 'show-me', 'change'] as const;
 
 export type QuestionTopic = (typeof QUESTION_TOPICS)[number];
 
@@ -51,6 +53,7 @@ export const QUESTION_SPREAD: Readonly<Record<QuestionTopic, number>> = {
   setup: 25,
   piwi: 15,
   'show-me': 22,
+  change: 8,
 };
 
 /** The block kinds an answer can be expected to use: every kind but text. */
@@ -1405,6 +1408,80 @@ const showMe: LiveQuestion[] = [
   },
 ];
 
+/** Changes the user asks for: a good answer ends with the proposal card that makes it, which the user applies. */
+const change: LiveQuestion[] = [
+  {
+    id: 'change-resolve-users-cluster',
+    topic: 'change',
+    question: 'The fix for this has landed. Mark it resolved.',
+    on: '/failure-clusters/10',
+    tools: ['get_cluster', 'get_fix_plan', 'get_cluster_context'],
+    facts: [story('users-table-page-size', /users table/i)],
+    blocks: ['proposal'],
+  },
+  {
+    id: 'change-resolve-date-picker',
+    topic: 'change',
+    question: 'We renamed the field back, so the date picker test passes again. Resolve its failure cluster.',
+    on: '/failure-clusters/11',
+    tools: ['get_cluster', 'get_fix_plan', 'get_cluster_context'],
+    facts: [story('mobile-delivery-date-relabeled', /delivery date/i)],
+    blocks: ['proposal'],
+  },
+  {
+    id: 'change-quarantine-dark-mode',
+    topic: 'change',
+    question: 'Quarantine this test until we fix the order it depends on.',
+    on: '/test-cases/53',
+    tools: ['get_test_case', 'get_flake_profile'],
+    facts: [example('path-variation-order', 'toggles dark mode')],
+    blocks: ['proposal'],
+  },
+  {
+    id: 'change-quarantine-picked-modal',
+    topic: 'change',
+    question: 'From the flaky list I picked Modal opens and closes correctly: quarantine it.',
+    on: '/projects/3?tab=flaky-tests',
+    tools: ['list_flaky_tests', 'get_test_case', 'search'],
+    facts: [story('modal-never-opens', 'Modal opens and closes correctly')],
+    blocks: ['proposal'],
+  },
+  {
+    id: 'change-keep-run',
+    topic: 'change',
+    question: 'Keep this run forever, it is the build we shipped.',
+    on: '/test-runs/73',
+    tools: ['get_run'],
+    facts: [docs('operate/storage', /retention|cleanup/i)],
+    blocks: ['proposal'],
+  },
+  {
+    id: 'change-keep-newest-web-dashboard',
+    topic: 'change',
+    question: 'Keep the newest passing run of web-dashboard forever: it is our reference before the migration.',
+    tools: ['list_runs', 'list_projects', 'get_project'],
+    facts: [project(5, 'web-dashboard')],
+    blocks: ['proposal'],
+  },
+  {
+    id: 'change-decline-integrations',
+    topic: 'change',
+    question: 'We will never connect Jira or another issue tracker. Turn issue tracking off for the whole instance.',
+    tools: ['get_instance_config', 'explain_setting'],
+    facts: [docs('operate/capabilities', /declin/i)],
+    blocks: ['proposal'],
+  },
+  {
+    id: 'change-decline-project-resources',
+    topic: 'change',
+    question: 'This project does not record resource usage. Turn the Resources capability off for it.',
+    on: '/projects/1',
+    tools: ['get_project', 'get_instance_config'],
+    facts: [docs('operate/capabilities', /per project|for this project/i)],
+    blocks: ['proposal'],
+  },
+];
+
 export const LIVE_QUESTIONS: readonly LiveQuestion[] = [
   ...failure,
   ...flaky,
@@ -1413,6 +1490,7 @@ export const LIVE_QUESTIONS: readonly LiveQuestion[] = [
   ...setup,
   ...piwi,
   ...showMe,
+  ...change,
 ];
 
 /**

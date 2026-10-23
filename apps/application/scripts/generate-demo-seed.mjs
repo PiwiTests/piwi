@@ -4978,6 +4978,8 @@ const REBASE_SQL = [
   `UPDATE group_members SET created_at = created_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
+  `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
@@ -5822,6 +5824,101 @@ const SAVED_DASHBOARDS = [
   },
 ];
 
+// ── An assistant conversation ─────────────────────────────────────────────
+// One question the demo's default persona asked the assistant on the users
+// table cluster, and its answer: what it read (the tools it called, with their
+// one-line summaries) and the card of the cluster it links. The assistant
+// panel lists it under Conversations, and its guide anchors open it there.
+// Every fact the answer states is read from the cluster's story and its seeded
+// row: the row counts from the story's error, the page size from the endpoints
+// file it traces to, the patch from its diagnosis and the fix from the row.
+const USERS_STORY = storyByClusterId(10);
+const USERS_FAILURE = USERS_STORY.failingCases[0];
+const USERS_CLUSTER_ROW = FAILURE_CLUSTERS.find((c) => c.id === USERS_STORY.clusterId);
+const USERS_ENDPOINTS_FILE = USERS_STORY.appFiles[0];
+const USERS_CLUSTER = { type: 'cluster', id: USERS_STORY.clusterId, label: USERS_FAILURE.title };
+
+/** The number the users story states where `pattern` matches `text`; throws when it no longer does. */
+function usersStoryNumber(pattern, text, what) {
+  const match = pattern.exec(text);
+  if (!match) throw new Error(`The users table story no longer states ${what}`);
+  return Number(match[1]);
+}
+
+const USERS_ROWS_EXPECTED = usersStoryNumber(/^Expected: (\d+)$/m, USERS_FAILURE.error, 'the rows it expects');
+const USERS_ROWS_RECEIVED = usersStoryNumber(/^Received: (\d+)$/m, USERS_FAILURE.error, 'the rows it finds');
+const USERS_API_PAGE_SIZE = usersStoryNumber(
+  /DefaultPageSize = (\d+);/,
+  SOURCE_FILES[USERS_ENDPOINTS_FILE].join('\n'),
+  'the API default page size',
+);
+const USERS_ANSWER_LEADS = [
+  `The suspect lines are in \`${USERS_ENDPOINTS_FILE}\``,
+  USERS_STORY.diagnosis?.fix?.patch ? 'the stored diagnosis suggests a patch' : null,
+  USERS_CLUSTER_ROW.fix_landed_run_id ? 'the fix has since landed' : null,
+].filter(Boolean);
+const USERS_ANSWER =
+  `[${USERS_CLUSTER.label}](piwi:cluster/${USERS_CLUSTER.id}) expects ${USERS_ROWS_EXPECTED} rows, the header ` +
+  `and ${USERS_ROWS_EXPECTED - 1} users, and finds ${USERS_ROWS_RECEIVED}. Pagination moved to the server, and ` +
+  `the users endpoint pages with the API default page size, ${USERS_API_PAGE_SIZE}, when a request names no ` +
+  `page size, and the users table names none. ` +
+  `${new Intl.ListFormat('en', { type: 'conjunction' }).format(USERS_ANSWER_LEADS)}.`;
+const ASKED_AT_MS = (ANCHOR_SEC - 3 * 60 * 60) * 1000;
+const ASSISTANT_CONVERSATIONS = [
+  {
+    id: 1,
+    owner_id: DEFAULT_DEMO_USER.id,
+    title: 'Why does the users table test fail?',
+    created_at: ASKED_AT_MS,
+    updated_at: ASKED_AT_MS + 9000,
+  },
+];
+const ASSISTANT_MESSAGES = [
+  {
+    id: 1,
+    conversation_id: 1,
+    role: 'user',
+    content: { blocks: [{ kind: 'text', text: 'Why does the users table test fail?' }] },
+    context: {
+      route: `/failure-clusters/${USERS_CLUSTER.id}`,
+      page: '/failure-clusters/[id]',
+      params: { id: String(USERS_CLUSTER.id) },
+      projectId: USERS_STORY.projectId,
+    },
+    status: 'completed',
+    created_at: ASKED_AT_MS,
+  },
+  {
+    id: 2,
+    conversation_id: 1,
+    role: 'assistant',
+    content: {
+      blocks: [
+        { kind: 'text', text: USERS_ANSWER },
+        { kind: 'entity', id: 'users-cluster', entity: USERS_CLUSTER, status: USERS_CLUSTER_ROW.status },
+      ],
+    },
+    tool_calls: [
+      {
+        name: 'get_cluster',
+        arguments: { clusterId: USERS_CLUSTER.id },
+        summary: `Get cluster (clusterId ${USERS_CLUSTER.id})`,
+        entities: [USERS_CLUSTER],
+      },
+      {
+        name: 'get_fix_plan',
+        arguments: { clusterId: USERS_CLUSTER.id },
+        summary: `Get fix plan (clusterId ${USERS_CLUSTER.id})`,
+      },
+    ],
+    provider: 'demo',
+    model: 'demo',
+    status: 'completed',
+    duration_ms: 9000,
+    created_at: ASKED_AT_MS + 9000,
+  },
+];
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -5964,6 +6061,10 @@ const lines = [
   '',
   '-- Scenario gaps (references test_cases; test_run_id is not an FK)',
   insert('scenario_gaps', SCENARIO_GAPS),
+  '',
+  '-- An assistant conversation of the default persona',
+  insert('assistant_conversations', ASSISTANT_CONVERSATIONS),
+  insert('assistant_messages', ASSISTANT_MESSAGES),
   '',
   ...REBASE_SQL,
   '',

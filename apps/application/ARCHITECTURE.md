@@ -244,7 +244,7 @@ Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: f
 | `bug-reports/`                                                          | Bug report detail (Piwi Picker): the reported steps (`BugStepText`, from core's step parts), the evidence, the generated spec                                                                                                   |
 | `gaps/`                                                                 | Test Map: the feature graph and map views, the node inspector, the scenario gaps panel                                                                                                                                          |
 | `notifications/`, `reports/`                                            | Notification channels and subscription scope; quality reports: the schedule form and list, previews, snapshots                                                                                                                  |
-| `assistant/`                                                            | The in-app assistant's panel (`AssistantPanel`, opened from `AssistantLauncher` and the command palette), its messages and one component per answer block, on `useAssistant`                                                    |
+| `assistant/`                                                            | The in-app assistant's panel (`AssistantPanel`, opened from `AssistantLauncher` and the command palette), its messages and one component per answer block, on `useAssistant`; a page's nudge, `AssistantNudge`                  |
 | `home/`, `layout/`, `settings/`, `apps/desktop/`, `apps/docs/`, `demo/` | Home filters; app shell/nav; settings surfaces; desktop-only cards; in-app API reference; demo-only banner, simulator and guided tour                                                                                           |
 
 Shared building blocks worth knowing before writing new markup (`AGENTS.md` makes reuse a rule):
@@ -347,6 +347,7 @@ entity a stop opens on this instance (`GUIDE_RESOLVERS`) and the guide run they 
 `app/utils/assistant/` holds the assistant panel's pure parts: the event reducer, the page context a question carries
 (with the guide anchors rendered on the page), the replies to a question or options block, the page suggestions and the
 guide run of a composed guide.
+`app/utils/nudges/` holds the nudges (`NUDGES`: each one's page, rule, offer and words) and the browser's weekly budget.
 
 The coverage insights (`#shared/coverage-insights`) reach the UI where the project's coverage capability is active,
 and render nothing elsewhere: a failed execution's Coverage section compares it with the test's last passing run
@@ -367,7 +368,9 @@ Live updates use a BroadcastChannel instead of SSE. The demo build also mounts t
 on a guide anchor of each, `useDemoTour` handing the role's tour to the guide engine (`useGuide`); the tours are
 `TOUR_PROFILES` and their words one `copy.<code>.ts` per language, both in `app/utils/demo-tour/`. The anchors are the
 registry in `shared/guide-anchors/`: every element a guide can point at, by its `data-tour` attribute, with the pages
-it renders on, how to reveal it and a seeded sample where it renders. Rules and invariants: see `AGENTS.md`.
+it renders on, how to reveal it and a seeded sample where it renders. With no model, the demo's assistant answers the
+prepared questions of `shared/demo/assistant-questions.mjs`, matched by `app/demo/api/assistant-match.ts` and computed
+from the seed by `app/demo/api/assistant-answers.ts`. Rules and invariants: see `AGENTS.md`.
 
 ## Key features
 

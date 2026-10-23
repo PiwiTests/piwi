@@ -12,7 +12,7 @@ const {
 </script>
 
 <template>
-  <div class="space-y-2" data-assistant-conversations>
+  <div class="space-y-2" data-assistant-conversations data-tour="assistant-conversations">
     <p class="text-sm font-semibold text-highlighted">Your conversations</p>
     <ErrorState v-if="conversationsError" :text="conversationsError">
       <template #action>
@@ -28,6 +28,7 @@ const {
           class="min-w-0 flex-1 rounded px-1 py-1 text-left hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
           :disabled="busy"
           :aria-current="conversation?.id === item.id || undefined"
+          data-tour="assistant-conversation"
           @click="openConversation(item.id)"
         >
           <span class="block truncate text-sm text-highlighted">{{ item.title || 'Untitled conversation' }}</span>

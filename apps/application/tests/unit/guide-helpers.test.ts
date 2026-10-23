@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import type { GuideAnchor } from '#shared/guide-anchors/index.mjs';
+import { GUIDE_ANCHOR_BY_ID, type GuideAnchor } from '#shared/guide-anchors/index.mjs';
 import { boldLabels, escapeGuideHtml, fillGuideText, guideMarkup, plainGuideText } from '../../app/utils/guide/markup';
-import { anchorSelector, revealQuery, routeOnPage, stopRoute } from '../../app/utils/guide/stops';
+import { anchorSelector, opensLayer, revealQuery, routeOnPage, stopRoute } from '../../app/utils/guide/stops';
 
 describe('escapeGuideHtml', () => {
   test('escapes every character HTML gives a meaning to', () => {
@@ -68,6 +68,28 @@ function anchor(pages: string[], reveal?: GuideAnchor['reveal']): GuideAnchor {
 describe('anchorSelector', () => {
   test('names the element by its data-tour attribute', () => {
     expect(anchorSelector('flaky-test-row')).toBe('[data-tour="flaky-test-row"]');
+  });
+});
+
+describe('opensLayer', () => {
+  test('holds for an anchor whose reveal opens what it sits in, after any other step', () => {
+    expect(opensLayer(anchor(['/test-runs/[id]'], [{ open: 'run-details' }]))).toBe(true);
+    expect(opensLayer(anchor(['/projects/[id]'], [{ query: { tab: 'runs' } }, { open: 'project-markers' }]))).toBe(
+      true,
+    );
+  });
+
+  test('holds for the anchors of the run’s Details popover and the project’s bell', () => {
+    for (const id of ['run-retention', 'run-shards', 'project-subscriptions']) {
+      expect(opensLayer(GUIDE_ANCHOR_BY_ID.get(id)), id).toBe(true);
+    }
+  });
+
+  test('does not hold for a tab, a folded section, an anchor with no reveal, or no anchor', () => {
+    expect(opensLayer(anchor(['/projects/[id]'], [{ query: { tab: 'gaps' } }]))).toBe(false);
+    expect(opensLayer(anchor(['/test-runs/[id]'], [{ unfold: 'run-toolbox' }]))).toBe(false);
+    expect(opensLayer(anchor(['/']))).toBe(false);
+    expect(opensLayer(undefined)).toBe(false);
   });
 });
 

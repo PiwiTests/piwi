@@ -4,7 +4,8 @@
  * can be offered, every anchor is in the registry and can render on a
  * server, every page is a page of the dashboard showing a seeded entity,
  * every fact matches the story, example, project, seed table, docs page or
- * variable it names, and the topics have the spread the header lists.
+ * variable it names, a show-me question expects a guide and a change
+ * question a proposal, and the topics have the spread the header lists.
  */
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -179,6 +180,7 @@ describe('the question set', () => {
     expect(listed).toEqual(QUESTION_SPREAD);
     const total = Object.values(QUESTION_SPREAD).reduce((sum, n) => sum + n, 0);
     expect(total).toBeGreaterThanOrEqual(140);
+    expect(QUESTION_SPREAD.change).toBeGreaterThanOrEqual(8);
   });
 });
 
@@ -239,6 +241,9 @@ describe('blocks and anchors', () => {
         const guide = q.blocks?.includes('guide') ?? false;
         if (guide !== Boolean(q.anchors?.length)) problems.push(`${q.id}: a guide and its anchors go together`);
         if (q.topic === 'show-me' && !guide) problems.push(`${q.id}: a show-me question expects a guide`);
+        if (q.topic === 'change' && !q.blocks?.includes('proposal')) {
+          problems.push(`${q.id}: a change question expects a proposal`);
+        }
         return problems;
       }),
     ).toEqual([]);

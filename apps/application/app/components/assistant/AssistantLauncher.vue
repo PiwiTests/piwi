@@ -34,6 +34,7 @@ onMounted(() => void loadStatus());
       :square="collapsed"
       :class="collapsed ? '' : 'bg-transparent ring-default'"
       aria-label="Ask Piwi"
+      data-tour="assistant-launcher"
       @click="launch"
     />
   </UTooltip>

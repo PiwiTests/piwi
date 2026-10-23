@@ -419,6 +419,11 @@ import {
   apiRecordAssistantProposal,
   apiTickAssistantChecklist,
 } from './assistant';
+import {
+  apiDismissAssistantNudge,
+  apiListAssistantNudgeDismissals,
+  apiUndoAssistantNudgeDismissal,
+} from './assistant-nudges';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { demoHttpError } from './http-error';
 import {
@@ -1781,7 +1786,20 @@ const routes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/assistant\/conversations\/(\d+)\/messages$/,
-    handler: async (m, body, _q, ctx) => apiAskAssistant(+m[1]!, body, ctx?.actingUserId ?? null),
+    handler: async (m, body, _q, ctx) =>
+      apiAskAssistant(+m[1]!, body, {
+        ownerId: ctx?.actingUserId ?? null,
+        access: ctx?.access ?? ADMIN_ACCESS,
+        scope: ctx?.scope ?? 'all',
+        get: async <T>(path: string, query?: Record<string, string | number>) =>
+          (await handleDemoRequest(
+            path,
+            'GET',
+            undefined,
+            query ? new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)])).toString() : undefined,
+            ctx?.actingUserId ?? null,
+          )) as T,
+      }),
   },
   {
     method: 'PATCH',
@@ -1792,6 +1810,21 @@ const routes: RouteEntry[] = [
     method: 'PATCH',
     pattern: /^\/api\/assistant\/conversations\/(\d+)\/messages\/(\d+)\/proposal$/,
     handler: async (m, body, _q, ctx) => apiRecordAssistantProposal(+m[1]!, +m[2]!, body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/nudge-dismissals$/,
+    handler: async (_m, _b, _q, ctx) => apiListAssistantNudgeDismissals(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/assistant\/nudge-dismissals\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => apiDismissAssistantNudge(m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/assistant\/nudge-dismissals\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => apiUndoAssistantNudgeDismissal(m[1]!, ctx?.actingUserId ?? null),
   },
   // An answer's MCP endpoint takes the token of an answer the Claude Code CLI writes; the demo writes none.
   {

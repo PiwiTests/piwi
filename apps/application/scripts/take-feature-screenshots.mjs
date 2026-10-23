@@ -33,9 +33,14 @@
  * captures the Tauri shell — the server runs with `NUXT_PUBLIC_DESKTOP=true`
  * and a mocked Tauri IPC bridge is injected into the page, so no shell build is
  * needed. A desktop scene can shape what the mock answers (linked folder,
- * inspection result). A run covering several modes boots one server per mode,
- * web first. With `--url`, every scene drives that one server, so point a tour
- * scene at a server started with `NUXT_PUBLIC_DEMO_TOUR=true`.
+ * inspection result). `demo` captures the built demo SPA (run
+ * `npm run app:generate:demo` first), served from its `/demo/` sub-path with
+ * its service worker answering from the in-browser seed, for what only the
+ * demo build does, such as its assistant's prepared answers. A run covering
+ * several modes boots one server per mode, web first. With `--url`, every
+ * scene drives that one server, so point a tour scene at a server started with
+ * `NUXT_PUBLIC_DEMO_TOUR=true`, and a demo scene at a served demo's base
+ * (`http://localhost:4173/demo`).
  *
  * Output goes where the scene's `out` says: `screens` → `.screens/` (gitignored
  * report artifacts) and `docs` → `apps/docs/public/screenshots/` (committed
@@ -61,6 +66,7 @@ import {
 } from './lib/coverage-scene.mjs';
 import { ORDER_SCENE, orderSceneSource } from './lib/coverage-insights-scene.mjs';
 import { READY_INSPECTION, bridgeScript } from './lib/desktop-bridge.mjs';
+import { BUILT_DEMO_BASE, BUILT_DEMO_ROOT, serveBuiltDemo } from './lib/built-demo.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -631,7 +637,23 @@ function reportSupersededBranch(request, base) {
 }
 
 /** Surfaces a scene can be captured against, in the order a run boots their servers. */
-const MODES = ['web', 'tour', 'desktop'];
+const MODES = ['web', 'tour', 'desktop', 'demo'];
+
+/** Where the `demo` mode serves the built demo: off 3000 and 3050, where dev servers run. */
+const DEMO_PORT = 4175;
+
+/** Serves the built demo for the `demo` mode; its base is the demo's sub-path, which every scene route follows. */
+async function startBuiltDemo() {
+  if (!existsSync(join(BUILT_DEMO_ROOT, 'index.html'))) {
+    throw new Error(
+      `the demo mode serves the built demo, and ${BUILT_DEMO_ROOT} holds none: run "npm run app:generate:demo"`,
+    );
+  }
+  const server = await serveBuiltDemo({ port: DEMO_PORT });
+  const base = `http://localhost:${DEMO_PORT}${BUILT_DEMO_BASE.replace(/\/$/, '')}`;
+  console.error(`Serving the built demo at ${base}/…`);
+  return { base, stop: () => server.close() };
+}
 
 /** Cookie `@nuxtjs/color-mode` reads the stored light/dark preference from (`colorMode` in nuxt.config.ts). */
 const COLOR_MODE_COOKIE = 'piwi-color-mode';
@@ -1531,6 +1553,81 @@ async function openAssistantAnswer(page, goto, path = '/') {
   return panel;
 }
 
+// The nudges scene submits a timed-out failure in a project without capture
+// fixtures; `prepareNudgeFailure` records its execution id.
+let nudgeExecId = 0;
+async function prepareNudgeFailure({ base, request }) {
+  const projectName = 'nudge-demo-timeout';
+  await request.post(`${base}/api/test-runs/submit`, {
+    data: {
+      projectName,
+      status: 'failed',
+      startTime: new Date().toISOString(),
+      duration: 31000,
+      totalTests: 1,
+      passedTests: 0,
+      failedTests: 0,
+      timedOutTests: 1,
+      skippedTests: 0,
+      testCases: [
+        {
+          title: 'checkout waits for the payment provider',
+          status: 'timedOut',
+          duration: 30000,
+          location: 'tests/checkout.spec.ts:12:3',
+          error: 'Test timeout of 30000ms exceeded.',
+        },
+      ],
+    },
+  });
+  const { items } = await (await request.get(`${base}/api/projects`)).json();
+  const project = items.find((p) => p.name === projectName);
+  const detail = await (await request.get(`${base}/api/projects/${project.id}`)).json();
+  const run = await (await request.get(`${base}/api/test-runs/${detail.testRuns[0].id}`)).json();
+  nudgeExecId = run.testCases[0].executionId;
+}
+
+/**
+ * Answers the nudges scene's reads in the browser: the assistant's status names
+ * a model, so the Setup nudge's question can be asked, and the diagnosis context
+ * of a cluster with a completed diagnosis reads no commits for want of an SCM
+ * token, as on an instance with none set.
+ */
+async function routeNudgeScene(page, clusterId) {
+  await page.route('**/api/assistant/status', (route) =>
+    route.fulfill({
+      json: { available: true, reason: null, provider: 'anthropic', model: 'claude-sonnet-4-5', toolMode: 'native' },
+    }),
+  );
+  await page.route(`**/api/failure-clusters/${clusterId}/context**`, async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    json.scmChanges = null;
+    json.coverage = {
+      ...json.coverage,
+      scm: {
+        hasLastGreen: true,
+        hasCommitRange: true,
+        baseCommitUsed: null,
+        provider: 'github',
+        commitsCount: 0,
+        filesCount: 0,
+        patchedFilesCount: 0,
+        patchesOmitted: false,
+        patchesTruncated: false,
+        baselineKind: 'run-green',
+        repositoryUrl: 'https://github.com/acme/shop',
+        range: { from: 'a1b2c3d', to: 'e4f5a6b' },
+        compareUrl: 'https://github.com/acme/shop/compare/a1b2c3d...e4f5a6b',
+        gitCommand: 'git log --oneline a1b2c3d..e4f5a6b',
+        error: null,
+        hasToken: false,
+      },
+    };
+    await route.fulfill({ response, json });
+  });
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -1605,6 +1702,46 @@ const SCENES = [
     ],
   },
   {
+    name: 'assistant-demo',
+    mode: 'demo',
+    description:
+      'The live demo’s assistant answering a prepared question with blocks computed from the seed (why a checkout test failed: the situation, the clues, the cluster, the diagnosed patch, the reproduce command and the ways to fix it): beside the page at 1280 px, and whole at 1280 and 390 px',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      // The demo's guided tour asks a first-time visitor their role; this scene is about the panel.
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.locator('[data-tour="situation"]').waitFor({ timeout: 90_000 });
+      const launcher = page.getByRole('button', { name: 'Ask Piwi' });
+      await launcher.click();
+      const panel = page.locator('[data-shot="assistant-panel"]');
+      await panel.locator('[data-assistant-empty]').getByRole('button', { name: 'Why did this test fail?' }).click();
+      await panel.locator('[data-assistant-read]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('wide');
+      // Tall enough for the whole answer, so one image shows every block: grown until the panel scrolls no more.
+      const scroller = panel.locator('[data-assistant-panel]');
+      const tall = async (width) => {
+        await page.setViewportSize({ width, height: 860 });
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const hidden = await scroller.evaluate((node) => node.scrollHeight - node.clientHeight);
+          if (hidden <= 0) break;
+          await page.setViewportSize({ width, height: page.viewportSize().height + hidden + 40 });
+        }
+        await scroller.evaluate((node) => node.scrollTo({ top: 0 }));
+        await settle();
+      };
+      await tall(1280);
+      await shoot('blocks', { of: '[data-shot="assistant-panel"]' });
+      await tall(390);
+      await shoot('phone', { of: '[data-shot="assistant-panel"]' });
+    },
+    outputs: ['assistant-demo-wide.png', 'assistant-demo-blocks.png', 'assistant-demo-phone.png'],
+  },
+  {
     name: 'assistant-proposal',
     description:
       'A change the assistant proposes, in the panel on the fixed answer: the card with Apply and Dismiss, then the same card applied, at 1280 and 390 px',
@@ -1634,6 +1771,54 @@ const SCENES = [
       'assistant-proposal-phone.png',
       'assistant-proposal-phone-applied.png',
       'assistant-proposal-wide-applied.png',
+    ],
+  },
+  {
+    name: 'assistant-nudges',
+    description:
+      'The three nudges in place, at 1280 and 390 px: Setup with undecided capabilities (Ask), a cluster diagnosis that read no commits for want of an SCM token, and a timed-out failure in a project without capture fixtures (Show me)',
+    prepare: prepareNudgeFailure,
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle, goto }) {
+      const clusterId = 3;
+      await routeNudgeScene(page, clusterId);
+      const pages = [
+        ['setup', '/setup'],
+        ['cluster', `/failure-clusters/${clusterId}`],
+        ['failure', `/test-run-cases/${nudgeExecId}`],
+      ];
+      for (const [width, height, suffix] of [
+        [1280, 860, ''],
+        [390, 844, '-phone'],
+      ]) {
+        await page.setViewportSize({ width, height });
+        for (const [label, path] of pages) {
+          // Each page view gets the browser's weekly budget afresh.
+          await page.evaluate(() => localStorage.removeItem('piwi-nudges'));
+          await goto(path);
+          const nudge = page.locator('[data-shot="assistant-nudge"]');
+          await nudge.waitFor({ timeout: 90_000 });
+          // Centered by scrolling the panel that holds it, so the page header stays in place.
+          await nudge.evaluate((node) => {
+            let panel = node.parentElement;
+            while (panel && !/(auto|scroll)/.test(getComputedStyle(panel).overflowY)) panel = panel.parentElement;
+            if (!panel) return;
+            const offset = node.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+            panel.scrollTop += offset - (panel.clientHeight - node.offsetHeight) / 2;
+          });
+          await settle();
+          await shoot(`${label}${suffix}`);
+        }
+      }
+    },
+    outputs: [
+      'assistant-nudges-setup.png',
+      'assistant-nudges-cluster.png',
+      'assistant-nudges-failure.png',
+      'assistant-nudges-setup-phone.png',
+      'assistant-nudges-cluster-phone.png',
+      'assistant-nudges-failure-phone.png',
     ],
   },
   {
@@ -6454,7 +6639,11 @@ async function main() {
   let written = 0;
   try {
     for (const [mode, group] of byMode) {
-      const server = flags.url ? { base: flags.url, stop: () => {} } : await startServer({ mode });
+      const server = flags.url
+        ? { base: flags.url, stop: () => {} }
+        : mode === 'demo'
+          ? await startBuiltDemo()
+          : await startServer({ mode });
       try {
         for (const scene of group) {
           try {

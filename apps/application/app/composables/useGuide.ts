@@ -2,7 +2,7 @@ import type { Config, Driver, DriveStep, PopoverDOM } from 'driver.js';
 import { docsUrl } from '#shared/docs';
 import { findGuideAnchor, type GuideAnchor } from '#shared/guide-anchors/index.mjs';
 import { escapeGuideHtml, guideMarkup } from '~/utils/guide/markup';
-import { anchorSelector, stopRoute } from '~/utils/guide/stops';
+import { anchorSelector, opensLayer, stopRoute } from '~/utils/guide/stops';
 import type { GuideRun, GuideStop } from '~/utils/guide/types';
 
 /** How long a stop waits for its anchor to render before it shows centered. */
@@ -35,6 +35,12 @@ const MOVING_CLASS = 'piwi-guide-moving';
 const PAGING_CLASS = 'piwi-guide-paging';
 /** On the popover once its stop is fully shown: the cutout on the target, the popover in place. */
 const SETTLED_ATTRIBUTE = 'data-guide-settled';
+/**
+ * What marks a Reka UI layer (a popover, a menu, a dialog). Reka counts focus
+ * and clicks in a marked element that comes after a layer as inside that
+ * layer, as for a menu opened from it, so the layer stays open.
+ */
+const LAYER_ATTRIBUTE = 'data-dismissable-layer';
 /** How often the shown target is checked for having moved, or been replaced by the page. */
 const TARGET_CHECK_MS = 250;
 /** What the user does to move the page: after one, the guide no longer scrolls its target back into view. */
@@ -557,7 +563,10 @@ export function useGuide() {
    * on a stop shown centered for want of its anchor the line saying when the
    * anchor shows, the docs link, room above the target for a popover that
    * opens above it, room under it for one that opens below it (every popover
-   * below `sm`), and focus on Next.
+   * below `sm`), and focus on Next. On a stop whose anchor sits in a layer its
+   * reveal opened (a popover, a menu), the popover is marked as a layer opened
+   * from that one, so Next taking focus leaves that layer, and the anchor in
+   * it, open.
    */
   function decorate(run: RunningGuide, popover: PopoverDOM, index: number | undefined, element?: Element): void {
     const { words } = run.guide;
@@ -570,6 +579,7 @@ export function useGuide() {
     wrapper.dataset.guideStop = guideStop?.id ?? '';
     wrapper.dataset.guideAnchor = centered ? '' : (anchor?.id ?? '');
     Object.assign(wrapper.dataset, run.guide.dataset);
+    if (!centered && opensLayer(anchor)) wrapper.setAttribute(LAYER_ATTRIBUTE, '');
     // The popover is fixed: driver.js's scrollIntoView call on it does nothing.
     wrapper.scrollIntoView = () => {};
     closeButton.innerHTML = CLOSE_ICON;

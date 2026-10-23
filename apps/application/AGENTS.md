@@ -213,9 +213,11 @@ the scene name _is_ the image name and `npm run app:screens:docs` regenerates ev
 **Every scene declares the surface it captures** via `mode`: `web` (the default) is the dashboard as a browser serves
 it; `tour` is the web server with the demo's guided tour switched on (`NUXT_PUBLIC_DEMO_TOUR=true`), for scenes of the
 tour itself; `desktop` is the Tauri shell — the server runs with `NUXT_PUBLIC_DESKTOP=true` and the built-in mocked
-Tauri bridge is injected, so no shell build is needed (shape the mock per scene with `link` / `inspection`). Pick `web`
-for anything a browser user sees: desktop-only chrome such as the sidebar's back/forward pair would otherwise
-misrepresent the app in a full-viewport capture. A run covering several modes boots one server per mode, web first.
+Tauri bridge is injected, so no shell build is needed (shape the mock per scene with `link` / `inspection`); `demo` is
+the built demo SPA (`npm run app:generate:demo` first), served from its `/demo/` sub-path, for what only the demo
+build does, such as its assistant's prepared answers. Pick `web` for anything a browser user sees: desktop-only chrome
+such as the sidebar's back/forward pair would otherwise misrepresent the app in a full-viewport capture. A run covering
+several modes boots one server per mode, web first.
 
 | Command                          | Purpose                                                            |
 | -------------------------------- | ------------------------------------------------------------------ |
@@ -936,8 +938,11 @@ language, the stops with their copy, the words of the popover's controls) and op
 anchor's main page when that is a fixed path), runs the anchor's reveal, scrolls the panels holding it and highlights
 it. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup). A stop whose anchor does not render
 shows centered, with the anchor's `shownWhen` under its body; an `absent` stop does so at once, without opening a page
-or waiting. Until the user scrolls, clicks or types, the engine scrolls a target that content loading above pushed out
-of view back into it. The popover carries `data-guide`, `data-guide-stop`, `data-guide-anchor` (empty when centered),
+or waiting. A stop whose anchor sits in what an `open` step opened (`opensLayer`) marks its popover
+`data-dismissable-layer`, so Reka UI counts it as a layer opened from that one: Next taking focus leaves a popover
+holding the anchor open (`scripts/check-demo-runtime.mjs` plays a guide in the run's **Details** popover to hold it).
+Until the user scrolls, clicks or types, the engine scrolls a target that content loading above pushed out of view
+back into it. The popover carries `data-guide`, `data-guide-stop`, `data-guide-anchor` (empty when centered),
 `data-guide-settled` once settled, `lang` and the run's `dataset`, which is what the checks read;
 `app/assets/css/guide.css` themes it (`piwi-guide*` classes).
 
@@ -1020,8 +1025,7 @@ stops), `resolvers.ts` (`GUIDE_RESOLVERS`) and `run.ts` (the `GuideRun` the engi
 - **Limits**: 3–7 stops; a title ≤ 60 characters and a body ≤ 360, a guide title ≤ 60 and a one-line summary ≤ 80;
   English, in the docs' voice ([`apps/docs/AGENTS.md`](../docs/AGENTS.md#voice)); `**bold**` the only markup, a
   dashboard label bold and spelled as the screen shows it. A stop on the page the guide is already on adds no query
-  value, since a page reads its `?tab=` when it opens. No stop on an anchor inside a popover (the engine's focus on
-  **Next** closes it) or a modal.
+  value, since a page reads its `?tab=` when it opens. No stop on an anchor inside a modal.
 - **Checks**: `tests/unit/authored-guides.test.ts` (the anchors, pages, resolvers, `requires`, limits, and every bold
   label against the source of the component setting the stop's anchor, the component carrying it or the page's
   files, so a renamed label fails; the resolvers on stubbed routes; the docs page listing every guide),
@@ -1116,16 +1120,18 @@ composed guide through `useGuide`.
   is the stored calls of all its answers: a card, a choice or a patch target outside it is refused, and the panel
   links `piwi:<type>/<id>` only to one in it. A read tool whose top-level `id` is an entity gets its `TOOL_ENTITY` line.
 - **Guide plans are checked server-side** (`server/utils/assistant/guides.ts`), and `find_anchors` filters the same
-  way: registry anchors only, their `requires` holding for this user and instance (never a demo-only one), each
-  route on one of its anchor's pages, its ids readable by the user (`checkRouteEntities`, as `checkEntityScope` checks
+  way: registry anchors only, their `requires` holding for this user and instance (never a demo-only one; on a
+  project's pages a capability follows that project's states, read by `readProjectStates`), each route on one of its
+  anchor's pages, its ids readable by the user (`checkRouteEntities`, as `checkEntityScope` checks
   an MCP tool's), a route wherever the anchor's page has an id the user is not on, at most 7 stops, copy within the
   tour's limits with `**bold**` only. A `navigate` route is checked the same way. A page with another kind of `[id]`
   gets its `ROUTE_ENTITIES` line, or its routes are refused. The question's context lists the anchors rendered on the
   page (`renderedAnchors`, the visible `data-tour` values), which `find_anchors` ranks first.
 - **A change is a proposal the user applies; the model never writes.** `propose_change` makes a `proposal` block from
   the closed registry `ASSISTANT_ACTIONS` (`shared/assistant-actions.ts`), shown only when the action's parameters
-  pass its schema, its target is an entity of the conversation of the kind it changes, and the user holds its
-  permission on the target's project (on the instance when it has no target). **Apply** calls the action's own REST
+  pass its schema, its target is an entity of the conversation of the kind it changes, its capability is declined
+  neither for the target's project nor on the instance (a project may enable one the instance declined), and the user
+  holds its permission on the target's project (on the instance when it has no target). **Apply** calls the action's own REST
   route from the browser with the user's session (`assistantActionRequest`), then records the outcome through
   `PATCH …/messages/:messageId/proposal`. A new action is one registry entry naming an existing route, its method, the
   permission that route declares in `x-required-permission` and the pure path and body builders;
@@ -1135,6 +1141,43 @@ composed guide through `useGuide`.
   `shared/`. Which variables the environment sets, and a field's value, go only to a user who may open its page; a
   value comes from a `READERS` line that reads it as that page's own endpoint does, a secret only as set or not set, a
   variable's value never.
+- **The demo answers prepared questions, each computed from the seed.** With no model, the demo's assistant answers
+  `DEMO_ASSISTANT_QUESTIONS` (`shared/demo/assistant-questions.mjs`: each question's answer, the pages it is offered
+  on, which are the demo's **Ask about this page** suggestions, and a seeded sample route). `app/demo/api/assistant-match.ts`
+  matches a typed question to an answer by its words and its page; `app/demo/api/assistant-answers.ts` computes the
+  answer from the in-browser database through the shared handlers the read tools call, each read streamed as the
+  `tool` the server's assistant would call, with the entities it named, its blocks made through
+  `checkAssistantBlock`, its guides from `rankAnchors` (on a project's pages, with that project's capability states,
+  as the server reads them) and the authored guides, its proposals held to the action's capability and permission on
+  the target's project, and a reply to one of its blocks answered with the follow-up. A question no
+  answer matches gets the page's prepared questions to pick from and the authored guides that fit it. Never write a
+  seeded fact into an answer: read it. `tests/unit/demo-assistant-answers.test.ts` computes every answer at its sample
+  on the generated seed and `scripts/check-demo-runtime.mjs` asks one of each from the panel in the built demo; a seed
+  change that breaks one updates the answer or its sample, never the check.
+
+### Nudges
+
+A nudge is the one thing the assistant shows unasked: a suggestion on a page, offering an authored guide (**Show me**)
+or a question the panel opens on and asks (**Ask**), when a rule over what the page already loaded holds.
+
+- **One registry**: `NUDGES` in `app/utils/nudges/nudges.ts`, all pure. A nudge has an id, its page (a pattern of
+  `app/pages`), its rule over that page's facts (`NudgePageFacts`), its offer, its words (a title ≤ 60 characters and
+  one or two plain sentences, in the docs' voice) and its `requires`; a guide offer also needs its guide's `requires`,
+  a question an AI model. Its id is in `ASSISTANT_NUDGE_IDS` (`shared/assistant-nudges.ts`), the only ids the
+  dismissal routes accept, which their meta's `enum` lists. A new nudge is its id there and in both routes' `enum`,
+  its `NUDGES` entry, its page placing `<AssistantNudge page="…" :facts="…">` and its row on
+  `apps/docs/features/guides.md`; `tests/unit/assistant-nudges.test.ts` checks the ids, the placement, the copy and
+  each rule both ways.
+- **No model call, ever, and no fetch of its own**: a rule reads only what its page already loaded.
+- **The budget keeps them rare**: a page view shows one nudge at most and asks the budget once, and a browser shows at
+  most `NUDGE_BUDGET` (3) in seven days, counted in `localStorage['piwi-nudges']` (`app/utils/nudges/budget.ts`).
+  Never raise it to make room for a nudge.
+- **A dismissal lives on the server**, one row per owner and nudge in `assistant_nudge_dismissals` (the owner as
+  `assistantOwnerOf` reads it: null with authentication off, when a dismissal holds for the whole instance), through
+  `shared/handlers/assistant-nudges.ts`, shared with the demo; deleting a user deletes theirs. Never keep one in the
+  browser alone: **Don't show again** holds in every browser.
+- **Declining the assistant hides every nudge**: `AssistantNudge` renders nothing and the dismissal routes answer 403.
+  The card renders in the browser only, after the page's first paint.
 
 ## Performance
 

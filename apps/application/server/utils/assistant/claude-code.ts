@@ -14,15 +14,21 @@
  * ({@link claudeCodeMaxTurns}) behind it; the turn's time limit, after which
  * the CLI is killed; the tokens the daily caps leave, checked before the run.
  */
+import { ASSISTANT_BLOCK_LIMITS } from '#shared/assistant-blocks';
 import type { AiChatMessage } from '../ai-tool-calls';
 import { runClaudeCliAgent } from '../ai-claude-cli';
 import { createAssistantAnswer, turnTimeoutError, type AssistantTurnResult, type AssistantTurnUsage } from './answer';
 import type { AssistantTurnOptions } from './loop';
 import { mintAssistantTurnToken } from './turn-token';
 
-/** The model turns of a run: one per read tool call the limit allows, three for blocks, one for the answer. */
+/**
+ * The model turns of a run: one per read tool call the limit allows, one per
+ * block an answer can hold (each card, question, checklist or guide is a call
+ * of its own), one for a block call fixed after its check refused it, and one
+ * for the answer.
+ */
 export function claudeCodeMaxTurns(maxToolCalls: number): number {
-  return maxToolCalls + 4;
+  return maxToolCalls + ASSISTANT_BLOCK_LIMITS.maxBlocks + 2;
 }
 
 /** How long a turn's token outlives its time limit, while the killed CLI exits. */

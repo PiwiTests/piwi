@@ -2820,3 +2820,27 @@ export const assistantUsage = sqliteTable(
     ownerIdx: index('idx_assistant_usage_owner').on(t.ownerId, t.createdAt),
   }),
 );
+
+// The nudges a user dismissed for good: one row per owner and nudge, so a nudge
+// dismissed in one browser stays dismissed in every other. With authentication
+// off every visitor is the same virtual administrator and `owner_id` is null, so
+// a dismissal holds for the whole instance.
+export const assistantNudgeDismissals = sqliteTable(
+  'assistant_nudge_dismissals',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'cascade' }), // null when authentication is off
+    nudgeId: text('nudge_id').notNull(), // one of ASSISTANT_NUDGE_IDS (shared/assistant-nudges.ts)
+    dismissedAt: integer('dismissed_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    ownerIdx: uniqueIndex('idx_assistant_nudge_dismissals_owner')
+      .on(t.ownerId, t.nudgeId)
+      .where(sql`owner_id IS NOT NULL`),
+    sharedIdx: uniqueIndex('idx_assistant_nudge_dismissals_shared')
+      .on(t.nudgeId)
+      .where(sql`owner_id IS NULL`),
+  }),
+);

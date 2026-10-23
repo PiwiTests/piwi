@@ -3,8 +3,9 @@
  * registry, with parameters its schema takes, on an entity a tool result of
  * the conversation named, of the kind the action changes, and only when the
  * user holds the action's permission on that entity's project (on the
- * instance for an instance-wide action) and the instance has not declined its
- * capability. A shown card carries its target's project for the route.
+ * instance for an instance-wide action) and neither that project nor the
+ * instance has declined its capability (a project may enable one the instance
+ * declined). A shown card carries its target's project for the route.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
@@ -18,7 +19,7 @@ delete process.env.PIWI_DESKTOP_TOKEN;
 vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
 
 const tools = await import('../../server/utils/assistant/tools');
-const { setInstanceDecisions } = await import('#shared/handlers/capabilities');
+const { setInstanceDecisions, setProjectDecisions } = await import('#shared/handlers/capabilities');
 type McpContext = import('../../server/utils/mcp/tools').McpContext;
 
 const context = (access: AccessSummary, scope: McpContext['scope']): McpContext => ({
@@ -195,6 +196,29 @@ describe('propose_change', () => {
     await setInstanceDecisions(db as never, { quarantine: 'declined' });
     const declined = await propose(administrator, { action: 'quarantine-test', target: { type: 'test-case', id: 1 } });
     expect(declined.content).toContain('quarantine-test needs the quarantine capability, declined on this instance');
+  });
+
+  test("refuses an action of a capability its target's project declined, and follows a project enabling it", async () => {
+    await setProjectDecisions(db as never, 1, { quarantine: 'declined' });
+    const declined = await propose(administrator, { action: 'quarantine-test', target: { type: 'test-case', id: 1 } });
+    expect(declined).toMatchObject({ isError: true });
+    expect(declined.content).toContain('quarantine-test needs the quarantine capability, declined for project 1');
+    const release = await propose(maintainer, { action: 'release-test', target: { type: 'test-case', id: 1 } });
+    expect(release.content).toContain('declined for project 1');
+    // An action of another capability is not concerned.
+    expect(
+      (await propose(administrator, { action: 'resolve-cluster', target: { type: 'cluster', id: 1 } })).block,
+    ).toMatchObject({ projectId: 1 });
+
+    // A project enabling a capability the instance declined takes the card on its own tests.
+    await setInstanceDecisions(db as never, { quarantine: 'declined' });
+    await setProjectDecisions(db as never, 1, { quarantine: 'enabled' });
+    const enabled = await propose(maintainer, { action: 'quarantine-test', target: { type: 'test-case', id: 1 } });
+    expect(enabled.block).toMatchObject({
+      action: 'quarantine-test',
+      target: { type: 'test-case', id: 1 },
+      projectId: 1,
+    });
   });
 
   test('is a block tool: it does not count toward the read limit', async () => {

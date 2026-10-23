@@ -125,7 +125,7 @@ export function useAssistant() {
 
   /** The `app/pages` pattern of the current page, for its suggestions. */
   const currentPage = computed(() => pageContext().page ?? null);
-  const suggestions = computed(() => assistantSuggestionsFor(currentPage.value));
+  const suggestions = computed(() => assistantSuggestionsFor(currentPage.value, Boolean(config.public.demoMode)));
 
   function apiUrl(path: string): string {
     return `${(config.app.baseURL || '/').replace(/\/$/, '')}${path}`;

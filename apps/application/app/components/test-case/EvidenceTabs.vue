@@ -52,11 +52,6 @@ const props = defineProps<{
   };
   /** Inline-help topic for the card header. */
   help?: HelpTopicKey;
-  /**
-   * The page's contextual nudge already offers the fixtures decision under the
-   * headline, so the footer sentence stays off to avoid saying it twice.
-   */
-  suppressFixturesFooter?: boolean;
   /** The project's resolved fixtures state, from the page's capability composable. */
   fixturesState?: CapabilityState;
   /** Whether the viewer may write the footer's decline decisions. */
@@ -280,9 +275,8 @@ const hasNoEvidence = computed(
 
 // The footer names the sources the capture fixtures would add, shown only while
 // the project has not decided on them. A declined project drops it entirely (the
-// tabs are already gone), and the page's nudge suppresses it when it offers the
-// same decision under the headline.
-const showFixturesFooter = computed(() => !props.suppressFixturesFooter && fixturesState.value === 'undecided');
+// tabs are already gone).
+const showFixturesFooter = computed(() => fixturesState.value === 'undecided');
 
 function computeDefault(): TabValue {
   // A pass that needed a retry leads with what differed between its attempts.

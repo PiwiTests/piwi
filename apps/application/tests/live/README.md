@@ -17,11 +17,12 @@ Uses its own port and a throwaway SQLite DB under `.live-temp/diagnosis/`.
 ## Assistant — `assistant-live.spec.ts`
 
 The assistant's answers to about 150 questions over the demo seed, measured against a real model. The questions are
-in `assistant-questions.ts`, spread over seven topics (why a failure happened, flaky tests, what changed in a run,
-where a setting is, how to set something up, what Piwi is, show-me guides); some are asked on a page, with the page
-context the panel sends. Each names the tools a good answer calls, the facts it must say (from the failure stories,
-the demo examples, the seed or the bundled docs), the blocks that fit it and, for a guide, the anchors it should stop
-on. `tests/unit/assistant-questions.test.ts` checks the set itself in the normal unit suite, with no model.
+in `assistant-questions.ts`, spread over eight topics (why a failure happened, flaky tests, what changed in a run,
+where a setting is, how to set something up, what Piwi is, show-me guides, changes to apply); some are asked on a
+page, with the page context the panel sends. Each names the tools a good answer calls, the facts it must say (from the
+failure stories, the demo examples, the seed or the bundled docs), the blocks that fit it (a proposal card for a
+change) and, for a guide, the anchors it should stop on. `tests/unit/assistant-questions.test.ts` checks the set
+itself in the normal unit suite, with no model.
 
 ```bash
 OPENCODE_API_KEY=<key> npm run app:test:assistant:live

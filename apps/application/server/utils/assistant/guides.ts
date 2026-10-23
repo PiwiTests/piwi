@@ -3,18 +3,20 @@
  * searches it for the anchors this user can see on this instance, and every
  * guide plan, and every page a `navigate` block opens, is checked here before
  * it is sent. A plan's anchors must exist and render for the user (their
- * `requires`: a capability not declined, the permission on the page's project
- * or on any, the desktop app, never a demo-only one); each stop's route must
+ * `requires`: a capability not declined, by the page's project on its pages
+ * or by the instance, the permission on the page's project or on any, the
+ * desktop app, never a demo-only one); each stop's route must
  * open one of its anchor's pages and name only entities the user can read; a
  * stop on a page with an id needs a route unless the user is already there;
  * its copy fits the tour's limits, with `**bold**` as the only markup.
  */
 import { eq } from 'drizzle-orm';
-import { GUIDE_ANCHORS, findGuideAnchor, type GuideAnchor } from '#shared/guide-anchors/index.mjs';
+import { GUIDE_ANCHORS, findGuideAnchor } from '#shared/guide-anchors/index.mjs';
 import type { AssistantGuidePlan, AssistantPageContext } from '#shared/assistant';
-import type { CapabilityId, CapabilityState } from '#shared/capabilities';
-import { can, holdsAnywhere, type AccessSummary } from '#shared/permissions';
 import { isFixedPage, routeOnPage } from '#shared/guide-stops';
+import { anchorUnavailable, guideMarkupProblem, needsRoute, type AnchorFacts } from '#shared/guide-anchor-search';
+import type { CapabilityId, CapabilityState } from '#shared/capabilities';
+import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { resolveInstanceStates } from '#shared/handlers/setup-status';
 import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { dashboardActorFor, loadDashboardDefinition } from '#shared/handlers/dashboards';
@@ -33,145 +35,34 @@ import {
   scopeAllows,
 } from '../project-access';
 
-/** The most anchors one `find_anchors` call returns. */
-const FIND_ANCHORS_LIMIT = 8;
+export { anchorUnavailable, findAnchors, guideMarkupProblem, type AnchorFacts } from '#shared/guide-anchor-search';
 
-/** What an anchor's `requires` is checked against. */
-export interface AnchorFacts {
-  states: Record<CapabilityId, CapabilityState>;
-  access: AccessSummary;
-  desktop: boolean;
+/** The anchor facts of one answer, with the capability states of each project a check named, read once. */
+export interface AnswerAnchorFacts extends AnchorFacts {
+  projectStates: Map<number, Record<CapabilityId, CapabilityState>>;
 }
 
-export async function loadAnchorFacts(db: DbClient, ctx: McpContext): Promise<AnchorFacts> {
-  return { states: await resolveInstanceStates(db), access: ctx.access, desktop: isDesktopRuntime() };
-}
-
-/**
- * Why an anchor does not render for this user here, or null when it does. A
- * permission is checked on `projectId` when the page shows a project, on any
- * project otherwise.
- */
-export function anchorUnavailable(anchor: GuideAnchor, facts: AnchorFacts, projectId: number | null): string | null {
-  const requires = anchor.requires;
-  if (!requires) return null;
-  if (requires.demo) return 'it shows in the live demo only';
-  if (requires.desktop && !facts.desktop) return 'it shows in the desktop app only';
-  if (requires.capability) {
-    const state = facts.states[requires.capability];
-    if (state === 'declined' || state === 'not-applicable') {
-      return `it needs the ${requires.capability} capability, ${state} on this instance`;
-    }
-  }
-  if (requires.permission) {
-    const holds =
-      projectId !== null
-        ? can(facts.access, requires.permission, projectId)
-        : holdsAnywhere(facts.access, requires.permission);
-    if (!holds) {
-      return `it needs the ${requires.permission} permission${projectId !== null ? ` on project ${projectId}` : ''}, which the user does not hold`;
-    }
-  }
-  return null;
-}
-
-// ── find_anchors ──────────────────────────────────────────────────────────────
-
-const STOP_WORDS = new Set([
-  'the',
-  'and',
-  'for',
-  'how',
-  'where',
-  'what',
-  'which',
-  'can',
-  'does',
-  'with',
-  'this',
-  'that',
-]);
-
-/** A word as matched: lower case, a plural `s` dropped. */
-function stem(word: string): string {
-  return word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word;
-}
-
-function words(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w))
-    .map(stem);
-}
-
-/** Whether a query word names a text's word: the same, or one starting the other when both are long. */
-function matches(word: string, tokens: readonly string[]): boolean {
-  return tokens.some(
-    (t) => t === word || (word.length >= 5 && t.startsWith(word)) || (t.length >= 5 && word.startsWith(t)),
-  );
-}
-
-/** Whether `route` opens one of the anchor's pages. */
-function rendersOn(anchor: GuideAnchor, route: string | null | undefined): boolean {
-  return route ? anchor.pages.some((page) => routeOnPage(route, page)) : false;
-}
-
-/** Whether a stop at this anchor needs a route: its main page has an id, and the user is not on one of its pages. */
-function needsRoute(anchor: GuideAnchor, route: string | null | undefined): boolean {
-  const main = anchor.pages[0] ?? '*';
-  return main !== '*' && !isFixedPage(main) && !rendersOn(anchor, route);
-}
-
-/**
- * The anchors matching a query that render for this user: those on the
- * user's page first, then the others, each best first. Each query word found
- * in the id, the description, the help topic, the kind or the condition
- * scores. The page's anchors are the ones the browser listed as rendered when
- * the question was asked, or, without that list, those of the page its route
- * opens; the layout's, on every page, are not counted as the page's.
- */
-export function findAnchors(query: string, facts: AnchorFacts, context: AssistantPageContext | null) {
-  const wanted = words(query);
-  const projectId = context?.projectId ?? null;
-  const rendered = context?.anchors ? new Set(context.anchors) : null;
-  const scored = GUIDE_ANCHORS.filter((anchor) => !anchorUnavailable(anchor, facts, projectId))
-    .map((anchor) => {
-      const fields: Array<[string, number]> = [
-        [anchor.id, 3],
-        [anchor.describes, 2],
-        [anchor.help ?? '', 2],
-        [anchor.kind, 1],
-        [anchor.shownWhen ?? '', 1],
-      ];
-      const tokens = fields.map(([text, weight]) => [words(text), weight] as const);
-      const score = wanted.reduce(
-        (n, w) => n + tokens.reduce((m, [t, weight]) => m + (matches(w, t) ? weight : 0), 0),
-        0,
-      );
-      const here = anchor.pages[0] !== '*' && (rendered ? rendered.has(anchor.id) : rendersOn(anchor, context?.route));
-      return { anchor, score, here };
-    })
-    .filter((m) => m.score > 0)
-    .sort((a, b) => Number(b.here) - Number(a.here) || b.score - a.score)
-    .slice(0, FIND_ANCHORS_LIMIT);
-  if (scored.length === 0) {
-    return {
-      anchors: [],
-      note: 'No anchor matches. Try the words the dashboard uses (a page, a tab, a section or a setting), or answer without a guide.',
-    };
-  }
+export async function loadAnchorFacts(db: DbClient, ctx: McpContext): Promise<AnswerAnchorFacts> {
   return {
-    anchors: scored.map(({ anchor, here }) => ({
-      id: anchor.id,
-      kind: anchor.kind,
-      pages: anchor.pages,
-      describes: anchor.describes,
-      ...(anchor.shownWhen ? { shownWhen: anchor.shownWhen } : {}),
-      ...(here ? { onThisPage: true } : {}),
-      ...(needsRoute(anchor, context?.route) ? { needsRoute: true } : {}),
-    })),
+    states: await resolveInstanceStates(db),
+    projectStates: new Map(),
+    access: ctx.access,
+    desktop: isDesktopRuntime(),
   };
+}
+
+/** The capability states of `projectId` (its decisions over the instance's), read into `facts` the first time. */
+export async function readProjectStates(
+  db: DbClient,
+  facts: AnswerAnchorFacts,
+  projectId: number,
+): Promise<Record<CapabilityId, CapabilityState>> {
+  let states = facts.projectStates.get(projectId);
+  if (!states) {
+    states = await resolveProjectStates(db, projectId);
+    facts.projectStates.set(projectId, states);
+  }
+  return states;
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -259,15 +150,28 @@ export interface GuideCheckEnv {
   checkRoute: (route: string) => Promise<RouteCheck>;
 }
 
-/** Why guide copy uses markup other than `**bold**`, or null. */
-export function guideMarkupProblem(text: string): string | null {
-  const rest = text.replace(/\*\*[^*\n]+?\*\*/g, '');
-  if (rest.includes('*')) return 'a lone * (only **bold** is allowed)';
-  if (rest.includes('`')) return 'backticks (only **bold** is allowed)';
-  if (/<[a-z/!]/i.test(rest)) return 'HTML (only **bold** is allowed)';
-  if (/\]\(/.test(rest)) return 'a link (only **bold** is allowed; the stop links its docs page itself)';
-  if (/[\r\n]/.test(rest)) return 'a line break (one paragraph)';
-  return null;
+/**
+ * The env an answer's guides and page links are checked in: its anchor facts
+ * with the capability states of the project of the user's page, and of each
+ * route's project once the route is checked, read into them; the routes
+ * checked as the user would open them.
+ */
+export async function answerGuideCheckEnv(
+  db: DbClient,
+  ctx: McpContext,
+  facts: AnswerAnchorFacts,
+  context: AssistantPageContext | null,
+): Promise<GuideCheckEnv> {
+  if (context?.projectId != null) await readProjectStates(db, facts, context.projectId);
+  return {
+    facts,
+    context,
+    checkRoute: async (route) => {
+      const checked = await checkRouteEntities(db, ctx, route);
+      if (checked.ok && checked.projectId !== null) await readProjectStates(db, facts, checked.projectId);
+      return checked;
+    },
+  };
 }
 
 /**

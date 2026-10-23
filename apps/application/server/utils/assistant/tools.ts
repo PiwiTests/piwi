@@ -31,7 +31,7 @@ import { toolsForCaller } from '../mcp/catalog';
 import type { McpContext, McpTool } from '../mcp/tools';
 import { BLOCK_TOOL_DEFS, FIND_ANCHORS, runBlockTool } from './blocks';
 import { AssistantEntitySet, extractEntities } from './entities';
-import { findAnchors, loadAnchorFacts, type AnchorFacts } from './guides';
+import { findAnchors, loadAnchorFacts, readProjectStates, type AnswerAnchorFacts } from './guides';
 import { getInstanceConfig } from './instance-config';
 import { ASSISTANT_LOCAL_SOURCE_TOOL } from './local-source';
 import { EXPLAIN_SETTING, explainSetting } from './settings';
@@ -268,7 +268,7 @@ export function createAssistantToolbox(opts: {
   const entities = new AssistantEntitySet(opts.entities);
   const usedIds = new Set<string>();
   const blockFailures = new Map<string, number>();
-  let facts: Promise<AnchorFacts> | null = null;
+  let facts: Promise<AnswerAnchorFacts> | null = null;
   const anchorFacts = () => (facts ??= loadAnchorFacts(opts.db, opts.ctx));
 
   async function runTool(call: AiToolCall): Promise<{ data: unknown; error?: string }> {
@@ -279,7 +279,10 @@ export function createAssistantToolbox(opts: {
       return { data: await explainSetting(opts.db, opts.ctx, String(call.arguments.fieldId ?? '')) };
     }
     if (call.name === FIND_ANCHORS.name) {
-      return { data: findAnchors(String(call.arguments.query ?? ''), await anchorFacts(), context) };
+      const anchors = await anchorFacts();
+      // An anchor on the pages of the user's project follows that project's capability states.
+      if (context?.projectId != null) await readProjectStates(opts.db, anchors, context.projectId);
+      return { data: findAnchors(String(call.arguments.query ?? ''), anchors, context) };
     }
     const tool = offered().has(call.name) ? byName.get(call.name) : undefined;
     if (!tool) return { data: null, error: `Unknown tool: ${call.name}. Call find_tools to look for one.` };

@@ -30,6 +30,7 @@ const {
   ask,
 } = useAssistant();
 const { can } = useAuth();
+const config = useRuntimeConfig();
 
 const scroller = useTemplateRef<HTMLElement>('scroller');
 const input = useTemplateRef<{ focus: () => void }>('input');
@@ -49,6 +50,15 @@ const contentProps = {
   onInteractOutside: (event: Event) => event.preventDefault(),
   'data-shot': 'assistant-panel',
 };
+
+/**
+ * The panel's width, and in the demo its top: under the demo banner, whose
+ * height the banner sets on the page (`--demo-banner-height`), so the header
+ * and its Close button stay clear of it.
+ */
+const contentClass = config.public.demoMode
+  ? 'max-w-none sm:max-w-lg top-(--demo-banner-height)'
+  : 'max-w-none sm:max-w-lg';
 
 /** From this width up the panel sits beside the page; below it, it covers the page. */
 const WIDE_QUERY = '(min-width: 640px)';
@@ -94,7 +104,7 @@ watch(open, (isOpen) => {
     description="Answers about your runs, failures and setup, from the data you can read."
     :content="contentProps"
     :ui="{
-      content: 'max-w-none sm:max-w-lg',
+      content: contentClass,
       description: 'sr-only',
       body: 'p-0 sm:p-0 flex flex-col min-h-0 overflow-hidden',
       footer: 'flex-col items-stretch',
@@ -109,6 +119,7 @@ watch(open, (isOpen) => {
           :aria-label="view === 'list' ? 'Back to the conversation' : 'Conversations'"
           :title="view === 'list' ? 'Back to the conversation' : 'Conversations'"
           :aria-pressed="view === 'list'"
+          data-tour="assistant-conversations-button"
           @click="view === 'list' ? (view = 'conversation') : showList()"
         />
         <UButton

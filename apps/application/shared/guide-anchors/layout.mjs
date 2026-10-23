@@ -1,4 +1,7 @@
-/** The guide anchors of the layout around every page: the sidebar, its destinations, the command palette and the user menu. */
+/**
+ * The guide anchors of the layout around every page: the sidebar, its destinations, the command palette, the user menu
+ * and the assistant's panel.
+ */
 
 /** @type {readonly import('./index.d.mts').GuideAnchor[]} */
 export const LAYOUT_ANCHORS = [
@@ -89,6 +92,80 @@ export const LAYOUT_ANCHORS = [
     describes:
       'The search button that opens the command palette (Ctrl+K): go to any page, or find a project, run, test or failure cluster.',
     doc: 'reference/keyboard-shortcuts#anywhere',
+    sample: { route: '/projects' },
+  },
+  {
+    id: 'assistant-launcher',
+    kind: 'action',
+    pages: ['*'],
+    describes:
+      'The sidebar’s Ask Piwi button, under the search, which opens the assistant’s panel to ask about your runs, failures and setup.',
+    requires: { capability: 'assistant' },
+    doc: 'features/assistant#asking-a-question',
+    sample: { route: '/projects' },
+  },
+  {
+    id: 'assistant-input',
+    kind: 'block',
+    pages: ['*'],
+    reveal: [{ open: 'assistant-launcher' }],
+    describes:
+      'The assistant panel’s question field, where Enter asks, with the line under it naming the model that answers and what is sent to it.',
+    shownWhen: 'When an AI model answers the assistant’s questions on this instance.',
+    requires: { capability: 'assistant' },
+    doc: 'features/assistant#asking-a-question',
+    sample: { route: '/projects' },
+  },
+  {
+    id: 'assistant-conversations-button',
+    kind: 'action',
+    pages: ['*'],
+    reveal: [{ open: 'assistant-launcher' }],
+    describes:
+      'The assistant panel’s Conversations button, which lists your earlier conversations, and goes back to the open one.',
+    shownWhen: 'When an AI model answers the assistant’s questions on this instance.',
+    requires: { capability: 'assistant' },
+    doc: 'features/assistant#asking-a-question',
+    sample: { route: '/projects' },
+  },
+  {
+    id: 'assistant-conversations',
+    kind: 'block',
+    pages: ['*'],
+    reveal: [{ open: 'assistant-launcher' }, { open: 'assistant-conversations-button' }],
+    describes:
+      'Your conversations with the assistant, the most recently active first, each to open again or delete; nobody else can read them.',
+    shownWhen: 'When an AI model answers the assistant’s questions on this instance.',
+    requires: { capability: 'assistant' },
+    doc: 'features/assistant#privacy',
+    sample: { route: '/projects' },
+  },
+  {
+    id: 'assistant-conversation',
+    kind: 'row',
+    pages: ['*'],
+    reveal: [{ open: 'assistant-launcher' }, { open: 'assistant-conversations-button' }],
+    describes:
+      'A conversation in the assistant panel’s list, named by its first question, with when it was last active; it opens the conversation again.',
+    shownWhen: 'When you have asked the assistant a question.',
+    requires: { capability: 'assistant' },
+    doc: 'features/assistant#asking-a-question',
+    sample: { route: '/projects' },
+  },
+  {
+    id: 'assistant-what-it-read',
+    kind: 'block',
+    pages: ['*'],
+    reveal: [
+      { open: 'assistant-launcher' },
+      { open: 'assistant-conversations-button' },
+      { open: 'assistant-conversation' },
+    ],
+    describes:
+      'What it read, under an answer of the assistant: the tools it called for that answer, each with a one-line summary, and the model.',
+    shownWhen: 'Under an answer of the conversation the assistant panel shows.',
+    requires: { capability: 'assistant' },
+    doc: 'features/assistant#what-an-answer-contains',
     sample: { route: '/projects' },
   },
   {
