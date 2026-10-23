@@ -1,5 +1,8 @@
 # In-app assistant
 
+- Status: accepted
+- Date: 2026-10-23
+
 A plan for an assistant inside the dashboard and the desktop app: a panel that answers questions about the user's
 runs, failures and configuration with the AI model the instance already uses, shows the answer on the real screens with
 a guided walkthrough, and proposes changes the user applies with a click. It reads the data through the MCP tools with

@@ -15,6 +15,13 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Recently shipped
 
+- **An in-app assistant and guides**: a panel that answers questions about your runs, failures and setup with the AI
+  model the instance already uses, reading only what you can read, through the MCP tools and the bundled docs. Its
+  answers show code, validated patches, choices with checkboxes, checklists and guides on the real screens, and propose
+  changes that apply only when you click. Fifteen written guides walk through common tasks with no model at all, from
+  the command palette, and every block a guide can point at is a tested anchor. Design record in
+  [adr/in-app-assistant.md](adr/in-app-assistant.md); see [the assistant](https://piwitests.dev/features/assistant) and
+  [guides](https://piwitests.dev/features/guides).
 - **Local runs in the editor**: a test run started from VS Code or a JetBrains IDE shows its progress in the status
   bar and reports back within a second of its end; its results, a partial run's included, overlay the latest CI run's
   failures, which follow the edits made to the file since; the failures view is a tree, one click runs the failing
