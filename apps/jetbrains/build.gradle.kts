@@ -76,10 +76,12 @@ intellijPlatform {
     publishing {
         token = providers.environmentVariable("PUBLISH_TOKEN")
     }
-    // `verifyIdes` lists `<type code>:<version>` pairs, comma-separated; each IDE is a large download.
+    // `verifyIdes` lists `<type code>:<version>` pairs, comma-separated; each IDE is a large download. The Marketplace
+    // refuses an upload that uses an internal API.
     pluginVerification {
         failureLevel = listOf(
             VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS,
+            VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES,
             VerifyPluginTask.FailureLevel.INVALID_PLUGIN,
         )
         ides {

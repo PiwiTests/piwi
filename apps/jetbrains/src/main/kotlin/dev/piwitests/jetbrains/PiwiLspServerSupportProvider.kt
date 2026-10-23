@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.configurations.GeneralCommandLine
+import com.intellij.execution.process.OSProcessHandler
 import com.intellij.execution.util.ExecUtil
 import com.intellij.javascript.nodejs.interpreter.NodeJsInterpreterManager
 import com.intellij.javascript.nodejs.interpreter.local.NodeJsLocalInterpreter
@@ -84,6 +85,10 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             .withCharset(Charsets.UTF_8)
             .withEnvironment(proxyEnvironment())
     }
+
+    /** The service's process, which [PiwiProjectService.watchServer] starts again when it ends while starting. */
+    override fun startServerProcess(): OSProcessHandler =
+        super.startServerProcess().also { project.service<PiwiProjectService>().watchServer(it) }
 
     /**
      * The IDE's HTTP proxy for the instance the project names ([REPRESENTATIVE_INSTANCE] stands in while none is saved),

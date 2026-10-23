@@ -2,6 +2,9 @@ package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.credentialStore.generateServiceName
+import com.intellij.execution.process.ProcessEvent
+import com.intellij.execution.process.ProcessHandler
+import com.intellij.execution.process.ProcessListener
 import com.intellij.ide.BrowserUtil
 import com.intellij.ide.impl.isTrusted
 import com.intellij.ide.passwordSafe.PasswordSafe
@@ -38,9 +41,7 @@ import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
-import com.intellij.platform.lsp.api.LspServer
 import com.intellij.platform.lsp.api.LspServerManager
-import com.intellij.platform.lsp.api.LspServerManagerListener
 import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.psi.PsiManager
 import com.intellij.util.concurrency.AppExecutorUtil
@@ -294,33 +295,25 @@ class PiwiProjectService(private val project: Project) : Disposable {
         }
     }
 
-    /** When each editor service was first seen starting, by server; and when one that failed to start was started again. */
-    private val serverStarts = ConcurrentHashMap<LspServer, Long>()
+    /** When an editor service that failed to start was started again. */
     private val serverRestarts = CopyOnWriteArrayList<Long>()
 
     /**
-     * Start the editor service again, two seconds later, when it stops while starting and none other runs: the IDE stops
-     * a service whose start failed. A few times only (`Glue.restartsService`), and never while Node.js is the problem.
+     * Start the editor service again, two seconds later, when its process, started now, ends while starting and none
+     * other runs: the IDE stops a service whose start failed. A few times only (`Glue.restartsService`), and never while
+     * Node.js is the problem.
      */
-    fun watchServer() {
-        LspServerManager.getInstance(project).addLspServerManagerListener(
-            object : LspServerManagerListener {
-                override fun serverStateChanged(lspServer: LspServer) {
-                    if (lspServer.descriptor !is PiwiLspServerDescriptor) return
-                    val now = System.currentTimeMillis()
-                    when (lspServer.state) {
-                        LspServerState.Initializing, LspServerState.Running -> serverStarts.putIfAbsent(lspServer, now)
-                        LspServerState.ShutdownNormally, LspServerState.ShutdownUnexpectedly -> {
-                            val startedAt = serverStarts.remove(lspServer)
-                            if (gone.value(null) || startProblem != null) return
-                            if (!Glue.restartsService(startedAt, now, serverRestarts)) return
-                            AppExecutorUtil.getAppScheduledExecutorService().schedule(::restartIfStopped, 2, TimeUnit.SECONDS)
-                        }
-                    }
+    fun watchServer(process: ProcessHandler) {
+        val startedAt = System.currentTimeMillis()
+        process.addProcessListener(
+            object : ProcessListener {
+                override fun processTerminated(event: ProcessEvent) {
+                    if (gone.value(null) || startProblem != null) return
+                    if (!Glue.restartsService(startedAt, System.currentTimeMillis(), serverRestarts)) return
+                    AppExecutorUtil.getAppScheduledExecutorService().schedule(::restartIfStopped, 2, TimeUnit.SECONDS)
                 }
             },
             this,
-            false,
         )
     }
 
@@ -845,7 +838,6 @@ class PiwiProjectService(private val project: Project) : Disposable {
 class PiwiStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         val service = project.service<PiwiProjectService>()
-        service.watchServer()
         service.findPlaywright()
         service.watchConfigs()
         project.service<PiwiCoverageMarks>().start()
