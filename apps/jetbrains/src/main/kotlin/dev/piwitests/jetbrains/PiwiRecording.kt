@@ -1,5 +1,6 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
@@ -42,6 +43,7 @@ import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.ui.EditorNotifications
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.concurrency.AppExecutorUtil
@@ -113,10 +115,13 @@ class PiwiRecordings(private val project: Project) : Disposable {
         listeners.forEach { it() }
     }
 
-    /** The warnings to show in a document, of its recording and of the ended ones, where they show now. In a read action. */
-    fun warnings(document: Document): List<Pair<TextRange, String>> =
-        (sessions.values.filter { it.document == document }.flatMap { it.warnings } + kept[document].orEmpty())
-            .mapNotNull { mark -> mark.range(document)?.let { it to mark.message } }
+    /**
+     * The warnings to show in a document, of its recording and of the ended ones, where they show now; those of an ended
+     * recording with the other locators of their step as quick fixes. In a read action.
+     */
+    fun warnings(document: Document): List<RecordingWarningView> =
+        sessions.values.filter { it.document == document }.flatMap { it.warnings }.mapNotNull { it.view(document, fixes = false) } +
+            kept[document].orEmpty().mapNotNull { it.view(document, fixes = true) }
 
     /** A `piwi/recordingChanged` notification, from any thread; applied on the event thread. */
     fun changed(update: RecordingUpdate) {
@@ -191,8 +196,13 @@ class PiwiRecordings(private val project: Project) : Disposable {
         }
     }
 
+    /** Keeps the warnings of an ended recording, which offer their quick fixes then: the file is highlighted again. */
     internal fun keep(document: Document, marks: List<RecordingWarningMark>) {
-        if (marks.isNotEmpty()) kept.merge(document, marks) { before, added -> before + added }
+        if (marks.isEmpty()) return
+        kept.merge(document, marks) { before, added -> before + added }
+        ApplicationManager.getApplication().runReadAction {
+            PsiDocumentManager.getInstance(project).getPsiFile(document)?.let { DaemonCodeAnalyzer.getInstance(project).restart(it) }
+        }
     }
 
     internal fun ended(session: RecordingSession) {
@@ -337,7 +347,7 @@ class RecordingSession internal constructor(
         command = update.command
         val ending = state == "stopped" || state == "failed"
         if (!edited && (written || !ending || (state == "stopped" && steps > 0))) {
-            write(update.code.orEmpty(), update.importEdit, update.warnings.orEmpty())
+            write(update.code.orEmpty(), update.importEdit, update.warnings.orEmpty(), update.steps.orEmpty())
         }
         if (ending) end(update.message, failed = state == "failed") else refreshView()
     }
@@ -354,11 +364,12 @@ class RecordingSession internal constructor(
         val kept = warnings
         warnings = emptyList()
         if (open) recordings.keep(document, kept) else kept.forEach { it.marker.dispose() }
+        val blockEnd = block?.takeIf { it.isValid && written && !failed && open }?.let { document.createRangeMarker(it.endOffset, it.endOffset) }
         recordings.ended(this)
         Disposer.dispose(this)
         EditorNotifications.getInstance(project).updateNotifications(file)
         recordings.viewChanged()
-        notify(reason, failed, if (open) kept.size else 0)
+        notify(reason, failed, if (open) kept.size else 0, blockEnd)
     }
 
     internal fun refreshView() {
@@ -428,12 +439,12 @@ class RecordingSession internal constructor(
      * Writes `code` as the block, in one write command with the service's import edit: over the block when there is one,
      * else at the anchor, where the placement put it. Each write joins the recording's undo step.
      */
-    private fun write(code: String, importEdit: FileEdit?, warnings: List<RecordingWarning>) {
+    private fun write(code: String, importEdit: FileEdit?, warnings: List<RecordingWarning>, steps: List<RecordingStep>) {
         val text = Glue.recordedBlock(code, placement.indent)
         val current = block?.takeIf { it.isValid }
         val same = current != null && document.immutableCharSequence.subSequence(current.startOffset, current.endOffset).toString() == text
         if (same && importEdit == null) {
-            mark(warnings)
+            mark(warnings, steps)
             return
         }
         bracket.open(editor)
@@ -470,7 +481,7 @@ class RecordingSession internal constructor(
             }
         written = true
         tint()
-        mark(warnings)
+        mark(warnings, steps)
     }
 
     /** The tint over the block's lines, with the recording's mark in the gutter. */
@@ -491,8 +502,8 @@ class RecordingSession internal constructor(
         }
     }
 
-    /** Each warning on the text of its line of the block, which it shows on until that text changes. */
-    private fun mark(list: List<RecordingWarning>) {
+    /** Each warning on the text of its line of the block, which it shows on until that text changes, with its step. */
+    private fun mark(list: List<RecordingWarning>, steps: List<RecordingStep>) {
         warnings.forEach { it.marker.dispose() }
         val range = block?.takeIf { it.isValid }
         if (range == null) {
@@ -509,20 +520,50 @@ class RecordingSession internal constructor(
             val start = document.getLineStartOffset(line)
             val end = document.getLineEndOffset(line)
             val from = start + (end - start - chars.subSequence(start, end).trimStart().length)
-            if (from >= end) null else RecordingWarningMark(document.createRangeMarker(from, end), chars.subSequence(from, end).toString(), note)
+            if (from >= end) null else RecordingWarningMark(document.createRangeMarker(from, end), chars.subSequence(from, end).toString(), note, steps.getOrNull(warning.step))
         }
     }
 
-    private fun notify(reason: String?, failed: Boolean, warnings: Int) {
+    /**
+     * Says how the recording ended. Once a block is written, while the editor service runs, a test that holds it
+     * (`piwi/testAt` at the line the block ends on, `blockEnd`) gets **Run** and **Verify ×3**, which run it from where
+     * the block ends when clicked.
+     */
+    private fun notify(reason: String?, failed: Boolean, warnings: Int, blockEnd: RangeMarker?) {
         val text = if (failed && !written) reason ?: "The recording did not start." else Glue.recordingSummary(steps, warnings, file.name, reason)
-        val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(text, if (failed) NotificationType.WARNING else NotificationType.INFORMATION)
         val command = command
         val title = command?.title
-        if (failed && title != null) {
-            notification.addAction(NotificationAction.createSimpleExpiring(title) { PiwiCommands.execute(project, command.command, command.arguments.orEmpty()) })
+        val show = { runs: Boolean ->
+            val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+                .createNotification(text, if (failed) NotificationType.WARNING else NotificationType.INFORMATION)
+            if (failed && title != null) {
+                notification.addAction(NotificationAction.createSimpleExpiring(title) { PiwiCommands.execute(project, command.command, command.arguments.orEmpty()) })
+            }
+            if (runs && blockEnd != null) {
+                notification.addAction(NotificationAction.createSimpleExpiring(Glue.RUN_RECORDED) { runRecorded(blockEnd, null) })
+                notification.addAction(NotificationAction.createSimpleExpiring(Glue.VERIFY_RECORDED) { runRecorded(blockEnd, Glue.VERIFY_REPEAT) })
+            } else {
+                blockEnd?.dispose()
+            }
+            notification.notify(project)
         }
-        notification.notify(project)
+        val service = project.service<PiwiProjectService>()
+        val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull()
+        if (blockEnd == null || uri == null || !service.serverStarted()) return show(false)
+        val line = document.getLineNumber(blockEnd.startOffset)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val found = service.server()?.testAt(TestAtParams(uri, line, 0))?.orNull()
+            ApplicationManager.getApplication().invokeLater({ show(found?.location != null) }, project.disposed)
+        }
+    }
+
+    /** Run the test that holds the recorded block, from the line the block ends on now; `repeat` times to verify it. */
+    private fun runRecorded(blockEnd: RangeMarker, repeat: Int?) {
+        val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull()
+        if (blockEnd.isValid && uri != null) {
+            PiwiCommands.runTestAt(project, uri, document.getLineNumber(blockEnd.startOffset), 0, wholeSpec = false, repeat = repeat)
+        }
+        blockEnd.dispose()
     }
 
     override fun dispose() {
@@ -565,8 +606,8 @@ class DocumentChanges(document: Document, parent: Disposable) : Disposable {
     override fun dispose() = Unit
 }
 
-/** A recorded step's warning on the text of its line: shown while that text is unchanged. */
-class RecordingWarningMark(val marker: RangeMarker, private val text: String, val message: String) {
+/** A recorded step's warning on the text of its line, with the step: shown while that text is unchanged. */
+class RecordingWarningMark(val marker: RangeMarker, private val text: String, val message: String, private val step: RecordingStep? = null) {
     /** Where it shows in `document`; null once its line changed or was removed. */
     fun range(document: Document): TextRange? {
         if (!marker.isValid) return null
@@ -575,7 +616,19 @@ class RecordingWarningMark(val marker: RangeMarker, private val text: String, va
         if (range.endOffset > chars.length || chars.subSequence(range.startOffset, range.endOffset).toString() != text) return null
         return range
     }
+
+    /** Where it shows in `document`, with the other locators of its step when `fixes`; null once its line changed. */
+    fun view(document: Document, fixes: Boolean): RecordingWarningView? {
+        val range = range(document) ?: return null
+        return RecordingWarningView(range, text, message, if (fixes) Glue.locatorChoices(text, step) else emptyList())
+    }
 }
+
+/**
+ * A recording's warning where it shows: its range and the text there, its message, and the quick fixes that put another
+ * locator of its step in place of the written one, at offsets in that text.
+ */
+data class RecordingWarningView(val range: TextRange, val text: String, val message: String, val choices: List<Glue.LocatorChoice>)
 
 /**
  * Makes everything a recording writes one undo step: a start mark before its first write and a finish mark at its end,

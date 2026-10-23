@@ -57,6 +57,15 @@ describe('computeDistinctRunCounts', () => {
     expect(counts).toMatchObject({ totalTests: 4, passedTests: 3, failedTests: 1 });
   });
 
+  it('keeps `--repeat-each` repetitions apart when they carry no test id', () => {
+    const counts = computeDistinctRunCounts([
+      { title: 'pays', location: 'a.spec.ts:9:5', repeatEachIndex: 0, status: 'passed', retries: 0 },
+      { title: 'pays', location: 'a.spec.ts:9:5', repeatEachIndex: 1, status: 'failed', retries: 0 },
+      { title: 'pays', location: 'a.spec.ts:9:5', repeatEachIndex: 2, status: 'passed', retries: 0 },
+    ]);
+    expect(counts).toMatchObject({ totalTests: 3, passedTests: 2, failedTests: 1 });
+  });
+
   it('keeps tests apart by their describe path when they carry no test id', () => {
     const counts = computeDistinctRunCounts([
       { title: 'logs in', location: 'a.spec.ts:3:5', suitePath: ['as Alice'], status: 'failed', retries: 0 },
@@ -142,6 +151,11 @@ describe('toWireTestCase', () => {
     expect(out.error).toBe(undefined);
     expect(out.retries).toBe(undefined);
     expect(out.attempts).toBe(null);
+  });
+
+  it('carries the `--repeat-each` repetition, 0 for a case collected without one', () => {
+    expect(toWireTestCase({ type: 'complete', title: 't', location: 'l', repeatEachIndex: 2 }).repeatEachIndex).toBe(2);
+    expect(toWireTestCase({ type: 'begin', title: 't', location: 'l' }).repeatEachIndex).toBe(0);
   });
 
   it('carries per-attempt outcomes through', () => {
@@ -293,6 +307,7 @@ describe('toWireTestCase', () => {
       'networkRequests',
       'pageInventory',
       'pageState',
+      'repeatEachIndex',
       'resources',
       'retries',
       'shardIndex',

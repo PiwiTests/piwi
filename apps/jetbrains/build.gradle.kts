@@ -60,6 +60,9 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         version = providers.gradleProperty("pluginVersion")
+        // The Marketplace's "What's new": the release's `ide` entries as HTML, which the publish workflow puts in
+        // CHANGE_NOTES (`node scripts/ide-changelog.mjs --format html`). A build without it ships no change notes.
+        changeNotes = providers.environmentVariable("CHANGE_NOTES")
         ideaVersion {
             sinceBuild = providers.gradleProperty("pluginSinceBuild")
             untilBuild = provider { null }

@@ -29,6 +29,29 @@ object Glue {
         "playwright.config.mts", "playwright.config.cts",
     )
 
+    /** Whether a file name is a spec's, as the editor service reads specs (`checkout.spec.ts`, `cart.test.mjs`). */
+    fun isSpecFile(name: String): Boolean = SPEC_FILE.containsMatchIn(name)
+
+    private val SPEC_FILE = Regex("\\.(spec|test)\\.[cm]?[jt]sx?$")
+
+    /** How many times **Verify ×3** runs a test. */
+    const val VERIFY_REPEAT = 3
+
+    /** The actions the notification after a recording offers for the test that holds the block. */
+    const val RUN_RECORDED = "Run"
+    const val VERIFY_RECORDED = "Verify ×3"
+
+    /**
+     * What runs the test `piwi/testAt` found at a line of the spec at `uri`: by its id when Piwi knows it, else by its
+     * location; with `repeat`, by its location, that many times. Null outside every test.
+     */
+    fun testAtRun(uri: String, found: TestAtResult?, repeat: Int? = null): RunTestsArgs? {
+        val test = found?.test
+        if (test != null && repeat == null) return RunTestsArgs(uri, listOf(test.id))
+        val location = found?.location ?: return null
+        return RunTestsArgs(uri, emptyList(), locations = listOf(location), repeat = repeat)
+    }
+
     /** Whether a path, with either separator, names a Playwright config. */
     fun isPlaywrightConfig(path: String?): Boolean =
         path != null && path.substringAfterLast('/').substringAfterLast('\\') in PLAYWRIGHT_CONFIGS
@@ -124,12 +147,63 @@ object Glue {
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
     /**
-     * What a click on the status bar item does: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY` reads
-     * the instance again (Refresh), `NODE_SETTINGS` opens the Node.js settings, then starts the service again.
+     * The first entry of the status bar item's popup: `REFRESH` reads the latest run again (`piwi/refreshRun`), `RETRY`
+     * reads the instance again (Refresh), `NODE_SETTINGS` opens the Node.js settings, then starts the service again.
      */
     enum class StatusAction { REFRESH, RETRY, CONNECT, SETTINGS, NODE_SETTINGS, NONE }
 
-    data class StatusView(val text: String, val tooltip: String, val url: String?, val action: StatusAction)
+    /**
+     * The icon before the status bar text: Piwi's own, the connection's state (`CONNECT`, `UNREACHABLE`), a run in
+     * progress, the tests still failing, a run that passed, or a run that ended otherwise or a service that cannot
+     * start (`WARNING`).
+     */
+    enum class StatusIcon { PIWI, CONNECT, UNREACHABLE, RUNNING, FAILING, PASSED, WARNING }
+
+    /**
+     * What the status bar item shows: its text and tooltip, the page of the run it counts, its popup's first entry, its
+     * icon, and whether its text takes the error color, while tests of the run it counts fail.
+     */
+    data class StatusView(
+        val text: String,
+        val tooltip: String,
+        val url: String?,
+        val action: StatusAction,
+        val icon: StatusIcon = StatusIcon.PIWI,
+        val error: Boolean = false,
+    )
+
+    /**
+     * The context the status bar item speaks for: the one whose Playwright config folder holds `file` (a path, with
+     * either separator), the deepest when several do, else the first connected, else the first the instance did not
+     * answer, else the first. Null without a context.
+     */
+    fun statusContext(contexts: List<ContextStatus>, file: String?): ContextStatus? =
+        contexts.filter { holds(it.root, file) }.maxByOrNull { folderPath(it.root!!).length }
+            ?: contexts.firstOrNull { it.connected }
+            ?: contexts.firstOrNull { it.problemKind == "unreachable" }
+            ?: contexts.firstOrNull()
+
+    /** A path with `/` separators and one trailing `/`, so a folder holds what starts with it. */
+    private fun folderPath(path: String) = path.replace('\\', '/').trimEnd('/') + "/"
+
+    /** Whether the folder `root` holds `file`, either path with either separator, ignoring case. */
+    private fun holds(root: String?, file: String?): Boolean =
+        root != null && file != null && folderPath(file).startsWith(folderPath(root), ignoreCase = true)
+
+    /**
+     * With several contexts, the tooltip's line on the one the status bar item speaks for, by its label (else its
+     * folder's name): `The active file's Playwright config, in admin (one of 3)`, or, when `file` is in none, how to see
+     * another's run. Empty with one context.
+     */
+    private fun configLine(contexts: List<ContextStatus>, shown: ContextStatus, file: String?): String {
+        if (contexts.size < 2) return ""
+        val where = shown.label ?: shown.root?.let { folderPath(it).trimEnd('/').substringAfterLast('/') } ?: return ""
+        return if (holds(shown.root, file)) {
+            "\nThe active file's Playwright config, in $where (one of ${contexts.size})"
+        } else {
+            "\nThe Playwright config in $where (one of ${contexts.size}): open a file of another one to see its run"
+        }
+    }
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
@@ -145,7 +219,7 @@ object Glue {
         return "\n${if (live.own) "Your run" else "Run"} #${live.runId} is running: ${live.done}/${live.total}$failing"
     }
 
-    /** The status bar text while a click reads the latest run again. */
+    /** The status bar text while the latest run is read again (**Read the Latest Run Again**, in its popup). */
     const val REFRESHING = "Piwi: refreshing…"
 
     /**
@@ -178,8 +252,10 @@ object Glue {
     /**
      * The status bar text: the latest run on the checked-out branch, with what the runs laid over it fixed or still
      * fail, or what keeps the service from reading it, or from starting (`startProblem`, with no status). While a run is in progress, the editor's own or one on the
-     * branch, the text counts it, and the tooltip has both, with the baseline chosen and when the latest run was read. A
-     * click reads it again.
+     * branch, the text counts it, and the tooltip has both, with the baseline chosen and when the latest run was read. The
+     * first entry of its popup reads it again.
+     * It speaks for the context of `file`, the selected editor's ([statusContext]); with several, the tooltip names its
+     * Playwright config. The text takes the error color while tests of the run it counts fail, that run in progress too.
      * A null status means the service has not started: it starts with the first file of the project opened.
      */
     fun statusView(
@@ -188,27 +264,33 @@ object Glue {
         desktopChosen: Boolean = false,
         now: Long = System.currentTimeMillis(),
         startProblem: String? = null,
+        file: String? = null,
     ): StatusView {
         if (status == null && startProblem != null) {
-            return StatusView("Piwi: Node.js", "$startProblem\nClick to open the Node.js settings.", null, StatusAction.NODE_SETTINGS)
+            return StatusView("Piwi: Node.js", "$startProblem\nClick for the Node.js settings.", null, StatusAction.NODE_SETTINGS, StatusIcon.WARNING)
         }
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
         val contexts = status.contexts.orEmpty()
-        if (contexts.isEmpty()) return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
+        val shown = statusContext(contexts, file)
+            ?: return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else "\n$it" }
-        val connected = contexts.firstOrNull { it.connected }
-        val unreachable = contexts.firstOrNull { it.problemKind == "unreachable" }
-        if (connected == null && unreachable != null) {
-            val problem = unreachable.problem ?: "The instance did not answer"
-            return StatusView("Piwi: unreachable", "$problem\nPiwi reads it again on its own; click to read it now.$hint", null, StatusAction.RETRY)
+        val config = configLine(contexts, shown, file)
+        if (!shown.connected && shown.problemKind == "unreachable") {
+            val problem = shown.problem ?: "The instance did not answer"
+            val tooltip = "$problem$config\nPiwi reads it again on its own; Refresh reads it now.$hint"
+            return StatusView("Piwi: unreachable", tooltip, null, StatusAction.RETRY, StatusIcon.UNREACHABLE)
         }
-        connected
-            ?: return StatusView("Piwi: connect", (contexts.first().problem ?: "Not connected") + hint, null, StatusAction.CONNECT)
-        val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
-        val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
+        if (!shown.connected) {
+            return StatusView("Piwi: connect", (shown.problem ?: "Not connected") + config + hint, null, StatusAction.CONNECT, StatusIcon.CONNECT)
+        }
+        // With several contexts, another one's run is never shown for this one.
+        val run = runs?.contexts?.firstOrNull { it.root == shown.root }
+            ?: if (contexts.size == 1) runs?.contexts?.firstOrNull() else null
+        val where = (shown.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
         val reporter = run?.reporterVersion?.let { "\nreporter $it" } ?: ""
-        val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + reporter + hint
+        val from = (shown.serverUrl?.let { url -> "\n$url, from ${sourceLabel(shown.source)}" } ?: "") + reporter + hint
         val live = run?.live
+        val liveFailing = (live?.failed ?: 0) > 0
         val baseline = baselineLine(run?.baseline?.label)?.let { "\n$it" } ?: ""
         val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
         val overlays = run?.overlays ?: 0
@@ -217,34 +299,40 @@ object Glue {
             // A developer's own runs alone, with no baseline.
             val failing = run?.failingTests ?: run?.failures ?: 0
             val text = live?.let { liveText(it) } ?: if (failing > 0) "Piwi: $failing failing" else "Piwi: no failure"
-            val tooltip = "${plural(overlays, "local run")} of $where, ${plural(failing, "test")} failing$baseline$progress$from"
-            return StatusView(text, tooltip, null, StatusAction.REFRESH)
+            val tooltip = "${plural(overlays, "local run")} of $where, ${plural(failing, "test")} failing$config$baseline$progress$from"
+            return when {
+                live != null -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
+                failing > 0 -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.FAILING, true)
+                else -> StatusView(text, tooltip, null, StatusAction.REFRESH, StatusIcon.PASSED)
+            }
         }
         if (r == null) {
-            return StatusView(live?.let { liveText(it) } ?: "Piwi: no run", "No run of $where yet$baseline$progress$from", null, StatusAction.REFRESH)
+            val tooltip = "No run of $where yet$config$baseline$progress$from"
+            if (live != null) return StatusView(liveText(live), tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
+            return StatusView("Piwi: no run", tooltip, null, StatusAction.REFRESH)
         }
         // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
         val failing = run.failingTests ?: r.failedTests
         val fixed = run.resolved ?: 0
         val local = if (overlays > 0) "\n${plural(overlays, "local run")} since · ${plural(fixed, "test")} fixed locally" else ""
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
-            "${r.flakyTests} flaky, ${r.skippedTests} skipped$baseline$local$progress$from"
+            "${r.flakyTests} flaky, ${r.skippedTests} skipped$config$baseline$local$progress$from"
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
         val refresh = StatusAction.REFRESH
         return when {
-            live != null -> StatusView(liveText(live), tooltip, r.url, refresh)
+            live != null -> StatusView(liveText(live), tooltip, r.url, refresh, StatusIcon.RUNNING, liveFailing)
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
                 val failed = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
-                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, refresh)
+                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, refresh, StatusIcon.RUNNING, r.failedTests > 0)
             }
             failing > 0 -> {
                 val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
-                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh)
+                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, true)
             }
-            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, refresh)
-            fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh)
-            else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh)
+            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, refresh, StatusIcon.WARNING)
+            fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh, StatusIcon.PASSED)
+            else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh, StatusIcon.PASSED)
         }
     }
 
@@ -253,8 +341,41 @@ object Glue {
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
     const val UNTRUSTED = "Piwi starts once you trust this project, then open one of its files."
 
+    /** What the first-run notification says Piwi does. */
+    const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
+        "with your local runs laid over them, and records tests at the caret."
+
+    /** The editor extensions' documentation, which the first-run notification's **Learn More** opens. */
+    const val DOCS_URL = "https://piwitests.dev/features/editors"
+
+    /**
+     * Whether the first-run notification shows: not `shown` on this installation yet, in a `trusted` project holding a
+     * Playwright config, while no context of `status` is connected and none of `instances` names an instance (the
+     * project's settings, `PIWI_DASHBOARD_URL` in the environment or a config folder's `.env`, the desktop app while it
+     * runs). `status` is null until the service starts, with the first file opened.
+     */
+    fun showsFirstRun(shown: Boolean, trusted: Boolean, configDirs: List<Path>, status: StatusResult?, instances: List<String?>): Boolean =
+        !shown && trusted && configDirs.isNotEmpty() &&
+            status?.contexts.orEmpty().none { it.connected } && instances.all { it.isNullOrBlank() }
+
     /** The oldest Node.js major version the editor service runs on. */
     const val NODE_MAJOR = 20
+
+    /** A service that stops this soon after it started failed to start. */
+    const val SERVICE_START_MILLIS = 30_000L
+
+    /** How many times a service that failed to start is started again, within [SERVICE_RESTART_PERIOD_MILLIS]. */
+    const val SERVICE_RESTARTS = 3
+    const val SERVICE_RESTART_PERIOD_MILLIS = 300_000L
+
+    /**
+     * Whether the editor service, started at `startedAt` and stopped at `stoppedAt`, is started again: it stopped while
+     * starting, and fewer than [SERVICE_RESTARTS] of `restarts`, when it was started again before, are recent. The IDE
+     * stops a service whose start failed, for instance when a tab opened or closed while it sent the open files.
+     */
+    fun restartsService(startedAt: Long?, stoppedAt: Long, restarts: List<Long>): Boolean =
+        startedAt != null && stoppedAt - startedAt in 0..SERVICE_START_MILLIS &&
+            restarts.count { stoppedAt - it < SERVICE_RESTART_PERIOD_MILLIS } < SERVICE_RESTARTS
 
     /**
      * Why the editor service cannot start with the Node.js interpreter `node`, from what `node --version` printed (null
@@ -276,11 +397,12 @@ object Glue {
 
     /**
      * A node of the failures tree as the tool window draws it: a node of the service's tree (`FailuresResult.tree`),
-     * with the age of its run after its description, and the failure a leaf stands for. `kind` is `run`, `runs`,
-     * `overlay`, `group` or `failure`; `key` stays the same across answers, so the tree keeps a node's expansion and
-     * selection by it; `icon` is the service's (`run`, `history`, `failed`, `passed`, `file`, `cluster`, `owner`,
-     * `failing`, `edited`, `fixed`); `note` what a failure says about its run; `url` the page a run opens, a failure's
-     * execution page.
+     * with the age of its run after its description, and the failure a leaf stands for. `kind` is `context`, `run`,
+     * `runs`, `overlay`, `group` or `failure`; `key` stays the same across answers, so the tree keeps a node's expansion
+     * and selection by it; `icon` is the service's (`context`, `run`, `history`, `failed`, `passed`, `file`, `cluster`,
+     * `owner`, `failing`, `edited`, `fixed`); `note` what a failure says about its run; `url` the page a run opens, a
+     * failure's execution page; `root`, on a Playwright config's node and a run's, that config's folder, which their
+     * actions act on.
      */
     data class FailureNode(
         val key: String,
@@ -292,21 +414,28 @@ object Glue {
         val url: String?,
         val failure: WorkspaceFailure? = null,
         val note: String? = null,
+        val root: String? = null,
         val children: List<FailureNode> = emptyList(),
     )
 
     /**
      * The failures tree as the tool window draws it, from the tree the service grouped: a run's age after its
-     * description (`4 min ago`), and, while the editor's own run is `live`, that run on the run's node (`running 4/9`).
+     * description (`4 min ago`), and, while the editor's own run is `live`, that run on the node of the run of its
+     * Playwright config (`liveRoot`; any run's node when either does not say which: `running 4/9`).
      */
-    fun failureNodes(result: FailuresResult?, now: Long = System.currentTimeMillis(), live: LiveRun? = null): List<FailureNode> {
+    fun failureNodes(
+        result: FailuresResult?,
+        now: Long = System.currentTimeMillis(),
+        live: LiveRun? = null,
+        liveRoot: String? = null,
+    ): List<FailureNode> {
         val running = live?.takeIf { it.own }
         val failures = result?.items.orEmpty().associateBy { it.executionId }
         fun draw(node: FailureTreeNode): FailureNode = FailureNode(
             key = node.key,
             kind = node.kind,
             label = node.label,
-            description = if (running != null && node.kind == "run") {
+            description = if (running != null && node.kind == "run" && (liveRoot == null || node.root == null || node.root == liveRoot)) {
                 "running ${running.done}/${running.total}"
             } else {
                 listOfNotNull(node.description.ifBlank { null }, node.startTime?.let { relativeTime(it, now) }).joinToString(" · ")
@@ -316,9 +445,19 @@ object Glue {
             url = node.url,
             failure = node.executionId?.let { failures[it] },
             note = node.note,
+            root = node.root,
             children = node.children.orEmpty().map { draw(it) },
         )
         return result?.tree.orEmpty().map { draw(it) }
+    }
+
+    /**
+     * What Re-run the Failing Tests runs: the tests still failing of every Playwright config, one run each
+     * (`FailuresResult.rerun`), or of the config at `root` alone, run from its node in the tool window.
+     */
+    fun failingRuns(result: FailuresResult?, root: String? = null): List<RunTestsArgs> {
+        val runs = result?.rerun.orEmpty()
+        return if (root == null) runs else runs.filter { it.root == root }
     }
 
     /**
@@ -331,7 +470,8 @@ object Glue {
     /**
      * The tool window's line on the run and the baseline: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min
      * ago · Baseline: CI run #120 on feature/x`; `Your local runs · 1 failing · Baseline: your local runs only` with a
-     * developer's own runs alone; the baseline alone when it found no run.
+     * developer's own runs alone; the baseline alone when it found no run; null when the tree holds a node per
+     * Playwright config, each over its own run.
      */
     fun runHeader(result: FailuresResult?, now: Long = System.currentTimeMillis()): String? =
         listOfNotNull(
@@ -504,6 +644,18 @@ object Glue {
             marks(result.changed, CoverageKind.CHANGED) { "Piwi: changed since the coverage run" }
     }
 
+    /** The coverage marks to take off a file, and those to draw on it, each once. */
+    data class CoverageMarksDiff(val remove: List<CoverageMark>, val add: List<CoverageMark>)
+
+    /**
+     * What turns the marks `drawn` on a file into its `marks`: a mark is kept while one of the same kind, lines and
+     * tooltip is wanted, so only the marks that changed are taken off or drawn.
+     */
+    fun coverageMarksDiff(drawn: Set<CoverageMark>, marks: List<CoverageMark>): CoverageMarksDiff {
+        val wanted = marks.toSet()
+        return CoverageMarksDiff(remove = drawn.filter { it !in wanted }, add = wanted.filter { it !in drawn })
+    }
+
     /** `text` as HTML text: the IDE renders a tooltip as HTML, and the instance's text is never markup. */
     private fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -537,6 +689,12 @@ object Glue {
     /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
 
+    /**
+     * The severity of a failure's diagnostic (`EditorCredentials.failureSeverity`): `error`, `warning`, `information`,
+     * or `off`, which leaves the failures to the tool window and the gutter.
+     */
+    val FAILURE_SEVERITIES = listOf("error", "warning", "information", "off")
+
     const val OPEN_FAILURES = "Open the Failures"
     const val OPEN_IN_DASHBOARD = "Open in Dashboard"
     const val RERUN_FAILING = "Re-run Failing"
@@ -552,9 +710,14 @@ object Glue {
     /**
      * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
      * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
-     * **Re-run Failing** when something fails. Null when `setting` keeps it quiet.
+     * **Re-run Failing** when something fails. Null when `setting` keeps it quiet. A run of each test several times
+     * says how many of its runs passed, `Run #124 · Failed 1 of 3`, whatever the setting.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
+        val repeat = ended.repeat
+        if (repeat?.verdict != null) {
+            return RunVerdict(repeat.failed, "Run #${ended.runId} · ${repeat.verdict}", listOf(OPEN_FAILURES, OPEN_IN_DASHBOARD))
+        }
         val stillTitles = ended.stillFailing.orEmpty()
         val newTitles = ended.newFailures.orEmpty()
         val still = ended.stillFailingCount ?: stillTitles.size
@@ -864,17 +1027,46 @@ object Glue {
         }
     }
 
-    /** Where a locator picked at a breakpoint went: on its line, or to the caret because the line or the file has none. */
-    enum class PickOutcome { REPLACED, NO_LOCATOR, NO_FILE }
+    /**
+     * Where a locator picked at a breakpoint went: on its line, or elsewhere because the line or the file holds none,
+     * the editor service does not run, or it did not answer.
+     */
+    enum class PickOutcome { REPLACED, NO_LOCATOR, NO_FILE, NOT_RUNNING, NO_ANSWER }
 
-    /** What the notification says once a locator picked while a run was paused at a breakpoint reached the IDE. */
-    fun pickNotice(at: SendPlace, outcome: PickOutcome): String {
+    /**
+     * What the notification says once a locator picked while a run was paused at a breakpoint reached the IDE: where it
+     * went, at the caret or, with `scratch`, in a new scratch file, and why when not on its line.
+     */
+    fun pickNotice(at: SendPlace, outcome: PickOutcome, scratch: Boolean = false): String {
         val name = at.file.substringAfterLast('/')
+        val went = if (scratch) "The picked locator was inserted in a new scratch file" else "The picked locator was inserted at the caret"
         return when (outcome) {
             PickOutcome.REPLACED -> "The picked locator replaced the one at line ${at.line} of $name."
-            PickOutcome.NO_LOCATOR -> "The picked locator was inserted at the caret: line ${at.line} of $name holds no locator anymore."
-            PickOutcome.NO_FILE -> "The picked locator was inserted at the caret: ${at.file} is not in this project."
+            PickOutcome.NO_LOCATOR -> "$went: line ${at.line} of $name holds no locator anymore."
+            PickOutcome.NO_FILE -> "$went: ${at.file} is not in this project."
+            PickOutcome.NOT_RUNNING -> "$went: the Piwi editor service is not running in this project."
+            PickOutcome.NO_ANSWER -> "$went: the Piwi editor service did not answer."
         }
+    }
+
+    /** The names of this machine, which the service reaches directly whatever the proxy: the desktop app listens on them. */
+    private val LOOPBACK_NAMES = listOf("localhost", "127.0.0.1", "::1")
+
+    /**
+     * The environment that takes the service through the IDE's HTTP proxy at `host`:`port`: `HTTPS_PROXY` and
+     * `HTTP_PROXY` naming it, and `NO_PROXY` with this machine's names and
+     * `exceptions`, the hosts the IDE reaches directly, a `*.example.com` pattern as the `.example.com` suffix Node
+     * matches.
+     */
+    fun proxyEnvironment(host: String, port: Int, exceptions: List<String>): Map<String, String> {
+        val name = host.trim().let { if (':' in it && !it.startsWith("[")) "[$it]" else it }
+        val proxy = "http://$name:$port"
+        val direct = exceptions.map { it.trim() }.filter { it.isNotEmpty() }.map { if (it.startsWith("*.")) it.substring(1) else it }
+        return linkedMapOf(
+            "HTTPS_PROXY" to proxy,
+            "HTTP_PROXY" to proxy,
+            "NO_PROXY" to (LOOPBACK_NAMES + direct).distinct().joinToString(","),
+        )
     }
 
     /** A line breakpoint of the IDE: its file's path on disk and its 0-based line. */
@@ -989,6 +1181,12 @@ object Glue {
     /** The extensions of the files a recording writes into: JavaScript and TypeScript. */
     val SCRIPT_EXTENSIONS = setOf("ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts")
 
+    /** Whether `path` is one of `configDirs`, the Playwright config folders, or inside one: where a recording may write. */
+    fun inConfigDirs(path: Path?, configDirs: List<Path>): Boolean {
+        val file = path?.let { runCatching { it.toAbsolutePath().normalize() }.getOrNull() } ?: return false
+        return configDirs.any { dir -> runCatching { file.startsWith(dir.toAbsolutePath().normalize()) }.getOrDefault(false) }
+    }
+
     /**
      * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: outside
      * every test, function and class (`file`), a new test (`test`); anywhere else, the steps there (`steps`), which the
@@ -1080,6 +1278,25 @@ object Glue {
             offset <= write.start -> ImportWrite(offset, text, first = false)
             else -> null
         }
+    }
+
+    /** A quick fix on a recorded line's warning: another locator of the step, for the written one at `[start, end)` of the line. */
+    data class LocatorChoice(val title: String, val locator: String, val start: Int, val end: Int)
+
+    /**
+     * The other locators the recorder verified for a step, best first, as quick fixes on `line`, the text of the line the
+     * step is written on: each puts its locator in place of the written one (`RecordingStep.chosen`), which is found on
+     * the line as it is written, after a page expression or inside a call. None when the step has a single locator, or
+     * when the written one is not on the line exactly once.
+     */
+    fun locatorChoices(line: String, step: RecordingStep?): List<LocatorChoice> {
+        val locators = step?.locators.orEmpty()
+        val written = step?.chosen?.let { locators.getOrNull(it) }
+        if (written.isNullOrEmpty() || locators.size < 2) return emptyList()
+        val start = line.indexOf(written)
+        if (start < 0 || line.indexOf(written, start + 1) >= 0) return emptyList()
+        return locators.filter { it.isNotEmpty() && it != written }
+            .map { LocatorChoice("Use $it", it, start, start + written.length) }
     }
 
     /** "1 step", "3 steps". */

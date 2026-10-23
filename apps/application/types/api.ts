@@ -963,6 +963,8 @@ export interface TestCaseResult {
   testSourceFrames?: TestSourceFrame[] | null;
   failureClusterId?: number | null;
   retries?: number | null;
+  /** Playwright's `repeatEachIndex`: which `--repeat-each` repetition this execution belongs to, 0 without repeats. */
+  repeatEachIndex?: number;
   /** Per-attempt outcomes, oldest first. */
   attempts?: AttemptOutcome[] | null;
   steps?: PerformanceStep[] | null;

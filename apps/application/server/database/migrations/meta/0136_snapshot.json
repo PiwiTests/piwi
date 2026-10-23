@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "31066395-c97b-4eec-b317-4f38610663f1",
-  "prevId": "65fe9fc2-7350-43d1-9ce5-bd50ec3d736f",
+  "id": "c2d5740f-18a3-45b7-a4b4-566320db8cb2",
+  "prevId": "3be4d424-efdd-45f2-a728-fc5c232d9b1d",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -10119,6 +10119,14 @@
           "autoincrement": false,
           "default": 0
         },
+        "repeat_each_index": {
+          "name": "repeat_each_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "attempts": {
           "name": "attempts",
           "type": "text",
@@ -10432,7 +10440,7 @@
         },
         "idx_test_runs_cases_run_browser": {
           "name": "idx_test_runs_cases_run_browser",
-          "columns": ["test_run_id", "test_case_id", "retries", "browser_name"],
+          "columns": ["test_run_id", "test_case_id", "repeat_each_index", "retries", "browser_name"],
           "isUnique": true
         },
         "idx_trc_aria_payload": {

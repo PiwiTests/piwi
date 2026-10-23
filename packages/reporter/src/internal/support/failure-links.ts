@@ -10,6 +10,8 @@ export interface FailedTest {
   retry: number;
   /** Playwright project name the test ran under, when known. */
   browser: string | null;
+  /** Which `--repeat-each` repetition failed (`TestCase.repeatEachIndex`); 0 or absent without repeats. */
+  repeatEachIndex?: number;
   /** The one-line explanation of the failure, built from the error text by `@piwitests/core`. */
   headline: string | null;
 }
@@ -35,8 +37,9 @@ export interface FailureLink extends FailedTest {
 /**
  * Deterministic dashboard URL for one execution, built from what the reporter
  * knows before the server assigns execution ids: the run id plus the test's
- * file, title, retry and project. The dashboard's `/test-runs/:id/locate`
- * route resolves it to `/test-run-cases/:id`.
+ * file, title, retry, project and, past the first, its `--repeat-each`
+ * repetition. The dashboard's `/test-runs/:id/locate` route resolves it to
+ * `/test-run-cases/:id`.
  */
 export function caseLocateUrl(serverUrl: string, runId: number | string, test: FailedTest): string {
   const params = [
@@ -45,6 +48,7 @@ export function caseLocateUrl(serverUrl: string, runId: number | string, test: F
     `retry=${test.retry}`,
   ];
   if (test.browser) params.push(`browser=${encodeURIComponent(test.browser)}`);
+  if (test.repeatEachIndex) params.push(`repeat=${test.repeatEachIndex}`);
   return `${serverUrl.replace(/\/+$/, '')}/test-runs/${runId}/locate?${params.join('&')}`;
 }
 

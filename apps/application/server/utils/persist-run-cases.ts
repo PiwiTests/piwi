@@ -32,7 +32,7 @@ import {
   parseTestMetadata,
   sanitizeTestMetadata,
 } from '@piwitests/core/test-meta';
-import { matchInsertedRunCases } from './inserted-run-cases';
+import { matchInsertedRunCases, resolveRepeatEachIndex } from './inserted-run-cases';
 import { testCaseCache } from './test-case-cache';
 import { syncTestCaseMetadata, type CaseMetaSnapshot } from './test-case-metadata-sync';
 import { displayTitleOf, externalIdOf, recordExternalIdDuplicates, type TestCaseClaim } from './test-case-match';
@@ -113,6 +113,8 @@ export interface RunCaseInput {
   timeout?: number | null;
   error?: string | null;
   retries?: number | null;
+  /** Playwright's `repeatEachIndex`: which `--repeat-each` repetition the execution is, 0 when absent. */
+  repeatEachIndex?: number | null;
   /** Per-attempt outcomes `{ retry, status, duration, startedAt }`, oldest first. */
   attempts?: unknown;
   line: number | null;
@@ -327,9 +329,10 @@ async function dedupeGreenSamples(
  * never by position in the returned array.
  *
  * Deduplication is enforced by a DB unique index on
- * `(test_run_id, test_case_id, retries, browser)` — the `ON CONFLICT DO NOTHING`
- * clause silently skips rows that would violate it. This naturally handles both
- * batch retries and same-test-different-browser scenarios.
+ * `(test_run_id, test_case_id, repeat_each_index, retries, browser)`: the
+ * `ON CONFLICT DO NOTHING` clause skips rows that would violate it, so a batch
+ * sent twice stores its executions once, while each attempt, each Playwright
+ * project and each `--repeat-each` repetition of a test is a row of its own.
  */
 export async function persistRunCases(
   db: DB,
@@ -419,8 +422,8 @@ export async function persistRunCases(
     purge?: boolean;
   }> = [];
   // Latest tags/metadata per resolved test case, mirrored onto test_cases once
-  // the batch is built. A test appearing twice (retries, browsers) declares the
-  // same values, so last-write-wins is safe.
+  // the batch is built. A test appearing twice (retries, browsers, repeats)
+  // declares the same values, so last-write-wins is safe.
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
   // Locator uses read from each execution's steps, indexed after the insert.
   const perCaseUsages: LocatorUsageCase[] = [];
@@ -513,6 +516,7 @@ export async function persistRunCases(
       timeout: c.timeout ?? null,
       error: capErrorText(c.error, limits.errorChars),
       retries: c.retries ?? 0,
+      repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),
       line: c.line,
       column: c.column,
@@ -627,6 +631,7 @@ export async function persistRunCases(
       status: testRunsCases.status,
       testCaseId: testRunsCases.testCaseId,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
     }),
   );

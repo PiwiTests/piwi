@@ -38,8 +38,16 @@ import type {
 } from '../protocol.js';
 import { recorderBrowser, type RecorderBrowser } from './context-options.js';
 import type { LaunchRequest, LauncherToService, ServiceToLauncher } from './ipc.js';
-import { importInsertion, missingImports } from './imports.js';
-import { declaredNamesAt, fileFixtures, pageCandidates, recordingPlacement, testImportOf } from './page-candidates.js';
+import {
+  expectModuleOf,
+  importBindings,
+  importInsertion,
+  missingImports,
+  testImportOf,
+  type ImportBindings,
+} from './imports.js';
+import { projectNode, projectNodeEnv } from './node.js';
+import { declaredNamesAt, fileFixtures, pageCandidates, recordingPlacement } from './page-candidates.js';
 import { canonicalPath } from './playwright.js';
 import type { ProjectOptions } from './project-options.js';
 
@@ -78,11 +86,21 @@ export interface LauncherEvents {
 /** Starts a launcher in the config's folder. Throws when it cannot. */
 export type LauncherFactory = (cwd: string, events: LauncherEvents) => LauncherHandle;
 
-/** Forks the bundled launcher, with an IPC channel and its error output kept for a failure's message. */
+/**
+ * Forks the bundled launcher with the project's Node (`projectNode`), with an IPC channel and its error output kept
+ * for a failure's message.
+ */
 export function forkLauncher(file: string): LauncherFactory {
   return (cwd, events) => {
     if (!fs.existsSync(file)) throw new Error(`The recorder is missing from this installation: ${file} was not found.`);
-    const child = fork(file, [], { cwd, execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    const node = projectNode();
+    const child = fork(file, [], {
+      cwd,
+      env: projectNodeEnv(node),
+      execArgv: [],
+      execPath: node.execPath,
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    });
     let detail: string | null = null;
     let ended = false;
     const end = (code: number | null) => {
@@ -163,6 +181,8 @@ interface Session {
   events: RawCaptureEvent[];
   startedAt: number;
   codegen: CodegenOptions;
+  /** The module `expect` is imported from when the block checks something, decided when the recording starts. */
+  expectModule: string;
   /** The origin of the project's `baseURL`: a recording on it writes paths. */
   baseOrigin: string | null;
   cwd: string;
@@ -252,7 +272,6 @@ export function startUrl(
   }
 }
 
-/** The module most spec files beside `file` import `test` from; null when none does. */
 /** The texts of the spec files beside `file`, the first ones by name. */
 function siblingSpecs(file: string): string[] {
   const dir = path.dirname(file);
@@ -322,15 +341,27 @@ function blockCode(code: string, into: RecordInto): string {
   return (into === 'steps' ? lines.map((line) => (line.startsWith('  ') ? line.slice(2) : line)) : lines).join('\n');
 }
 
+export interface BlockImportsOptions {
+  /** The module `expect` is imported from; what `expectModuleOf` reads from the text alone by default. */
+  expectModule?: string;
+  /** The file's module statements and bindings, when read already; those of `text` by default. */
+  bindings?: ImportBindings;
+}
+
 /**
  * The import lines a block needs that the file lacks: its catalog calls' imports, and `expect` when the block checks
- * something and the file does not import it, from the module the file takes `test` from (`@playwright/test` when it
- * takes it from none).
+ * something and the file does not import it, from the module `test` comes from when that is `@playwright/test` or a
+ * spec of the folder imports `expect` from it, else from `@playwright/test`.
  */
-export function blockImports(text: string, result: Pick<CodegenResult, 'code' | 'imports'>): string[] {
+export function blockImports(
+  text: string,
+  result: Pick<CodegenResult, 'code' | 'imports'>,
+  options: BlockImportsOptions = {},
+): string[] {
+  const bindings = options.bindings ?? importBindings(text);
   const needsExpect = /(?<![\w$.])expect\(/.test(result.code);
-  const expectLine = `import { expect } from '${testImportOf(text) ?? '@playwright/test'}';`;
-  return missingImports(text, needsExpect ? [expectLine, ...result.imports] : result.imports);
+  const expectLine = `import { expect } from '${options.expectModule ?? expectModuleOf(text, { bindings })}';`;
+  return missingImports(text, needsExpect ? [expectLine, ...result.imports] : result.imports, bindings);
 }
 
 /**
@@ -380,6 +411,8 @@ export class RecordingSessions {
     const at = pageCandidates(target.text, line);
     const refusal = into === 'file' ? null : placementRefusal(into, at.context);
     if (refusal) return { ok: false, message: refusal };
+    const placement = recordingPlacement(target.text, line, into);
+    if ('refusal' in placement) return { ok: false, message: placement.refusal };
     const page = params.page?.trim() || at.default;
     if (!isPageExpression(page)) {
       return {
@@ -472,6 +505,7 @@ export class RecordingSessions {
       events: [],
       startedAt: Date.now(),
       codegen,
+      expectModule: expectModuleOf(target.text, { siblings: () => siblingSpecs(target.file) }),
       baseOrigin: originOf(baseURL),
       cwd,
       browser,
@@ -518,7 +552,7 @@ export class RecordingSessions {
       message: project.name
         ? `Opening ${label} with the options of the ${project.name} project.`
         : `Opening ${label} with the options of ${config}.`,
-      placement: recordingPlacement(target.text, line, into),
+      placement,
     };
   }
 
@@ -687,11 +721,16 @@ export class RecordingSessions {
     return this.options.readText?.(session.uri) ?? session.text;
   }
 
-  /** The edit that adds the imports a rendering needs and the file lacks now; none for a whole file. */
+  /**
+   * The edit that adds the imports a rendering needs and the file lacks now; none for a whole file. The file's text
+   * is read once, for the names it binds and where its import statements end.
+   */
   private importEdit(session: Session, rendered: Pick<CodegenResult, 'code' | 'imports'> | null): FileEdit | null {
     if (session.into === 'file' || !rendered) return null;
     const text = this.currentText(session);
-    return importInsertion(text, blockImports(text, rendered));
+    const bindings = importBindings(text);
+    const lines = blockImports(text, rendered, { expectModule: session.expectModule, bindings });
+    return importInsertion(text, lines, bindings);
   }
 
   private send(update: RecordingUpdate): void {

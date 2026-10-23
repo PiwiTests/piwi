@@ -86,6 +86,20 @@ export async function headCommit(repoRoot: string): Promise<string | null> {
   return (await git(repoRoot, ['rev-parse', 'HEAD']))?.trim() || null;
 }
 
+/**
+ * The files git writes when `HEAD` moves, by a checkout or a commit: `HEAD` and `logs/HEAD` of the repository around
+ * `repoRoot`, where git keeps them (those of a worktree or a submodule lie in the main repository's `.git`). Empty
+ * outside a repository.
+ */
+export async function headFiles(repoRoot: string): Promise<string[]> {
+  const out = await git(repoRoot, ['rev-parse', '--git-path', 'HEAD', '--git-path', 'logs/HEAD']);
+  return (out ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((file) => path.resolve(repoRoot, file));
+}
+
 /** A file as `HEAD` holds it; null when it is new or outside a repository. */
 export async function committedText(repoRoot: string, relativePath: string): Promise<string | null> {
   return git(repoRoot, ['show', `HEAD:${relativePath.split(path.sep).join('/')}`]);
@@ -142,6 +156,22 @@ export function relativeTo(root: string, file: string): string | null {
   const rel = path.relative(root, file);
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
   return rel.split(path.sep).join('/');
+}
+
+/**
+ * A Playwright config's folder as the editor names it: relative to the deepest workspace folder holding it, with
+ * forward slashes, after that folder's name when the workspace has several (`shop/e2e`); the workspace folder's name
+ * for a config at its root; the whole path outside every workspace folder.
+ */
+export function contextLabel(root: string, folders: readonly string[]): string {
+  const folder = folders
+    .filter((f) => path.relative(f, root) === '' || relativeTo(f, root) !== null)
+    .sort((a, b) => b.length - a.length)[0];
+  if (!folder) return root;
+  const name = path.basename(folder) || folder;
+  const rel = relativeTo(folder, root);
+  if (!rel) return name;
+  return folders.length > 1 ? `${name}/${rel}` : rel;
 }
 
 /**

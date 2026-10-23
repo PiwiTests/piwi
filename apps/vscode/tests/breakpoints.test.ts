@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { runBreakpoints, terminalEnvKey, type BreakpointLike } from '../src/breakpoints';
+import { runBreakpoints, type BreakpointLike } from '../src/breakpoints';
 
 const root = path.resolve('/work/shop');
 
@@ -39,14 +39,5 @@ describe('the breakpoints a run pauses at', () => {
 
   test('are none without a Playwright config', () => {
     expect(runBreakpoints([at(path.join(root, 'tests', 'a.spec.ts'), 1)], [])).toEqual([]);
-  });
-});
-
-describe('the terminal a run is sent to', () => {
-  test('is told apart by its environment, not by its ref', () => {
-    const base = { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: 'ed-00000001' };
-    expect(terminalEnvKey(base)).toBe(terminalEnvKey({ ...base, PIWI_ORIGIN_REF: 'ed-00000002' }));
-    expect(terminalEnvKey({ ...base, PIWI_PAUSE_AT: 'tests/a.spec.ts:3' })).not.toBe(terminalEnvKey(base));
-    expect(terminalEnvKey(undefined)).toBe(terminalEnvKey({}));
   });
 });

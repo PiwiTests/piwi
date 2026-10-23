@@ -7,6 +7,7 @@ import {
   flakeLabLens,
   headedCommand,
   locatorChainOnLine,
+  locatorCompletionSite,
   pauseAtValue,
   pickEditOnLine,
   placeLine,
@@ -278,5 +279,79 @@ describe('the breakpoints of a run', () => {
     expect(breakpointsNotice('1.0.0')).toBeNull();
     expect(breakpointsNotice(null)).toBeNull();
     expect(breakpointsNotice('workspace:*')).toBeNull();
+  });
+});
+
+describe('where a locator chain completes', () => {
+  const file = (...lines: string[]) => lines.join('\n');
+  /** The site at the end of the line ending with `marker`. */
+  const siteAt = (text: string, marker: string) => {
+    const lines = text.split('\n');
+    const line = lines.findIndex((l) => l.endsWith(marker));
+    return locatorCompletionSite(text, line, lines[line]!);
+  };
+
+  test('after page. and this.page., whatever the file holds', () => {
+    expect(locatorCompletionSite('', 0, '  await page.')).toEqual({ typed: '', prefix: '' });
+    expect(locatorCompletionSite('', 0, '  await page.getBy')).toEqual({ typed: 'getBy', prefix: '' });
+    expect(locatorCompletionSite('', 0, '  return this.page.')).toEqual({ typed: '', prefix: '' });
+  });
+
+  test("after a test's other page fixtures, the pages it opens and a fixture's page", () => {
+    const text = file(
+      "test('approves', async ({ adminPage, context, app }) => {",
+      '  const second = await context.newPage();',
+      "  await app.page.goto('/');",
+      '  await adminPage.',
+      '  await second.getBy',
+      '  await app.page.',
+      '});',
+    );
+    expect(siteAt(text, 'adminPage.')).toEqual({ typed: '', prefix: '' });
+    expect(siteAt(text, 'second.getBy')).toEqual({ typed: 'getBy', prefix: '' });
+    expect(siteAt(text, 'app.page.')).toEqual({ typed: '', prefix: '' });
+  });
+
+  test("after a page object's page fields", () => {
+    const text = file(
+      "import type { Page } from '@playwright/test';",
+      'export class InboxPage {',
+      '  constructor(private readonly root: Page) {}',
+      '  async open() {',
+      '    await this.root.',
+      '  }',
+      '}',
+    );
+    expect(siteAt(text, 'this.root.')).toEqual({ typed: '', prefix: '' });
+  });
+
+  test('right after expect(, on the page in use there', () => {
+    const spec = file("test('pays', async ({ page }) => {", '  await expect(', '});');
+    expect(siteAt(spec, 'expect(')).toEqual({ typed: '', prefix: 'page.' });
+    const admin = file(
+      "test('approves', async ({ adminPage }) => {",
+      "  await adminPage.goto('/admin');",
+      '  await expect( adm',
+      '});',
+    );
+    expect(siteAt(admin, 'expect( adm')).toEqual({ typed: 'adm', prefix: 'adminPage.' });
+    const pageObject = file('export class CartPage {', '  async check() {', '    await expect(', '  }', '}');
+    expect(siteAt(pageObject, 'expect(')).toEqual({ typed: '', prefix: 'this.page.' });
+  });
+
+  test('nowhere else', () => {
+    const text = file("test('pays', async ({ page }) => {", '  foo.', '});');
+    expect(siteAt(text, 'foo.')).toBeNull();
+    for (const before of [
+      '  console.',
+      '  page.keyboard.',
+      '  app.page.',
+      '  foo(',
+      '  expect.soft(',
+      '  expect(x).',
+      '  x.expect(',
+    ]) {
+      expect(locatorCompletionSite('', 0, before), before).toBeNull();
+    }
   });
 });

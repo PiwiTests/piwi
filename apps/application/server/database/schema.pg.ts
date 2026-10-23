@@ -530,6 +530,7 @@ export const testRunsCases = pgTable(
     error: text('error'),
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id), // set for failed rows with an error — groups rows sharing a fingerprint
     retries: integer('retries').default(0),
+    repeatEachIndex: integer('repeat_each_index').notNull().default(0), // Playwright's repeatEachIndex: which `--repeat-each` repetition the row belongs to (0 without repeats)
     attempts: jsonb('attempts'), // Array of { retry, status, duration, startedAt } — per-attempt outcomes
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file
@@ -589,6 +590,7 @@ export const testRunsCases = pgTable(
     runCaseBrowserUnique: uniqueIndex('idx_test_runs_cases_run_browser').on(
       table.testRunId,
       table.testCaseId,
+      table.repeatEachIndex,
       table.retries,
       table.browserName,
     ),

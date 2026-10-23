@@ -8,8 +8,8 @@ lang: en-US
 
 The Piwi extension for VS Code (and Cursor, VSCodium) and the Piwi plugin for the JetBrains IDEs with the LSP API
 (WebStorm, IntelliJ IDEA Ultimate, Rider, from 2024.1) bring what the dashboard knows about your suite to the line you
-are editing. Both run the same editor service; [JetBrains IDEs](#jetbrains-ides) lists what the plugin draws
-differently.
+are editing. Both run the same editor service; the [JetBrains plugin](./jetbrains) page lists what the plugin needs
+and draws differently.
 
 <figure>
   <img src="/screenshots/vscode-heal.png" alt="VS Code: a CI failure at its line, the heal offered as a quick fix">
@@ -25,6 +25,13 @@ in the extensions view) or the **[JetBrains Marketplace ↗](https://plugins.jet
 the reporter already uses: the `PIWI_*` variables in the environment or the workspace `.env`, or the
 [desktop app](/features/desktop). Otherwise, run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE)
 and sign in with the browser: [Editor connection](./editor-connection) has the steps.
+In VS Code, the extension also opens a path clicked in the dashboard, with no workspace root to set:
+[Open in IDE](./ide-integration#vs-code-the-piwi-extension).
+
+In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
+machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. Its
+steps connect, open the latest CI run's failures, run the failing tests, record a test, give your agent the MCP server
+and open the settings. A JetBrains IDE shows one notification instead: [JetBrains plugin](./jetbrains#install-and-start).
 
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
@@ -33,29 +40,9 @@ your files locally.
 ## CI failures in the Problems panel
 
 The failures of the latest complete [CI run](/reference/test-metadata#run-origin) on the checked-out branch, else the
-default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
-is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. Your local runs
-since are laid over it, read again as soon as a run ends: [Runs from the editor](./editor-runs)
-covers runs, the failures view and the status bar. Each failure follows your edits until a run covers its
-test again: [Failures follow your edits](./editor-runs#failures-follow-your-edits).
-
-On a failure, the quick fixes are:
-
-- **Heal: use …** — the edit an [auto-heal pull request](/features/auto-heal) would make, when
-  [locator healing](/features/locator-healing) has a recommendation for the failing locator.
-- **Run this test** — runs the failing test; first once you rewrote the line it failed at.
-- **Open the trace** — in `npx playwright show-trace`.
-- **Reproduce in the desktop app**, **Find the breaking commit in the desktop app** and **Run Flake Lab on its
-  untested suspects in the desktop app**, for a test with an untested [flake suspect](./flake-lab), while the
-  [desktop app](/features/desktop#jobs-from-your-editor) runs; **Share on …** records the result.
-- **Apply the fix plan, then run its verification** — when the failure's [cluster](/features/failure-clusters) has a
-  [fix plan](/features/fix-plans) whose patch applies to your files: the edit is previewed, then the plan's verify
-  command runs in a terminal.
-- **Copy context for agent** — the failure, its healing and fix plan.
-- **Open the failure in the dashboard** — the execution page, with its [evidence](/features/evidence).
-
-Hover for the error message, its call chain, the failure screenshot, and the tickets linked to its cluster or
-test. Without one, **File an issue** opens the cluster in the dashboard.
+default branch, are in the Problems panel at the line that failed, with your local runs laid over them, and each
+failing line follows your edits until a run covers its test again. The heal, the trace, a rerun and the fix plan are
+quick fixes on the failure, and the failures view lists them as a tree: [Failures in the editor](./editor-failures).
 
 ## The tests behind each line
 
@@ -67,9 +54,6 @@ Lines above the code (CodeLens):
 | A page object or spec | above each locator line, the tests using it, their actions, and how many fail or are flaky | runs those tests |
 | An application file | the tests that reach it, from [code reach](/features/code-reach); with [coverage](./editor-coverage), each function's too | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
-
-In a failing test, the line it failed at (in the spec, the line that calls the page object) is tinted darker, with the
-reason, **Screenshot** and **Trace** above it.
 
 Above a flaky test: its flaky rate and [top suspect](./flake-lab#from-the-editor-and-the-failure-pages), then
 **Reproduce this flake** and, once reproduced, **Verify the flake fix**, which run `piwi flake`; beside a team instance,
@@ -83,8 +67,13 @@ suggested value.
 
 ## Completion
 
-- After `page.` (or `this.page.`) in a spec or a page object: the locator chains your suite already uses on the pages
-  this file's tests visit, most used first and brittle ones last.
+- After a page and a `.` in a spec or a page object: the locator chains your suite already uses on the pages this
+  file's tests visit, most used first and brittle ones last. The page is `page`, `this.page`, or any page the code at
+  the cursor can use, the same ones [a recording](/features/editor-recording#start-a-recording) offers: another page
+  fixture of the test (`adminPage.`), a page object's page field (`this.root.`), a page the test opens
+  (`newPage()`, a popup).
+- Right after `expect(`: the same chains on the page in use there, such as
+  `page.getByRole('button', { name: 'Pay' })`, so an assertion's locator is written in one step.
 - At the start of a statement: the [functions](/features/test-functions) of your catalog whose URL pattern matches
   those pages, as a call with a placeholder per parameter.
 - In a `piwi:` annotation: the types (`piwi:owner`, `piwi:priority`, `piwi:feature`, `piwi:link`), then the owners,
@@ -105,8 +94,9 @@ a warning, with the chains it breaks on hover, and one quick fix that rewrites e
 ## Piwi's MCP server for the agent
 
 In VS Code 1.101 and later, the extension provides Piwi's [MCP server](/features/mcp) to the editor's agent with the
-connection it already has. In an editor without that API, **Piwi: Copy the MCP server configuration** puts an `mcp.json` entry on the
-clipboard; it holds your API key, so paste it into your user settings, not into the repository.
+connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration** puts an entry on the clipboard: for
+`mcp.json` in VS Code, for the AI Assistant's MCP settings in a JetBrains IDE (an `mcpServers` entry running
+`mcp-remote`). It holds your API key, so paste it into your user settings, not into the repository.
 
 ## Commands
 
@@ -115,38 +105,37 @@ clipboard; it holds your API key, so paste it into your user settings, not into 
 | Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) |
 | Piwi: Refresh | Fetch the indexes and the latest run again |
 | Piwi: Refresh the latest run | Read the latest run again, as a click on the status bar does |
+| Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) |
+| Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed |
+| Piwi: Run this spec | Run the tests of the spec Piwi knows |
 | Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would |
+| Piwi: Re-run the failing tests | Run every test still failing: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
 | Piwi: Run selection… | Run a saved [selection](/features/test-selection) |
 | Piwi: Open the latest run | Open the run the status bar shows |
-| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-runs#compare-with-another-run) |
+| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-failures#compare-with-another-run) |
 | Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
-| Piwi: Record here, Record a new test file | Record through your project's own Playwright, at the cursor or into a new spec: [Record tests from the editor](./editor-recording) |
+| Piwi: Record here, Record a new test file | Record at the cursor, or into a new spec: [Record tests from the editor](./editor-recording) |
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
 | Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) |
+| Piwi: Open the log | Show the editor service's log; the `piwi.trace.server` setting adds its traffic |
+| Piwi: Get started | Open the walkthrough |
+
+Three commands have a shortcut, the same in VS Code and the JetBrains IDEs and free in their default keymaps on
+Windows, Linux and macOS: `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
+tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording; on macOS, `Cmd` takes the place of
+`Ctrl`. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a
+JetBrains IDE (search `Piwi`).
 
 ## JetBrains IDEs
 
-The [plugin](https://plugins.jetbrains.com/plugin/34674-piwi) starts the editor service with the project's Node.js
-interpreter, 20 or later (**Settings → Languages & Frameworks → Node.js**, which the status bar opens when it is
-missing or older), once it finds a Playwright config within four folders of the project's (in Rider, the solution's)
-or of its Git root, and looks again on **Tools → Piwi → Refresh**. The IDE's LSP client shows warnings, quick fixes
-and hover in open files; the rest is native:
+The plugin runs in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API, with the
+project's Node.js interpreter, 20 or later. It shows the failures in the Piwi tool window, the lines above the code
+with Code Vision, and its actions under **Tools → Piwi**: [JetBrains plugin](./jetbrains).
 
-- **The Piwi tool window** names the connection and holds the latest run's failures as a tree, since the IDE
-  highlights open files only: [the failures view](./editor-runs#the-failures-view).
-- **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter.
-- **The status bar** shows the latest run, or the run in progress, and reads it again on a click
-  ([the status bar](./editor-runs#the-status-bar)); the actions are under **Tools → Piwi**.
-- **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry, running `mcp-remote` with the key, on
-  the clipboard for the AI Assistant's MCP settings.
-- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard or the desktop app opens at its line.
-- **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert, and **File → New →
-  Record a New Test File…**; the controls are in a banner above the editor.
+## Related
 
-<figure>
-  <img src="/screenshots/jetbrains-failures.png" alt="WebStorm: the failing tests tinted in the spec, the Piwi tool window below with the run's failures">
-  <figcaption>WebStorm: the latest run's failures in the Piwi tool window, a local run laid over them, the failing tests tinted above.</figcaption>
-</figure>
-
-IntelliJ IDEA Community Edition and Android Studio lack the LSP API the plugin needs.
+- [Failures in the editor](./editor-failures): the CI failures at their lines, the quick fixes and the failures view.
+- [Runs from the editor](./editor-runs): run tests, and follow the run in the status bar.
+- [Record tests from the editor](./editor-recording): steps written at the cursor as you take them in a browser.
+- [Editor connection](./editor-connection): the instance the editor reads, and its key.

@@ -1,7 +1,8 @@
 /**
  * The failures tree both editor clients draw (`FailuresResult.tree`): the run, the runs laid over it, and the
- * failures grouped by spec, failure cluster or owner, or flat; with the count of the tests still failing and what
- * **Re-run the failing tests** runs. Pure: the clients add a run's age and the editor's own run in progress.
+ * failures grouped by spec, failure cluster or owner, or flat, under one node per Playwright config when several have
+ * something to show; with the count of the tests still failing and what **Re-run the failing tests** runs. Pure: the
+ * clients add a run's age and the editor's own run in progress.
  */
 import type {
   FailuresGrouping,
@@ -160,8 +161,21 @@ function grouped(items: WorkspaceFailure[], grouping: FailuresGrouping, runId: n
     }));
 }
 
-/** The failures a tree is built from: `piwi/failures`'s items, run, runs laid over it and baseline. */
-export type FailuresInput = Pick<FailuresResult, 'items' | 'run' | 'overlays' | 'baseline'>;
+/**
+ * The failures a tree is built from: `piwi/failures`'s items, run, runs laid over it and baseline, and the folder of
+ * the Playwright config they belong to, which the run's node names (`root`).
+ */
+export type FailuresInput = Pick<FailuresResult, 'items' | 'run' | 'overlays' | 'baseline'> & { root?: string };
+
+/** One context's failures, as `failuresAnswer` reads them: with what names its node, and when its run was read. */
+export interface ContextFailures extends FailuresInput {
+  root: string;
+  /** Its folder as the editor names it (`contextLabel`). */
+  label: string;
+  projectName?: string | null;
+  /** ISO 8601. */
+  updatedAt?: string;
+}
 
 /** The baseline a context compares with, as the run's tooltip names it: `Baseline: CI run #120 on main`. */
 function baselineLine(label: string | undefined): string | null {
@@ -206,20 +220,16 @@ function runSummary(run: FailuresRun): string {
 }
 
 /**
- * The failures tree: the baseline run (its tooltip naming the baseline chosen, `Baseline: CI run #120 on feature/x`),
- * with the runs laid over it under `Your runs since`, and its failures grouped by file, cluster or owner, or flat,
- * failing first, then edited, then fixed locally. With a developer's own runs alone, the root is `Your local runs`.
- * Without a run (an older instance), the groups alone; without a failure, nothing.
+ * The run's node over `children`: the baseline run (its tooltip naming the baseline chosen, `Baseline: CI run #120 on
+ * feature/x`), with the runs laid over it under `Your runs since`; `Your local runs` with a developer's own runs alone.
+ * Null without a run, and with runs laid over none but no baseline named (an older service).
  */
-export function failureTree(view: FailuresInput, grouping: FailuresGrouping): FailureTreeNode[] {
-  const items = view.items;
-  if (!items.length) return [];
+function runNode(view: FailuresInput, children: FailureTreeNode[]): FailureTreeNode | null {
   const run = view.run ?? null;
-  const groups = grouped(items, grouping, run?.id ?? null);
   const overlays = view.overlays ?? [];
   const baseline = baselineLine(view.baseline?.label);
   const label = runLabel(view);
-  if (!label || (!run && !baseline)) return groups;
+  if (!label || (!run && !baseline)) return null;
   const runs: FailureTreeNode[] = overlays.length
     ? [
         {
@@ -239,20 +249,69 @@ export function failureTree(view: FailuresInput, grouping: FailuresGrouping): Fa
         },
       ]
     : [];
-  return [
-    {
-      key: 'run',
-      kind: 'run',
-      label,
-      description: run ? '' : 'no baseline',
-      startTime: run?.startTime ?? null,
-      tooltip: [baseline, run ? runSummary(run) : null].filter((line): line is string => !!line),
-      icon: 'run',
-      expanded: true,
-      url: run?.url ?? null,
-      children: [...runs, ...groups],
-    },
-  ];
+  return {
+    key: 'run',
+    kind: 'run',
+    label,
+    description: run ? '' : 'no baseline',
+    startTime: run?.startTime ?? null,
+    tooltip: [baseline, run ? runSummary(run) : null].filter((line): line is string => !!line),
+    icon: 'run',
+    expanded: true,
+    url: run?.url ?? null,
+    ...(view.root ? { root: view.root } : {}),
+    children: [...runs, ...children],
+  };
+}
+
+/**
+ * The failures tree: the run's node (`runNode`) over the failures grouped by file, cluster or owner, or flat, failing
+ * first, then edited, then fixed locally. Without a run (an older instance), the groups alone; without a failure,
+ * nothing.
+ */
+export function failureTree(view: FailuresInput, grouping: FailuresGrouping): FailureTreeNode[] {
+  const items = view.items;
+  if (!items.length) return [];
+  const groups = grouped(items, grouping, view.run?.id ?? null);
+  const run = runNode(view, groups);
+  return run ? [run] : groups;
+}
+
+/** Whether a context has something for the failures tree: a run, runs laid over none, or failures. */
+function showsSomething(view: FailuresInput): boolean {
+  return !!view.run || !!view.overlays?.length || view.items.length > 0;
+}
+
+/**
+ * A context's node: its folder (`apps/admin`), its project and its counts, over its failures tree, or its run alone
+ * without a failure. The keys under it are its own and theirs, on two lines, so that no two nodes share one.
+ */
+function contextNode(view: ContextFailures, grouping: FailuresGrouping): FailureTreeNode {
+  const key = `context:${view.root}`;
+  const run = view.items.length ? null : runNode(view, []);
+  const children = run ? [run] : failureTree(view, grouping);
+  const within = (node: FailureTreeNode): FailureTreeNode => ({
+    ...node,
+    key: `${key}\n${node.key}`,
+    children: node.children.map(within),
+  });
+  return {
+    key,
+    kind: 'context',
+    label: view.label,
+    description: [view.projectName, failureCounts(view.items)].filter(Boolean).join(' · '),
+    tooltip: [
+      `Playwright config in ${view.root}`,
+      view.projectName ? `Project: ${view.projectName}` : null,
+      runLabel(view),
+      baselineLine(view.baseline?.label),
+    ].filter((line): line is string => !!line),
+    icon: 'context',
+    expanded: true,
+    url: view.run?.url ?? null,
+    root: view.root,
+    children: children.map(within),
+  };
 }
 
 /**
@@ -283,4 +342,37 @@ export function failuresDrawn(
     failing: failingCount(view.items),
     rerun: rerunFailingArgs(view.items),
   };
+}
+
+/**
+ * `piwi/failures` from each context's failures: the failures of all, the count and the re-run, and the tree. With one
+ * context that has a run, runs laid over none or failures, its tree, run, runs, baseline and when it was read, as
+ * `failuresDrawn` gives them; with several, one node per context (`contextNode`), in the contexts' order, and no run,
+ * runs or baseline beside them.
+ */
+export function failuresAnswer(contexts: ContextFailures[], grouping: FailuresGrouping): FailuresResult {
+  const items = contexts.flatMap((c) => c.items);
+  const shown = contexts.filter(showsSomething);
+  if (shown.length > 1) {
+    const read = shown.flatMap((c) => (c.updatedAt ? [c.updatedAt] : [])).sort();
+    return {
+      items,
+      ...(read.length ? { updatedAt: read[read.length - 1] } : {}),
+      grouping,
+      tree: shown.map((c) => contextNode(c, grouping)),
+      runLabel: null,
+      failing: failingCount(items),
+      rerun: rerunFailingArgs(items),
+    };
+  }
+  const one = shown[0];
+  if (!one || (!one.run && !one.overlays?.length)) return { items, ...failuresDrawn({ items }, grouping) };
+  const view = {
+    items,
+    run: one.run ?? null,
+    overlays: one.overlays ?? [],
+    ...(one.baseline ? { baseline: one.baseline } : {}),
+    ...(one.updatedAt ? { updatedAt: one.updatedAt } : {}),
+  };
+  return { ...view, ...failuresDrawn({ ...view, root: one.root }, grouping) };
 }

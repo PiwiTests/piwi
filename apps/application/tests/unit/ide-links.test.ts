@@ -3,6 +3,7 @@ import {
   buildJetbrainsHttpUrl,
   buildJetbrainsNavigateUrl,
   buildPiwiPluginOpenUrl,
+  buildVscodeExtensionUrl,
   buildVscodeUrl,
   encodePathForUrl,
   isJetbrainsProduct,
@@ -72,6 +73,29 @@ describe('buildVscodeUrl', () => {
   test('encodes a space in the path', () => {
     expect(buildVscodeUrl({ scheme: 'vscode', absPath: '/my repo/a.ts', line: 1 })).toBe(
       'vscode://file/my%20repo/a.ts:1',
+    );
+  });
+});
+
+describe('buildVscodeExtensionUrl', () => {
+  test('names the path as the run reported it, its line and column, for the Piwi extension', () => {
+    expect(buildVscodeExtensionUrl({ scheme: 'vscode', path: 'tests/a.spec.ts', line: 12, column: 3 })).toBe(
+      'vscode://piwitests.piwi/open?file=tests%2Fa.spec.ts&line=12&column=3',
+    );
+  });
+
+  test('uses the flavor as the scheme, and adds the root when known', () => {
+    expect(buildVscodeExtensionUrl({ scheme: 'cursor', path: 'a.ts', root: 'C:\\my repo' })).toBe(
+      'cursor://piwitests.piwi/open?file=a.ts&root=C%3A%2Fmy%20repo',
+    );
+    expect(buildVscodeExtensionUrl({ scheme: 'vscodium', path: 'a.ts', line: 4 })).toBe(
+      'vscodium://piwitests.piwi/open?file=a.ts&line=4',
+    );
+  });
+
+  test('encodes a space as %20 and keeps a plus, an ampersand and a hash inside the value', () => {
+    expect(buildVscodeExtensionUrl({ scheme: 'vscode-insiders', path: 'tests\\a b+c&d#e.spec.ts' })).toBe(
+      'vscode-insiders://piwitests.piwi/open?file=tests%2Fa%20b%2Bc%26d%23e.spec.ts',
     );
   });
 });

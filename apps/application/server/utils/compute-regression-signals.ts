@@ -6,6 +6,7 @@ import { resolveDefaultBranch } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { selectBaselineRun } from './branch-baseline';
 import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
+import { testOutcomes } from '#shared/utils/test-counts';
 
 /** Execution ids one flag UPDATE sets at most. */
 const UPDATE_BATCH = 500;
@@ -49,11 +50,19 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
   if (!baseline) return;
   const baselineRun = baseline.run;
 
-  // Fetch baseline case statuses and retries
-  const baselineCases: any[] = await db
-    .select({ testCaseId: testRunsCases.testCaseId, status: testRunsCases.status, retries: testRunsCases.retries })
-    .from(testRunsCases)
-    .where(eq(testRunsCases.testRunId, baselineRun.id));
+  // The baseline's outcome of each test per browser: a test failed there when one of its repetitions failed
+  const baselineCases = testOutcomes(
+    await db
+      .select({
+        testCaseId: testRunsCases.testCaseId,
+        browserName: testRunsCases.browserName,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
+        status: testRunsCases.status,
+        retries: testRunsCases.retries,
+      })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.testRunId, baselineRun.id)),
+  );
 
   const baselineByCaseId = new Map<number, { status: string; retries: number }>();
   for (const bc of baselineCases) {

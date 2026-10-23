@@ -28,7 +28,6 @@ import io.netty.handler.codec.http.HttpVersion
 import io.netty.handler.codec.http.QueryStringDecoder
 import org.jetbrains.ide.RestService
 import java.io.File
-import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -46,7 +45,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * files in the projects connected to it only. Any other request for this path gets a 403 from
  * this handler. The platform's own rules, which trust any page on this
  * machine and every page once the built-in server allows unsigned requests, do not apply. The
- * platform still refuses a request whose `Host` is not this machine.
+ * platform still refuses a request whose `Host` is not this machine. The addresses come from
+ * each project's snapshot ([PiwiProjectService.knownAddresses]), read again when the status, the
+ * configs or the settings change: the server's I/O thread reads nothing from the disk.
  */
 class PiwiOpenHandler : RestService() {
     override fun getServiceName(): String = SERVICE
@@ -81,36 +82,19 @@ class PiwiOpenHandler : RestService() {
     private class KnownAddresses(val everywhere: List<String?>, val byProject: Map<Project, List<String?>>)
 
     /**
-     * The desktop app, as its discovery file and the editor service name it, and the instance in the environment, for
-     * every project; for each open project, its instance wherever else it is named (the workspace `.env`, the
-     * settings, what the editor service reads).
+     * The instance in the environment, for every project, and each open project's snapshot: the desktop app, for
+     * every project, and the project's instance wherever it is named, as `PiwiProjectService` last read them.
      */
     private fun knownAddresses(): KnownAddresses {
-        val everywhere = mutableListOf(System.getenv("PIWI_DASHBOARD_URL"), desktopDiscoveryUrl())
+        val everywhere = mutableListOf(System.getenv("PIWI_DASHBOARD_URL"))
         val byProject = LinkedHashMap<Project, List<String?>>()
         for (project in ProjectManager.getInstance().openProjects) {
             if (project.isDefault || project.isDisposed) continue
-            val service = project.service<PiwiProjectService>()
-            everywhere += service.status?.desktopUrl
-            byProject[project] = buildList {
-                add(service.settings().serverUrl)
-                service.status?.contexts.orEmpty().forEach { context ->
-                    add(context.serverUrl)
-                    add(context.instance?.serverUrl)
-                }
-                for (dir in if (service.trusted()) service.playwrightConfigDirs() else emptyList()) {
-                    val dotEnv = dir.resolve(".env")
-                    if (Files.isRegularFile(dotEnv)) add(OpenOrigins.dashboardUrlFromDotEnv(runCatching { Files.readString(dotEnv) }.getOrNull()))
-                }
-            }
+            val addresses = project.service<PiwiProjectService>().knownAddresses()
+            everywhere += addresses.everywhere
+            byProject[project] = addresses.own
         }
         return KnownAddresses(everywhere, byProject)
-    }
-
-    /** The desktop app's address in its discovery file ([Glue.desktopConfigPath]), while it runs. */
-    private fun desktopDiscoveryUrl(): String? {
-        val file = Glue.desktopConfigPath(System.getenv(), System.getProperty("user.home")) ?: return null
-        return Glue.parseDesktopDiscovery(runCatching { Files.readString(file) }.getOrNull())?.url
     }
 
     /** Names the first page refused in this IDE session in a notification; later refusals are silent. */
@@ -238,5 +222,18 @@ class PiwiOpenHandler : RestService() {
 
         /** Whether a refused page was already named in a notification this session. */
         private val NOTIFIED = AtomicBoolean()
+    }
+}
+
+/**
+ * The addresses whose pages may open a project's files, as its `PiwiProjectService` read them last
+ * ([PiwiProjectService.readKnownAddresses]): the desktop app's, whose pages open files in every open project, and the
+ * project's own instance wherever it is named (its settings, what the editor service reads, the `.env` of each
+ * Playwright config folder).
+ */
+class ProjectAddresses(val everywhere: List<String?>, val own: List<String?>) {
+    companion object {
+        /** Before the first read. */
+        val NONE = ProjectAddresses(emptyList(), emptyList())
     }
 }

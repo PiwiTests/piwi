@@ -106,6 +106,36 @@ class RunTestsForFileAction : AnAction(), DumbAware {
     }
 }
 
+/**
+ * Piwi: Run the Test at the Caret (`wholeSpec` false), Verify the Test at the Caret ×3 (`repeat`) or Run This Spec,
+ * through `piwi/testAt`, in the Run tool window with the IDE's breakpoints, which a verification leaves out. Offered in
+ * a spec file of a project with a Playwright config.
+ */
+abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repeat: Int? = null) : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
+        val project = e.project
+        e.presentation.isEnabledAndVisible = project != null && file != null && Glue.isSpecFile(file.name) &&
+            (wholeSpec || e.getData(CommonDataKeys.EDITOR) != null) &&
+            project.service<PiwiProjectService>().hasPlaywrightConfig()
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) } ?: return
+        val caret = e.getData(CommonDataKeys.EDITOR)?.caretModel?.logicalPosition
+        PiwiCommands.runTestAt(project, uri, caret?.line ?: 0, caret?.column ?: 0, wholeSpec, repeat)
+    }
+}
+
+class RunTestAtCursorAction : RunInSpecAction(wholeSpec = false)
+
+class VerifyTestAtCursorAction : RunInSpecAction(wholeSpec = false, repeat = Glue.VERIFY_REPEAT)
+
+class RunSpecAction : RunInSpecAction(wholeSpec = true)
+
 /** Piwi: Open in dashboard — this file's test, or the latest run. */
 class OpenInDashboardAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -126,7 +156,8 @@ class OpenInDashboardAction : AnAction(), DumbAware {
                         .setItemChosenCallback { t -> t.url?.let { BrowserUtil.browse(it) } }
                         .createPopup()
                         .showCenteredInCurrentWindow(project)
-                    else -> Glue.statusView(service.status, service.runs).url?.let { BrowserUtil.browse(it) }
+                    else -> Glue.statusView(service.status, service.runs, file = file?.path ?: PiwiStatusBarWidget.shownFile(project))
+                        .url?.let { BrowserUtil.browse(it) }
                 }
             }
         }
@@ -138,13 +169,16 @@ class OpenLatestRunAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        val service = e.project?.service<PiwiProjectService>()
-        e.presentation.isEnabled = service != null && Glue.statusView(service.status, service.runs).url != null
+        e.presentation.isEnabled = e.project?.let { url(it) } != null
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val service = e.project?.service<PiwiProjectService>() ?: return
-        Glue.statusView(service.status, service.runs).url?.let { BrowserUtil.browse(it) }
+        e.project?.let { url(it) }?.let { BrowserUtil.browse(it) }
+    }
+
+    /** The page of the run the status bar shows, for the context of the selected editor's file. */
+    private fun url(project: Project): String? = project.service<PiwiProjectService>().let {
+        Glue.statusView(it.status, it.runs, file = PiwiStatusBarWidget.shownFile(project)).url
     }
 }
 
@@ -162,42 +196,51 @@ class CompareWithAction : AnAction(), DumbAware {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val service = project.service<PiwiProjectService>()
         val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) }
-        val contexts = service.runs?.contexts.orEmpty()
-        val root = Glue.contextRootOf(service.status, uri)
-        val run = contexts.firstOrNull { it.root == root } ?: contexts.firstOrNull() ?: return
-        val target = run.root ?: return
-        JBPopupFactory.getInstance()
-            .createPopupChooserBuilder(Glue.baselineEntries(run))
-            .setRenderer(textRenderer<Glue.BaselineEntry> { if (it.current) "${it.label} · current" else it.label })
-            .setTitle("Compare With… (now: ${run.baseline?.label?.ifBlank { null } ?: "the latest run"})")
-            .setItemChosenCallback { entry ->
-                val chosen = entry.choice
-                // A run by id: the service reads the id typed, and a text that is not one is said so.
-                val typed = if (chosen != null) "" else Messages.showInputDialog(
-                    project,
-                    "The id of the run to compare with (its page in the dashboard shows it):",
-                    "Compare With a Run",
-                    null,
-                    null,
-                    object : InputValidator {
-                        override fun checkInput(inputString: String?) = !inputString.isNullOrBlank()
-                        override fun canClose(inputString: String?) = checkInput(inputString)
-                    },
-                ) ?: return@setItemChosenCallback
-                ApplicationManager.getApplication().executeOnPooledThread {
-                    val choice = chosen ?: service.server()?.runId(RunIdParams(typed))?.orNull()?.runId
-                        ?.let { BaselineChoice("run", runId = it) }
-                    if (choice == null) {
-                        PiwiCommands.notify(project, "Not a run id: give a positive number, such as 118.", NotificationType.WARNING)
-                    } else {
-                        service.setBaseline(target, choice)
+        choose(project, Glue.contextRootOf(project.service<PiwiProjectService>().status, uri))
+    }
+
+    companion object {
+        /**
+         * Offer the baselines of the context at `root` (the first one when no context is there), from the action or a
+         * Playwright config's node of the tool window, and keep the one chosen.
+         */
+        fun choose(project: Project, root: String?) {
+            val service = project.service<PiwiProjectService>()
+            val contexts = service.runs?.contexts.orEmpty()
+            val run = contexts.firstOrNull { it.root == root } ?: contexts.firstOrNull() ?: return
+            val target = run.root ?: return
+            JBPopupFactory.getInstance()
+                .createPopupChooserBuilder(Glue.baselineEntries(run))
+                .setRenderer(textRenderer<Glue.BaselineEntry> { if (it.current) "${it.label} · current" else it.label })
+                .setTitle("Compare With… (now: ${run.baseline?.label?.ifBlank { null } ?: "the latest run"})")
+                .setItemChosenCallback { entry ->
+                    val chosen = entry.choice
+                    // A run by id: the service reads the id typed, and a text that is not one is said so.
+                    val typed = if (chosen != null) "" else Messages.showInputDialog(
+                        project,
+                        "The id of the run to compare with (its page in the dashboard shows it):",
+                        "Compare With a Run",
+                        null,
+                        null,
+                        object : InputValidator {
+                            override fun checkInput(inputString: String?) = !inputString.isNullOrBlank()
+                            override fun canClose(inputString: String?) = checkInput(inputString)
+                        },
+                    ) ?: return@setItemChosenCallback
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        val choice = chosen ?: service.server()?.runId(RunIdParams(typed))?.orNull()?.runId
+                            ?.let { BaselineChoice("run", runId = it) }
+                        if (choice == null) {
+                            PiwiCommands.notify(project, "Not a run id: give a positive number, such as 118.", NotificationType.WARNING)
+                        } else {
+                            service.setBaseline(target, choice)
+                        }
                     }
                 }
-            }
-            .createPopup()
-            .showCenteredInCurrentWindow(project)
+                .createPopup()
+                .showCenteredInCurrentWindow(project)
+        }
     }
 }
 

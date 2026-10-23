@@ -40,6 +40,7 @@ export function resolveOverallStatus(
  *   while `workerIndex`/`shardIndex`/`startedAt`/`suitePath`/`suiteConfig`/
  *   `testAnnotations`/`tags`/`testMeta` use `?? null` (so `0` survives). Note:
  *   an empty array is truthy, so `steps: []` is preserved as `[]`, not `null`.
+ * - `repeatEachIndex` is `0` for a case collected without one.
  */
 export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
   const { type, ...rest } = tc as any;
@@ -52,6 +53,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     timeout: rest.timeout ?? null,
     error: rest.error,
     retries: rest.retries,
+    repeatEachIndex: rest.repeatEachIndex ?? 0,
     attempts: rest.attempts || null,
     workerIndex: rest.workerIndex ?? null,
     shardIndex: rest.shardIndex ?? null,
@@ -122,8 +124,8 @@ function isFailingStatus(status: string): boolean {
 /**
  * Run counts computed from the collected cases as **distinct tests**: the final
  * attempt of each test (Playwright's `test.id`, or its title, location, describe
- * path and browser for a case collected without one) decides its outcome, so
- * retries never inflate the totals while a parameterized test or a
+ * path, browser and repeat index for a case collected without one) decides its
+ * outcome, so retries never inflate the totals while a parameterized test or a
  * `--repeat-each` repetition counts once each (`total = passed + failed +
  * timedOut + skipped + didNotRun`, ignoring any rare interrupted case). Of two
  * attempts with the same retry index, the failing one decides. Timed-out stays
@@ -139,6 +141,7 @@ export function computeDistinctRunCounts(
     location: string;
     status?: string;
     retries?: number | null;
+    repeatEachIndex?: number | null;
     browser?: unknown;
     suitePath?: string[] | null;
   }>,
@@ -147,7 +150,13 @@ export function computeDistinctRunCounts(
   for (const tc of testCases) {
     const key =
       tc.testId ??
-      [tc.title, tc.location, (tc.suitePath ?? []).join('\x1f'), browserProjectName(tc.browser)].join('\x00');
+      [
+        tc.title,
+        tc.location,
+        (tc.suitePath ?? []).join('\x1f'),
+        browserProjectName(tc.browser),
+        tc.repeatEachIndex ?? 0,
+      ].join('\x00');
     const status = tc.status ?? '';
     const retries = tc.retries ?? 0;
     const prev = final.get(key);

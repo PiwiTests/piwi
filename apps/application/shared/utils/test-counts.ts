@@ -53,7 +53,7 @@ export function countFailedFromTally(tally: Record<string, number> | undefined |
 
 const FAILED_STATUS_SET = new Set<string>(FAILED_STATUS_KEYS);
 
-/** Stored run counters, distinct by test. `failedTests` already folds timed-out in. */
+/** Stored run counters, one per test result (each repetition of a test counts). `failedTests` already folds timed-out in. */
 export interface DistinctRunCounts {
   totalTests: number;
   passedTests: number;
@@ -63,13 +63,20 @@ export interface DistinctRunCounts {
   flakyTests: number;
 }
 
+/** The columns that tell one attempt row of a run from another. */
+interface AttemptRow {
+  testCaseId: number;
+  browserName?: string | null;
+  /** Playwright's `repeatEachIndex`: each `--repeat-each` repetition is a test result of its own, with its own retries. */
+  repeatEachIndex: number | null;
+  retries?: number | null;
+}
+
 /**
- * The final attempt of each (test case, browser) — the row with the highest
- * retry. A run stores one row per attempt; this row decides the test's outcome.
+ * The final attempt of each repetition of a test in a run: per (test case, browser, repeat), the row with the highest
+ * retry. A run stores one row per attempt; this row decides that repetition's outcome.
  */
-export function finalAttempts<T extends { testCaseId: number; browserName?: string | null; retries?: number | null }>(
-  rows: ReadonlyArray<T>,
-): T[] {
+export function finalAttempts<T extends AttemptRow>(rows: ReadonlyArray<T>): T[] {
   const final = new Map<string, T>();
   for (const r of rows) {
     const key = attemptKey(r);
@@ -79,22 +86,60 @@ export function finalAttempts<T extends { testCaseId: number; browserName?: stri
   return [...final.values()];
 }
 
-/** The (test case, browser) identity shared by all attempts of one test in a run. */
-export function attemptKey(row: { testCaseId: number; browserName?: string | null }): string {
+/** The (test case, browser, repeat) identity shared by all attempts of one repetition of a test in a run. */
+export function attemptKey(row: Pick<AttemptRow, 'testCaseId' | 'browserName' | 'repeatEachIndex'>): string {
+  return `${testKey(row)}\x00${row.repeatEachIndex ?? 0}`;
+}
+
+/** The (test case, browser) identity of a test in a run, shared by every repetition and attempt of it. */
+export function testKey(row: Pick<AttemptRow, 'testCaseId' | 'browserName'>): string {
   return `${row.testCaseId}\x00${row.browserName ?? ''}`;
 }
 
+/** How strongly a repetition's final attempt speaks for its test: a failure first, then a pass after a retry. */
+function outcomeRank(row: { status: string; retries?: number | null }): number {
+  if (FAILED_STATUS_SET.has(row.status)) return 3;
+  if (row.status === 'passed') return (row.retries ?? 0) > 0 ? 2 : 1;
+  return 0;
+}
+
 /**
- * Reduce a run's per-attempt `test_runs_cases` rows to distinct-test counters:
- * the final attempt per (test case, browser) — the highest retry — decides each
- * test's outcome, timed-out folds into `failedTests` (Piwi has no separate
- * column), and a test that passed only after a retry counts as passed and as
- * flaky. Used to set a run's stored counters from the rows the server holds,
- * so retry attempts never inflate them.
+ * Whether `row` rather than `current` decides a test's outcome in a run, both being final attempts of its
+ * repetitions: a failed one when any failed, else one that passed after a retry, else the later repetition.
  */
-export function distinctRunCountsFromAttempts(
-  rows: ReadonlyArray<{ testCaseId: number; browserName?: string | null; retries?: number | null; status: string }>,
-): DistinctRunCounts {
+export function decidesOutcome(
+  row: { status: string; retries?: number | null; repeatEachIndex: number | null },
+  current: { status: string; retries?: number | null; repeatEachIndex: number | null } | undefined,
+): boolean {
+  if (!current) return true;
+  const rank = outcomeRank(row);
+  const currentRank = outcomeRank(current);
+  return rank > currentRank || (rank === currentRank && (row.repeatEachIndex ?? 0) >= (current.repeatEachIndex ?? 0));
+}
+
+/**
+ * The outcome of each test in a run, one row per (test case, browser): among the final attempts of its repetitions
+ * (`finalAttempts`), the one `decidesOutcome` picks. A test failed in a run when one of its repetitions failed, and
+ * is flaky there when none failed and one passed only on a retry. Without `--repeat-each` this is the test's final
+ * attempt.
+ */
+export function testOutcomes<T extends AttemptRow & { status: string }>(rows: ReadonlyArray<T>): T[] {
+  const outcome = new Map<string, T>();
+  for (const r of finalAttempts(rows)) {
+    const key = testKey(r);
+    if (decidesOutcome(r, outcome.get(key))) outcome.set(key, r);
+  }
+  return [...outcome.values()];
+}
+
+/**
+ * Reduce a run's per-attempt `test_runs_cases` rows to its counters, one per test result: the final attempt of each
+ * repetition of a test (per test case, browser and `--repeat-each` repetition, the highest retry) decides that
+ * result, so retry attempts never inflate the counters while each repetition counts once, as Playwright's own summary
+ * counts them. Timed-out folds into `failedTests` (Piwi has no separate column), and a result that passed only after
+ * a retry counts as passed and as flaky.
+ */
+export function distinctRunCountsFromAttempts(rows: ReadonlyArray<AttemptRow & { status: string }>): DistinctRunCounts {
   const final = finalAttempts(rows);
   const counts: DistinctRunCounts = {
     totalTests: final.length,

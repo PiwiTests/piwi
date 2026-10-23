@@ -246,6 +246,42 @@ describe('slow-request-overlapping-failure', () => {
     });
     expect(rules(input)).not.toContain('slow-request-overlapping-failure');
   });
+
+  describe('a failed step that is the test’s own HTTP call', () => {
+    // A slow page request in flight while the test's own API call ran.
+    const pageRequest = { method: 'GET', url: '/api/notifications', status: 200, duration: 3_000, startTime: T0 + 500 };
+
+    function apiCallInput(subtitle: string, duration = 3_800) {
+      const timeline = buildFailureTimeline(
+        timelineInput({
+          timeout: 4_000,
+          duration: 4_000,
+          networkRequests: [pageRequest],
+          steps: [{ title: 'POST', subtitle, category: 'pw:api', duration, startTime: T0, error: 'server error' }],
+        }),
+      );
+      return baseInput({ timeline, timeout: 4_000, networkRequests: [pageRequest], parsedError: null });
+    }
+
+    test('names the call, not a page request that happened to overlap it', () => {
+      const clue = runClues(apiCallInput('https://app.test/api/seed?run=1')).find(
+        (c) => c.rule === 'slow-request-overlapping-failure',
+      );
+      expect(clue!.title).toBe('POST /api/seed took 3.8 s');
+      expect(clue!.detail).not.toContain('/api/notifications');
+      expect(clue!.citations).toEqual([{ section: 'steps' }]);
+    });
+
+    test('reads the path of a URL shown without its scheme', () => {
+      const { story } = buildFailureClues(apiCallInput('app.test/api/seed'));
+      expect(story?.id).toBe('timing');
+      expect(story!.sentence).toMatch(/waiting on \/api\/seed\.$/);
+    });
+
+    test('a fast call fires nothing, even with a slow page request in flight', () => {
+      expect(rules(apiCallInput('https://app.test/api/seed', 200))).not.toContain('slow-request-overlapping-failure');
+    });
+  });
 });
 
 describe('console-mentions-target', () => {

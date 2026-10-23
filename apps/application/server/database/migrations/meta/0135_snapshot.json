@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "65fe9fc2-7350-43d1-9ce5-bd50ec3d736f",
+  "id": "3be4d424-efdd-45f2-a728-fc5c232d9b1d",
   "prevId": "3c48deed-abce-4b52-8fa3-42b114e95799",
   "tables": {
     "account_tokens": {
@@ -562,294 +562,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "assistant_conversations": {
-      "name": "assistant_conversations",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
-        "extra_tools": {
-          "name": "extra_tools",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_assistant_conversations_owner": {
-          "name": "idx_assistant_conversations_owner",
-          "columns": ["owner_id", "updated_at"],
-          "isUnique": false
-        },
-        "idx_assistant_conversations_updated": {
-          "name": "idx_assistant_conversations_updated",
-          "columns": ["updated_at"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "assistant_conversations_owner_id_users_id_fk": {
-          "name": "assistant_conversations_owner_id_users_id_fk",
-          "tableFrom": "assistant_conversations",
-          "tableTo": "users",
-          "columnsFrom": ["owner_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "assistant_messages": {
-      "name": "assistant_messages",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "conversation_id": {
-          "name": "conversation_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "context": {
-          "name": "context",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "tool_calls": {
-          "name": "tool_calls",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'completed'"
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "duration_ms": {
-          "name": "duration_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_assistant_messages_conversation": {
-          "name": "idx_assistant_messages_conversation",
-          "columns": ["conversation_id", "id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "assistant_messages_conversation_id_assistant_conversations_id_fk": {
-          "name": "assistant_messages_conversation_id_assistant_conversations_id_fk",
-          "tableFrom": "assistant_messages",
-          "tableTo": "assistant_conversations",
-          "columnsFrom": ["conversation_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "assistant_usage": {
-      "name": "assistant_usage",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_assistant_usage_created": {
-          "name": "idx_assistant_usage_created",
-          "columns": ["created_at"],
-          "isUnique": false
-        },
-        "idx_assistant_usage_owner": {
-          "name": "idx_assistant_usage_owner",
-          "columns": ["owner_id", "created_at"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "assistant_usage_owner_id_users_id_fk": {
-          "name": "assistant_usage_owner_id_users_id_fk",
-          "tableFrom": "assistant_usage",
-          "tableTo": "users",
-          "columnsFrom": ["owner_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -10058,6 +9770,14 @@
           "autoincrement": false,
           "default": 0
         },
+        "repeat_each_index": {
+          "name": "repeat_each_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "attempts": {
           "name": "attempts",
           "type": "text",
@@ -10371,7 +10091,7 @@
         },
         "idx_test_runs_cases_run_browser": {
           "name": "idx_test_runs_cases_run_browser",
-          "columns": ["test_run_id", "test_case_id", "retries", "browser_name"],
+          "columns": ["test_run_id", "test_case_id", "repeat_each_index", "retries", "browser_name"],
           "isUnique": true
         },
         "idx_trc_aria_payload": {

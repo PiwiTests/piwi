@@ -6,6 +6,7 @@ import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
+import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import type { StreamEventPayload } from '#shared/types';
@@ -41,11 +42,16 @@ const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024; // 10 MB
 /**
  * Stable identity for a test case within a run, used to match a `begin` event
  * to its later `complete`. Mirrors the key the run page builds client-side
- * (title + location + browser), so recording on begin and clearing on complete
- * target the same running-case entry.
+ * (title + location + browser + repeat), so recording on begin and clearing on
+ * complete target the same running-case entry.
  */
-function runningCaseKey(tc: { title?: string; location?: string | null; browser?: unknown }): string {
-  return `${tc.title}\x1f${tc.location ?? ''}\x1f${JSON.stringify(tc.browser ?? null)}`;
+function runningCaseKey(tc: {
+  title?: string;
+  location?: string | null;
+  browser?: unknown;
+  repeatEachIndex?: unknown;
+}): string {
+  return `${tc.title}\x1f${tc.location ?? ''}\x1f${JSON.stringify(tc.browser ?? null)}\x1f${resolveRepeatEachIndex(tc.repeatEachIndex)}`;
 }
 
 export default eventHandler(async (event) => {
@@ -100,6 +106,7 @@ export default eventHandler(async (event) => {
       shardIndex: tc.shardIndex ?? null,
       startedAt: tc.startedAt ?? null,
       browser: tc.browser ?? null,
+      repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
     };
     runEventBus.publish(id, { type: 'test-begin', data: beginData });
     // A running case has no DB row until it completes, so remember its begin
@@ -186,6 +193,7 @@ export default eventHandler(async (event) => {
         // The attempt number rides along so the live page can tell a
         // passed-on-retry (flaky) test from a first-try pass.
         retries: tc.retries ?? null,
+        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
       },

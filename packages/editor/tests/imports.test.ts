@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { importInsertion, importStatementEnds, importedNames, missingImports } from '../src/recorder/imports';
+import {
+  expectModuleOf,
+  importInsertion,
+  importStatementEnds,
+  importedNames,
+  missingImports,
+  requireForm,
+  testImportOf,
+} from '../src/recorder/imports';
 
 const file = (...lines: string[]) => lines.join('\n');
 const names = (text: string) => [...importedNames(text)].sort();
@@ -49,12 +57,11 @@ describe('importedNames', () => {
     expect(names(text)).toEqual(['CartPage', 'Checkout', 'type']);
   });
 
-  test('side-effect imports, dynamic imports, import.meta, require and code inside blocks or strings bind nothing', () => {
+  test('side-effect imports, dynamic imports, import.meta and code inside blocks or strings bind nothing', () => {
     const text = file(
       "import './setup';",
       "const lazy = await import('./lazy');",
       'const here = import.meta.url;',
-      "const fs = require('node:fs');",
       'const text = "import { Fake } from \'x\';";',
       '// import { Commented } from "y";',
       "declare module 'z' {",
@@ -62,6 +69,23 @@ describe('importedNames', () => {
       '}',
     );
     expect(names(text)).toEqual([]);
+  });
+
+  test('the names of require declarations: a destructuring, a whole module, a renamed export, a member', () => {
+    const text = file(
+      "const { test, expect } = require('@playwright/test');",
+      "const base = require('./base');",
+      "let { test: it, 'odd-name': odd } = require('./fixtures'), helpers = require('./helpers');",
+      "var only = require('./pages').OnlyPage;",
+      "require('./setup');",
+      "const fs = require('node:fs'), count = 1;",
+      'function run() {',
+      "  const inner = require('./inner');",
+      '}',
+      'const text = \'const { fake } = require("x")\';',
+      "// const { commented } = require('y');",
+    );
+    expect(names(text)).toEqual(['base', 'expect', 'fs', 'helpers', 'it', 'odd', 'only', 'test'].sort());
   });
 });
 
@@ -82,6 +106,16 @@ describe('missingImports', () => {
       ]),
     ).toEqual(["import { SignInPage } from './pages/sign-in.page';", "import { fill } from './helpers';"]);
     expect(missingImports(text, [])).toEqual([]);
+  });
+
+  test('a require declaration binds its names, in the file and as a line', () => {
+    const text = "const { test, expect } = require('@playwright/test');\n";
+    expect(
+      missingImports(text, [
+        "import { expect } from '@playwright/test';",
+        "const { CartPage } = require('./pages/cart.page');",
+      ]),
+    ).toEqual(["const { CartPage } = require('./pages/cart.page');"]);
   });
 });
 
@@ -116,12 +150,13 @@ describe('importStatementEnds', () => {
     ]);
   });
 
-  test('skips what is not a statement: in a string, a comment or a block, and an alias with no module', () => {
+  test('skips what is not a statement: in a string, a comment or a block, an alias with no module, a require', () => {
     const text = file(
       "// import { a } from './a';",
       'const s = "import { b } from \'./b\';";',
       "if (x) { import('./c'); }",
       'import Alias = Name.Space;',
+      "const { expect } = require('@playwright/test');",
     );
     expect(importStatementEnds(text)).toEqual([]);
   });
@@ -158,9 +193,110 @@ describe('importInsertion', () => {
     expect(importInsertion('', [cart])).toEqual(insertAt(0, `${cart}\n\n`));
   });
 
+  test('in a file loading its modules with require: require declarations, after the last of them', () => {
+    const text = file(
+      "const { test } = require('@playwright/test');",
+      "const base = require('./base');",
+      '',
+      "test('t', async ({ page }) => {});",
+    );
+    expect(importInsertion(text, ["import { expect } from '@playwright/test';", cart])).toEqual(
+      insertAt(
+        2,
+        "const { expect } = require('@playwright/test');\nconst { CartPage } = require('./pages/cart.page');\n",
+      ),
+    );
+    const both = file("import { test } from '@playwright/test';", "const base = require('./base');", '');
+    expect(importInsertion(both, [cart])).toEqual(insertAt(1, `${cart}\n`));
+    const inner = file('function f() {', "  const x = require('./x');", '}');
+    expect(importInsertion(inner, [cart])).toEqual(insertAt(0, `${cart}\n\n`));
+  });
+
   test('adds each line once, and nothing without a line', () => {
     expect(importInsertion("import { b } from './b';\n", [cart, ` ${cart} `, ''])).toEqual(insertAt(1, `${cart}\n`));
     expect(importInsertion("import { b } from './b';\n", [])).toBeNull();
     expect(importInsertion("import { b } from './b';\n", ['  '])).toBeNull();
+  });
+});
+
+describe('requireForm', () => {
+  test('an import line as a require declaration of the same shape', () => {
+    expect(requireForm("import { CartPage } from './pages/cart.page';")).toBe(
+      "const { CartPage } = require('./pages/cart.page');",
+    );
+    expect(requireForm("import { test as it, expect } from '@playwright/test'")).toBe(
+      "const { test: it, expect } = require('@playwright/test');",
+    );
+    expect(requireForm("import base from './base';")).toBe("const base = require('./base');");
+    expect(requireForm("import * as pages from './pages';")).toBe("const pages = require('./pages');");
+    expect(requireForm("import './setup';")).toBe("require('./setup');");
+    expect(requireForm("import type { Page } from '@playwright/test';")).toBe('');
+    expect(requireForm("const { expect } = require('@playwright/test');")).toBe(
+      "const { expect } = require('@playwright/test');",
+    );
+  });
+});
+
+describe('testImportOf', () => {
+  test('the module the file takes test from: named, renamed, as a default, or through require', () => {
+    expect(testImportOf("import { test, expect } from '@playwright/test';\n\ntest('t', () => {});\n")).toBe(
+      '@playwright/test',
+    );
+    expect(testImportOf("import { expect, test } from './fixtures';\n")).toBe('./fixtures');
+    expect(testImportOf("import fixtures, { test } from '../support';\n")).toBe('../support');
+    expect(testImportOf("import { test as it } from './fixtures';\nit('x', async ({ page }) => {});")).toBe(
+      './fixtures',
+    );
+    expect(testImportOf("import test from './fixtures';\n")).toBe('./fixtures');
+    expect(testImportOf("const { test, expect } = require('@playwright/test');\n")).toBe('@playwright/test');
+    expect(testImportOf("const { test: it } = require('./fixtures');\n")).toBe('./fixtures');
+    expect(testImportOf("const test = require('@playwright/test').test;\n")).toBe('@playwright/test');
+  });
+
+  test('none when the file declares its own test, imports it as a type only, or takes it from nothing', () => {
+    expect(
+      testImportOf("import { test as base } from '@playwright/test';\nexport const test = base.extend({});"),
+    ).toBeNull();
+    expect(testImportOf("const base = require('@playwright/test');\nconst test = base.test.extend({});")).toBeNull();
+    expect(testImportOf("import { test } from './fixtures';\nfunction test() {}")).toBeNull();
+    expect(testImportOf("import type { test } from './fixtures';")).toBeNull();
+    expect(testImportOf("// import { test } from './fixtures';\nconst x = 1;")).toBeNull();
+    expect(testImportOf('')).toBeNull();
+  });
+});
+
+describe('expectModuleOf', () => {
+  test('the module test comes from when it is @playwright/test, or when the file or a spec beside it imports expect from it', () => {
+    expect(expectModuleOf("import { test } from '@playwright/test';")).toBe('@playwright/test');
+    expect(expectModuleOf("import { test, expect } from './fixtures';")).toBe('./fixtures');
+    expect(expectModuleOf("import { test } from './fixtures';")).toBe('@playwright/test');
+    const fixtures = "import { test } from './fixtures';";
+    expect(expectModuleOf(fixtures, { siblings: () => ["import { test, expect } from './fixtures';"] })).toBe(
+      './fixtures',
+    );
+    expect(
+      expectModuleOf(fixtures, {
+        siblings: () => ["import { test, expect } from '@playwright/test';", "import { expect } from './other';"],
+      }),
+    ).toBe('@playwright/test');
+    expect(
+      expectModuleOf("const { test } = require('./fixtures');", {
+        siblings: () => ["const { test, expect } = require('./fixtures');"],
+      }),
+    ).toBe('./fixtures');
+    expect(expectModuleOf('')).toBe('@playwright/test');
+  });
+
+  test('the specs beside the file are read only when the module could export expect', () => {
+    let read = 0;
+    const siblings = () => {
+      read++;
+      return [];
+    };
+    expectModuleOf("import { test } from '@playwright/test';", { siblings });
+    expectModuleOf("import { test, expect } from './fixtures';", { siblings });
+    expect(read).toBe(0);
+    expectModuleOf("import { test } from './fixtures';", { siblings });
+    expect(read).toBe(1);
   });
 });

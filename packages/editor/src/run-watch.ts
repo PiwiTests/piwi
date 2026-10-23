@@ -3,17 +3,19 @@
  * a context's project starts or ends: half a second after a run ends, the context reads its latest run again, and
  * while a run of its branch is in progress, the context follows it (`live`), counted through that run's own stream.
  * A test run the editor starts carries a ref (`PIWI_ORIGIN_REF`), which the service looks for on the instance for two
- * minutes, and in every run the stream announces: the context follows that run wherever it runs and keeps it as its own
+ * minutes, seldom while the instance's stream is connected, and in every run the stream announces: the context follows
+ * that run wherever it runs and keeps it as its own
  * (`ownRuns`), and so a later run with the same ref, a rerun of the command. A command that ended without its run
  * reaching the instance is said in a notice. The tests the live run begins and ends are kept until the latest run is
- * read once it ended (`liveTests`), and when a run of the editor's own ended and was read, its verdict is said.
+ * read once it ended (`liveTests`), and when a run of the editor's own ended and was read, its verdict is said: for a
+ * command that runs each test several times, with how many of those runs passed, counted from the run's stream.
  */
 import { randomBytes } from 'node:crypto';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
 import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import type { PiwiContext } from './context.js';
 import type { BranchFailures, CatalogCase, RunDetails } from './piwi-client.js';
-import type { LiveRun, LiveTestStatus, Notice, RunEnded } from './protocol.js';
+import type { LiveRun, LiveTestStatus, Notice, RepeatVerdict, RunEnded } from './protocol.js';
 import {
   EventStream,
   InstanceStream,
@@ -31,6 +33,8 @@ const PROGRESS_MS = 300;
 /** How often, and for how long, the instance is asked for the run of a command the editor built. */
 const OWN_RUN_POLL_MS = 2_000;
 const OWN_RUN_WATCH_MS = 2 * 60_000;
+/** While the instance's stream is connected, which announces the run, it is asked this many times less often. */
+const STREAM_POLL_FACTOR = 10;
 /** The commands whose runs the service recognizes, the latest ones: past this many, the oldest is forgotten. */
 const MAX_WATCHES = 50;
 /** How long after a command ends its run may take to show on the instance. */
@@ -73,6 +77,9 @@ function liveOf(run: RunDetails, own: boolean): LiveRun {
 }
 
 const streamKey = (connection: PiwiConnection) => `${connection.serverUrl}\n${connection.apiKey ?? ''}`;
+
+/** A run of an instance: its id is the instance's. */
+const runKey = (connection: PiwiConnection, runId: number) => `${connection.serverUrl}\n${runId}`;
 
 /** A test's end as the gutter shows it: a pass after a failed attempt is flaky; null for an outcome it does not show. */
 function endedStatus(data: Record<string, unknown>): LiveTestStatus | null {
@@ -143,6 +150,56 @@ export function runVerdict(
   };
 }
 
+/** The results a repeated run's stream brought, each once: one per run of a test on a Playwright project. */
+export interface RepeatCount {
+  passed: number;
+  failed: number;
+  skipped: number;
+}
+
+/**
+ * How many runs of a run that ran each test `repeat` times passed: `Passed 3 of 3`, `Failed 1 of 3`. The runs are the
+ * run's tests, which the instance counts once per Playwright project and repetition, and at least the results the run's
+ * stream brought and `repeat`. When the stream did not bring every result, a run that failed says
+ * `Failed at least 1 of 3`, and one that did not, that they all passed.
+ */
+export function repeatVerdict(
+  repeat: number,
+  counted: RepeatCount,
+  run: Pick<RunDetails, 'totalTests' | 'failedTests' | 'skippedTests'>,
+): RepeatVerdict {
+  const seen = counted.passed + counted.failed + counted.skipped;
+  const total = run.totalTests || seen ? Math.max(run.totalTests, seen, repeat) : 0;
+  if (!total) return { verdict: 'No test ran', failed: false };
+  if (!counted.failed && !run.failedTests) {
+    const skipped = Math.min(total, Math.max(counted.skipped, run.skippedTests));
+    if (skipped === total) return { verdict: `Skipped ${total} of ${total}`, failed: false };
+    return { verdict: `Passed ${total - skipped} of ${total}${skipped ? `, ${skipped} skipped` : ''}`, failed: false };
+  }
+  const failed = Math.max(counted.failed, run.failedTests);
+  const verdict = seen >= total ? `Failed ${failed} of ${total}` : `Failed at least ${failed} of ${total}`;
+  return { verdict, failed: true };
+}
+
+/**
+ * What a command that ran the tests at `target` `repeat` times each says once it ended, when its run reached no
+ * instance: from its exit code alone, every run passed, or at least one failed.
+ */
+export function exitVerdict(
+  repeat: number,
+  exitCode: number | null,
+  target: string,
+): Pick<Notice, 'severity' | 'message'> {
+  if (exitCode === 0) return { severity: 'information', message: `Passed ${repeat} of ${repeat}: ${target}` };
+  if (exitCode === null) {
+    return {
+      severity: 'warning',
+      message: `The ${repeat} runs of ${target} ended without an exit code: see the output.`,
+    };
+  }
+  return { severity: 'warning', message: `Failed at least 1 of ${repeat}: ${target} (exit code ${exitCode})` };
+}
+
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms).unref?.();
@@ -164,7 +221,10 @@ export interface RunWatchOptions {
   runEnded?: (ended: RunEnded) => void;
   /** The streams' timings. */
   stream?: EventStreamOptions;
-  /** How often the instance is asked for the run of a command the editor built. */
+  /**
+   * How often the instance is asked for the run of a command the editor built while its stream is down; ten times
+   * less often while the stream is connected.
+   */
   ownRunPollMs?: number;
   /** How long after a command ends its run may take to reach the instance. */
   commandEndWaitMs?: number;
@@ -187,6 +247,15 @@ interface RefWatch {
   /** Until when the instance is asked for the command's run: two minutes after the command was built. */
   until: number;
   timer: ReturnType<typeof setTimeout> | null;
+  /** How many times the command runs each test; null for once. */
+  repeat: number | null;
+}
+
+/** The results of a repeated run that its stream brought, counted once each. */
+interface RepeatTally extends RepeatCount {
+  repeat: number;
+  /** The executions counted: the stream's catch-up sends again the results it brought live. */
+  executions: Set<number>;
 }
 
 /** The live run of a context, followed through its own stream. */
@@ -212,6 +281,8 @@ export class RunWatch {
   private readonly attempts = new Map<PiwiContext, Map<number, Map<string, LiveTestStatus>>>();
   /** The runs of the editor's own whose verdict was said, by instance. */
   private readonly told = new Set<string>();
+  /** The results of the repeated runs of the editor's own, by instance and run, until their verdict is said. */
+  private readonly tallies = new Map<string, RepeatTally>();
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
   private progressAt = 0;
   private disposed = false;
@@ -235,7 +306,10 @@ export class RunWatch {
       const stream = new InstanceStream(
         connection,
         (event) => this.onEvent(key, event),
-        () => this.options.changed(),
+        (connected) => {
+          this.streamState(key, connected);
+          this.options.changed();
+        },
         this.options.stream,
       );
       this.streams.set(key, stream);
@@ -260,10 +334,12 @@ export class RunWatch {
   }
 
   /**
-   * Look for the run of a command built for `context` with `ref`: on the instance for two minutes, and in the runs the
-   * stream announces for as long as the service keeps the command, one of the latest `MAX_WATCHES`.
+   * Look for the run of a command built for `context` with `ref`: on the instance for two minutes, every `ownRunPollMs`
+   * while the instance's stream is down and `STREAM_POLL_FACTOR` times less often while it is connected, and in the
+   * runs the stream announces for as long as the service keeps the command, one of the latest `MAX_WATCHES`. A command
+   * that runs each test `repeat` times has its runs' results counted.
    */
-  watch(context: PiwiContext, ref: string): void {
+  watch(context: PiwiContext, ref: string, repeat: number | null = null): void {
     if (this.disposed || !context.client || !context.project) return;
     const w: RefWatch = {
       context,
@@ -274,6 +350,7 @@ export class RunWatch {
       found: null,
       until: Date.now() + OWN_RUN_WATCH_MS,
       timer: null,
+      repeat,
     };
     this.watches.set(ref, w);
     for (const [oldest, dropped] of this.watches) {
@@ -310,11 +387,11 @@ export class RunWatch {
    * A command built with `ref` ended: its context reads its latest run and its live run once more, and, when no run of
    * the command was found, the instance is asked for one for a few seconds more; without one, a notice says so. The
    * instance is not asked again: the run found joins the command's known runs, and a rerun of the command, with the
-   * same ref, is a run the stream announces.
+   * same ref, is a run the stream announces. True when the command's run is on the instance, whose end `runEnded` says.
    */
-  async commandEnded(ref: string, exitCode: number | null): Promise<void> {
+  async commandEnded(ref: string, exitCode: number | null): Promise<boolean> {
     const w = this.watches.get(ref);
-    if (!w || !this.current(w)) return;
+    if (!w || !this.current(w)) return false;
     if (w.timer) clearTimeout(w.timer);
     w.timer = null;
     w.until = 0;
@@ -335,7 +412,7 @@ export class RunWatch {
         break;
       }
     }
-    if (!this.current(w)) return;
+    if (!this.current(w)) return false;
     if (ended === null) {
       const code = exitCode === null || exitCode === undefined ? '' : ` (exit code ${exitCode})`;
       this.options.notice({
@@ -347,6 +424,7 @@ export class RunWatch {
       w.known.add(ended);
     }
     if (w.found === ended) w.found = null;
+    return ended !== null;
   }
 
   /** Read the context's live run again, for its counts; true when it ended. */
@@ -377,6 +455,7 @@ export class RunWatch {
     for (const w of this.watches.values()) if (w.timer) clearTimeout(w.timer);
     for (const pending of this.settling.values()) clearTimeout(pending.timer);
     this.settling.clear();
+    this.tallies.clear();
     if (this.progressTimer) clearTimeout(this.progressTimer);
   }
 
@@ -480,6 +559,7 @@ export class RunWatch {
     const status = typeof event.data.status === 'string' ? event.data.status : null;
     const counts = countsOf(event.data);
     if (event.type === 'test-begin' || event.type === 'test-completed') void this.testEvent(context, runId, event);
+    if (event.type === 'test-completed') this.tally(context, runId, event.data);
     if (counts) {
       if (followed.countsTimer) clearTimeout(followed.countsTimer);
       followed.countsTimer = null;
@@ -521,6 +601,23 @@ export class RunWatch {
     this.progress();
   }
 
+  /**
+   * A result of a repeated run of the editor's own, counted once: the stream brings every run of a test live, and its
+   * catch-up sends again, with their execution, the results the instance kept.
+   */
+  private tally(context: PiwiContext, runId: number, data: Record<string, unknown>): void {
+    const tally = context.client && this.tallies.get(runKey(context.client.connection, runId));
+    const status = endedStatus(data);
+    if (!tally || !status || data.filePath === 'hooks') return;
+    if (typeof data.executionId === 'number') {
+      if (tally.executions.has(data.executionId)) return;
+      tally.executions.add(data.executionId);
+    }
+    if (status === 'failed') tally.failed++;
+    else if (status === 'skipped') tally.skipped++;
+    else tally.passed++;
+  }
+
   /** The context's tests show the latest run's results again. */
   private clearTests(context: PiwiContext): void {
     this.attempts.delete(context);
@@ -557,8 +654,9 @@ export class RunWatch {
   }
 
   /**
-   * A run of the context's project ended: the context reads its latest run again once no other run ended for
-   * `SETTLE_MS`, and its live run, among the ones that ended, goes in the same change.
+   * A run of the context's project ended: the context reads its latest run again, from the instance rather than an
+   * answer shared for a moment, once no other run ended for `SETTLE_MS`, and its live run, among the ones that ended,
+   * goes in the same change.
    */
   private settle(context: PiwiContext, runId?: number): void {
     if (this.disposed) return;
@@ -569,7 +667,7 @@ export class RunWatch {
     const timer = setTimeout(async () => {
       this.settling.delete(context);
       const before = context.failures;
-      await context.refreshRun();
+      await context.refreshRun(true);
       if (this.disposed) return;
       if (context.live && ended.has(context.live.runId)) this.end(context);
       this.options.changed();
@@ -584,7 +682,7 @@ export class RunWatch {
     const client = context.client;
     const runEnded = this.options.runEnded;
     if (!client || !runEnded) return;
-    const key = `${client.connection.serverUrl}\n${runId}`;
+    const key = runKey(client.connection, runId);
     if (this.told.has(key)) return;
     this.told.add(key);
     const run = await client.runDetails(runId).catch(() => null);
@@ -592,6 +690,8 @@ export class RunWatch {
       this.told.delete(key);
       return;
     }
+    const tally = this.tallies.get(key);
+    this.tallies.delete(key);
     runEnded({
       root: context.root,
       runId,
@@ -601,15 +701,36 @@ export class RunWatch {
       flaky: run.flakyTests ?? 0,
       skipped: run.skippedTests,
       ...runVerdict(before, context.failures, runId),
+      ...(tally ? { repeat: repeatVerdict(tally.repeat, tally, run) } : {}),
     });
   }
 
+  /** Ask the instance for the watch's run after a poll's wait: longer while its stream, which announces runs, is up. */
   private lookLater(w: RefWatch): void {
-    w.timer = setTimeout(() => {
-      w.timer = null;
-      void this.look(w);
-    }, this.options.ownRunPollMs ?? OWN_RUN_POLL_MS);
+    const pace = this.options.ownRunPollMs ?? OWN_RUN_POLL_MS;
+    w.timer = setTimeout(
+      () => {
+        w.timer = null;
+        void this.look(w);
+      },
+      this.isConnected(w.context) ? pace * STREAM_POLL_FACTOR : pace,
+    );
     w.timer.unref?.();
+  }
+
+  /**
+   * The stream of an instance connected or dropped. Connected, the instance is asked once for the runs of the commands
+   * still looked for on it: one may have started meanwhile; dropped, they are asked for at the poll's pace again.
+   */
+  private streamState(key: string, connected: boolean): void {
+    for (const w of this.watches.values()) {
+      if (w.found !== null || Date.now() >= w.until || !this.current(w)) continue;
+      if (streamKey(w.context.client!.connection) !== key) continue;
+      if (w.timer) clearTimeout(w.timer);
+      w.timer = null;
+      if (connected) void this.look(w);
+      else this.lookLater(w);
+    }
   }
 
   private async look(w: RefWatch): Promise<void> {
@@ -654,6 +775,14 @@ export class RunWatch {
     if (w.timer) clearTimeout(w.timer);
     w.timer = null;
     w.context.ownRuns.add(run.id);
+    if (w.repeat !== null && w.context.client) {
+      const tally = { repeat: w.repeat, passed: 0, failed: 0, skipped: 0, executions: new Set<number>() };
+      this.tallies.set(runKey(w.context.client.connection, run.id), tally);
+      for (const oldest of this.tallies.keys()) {
+        if (this.tallies.size <= MAX_WATCHES) break;
+        this.tallies.delete(oldest);
+      }
+    }
     this.follow(w.context, run, true);
   }
 }

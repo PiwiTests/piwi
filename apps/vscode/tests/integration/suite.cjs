@@ -305,6 +305,7 @@ const tests = {
       'piwi.connect',
       'piwi.disconnect',
       'piwi.openSettings',
+      'piwi.getStarted',
       'piwi.refresh',
       'piwi.refreshRun',
       'piwi.runTestsForFile',

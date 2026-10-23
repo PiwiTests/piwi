@@ -7,7 +7,7 @@ import { listBaselineBranches, selectBaselineRun } from '../../server/utils/bran
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { buildCommitRange, computeMetadataDiff, type CommitRange, type MetaDiffEntry } from '../utils/run-metadata';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
-import { attemptKey, finalAttempts } from '../utils/test-counts';
+import { finalAttempts, testKey, testOutcomes } from '../utils/test-counts';
 import { notLabRun } from './probes';
 import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
@@ -132,13 +132,14 @@ export async function computeRunInsights(
   const run = runResults[0];
   if (!run) throw new Error('Run not found');
 
-  // The run's tests, one row per (test case, browser): its final attempt.
+  // The run's test results, one row per (test case, browser, repetition): its final attempt.
   const currentCases: any[] = finalAttempts(
     await db
       .select({
         id: testRunsCases.id,
         testCaseId: testRunsCases.testCaseId,
         browserName: testRunsCases.browserName,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
         status: testRunsCases.status,
         duration: testRunsCases.duration,
         retries: testRunsCases.retries,
@@ -268,6 +269,7 @@ export async function computeRunInsights(
       .select({
         testCaseId: testRunsCases.testCaseId,
         browserName: testRunsCases.browserName,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
         status: testRunsCases.status,
         duration: testRunsCases.duration,
         retries: testRunsCases.retries,
@@ -275,7 +277,8 @@ export async function computeRunInsights(
       .from(testRunsCases)
       .where(eq(testRunsCases.testRunId, baselineRun.id)),
   );
-  const baselineByTest = new Map<string, any>(baselineCases.map((bc) => [attemptKey(bc), bc]));
+  // Each test is compared with the baseline through its outcome in either run, whatever their repetitions.
+  const baselineByTest = new Map<string, any>(testOutcomes(baselineCases).map((bc) => [testKey(bc), bc]));
 
   const newRegressions: TestCaseEntry[] = [];
   const recurrences: TestCaseEntry[] = [];
@@ -284,8 +287,8 @@ export async function computeRunInsights(
   const flakyOnRetry: Array<{ executionId: number; title: string; filePath: string; retries: number }> = [];
   const perfChanges: PerfChangeEntry[] = [];
 
-  for (const cc of currentCases) {
-    const bc = baselineByTest.get(attemptKey(cc));
+  for (const cc of testOutcomes(currentCases)) {
+    const bc = baselineByTest.get(testKey(cc));
 
     // Status changes
     if (bc) {
@@ -310,11 +313,6 @@ export async function computeRunInsights(
       }
     }
 
-    // Flaky on retry (passed but had retries)
-    if (cc.status === 'passed' && (cc.retries ?? 0) > 0) {
-      flakyOnRetry.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, retries: cc.retries ?? 0 });
-    }
-
     // Duration changes
     if (bc && cc.duration != null && bc.duration != null && bc.status === 'passed' && cc.status === 'passed') {
       const before = bc.duration;
@@ -333,7 +331,23 @@ export async function computeRunInsights(
     }
   }
 
-  // Summary stats
+  // Flaky on retry (passed but had retries): once per test, with the repetition that needed the most retries
+  const flakyByTest = new Map<string, (typeof flakyOnRetry)[number]>();
+  for (const cc of currentCases) {
+    if (cc.status !== 'passed' || (cc.retries ?? 0) === 0) continue;
+    const known = flakyByTest.get(testKey(cc));
+    if (!known || (cc.retries ?? 0) > known.retries) {
+      flakyByTest.set(testKey(cc), {
+        executionId: cc.id,
+        title: cc.title,
+        filePath: cc.filePath,
+        retries: cc.retries ?? 0,
+      });
+    }
+  }
+  flakyOnRetry.push(...flakyByTest.values());
+
+  // Summary stats, one per test result
   const totalTests = currentCases.length;
   const passedTests = currentCases.filter((c: any) => c.status === 'passed').length;
   const failedTests = currentCases.filter((c: any) => FAIL_STATUSES.has(c.status)).length;

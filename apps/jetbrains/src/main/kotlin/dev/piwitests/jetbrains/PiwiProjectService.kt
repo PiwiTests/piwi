@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.credentialStore.generateServiceName
+import com.intellij.ide.BrowserUtil
 import com.intellij.ide.impl.isTrusted
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.notification.NotificationAction
@@ -37,7 +38,10 @@ import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
+import com.intellij.platform.lsp.api.LspServer
 import com.intellij.platform.lsp.api.LspServerManager
+import com.intellij.platform.lsp.api.LspServerManagerListener
+import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.psi.PsiManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.xdebugger.XDebuggerManager
@@ -79,7 +83,8 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
  * at the IDE's breakpoints, and whether they run in the IDE's Playwright runner; when a run started from the IDE says what it changed (`always`,
  * `failures`, `never`); the baseline chosen with **Compare With…** for each Playwright
- * config folder (`Glue.encodeBaseline`; the ladder is no entry); and whether the coverage marks are shown.
+ * config folder (`Glue.encodeBaseline`; the ladder is no entry); whether the coverage marks are shown; and the severity
+ * of a failure's diagnostic (`Glue.FAILURE_SEVERITIES`).
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -97,6 +102,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var runNotifications: String = "always",
         var baselines: MutableMap<String, String> = mutableMapOf(),
         var coverageMarks: Boolean = true,
+        var failureSeverity: String = "error",
     )
 
     private var state = State()
@@ -185,6 +191,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /** The project's Playwright configs; null until the first search ends. */
     @Volatile private var playwright: Glue.PlaywrightSearch? = null
 
+    /** The addresses whose pages may open this project's files, as [readKnownAddresses] read them last. */
+    @Volatile private var addresses: ProjectAddresses = ProjectAddresses.NONE
+
     /** Called on the event thread after each refresh of the status. */
     fun onChange(parent: Disposable, listener: () -> Unit) {
         listeners += listener
@@ -232,14 +241,15 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * Search for Playwright configs off the event thread; when the answer changes, show or hide the
-     * tool window and the status bar item, and start the editor service on the folders found, or
-     * restart it there.
+     * tool window and the status bar item, start the editor service on the folders found, or
+     * restart it there, and offer the first-run notification ([offerFirstRun]).
      */
     fun findPlaywright() {
         ApplicationManager.getApplication().executeOnPooledThread {
             if (gone.value(null)) return@executeOnPooledThread
             val before = playwright
             val found = searchPlaywright()
+            val addresses = readKnownAddresses()
             if (found == before) return@executeOnPooledThread
             // Once the tool windows are registered.
             val tools = ToolWindowManager.getInstance(project)
@@ -249,7 +259,29 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 project.service<StatusBarWidgetsManager>().updateWidget(PiwiStatusBarWidgetFactory::class.java)
             }
             restartServer(runningOnly = found.configDirs.isEmpty())
+            offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
         }
+    }
+
+    /**
+     * Once per installation, the first time a trusted project holds a Playwright config while nothing connects it
+     * (`Glue.showsFirstRun`, with the addresses the project names in `instances`): what Piwi does, with Connect, the
+     * failures and the documentation one click away.
+     */
+    fun offerFirstRun(found: Glue.PlaywrightSearch, instances: List<String?>) {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        if (!Glue.showsFirstRun(properties.getBoolean(FIRST_RUN_SHOWN), trusted(), found.configDirs, status, instances)) return
+        properties.setValue(FIRST_RUN_SHOWN, true)
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(Glue.FIRST_RUN, NotificationType.INFORMATION)
+            .addAction(NotificationAction.createSimpleExpiring("Connect…") { PiwiConnectFlow.run(project) })
+            .addAction(
+                NotificationAction.createSimple(Glue.OPEN_FAILURES) {
+                    ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
+                },
+            )
+            .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOCS_URL) })
+            .notify(project)
     }
 
     /** Start the editor service again, or, unless `runningOnly`, start it for the open files when it does not run. */
@@ -260,6 +292,47 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 manager.stopAndRestartIfNeeded(PiwiLspServerSupportProvider::class.java)
             !runningOnly -> manager.startServersIfNeeded(PiwiLspServerSupportProvider::class.java)
         }
+    }
+
+    /** When each editor service was first seen starting, by server; and when one that failed to start was started again. */
+    private val serverStarts = ConcurrentHashMap<LspServer, Long>()
+    private val serverRestarts = CopyOnWriteArrayList<Long>()
+
+    /**
+     * Start the editor service again, two seconds later, when it stops while starting and none other runs: the IDE stops
+     * a service whose start failed. A few times only (`Glue.restartsService`), and never while Node.js is the problem.
+     */
+    fun watchServer() {
+        LspServerManager.getInstance(project).addLspServerManagerListener(
+            object : LspServerManagerListener {
+                override fun serverStateChanged(lspServer: LspServer) {
+                    if (lspServer.descriptor !is PiwiLspServerDescriptor) return
+                    val now = System.currentTimeMillis()
+                    when (lspServer.state) {
+                        LspServerState.Initializing, LspServerState.Running -> serverStarts.putIfAbsent(lspServer, now)
+                        LspServerState.ShutdownNormally, LspServerState.ShutdownUnexpectedly -> {
+                            val startedAt = serverStarts.remove(lspServer)
+                            if (gone.value(null) || startProblem != null) return
+                            if (!Glue.restartsService(startedAt, now, serverRestarts)) return
+                            AppExecutorUtil.getAppScheduledExecutorService().schedule(::restartIfStopped, 2, TimeUnit.SECONDS)
+                        }
+                    }
+                }
+            },
+            this,
+            false,
+        )
+    }
+
+    /** Start the editor service again unless another one starts or runs. */
+    private fun restartIfStopped() {
+        if (gone.value(null)) return
+        val servers = LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java)
+        if (servers.any { it.state == LspServerState.Initializing || it.state == LspServerState.Running }) return
+        val now = System.currentTimeMillis()
+        serverRestarts.removeIf { now - it >= Glue.SERVICE_RESTART_PERIOD_MILLIS }
+        serverRestarts.add(now)
+        restartServer()
     }
 
     /**
@@ -373,6 +446,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             desktop = local.desktop,
             desktopProject = local.desktopProject.ifBlank { null },
             baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
+            failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
         )
     }
 
@@ -457,12 +531,46 @@ class PiwiProjectService(private val project: Project) : Disposable {
         return Glue.parseDesktopDiscovery(runCatching { Files.readString(file) }.getOrNull())
     }
 
+    /** The addresses whose pages may open this project's files, as read last (`PiwiOpenHandler`): nothing from the disk. */
+    fun knownAddresses(): ProjectAddresses = addresses
+
+    /**
+     * Read the addresses whose pages may open this project's files, and keep them: the desktop app's, from the status
+     * and its discovery file, for every open project; this project's instance from its settings, the status's
+     * contexts and, in a trusted project, `PIWI_DASHBOARD_URL` in the `.env` of each Playwright config folder. Reads
+     * the disk, on the calling thread: once the configs are found, with each status, and when the settings are saved.
+     */
+    fun readKnownAddresses(): ProjectAddresses {
+        val status = status
+        val everywhere = listOf(status?.desktopUrl, readDesktopDiscovery()?.url)
+        val own = buildList {
+            add(settings().serverUrl)
+            for (context in status?.contexts.orEmpty()) {
+                add(context.serverUrl)
+                add(context.instance?.serverUrl)
+            }
+            if (trusted()) {
+                for (dir in playwrightConfigDirs()) {
+                    val dotEnv = dir.resolve(".env")
+                    if (Files.isRegularFile(dotEnv)) add(OpenOrigins.dashboardUrlFromDotEnv(runCatching { Files.readString(dotEnv) }.getOrNull()))
+                }
+            }
+        }
+        return ProjectAddresses(everywhere, own).also { addresses = it }
+    }
+
+    /** [readKnownAddresses] on a pooled thread. */
+    private fun refreshKnownAddresses() {
+        ApplicationManager.getApplication().executeOnPooledThread { if (!gone.value(null)) readKnownAddresses() }
+    }
+
     /**
      * Hand the connection to the running service (`piwi/setCredentials`), which reads everything again with it and
      * pushes what changed; without a service, start it for the open files.
      */
     fun sendCredentials() {
         ApplicationManager.getApplication().executeOnPooledThread {
+            readKnownAddresses()
             val manager = LspServerManager.getInstance(project)
             val lsp = manager.getServersForProvider(PiwiLspServerSupportProvider::class.java)
             if (lsp.isEmpty()) {
@@ -474,6 +582,10 @@ class PiwiProjectService(private val project: Project) : Disposable {
             refreshStatus()
         }
     }
+
+    /** Whether the editor service started, without asking it anything. */
+    fun serverStarted(): Boolean =
+        LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java).isNotEmpty()
 
     /** The running editor service, if any. */
     fun server(): PiwiLanguageServer? =
@@ -507,6 +619,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             statusPushes++
         }
         changed()
+        refreshKnownAddresses()
         offerDesktop(result)
         project.getServiceIfCreated(PiwiCoverageMarks::class.java)?.askOpen()
     }
@@ -584,6 +697,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 failures = readFailures?.items.orEmpty()
             }
         }
+        readKnownAddresses()
         changed()
         offerDesktop(status)
     }
@@ -711,6 +825,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
         const val TIMEOUT_SECONDS = 20L
         private const val SHARED_KEY_FORGOTTEN = "piwi.sharedKeyForgotten"
 
+        /** Whether the first-run notification was shown on this installation: an application-level property. */
+        const val FIRST_RUN_SHOWN = "piwi.firstRunShown"
+
         /** How long a file's summary answers for the same text: the indexes the service reads again push nothing. */
         const val SUMMARY_TTL_MILLIS = 5_000L
 
@@ -728,6 +845,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
 class PiwiStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         val service = project.service<PiwiProjectService>()
+        service.watchServer()
         service.findPlaywright()
         service.watchConfigs()
         project.service<PiwiCoverageMarks>().start()

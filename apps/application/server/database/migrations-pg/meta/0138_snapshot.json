@@ -1,6 +1,6 @@
 {
-  "id": "4d8157cf-b971-44af-96ff-cd755f6f480a",
-  "prevId": "a87e4f53-8011-4be7-bbe8-2b7ec775246f",
+  "id": "4f2612c8-20fb-4401-9170-b92cfa24639d",
+  "prevId": "f6fb46a3-a0cd-4bd6-8f80-ec5d145d9778",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12441,6 +12441,13 @@
           "notNull": false,
           "default": 0
         },
+        "repeat_each_index": {
+          "name": "repeat_each_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "attempts": {
           "name": "attempts",
           "type": "jsonb",
@@ -12757,6 +12764,12 @@
             },
             {
               "expression": "test_case_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "repeat_each_index",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

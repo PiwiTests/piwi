@@ -333,6 +333,21 @@ function pathOf(url: string | null | undefined): string | null {
 }
 
 /**
+ * The method and path of a step that is itself an HTTP call — Playwright titles
+ * an APIRequestContext request with its method and URL (`POST https://…/seed`).
+ * A URL whose scheme was dropped (`host.tld/path`) keeps only its path. Null
+ * for any other step.
+ */
+function apiCallOf(label: string): { method: string; path: string } | null {
+  const match = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+"?([^\s"]+)"?$/i.exec(label.trim());
+  if (!match) return null;
+  const url = match[2]!;
+  const withScheme = /^[\w-]+(\.[\w-]+)+(:\d+)?(\/|$)/.test(url) ? `http://${url}` : url;
+  const path = pathOf(withScheme);
+  return path ? { method: match[1]!.toUpperCase(), path } : null;
+}
+
+/**
  * How long before the failure the anchor happened (`1.1 s before the failure`);
  * under 100 ms, and up to the request slack after it, `just before the
  * failure`; empty when the anchor is later than that.
@@ -495,8 +510,26 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
 
   // ── slow-request-overlapping-failure (medium) ──────────────────────────────
   // A request slower than the threshold that was in flight during the failed step.
+  // When the failed step is the test's own HTTP call (an APIRequestContext
+  // request), the step waited on that call: page requests in flight meanwhile
+  // are unrelated, so the slow request is the step itself.
   const failedStep = timeline?.failedStep ?? null;
-  if (failedStep && positionedRequests.length > 0) {
+  const ownCall = failedStep ? apiCallOf(failedStep.label) : null;
+  if (failedStep && ownCall) {
+    if (failedStep.duration >= slowMs) {
+      const durSec = (failedStep.duration / 1000).toFixed(1);
+      facts.slowRequest = { method: ownCall.method, path: ownCall.path, durSec };
+      add({
+        id: 'slow-request-overlapping-failure',
+        rule: 'slow-request-overlapping-failure',
+        strength: 'medium',
+        title: `${ownCall.method} ${ownCall.path} took ${durSec} s`,
+        detail: `The failed step is the test's own ${ownCall.method} ${ownCall.path} call, and it took ${durSec} s.`,
+        citations: [{ section: 'steps' }],
+        at: failedStep.at,
+      });
+    }
+  } else if (failedStep && positionedRequests.length > 0) {
     const stepStart = failedStep.at;
     const stepEnd = failedStep.at + failedStep.duration;
     const slow = positionedRequests

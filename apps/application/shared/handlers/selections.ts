@@ -13,6 +13,7 @@ import { testCases, testRunsCases, testSelections } from '../../server/database/
 import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
 import { eligibleExecutionSql } from '../run-eligibility';
+import { latestRunStatusSql } from './latest-run-status';
 import { foldText } from '#shared/utils/fold-text';
 import {
   BUILTIN_SELECTIONS,
@@ -81,13 +82,8 @@ export async function loadSelectionCatalog(
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
     )`;
-  const lastStatus = sql<string | null>`(
-      SELECT ${testRunsCases.status}
-      FROM ${testRunsCases}
-      WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)}
-      ORDER BY ${testRunsCases.createdAt} DESC
-      LIMIT 1
-    )`;
+  // The latest run's status: failed when one of the test's repetitions failed there.
+  const lastStatus = latestRunStatusSql(eligibleExecutionSql('selection-catalog', testRunsCases.testRunId));
   const lastLine = sql<number | null>`(
       SELECT ${testRunsCases.line}
       FROM ${testRunsCases}

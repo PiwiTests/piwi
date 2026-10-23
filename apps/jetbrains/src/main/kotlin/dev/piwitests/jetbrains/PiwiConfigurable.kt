@@ -21,7 +21,7 @@ import javax.swing.JList
  * **Settings → Tools → Piwi**: the desktop app and whether this machine reads it first, the
  * instance and project saved for this project, whether a key is saved for that instance, when
  * a run started from the IDE says what it changed, whether the runs it starts pause at the IDE's
- * breakpoints, and the connection the service actually uses.
+ * breakpoints, the severity of a failure in the editor, and the connection the service actually uses.
  */
 class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi") {
     private val service get() = project.service<PiwiProjectService>()
@@ -92,6 +92,15 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                                 "Kept for you only, in .idea/workspace.xml",
                         )
                 }
+                row("A failing test's line in the editor:") {
+                    comboBox(Glue.FAILURE_SEVERITIES, FailureSeverityRenderer())
+                        .bindItem({ local.failureSeverity }, { local.failureSeverity = it ?: "error" })
+                        .comment(
+                            "A failure of a run on another branch is a warning at most; one whose line changed since its run, " +
+                                "a weak warning. Off leaves the failures to the Piwi tool window and the gutter. " +
+                                "Kept for you only, in .idea/workspace.xml",
+                        )
+                }
                 row {
                     checkBox("Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker")
                         .bindSelected({ local.breakpoints }, { local.breakpoints = it })
@@ -133,11 +142,11 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         show()
     }
 
-    /** What this page changes of the connection: the key is saved by Connect, never here. */
+    /** What this page changes of what the service is handed: the key is saved by Connect, never here. */
     private fun connection(): List<Any> {
         val settings = service.settings()
         val local = service.local()
-        return listOf(settings.serverUrl, settings.project, local.desktop, local.desktopProject)
+        return listOf(settings.serverUrl, settings.project, local.desktop, local.desktopProject, local.failureSeverity)
     }
 
     private fun show() {
@@ -179,6 +188,18 @@ private class RunNotificationRenderer : SimpleListCellRenderer<String>() {
             "failures" -> "Say what it changed when something fails"
             "never" -> "Say nothing"
             else -> "Say what it changed"
+        }
+    }
+}
+
+/** A choice of `PiwiLocalSettings.failureSeverity`, in words. */
+private class FailureSeverityRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = when (value) {
+            "warning" -> "A warning"
+            "information" -> "A weak warning"
+            "off" -> "Nothing in the editor's problems"
+            else -> "An error"
         }
     }
 }

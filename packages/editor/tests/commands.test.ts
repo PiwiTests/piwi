@@ -2,8 +2,10 @@ import { describe, expect, test } from 'vitest';
 import {
   commandWords,
   flakeCommand,
+  isTestLocation,
   playwrightArgsOf,
   playwrightTestCommand,
+  repeatArgs,
   shellWord,
   verificationCommand,
 } from '../src/commands';
@@ -48,6 +50,50 @@ describe('playwrightTestCommand', () => {
       expect(playwrightTestCommand(args), JSON.stringify(args)).toBeNull();
     }
     expect(playwrightTestCommand('npx playwright test')).toBeNull();
+  });
+});
+
+describe('a test by its location', () => {
+  test('is a spec relative to the config folder and the line of its test call', () => {
+    expect(isTestLocation('tests/checkout.spec.ts:42')).toBe(true);
+    expect(isTestLocation('checkout.spec.ts:1')).toBe(true);
+    expect(playwrightTestCommand(['tests/my cart.spec.ts:7'])).toBe('npx playwright test "tests/my cart.spec.ts:7"');
+  });
+
+  test('is refused without a line, outside the folder, absolute, or read as an option', () => {
+    for (const location of [
+      'tests/checkout.spec.ts',
+      'tests/checkout.spec.ts:0',
+      'tests/checkout.spec.ts:4:2',
+      '../shop/checkout.spec.ts:3',
+      'tests/../../checkout.spec.ts:3',
+      '/home/dev/checkout.spec.ts:3',
+      'C:/shop/checkout.spec.ts:3',
+      '--config=evil.ts:3',
+      42,
+    ]) {
+      expect(isTestLocation(location), String(location)).toBe(false);
+    }
+  });
+});
+
+describe('repeatArgs', () => {
+  test('runs each test that many times without retries, in place of the repeat and retries the arguments set', () => {
+    expect(repeatArgs(['tests/checkout.spec.ts:42'], 3)).toEqual([
+      'tests/checkout.spec.ts:42',
+      '--repeat-each=3',
+      '--retries=0',
+    ]);
+    expect(
+      repeatArgs(['--retries', '2', '--grep', '--retries', '--repeat-each=5', '--project=chromium', 'a.spec.ts'], 3),
+    ).toEqual(['--grep', '--retries', '--project=chromium', 'a.spec.ts', '--repeat-each=3', '--retries=0']);
+  });
+
+  test('is null for a repeat that is not a whole number from 1 to 100, or arguments Piwi does not pass', () => {
+    for (const repeat of [0, 101, 2.5, '3', null]) {
+      expect(repeatArgs(['a.spec.ts:3'], repeat), String(repeat)).toBeNull();
+    }
+    expect(repeatArgs(['--config=evil.ts'], 3)).toBeNull();
   });
 });
 

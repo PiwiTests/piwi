@@ -17,7 +17,7 @@ data class PiwiCommand(val title: String? = null, val command: String? = null, v
 /**
  * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
  * `skipped`, `running` while the run in progress runs it, or `unknown`), shown in the gutter with `title` as its
- * tooltip, `endLine` where its call ends, and `failure` where and why it failed.
+ * tooltip, `endLine` where its call ends, `failure` where and why it failed, and `testCaseId` the test's id.
  */
 data class SummaryLine(
     val line: Int = 0,
@@ -26,6 +26,7 @@ data class SummaryLine(
     val status: String? = null,
     val endLine: Int? = null,
     val failure: TestFailure? = null,
+    val testCaseId: Int? = null,
 )
 
 /**
@@ -52,6 +53,20 @@ data class EditorTest(
 )
 
 data class TestsForFile(val tests: List<EditorTest>? = null, val basis: String? = null)
+
+/** `piwi/testAt`: a 0-based position of a spec. */
+data class TestAtParams(val uri: String, val line: Int, val character: Int)
+
+/** The tests of a spec, by id, which `piwi/runArgs` runs. */
+data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null)
+
+/**
+ * `piwi/testAt`: the test whose `test(…)` call spans the line, null outside every test Piwi knows; the spec's tests,
+ * null for a file that is not a spec or holds none of them; and where that `test(…)` call starts, as Playwright's
+ * location filter takes it (`tests/checkout.spec.ts:42`, relative to the Playwright config's folder), whether Piwi
+ * knows the test or not, null outside every `test(…)` call and from an older service.
+ */
+data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null, val location: String? = null)
 
 /** Lines `start` to `end`, 0-based and inclusive; for lines the tests ran, `tests` is how many ran each. */
 data class LineSpan(val start: Int = 0, val end: Int = 0, val tests: Int? = null)
@@ -84,7 +99,10 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * action or assertion on their line, headed, with Piwi's pause bar, when their file is under the Playwright config's
  * folder. `root` names the Playwright config's folder to run them with; without it, the config of `uri`. `coverage`
  * `server`, set by a server file's coverage lens, has the run record the backend's coverage by line; `browser`, set by
- * a browser file's, the browser's coverage by function.
+ * a browser file's, the browser's coverage by function. `locations` names tests by where their `test(…)` call starts
+ * (`TestAtResult.location`), in place of `testIds`: a test the instance does not know yet runs too, without an
+ * instance. `repeat` runs each test that many times without retries (`--repeat-each=3 --retries=0`), headless, and
+ * the run's end says how many of those runs passed.
  */
 data class RunTestsArgs(
     val uri: String,
@@ -92,6 +110,8 @@ data class RunTestsArgs(
     val breakpoints: List<EditorBreakpoint>? = null,
     val root: String? = null,
     val coverage: String? = null,
+    val locations: List<String>? = null,
+    val repeat: Int? = null,
 )
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
@@ -144,6 +164,11 @@ data class ContextStatus(
     val problemKind: String? = null,
     /** The instance the environment, the `.env` or the settings name, in use or not; Connect offers it beside the desktop app. */
     val instance: NamedInstance? = null,
+    /**
+     * `root` as the editor names it: relative to the workspace folder holding it, after the folder's name when the
+     * workspace has several; the folder's name for a config at its root. Null from an older service.
+     */
+    val label: String? = null,
 )
 
 data class NamedInstance(val serverUrl: String? = null, val source: String? = null)
@@ -227,7 +252,8 @@ data class RunStatusResult(val contexts: List<RunStatus>? = null)
 /**
  * `piwi/runEnded`: a run the editor started ended and the latest run was read again with it: its counts, `fixed` the
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
- * most five) of the tests it failed again and of those that were not failing before, with their counts.
+ * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
+ * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed.
  */
 data class RunEnded(
     val root: String? = null,
@@ -242,7 +268,11 @@ data class RunEnded(
     val newFailures: List<String>? = null,
     val stillFailingCount: Int? = null,
     val newFailureCount: Int? = null,
+    val repeat: RepeatVerdict? = null,
 )
+
+/** How a run of each test several times went: `Passed 3 of 3`, `Failed 1 of 3`, and whether one of the runs failed. */
+data class RepeatVerdict(val verdict: String? = null, val failed: Boolean = false)
 
 /**
  * A failure of the latest run where it shows, its line followed through the edits since the run, or, with `state`
@@ -313,11 +343,15 @@ data class FailuresOverlay(
 
 /**
  * A node of the failures tree the service groups (`FailuresResult.tree`): the run, the runs laid over it, the groups and
- * the failures. `kind` is `run`, `runs`, `overlay`, `group` or `failure`; `key` stays the same across answers;
- * `description` is a group's counts or a failure's place, after which a client adds the age of `startTime` (a run's);
- * `tooltip` its lines, plain text; `note` what a failure says about its run when that is not the tree's run failing as it
- * stands; `icon` one of `run`, `history`, `failed`, `passed`, `file`, `cluster`, `owner`, `failing`, `edited`, `fixed`;
- * `expanded` whether a node with children opens expanded; `executionId` a failure's item in `FailuresResult.items`.
+ * the failures, under a `context` node per Playwright config when several have a run, runs laid over none or failures.
+ * `kind` is `context`, `run`, `runs`, `overlay`, `group` or `failure`; `key` stays the same across answers;
+ * `description` is a context's project and counts, a group's counts or a failure's place, after which a client adds the
+ * age of `startTime` (a run's); `tooltip` its lines, plain text; `note` what a failure says about its run when that is
+ * not the tree's run failing as it stands; `icon` one of `context`, `run`, `history`, `failed`, `passed`, `file`,
+ * `cluster`, `owner`, `failing`, `edited`, `fixed`; `expanded` whether a node with children opens expanded; `url` the
+ * page a run opens (a context's run too); `executionId` a failure's item in `FailuresResult.items`; `root`, on a
+ * `context` node and a `run` node, the Playwright config's folder whose failures Re-run the Failing Tests runs from them
+ * and whose baseline Compare With… chooses.
  */
 data class FailureTreeNode(
     val key: String = "",
@@ -332,16 +366,19 @@ data class FailureTreeNode(
     val url: String? = null,
     val executionId: Int? = null,
     val children: List<FailureTreeNode>? = null,
+    val root: String? = null,
 )
 
 /** `piwi/failures`: `grouping` (`file`, `cluster`, `owner` or `flat`) is kept by the service for what it pushes after. */
 data class FailuresParams(val grouping: String? = null)
 
 /**
- * `piwi/failures`: the failures, the baseline run of the first context that has one (`run`, null when a developer's
- * own runs are read alone), the runs laid over it, newest first, when they were read (ISO 8601) and the baseline
- * chosen; then the tree in `grouping`, the run as its root names it (`runLabel`, with or without a failure), how many
- * tests still fail (`failing`) and what Re-run the Failing Tests runs (`rerun`, one run per Playwright config).
+ * `piwi/failures`: the failures, the baseline run of the one context that has a run, runs laid over none or failures
+ * (`run`, null when a developer's own runs are read alone), the runs laid over it, newest first, when they were read
+ * (ISO 8601) and the baseline chosen; then the tree in `grouping`, the run as its root names it (`runLabel`, with or
+ * without a failure), how many tests still fail (`failing`) and what Re-run the Failing Tests runs (`rerun`, one run
+ * per Playwright config). When several contexts have one, the tree holds a `context` node each, which carries its run,
+ * and `run`, `overlays`, `baseline` and `runLabel` are null.
  */
 data class FailuresResult(
     val items: List<WorkspaceFailure>? = null,
@@ -509,7 +546,9 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
 /**
  * `piwi/setCredentials`: the instance saved in the IDE, and, with `desktop`, the desktop app first while it runs,
  * on the project `desktopProject` names, else the one linked there to the folder. `baselines` are the baselines chosen
- * per context root, kept on this machine; when sent, a context they leave out reads the ladder.
+ * per context root, kept on this machine; when sent, a context they leave out reads the ladder. `failureSeverity` is the
+ * severity of a failure's diagnostic (`error`, `warning`, `information` or `off`; `error` when null): a run on another
+ * branch is a warning at most, and `off` publishes none while the tool window and the gutter still show the failures.
  */
 data class EditorCredentials(
     val serverUrl: String? = null,
@@ -518,6 +557,7 @@ data class EditorCredentials(
     val desktop: Boolean = false,
     val desktopProject: String? = null,
     val baselines: Map<String, BaselineChoice>? = null,
+    val failureSeverity: String? = null,
 )
 
 /**
@@ -559,6 +599,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/testsForFile")
     fun testsForFile(params: UriParams): CompletableFuture<TestsForFile?>
+
+    @JsonRequest("piwi/testAt")
+    fun testAt(params: TestAtParams): CompletableFuture<TestAtResult?>
 
     @JsonRequest("piwi/coverage")
     fun coverage(params: UriParams): CompletableFuture<CoverageResult?>

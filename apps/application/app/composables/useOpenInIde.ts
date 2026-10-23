@@ -1,8 +1,10 @@
 /**
  * "Open in IDE" — turns a repo-relative source path into a launch into the
  * user's local editor (the Piwi JetBrains plugin, VS Code family via
- * `vscode://`, JetBrains via the `jetbrains://` navigate URL, or the JetBrains
- * built-in local server / IDE Remote Control plugin).
+ * `vscode://` or, without a workspace root, the Piwi extension's
+ * `vscode://piwitests.piwi/open` link, JetBrains via the `jetbrains://`
+ * navigate URL, or the JetBrains built-in local server / IDE Remote Control
+ * plugin).
  *
  * Preferences (which method, the local workspace root that maps a repo-relative
  * path to an absolute one, the VS Code flavor, the JetBrains product/port) are a
@@ -21,6 +23,7 @@ import {
   buildJetbrainsHttpUrl,
   buildJetbrainsNavigateUrl,
   buildPiwiPluginOpenUrl,
+  buildVscodeExtensionUrl,
   buildVscodeUrl,
   jetbrainsPorts,
   joinWorkspacePath,
@@ -40,6 +43,12 @@ export interface IdePrefs {
   jetbrainsPort: number;
   /** Send a content-root-relative path to the local server instead of an absolute one. */
   jetbrainsHttpUsesRelativePath: boolean;
+  /**
+   * The Piwi extension is installed in VS Code: with no workspace root and no
+   * JetBrains project name, Auto opens the file through it. Off until the
+   * visitor ticks it, in the settings or from a setup toast.
+   */
+  vscodeExtension: boolean;
   /** Global local checkout root; '' when unset. */
   defaultRoot: string;
   /** Piwi project id → absolute root override (monorepo / multiple checkouts). */
@@ -73,6 +82,7 @@ const DEFAULT_PREFS: IdePrefs = {
   jetbrainsProduct: 'idea',
   jetbrainsPort: 63342,
   jetbrainsHttpUsesRelativePath: false,
+  vscodeExtension: false,
   defaultRoot: '',
   projectRoots: {},
   jetbrainsProjectNames: {},
@@ -305,14 +315,42 @@ export function useOpenInIde() {
     };
     const configureAction = { label: 'Configure', color: 'info' as const, onClick: () => openSettings(ctx) };
 
+    // The Piwi extension finds the run's path in the VS Code window focused
+    // last; like any URL scheme, it cannot report whether the file opened.
+    const openVscodeExtension = () => {
+      const editor = VSCODE_SCHEME_LABELS[prefs.value.vscodeScheme];
+      launchScheme(buildVscodeExtensionUrl({ scheme: prefs.value.vscodeScheme, path: rel, line, column }));
+      toast.add({
+        title: `Asked the Piwi extension in ${editor}`,
+        description: `It opens the file in the ${editor} window focused last when that window holds it. If nothing opens, install the Piwi extension in ${editor}, or set a workspace root.`,
+        color: 'neutral',
+        icon: 'i-lucide-external-link',
+        actions: [configureAction],
+      });
+    };
+
+    // Offered where the extension is not ticked yet: ticks it, then opens the file through it.
+    const useExtensionAction = {
+      label: 'Use the Piwi extension',
+      color: 'neutral' as const,
+      onClick: () => {
+        prefs.value.vscodeExtension = true;
+        openVscodeExtension();
+      },
+    };
+
     const openVscode = (): boolean => {
+      if (!root && prefs.value.vscodeExtension) {
+        openVscodeExtension();
+        return true;
+      }
       if (!root) {
         toast.add({
           title: 'Set a workspace root',
-          description: 'VS Code needs the local folder that contains this file.',
+          description: 'VS Code needs the local folder that contains this file, or the Piwi extension.',
           color: 'info',
           icon: 'i-lucide-folder-cog',
-          actions: [configureAction],
+          actions: [useExtensionAction, configureAction],
         });
         return false;
       }
@@ -488,13 +526,17 @@ export function useOpenInIde() {
       openJetbrainsUrl();
       return;
     }
+    if (prefs.value.vscodeExtension) {
+      openVscodeExtension();
+      return;
+    }
     toast.add({
       title: 'Set up "Open in IDE"',
       description:
-        'Install the Piwi plugin in your JetBrains IDE and connect its project to this instance, or add your local workspace folder (for VS Code) or a JetBrains project name, to open files from here.',
+        'Install the Piwi plugin in your JetBrains IDE and connect its project to this instance, use the Piwi extension in VS Code, or add your local workspace folder (for VS Code) or a JetBrains project name, to open files from here.',
       color: 'info',
       icon: 'i-lucide-folder-cog',
-      actions: [configureAction],
+      actions: [useExtensionAction, configureAction],
     });
   }
 

@@ -39,7 +39,10 @@ export type LauncherToService =
   | { type: 'started' }
   /** The recorder captured an event, checked field by field. */
   | { type: 'event'; event: RawCaptureEvent }
-  /** Something the person should know that does not end the recording: the start page did not load. */
+  /**
+   * Something the person should know that does not end the recording: the start page did not load, the application
+   * opened a tab or a popup, where nothing is recorded.
+   */
   | { type: 'notice'; message: string }
   /** The person pressed Stop in the browser. */
   | { type: 'stopped-in-browser' }

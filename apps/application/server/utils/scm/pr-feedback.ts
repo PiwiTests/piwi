@@ -98,6 +98,7 @@ interface CaseRow {
   expectedStatus: string | null;
   testMeta: unknown;
   retries: number | null;
+  repeatEachIndex: number;
   browserName: string | null;
   duration: number | null;
   wastedTimeMs: number | null;
@@ -207,6 +208,7 @@ export async function buildRunPrSummary(
       expectedStatus: testRunsCases.expectedStatus,
       testMeta: testRunsCases.testMeta,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
       duration: testRunsCases.duration,
       wastedTimeMs: testRunsCases.wastedTimeMs,
@@ -226,7 +228,7 @@ export async function buildRunPrSummary(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, runId));
 
-  // Each project's last attempt says whether a test's bug still shows there.
+  // Each project's and repetition's last attempt says whether a test's bug still shows there.
   const looksFixedRows = looksFixedTests(caseRows);
   const namedBugs = looksFixedRows.flatMap((row) => {
     const bug = Number((row.testMeta as TestMetadata | null)?.bug);

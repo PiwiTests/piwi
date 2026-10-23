@@ -62,7 +62,7 @@ git bisect reset
 
 The bisect needs two commits, the failing run's and the **last green** run's, which the reporter records from git (`collectScmInfo`, on by default): when either is missing, or the two are the same commit, the section says so in one line instead of showing a script. The recipe is always there.
 
-In the [desktop app](/features/desktop#reproducing-a-failure-and-finding-the-breaking-commit) the same section can do the work for you: **Reproduce here** runs the recipe against the linked folder in a throwaway `git worktree` (your checkout is never touched), and **Find the breaking commit here** drives the whole bisect with live progress, then records the first bad commit on the cluster. For a failure on a team instance, your [editor](/features/editors#ci-failures-in-the-problems-panel) passes the bisect to the desktop app and shares the first bad commit back with its own key; an agent records one with the `set_cluster_bisect` [MCP tool](/reference/mcp-tools).
+In the [desktop app](/features/desktop#reproducing-a-failure-and-finding-the-breaking-commit) the same section can do the work for you: **Reproduce here** runs the recipe against the linked folder in a throwaway `git worktree` (your checkout is never touched), and **Find the breaking commit here** drives the whole bisect with live progress, then records the first bad commit on the cluster. For a failure on a team instance, your [editor](/features/editor-failures#ci-failures-in-the-problems-panel) passes the bisect to the desktop app and shares the first bad commit back with its own key; an agent records one with the `set_cluster_bisect` [MCP tool](/reference/mcp-tools).
 
 ## Fixed before
 

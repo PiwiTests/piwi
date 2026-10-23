@@ -91,19 +91,22 @@ export interface AttemptRow {
   retries: number | null;
   /** The Playwright project the execution ran in; null or absent when unknown. */
   browserName?: string | null;
+  /** Playwright's `repeatEachIndex`: each `--repeat-each` repetition retries on its own; 0 when absent. */
+  repeatEachIndex?: number | null;
 }
 
 /**
- * Each test's last attempt in a run, per Playwright project: the row with the
- * most retries for each `(testCaseId, browserName)`. It is the one an outcome
- * is read from. An expected failure that passed on its first attempt and
- * failed as expected on a retry still reproduces its bug. On equal retries the
- * row with the higher `id` wins, when rows carry one.
+ * Each test's last attempt in a run, per Playwright project and `--repeat-each`
+ * repetition: the row with the most retries for each `(testCaseId,
+ * browserName, repeatEachIndex)`. It is the one an outcome is read from. An
+ * expected failure that passed on its first attempt and failed as expected on
+ * a retry still reproduces its bug. On equal retries the row with the higher
+ * `id` wins, when rows carry one.
  */
 export function lastAttempts<T extends AttemptRow & { id?: number }>(rows: readonly T[]): T[] {
   const last = new Map<string, T>();
   for (const row of rows) {
-    const key = `${row.testCaseId}\x00${row.browserName ?? ''}`;
+    const key = `${row.testCaseId}\x00${row.browserName ?? ''}\x00${row.repeatEachIndex ?? 0}`;
     const prev = last.get(key);
     if (!prev || isLaterAttempt(row, prev)) last.set(key, row);
   }
@@ -117,7 +120,9 @@ function isLaterAttempt(row: AttemptRow & { id?: number }, prev: AttemptRow & { 
   return (row.id ?? 0) >= (prev.id ?? 0);
 }
 
-/** Each test's last attempts in a run, one per Playwright project, grouped by test in first-seen order. */
+/**
+ * Each test's last attempts in a run, one per Playwright project and repetition, grouped by test in first-seen order.
+ */
 export function lastAttemptsByTest<T extends AttemptRow & { id?: number }>(rows: readonly T[]): Map<number, T[]> {
   const byTest = new Map<number, T[]>();
   for (const row of lastAttempts(rows)) {
@@ -139,11 +144,11 @@ function isOrdinaryPass(row: OutcomeRow): boolean {
 }
 
 /**
- * Whether one test's last attempts, one per Playwright project, read as its
- * bug looking fixed: at least one project ran it as an expected failure that
- * passed, and every other project that ran it passed too. A project where the
- * test still fails, as expected or not, keeps the bug open. Projects that did
- * not run the test have no say.
+ * Whether one test's last attempts, one per Playwright project and repetition,
+ * read as its bug looking fixed: at least one of them ran it as an expected
+ * failure that passed, and every other one that ran it passed too. A project
+ * or a repetition where the test still fails, as expected or not, keeps the bug
+ * open. Those that did not run the test have no say.
  */
 export function looksFixed(attempts: readonly OutcomeRow[]): boolean {
   const ran = attempts.filter(didRun);
@@ -168,9 +173,9 @@ export function looksFixedTests<T extends AttemptRow & OutcomeRow & { id?: numbe
 }
 
 /**
- * Where one test's last attempts, one per Playwright project, leave the bug it
- * reproduces: `looks-fixed` (see `looksFixed`), `passed` when every project
- * that ran it passed without expecting a failure, `not-run` when no project
+ * Where one test's last attempts, one per Playwright project and repetition,
+ * leave the bug it reproduces: `looks-fixed` (see `looksFixed`), `passed` when
+ * every one that ran it passed without expecting a failure, `not-run` when none
  * ran it, and `fails` otherwise.
  */
 export function bugOutcome(attempts: readonly OutcomeRow[]): 'looks-fixed' | 'passed' | 'not-run' | 'fails' {

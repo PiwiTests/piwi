@@ -47,6 +47,8 @@ export interface SummaryLine {
   endLine?: number;
   /** On the line of a test that failed in the latest run the service reads: where and why. */
   failure?: TestFailure;
+  /** On a test's line: the test's id, for a client's own **Run** (`RunTestsArgs.testIds`). Absent on other lines. */
+  testCaseId?: number;
 }
 
 /**
@@ -117,6 +119,30 @@ export interface TestsForFile {
 }
 
 export const TESTS_FOR_FILE_REQUEST = 'piwi/testsForFile';
+
+/** `piwi/testAt`: the test whose `test(…)` call holds a position of a spec, and the spec's tests. */
+export interface TestAtParams {
+  uri: string;
+  /** 0-based position. */
+  line: number;
+  character: number;
+}
+
+export interface TestAtResult {
+  /** The test whose `test(…)` call spans `line`; null outside every test Piwi knows. */
+  test: EditorTest | null;
+  /** The spec's tests Piwi knows, which `piwi/runArgs` runs; null for a file that is not a spec or holds none of them. */
+  spec: { uri: string; testIds: number[] } | null;
+  /**
+   * Where the `test(…)` call spanning `line` starts, as Playwright's location filter takes it: the spec relative to its
+   * Playwright config's folder and the call's 1-based line (`tests/checkout.spec.ts:42`), in the text as it stands,
+   * whether Piwi knows the test or not. `piwi/runArgs` runs it (`RunTestsArgs.locations`). Null outside every
+   * `test(…)` call of a spec under a Playwright config's folder; absent from an older service.
+   */
+  location?: string | null;
+}
+
+export const TEST_AT_REQUEST = 'piwi/testAt';
 
 /** `piwi/coverage`: the lines of an application file the project's tests ran, placed on the file as it stands. */
 export interface CoverageParams {
@@ -201,6 +227,18 @@ export interface RunTestsArgs {
    * Set by those lenses; absent otherwise.
    */
   coverage?: 'server' | 'browser';
+  /**
+   * Tests by where their `test(…)` call starts (`TestAtResult.location`, relative to the folder of the Playwright
+   * config `uri` or `root` names), run in place of `testIds`: a test the instance does not know yet, such as one just
+   * recorded, runs too, and the command needs no instance. The spec runs as saved.
+   */
+  locations?: string[];
+  /**
+   * Runs each test this many times (1 to 100) without retries (`--repeat-each=3 --retries=0`), headless: the
+   * breakpoints are not passed. Once it ended, `RunEnded.repeat` says how many of those runs passed, or, when its run
+   * did not reach an instance, a `piwi/notice` from its exit code.
+   */
+  repeat?: number;
 }
 
 export interface RunCommand {
@@ -248,6 +286,11 @@ export interface StatusResult {
   contexts: Array<{
     /** The Playwright config's directory. */
     root: string;
+    /**
+     * That directory as the editor names it: relative to the workspace folder holding it, after the folder's name when
+     * the workspace has several; the folder's name for a config at its root. Absent from an older service.
+     */
+    label?: string;
     connected: boolean;
     serverUrl: string | null;
     /**
@@ -331,7 +374,16 @@ export interface EditorCredentials {
    * choices stay.
    */
   baselines?: Record<string, BaselineChoice> | null;
+  /**
+   * The severity of a `ci-failure` diagnostic: a failure of a run on the checked-out branch gets it, one of a run on
+   * another branch is a warning at most, one whose line changed since its run an information; `off` publishes none,
+   * while `piwi/failures` and `piwi/fileSummary` still give the failures. `error` when absent.
+   */
+  failureSeverity?: FailureSeverity | null;
 }
+
+/** The severity of a failure's diagnostic, as the editor's setting chooses it. */
+export type FailureSeverity = 'error' | 'warning' | 'information' | 'off';
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
 
@@ -496,7 +548,7 @@ export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
 
 /**
  * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with
- * `ref` to a terminal. `terminalRef` is the ref of that terminal's environment when it is another one, which the run
+ * `ref` to a terminal or a task. `terminalRef` is the ref of that terminal's environment when it is another one, which the run
  * carries instead: the service does not look for `ref`, and recognizes the run by `terminalRef`.
  */
 export interface CommandStartedParams {
@@ -509,7 +561,8 @@ export const COMMAND_STARTED_NOTIFICATION = 'piwi/commandStarted';
 /**
  * `piwi/commandEnded` (notification, client to server): the command of a `RunCommand` with a `ref` ended, with its exit
  * code when the client knows it. The service reads the run once more, and says in `piwi/notice` when no run carries
- * the ref.
+ * the ref; for a command built with `RunTestsArgs.repeat` whose run reached no instance, a `piwi/notice` says how it
+ * went from the exit code.
  */
 export interface CommandEndedParams {
   ref: string;
@@ -538,6 +591,19 @@ export interface RunEnded {
   newFailures: string[];
   stillFailingCount: number;
   newFailureCount: number;
+  /**
+   * For a run of each test several times (`RunTestsArgs.repeat`): how many of those runs passed, `Passed 3 of 3` or
+   * `Failed 1 of 3` (`Failed at least 1 of 3` when the run's stream did not bring every result), which a client shows
+   * in place of what the run changed, whatever its run notifications setting, and whether one of them failed. Absent
+   * otherwise.
+   */
+  repeat?: RepeatVerdict;
+}
+
+/** How a run of each test several times went: `Passed 3 of 3`, `Failed 1 of 3`. */
+export interface RepeatVerdict {
+  verdict: string;
+  failed: boolean;
 }
 
 export const RUN_ENDED_NOTIFICATION = 'piwi/runEnded';
@@ -688,10 +754,12 @@ export interface FailuresOverlay {
 export type FailuresGrouping = 'file' | 'cluster' | 'owner' | 'flat';
 
 /**
- * What a node of the failures tree shows as its icon: `run` the run, `history` the runs laid over it, `failed` and
- * `passed` one of those runs, `file`, `cluster` and `owner` a group, `failing`, `edited` and `fixed` a failure's state.
+ * What a node of the failures tree shows as its icon: `context` a Playwright config, `run` the run, `history` the runs
+ * laid over it, `failed` and `passed` one of those runs, `file`, `cluster` and `owner` a group, `failing`, `edited` and
+ * `fixed` a failure's state.
  */
 export type FailureTreeIcon =
+  | 'context'
   | 'run'
   | 'history'
   | 'failed'
@@ -706,16 +774,20 @@ export type FailureTreeIcon =
 /**
  * A node of the failures tree both clients draw: the run (`Run #120 · CI · feature/x · 3 failing · 1 fixed locally`,
  * or `Your local runs · 1 failing` with a developer's own runs alone), the runs laid over it under `Your runs since`,
- * then the failures grouped as `FailuresResult.grouping` says, failing first, then edited, then fixed locally.
+ * then the failures grouped as `FailuresResult.grouping` says, failing first, then edited, then fixed locally. When
+ * several Playwright configs have a run, runs laid over none or failures, each has a `context` node at the root
+ * (`apps/admin`, its project and its counts beside it) holding that tree for its config alone, or its run alone without
+ * a failure.
  */
 export interface FailureTreeNode {
   /** Stable across answers: a client keeps a node's expansion and selection by it. */
   key: string;
-  kind: 'run' | 'runs' | 'overlay' | 'group' | 'failure';
+  kind: 'context' | 'run' | 'runs' | 'overlay' | 'group' | 'failure';
   label: string;
   /**
-   * Beside the label: a group's counts, a failure's place (`tests/login.spec.ts:42 · chromium · new`). A client adds
-   * the age of `startTime`, and on the `run` node shows the editor's own run in progress instead.
+   * Beside the label: a context's project and counts, a group's counts, a failure's place (`tests/login.spec.ts:42 ·
+   * chromium · new`). A client adds the age of `startTime`, and on the `run` node of the context running the editor's
+   * own run shows that run in progress instead.
    */
   description: string;
   /** When the run a `run` or `overlay` node stands for started (ISO 8601). */
@@ -730,8 +802,14 @@ export interface FailureTreeNode {
   icon: FailureTreeIcon;
   /** Whether a node with children opens expanded. */
   expanded: boolean;
-  /** The page a run opens, a failure's execution page. */
+  /** The page a run opens (a `context` node's run too), a failure's execution page. */
   url: string | null;
+  /**
+   * On a `context` node and a `run` node: the folder of the Playwright config they stand for, whose failures **Re-run
+   * the failing tests** runs from them (`FailuresResult.rerun` with this `root`) and whose baseline **Compare with…**
+   * chooses. Absent from an older service.
+   */
+  root?: string;
   /** On a failure: the `executionId` of its item in `FailuresResult.items`. */
   executionId?: number;
   children: FailureTreeNode[];
@@ -754,23 +832,27 @@ export interface FailuresParams {
 export interface FailuresResult {
   items: WorkspaceFailure[];
   /**
-   * The baseline of the first context that has one, or runs laid over none (a developer's own runs only); null when
-   * only overlays are read. Absent from an older service.
+   * The baseline run of the one context that has a run, runs laid over none (a developer's own runs only) or failures;
+   * null when only overlays are read. Absent when several contexts do, each `context` node of the tree carrying its
+   * own, and from an older service.
    */
   run?: FailuresRun | null;
-  /** The runs of its branch laid over it, newest first. */
+  /** The runs of its branch laid over it, newest first; absent with `run`. */
   overlays?: FailuresOverlay[];
-  /** The baseline chosen for that context and what it found; absent from an older service. */
+  /** The baseline chosen for that context and what it found; absent with `run`. */
   baseline?: Baseline;
-  /** When it was last read (ISO 8601). */
+  /** When it was last read (ISO 8601); with several contexts, the latest of their reads. */
   updatedAt?: string;
   /** How `tree` groups the failures. */
   grouping: FailuresGrouping;
-  /** The failures as a tree: empty without a failure; the groups alone without a run. */
+  /**
+   * The failures as a tree: with one context, empty without a failure, the groups alone without a run; with several,
+   * one `context` node each.
+   */
   tree: FailureTreeNode[];
   /**
    * The run in a few words, as the tree's `run` node names it, with or without a failure: `Run #120 · CI · feature/x ·
-   * 0 failing`, `Your local runs · 1 failing`; null without a run.
+   * 0 failing`, `Your local runs · 1 failing`; null without a run, and with several contexts.
    */
   runLabel: string | null;
   /** How many tests still fail, edited since their run or not; a test failing on several projects counts once. */

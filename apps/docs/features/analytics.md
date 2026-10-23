@@ -68,8 +68,8 @@ The *Tests* filter narrows every number to some tests:
 - **browsers**: the Playwright projects the executions ran on.
 
 It means the tests that match **today**, with their whole history. The widgets then count from the
-stored executions, final attempt per test and browser, so they reach back only as far as retention keeps
-runs. A widget that cannot narrow (the failure clusters) says so above its card.
+stored executions, final attempt per test, browser and `--repeat-each` repetition, so they reach back only
+as far as retention keeps runs. A widget that cannot narrow (the failure clusters) says so above its card.
 
 With one project in scope, *Save as selection* stores the tags as a selection you can run with
 `piwi run <key>`.

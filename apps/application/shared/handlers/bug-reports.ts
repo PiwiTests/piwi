@@ -610,13 +610,13 @@ async function runDefaultBranch(db: DrizzleDB, projectId: number, metadata: unkn
  * Moves the reports a run's tests name (`piwi:bug <id>`, same project) along
  * their lifecycle, and links each report to its test, when the run moves bug
  * reports at all ({@link movesBugReports}). Returns what changed.
- * The last attempt of each test in each browser project decides
- * (`bugOutcome`): an expected failure that passed where every other project
- * passed too → looks fixed; an ordinary pass everywhere → closed; a test no
- * project ran keeps its report; anything else keeps an open report
- * committed, and reopens a closed one. Only a run the `bug-lifecycle` use
- * reads moves a report: never `piwi bug`'s own run, a lab run, a bisect step
- * or a reproduction.
+ * The last attempt of each test in each browser project and `--repeat-each`
+ * repetition decides (`bugOutcome`): an expected failure that passed where
+ * every other project and repetition passed too → looks fixed; an ordinary pass
+ * everywhere → closed; a test no project ran keeps its report; anything else
+ * keeps an open report committed, and reopens a closed one. Only a run the
+ * `bug-lifecycle` use reads moves a report: never `piwi bug`'s own run, a lab
+ * run, a bisect step or a reproduction.
  */
 export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Promise<Transition[]> {
   const [run] = await db
@@ -632,6 +632,7 @@ export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Pro
       status: testRunsCases.status,
       expectedStatus: testRunsCases.expectedStatus,
       retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
       testMeta: testRunsCases.testMeta,
     })
