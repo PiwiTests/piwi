@@ -1,13 +1,15 @@
 /**
  * Assistant conversations belong to their owner: no read, list or delete
- * reaches another user's, administrators included. Usage outlives a deleted
- * conversation, feeds the daily caps and the AI usage summary, and the
- * retention sweep prunes both on their own horizon.
+ * reaches another user's, administrators included, nor a reply or a
+ * checklist tick. Usage outlives a deleted conversation, feeds the daily caps
+ * and the AI usage summary, and the retention sweep prunes both on their own
+ * horizon.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
+import type { AssistantBlock } from '#shared/assistant';
 
 delete process.env.PIWI_DATABASE_URL;
 vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
@@ -231,5 +233,158 @@ describe('the capability', () => {
     expect(await handlers.isAssistantDeclined(d())).toBe(true);
     await setInstanceDecisions(d(), { ai: null });
     expect(await handlers.isAssistantDeclined(d())).toBe(false);
+  });
+});
+
+describe('replies and checklist ticks', () => {
+  const question: AssistantBlock = {
+    kind: 'question',
+    id: 'which-test',
+    prompt: 'Which test should I look at?',
+    multiple: true,
+    choices: [
+      { id: 'cart', label: 'adds to cart', entity: { type: 'test-case', id: 9, label: 'adds to cart' } },
+      { id: 'pay', label: 'pays' },
+    ],
+    other: true,
+  };
+  const radio: AssistantBlock = { ...question, id: 'one-test', multiple: false, other: false };
+  const options: AssistantBlock = {
+    kind: 'options',
+    id: 'fix',
+    prompt: 'How do you want to fix it?',
+    options: [
+      { id: 'wait', title: 'Wait for the quote', summary: 'Waits for the request.' },
+      { id: 'retry', title: 'Retry the click', summary: 'Retries.' },
+    ],
+  };
+  const checklist: AssistantBlock = {
+    kind: 'checklist',
+    id: 'setup',
+    title: 'Report a first run',
+    steps: [
+      { id: 'install', text: 'Install the reporter' },
+      { id: 'run', text: 'Run the tests' },
+    ],
+  };
+
+  /** A conversation whose answer carries the blocks; the answer's id with the conversation's. */
+  async function answered(ownerId: number | null, blocks: AssistantBlock[]) {
+    const summary = await handlers.createAssistantConversation(d(), ownerId);
+    const row = (await handlers.findAssistantConversation(d(), ownerId, summary.id))!;
+    await handlers.addAssistantMessage(d(), row, { role: 'user', blocks: [{ kind: 'text', text: 'Help' }] });
+    const messageId = await handlers.addAssistantMessage(d(), row, {
+      role: 'assistant',
+      blocks: [{ kind: 'text', text: 'Pick:' }, ...blocks],
+    });
+    return { conversationId: summary.id, messageId };
+  }
+  const stored = async (ownerId: number | null, conversationId: number) =>
+    (await handlers.getAssistantConversation(d(), ownerId, conversationId))!.messages[1]!.blocks;
+
+  test("stores a question's picks on its block and hands back the prompt, the labels and the Other text", async () => {
+    const { conversationId, messageId } = await answered(ALICE, [checklist, question]);
+    const outcome = await handlers.recordAssistantReply(d(), ALICE, conversationId, {
+      messageId,
+      blockId: 'which-test',
+      choiceIds: ['pay', 'cart'],
+      other: '  the login test  ',
+    });
+    expect(outcome).toEqual({
+      ok: true,
+      reply: {
+        prompt: 'Which test should I look at?',
+        picked: [
+          { id: 'pay', label: 'pays' },
+          { id: 'cart', label: 'adds to cart', entity: { type: 'test-case', id: 9, label: 'adds to cart' } },
+        ],
+        other: 'the login test',
+      },
+    });
+    const blocks = await stored(ALICE, conversationId);
+    expect(blocks[2]).toMatchObject({
+      id: 'which-test',
+      answer: { choiceIds: ['pay', 'cart'], other: 'the login test' },
+    });
+    expect(blocks[1]).toEqual(checklist);
+  });
+
+  test('stores the option picked on an options block', async () => {
+    const { conversationId, messageId } = await answered(ALICE, [options]);
+    const outcome = await handlers.recordAssistantReply(d(), ALICE, conversationId, {
+      messageId,
+      blockId: 'fix',
+      choiceIds: ['retry'],
+    });
+    expect(outcome).toEqual({
+      ok: true,
+      reply: { prompt: 'How do you want to fix it?', picked: [{ id: 'retry', label: 'Retry the click' }] },
+    });
+    expect((await stored(ALICE, conversationId))[1]).toMatchObject({ id: 'fix', picked: 'retry' });
+  });
+
+  test("refuses a reply on another user's or another conversation's message as missing", async () => {
+    const alice = await answered(ALICE, [question]);
+    const bob = await answered(BOB, [question]);
+    const reply = { messageId: alice.messageId, blockId: 'which-test', choiceIds: ['pay'] };
+    expect(await handlers.recordAssistantReply(d(), BOB, alice.conversationId, reply)).toEqual({
+      ok: false,
+      status: 404,
+      message: 'Message not found',
+    });
+    expect(await handlers.recordAssistantReply(d(), BOB, bob.conversationId, reply)).toMatchObject({ status: 404 });
+    expect(
+      await handlers.recordAssistantReply(d(), ALICE, alice.conversationId, {
+        ...reply,
+        messageId: alice.messageId - 1,
+      }),
+    ).toMatchObject({ status: 404 });
+    expect(
+      await handlers.recordAssistantReply(d(), ALICE, alice.conversationId, { ...reply, blockId: 'nope' }),
+    ).toMatchObject({ status: 404, message: 'Block not found' });
+    expect((await stored(ALICE, alice.conversationId))[1]).not.toHaveProperty('answer');
+  });
+
+  test('refuses picks the block does not offer', async () => {
+    const { conversationId, messageId } = await answered(ALICE, [radio, options, checklist]);
+    const reply = (blockId: string, choiceIds: string[], other?: string) =>
+      handlers.recordAssistantReply(d(), ALICE, conversationId, { messageId, blockId, choiceIds, other });
+    expect(await reply('one-test', ['nope'])).toMatchObject({
+      status: 400,
+      message: 'The question has no choice "nope"',
+    });
+    expect(await reply('one-test', ['cart', 'pay'])).toMatchObject({
+      status: 400,
+      message: 'The question takes one choice',
+    });
+    expect(await reply('one-test', [], 'mine')).toMatchObject({ status: 400 });
+    expect(await reply('one-test', [])).toMatchObject({ status: 400 });
+    expect(await reply('fix', ['wait', 'retry'])).toMatchObject({ status: 400 });
+    expect(await reply('setup', ['install'])).toMatchObject({ status: 400 });
+    expect(await reply('one-test', ['cart'])).toMatchObject({ ok: true });
+  });
+
+  test("ticks and unticks one step of the owner's checklist, and nobody else's", async () => {
+    const { conversationId, messageId } = await answered(ALICE, [checklist]);
+    const tick = { blockId: 'setup', stepId: 'run', done: true };
+    expect(await handlers.tickAssistantChecklist(d(), ALICE, conversationId, messageId, tick)).toMatchObject({
+      steps: [{ id: 'install' }, { id: 'run', done: true }],
+    });
+    expect((await stored(ALICE, conversationId))[1]).toMatchObject({
+      steps: [{ id: 'install' }, { id: 'run', done: true }],
+    });
+    const unticked = await handlers.tickAssistantChecklist(d(), ALICE, conversationId, messageId, {
+      ...tick,
+      done: false,
+    });
+    expect(unticked!.steps[1]).toEqual({ id: 'run', text: 'Run the tests' });
+
+    expect(await handlers.tickAssistantChecklist(d(), BOB, conversationId, messageId, tick)).toBeNull();
+    expect(
+      await handlers.tickAssistantChecklist(d(), ALICE, conversationId, messageId, { ...tick, stepId: 'x' }),
+    ).toBeNull();
+    expect(
+      await handlers.tickAssistantChecklist(d(), ALICE, conversationId, messageId, { ...tick, blockId: 'x' }),
+    ).toBeNull();
   });
 });

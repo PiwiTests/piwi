@@ -12,7 +12,7 @@ The dashboard's shortcuts, by where they work. The letter keys never fire while 
 
 | Keys | Action |
 |---|---|
-| `Ctrl` + `K` (`⌘` + `K` on macOS) | Open the command palette: go to a page, or search projects, runs and tests |
+| `Ctrl` + `K` (`⌘` + `K` on macOS) | Open the command palette: go to a page, search projects, runs and tests, or ask the [assistant](/features/assistant) |
 | `g` then `h` | Go to Home |
 | `g` then `p` | Go to Projects |
 | `g` then `a` | Go to Analytics |

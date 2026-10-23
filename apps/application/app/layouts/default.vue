@@ -323,6 +323,10 @@ function runStatusIcon(status: string) {
   return 'i-lucide-circle';
 }
 
+// The assistant's palette items: Ask Piwi with the typed text as the question, and the page's suggestions.
+const assistant = useAssistant();
+const assistantGroups = computed(() => assistant.paletteGroups(searchTerm.value));
+
 const groups = computed<CommandPaletteGroup[]>(() => {
   const staticGroups: CommandPaletteGroup[] = [
     {
@@ -372,6 +376,8 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       })),
     });
   }
+
+  staticGroups.unshift(...assistantGroups.value);
 
   if (!searchResults.value) return staticGroups;
 
@@ -532,6 +538,8 @@ onMounted(async () => {
           data-tour="command-palette"
         />
 
+        <AssistantLauncher :collapsed="collapsed" @open="open = false" />
+
         <UNavigationMenu
           :key="currentProjectId ?? undefined"
           :collapsed="collapsed"
@@ -595,5 +603,8 @@ onMounted(async () => {
 
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />
+
+    <!-- The assistant's panel: opened from the sidebar's Ask Piwi and the command palette, kept across navigation -->
+    <AssistantPanel />
   </UDashboardGroup>
 </template>

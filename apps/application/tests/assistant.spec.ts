@@ -1,8 +1,11 @@
 /**
  * The assistant end to end against a mock OpenAI-compatible server: a question
  * makes the model call a read tool, the tool's result goes back to it, and its
- * answer streams to the browser as Server-Sent Events. The conversation is
- * stored for the user who asked, and a declined capability turns it off.
+ * answer streams to the browser as Server-Sent Events, with the entities the
+ * result named. A question block ends the answer and the user's reply reaches
+ * the model as data and is stored on the block; a guide the server refuses
+ * comes back to the model as a tool error. The conversation is stored for the
+ * user who asked, and a declined capability turns it off.
  */
 import { test, expect } from './fixtures';
 import type { APIRequestContext } from '@playwright/test';
@@ -38,10 +41,18 @@ function getFreePort(): Promise<number> {
 type ChatMessage = { role: string; content?: string | null; tool_call_id?: string };
 type ChatBody = { messages: ChatMessage[]; tools?: Array<{ function: { name: string } }>; stream?: boolean };
 
+/** The questions the mock model answers with a block, and the reply to one. */
+const ASK_PROJECT = 'Which project should I look at?';
+const PICKED_REPLY = 'This one';
+const ASK_GUIDE = 'Where are the resource leaks?';
+
 /**
  * A model that, on a question, calls `list_projects`; and once the tool's
- * result is back, answers with the project it found there. It records each
- * request so the test can check what reached it.
+ * result is back, answers with the project it found there, or, asked
+ * {@link ASK_PROJECT}, asks which project with the one it found as a choice.
+ * Asked {@link ASK_GUIDE}, it shows a guide on an anchor that does not exist,
+ * and answers in text once the refusal is back. It records each request so the
+ * test can check what reached it.
  */
 function startMockModel(port: number): { server: http.Server; requests: ChatBody[] } {
   const requests: ChatBody[] = [];
@@ -56,9 +67,55 @@ function startMockModel(port: number): { server: http.Server; requests: ChatBody
       const body = JSON.parse(raw || '{}') as ChatBody;
       requests.push(body);
       const last = body.messages.at(-1)!;
+      const question = body.messages.filter((m) => m.role === 'user').at(-1)?.content ?? '';
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
       const write = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
-      if (last.role === 'tool') {
+      const callTool = (id: string, name: string, args: object, text = '') => {
+        if (text) write({ model: 'mock-chat', choices: [{ delta: { content: text } }] });
+        write({
+          model: 'mock-chat',
+          choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] } }],
+        });
+        write({
+          choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+          usage: { prompt_tokens: 700, completion_tokens: 12 },
+        });
+      };
+      const answer = (text: string) => {
+        write({ model: 'mock-chat', choices: [{ delta: { content: text } }] });
+        write({
+          choices: [{ delta: {}, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 900, completion_tokens: 25 },
+        });
+      };
+      if (question.startsWith(ASK_PROJECT) && last.role === 'tool') {
+        const projects = JSON.parse(last.content ?? '{}') as { items?: Array<{ id: number; name: string }> };
+        const mine = projects.items?.find((p) => p.name === PROJECT.ASSISTANT);
+        callTool(
+          'call_ask',
+          'ask',
+          {
+            id: 'pick-project',
+            prompt: 'Which project?',
+            choices: [
+              { id: 'mine', entity: { type: 'project', id: mine?.id ?? 0 } },
+              { id: 'none', label: 'None of these' },
+            ],
+          },
+          'Pick one:',
+        );
+      } else if (question.startsWith(PICKED_REPLY)) {
+        answer('Noted.');
+      } else if (question.startsWith(ASK_GUIDE)) {
+        if (last.role === 'tool') answer('I cannot show that here.');
+        else {
+          callTool('call_guide', 'show_guide', {
+            id: 'where',
+            title: 'Resource leaks',
+            stops: [{ anchor: 'no-such-anchor', title: 'Here', body: 'Look here.' }],
+          });
+        }
+      } else if (last.role === 'tool') {
         const named = last.content?.includes(PROJECT.ASSISTANT) ? PROJECT.ASSISTANT : 'no project';
         write({ model: 'mock-chat', choices: [{ delta: { content: 'The project ' } }] });
         write({ choices: [{ delta: { content: `**${named}** reports here [list_projects].` } }] });
@@ -97,6 +154,14 @@ function parseEvents(body: string): Array<{ event: string; data: any }> {
       const [eventLine, dataLine] = frame.split('\n');
       return { event: eventLine!.slice('event: '.length), data: JSON.parse(dataLine!.slice('data: '.length)) };
     });
+}
+
+/** The id of the project the tests report to. */
+async function projectId(request: APIRequestContext): Promise<number> {
+  const projects = (await (await request.get('/api/projects')).json()) as {
+    items: Array<{ id: number; name: string }>;
+  };
+  return projects.items.find((p) => p.name === PROJECT.ASSISTANT)!.id;
 }
 
 async function configureAi(request: APIRequestContext, port: number, baseUrl = '') {
@@ -169,7 +234,12 @@ test.describe.serial('Assistant', () => {
     const events = parseEvents(await res.text());
 
     expect(events.map((e) => e.event)).toEqual(['tool', 'text', 'text', 'done']);
-    expect(events[0]!.data).toEqual({ name: 'list_projects', summary: 'List projects' });
+    expect(events[0]!.data).toMatchObject({ name: 'list_projects', summary: 'List projects' });
+    expect(events[0]!.data.entities).toContainEqual({
+      type: 'project',
+      id: await projectId(request),
+      label: expect.any(String),
+    });
     expect(
       events
         .filter((e) => e.event === 'text')
@@ -215,6 +285,99 @@ test.describe.serial('Assistant', () => {
     });
 
     expect((await request.get('/api/assistant/conversations/999999')).status()).toBe(404);
+  });
+
+  test('a question block ends the answer, and the reply reaches the model and is stored on the block', async ({
+    request,
+  }) => {
+    const id = ((await (await request.post('/api/assistant/conversations', { data: {} })).json()) as { id: number }).id;
+    const project = await projectId(request);
+
+    mock.requests.length = 0;
+    const asked = await request.post(`/api/assistant/conversations/${id}/messages`, {
+      data: { text: ASK_PROJECT, context: { route: '/', page: '/' } },
+    });
+    const events = parseEvents(await asked.text());
+    expect(events.map((e) => e.event)).toEqual(['tool', 'text', 'block', 'done']);
+    expect(events[0]!.data.entities).toContainEqual({ type: 'project', id: project, label: expect.any(String) });
+    const label = (events[0]!.data.entities as Array<{ type: string; id: number; label: string }>).find(
+      (e) => e.type === 'project' && e.id === project,
+    )!.label;
+    expect(events[2]!.data.block).toEqual({
+      kind: 'question',
+      id: 'pick-project',
+      prompt: 'Which project?',
+      multiple: false,
+      choices: [
+        { id: 'mine', label, entity: { type: 'project', id: project, label } },
+        { id: 'none', label: 'None of these' },
+      ],
+      other: false,
+    });
+    // The question ended the answer: no model call after it.
+    expect(mock.requests).toHaveLength(2);
+    const messageId = events[3]!.data.messageId as number;
+
+    // A reply naming a message of another conversation is refused.
+    const other = ((await (await request.post('/api/assistant/conversations', { data: {} })).json()) as { id: number })
+      .id;
+    const elsewhere = await request.post(`/api/assistant/conversations/${other}/messages`, {
+      data: { text: PICKED_REPLY, reply: { messageId, blockId: 'pick-project', choiceIds: ['mine'] } },
+    });
+    expect(elsewhere.status()).toBe(404);
+    await request.delete(`/api/assistant/conversations/${other}`);
+
+    mock.requests.length = 0;
+    const replied = await request.post(`/api/assistant/conversations/${id}/messages`, {
+      data: { text: PICKED_REPLY, reply: { messageId, blockId: 'pick-project', choiceIds: ['mine'] } },
+    });
+    expect(parseEvents(await replied.text()).map((e) => e.event)).toEqual(['text', 'done']);
+    const sent = mock.requests[0]!.messages;
+    const userTurn = sent.at(-1)!;
+    expect(userTurn.role).toBe('user');
+    expect(userTurn.content).toContain('This answers your question "Which project?"');
+    expect(userTurn.content).toContain(`"picked":[{"id":"mine","label":${JSON.stringify(label)}`);
+    expect(userTurn.content).toContain(`"entity":{"type":"project","id":${project}`);
+    expect(sent.at(-2)).toMatchObject({ role: 'assistant' });
+    expect(sent.at(-2)!.content).toContain('[Asked: Which project?');
+
+    const conversation = (await (
+      await request.get(`/api/assistant/conversations/${id}`)
+    ).json()) as AssistantConversation;
+    expect(conversation.messages[1]).toMatchObject({
+      blocks: [
+        { kind: 'text', text: 'Pick one:' },
+        { kind: 'question', id: 'pick-project', answer: { choiceIds: ['mine'] } },
+      ],
+      toolCalls: [{ name: 'list_projects' }],
+    });
+    expect(conversation.messages[1]!.toolCalls[0]!.entities).toContainEqual({ type: 'project', id: project, label });
+    expect(conversation.messages[3]).toMatchObject({ blocks: [{ kind: 'text', text: 'Noted.' }] });
+
+    // A checklist tick names a checklist step; the question is not one.
+    const tick = await request.patch(`/api/assistant/conversations/${id}/messages/${messageId}/checklist`, {
+      data: { blockId: 'pick-project', stepId: 'mine', done: true },
+    });
+    expect(tick.status()).toBe(404);
+    await request.delete(`/api/assistant/conversations/${id}`);
+  });
+
+  test('a guide the server refuses comes back to the model as a tool error and is never sent', async ({ request }) => {
+    mock.requests.length = 0;
+    const res = await request.post(`/api/assistant/conversations/${conversationId}/messages`, {
+      data: { text: ASK_GUIDE, context: { route: '/', page: '/' } },
+    });
+    const events = parseEvents(await res.text());
+    expect(events.map((e) => e.event)).toEqual(['text', 'done']);
+    expect(events[0]!.data.text).toBe('I cannot show that here.');
+    expect(mock.requests).toHaveLength(2);
+    const refusal = mock.requests[1]!.messages.at(-1)!;
+    expect(refusal).toMatchObject({ role: 'tool', tool_call_id: 'call_guide' });
+    expect(refusal.content).toContain('Error: Not shown: stops.0.anchor: unknown anchor "no-such-anchor"');
+    // Its definition was offered with the read tools.
+    expect(mock.requests[0]!.tools!.map((t) => t.function.name)).toEqual(
+      expect.arrayContaining(['find_anchors', 'show_guide', 'ask', 'checklist', 'show_command']),
+    );
   });
 
   test('declining the capability makes it unavailable', async ({ request }) => {

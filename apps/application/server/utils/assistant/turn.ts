@@ -14,19 +14,22 @@ import {
   setAssistantExtraTools,
   type AssistantOwner,
 } from '#shared/handlers/assistant';
+import type { AssistantRecordedReply } from '#shared/handlers/assistant';
 import type { AssistantEvent, AssistantPageContext, AssistantStatus } from '#shared/assistant';
 import type { ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../../database';
 import type { User } from '../../database/schema';
+import { claudeCliRunsAgents } from '../ai-claude-cli';
 import { assistantRole, resolveAiConfig } from '../ai-provider';
 import { knownToolMode } from '../ai-tool-calls';
 import { apiError } from '../api-error';
 import { isAuthEnabled } from '../auth';
 import type { McpContext } from '../mcp/tools';
-import { assistantHistory, runAssistantTurn } from './loop';
+import { runClaudeCodeTurn } from './claude-code';
+import { assistantHistory, runAssistantTurn, type AssistantTurnOptions } from './loop';
 import { resolveAssistantLimits, type AssistantLimits } from './limits';
-import { buildAssistantSystemPrompt, loadAssistantPromptParts } from './prompt';
-import { assistantReadTools, createAssistantToolbox } from './tools';
+import { assistantQuestionText, buildAssistantSystemPrompt, loadAssistantPromptParts } from './prompt';
+import { assistantReadTools, assistantToolNames, createAssistantToolbox } from './tools';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -40,6 +43,15 @@ export async function requireAssistantNotDeclined(db: DbClient): Promise<void> {
   if (await isAssistantDeclined(db)) {
     throw apiError({ statusCode: 403, message: 'The assistant is declined on this instance' });
   }
+}
+
+/**
+ * Whether a turn runs in the Claude Code CLI, which then calls the model and
+ * the tools itself (`claude-code.ts`): a `claude-cli` role whose installed CLI
+ * can. Otherwise the CLI answers step by step in the JSON action mode.
+ */
+async function runsInClaudeCode(role: ResolvedAiRole): Promise<boolean> {
+  return role.provider === 'claude-cli' && (await claudeCliRunsAgents());
 }
 
 /** Whether the assistant can answer here, with the role it would answer with. */
@@ -60,7 +72,7 @@ export async function assistantAvailability(
       reason: null,
       provider: role.provider,
       model: role.model || null,
-      toolMode: knownToolMode(role),
+      toolMode: (await runsInClaudeCode(role)) ? 'native' : knownToolMode(role),
     },
     role,
   };
@@ -99,10 +111,15 @@ type ConversationRow = NonNullable<Awaited<ReturnType<typeof findAssistantConver
 
 /**
  * Answer one question in a conversation and store both: the question first,
- * then the answer (its text, the tools it called, its model and tokens, or the
- * error that stopped it), with what it spent recorded for the daily caps. The
- * events stream through `emit` as the answer is written; the final `done` or
- * `error` carries the stored answer's id.
+ * then the answer (its blocks, the tools it called with the entities they
+ * named, its model and tokens, or the error that stopped it), with what it
+ * spent recorded for the daily caps. A question that replies to an earlier
+ * question or options block carries the picks, already recorded on the block,
+ * to the model as data. The entities the conversation's earlier answers read
+ * stay usable in this one. The events stream through `emit` as the answer is
+ * written; the final `done` or `error` carries the stored answer's id. With
+ * the Claude Code CLI the answer runs in one CLI run, which calls the turn's
+ * tools on this server's `origin` (`assistantLoopbackOrigin`).
  */
 export async function answerQuestion(opts: {
   db: DbClient;
@@ -112,10 +129,13 @@ export async function answerQuestion(opts: {
   conversation: ConversationRow;
   question: string;
   context: AssistantPageContext | null;
+  reply?: AssistantRecordedReply | null;
+  origin: string;
   emit: (event: AssistantEvent) => void;
 }): Promise<void> {
   const { db, ctx, ownerId, conversation, context } = opts;
   const earlier = (await getAssistantConversation(db, ownerId, conversation.id))?.messages ?? [];
+  const earlierEntities = earlier.flatMap((m) => m.toolCalls.flatMap((call) => call.entities ?? []));
   await addAssistantMessage(db, conversation, {
     role: 'user',
     blocks: [{ kind: 'text', text: opts.question }],
@@ -129,14 +149,22 @@ export async function answerQuestion(opts: {
     loadAssistantPromptParts(db, ctx, isAuthEnabled(), context),
   ]);
   const extraTools = Array.isArray(conversation.extraTools) ? (conversation.extraTools as string[]) : [];
-  const toolbox = createAssistantToolbox({ db, ctx, readTools, page: context?.page ?? null, extraTools });
+  const toolbox = createAssistantToolbox({
+    db,
+    ctx,
+    readTools,
+    page: context?.page ?? null,
+    extraTools,
+    context,
+    entities: earlierEntities,
+  });
 
   let final: Extract<AssistantEvent, { event: 'done' | 'error' }> | null = null;
-  const result = await runAssistantTurn({
+  const turn: AssistantTurnOptions = {
     role: opts.role,
     system: buildAssistantSystemPrompt(promptParts),
     history: assistantHistory(earlier),
-    question: opts.question,
+    question: assistantQuestionText(opts.question, opts.reply ?? null),
     toolbox,
     limits,
     allowance,
@@ -144,11 +172,20 @@ export async function answerQuestion(opts: {
       if (event.event === 'done' || event.event === 'error') final = event;
       else opts.emit(event);
     },
-  });
+  };
+  const result = (await runsInClaudeCode(opts.role))
+    ? await runClaudeCodeTurn({
+        ...turn,
+        conversationId: conversation.id,
+        ownerId,
+        origin: opts.origin,
+        allowedTools: assistantToolNames(readTools),
+      })
+    : await runAssistantTurn(turn);
 
   const messageId = await addAssistantMessage(db, conversation, {
     role: 'assistant',
-    blocks: result.text ? [{ kind: 'text', text: result.text }] : [],
+    blocks: result.blocks,
     toolCalls: result.toolCalls,
     provider: result.provider,
     model: result.model,

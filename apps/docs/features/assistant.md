@@ -13,10 +13,46 @@ whether a capability is on. Your AI model writes the answer from the same read t
 coding agents, called with the access of the person asking, and from Piwi's documentation bundled with the server,
 so it can say only what the data and the docs say. It reads; it never changes anything.
 
-A conversation is asked over the API: start one, send a question, and the answer streams back as Server-Sent Events,
-text as it is written and a line for each tool it calls. The API reference (`/docs` in your instance, or the
-[demo's](https://piwitests.dev/demo/docs)) lists the routes under **Assistant**. The live demo has no model and
-answers with a fixed reply.
+## Asking a question
+
+Click **Ask Piwi** in the sidebar, under the search, or open the command palette (`Ctrl` + `K`, `⌘` + `K` on macOS),
+type a question and pick **Ask Piwi**. The palette also offers a few **Ask about this page** questions for the page you
+are on, and so does an empty conversation. The panel opens beside the page, or over the whole screen on a phone, and
+keeps its conversation while you move between pages, so you can follow a link in an answer and read on.
+
+Each question carries the page it was asked on: its address, which page it is, its tab and filters, and the project it
+shows. "Why did this fail?" asked on an execution needs no ids. The clock icon lists your conversations, to reopen or
+delete one; the pen starts a new one.
+
+The answer streams in as it is written, with a line for each tool it calls. The same conversations can be asked over
+the API: the API reference (`/docs` in your instance, or the [demo's](https://piwitests.dev/demo/docs)) lists the
+routes under **Assistant**. The live demo has no model and answers with a fixed reply.
+
+When no AI provider is configured, the panel says so, with a link to Settings → AI for those who can change it.
+
+## What an answer contains
+
+An answer is text and blocks, each drawn by the dashboard's own components; the model sends no HTML.
+
+- **Text**: Markdown with headings, lists, tables and code. A link to a run, an execution, a failure cluster, a test or
+  a project opens its page, and only when a tool result of the conversation named that entity; any other name stays
+  plain text, so the model cannot link to something it never read.
+- **Code and commands**: a snippet with a copy button, and a shell command in bash and, when it differs, PowerShell.
+- **A patch**: a unified diff with the badge its check against the files at the run's commit gave it, as on a
+  [diagnosis](./ai-diagnosis), and its download, apply command and copy buttons.
+- **A card** for a run, an execution, a cluster or a test, in its outcome's color, drawn from the tool result.
+- **Options**: two to four ways to solve the problem, each with its trade-off and effort, one marked recommended.
+  **Choose** sends your pick as the next question.
+- **A question** with radio buttons or checkboxes and an **Other** field. **Answer** sends your picks back in words and
+  as the ids of the choices, so the model reads exactly what you picked; the question then shows your answer.
+- **A checklist**: steps to do in order, some with their command. Your ticks are saved with the conversation.
+- **Show me**: a guide on your own screens. The panel closes and a popover walks you through the parts of the
+  dashboard the answer is about, each with a link to its docs page. A guide can point only at the parts of the
+  dashboard Piwi lists for guides, each checked by its tests, never at an element the model picked.
+- **A link** to the page to open next.
+
+Under each answer, **What it read** unfolds the tools it called, one line each, and names the model. The line under
+the question field names the model too, and says that your question and what the assistant reads are sent to it.
 
 ## What it reads
 
@@ -41,9 +77,15 @@ Left unset, it uses the diagnosis model's provider, key and model, so an instanc
 with no further setup; set it to point the assistant at a faster, cheaper model while diagnosis keeps the strong one.
 The response language and the global and project instructions apply as they do to [AI diagnosis](./ai-diagnosis).
 
-Anthropic models and most OpenAI-compatible servers call tools natively. A server that refuses tools, and the Claude
-Code CLI, answer in a JSON action mode instead: each reply is one tool call or the answer. The assistant's status says
-which mode a model uses once it is known.
+Anthropic models and most OpenAI-compatible servers call tools natively. With the Claude Code CLI (the desktop app, or
+a server with `PIWI_CLAUDE_CLI_PATH`), one Claude Code run writes the whole answer: its only MCP server is this server's
+endpoint for that answer, which offers the assistant's tools and nothing else, through a token that works for that
+answer only. The desktop app's own token never goes to the CLI. A server that refuses tools, and a Claude Code version
+without the options this needs, answer in a JSON action mode instead: each reply is one tool call or the answer. The
+assistant's status says which mode a model uses once it is known.
+
+In the desktop app the assistant can also read a file's current code, only inside the folder linked to the project.
+It never changes a file or imports a run.
 
 ## What leaves the instance
 
@@ -76,7 +118,8 @@ limits, and **AI usage** on Settings → AI counts the assistant's answers apart
 ## Turning it off
 
 Decline **Assistant** on the Setup page ([Choose what you use](/operate/capabilities#declining-a-capability)) and its
-routes answer as unavailable for everyone, its stored conversations included. Declining AI turns it off too.
+routes answer as unavailable for everyone, its stored conversations included; **Ask Piwi** leaves the sidebar and the
+command palette. Declining AI turns it off too.
 
 ## Related
 

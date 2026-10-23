@@ -17,6 +17,7 @@ delete process.env.PIWI_DESKTOP_TOKEN;
 vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
 
 const tools = await import('../../server/utils/assistant/tools');
+const schema = await import('../../server/database/schema.sqlite');
 const { setInstanceDecisions } = await import('#shared/handlers/capabilities');
 type McpContext = import('../../server/utils/mcp/tools').McpContext;
 
@@ -105,11 +106,34 @@ describe('the toolbox', () => {
     return tools.createAssistantToolbox({ db: db as never, ctx, readTools, page, extraTools });
   }
 
-  test('offers its own two tools after the read tools', async () => {
+  test('offers its own tools and the block tools after the read tools', async () => {
     const names = (await box(member)).definitions().map((d) => d.name);
-    expect(names.slice(-2)).toEqual(['find_tools', 'get_instance_config']);
+    expect(names.slice(names.indexOf('find_tools'))).toEqual([
+      'find_tools',
+      'get_instance_config',
+      'find_anchors',
+      'show_code',
+      'show_command',
+      'show_patch',
+      'show_entity',
+      'offer_options',
+      'ask',
+      'checklist',
+      'show_guide',
+      'navigate',
+    ]);
     expect(names).toContain('list_projects');
     expect(names).not.toContain('get_coverage');
+  });
+
+  test("a block tool's input schema is the JSON Schema of its arguments, with their limits", async () => {
+    const ask = (await box(member)).definitions().find((d) => d.name === 'ask')!;
+    expect(ask.inputSchema).toMatchObject({
+      type: 'object',
+      required: expect.arrayContaining(['id', 'prompt', 'choices']),
+      properties: { prompt: { type: 'string', maxLength: 300 }, choices: { maxItems: 20, minItems: 2 } },
+    });
+    expect(ask.inputSchema).not.toHaveProperty('$schema');
   });
 
   test('refuses a tool it does not offer, a write tool included', async () => {
@@ -192,5 +216,169 @@ describe('helpers', () => {
     const catalog = MCP_TOOL_DEFS.filter((t) => READ_TOOLS.has(t.name)) as never;
     expect(tools.matchTools(catalog, 'flaky tests')[0]!.name).toBe('list_flaky_tests');
     expect(tools.matchTools(catalog, 'zz')).toEqual([]);
+  });
+});
+
+describe('block tools', () => {
+  const PATCH = '--- a/tests/cart.spec.ts\n+++ b/tests/cart.spec.ts\n@@ -1 +1 @@\n-old\n+new\n';
+
+  async function box(ctx: McpContext, extra: Partial<Parameters<typeof tools.createAssistantToolbox>[0]> = {}) {
+    const readTools = await tools.assistantReadTools(db as never, ctx);
+    return tools.createAssistantToolbox({ db: db as never, ctx, readTools, page: null, extraTools: [], ...extra });
+  }
+  const run = (toolbox: Awaited<ReturnType<typeof box>>, name: string, args: Record<string, unknown>) =>
+    toolbox.run({ id: name, name, arguments: args });
+
+  beforeEach(async () => {
+    await db.insert(schema.projects).values([
+      { id: 1, name: 'shop' },
+      { id: 2, name: 'admin-console' },
+    ]);
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'failed', startTime: new Date() },
+      { id: 2, projectId: 2, status: 'failed', startTime: new Date() },
+    ]);
+  });
+
+  test("a read records the entities its result names, and a card shows one with the result's label", async () => {
+    const toolbox = await box(member);
+    const listed = await run(toolbox, 'list_projects', {});
+    expect(listed.record?.entities).toEqual(expect.arrayContaining([{ type: 'project', id: 1, label: 'shop' }]));
+    expect(listed.record?.entities?.map((e) => e.id)).not.toContain(2);
+
+    const card = await run(toolbox, 'show_entity', { id: 'shop', entity: { type: 'project', id: 1 } });
+    expect(card).toEqual({
+      content: 'Shown to the user.',
+      isError: false,
+      block: { kind: 'entity', id: 'shop', entity: { type: 'project', id: 1, label: 'shop' } },
+    });
+    expect(card.record).toBeUndefined();
+    const other = await run(toolbox, 'show_entity', { id: 'other', entity: { type: 'project', id: 2 } });
+    expect(other).toMatchObject({ isError: true });
+    expect(other.content).toContain('no tool result of this conversation named project 2');
+    expect(toolbox.isBlockTool('show_entity')).toBe(true);
+    expect(toolbox.isBlockTool('list_projects')).toBe(false);
+  });
+
+  test("the entities the conversation's earlier answers read count too", async () => {
+    const toolbox = await box(member, { entities: [{ type: 'run', id: 1, label: 'Run #1' }] });
+    expect((await run(toolbox, 'show_entity', { id: 'run', entity: { type: 'run', id: 1 } })).block).toMatchObject({
+      entity: { type: 'run', id: 1, label: 'Run #1' },
+    });
+  });
+
+  test('a refused call says why so the model can fix it once, then the tool is refused for the answer', async () => {
+    const toolbox = await box(member);
+    const bad = { id: 'q', prompt: 'Which?', choices: [{ id: 'only', label: 'One' }] };
+    const first = await run(toolbox, 'ask', bad);
+    expect(first.content).toMatch(/^Error: Not shown: choices: .*Fix the call and make it once more\.$/);
+    const second = await run(toolbox, 'ask', bad);
+    expect(second.content).toMatch(/Answer in text instead\.$/);
+    const third = await run(toolbox, 'ask', { ...bad, choices: [...bad.choices, { id: 'two', label: 'Two' }] });
+    expect(third).toEqual({
+      content: 'Error: ask failed its checks 2 times in this answer; answer in text instead.',
+      isError: true,
+    });
+    expect((await run(toolbox, 'show_code', { id: 'c', language: 'ts', code: 'x' })).isError).toBe(false);
+  });
+
+  test('a question ends the answer; block ids stay unique across the answer; an answer holds at most 12 blocks', async () => {
+    const toolbox = await box(member);
+    const asked = await run(toolbox, 'ask', {
+      id: 'ci',
+      prompt: 'Which CI provider?',
+      choices: [
+        { id: 'github', label: 'GitHub Actions' },
+        { id: 'gitlab', label: 'GitLab CI' },
+      ],
+      other: true,
+    });
+    expect(asked.content).toContain('Your answer ends here');
+    expect(asked.block).toMatchObject({ kind: 'question', multiple: false, other: true });
+    expect((await run(toolbox, 'show_code', { id: 'ci', language: 'ts', code: 'x' })).content).toContain(
+      'already the id',
+    );
+    for (let n = 1; n < 12; n++) {
+      expect((await run(toolbox, 'show_code', { id: `c-${n}`, language: 'ts', code: 'x' })).isError).toBe(false);
+    }
+    expect((await run(toolbox, 'show_code', { id: 'c-12', language: 'ts', code: 'x' })).content).toContain(
+      'the most blocks one answer can have (12)',
+    );
+  });
+
+  test("a patch is validated at its run's commit, null without SCM; its target must be read and readable", async () => {
+    const toolbox = await box(member, {
+      entities: [
+        { type: 'run', id: 1, label: 'Run #1' },
+        { type: 'run', id: 2, label: 'Run #2' },
+      ],
+    });
+    const shown = await run(toolbox, 'show_patch', { id: 'fix', patch: PATCH, target: { type: 'run', id: 1 } });
+    expect(shown.block).toEqual({ kind: 'patch', id: 'fix', patch: PATCH, validation: null });
+    const prose = await run(toolbox, 'show_patch', {
+      id: 'p2',
+      patch: 'Change old to new',
+      target: { type: 'run', id: 1 },
+    });
+    expect(prose.content).toContain('not a unified diff');
+    const hidden = await run(toolbox, 'show_patch', { id: 'p3', patch: PATCH, target: { type: 'run', id: 2 } });
+    expect(hidden.content).toContain('target: run 2 is missing or not readable by the user');
+  });
+
+  test("a guide is checked against the registry, the user and the page's entities", async () => {
+    const toolbox = await box(member, { context: { route: '/', page: '/' } });
+    const stop = {
+      anchor: 'run-incident',
+      route: '/test-runs/1',
+      title: 'The run',
+      body: 'Look at the **incident** line.',
+    };
+    expect((await run(toolbox, 'show_guide', { id: 'g', title: 'Where', stops: [stop] })).block).toEqual({
+      kind: 'guide',
+      id: 'g',
+      guide: { title: 'Where', stops: [stop] },
+    });
+    const unknown = await run(toolbox, 'show_guide', { id: 'g2', title: 'Where', stops: [{ ...stop, anchor: 'pay' }] });
+    expect(unknown.content).toContain('stops.0.anchor: unknown anchor "pay"');
+    const hidden = await run(toolbox, 'show_guide', {
+      id: 'g3',
+      title: 'Where',
+      stops: [{ ...stop, route: '/test-runs/2' }],
+    });
+    expect(hidden.content).toContain('stops.0.route: the user cannot read run 2');
+  });
+
+  test("a checklist step's guide and a navigate route are checked the same way", async () => {
+    const toolbox = await box(member);
+    const steps = [
+      { id: 'install', text: 'Install the reporter', command: { bash: 'npm i -D @piwitests/reporter' } },
+      {
+        id: 'look',
+        text: 'Open the run',
+        guide: { title: 'The run', stops: [{ anchor: 'run-incident', title: 'Here', body: 'There.' }] },
+      },
+    ];
+    const refused = await run(toolbox, 'checklist', { id: 'setup', title: 'Report a run', steps });
+    expect(refused.content).toContain('steps.1.guide.stops.0.route');
+    expect((await run(toolbox, 'navigate', { id: 'go', route: '/test-runs/2', label: 'Run #2' })).content).toContain(
+      'the user cannot read run 2',
+    );
+    expect((await run(toolbox, 'navigate', { id: 'go', route: '/test-runs/1', label: 'Run #1' })).block).toEqual({
+      kind: 'navigate',
+      id: 'go',
+      route: '/test-runs/1',
+      label: 'Run #1',
+    });
+  });
+
+  test("find_anchors searches the registry with the caller's access", async () => {
+    const forMember = await run(await box(member), 'find_anchors', { query: 'setup ladder capabilities' });
+    expect(forMember.record).toMatchObject({
+      name: 'find_anchors',
+      summary: 'Find anchors (query setup ladder capabilities)',
+    });
+    expect(forMember.content).not.toContain('"setup-ladder"');
+    const forAdmin = await run(await box(administrator), 'find_anchors', { query: 'setup ladder capabilities' });
+    expect(forAdmin.content).toContain('"setup-ladder"');
   });
 });

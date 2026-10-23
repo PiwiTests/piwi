@@ -416,6 +416,7 @@ import {
   apiDeleteAssistantConversation,
   apiGetAssistantConversation,
   apiListAssistantConversations,
+  apiTickAssistantChecklist,
 } from './assistant';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { demoHttpError } from './http-error';
@@ -1780,6 +1781,19 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/assistant\/conversations\/(\d+)\/messages$/,
     handler: async (m, body, _q, ctx) => apiAskAssistant(+m[1]!, body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/messages\/(\d+)\/checklist$/,
+    handler: async (m, body, _q, ctx) => apiTickAssistantChecklist(+m[1]!, +m[2]!, body, ctx?.actingUserId ?? null),
+  },
+  // An answer's MCP endpoint takes the token of an answer the Claude Code CLI writes; the demo writes none.
+  {
+    method: 'POST',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
+    handler: () => {
+      throw demoHttpError(401, 'This endpoint takes the token of a running answer');
+    },
   },
   {
     method: 'GET',

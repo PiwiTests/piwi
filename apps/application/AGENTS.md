@@ -1034,14 +1034,29 @@ states) is deployment shape, shown to administrators only, like the Setup page.
 The in-app assistant answers questions with the `assistant` AI role (the diagnosis role when unset) by calling the MCP
 tools in-process: the loop and its tools in `server/utils/assistant/`, the model calls with tools in
 `server/utils/ai-tool-calls.ts`, the routes under `server/api/assistant/`, the wire shapes in `shared/assistant.ts`
-and the conversations in `shared/handlers/assistant.ts` (shared with the demo).
+and the conversations in `shared/handlers/assistant.ts` (shared with the demo). The panel (`app/components/assistant/`,
+`useAssistant`, its pure parts in `app/utils/assistant/`) renders every block with the dashboard's own components,
+links a `piwi:` entity only when it is in the conversation's known entities (`assistantKnownEntities`), and plays a
+composed guide through `useGuide`.
 
 - **The model is offered read tools only.** `assistantReadTools` drops every tool that declares a `permission` and
-  every desktop-only tool, so a new write tool is never offered. Never add a tool that writes to the assistant's set,
-  not even through `find_tools`.
+  every desktop-only tool but `read_local_source` on the desktop app, which the assistant wraps to read only inside
+  the folder linked to a project the user reads (`server/utils/assistant/local-source.ts`), so a new write tool is
+  never offered. `apply_locator_fix` and `import_local_report` write and stay out. Never add a tool that writes to the
+  assistant's set, not even through `find_tools`.
 - **Tools run with the asking user's context.** The route builds the `McpContext` with `requestMcpContext`, as `/mcp`
   does, and both filter the catalog with `toolsForCaller` (`server/utils/mcp/catalog.ts`). Never call a handler with a
   wider context than the caller's.
+- **With the Claude Code CLI, one CLI run writes the answer** (`server/utils/assistant/claude-code.ts`, when
+  `claudeCliRunsAgents` finds the options in `claude --help`; otherwise the CLI answers step by step in the JSON
+  action mode). Its only MCP server is the answer's endpoint, `POST /api/assistant/conversations/:id/mcp`
+  (`turn-mcp.ts`), which serves that answer's toolbox and runs each call through the same answer as the loop
+  (`answer.ts`: the events, the tool-call limit, nothing after a question block). It authenticates with a token
+  minted per user, conversation and answer (`turn-token.ts`), kept as a hash in memory, revoked when the answer ends
+  and refused past its time limit, for another conversation, on any other route and from a host, origin or peer that
+  is not loopback. The token goes to the CLI in a `--mcp-config` file, never on its command line; never hand the CLI
+  the desktop token or an API key. On the desktop app the guard lets that one route through on that token alone
+  (`presentsAssistantTurnToken`); any other route keeps needing the desktop token.
 - **A conversation is never returned to another user**, administrators included. Every read in
   `shared/handlers/assistant.ts` is narrowed to the owner (`assistantOwnerOf`: the user's id, or null with
   authentication off), and a miss answers 404.
@@ -1050,6 +1065,23 @@ and the conversations in `shared/handlers/assistant.ts` (shared with the demo).
   pattern a page.
 - **Usage outlives a conversation.** Each answer that called a model writes an `assistant_usage` row, which the daily
   caps and Settings → AI → AI usage read; deleting a conversation never deletes it.
+- **An answer's blocks are checked on the server, against limits kept in one place.** Every block but text is a call
+  to a block tool (`server/utils/assistant/blocks.ts`); `shared/assistant-blocks.ts` holds `ASSISTANT_BLOCK_LIMITS`,
+  the zod schema of each tool's arguments (its input schema is derived from it, so the model reads the same limits)
+  and the checks that need no database. A block that fails is never sent: the tool result says why. A `question` or
+  `options` block ends the answer; the user's pick comes back as the next question's `reply`, recorded on the block
+  (`recordAssistantReply`) and handed to the model as data.
+- **Entities come from tool results only.** `extractEntities` (`server/utils/assistant/entities.ts`) reads each read
+  tool's result by the field conventions of the MCP tools (the tool's own `id`, by `TOOL_ENTITY`; objects under keys
+  such as `project` or `recentExecutions`; the `…Id` fields), and the tool call stores them. The conversation's set
+  is the stored calls of all its answers: a card, a choice or a patch target outside it is refused, and the panel
+  links `piwi:<type>/<id>` only to one in it. A read tool whose top-level `id` is an entity gets its `TOOL_ENTITY` line.
+- **Guide plans are checked server-side** (`server/utils/assistant/guides.ts`), and `find_anchors` filters the same
+  way: registry anchors only, their `requires` holding for this user and instance (never a demo-only one), each
+  route on one of its anchor's pages, its ids readable by the user (`checkRouteEntities`, as `checkEntityScope` checks
+  an MCP tool's), a route wherever the anchor's page has an id the user is not on, at most 7 stops, copy within the
+  tour's limits with `**bold**` only. A `navigate` route is checked the same way. A page with another kind of `[id]`
+  gets its `ROUTE_ENTITIES` line, or its routes are refused.
 
 ## Performance
 

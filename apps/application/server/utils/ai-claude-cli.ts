@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, join, win32 } from 'node:path';
 import type { AiCallOptions, AiCallResult, StreamChunk } from './ai-provider';
@@ -8,6 +8,8 @@ import type { ClaudeCliStatus, ClaudeCliUsageTotals, ResolvedAiRole } from '~~/t
 /**
  * Backend for the `claude-cli` AI provider: the locally-installed `claude`
  * binary (Claude Code) driven headlessly via `claude -p --output-format json`.
+ * Every generation runs with its tools off; an assistant turn runs in one
+ * `claude -p` with only that turn's tools attached (`runClaudeCliAgent`).
  *
  * Only usable inside the desktop app, where the bundled Nitro server runs as a
  * local Node process on the user's machine and a `claude` install is expected.
@@ -211,7 +213,7 @@ export function resetClaudeCliCache(): void {
   cachedBinary = undefined;
   cachedShellPath = undefined;
   cachedStatus = null;
-  supportedFlags = undefined;
+  cliHelp = undefined;
 }
 
 /** Variables the CLI runs with besides `PATH`: the user's home, temp and locale, the network, and Windows' own. */
@@ -306,7 +308,15 @@ interface SpawnResult {
 function runClaude(
   binary: string,
   args: string[],
-  opts: { input?: string; timeoutMs: number; onLine?: (line: string) => void },
+  opts: {
+    input?: string;
+    timeoutMs: number;
+    onLine?: (line: string) => void;
+    /** The environment instead of {@link cliEnv}'s. */
+    env?: NodeJS.ProcessEnv;
+    /** Kills the CLI when it aborts. */
+    signal?: AbortSignal;
+  },
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     const cwd = mkdtempSync(join(tmpdir(), 'piwi-claude-'));
@@ -322,7 +332,7 @@ function runClaude(
       const command = cliCommand(binary, args);
       child = spawn(command.command, command.args, {
         cwd,
-        env: cliEnv(),
+        env: opts.env ?? cliEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -342,11 +352,15 @@ function runClaude(
       timedOut = true;
       child.kill('SIGKILL');
     }, opts.timeoutMs);
+    const onAbort = () => child.kill('SIGKILL');
+    if (opts.signal?.aborted) onAbort();
+    else opts.signal?.addEventListener('abort', onAbort, { once: true });
 
     const finish = (code: number | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', onAbort);
       removeCwd();
       if (lineBuffer && opts.onLine) opts.onLine(lineBuffer);
       resolve({ code, stdout, stderr, timedOut });
@@ -511,15 +525,22 @@ interface ClaudeCallOutcome extends AiCallResult {
 // the probe succeeds; `--max-turns` is a print-mode option `--help` does not
 // list, which every CLI with `--tools` accepts. `--restricted` is added when the
 // CLI has it. A CLI without the required flags is refused.
-let supportedFlags: Set<string> | undefined;
+export interface CliHelp {
+  /** The options `--help` lists. */
+  flags: Set<string>;
+  /** The whole text, for the values an option takes. */
+  text: string;
+}
+
+let cliHelp: CliHelp | undefined;
 
 const REQUIRED_FLAGS = ['--tools', '--strict-mcp-config'];
 
-async function getSupportedFlags(binary: string): Promise<Set<string>> {
-  if (supportedFlags) return supportedFlags;
+async function getCliHelp(binary: string): Promise<CliHelp> {
+  if (cliHelp) return cliHelp;
   const res = await runClaude(binary, ['--help'], { timeoutMs: PROBE_TIMEOUT_MS });
   const flags = new Set<string>();
-  for (const match of res.stdout.matchAll(/--[a-z][a-z0-9-]+/g)) flags.add(match[0]);
+  for (const match of res.stdout.matchAll(/--[a-zA-Z][a-zA-Z0-9-]+/g)) flags.add(match[0]);
   if (res.code !== 0 || flags.size === 0) {
     throw new Error(
       `Could not read the options of the Claude CLI (\`claude --help\`: ${
@@ -527,8 +548,8 @@ async function getSupportedFlags(binary: string): Promise<Set<string>> {
       }), so it cannot be run with its tools turned off.`,
     );
   }
-  supportedFlags = flags;
-  return flags;
+  cliHelp = { flags, text: res.stdout };
+  return cliHelp;
 }
 
 /**
@@ -545,8 +566,8 @@ async function buildArgs(
   opts: AiCallOptions,
   stream: boolean,
 ): Promise<string[]> {
-  const supported = await getSupportedFlags(binary);
-  const has = (flag: string) => supported.has(flag);
+  const { flags } = await getCliHelp(binary);
+  const has = (flag: string) => flags.has(flag);
   const missing = REQUIRED_FLAGS.filter((flag) => !has(flag));
   if (missing.length > 0) {
     throw new Error(
@@ -629,10 +650,14 @@ export async function callClaudeCli(config: ResolvedAiRole, opts: AiCallOptions)
 /** Shape of one `--output-format stream-json` line we care about. */
 interface StreamJsonLine {
   type?: string;
+  subtype?: string;
   event?: { type?: string; delta?: { type?: string; text?: string } };
+  /** An `assistant` line's message, whole. */
+  message?: { content?: Array<{ type?: string; text?: string }> };
+  /** The `system` `init` line's MCP servers and how their connection went. */
+  mcp_servers?: Array<{ name?: string; status?: string }>;
   result?: string;
   is_error?: boolean;
-  subtype?: string;
   total_cost_usd?: number;
   usage?: ClaudeJsonResult['usage'];
   modelUsage?: Record<string, unknown>;
@@ -717,6 +742,216 @@ export async function* streamClaudeCli(config: ResolvedAiRole, opts: AiCallOptio
       costUsd: outcome.costUsd,
     },
   };
+}
+
+// ── Assistant turns ────────────────────────────────────────────────────────
+
+/** The one MCP server an assistant turn's run is given: the turn's own tools. */
+export const CLAUDE_CLI_MCP_SERVER = 'piwi';
+
+/** A tool of that server as Claude Code names it, the form `--allowedTools` takes. */
+export function claudeCliToolName(name: string): string {
+  return `mcp__${CLAUDE_CLI_MCP_SERVER}__${name}`;
+}
+
+/** The options an assistant turn's run needs besides {@link REQUIRED_FLAGS}. */
+const AGENT_FLAGS = ['--mcp-config'];
+
+/** How the CLI spells its allowed-tools option, or null when it has none. */
+function allowedToolsFlag(flags: Set<string>): string | null {
+  if (flags.has('--allowedTools')) return '--allowedTools';
+  return flags.has('--allowed-tools') ? '--allowed-tools' : null;
+}
+
+function runsAgents(help: CliHelp): boolean {
+  return [...REQUIRED_FLAGS, ...AGENT_FLAGS].every((flag) => help.flags.has(flag)) && !!allowedToolsFlag(help.flags);
+}
+
+/**
+ * Whether the installed CLI can run a whole assistant turn itself, with the
+ * turn's tools attached as its MCP server; false when it is off here, missing
+ * or its options cannot be read.
+ */
+export async function claudeCliRunsAgents(): Promise<boolean> {
+  if (!claudeCliEnabled()) return false;
+  try {
+    const binary = await resolveClaudeBinaryDeep();
+    return !!binary && runsAgents(await getCliHelp(binary));
+  } catch {
+    return false;
+  }
+}
+
+export interface ClaudeCliAgentRun {
+  system: string;
+  /** The question, after the conversation so far. */
+  prompt: string;
+  /** The turn's MCP endpoint and the token it takes. */
+  server: { url: string; token: string };
+  /** The tools of that server the run may call, by their own names. */
+  tools: readonly string[];
+  maxTurns: number;
+  timeoutMs: number;
+  /** Each piece of the answer's text, as it is written. */
+  onText: (text: string) => void;
+}
+
+export interface ClaudeCliAgentResult extends ClaudeCallOutcome {
+  /** How the run ended: answered, out of turns, out of time, or failed with `error`. */
+  outcome: 'answered' | 'max-turns' | 'timeout' | 'failed';
+  error: string | null;
+}
+
+/** The `--mcp-config` of a run: the turn's endpoint as the one server, with its token. */
+export function agentMcpConfig(server: ClaudeCliAgentRun['server']): string {
+  return JSON.stringify({
+    mcpServers: {
+      [CLAUDE_CLI_MCP_SERVER]: { type: 'http', url: server.url, headers: { Authorization: `Bearer ${server.token}` } },
+    },
+  });
+}
+
+/**
+ * CLI args for an assistant turn. The system prompt replaces Claude Code's;
+ * every built-in tool is off (`--tools ""`); the turn's endpoint is the one
+ * MCP server (`--strict-mcp-config --mcp-config <file>`, a file so its token
+ * stays out of the process list) and its tools the only ones allowed
+ * (`--allowedTools`, with `--permission-mode dontAsk` refusing the rest when
+ * the CLI has it); `--max-turns` bounds the model turns; the output is
+ * `stream-json`, with partial messages when the CLI has them; and the session
+ * is not kept on disk when the CLI can say so.
+ */
+export function buildAgentArgs(
+  help: CliHelp,
+  config: ResolvedAiRole,
+  run: Pick<ClaudeCliAgentRun, 'system' | 'tools' | 'maxTurns'>,
+  mcpConfigPath: string,
+): string[] {
+  const has = (flag: string) => help.flags.has(flag);
+  const allowed = allowedToolsFlag(help.flags);
+  if (!runsAgents(help) || !allowed) {
+    throw new Error(
+      'This Claude Code version cannot run the assistant with only its tools attached. Update Claude Code (`claude update`).',
+    );
+  }
+  const args = ['-p', '--output-format', 'stream-json'];
+  if (has('--verbose')) args.push('--verbose');
+  if (has('--include-partial-messages')) args.push('--include-partial-messages');
+  args.push('--system-prompt', run.system);
+  if (config.model) args.push('--model', config.model);
+  args.push('--tools', '', '--strict-mcp-config', '--mcp-config', mcpConfigPath);
+  args.push(allowed, run.tools.map(claudeCliToolName).join(','));
+  if (has('--permission-mode') && help.text.includes('dontAsk')) args.push('--permission-mode', 'dontAsk');
+  args.push('--max-turns', String(run.maxTurns));
+  if (has('--no-session-persistence')) args.push('--no-session-persistence');
+  if (has('--restricted')) args.push('--restricted');
+  return args;
+}
+
+/** `env` with the loopback hosts in `NO_PROXY`, so a proxy the CLI is set to never carries its calls to this server. */
+export function withLoopbackNoProxy(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const hosts = (env.NO_PROXY ?? env.no_proxy ?? '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean);
+  const value = [...new Set([...hosts, '127.0.0.1', 'localhost', '::1'])].join(',');
+  return { ...env, NO_PROXY: value, no_proxy: value };
+}
+
+/** MCP server states of the `init` line that mean the run has no tools. */
+const UNREACHABLE_SERVER = new Set(['failed', 'needs-auth']);
+
+/**
+ * Run one assistant turn in the CLI: it calls the model and the turn's tools
+ * itself, until it answers or `maxTurns` or `timeoutMs` stops it. The answer's
+ * text streams to `onText` (token by token with partial messages, else each
+ * message whole); the result carries the model, the tokens and the cost the
+ * CLI reported. A run whose MCP server did not connect is stopped at once.
+ */
+export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAgentRun): Promise<ClaudeCliAgentResult> {
+  const binary = await assertReady();
+  const help = await getCliHelp(binary);
+  const dir = mkdtempSync(join(tmpdir(), 'piwi-claude-mcp-'));
+  try {
+    const configPath = join(dir, 'mcp.json');
+    writeFileSync(configPath, agentMcpConfig(run.server), { mode: 0o600 });
+    const args = buildAgentArgs(help, config, run, configPath);
+
+    const stop = new AbortController();
+    let final: StreamJsonLine | null = null;
+    let failure: string | null = null;
+    let wrote = false;
+    let deltaSinceMessage = false;
+    const write = (text: string | undefined) => {
+      if (!text) return;
+      wrote = true;
+      run.onText(text);
+    };
+    const onLine = (line: string) => {
+      const obj = safeParse<StreamJsonLine>(line.trim());
+      if (!obj) return;
+      if (
+        obj.type === 'stream_event' &&
+        obj.event?.type === 'content_block_delta' &&
+        obj.event.delta?.type === 'text_delta'
+      ) {
+        deltaSinceMessage = true;
+        write(obj.event.delta.text);
+      } else if (obj.type === 'assistant') {
+        // Without partial messages, a message's text arrives here whole.
+        if (!deltaSinceMessage)
+          for (const block of obj.message?.content ?? []) if (block.type === 'text') write(block.text);
+        deltaSinceMessage = false;
+      } else if (obj.type === 'system' && obj.subtype === 'init' && Array.isArray(obj.mcp_servers)) {
+        const server = obj.mcp_servers.find((s) => s.name === CLAUDE_CLI_MCP_SERVER);
+        if (!server || UNREACHABLE_SERVER.has(server.status ?? '')) {
+          failure = `Claude Code could not reach this server's assistant tools (${server?.status ?? 'not loaded'}).`;
+          stop.abort();
+        }
+      } else if (obj.type === 'result') {
+        final = obj;
+      }
+    };
+
+    const res = await runClaude(binary, args, {
+      input: run.prompt,
+      timeoutMs: run.timeoutMs,
+      onLine,
+      env: withLoopbackNoProxy(cliEnv()),
+      signal: stop.signal,
+    });
+
+    const result = final as StreamJsonLine | null;
+    const usage: ClaudeCallOutcome = result
+      ? outcomeFromJson(result, config.model)
+      : {
+          text: '',
+          model: '',
+          inputTokens: null,
+          outputTokens: null,
+          cacheCreationInputTokens: null,
+          cacheReadInputTokens: null,
+          costUsd: null,
+        };
+    if (result) recordUsage(usage);
+    const ended = (outcome: ClaudeCliAgentResult['outcome'], error: string | null = null): ClaudeCliAgentResult => ({
+      ...usage,
+      outcome,
+      error,
+    });
+    if (failure) return ended('failed', failure);
+    if (res.timedOut) return ended('timeout', 'The Claude CLI timed out.');
+    if (!result)
+      return ended('failed', cleanErr(res.stderr || res.stdout) || `Claude CLI exited with code ${res.code}`);
+    if (result.subtype === 'error_max_turns') return ended('max-turns');
+    if (result.is_error || result.subtype?.startsWith('error')) {
+      return ended('failed', result.result?.slice(0, 500) || `Claude CLI reported an error (${result.subtype})`);
+    }
+    if (!wrote) write(result.result);
+    return ended('answered');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // ── Interactive auth (desktop only) ────────────────────────────────────────

@@ -1485,6 +1485,43 @@ async function walkTourStops(page, atStop) {
   await page.keyboard.press('Escape');
 }
 
+/** A fixed assistant answer holding one block of each kind, shared with `tests/assistant-panel.spec.ts`. */
+const ASSISTANT_ANSWER = join(APP_DIR, 'tests', 'fixtures', 'assistant-answer.json');
+
+/**
+ * Answers the assistant's routes in the browser, so a scene shows the panel
+ * whatever AI the server has: the status names a model, a question starts a
+ * conversation, and asking streams the fixture's answer. Reloads `path`, since
+ * the sidebar reads the status as the page mounts.
+ */
+async function openAssistantAnswer(page, goto, path = '/') {
+  const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
+  const frames = fixture.answer.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
+  await page.route('**/api/assistant/**', (route) => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/assistant/status')) return route.fulfill({ json: fixture.status });
+    if (pathname.endsWith('/assistant/conversations')) {
+      return request.method() === 'POST'
+        ? route.fulfill({ status: 201, json: fixture.conversation })
+        : route.fulfill({ json: { items: [fixture.conversation] } });
+    }
+    if (pathname.endsWith('/messages')) {
+      return route.fulfill({ headers: { 'Content-Type': 'text/event-stream' }, body: frames });
+    }
+    return route.fallback();
+  });
+  await goto(path);
+  const launcher = page.getByRole('button', { name: 'Ask Piwi' });
+  if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+  await launcher.click();
+  const panel = page.locator('[data-shot="assistant-panel"]');
+  await panel.getByLabel('Your question').fill(fixture.question);
+  await panel.getByLabel('Your question').press('Enter');
+  await panel.locator('[data-assistant-read]').waitFor({ timeout: 30_000 });
+  return panel;
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -1520,6 +1557,43 @@ const SCENES = [
       await shoot('narrow');
     },
     outputs: ['page-not-found-wide.png', 'page-not-found-narrow.png'],
+  },
+  {
+    name: 'assistant-panel',
+    description:
+      'The assistant panel on an answer holding every kind of block (a fixed answer streamed into it): beside the page, whole at 1280 and 390 px, and the command palette offering Ask Piwi',
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto);
+      await settle();
+      await shoot('wide');
+      // Tall enough for the whole answer, so one image shows every block.
+      const tall = async (width) => {
+        await page.setViewportSize({ width, height: 860 });
+        const content = await panel.locator('[data-assistant-panel]').evaluate((node) => node.scrollHeight);
+        await page.setViewportSize({ width, height: content + 260 });
+        await panel.locator('[data-assistant-panel]').evaluate((node) => node.scrollTo({ top: 0 }));
+        await settle();
+      };
+      await tall(1280);
+      await shoot('blocks', { of: '[data-shot="assistant-panel"]' });
+      await tall(390);
+      await shoot('phone', { of: '[data-shot="assistant-panel"]' });
+      await page.setViewportSize({ width: 1280, height: 860 });
+      await panel.getByRole('button', { name: 'Close' }).click();
+      await page.getByRole('button', { name: /^Search…/ }).click();
+      await page.getByPlaceholder('Type a command or search…').fill('Why does the cart test keep failing?');
+      await page.getByRole('option', { name: /Ask Piwi/ }).waitFor();
+      await settle();
+      await shoot('palette');
+    },
+    outputs: [
+      'assistant-panel-wide.png',
+      'assistant-panel-blocks.png',
+      'assistant-panel-phone.png',
+      'assistant-panel-palette.png',
+    ],
   },
   {
     name: 'user-menu-piwi-tools',

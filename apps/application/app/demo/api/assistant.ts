@@ -1,9 +1,10 @@
 /**
  * The assistant in demo mode (`server/api/assistant`): the status, and the
  * conversations kept in the in-browser database through the server's shared
- * handler. The demo calls no model, so a question is answered with
- * {@link DEMO_ASSISTANT_ANSWER}, streamed in the server's event format and
- * stored like a real answer.
+ * handler, with the replies to questions and the checklist ticks recorded on
+ * their blocks as the server records them. The demo calls no model, so a
+ * question is answered with {@link DEMO_ASSISTANT_ANSWER}, streamed in the
+ * server's event format and stored like a real answer.
  */
 import {
   addAssistantMessage,
@@ -13,9 +14,12 @@ import {
   getAssistantConversation,
   isAssistantDeclined,
   listAssistantConversations,
+  recordAssistantReply,
+  tickAssistantChecklist,
 } from '#shared/handlers/assistant';
 import {
   ASSISTANT_STREAM_HEADERS,
+  assistantChecklistTickSchema,
   assistantConversationCreateSchema,
   assistantFrame,
   assistantQuestionSchema,
@@ -87,6 +91,10 @@ export async function apiAskAssistant(id: number, body: unknown, ownerId: number
   if (!conversation) throw demoHttpError(404, 'Conversation not found');
   const parsed = assistantQuestionSchema.safeParse(body);
   if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+  if (parsed.data.reply) {
+    const recorded = await recordAssistantReply(db, ownerId, id, parsed.data.reply);
+    if (!recorded.ok) throw demoHttpError(recorded.status, recorded.message);
+  }
 
   await addAssistantMessage(db, conversation, {
     role: 'user',
@@ -128,4 +136,14 @@ export async function apiAskAssistant(id: number, body: unknown, ownerId: number
     },
   });
   return new Response(stream, { headers: ASSISTANT_STREAM_HEADERS });
+}
+
+/** PATCH /api/assistant/conversations/:id/messages/:messageId/checklist */
+export async function apiTickAssistantChecklist(id: number, messageId: number, body: unknown, ownerId: number | null) {
+  await requireNotDeclined();
+  const parsed = assistantChecklistTickSchema.safeParse(body);
+  if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+  const block = await tickAssistantChecklist(await getDemoDb(), ownerId, id, messageId, parsed.data);
+  if (!block) throw demoHttpError(404, 'Checklist step not found');
+  return { block };
 }

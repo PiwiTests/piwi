@@ -28,7 +28,20 @@ the server side with no panel yet: the `assistant` role; the loop with tool call
 OpenAI-compatible servers; a JSON action mode, one tool call or the answer per reply, for a server that refuses tools
 and for the Claude Code CLI until PR 7); the read tools routed per page with `find_tools` and `get_instance_config`;
 private conversations, and an `assistant_usage` ledger the daily caps count from, so deleting a conversation does not
-reset them; the `assistant` capability; its routes (1.0 register D58); and a fixed demo reply. Every question is
+reset them; the `assistant` capability; its routes (1.0 register D58); and a fixed demo reply. **PR 5 built
+2026-10-23**: the answer blocks, each a block tool the server checks against `ASSISTANT_BLOCK_LIMITS`
+(`shared/assistant-blocks.ts`) before it is sent; the entities each tool result names, which the answer may link
+(`piwi:<type>/<id>`) or offer as a card or a choice; `find_anchors` and composed guides, every stop checked on the
+server (its anchor, `requires`, page and the entities its route names), built-in dashboards included; patches validated
+at the run's commit; replies stored on their block; checklist ticks through their own route; and the panel, a side
+panel beside the page (full screen on a phone) opened from the sidebar and the command palette, with "Ask about this
+page" suggestions and **What it read** under each answer. As built, the launcher sits under the sidebar's search, since
+no page header is shared, and the page context does not yet list the anchors rendered on the page (PR 6 adds it).
+**PR 7 built 2026-10-23**: with the Claude Code CLI, one run writes the whole answer through a per-answer MCP endpoint
+(`/api/assistant/conversations/{id}/mcp`) serving exactly that answer's toolbox, behind a token minted for the user,
+the conversation and the answer, accepted from this machine only and revoked when the answer ends; the desktop guard
+lets that route through on that token alone, and the desktop token never reaches the CLI. On the desktop app the model
+may read source files, only inside the folder linked to a project the user reads. Every question is
 decided ([Decisions](#decisions), D1–D8): guides point only at a closed registry of anchors, every anchor tested;
 finding elements from the page's ARIA snapshot is deferred to
 [a later step](#later-finding-elements-from-the-pages-aria-snapshot), which keeps the measurements behind that choice;

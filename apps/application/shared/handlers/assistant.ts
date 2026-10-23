@@ -16,8 +16,10 @@ import {
   type AssistantBlock,
   type AssistantConversation,
   type AssistantConversationSummary,
+  type AssistantEntityRef,
   type AssistantMessageView,
   type AssistantPageContext,
+  type AssistantReply,
   type AssistantToolCall,
 } from '#shared/assistant';
 import type { DrizzleDB } from './db';
@@ -193,6 +195,125 @@ export async function addAssistantMessage(
     .set({ updatedAt: now, ...(title ? { title } : {}) })
     .where(eq(assistantConversations.id, conversation.id));
   return row!.id;
+}
+
+/** One of the owner's answers in one of their conversations, or null when it is missing or someone else's. */
+async function findOwnedAnswer(
+  db: DrizzleDB,
+  ownerId: AssistantOwner,
+  conversationId: number,
+  messageId: number,
+): Promise<{ id: number; blocks: AssistantBlock[] } | null> {
+  if (!(await findAssistantConversation(db, ownerId, conversationId))) return null;
+  const [row] = await db
+    .select()
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.id, messageId),
+        eq(assistantMessages.conversationId, conversationId),
+        eq(assistantMessages.role, 'assistant'),
+      ),
+    )
+    .limit(1);
+  return row ? { id: row.id, blocks: toMessageView(row).blocks } : null;
+}
+
+async function saveBlocks(db: DrizzleDB, messageId: number, blocks: AssistantBlock[]): Promise<void> {
+  await db.update(assistantMessages).set({ content: { blocks } }).where(eq(assistantMessages.id, messageId));
+}
+
+/** A choice the user picked, as the model reads it: its id, its label, and the entity it stands for. */
+interface AssistantReplyPick {
+  id: string;
+  label: string;
+  entity?: AssistantEntityRef;
+}
+
+/** A reply as recorded on its block, for the model: the block's prompt, the choices picked, the "Other" text. */
+export interface AssistantRecordedReply {
+  prompt: string;
+  picked: AssistantReplyPick[];
+  other?: string;
+}
+
+type AssistantReplyOutcome =
+  | { ok: true; reply: AssistantRecordedReply }
+  | { ok: false; status: 400 | 404; message: string };
+
+/**
+ * Record a reply on the `question` or `options` block it answers, in one of
+ * the owner's earlier answers of this conversation: the choice ids as the
+ * question's `answer`, the option id as the options' `picked`. Another
+ * conversation's message, or another user's, is a 404; picks the block does
+ * not offer are a 400.
+ */
+export async function recordAssistantReply(
+  db: DrizzleDB,
+  ownerId: AssistantOwner,
+  conversationId: number,
+  reply: AssistantReply,
+): Promise<AssistantReplyOutcome> {
+  const refuse = (status: 400 | 404, message: string): AssistantReplyOutcome => ({ ok: false, status, message });
+  const message = await findOwnedAnswer(db, ownerId, conversationId, reply.messageId);
+  if (!message) return refuse(404, 'Message not found');
+  const index = message.blocks.findIndex((b) => b.kind !== 'text' && b.id === reply.blockId);
+  const block = message.blocks[index];
+  if (!block) return refuse(404, 'Block not found');
+  const choiceIds = [...new Set(reply.choiceIds)];
+  const other = reply.other?.trim() || undefined;
+
+  if (block.kind === 'options') {
+    const option = block.options.find((o) => o.id === choiceIds[0]);
+    if (choiceIds.length !== 1 || !option) return refuse(400, 'Pick exactly one of the options');
+    if (other) return refuse(400, 'An options block has no "Other" field');
+    message.blocks[index] = { ...block, picked: option.id };
+    await saveBlocks(db, message.id, message.blocks);
+    return { ok: true, reply: { prompt: block.prompt, picked: [{ id: option.id, label: option.title }] } };
+  }
+  if (block.kind !== 'question') return refuse(400, 'Only a question or an options block takes a reply');
+
+  const unknown = choiceIds.find((id) => !block.choices.some((c) => c.id === id));
+  if (unknown) return refuse(400, `The question has no choice "${unknown}"`);
+  if (!block.multiple && choiceIds.length > 1) return refuse(400, 'The question takes one choice');
+  if (other && !block.other) return refuse(400, 'The question has no "Other" field');
+  if (choiceIds.length === 0 && !other) return refuse(400, 'Pick a choice, or fill in "Other"');
+  message.blocks[index] = { ...block, answer: { choiceIds, ...(other ? { other } : {}) } };
+  await saveBlocks(db, message.id, message.blocks);
+  const picked = choiceIds.map((id) => {
+    const choice = block.choices.find((c) => c.id === id)!;
+    return { id, label: choice.label, ...(choice.entity ? { entity: choice.entity } : {}) };
+  });
+  return { ok: true, reply: { prompt: block.prompt, picked, ...(other ? { other } : {}) } };
+}
+
+/**
+ * Tick or untick one step of a `checklist` block of one of the owner's
+ * answers; the block as it now stands, or null when the message, the block or
+ * the step is missing, or the conversation is someone else's.
+ */
+export async function tickAssistantChecklist(
+  db: DrizzleDB,
+  ownerId: AssistantOwner,
+  conversationId: number,
+  messageId: number,
+  tick: { blockId: string; stepId: string; done: boolean },
+): Promise<Extract<AssistantBlock, { kind: 'checklist' }> | null> {
+  const message = await findOwnedAnswer(db, ownerId, conversationId, messageId);
+  const index = message?.blocks.findIndex((b) => b.kind === 'checklist' && b.id === tick.blockId) ?? -1;
+  const block = message?.blocks[index];
+  if (!message || block?.kind !== 'checklist' || !block.steps.some((s) => s.id === tick.stepId)) return null;
+  const ticked = {
+    ...block,
+    steps: block.steps.map((s) => {
+      if (s.id !== tick.stepId) return s;
+      const { done: _done, ...step } = s;
+      return tick.done ? { ...step, done: true } : step;
+    }),
+  };
+  message.blocks[index] = ticked;
+  await saveBlocks(db, message.id, message.blocks);
+  return ticked;
 }
 
 /** Remember the tools `find_tools` added, offered for the rest of the conversation. */
