@@ -39,6 +39,9 @@ export type AssistantView = 'conversation' | 'list';
 /** The status request in flight, shared by every caller. */
 let statusRequest: Promise<void> | null = null;
 
+/** The last checklist tick being saved, per conversation, message and block: the next one waits for it. */
+const savingTicks = new Map<string, Promise<void>>();
+
 /** The message of an API error response, else a sentence naming its status. */
 function refusalText(status: number, body: string): string {
   try {
@@ -387,23 +390,34 @@ export function useAssistant() {
     };
   }
 
-  /** Ticks or unticks a checklist step, saved with the conversation; a refused tick is undone. */
+  /**
+   * Ticks or unticks a checklist step at once, and saves it with the
+   * conversation once the block's earlier ticks are saved; the block the
+   * server returns replaces it only when no later tick is waiting. A refused
+   * tick is undone.
+   */
   async function tick(messageId: number, blockId: string, stepId: string, done: boolean): Promise<void> {
     const target = conversation.value;
     if (!target || messageId <= 0) return;
     const update = (change: (block: AssistantBlock) => AssistantBlock) =>
       changeBlock(target.id, messageId, blockId, change);
     update((block) => ticked(block, stepId, done));
-    try {
-      const saved = await $fetch<{ block: Extract<AssistantBlock, { kind: 'checklist' }> }>(
-        `/api/assistant/conversations/${target.id}/messages/${messageId}/checklist`,
-        { method: 'PATCH', body: { blockId, stepId, done } },
-      );
-      if (saved?.block) update(() => saved.block);
-    } catch (error) {
-      update((block) => ticked(block, stepId, !done));
-      toast.add({ title: 'The step could not be saved', description: errorMessage(error), color: 'error' });
-    }
+    const key = `${target.id}/${messageId}/${blockId}`;
+    const saving: Promise<void> = (savingTicks.get(key) ?? Promise.resolve()).then(async () => {
+      try {
+        const saved = await $fetch<{ block: Extract<AssistantBlock, { kind: 'checklist' }> }>(
+          `/api/assistant/conversations/${target.id}/messages/${messageId}/checklist`,
+          { method: 'PATCH', body: { blockId, stepId, done } },
+        );
+        if (saved?.block && savingTicks.get(key) === saving) update(() => saved.block);
+      } catch (error) {
+        update((block) => ticked(block, stepId, !done));
+        toast.add({ title: 'The step could not be saved', description: errorMessage(error), color: 'error' });
+      }
+    });
+    savingTicks.set(key, saving);
+    await saving;
+    if (savingTicks.get(key) === saving) savingTicks.delete(key);
   }
 
   /**

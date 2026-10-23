@@ -62,6 +62,21 @@ process.stdin.on('end', () => {
     line({ type: 'system', subtype: 'init', mcp_servers: [{ name: 'piwi', status }] });
     if (status !== 'connected') { setTimeout(() => process.exit(0), 20000); return; }
     const seen = JSON.stringify({ args, config, configPath, prompt: input, noProxy: process.env.NO_PROXY });
+    if (process.env.CLAUDE_STUB_HANG) {
+      // Two model turns reported as Claude Code streams them, then no result before the run is killed:
+      // each message's usage as it starts and as it grows, and on its whole message (once per content block).
+      const usage = (output) => ({ input_tokens: 10, cache_creation_input_tokens: 200, cache_read_input_tokens: 1000, output_tokens: output });
+      const message = (id, output, content) => ({ id, type: 'message', role: 'assistant', model: 'claude-sonnet-5', content, usage: usage(output) });
+      line({ type: 'stream_event', event: { type: 'message_start', message: message('msg_1', 1, []) } });
+      line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Looking.' } } });
+      line({ type: 'assistant', message: message('msg_1', 5, [{ type: 'text', text: 'Looking.' }]) });
+      line({ type: 'assistant', message: message('msg_1', 5, [{ type: 'tool_use', name: 'mcp__piwi__list_projects' }]) });
+      line({ type: 'stream_event', event: { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 40 } } });
+      line({ type: 'stream_event', event: { type: 'message_start', message: message('msg_2', 1, []) } });
+      line({ type: 'stream_event', event: { type: 'message_delta', delta: {}, usage: { output_tokens: 12 } } });
+      setTimeout(() => process.exit(0), 20000);
+      return;
+    }
     if (process.env.CLAUDE_STUB_NO_PARTIAL) {
       line({ type: 'assistant', message: { content: [{ type: 'text', text: seen }, { type: 'tool_use', name: 'x' }] } });
     } else {
@@ -122,6 +137,7 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     delete process.env.CLAUDE_STUB_MCP_STATUS;
     delete process.env.CLAUDE_STUB_NO_PARTIAL;
     delete process.env.CLAUDE_STUB_SUBTYPE;
+    delete process.env.CLAUDE_STUB_HANG;
     delete process.env.PIWI_DESKTOP_TOKEN;
     delete process.env.NUXT_PUBLIC_DESKTOP;
     resetClaudeCliCache();
@@ -396,6 +412,24 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
       expect(await runClaudeCliAgent(role, agentRun([]))).toMatchObject({ outcome: 'max-turns', outputTokens: 9 });
       process.env.CLAUDE_STUB_SUBTYPE = 'error_during_execution';
       expect(await runClaudeCliAgent(role, agentRun([]))).toMatchObject({ outcome: 'failed', error: 'final' });
+    });
+
+    it('a run killed past its time limit reports what its messages spent', async () => {
+      process.env.CLAUDE_STUB_AGENT = '1';
+      process.env.CLAUDE_STUB_HANG = '1';
+      const text: string[] = [];
+      const result = await runClaudeCliAgent(role, { ...agentRun(text), timeoutMs: 1500 });
+      expect(text).toEqual(['Looking.']);
+      // Each message counted once, at the most it reported: 1,210 input tokens each, 40 and 12 output.
+      expect(result).toMatchObject({
+        outcome: 'timeout',
+        model: 'claude-sonnet-5',
+        inputTokens: 2420,
+        outputTokens: 52,
+        cacheReadInputTokens: 2000,
+        cacheCreationInputTokens: 400,
+        costUsd: null,
+      });
     });
 
     it('refuses a CLI that cannot attach only the turn server', async () => {

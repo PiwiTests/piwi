@@ -1176,8 +1176,10 @@ or a question the panel opens on and asks (**Ask**), when a rule over what the p
   `assistantOwnerOf` reads it: null with authentication off, when a dismissal holds for the whole instance), through
   `shared/handlers/assistant-nudges.ts`, shared with the demo; deleting a user deletes theirs. Never keep one in the
   browser alone: **Don't show again** holds in every browser.
-- **Declining the assistant hides every nudge**: `AssistantNudge` renders nothing and the dismissal routes answer 403.
-  The card renders in the browser only, after the page's first paint.
+- **Declining the assistant hides only the nudges that ask it**: a guide needs no model, so a nudge offering one keeps
+  showing while the `assistant` capability (or AI) is declined, and the dismissal routes keep answering; a question's
+  nudge shows only while the assistant can answer (`canAsk`). The card renders in the browser only, after the page's
+  first paint.
 
 ## Performance
 

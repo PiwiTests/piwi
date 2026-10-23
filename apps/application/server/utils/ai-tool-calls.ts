@@ -223,9 +223,28 @@ export function buildOpenAiToolBody(
   };
 }
 
-/** A 400 that names the tools: the server or the model does not take them. */
+/** What a server calls tools: the parameter, tool use, calling or choice, function calling. */
+const TOOLS = String.raw`(?:tools?|tool[ _-]?(?:use|calling|choice)|functions?(?:[ _-]?calling)?)`;
+
+/**
+ * The ways a server says it takes no tools at all: "does not support tools",
+ * "Function calling is not enabled", "Unrecognized request argument supplied:
+ * tools", "tool choice requires --enable-auto-tool-choice"; not a 400 about
+ * one tool's schema or a tool call's id.
+ */
+const TOOLS_UNSUPPORTED = new RegExp(
+  [
+    String.raw`\b(?:does not|doesn't|do not|don't|cannot|can't)\s+support\s+${TOOLS}\b`,
+    String.raw`\b${TOOLS}\b['"\`]?\s+(?:is|are)(?:\s+currently)?\s+not\s+(?:supported|enabled|available|allowed)\b`,
+    String.raw`\b(?:unsupported|unrecognized|unknown)\s+(?:request\s+)?(?:argument|parameter|field)s?\b[^.]{0,30}?\b(?:tools|tool_choice|functions)\b`,
+    String.raw`\b${TOOLS}\b[^.]{0,40}?\brequires\s+--`,
+  ].join('|'),
+  'i',
+);
+
+/** A 400 saying the server or the model does not take tools. */
 function rejectsTools(status: number, body: string): boolean {
-  return status === 400 && /\btools?\b|tool_choice|function/i.test(body);
+  return status === 400 && TOOLS_UNSUPPORTED.test(body);
 }
 
 /** The arguments of a streamed tool call, or why they are not a JSON object. */
@@ -367,25 +386,36 @@ export type JsonAction =
   | { kind: 'tool'; name: string; arguments: Record<string, unknown> }
   | { kind: 'invalid'; reason: string };
 
+/** A reply that is one fenced block, and what it holds. */
+const WHOLE_FENCE = /^```[a-z]*[ \t]*\n([\s\S]*?)\n?```$/i;
+
+/** A fenced JSON object in a reply. */
+const FENCED_OBJECT = /```(?:json)?[ \t]*\n(\{[\s\S]*?\})[ \t]*\n?```/gi;
+
 /**
  * Read one JSON action from a reply: `{ "tool": name, "arguments": {...} }` or
- * `{ "answer": "markdown" }`, tolerating a Markdown fence or prose around the
- * object. A reply that is plain prose, with no object in it and not starting
- * like one, is taken as the answer.
+ * `{ "answer": "markdown" }`. The reply is an action when it is that one
+ * object, bare or in a Markdown fence, or when prose holds it in a fence of
+ * its own; any other reply is prose, taken as the answer, braces and JSON
+ * snippets in it included.
  */
 export function parseJsonAction(raw: string): JsonAction {
   const text = raw.trim();
   if (!text) return { kind: 'invalid', reason: 'The reply was empty.' };
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end <= start) {
-    return /^(```|\{)/.test(text)
-      ? { kind: 'invalid', reason: 'The reply was not valid JSON.' }
-      : { kind: 'answer', text };
+  const whole = (WHOLE_FENCE.exec(text)?.[1] ?? text).trim();
+  if (whole.startsWith('{')) return readJsonAction(whole);
+  for (const [, fenced] of text.matchAll(FENCED_OBJECT)) {
+    const action = readJsonAction(fenced!);
+    if (action.kind !== 'invalid') return action;
   }
+  return { kind: 'answer', text };
+}
+
+/** One JSON object read as an action, or why it is not one. */
+function readJsonAction(json: string): JsonAction {
   let value: unknown;
   try {
-    value = JSON.parse(text.slice(start, end + 1));
+    value = JSON.parse(json);
   } catch {
     return { kind: 'invalid', reason: 'The reply was not valid JSON.' };
   }

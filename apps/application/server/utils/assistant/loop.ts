@@ -112,6 +112,22 @@ export function assistantHistory(messages: readonly AssistantMessageView[]): AiC
   return pairs.slice(-HISTORY_EXCHANGES).flat();
 }
 
+/**
+ * {@link assistantHistory} of a conversation, reading only its newest
+ * messages: `read(limit)` gives the newest `limit`, oldest first. The window
+ * doubles until it holds the exchanges the history keeps or the whole
+ * conversation, so failed answers in it never shorten the history.
+ */
+export async function readAssistantHistory(
+  read: (limit: number) => Promise<AssistantMessageView[]>,
+): Promise<AiChatMessage[]> {
+  for (let limit = 2 * HISTORY_EXCHANGES + 2; ; limit *= 2) {
+    const messages = await read(limit);
+    const history = assistantHistory(messages);
+    if (messages.length < limit || history.length >= 2 * HISTORY_EXCHANGES) return history;
+  }
+}
+
 export interface AssistantTurnOptions {
   role: ResolvedAiRole;
   system: string;

@@ -647,13 +647,27 @@ export async function callClaudeCli(config: ResolvedAiRole, opts: AiCallOptions)
   return outcome;
 }
 
+/** One model message as a `stream-json` line carries it: its id, its model and its usage so far. */
+interface StreamJsonMessage {
+  id?: string;
+  model?: string;
+  content?: Array<{ type?: string; text?: string }>;
+  usage?: ClaudeJsonResult['usage'];
+}
+
 /** Shape of one `--output-format stream-json` line we care about. */
 interface StreamJsonLine {
   type?: string;
   subtype?: string;
-  event?: { type?: string; delta?: { type?: string; text?: string } };
+  /** A partial message's event: `message_start` carries the message, `message_delta` its usage as it grows. */
+  event?: {
+    type?: string;
+    delta?: { type?: string; text?: string };
+    message?: StreamJsonMessage;
+    usage?: ClaudeJsonResult['usage'];
+  };
   /** An `assistant` line's message, whole. */
-  message?: { content?: Array<{ type?: string; text?: string }> };
+  message?: StreamJsonMessage;
   /** The `system` `init` line's MCP servers and how their connection went. */
   mcp_servers?: Array<{ name?: string; status?: string }>;
   result?: string;
@@ -861,12 +875,69 @@ export function withLoopbackNoProxy(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 /** MCP server states of the `init` line that mean the run has no tools. */
 const UNREACHABLE_SERVER = new Set(['failed', 'needs-auth']);
 
+type TokenCounts = Required<NonNullable<ClaudeJsonResult['usage']>>;
+
+/**
+ * The tokens a run's messages reported as they streamed, which is what it
+ * spent when it ends without its `result` line (killed past its time limit).
+ * A message is reported more than once as it grows (its `message_start` and
+ * `message_delta` events, an `assistant` line per content block), so each
+ * count is the highest one a message reported, summed over the messages.
+ */
+function createStreamUsage() {
+  const messages = new Map<string, TokenCounts>();
+  let current: string | null = null;
+  let model = '';
+  const note = (id: string | null | undefined, usage: ClaudeJsonResult['usage']) => {
+    if (!id || !usage) return;
+    const seen = messages.get(id) ?? {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    };
+    for (const key of Object.keys(seen) as Array<keyof TokenCounts>) seen[key] = Math.max(seen[key], usage[key] ?? 0);
+    messages.set(id, seen);
+  };
+  const noteMessage = (message: StreamJsonMessage | undefined) => {
+    if (message?.model) model = message.model;
+    note(message?.id, message?.usage);
+  };
+  return {
+    read(obj: StreamJsonLine) {
+      if (obj.type === 'assistant') noteMessage(obj.message);
+      else if (obj.type === 'stream_event' && obj.event?.type === 'message_start') {
+        current = obj.event.message?.id ?? null;
+        noteMessage(obj.event.message);
+      } else if (obj.type === 'stream_event' && obj.event?.type === 'message_delta') note(current, obj.event.usage);
+    },
+    /** What the messages spent, or null when none reported its usage. */
+    outcome(fallbackModel: string): ClaudeCallOutcome | null {
+      if (messages.size === 0) return null;
+      const total = (key: keyof TokenCounts) => [...messages.values()].reduce((n, counts) => n + counts[key], 0);
+      const cacheCreationInputTokens = total('cache_creation_input_tokens');
+      const cacheReadInputTokens = total('cache_read_input_tokens');
+      return {
+        text: '',
+        model: model || fallbackModel || 'claude',
+        inputTokens: total('input_tokens') + cacheCreationInputTokens + cacheReadInputTokens,
+        outputTokens: total('output_tokens'),
+        cacheCreationInputTokens,
+        cacheReadInputTokens,
+        costUsd: null,
+      };
+    },
+  };
+}
+
 /**
  * Run one assistant turn in the CLI: it calls the model and the turn's tools
  * itself, until it answers or `maxTurns` or `timeoutMs` stops it. The answer's
  * text streams to `onText` (token by token with partial messages, else each
  * message whole); the result carries the model, the tokens and the cost the
- * CLI reported. A run whose MCP server did not connect is stopped at once.
+ * CLI reported, and a run killed before its result line the model and the
+ * tokens its messages reported. A run whose MCP server did not connect is
+ * stopped at once.
  */
 export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAgentRun): Promise<ClaudeCliAgentResult> {
   const binary = await assertReady();
@@ -882,6 +953,7 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
     let failure: string | null = null;
     let wrote = false;
     let deltaSinceMessage = false;
+    const streamed = createStreamUsage();
     const write = (text: string | undefined) => {
       if (!text) return;
       wrote = true;
@@ -890,6 +962,7 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
     const onLine = (line: string) => {
       const obj = safeParse<StreamJsonLine>(line.trim());
       if (!obj) return;
+      streamed.read(obj);
       if (
         obj.type === 'stream_event' &&
         obj.event?.type === 'content_block_delta' &&
@@ -922,18 +995,18 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
     });
 
     const result = final as StreamJsonLine | null;
-    const usage: ClaudeCallOutcome = result
-      ? outcomeFromJson(result, config.model)
-      : {
-          text: '',
-          model: '',
-          inputTokens: null,
-          outputTokens: null,
-          cacheCreationInputTokens: null,
-          cacheReadInputTokens: null,
-          costUsd: null,
-        };
-    if (result) recordUsage(usage);
+    // The `result` line's totals and cost when the run wrote one, else what its messages reported.
+    const spent = result ? outcomeFromJson(result, config.model) : streamed.outcome(config.model);
+    const usage: ClaudeCallOutcome = spent ?? {
+      text: '',
+      model: '',
+      inputTokens: null,
+      outputTokens: null,
+      cacheCreationInputTokens: null,
+      cacheReadInputTokens: null,
+      costUsd: null,
+    };
+    if (spent) recordUsage(usage);
     const ended = (outcome: ClaudeCliAgentResult['outcome'], error: string | null = null): ClaudeCliAgentResult => ({
       ...usage,
       outcome,

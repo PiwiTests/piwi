@@ -7,8 +7,9 @@
  * what Claude Code does with the one MCP server it is given: it initializes
  * it over HTTP, lists its tools, calls `list_projects` and shows the first
  * project with `show_entity`, writing its text as `stream-json` before and
- * after, then reports its usage. It also tries the turn's token where it must
- * be refused, and writes what it was given and saw to `CLAUDE_FAKE_RECORD`.
+ * after, each message with its usage as the CLI streams it, then reports the
+ * run's usage. It also tries the turn's token where it must be refused, and
+ * writes what it was given and saw to `CLAUDE_FAKE_RECORD`.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -97,11 +98,11 @@ async function run() {
   out({ type: 'system', subtype: 'init', mcp_servers: [{ name: 'piwi', status: 'connected' }] });
 
   // Where the token must be refused while the turn runs: another route, another conversation's endpoint.
-  const origin = new URL(server.url).origin;
+  const base = server.url.replace(/\/api\/assistant\/conversations\/\d+\/mcp$/, '');
   const conversation = Number(/conversations\/(\d+)\/mcp$/.exec(server.url)[1]);
   const probes = {
-    otherRoute: (await fetch(`${origin}/api/projects`, { headers: server.headers })).status,
-    mcpRoute: (await post(`${origin}/mcp`, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status,
+    otherRoute: (await fetch(`${base}/api/projects`, { headers: server.headers })).status,
+    mcpRoute: (await post(`${base}/mcp`, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status,
     otherConversation: (
       await post(server.url.replace(`/conversations/${conversation}/`, `/conversations/${conversation + 1}/`), {
         jsonrpc: '2.0',
@@ -111,9 +112,18 @@ async function run() {
     ).status,
   };
 
-  out({ type: 'stream_event', event: { type: 'message_start' } });
+  // Each model message as Claude Code streams it: started with its id, model and usage, then whole.
+  const message = (id, content) => ({
+    id,
+    type: 'message',
+    role: 'assistant',
+    model: 'claude-fake-1',
+    content,
+    usage: { input_tokens: 15, output_tokens: 20, cache_read_input_tokens: 600, cache_creation_input_tokens: 0 },
+  });
+  out({ type: 'stream_event', event: { type: 'message_start', message: message('msg_1', []) } });
   text('Looking at the projects.');
-  out({ type: 'assistant', message: { content: [{ type: 'text', text: 'Looking at the projects.' }] } });
+  out({ type: 'assistant', message: message('msg_1', [{ type: 'text', text: 'Looking at the projects.' }]) });
   const listed = await rpc('tools/call', { name: 'list_projects', arguments: {} });
   const project = JSON.parse(listed.content[0].text).items[0];
   const card = await rpc('tools/call', {
@@ -122,9 +132,9 @@ async function run() {
   });
 
   const answer = `The project **${project.name}** reports here [list_projects].`;
-  out({ type: 'stream_event', event: { type: 'message_start' } });
+  out({ type: 'stream_event', event: { type: 'message_start', message: message('msg_2', []) } });
   text(answer);
-  out({ type: 'assistant', message: { content: [{ type: 'text', text: answer }] } });
+  out({ type: 'assistant', message: message('msg_2', [{ type: 'text', text: answer }]) });
 
   if (process.env.CLAUDE_FAKE_RECORD) {
     writeFileSync(

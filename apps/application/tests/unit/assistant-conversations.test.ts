@@ -92,6 +92,36 @@ describe('ownership', () => {
     expect((await handlers.listAssistantConversations(d(), ALICE)).items.map((c) => c.id)).toEqual([id]);
   });
 
+  test('a turn reads the newest messages and the entities named, of the owner only', async () => {
+    const id = await conversationWithExchange(ALICE);
+    const row = (await handlers.findAssistantConversation(d(), ALICE, id))!;
+    await handlers.addAssistantMessage(d(), row, { role: 'user', blocks: [{ kind: 'text', text: 'And run 5?' }] });
+    await handlers.addAssistantMessage(d(), row, {
+      role: 'assistant',
+      blocks: [{ kind: 'text', text: 'A crash.' }],
+      toolCalls: [
+        {
+          name: 'get_run',
+          arguments: { runId: 5 },
+          summary: 'Get run (runId 5)',
+          entities: [{ type: 'run', id: 5, label: 'Run #5' }],
+        },
+      ],
+    });
+
+    const recent = await handlers.listRecentAssistantMessages(d(), ALICE, id, 3);
+    expect(recent.map((m) => m.blocks)).toEqual([
+      [{ kind: 'text', text: 'A timeout.' }],
+      [{ kind: 'text', text: 'And run 5?' }],
+      [{ kind: 'text', text: 'A crash.' }],
+    ]);
+    expect(await handlers.listAssistantConversationEntities(d(), ALICE, id)).toEqual([
+      { type: 'run', id: 5, label: 'Run #5' },
+    ]);
+    expect(await handlers.listRecentAssistantMessages(d(), BOB, id, 10)).toEqual([]);
+    expect(await handlers.listAssistantConversationEntities(d(), BOB, id)).toEqual([]);
+  });
+
   test('the owner deletes it with its messages', async () => {
     const id = await conversationWithExchange(ALICE);
     expect(await handlers.deleteAssistantConversation(d(), ALICE, id)).toBe(true);
@@ -386,5 +416,45 @@ describe('replies and checklist ticks', () => {
     expect(
       await handlers.tickAssistantChecklist(d(), ALICE, conversationId, messageId, { ...tick, blockId: 'x' }),
     ).toBeNull();
+  });
+
+  test('changes of one message made at the same time all land, and a second Apply is still refused', async () => {
+    const proposal: AssistantBlock = {
+      kind: 'proposal',
+      id: 'resolve',
+      action: 'resolve-cluster',
+      title: 'Resolve the cart cluster',
+      change: 'It leaves the inbox.',
+      target: { type: 'cluster', id: 4, label: 'Cart total is stale' },
+      projectId: 1,
+      params: {},
+    };
+    const { conversationId, messageId } = await answered(ALICE, [checklist, options, proposal]);
+    const tick = (stepId: string) =>
+      handlers.tickAssistantChecklist(d(), ALICE, conversationId, messageId, { blockId: 'setup', stepId, done: true });
+    const apply = () =>
+      handlers.recordAssistantProposalOutcome(d(), ALICE, conversationId, messageId, {
+        blockId: 'resolve',
+        status: 'applied',
+      });
+    const outcomes = await Promise.all([
+      tick('install'),
+      apply(),
+      tick('run'),
+      handlers.recordAssistantReply(d(), ALICE, conversationId, { messageId, blockId: 'fix', choiceIds: ['wait'] }),
+      apply(),
+    ]);
+
+    expect(outcomes[1]).toMatchObject({ ok: true });
+    expect(outcomes[4]).toEqual({ ok: false, status: 409, message: 'This change was already applied' });
+    const blocks = await stored(ALICE, conversationId);
+    expect(blocks[1]).toMatchObject({
+      steps: [
+        { id: 'install', done: true },
+        { id: 'run', done: true },
+      ],
+    });
+    expect(blocks[2]).toMatchObject({ id: 'fix', picked: 'wait' });
+    expect(blocks[3]).toMatchObject({ id: 'resolve', outcome: { status: 'applied' } });
   });
 });

@@ -5,8 +5,9 @@
  * offer's button (**Show me** starts an authored guide, **Ask** opens the
  * assistant's panel and asks the question) and **Don't show again**, which
  * dismisses it for good, in every browser. A page view shows one nudge at
- * most, and only while this browser's weekly budget has room; none shows
- * while the assistant is declined. It renders in the browser only.
+ * most, and only while this browser's weekly budget has room. A guide needs
+ * no model, so its nudge shows while the assistant is declined; a question's
+ * shows only while the assistant can answer it. It renders in the browser only.
  */
 import { pickNudge, nudgeGuide, type Nudge, type NudgePage, type NudgePageFacts } from '~/utils/nudges/nudges';
 
@@ -26,15 +27,16 @@ const { dismissed, loadDismissals, dismiss, takeBudget } = useNudges();
 const titleId = useId();
 const mounted = ref(false);
 
-const declined = computed(() => state('assistant') === 'declined' || assistant.status.value?.reason === 'declined');
+/** The assistant answers here: neither declined nor without a model. */
+const canAsk = computed(() => assistant.available.value && state('assistant') !== 'declined');
 
 /** The nudge whose rule holds now, for this user; none until the dismissals are read. */
 const candidate = computed<Nudge | null>(() => {
-  if (!mounted.value || declined.value || !props.facts || !dismissed.value) return null;
+  if (!mounted.value || !props.facts || !dismissed.value) return null;
   return pickNudge(props.page, props.facts, {
     isHidden,
     holds: canAnywhere,
-    canAsk: assistant.available.value,
+    canAsk: canAsk.value,
     dismissed: dismissed.value,
   });
 });
@@ -64,9 +66,8 @@ function offer(): void {
 
 onMounted(() => {
   mounted.value = true;
-  if (declined.value) return;
   void loadDismissals();
-  void assistant.loadStatus();
+  if (state('assistant') !== 'declined') void assistant.loadStatus();
 });
 </script>
 

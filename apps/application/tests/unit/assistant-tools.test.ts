@@ -19,6 +19,7 @@ vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: {
 const tools = await import('../../server/utils/assistant/tools');
 const schema = await import('../../server/database/schema.sqlite');
 const { setInstanceDecisions } = await import('#shared/handlers/capabilities');
+const { setAppSetting } = await import('../../server/utils/app-settings');
 type McpContext = import('../../server/utils/mcp/tools').McpContext;
 
 const appDir = resolve(__dirname, '../..');
@@ -195,6 +196,51 @@ describe('the toolbox', () => {
     );
     expect(forAdmin.storage).toBe('local disk');
     expect(JSON.stringify(forAdmin)).not.toMatch(/apiKey|api_key/);
+  });
+
+  test('a tool of its own that fails is an error result the model reads, not a stopped answer', async () => {
+    // A key stored under another PIWI_SECRET_KEY no longer decrypts.
+    await setAppSetting(db as never, 'ai', {
+      provider: 'openai',
+      model: 'gpt-test',
+      baseUrl: 'https://llm.test/v1',
+      apiKey: 'v1:00112233445566778899aabb:00112233445566778899aabbccddeeff:00',
+    });
+    const config = await (await box(member)).run({ id: '1', name: 'get_instance_config', arguments: {} });
+    expect(config).toMatchObject({ isError: true, record: { name: 'get_instance_config', error: expect.any(String) } });
+    expect(config.content).toMatch(/^Error: /);
+
+    // A database that fails under the other reads.
+    const readTools = await tools.assistantReadTools(db as never, member);
+    const failing = new Proxy(db, {
+      get: (target, key) =>
+        key === 'select'
+          ? () => {
+              throw new Error('The database is unavailable');
+            }
+          : Reflect.get(target, key),
+    });
+    const toolbox = tools.createAssistantToolbox({
+      db: failing as never,
+      ctx: member,
+      readTools,
+      page: '/projects/[id]',
+      extraTools: [],
+      context: { route: '/projects/1', page: '/projects/[id]', params: { id: '1' }, projectId: 1 },
+    });
+    for (const [name, args] of [
+      ['find_anchors', { query: 'flaky tests' }],
+      ['list_projects', {}],
+    ] as const) {
+      const outcome = await toolbox.run({ id: name, name, arguments: args });
+      expect(outcome, name).toMatchObject({ isError: true, record: { error: 'The database is unavailable' } });
+    }
+    // A block checked against the database.
+    const link = await toolbox.run({ id: 'go', name: 'navigate', arguments: { id: 'go', label: 'Open', route: '/' } });
+    expect(link).toEqual({
+      content: 'Error: Not shown: The database is unavailable. Fix the call and make it once more.',
+      isError: true,
+    });
   });
 });
 

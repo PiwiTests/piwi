@@ -3,8 +3,8 @@
  * belongs to the user who made it, so no list reaches another user's,
  * administrators included; with authentication off every visitor is the same
  * virtual administrator and shares one list. Only the nudges the dashboard
- * offers can be dismissed, once per owner, and a user's dismissals go with
- * the user.
+ * offers can be dismissed, once per owner, also while the assistant is
+ * declined, and a user's dismissals go with the user.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -152,11 +152,15 @@ describe('the nudge dismissal routes', () => {
     expect(await listed()).toEqual([]);
   });
 
-  test('answer 403 while the assistant is declined', async () => {
+  test('keep working while the assistant or AI is declined, when the nudges offering a guide still show', async () => {
     as(ALICE);
-    await setInstanceDecisions(db as never, { assistant: 'declined' });
-    await expect(list({})).rejects.toMatchObject({ statusCode: 403 });
-    await expect(dismiss('undecided-capabilities')).rejects.toMatchObject({ statusCode: 403 });
+    for (const decisions of [{ assistant: 'declined' as const }, { assistant: null, ai: 'declined' as const }]) {
+      await setInstanceDecisions(db as never, decisions);
+      expect(await dismiss('failure-without-fixtures')).toMatchObject({ nudgeId: 'failure-without-fixtures' });
+      expect(await listed()).toEqual(['failure-without-fixtures']);
+      expect(await undo('failure-without-fixtures')).toEqual({ success: true });
+      expect(await listed()).toEqual([]);
+    }
   });
 
   test("delete a user's dismissals with the user", async () => {

@@ -3,7 +3,7 @@ import { requireAuth } from '../../../../utils/auth';
 import { requireRouteId } from '../../../../utils/project-access';
 import { requestMcpContext } from '../../../../utils/mcp/catalog';
 import { answerQuestion, assistantAvailability, assistantOwnerOf } from '../../../../utils/assistant/turn';
-import { assistantLoopbackOrigin } from '../../../../utils/assistant/turn-token';
+import { assistantLoopbackBaseUrl } from '../../../../utils/assistant/turn-token';
 import { findAssistantConversation, recordAssistantReply } from '#shared/handlers/assistant';
 import { ASSISTANT_STREAM_HEADERS, assistantFrame, assistantQuestionSchema } from '#shared/assistant';
 
@@ -39,53 +39,58 @@ export default eventHandler(async (event) => {
   const parsed = assistantQuestionSchema.safeParse(await readBody(event).catch(() => null));
   if (!parsed.success) throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   if (answering.has(id)) throw apiError({ statusCode: 409, message: 'The conversation is answering another question' });
-  const recorded = parsed.data.reply ? await recordAssistantReply(db, ownerId, id, parsed.data.reply) : null;
-  if (recorded && !recorded.ok) throw apiError({ statusCode: recorded.status, message: recorded.message });
-
-  const ctx = await requestMcpContext(event, db, user);
   answering.add(id);
-  setResponseHeaders(event, ASSISTANT_STREAM_HEADERS);
+  try {
+    const recorded = parsed.data.reply ? await recordAssistantReply(db, ownerId, id, parsed.data.reply) : null;
+    if (recorded && !recorded.ok) throw apiError({ statusCode: recorded.status, message: recorded.message });
+    const ctx = await requestMcpContext(event, db, user);
+    setResponseHeaders(event, ASSISTANT_STREAM_HEADERS);
 
-  // The answer runs to its end and is stored even when the browser leaves; only the sending stops.
-  let clientGone = false;
-  event.node.res.on('close', () => {
-    clientGone = true;
-  });
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    async start(controller) {
-      const send = (frame: string) => {
-        if (clientGone) return;
+    // The answer runs to its end and is stored even when the browser leaves; only the sending stops.
+    let clientGone = false;
+    event.node.res.on('close', () => {
+      clientGone = true;
+    });
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      async start(controller) {
+        const send = (frame: string) => {
+          if (clientGone) return;
+          try {
+            controller.enqueue(encoder.encode(frame));
+          } catch {
+            clientGone = true;
+          }
+        };
         try {
-          controller.enqueue(encoder.encode(frame));
-        } catch {
-          clientGone = true;
+          await answerQuestion({
+            db,
+            ctx,
+            ownerId,
+            role,
+            conversation,
+            question: parsed.data.text,
+            context: parsed.data.context ?? null,
+            reply: recorded?.ok ? recorded.reply : null,
+            baseUrl: assistantLoopbackBaseUrl(event),
+            emit: (e) => send(assistantFrame(e)),
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          send(assistantFrame({ event: 'error', data: { code: 'provider', message, messageId: null } }));
+        } finally {
+          answering.delete(id);
+          try {
+            controller.close();
+          } catch {
+            // Already closed.
+          }
         }
-      };
-      try {
-        await answerQuestion({
-          db,
-          ctx,
-          ownerId,
-          role,
-          conversation,
-          question: parsed.data.text,
-          context: parsed.data.context ?? null,
-          reply: recorded?.ok ? recorded.reply : null,
-          origin: assistantLoopbackOrigin(event),
-          emit: (e) => send(assistantFrame(e)),
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        send(assistantFrame({ event: 'error', data: { code: 'provider', message, messageId: null } }));
-      } finally {
-        answering.delete(id);
-        try {
-          controller.close();
-        } catch {
-          // Already closed.
-        }
-      }
-    },
-  });
+      },
+    });
+  } catch (err) {
+    // Refused or failed before the answer started: the stream frees the conversation once an answer runs.
+    answering.delete(id);
+    throw err;
+  }
 });

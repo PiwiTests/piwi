@@ -132,7 +132,7 @@ limits, and **AI usage** on Settings → AI counts the assistant's answers apart
 
 Decline **Assistant** on the Setup page ([Choose what you use](/operate/capabilities#declining-a-capability)) and its
 routes answer as unavailable for everyone, its stored conversations included; **Ask Piwi** leaves the sidebar and the
-command palette. Declining AI turns it off too.
+command palette. Declining AI turns it off too. [Suggestions](./guides#suggested-on-a-page) that offer a guide stay.
 
 ## Related
 

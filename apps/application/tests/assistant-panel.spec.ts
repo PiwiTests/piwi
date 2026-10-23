@@ -232,6 +232,8 @@ async function openPanel(page: Page) {
 async function routeAssistant(page: Page) {
   const asks: Request[] = [];
   const ticks: Request[] = [];
+  /** Answers each tick with the block the server would return, in order, when the test says. */
+  const tickAnswers: Array<(block: object) => void> = [];
   const outcomes: Request[] = [];
   await page.route('**/api/assistant/**', async (route) => {
     const request = route.request();
@@ -252,7 +254,8 @@ async function routeAssistant(page: Page) {
     }
     if (pathname.endsWith('/checklist')) {
       ticks.push(request);
-      return route.fulfill({ json: { success: true } });
+      const block = await new Promise<object>((resolve) => tickAnswers.push(resolve));
+      return route.fulfill({ json: { block } });
     }
     if (pathname.endsWith('/proposal')) {
       outcomes.push(request);
@@ -270,7 +273,7 @@ async function routeAssistant(page: Page) {
     applied.push(route.request());
     return route.fulfill({ json: { id: 3, status: 'resolved' } });
   });
-  return { asks, ticks, outcomes, applied };
+  return { asks, ticks, tickAnswers, outcomes, applied };
 }
 
 /** A failure cluster of two failing tests, reported to its own project. */
@@ -527,7 +530,7 @@ test.describe('Assistant panel blocks', () => {
 
   test('renders every block, answers a question, ticks a step and plays a guide', async ({ page }) => {
     test.setTimeout(120_000);
-    const { asks, ticks, outcomes, applied } = await routeAssistant(page);
+    const { asks, ticks, tickAnswers, outcomes, applied } = await routeAssistant(page);
     await page.goto('/');
     await waitForHydration(page);
     const panel = await openPanel(page);
@@ -584,13 +587,32 @@ test.describe('Assistant panel blocks', () => {
     expect(new URL(outcomes[0]!.url()).pathname).toBe('/api/assistant/conversations/501/messages/101/proposal');
     expect(outcomes[0]!.postDataJSON()).toEqual({ blockId: 'resolve', status: 'applied' });
 
-    // A checklist tick is saved through its route.
+    // A checklist tick is saved through its route; the next one shows at once and is sent once the first is saved.
+    const verify = fixture.answer
+      .flatMap((e) => (e.event === 'block' ? [e.data.block] : []))
+      .find((b): b is Extract<AssistantBlock, { kind: 'checklist' }> => b.kind === 'checklist')!;
+    const savedBlock = (...done: string[]) => ({
+      ...verify,
+      steps: verify.steps.map((step) => (done.includes(step.id) ? { ...step, done: true } : step)),
+    });
     await checklist.getByRole('checkbox', { name: 'Run the test five times' }).click();
     await expect(checklist.getByText('1 of 3 done')).toBeVisible();
     await expect.poll(() => ticks.length).toBe(1);
     expect(new URL(ticks[0]!.url()).pathname).toBe('/api/assistant/conversations/501/messages/101/checklist');
     expect(ticks[0]!.method()).toBe('PATCH');
     expect(ticks[0]!.postDataJSON()).toEqual({ blockId: 'verify', stepId: 'repeat', done: true });
+    await checklist.getByRole('checkbox', { name: 'Watch the project on the next run' }).click();
+    await expect(checklist.getByText('2 of 3 done')).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(ticks).toHaveLength(1);
+    tickAnswers[0]!(savedBlock('repeat'));
+    await expect.poll(() => ticks.length).toBe(2);
+    expect(ticks[1]!.postDataJSON()).toEqual({ blockId: 'verify', stepId: 'watch', done: true });
+    // The first tick's saved block does not undo the second, still being saved.
+    await expect(checklist.getByText('2 of 3 done')).toBeVisible();
+    tickAnswers[1]!(savedBlock('repeat', 'watch'));
+    await expect(checklist.getByRole('checkbox', { name: 'Watch the project on the next run' })).toBeChecked();
+    await expect(checklist.getByText('2 of 3 done')).toBeVisible();
 
     // The question: picks and an Other answer go back as words and as ids.
     const question = answer.locator('[data-assistant-block="question"]');

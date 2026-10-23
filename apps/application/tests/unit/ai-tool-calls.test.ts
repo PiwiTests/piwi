@@ -158,6 +158,52 @@ describe('OpenAI-compatible tool calls', () => {
     await expect(collect(toolStep(role('gpt-bad-key'), request))).rejects.toThrow(/HTTP 400/);
     expect(knownToolMode(role('gpt-bad-key'))).toBeNull();
   });
+
+  test('steps down on each way a server says it takes no tools', async () => {
+    const refusals = [
+      'registry.ollama.ai/library/gemma:2b does not support tools',
+      'deepseek-reasoner does not support Function Calling',
+      'Function calling is not enabled for this model',
+      '`tool calling` is not supported with this model',
+      "Unsupported parameter: 'tools' is not supported with this model.",
+      'Unrecognized request argument supplied: tools',
+      '"auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set',
+      'tools param requires --jinja flag',
+    ];
+    for (const [index, message] of refusals.entries()) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: unknown, init?: RequestInit) =>
+          JSON.parse(String(init?.body)).tools
+            ? json(400, { error: { message } })
+            : json(200, { choices: [{ message: { content: '{"answer": "Two projects."}' } }] }),
+        ),
+      );
+      const model = role(`refuses-tools-${index}`);
+      const chunks = await collect(toolStep(model, request));
+      expect(chunks.at(-1), message).toMatchObject({ reply: { mode: 'json-action', text: 'Two projects.' } });
+      expect(knownToolMode(model), message).toBe('json-action');
+    }
+  });
+
+  test("a 400 about one tool's schema or a tool call's id is an error, and the model keeps its tools", async () => {
+    const errors = [
+      "Invalid schema for function 'get_run': In context=('properties', 'runId'), 'additionalProperties' is required to be supplied and to be false.",
+      "Invalid schema for function 'get_run': format 'uri' is not supported.",
+      "Invalid parameter: messages with role 'tool' must be a response to a preceeding message with 'tool_calls'.",
+      "An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'. The following tool_call_ids did not have response messages: call_a",
+      "Invalid 'messages[2].tool_calls[0].function.name': string does not match pattern.",
+    ];
+    for (const [index, message] of errors.entries()) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => json(400, { error: { message } })),
+      );
+      const model = role(`keeps-tools-${index}`);
+      await expect(collect(toolStep(model, request)), message).rejects.toThrow(/HTTP 400/);
+      expect(knownToolMode(model), message).toBeNull();
+    }
+  });
 });
 
 describe('the JSON action mode', () => {
@@ -182,6 +228,27 @@ describe('the JSON action mode', () => {
     expect(parseJsonAction('Run 4 failed on a timeout.')).toEqual({
       kind: 'answer',
       text: 'Run 4 failed on a timeout.',
+    });
+  });
+
+  test('takes prose with braces or a JSON snippet in it as the answer', () => {
+    for (const prose of [
+      'Mark the file serial with `test.describe.configure({ mode: "serial" })`, then run it again.',
+      'Set `{ "retries": 2 }` in `playwright.config.ts` and the test passes on its second try.',
+      'Add this to the config:\n\n```json\n{ "retries": 2 }\n```\n\nThen run the suite.',
+      'The step logged `{"status": 500}` and then `{"status": 200}`.',
+    ]) {
+      expect(parseJsonAction(prose), prose).toEqual({ kind: 'answer', text: prose });
+    }
+  });
+
+  test('reads an action fenced in prose', () => {
+    expect(
+      parseJsonAction('I will look at the run.\n\n```json\n{"tool": "get_run", "arguments": {"runId": 3}}\n```'),
+    ).toEqual({
+      kind: 'tool',
+      name: 'get_run',
+      arguments: { runId: 3 },
     });
   });
 

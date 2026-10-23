@@ -10,7 +10,7 @@ import type { AssistantBlock, AssistantEntityRef, AssistantEvent, AssistantMessa
 
 delete process.env.PIWI_DATABASE_URL;
 
-const { assistantHistory, runAssistantTurn } = await import('../../server/utils/assistant/loop');
+const { assistantHistory, readAssistantHistory, runAssistantTurn } = await import('../../server/utils/assistant/loop');
 const { assistantQuestionText, buildAssistantSystemPrompt } = await import('../../server/utils/assistant/prompt');
 const { InstanceRole, ProjectRole, buildAccessSummary } = await import('#shared/permissions');
 type AiStepChunk = import('../../server/utils/ai-tool-calls').AiStepChunk;
@@ -442,6 +442,32 @@ describe('assistantHistory', () => {
       { role: 'user', text: 'Third?' },
       { role: 'assistant', text: 'Three.' },
     ]);
+  });
+
+  test('reads only the newest messages, and more of them when failed answers leave too few exchanges', async () => {
+    /** `exchanges` questions with their answers, each `failedEvery`th answer failed. */
+    const conversation = (exchanges: number, failedEvery = 0) =>
+      Array.from({ length: exchanges }, (_, n) => {
+        const failed = failedEvery > 0 && (n + 1) % failedEvery === 0;
+        return [
+          message(2 * n + 1, 'user', `Question ${n + 1}?`),
+          message(2 * n + 2, 'assistant', failed ? '' : `Answer ${n + 1}.`, failed ? 'failed' : 'completed'),
+        ];
+      }).flat();
+    const reads = async (messages: AssistantMessageView[]) => {
+      const limits: number[] = [];
+      const history = await readAssistantHistory(async (limit) => {
+        limits.push(limit);
+        return messages.slice(-limit);
+      });
+      expect(history).toEqual(assistantHistory(messages));
+      return limits;
+    };
+
+    expect(await reads(conversation(100))).toEqual([22]);
+    expect(await reads(conversation(100, 2))).toEqual([22, 44]);
+    expect(await reads(conversation(15, 2))).toEqual([22, 44]);
+    expect(await reads(conversation(3))).toEqual([22]);
   });
 });
 

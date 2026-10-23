@@ -120,11 +120,13 @@ export function presentsAssistantTurnToken(event: H3Event): boolean {
 }
 
 /**
- * This server's loopback origin, which the CLI calls a turn's endpoint on:
- * the port it listens on (`NITRO_PORT`, `PORT`, else the port the request
- * reached), never a host a request named.
+ * Where the CLI calls a turn's endpoint: this server on the loopback address,
+ * at the port the request arrived on (its socket's local port; else
+ * `NITRO_PORT` or `PORT`, for a socket that has none), under the app's base
+ * path (`app.baseURL`). Never a host a request named.
  */
-export function assistantLoopbackOrigin(event: H3Event): string {
-  const port = process.env.NITRO_PORT || process.env.PORT || event.node.req.socket?.localPort || 3000;
-  return `http://127.0.0.1:${port}`;
+export function assistantLoopbackBaseUrl(event: H3Event): string {
+  const port = event.node.req.socket?.localPort || process.env.NITRO_PORT || process.env.PORT || 3000;
+  const base = (useRuntimeConfig(event).app?.baseURL || '/').replace(/\/+$/, '');
+  return `http://127.0.0.1:${port}${base}`;
 }

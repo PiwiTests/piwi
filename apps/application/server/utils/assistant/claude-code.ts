@@ -55,8 +55,11 @@ export interface ClaudeCodeTurnOptions extends AssistantTurnOptions {
   conversationId: number;
   /** The asking user's id; null with authentication off. */
   ownerId: number | null;
-  /** This server's loopback origin (`assistantLoopbackOrigin`), which the CLI calls the endpoint on. */
-  origin: string;
+  /**
+   * Where the CLI calls the endpoint: this server on the loopback address,
+   * under the app's base path (`assistantLoopbackBaseUrl`).
+   */
+  baseUrl: string;
   /** The tools the endpoint may come to serve, `find_tools` additions included: the ones the CLI is allowed. */
   allowedTools: readonly string[];
   /** The CLI run; `runClaudeCliAgent` by default. */
@@ -101,7 +104,7 @@ export async function runClaudeCodeTurn(opts: ClaudeCodeTurnOptions): Promise<As
     const run = await (opts.run ?? runClaudeCliAgent)(opts.role, {
       system: claudeCodeSystem(opts.system),
       prompt: claudeCodePrompt(opts.history, opts.question),
-      server: { url: `${opts.origin}/api/assistant/conversations/${opts.conversationId}/mcp`, token: turn.token },
+      server: { url: `${opts.baseUrl}/api/assistant/conversations/${opts.conversationId}/mcp`, token: turn.token },
       tools: opts.allowedTools,
       maxTurns: claudeCodeMaxTurns(maxToolCalls),
       timeoutMs: turnTimeoutMs,

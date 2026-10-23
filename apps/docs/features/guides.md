@@ -70,8 +70,9 @@ Three pages suggest a guide, or a question for the [assistant](./assistant), whe
 A fixed rule over what the page already shows decides; no AI model is called. A page shows one suggestion at most,
 and a browser at most three a week. **Don't show again** hides one for good: the dismissal is kept on the server for
 your account, so it stays hidden in every browser, and with authentication off it is hidden for every visitor. A
-suggestion whose guide is not listed for you does not show, a question needs an AI model to answer it, and declining
-the assistant on the Setup page turns every suggestion off.
+suggestion whose guide is not listed for you does not show. A question needs the assistant and an AI model to answer
+it, so declining the assistant or AI on the Setup page turns the Setup suggestion off; the two that offer a guide need
+no model and keep showing, and **Don't show again** still hides them.
 
 ## Related
 

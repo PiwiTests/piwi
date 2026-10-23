@@ -2,8 +2,9 @@
  * Nudges on a running instance. A test that timed out, in a project that
  * captures no fixtures, gets the nudge offering the capture fixtures guide:
  * **Show me** starts the guide; **Don't show again** hides it, and it stays
- * hidden in a new browser context, since the dismissal is kept on the server;
- * declining the assistant hides it too.
+ * hidden in a new browser context, since the dismissal is kept on the server.
+ * A guide needs no model, so the nudge, and its dismissal, stay while the
+ * assistant is declined.
  */
 import { test, expect } from './fixtures';
 import type { Browser, Page } from '@playwright/test';
@@ -11,7 +12,7 @@ import { PROJECT } from '#shared/test-project-names';
 import type { AssistantNudgeDismissal } from '#shared/assistant-nudges';
 import { retryPost, waitForHydration } from './utils';
 
-// One test declines the assistant, which every nudge reads.
+// One test declines the assistant, which the nudges read.
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
 const NUDGE = 'failure-without-fixtures';
@@ -24,13 +25,11 @@ function nudge(page: Page) {
 }
 
 /** Opens the execution and waits for its read of the dismissed nudges, and the render after it. */
-async function openExecution(page: Page, readsDismissals = true) {
-  const dismissals = readsDismissals
-    ? page.waitForResponse((r) => r.url().includes('/api/assistant/nudge-dismissals'))
-    : null;
+async function openExecution(page: Page) {
+  const dismissals = page.waitForResponse((r) => r.url().includes('/api/assistant/nudge-dismissals'));
   await page.goto(`/test-run-cases/${executionId}`);
   await waitForHydration(page);
-  if (dismissals) expect((await dismissals).ok()).toBeTruthy();
+  expect((await dismissals).ok()).toBeTruthy();
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
@@ -117,19 +116,20 @@ test.describe('Nudges', () => {
     }
   });
 
-  test('declining the assistant hides it', async ({ page, request }) => {
+  test("declining the assistant keeps it, and Don't show again still hides it", async ({ page, request }) => {
     // Shown again once the dismissal is undone.
     expect((await request.delete(`/api/assistant/nudge-dismissals/${NUDGE}`)).ok()).toBeTruthy();
-    await openExecution(page);
-    await expect(nudge(page)).toBeVisible();
-
     const declined = await request.patch('/api/capabilities', { data: { decisions: { assistant: 'declined' } } });
     expect(declined.ok()).toBeTruthy();
     try {
-      expect((await request.get('/api/assistant/nudge-dismissals')).status()).toBe(403);
-      await openExecution(page, false);
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await openExecution(page);
+      await expect(nudge(page)).toBeVisible();
+      await nudge(page).getByRole('button', { name: "Don't show again" }).click();
       await expect(nudge(page)).toHaveCount(0);
+      const dismissed = (await (await request.get('/api/assistant/nudge-dismissals')).json()) as {
+        items: AssistantNudgeDismissal[];
+      };
+      expect(dismissed.items.map((item) => item.nudgeId)).toContain(NUDGE);
     } finally {
       await request.patch('/api/capabilities', { data: { decisions: { assistant: null } } });
     }

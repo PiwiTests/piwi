@@ -68,7 +68,8 @@ fixtures are undecided offers their guide, in place of the execution page's line
 inline card per page view, with **Show me** or **Ask** and **Don't show again**, and three a week per browser; the
 dismissals in `assistant_nudge_dismissals`, per user (null with authentication off), through their own routes (1.0
 register D58). As built, the fixtures nudge shows to everyone its guide is listed for, the evidence footer keeps its
-decline controls beside it, and a dismissal can be undone through the API. **PR 9 built 2026-10-23**: 150
+decline controls beside it, and a dismissal can be undone through the API; a nudge that offers a guide, and its
+dismissal, stay when the assistant or AI is declined, and only the question nudge goes with the assistant. **PR 9 built 2026-10-23**: 150
 questions over the demo seed (`tests/live/assistant-questions.ts`), each with the tools a good answer calls, the facts
 it must state (each traced to the seed or the docs, which a zero-token unit test checks), the blocks and, for show-me
 questions, the anchors it should use; and a live spec that asks them all against a real model and scores each answer
@@ -409,8 +410,8 @@ cap and an instance cap stop a turn before the call.
 - **What leaves the instance**: only the calls to the configured model endpoint, as for diagnosis; the panel says so.
   A local model through the OpenAI-compatible provider keeps everything on the network.
 - **Opting out**: an `assistant` capability in `CAPABILITIES` (`shared/capabilities.ts`), declinable for the instance;
-  declined, the panel, its routes, its palette entries and its nudges are gone. The authored guides are not part of it:
-  they need no model.
+  declined, the panel, its routes, its palette entries and the nudges that ask it a question are gone. The authored
+  guides are not part of it: they need no model, so a nudge offering one stays, and so do its dismissals.
 
 ### 12. Measuring the answers
 

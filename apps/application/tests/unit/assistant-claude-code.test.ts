@@ -19,7 +19,8 @@ import { ASSISTANT_BLOCK_LIMITS } from '#shared/assistant-blocks';
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_DESKTOP_TOKEN;
 
-vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, authEnabled: false, public: { appVersion: '0.59.0' } }));
+const RUNTIME_CONFIG = () => ({ ai: {}, authEnabled: false, app: { baseURL: '/' }, public: { appVersion: '0.59.0' } });
+vi.stubGlobal('useRuntimeConfig', RUNTIME_CONFIG);
 // Nitro auto-imports it into the server code these tests load.
 vi.stubGlobal('getRequestHeader', getRequestHeader);
 
@@ -48,6 +49,8 @@ function request(opts: {
   method?: string;
   headers?: Record<string, string>;
   peer?: string;
+  /** The port the request arrived on, when its socket knows one. */
+  localPort?: number;
   body?: unknown;
   params?: Record<string, string>;
 }): H3Event {
@@ -59,7 +62,7 @@ function request(opts: {
     node: {
       req: {
         headers: { host: '127.0.0.1:3000', ...opts.headers },
-        socket: { remoteAddress: opts.peer ?? '127.0.0.1' },
+        socket: { remoteAddress: opts.peer ?? '127.0.0.1', localPort: opts.localPort },
       },
       res: { setHeader: () => {}, getHeader: () => undefined },
     },
@@ -142,12 +145,13 @@ describe('the turn token', () => {
     expect(local({}, '10.0.0.5')).toBe(false);
   });
 
-  test("the CLI calls this server's own loopback origin, never a host the request named", () => {
+  test('the CLI calls this server on the loopback address, at the port the request arrived on, never a host it named', () => {
     vi.stubEnv('NITRO_PORT', '4123');
+    const named = { path: '/', headers: { host: 'piwi.example.com' } };
     try {
-      expect(tokens.assistantLoopbackOrigin(request({ path: '/', headers: { host: 'piwi.example.com' } }))).toBe(
-        'http://127.0.0.1:4123',
-      );
+      expect(tokens.assistantLoopbackBaseUrl(request({ ...named, localPort: 8080 }))).toBe('http://127.0.0.1:8080');
+      // A socket with no port (a dev server's worker): the port the environment names.
+      expect(tokens.assistantLoopbackBaseUrl(request(named))).toBe('http://127.0.0.1:4123');
     } finally {
       vi.unstubAllEnvs();
     }
@@ -549,7 +553,7 @@ describe("the CLI's arguments for a turn", () => {
 
 // ── The turn, with a scripted CLI ────────────────────────────────────────────
 
-const ORIGIN = 'http://127.0.0.1:3000';
+const BASE_URL = 'http://127.0.0.1:3000';
 
 /** A CLI run that calls the turn's endpoint as Claude Code does, then reports `outcome`. */
 function scriptedCli(
@@ -584,7 +588,7 @@ function scriptedCli(
 
 async function claudeCodeTurn(
   cli: ReturnType<typeof scriptedCli>['cli'],
-  overrides: { allowance?: number | null; maxToolCalls?: number } = {},
+  overrides: { allowance?: number | null; maxToolCalls?: number; baseUrl?: string } = {},
 ) {
   const { toolbox, readTools } = await toolboxOf(member);
   const events: AssistantEvent[] = [];
@@ -599,7 +603,7 @@ async function claudeCodeTurn(
     emit: (e) => events.push(e),
     conversationId: 7,
     ownerId: 2,
-    origin: ORIGIN,
+    baseUrl: overrides.baseUrl ?? BASE_URL,
     allowedTools: tools.assistantToolNames(readTools),
     run: cli,
   });
@@ -644,7 +648,7 @@ describe('runClaudeCodeTurn', () => {
     });
 
     const [run] = runs;
-    expect(run!.server.url).toBe(`${ORIGIN}/api/assistant/conversations/7/mcp`);
+    expect(run!.server.url).toBe(`${BASE_URL}/api/assistant/conversations/7/mcp`);
     expect(run!.server.token).toMatch(/^pwt_/);
     expect(run!.maxTurns).toBe(claudeCodeMaxTurns(8));
     expect(run!.maxTurns).toBe(22);
@@ -722,6 +726,19 @@ describe('runClaudeCodeTurn', () => {
     });
     const empty = await claudeCodeTurn(scriptedCli(async () => {}).cli);
     expect(empty.result.error).toEqual({ code: 'provider', message: 'The model returned an empty answer' });
+  });
+
+  test("the CLI calls the endpoint under the app's base path", async () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, app: { baseURL: '/piwi/' }, public: {} }));
+    try {
+      const baseUrl = tokens.assistantLoopbackBaseUrl(request({ path: '/', localPort: 8080 }));
+      expect(baseUrl).toBe('http://127.0.0.1:8080/piwi');
+      const { cli, runs } = scriptedCli(async (_endpoint, run) => run.onText('Done.'));
+      await claudeCodeTurn(cli, { baseUrl });
+      expect(runs[0]!.server.url).toBe('http://127.0.0.1:8080/piwi/api/assistant/conversations/7/mcp');
+    } finally {
+      vi.stubGlobal('useRuntimeConfig', RUNTIME_CONFIG);
+    }
   });
 
   test('a daily cap reached stops the turn before the CLI runs', async () => {

@@ -247,6 +247,8 @@ export interface AssistantToolbox {
   extraTools(): string[];
 }
 
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
 /** Failed calls of one block tool in an answer after which it is refused without a check. */
 const BLOCK_TOOL_ATTEMPTS = 2;
 
@@ -271,25 +273,26 @@ export function createAssistantToolbox(opts: {
   let facts: Promise<AnswerAnchorFacts> | null = null;
   const anchorFacts = () => (facts ??= loadAnchorFacts(opts.db, opts.ctx));
 
+  /** One read call, of a tool of its own or a read tool offered; a failure is its error, never a throw. */
   async function runTool(call: AiToolCall): Promise<{ data: unknown; error?: string }> {
     if (call.invalidArguments !== undefined) return { data: null, error: 'The arguments were not a JSON object' };
-    if (call.name === FIND_TOOLS.name) return { data: findTools(String(call.arguments.query ?? '')) };
-    if (call.name === GET_INSTANCE_CONFIG.name) return { data: await getInstanceConfig(opts.db, opts.ctx) };
-    if (call.name === EXPLAIN_SETTING.name) {
-      return { data: await explainSetting(opts.db, opts.ctx, String(call.arguments.fieldId ?? '')) };
-    }
-    if (call.name === FIND_ANCHORS.name) {
-      const anchors = await anchorFacts();
-      // An anchor on the pages of the user's project follows that project's capability states.
-      if (context?.projectId != null) await readProjectStates(opts.db, anchors, context.projectId);
-      return { data: findAnchors(String(call.arguments.query ?? ''), anchors, context) };
-    }
-    const tool = offered().has(call.name) ? byName.get(call.name) : undefined;
-    if (!tool) return { data: null, error: `Unknown tool: ${call.name}. Call find_tools to look for one.` };
     try {
+      if (call.name === FIND_TOOLS.name) return { data: findTools(String(call.arguments.query ?? '')) };
+      if (call.name === GET_INSTANCE_CONFIG.name) return { data: await getInstanceConfig(opts.db, opts.ctx) };
+      if (call.name === EXPLAIN_SETTING.name) {
+        return { data: await explainSetting(opts.db, opts.ctx, String(call.arguments.fieldId ?? '')) };
+      }
+      if (call.name === FIND_ANCHORS.name) {
+        const anchors = await anchorFacts();
+        // An anchor on the pages of the user's project follows that project's capability states.
+        if (context?.projectId != null) await readProjectStates(opts.db, anchors, context.projectId);
+        return { data: findAnchors(String(call.arguments.query ?? ''), anchors, context) };
+      }
+      const tool = offered().has(call.name) ? byName.get(call.name) : undefined;
+      if (!tool) return { data: null, error: `Unknown tool: ${call.name}. Call find_tools to look for one.` };
       return { data: await tool.handler(opts.db, call.arguments, opts.ctx) };
     } catch (err) {
-      return { data: null, error: err instanceof Error ? err.message : String(err) };
+      return { data: null, error: errorText(err) };
     }
   }
 
@@ -323,7 +326,7 @@ export function createAssistantToolbox(opts: {
       entities,
       usedIds,
       anchorFacts,
-    });
+    }).catch((err: unknown) => ({ error: errorText(err) }));
     if ('error' in outcome) {
       blockFailures.set(call.name, failures + 1);
       const next = failures + 1 < BLOCK_TOOL_ATTEMPTS ? 'Fix the call and make it once more' : 'Answer in text instead';

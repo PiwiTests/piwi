@@ -8,8 +8,9 @@ import {
   addAssistantMessage,
   assistantTokensSince,
   findAssistantConversation,
-  getAssistantConversation,
   isAssistantDeclined,
+  listAssistantConversationEntities,
+  listRecentAssistantMessages,
   recordAssistantUsage,
   setAssistantExtraTools,
   type AssistantOwner,
@@ -26,7 +27,7 @@ import { apiError } from '../api-error';
 import { isAuthEnabled } from '../auth';
 import type { McpContext } from '../mcp/tools';
 import { runClaudeCodeTurn } from './claude-code';
-import { assistantHistory, runAssistantTurn, type AssistantTurnOptions } from './loop';
+import { readAssistantHistory, runAssistantTurn, type AssistantTurnOptions } from './loop';
 import { resolveAssistantLimits, type AssistantLimits } from './limits';
 import { assistantQuestionText, buildAssistantSystemPrompt, loadAssistantPromptParts } from './prompt';
 import { assistantReadTools, assistantToolNames, createAssistantToolbox } from './tools';
@@ -119,7 +120,7 @@ type ConversationRow = NonNullable<Awaited<ReturnType<typeof findAssistantConver
  * stay usable in this one. The events stream through `emit` as the answer is
  * written; the final `done` or `error` carries the stored answer's id. With
  * the Claude Code CLI the answer runs in one CLI run, which calls the turn's
- * tools on this server's `origin` (`assistantLoopbackOrigin`).
+ * tools on this server at `baseUrl` (`assistantLoopbackBaseUrl`).
  */
 export async function answerQuestion(opts: {
   db: DbClient;
@@ -130,12 +131,15 @@ export async function answerQuestion(opts: {
   question: string;
   context: AssistantPageContext | null;
   reply?: AssistantRecordedReply | null;
-  origin: string;
+  baseUrl: string;
   emit: (event: AssistantEvent) => void;
 }): Promise<void> {
   const { db, ctx, ownerId, conversation, context } = opts;
-  const earlier = (await getAssistantConversation(db, ownerId, conversation.id))?.messages ?? [];
-  const earlierEntities = earlier.flatMap((m) => m.toolCalls.flatMap((call) => call.entities ?? []));
+  // The history reads the newest messages only; the entities come from every earlier answer's tool calls.
+  const [history, earlierEntities] = await Promise.all([
+    readAssistantHistory((limit) => listRecentAssistantMessages(db, ownerId, conversation.id, limit)),
+    listAssistantConversationEntities(db, ownerId, conversation.id),
+  ]);
   await addAssistantMessage(db, conversation, {
     role: 'user',
     blocks: [{ kind: 'text', text: opts.question }],
@@ -163,7 +167,7 @@ export async function answerQuestion(opts: {
   const turn: AssistantTurnOptions = {
     role: opts.role,
     system: buildAssistantSystemPrompt(promptParts),
-    history: assistantHistory(earlier),
+    history,
     question: assistantQuestionText(opts.question, opts.reply ?? null),
     toolbox,
     limits,
@@ -178,7 +182,7 @@ export async function answerQuestion(opts: {
         ...turn,
         conversationId: conversation.id,
         ownerId,
-        origin: opts.origin,
+        baseUrl: opts.baseUrl,
         allowedTools: assistantToolNames(readTools),
       })
     : await runAssistantTurn(turn);
@@ -195,8 +199,8 @@ export async function answerQuestion(opts: {
     error: result.error?.message ?? null,
     durationMs: result.durationMs,
   });
-  // A turn stopped before any model call spent nothing.
-  if (result.model !== null) {
+  // What a turn reports spending counts, a timed-out one's included; one stopped before any model call reports none.
+  if (result.model !== null || result.inputTokens !== null || result.outputTokens !== null) {
     await recordAssistantUsage(db, {
       ownerId,
       provider: result.provider,
@@ -206,8 +210,9 @@ export async function answerQuestion(opts: {
       status: result.status,
     });
   }
-  const nowExtra = toolbox.extraTools();
-  if (nowExtra.length !== extraTools.length) await setAssistantExtraTools(db, conversation.id, nowExtra);
+  // The tools `find_tools` added in this answer stay offered for the rest of the conversation.
+  const added = toolbox.extraTools().filter((name) => !extraTools.includes(name));
+  if (added.length > 0) await setAssistantExtraTools(db, conversation.id, [...extraTools, ...added]);
 
   const last = final as Extract<AssistantEvent, { event: 'done' | 'error' }> | null;
   if (last?.event === 'done') opts.emit({ event: 'done', data: { ...last.data, messageId } });
