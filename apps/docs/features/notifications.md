@@ -54,7 +54,7 @@ Sends native OS notifications to any open Piwi tab, even in the background, thro
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
 - **Without authentication**: no channel is needed; the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
 
-Diagnosis-completion notifications can be switched off per browser in **Settings → AI diagnosis → Diagnosis
+Diagnosis-completion notifications can be switched off per browser in **Settings → AI → Diagnosis
 notifications** without deleting the subscription.
 
 ### Email

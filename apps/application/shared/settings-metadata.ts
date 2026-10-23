@@ -256,7 +256,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
   },
   {
     id: 'ai',
-    label: 'AI diagnosis',
+    label: 'AI',
     icon: 'i-lucide-sparkles',
     to: '/settings/ai',
     group: 'analysis',

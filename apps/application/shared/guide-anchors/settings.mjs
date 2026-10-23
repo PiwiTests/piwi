@@ -609,7 +609,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings/ai'],
     describes:
-      'Settings → AI diagnosis: the model behind each AI role, usage, the repository token, instructions, language and context limits.',
+      'Settings → AI: the model behind each AI role, usage, the repository token, instructions, language and context limits.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     doc: 'guide/ai-provider',
     sample: { route: '/settings/ai' },

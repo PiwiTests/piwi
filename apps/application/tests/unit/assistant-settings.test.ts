@@ -49,7 +49,7 @@ describe('explain_setting', () => {
     expect(field).toMatchObject({
       id: 'ai.assistant',
       label: 'Assistant model',
-      page: { label: 'AI diagnosis', route: '/settings/ai' },
+      page: { label: 'AI', route: '/settings/ai' },
       title: 'Assistant model',
       help: expect.stringContaining('Unset, it uses the diagnosis model'),
       docs: 'https://piwitests.dev/features/assistant#the-model',
