@@ -13,6 +13,7 @@
  * through on that route only (`presentsAssistantTurnToken`).
  */
 import { randomBytes } from 'node:crypto';
+import { connect } from 'node:net';
 import { getRequestHeader, type H3Event } from 'h3';
 import type { AiToolCall, AiToolDef, AiToolResult } from '../ai-tool-calls';
 import { bearerToken } from '../bearer';
@@ -119,14 +120,61 @@ export function presentsAssistantTurnToken(event: H3Event): boolean {
   return conversationId !== null && assistantTurnOfRequest(event, conversationId) !== null;
 }
 
+/** The loopback addresses a server listens on, in the order they are tried: `nuxt dev` on Windows listens on `::1` alone. */
+const LOOPBACK_CANDIDATES = ['127.0.0.1', '::1'] as const;
+
+/** The loopback hosts found answering, by port: a server's address does not change while it runs. */
+const answeringLoopback = new Map<number, string>();
+
+/** Whether something accepts a TCP connection at `host:port` within `timeoutMs`. */
+function accepts(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ host, port });
+    const done = (ok: boolean) => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+  });
+}
+
+/** The first of `hosts` that answers at `port`; the first of them when none does. */
+export async function answeringLoopbackHost(
+  port: number,
+  hosts: readonly string[] = LOOPBACK_CANDIDATES,
+  timeoutMs = 1000,
+): Promise<string> {
+  const known = answeringLoopback.get(port);
+  if (known) return known;
+  for (const host of hosts) {
+    if (await accepts(host, port, timeoutMs)) {
+      answeringLoopback.set(port, host);
+      return host;
+    }
+  }
+  return hosts[0]!;
+}
+
+/** A socket's local address as a loopback host, or null when it is not one. */
+function loopbackHostOf(address: string | undefined): string | null {
+  if (!address || !LOOPBACK_ADDRESS.test(address)) return null;
+  return address.replace(/^::ffff:/i, '');
+}
+
 /**
- * Where the CLI calls a turn's endpoint: this server on the loopback address,
- * at the port the request arrived on (its socket's local port; else
- * `NITRO_PORT` or `PORT`, for a socket that has none), under the app's base
- * path (`app.baseURL`). Never a host a request named.
+ * Where the CLI calls a turn's endpoint: this server on a loopback address, at
+ * the port the request arrived on, under the app's base path (`app.baseURL`).
+ * Never a host a request named. A request on a loopback socket names both; a
+ * socket with no port (a dev server's worker) takes the port the environment
+ * names, as `nuxt dev` does, and either needs the loopback address that
+ * answers on that port, IPv4 or IPv6.
  */
-export function assistantLoopbackBaseUrl(event: H3Event): string {
-  const port = event.node.req.socket?.localPort || process.env.NITRO_PORT || process.env.PORT || 3000;
+export async function assistantLoopbackBaseUrl(event: H3Event): Promise<string> {
+  const socket = event.node.req.socket;
+  const port = Number(socket?.localPort || process.env.NUXT_PORT || process.env.NITRO_PORT || process.env.PORT || 3000);
+  const host = (socket?.localPort ? loopbackHostOf(socket.localAddress) : null) ?? (await answeringLoopbackHost(port));
   const base = (useRuntimeConfig(event).app?.baseURL || '/').replace(/\/+$/, '');
-  return `http://127.0.0.1:${port}${base}`;
+  return `http://${host.includes(':') ? `[${host}]` : host}:${port}${base}`;
 }

@@ -430,7 +430,11 @@ async function probeClaudeCli(): Promise<ClaudeCliStatus> {
   };
 
   if (!claudeCliEnabled()) {
-    return { ...base, error: 'The local Claude CLI is only available in the Piwi desktop app.' };
+    return {
+      ...base,
+      error:
+        'The local Claude CLI is only available in the Piwi desktop app, or on a server with PIWI_CLAUDE_CLI_PATH set.',
+    };
   }
 
   const binary = await resolveClaudeBinaryDeep();
@@ -868,7 +872,7 @@ export function withLoopbackNoProxy(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     .split(',')
     .map((h) => h.trim())
     .filter(Boolean);
-  const value = [...new Set([...hosts, '127.0.0.1', 'localhost', '::1'])].join(',');
+  const value = [...new Set([...hosts, '127.0.0.1', 'localhost', '::1', '[::1]'])].join(',');
   return { ...env, NO_PROXY: value, no_proxy: value };
 }
 
@@ -978,7 +982,7 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
       } else if (obj.type === 'system' && obj.subtype === 'init' && Array.isArray(obj.mcp_servers)) {
         const server = obj.mcp_servers.find((s) => s.name === CLAUDE_CLI_MCP_SERVER);
         if (!server || UNREACHABLE_SERVER.has(server.status ?? '')) {
-          failure = `Claude Code could not reach this server's assistant tools (${server?.status ?? 'not loaded'}).`;
+          failure = `Claude Code could not reach this server's assistant tools at ${new URL(run.server.url).origin} (${server?.status ?? 'not loaded'}).`;
           stop.abort();
         }
       } else if (obj.type === 'result') {

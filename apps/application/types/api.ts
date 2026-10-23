@@ -1834,6 +1834,8 @@ export interface AiSettings {
   languageEnvManaged: boolean;
   /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
   canStoreSecrets: boolean;
+  /** True when this server may run the local Claude Code CLI: the desktop app, or `PIWI_CLAUDE_CLI_PATH` set. */
+  claudeCliAvailable: boolean;
 }
 
 // ============================================================================

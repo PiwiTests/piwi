@@ -11,6 +11,7 @@
 import { eq } from 'drizzle-orm';
 import { getAppSetting } from './app-settings';
 import { canEncryptSecrets } from './crypto';
+import { claudeCliEnabled } from './ai-claude-cli';
 import { projects } from '../database/schema';
 import type { AiModelRole, AiProvider, AiRoleSettings, AiSettings } from '~~/types/api';
 import type { DbClient } from '../database';
@@ -245,5 +246,6 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
     language,
     languageEnvManaged,
     canStoreSecrets: canEncryptSecrets(),
+    claudeCliAvailable: claudeCliEnabled(),
   };
 }

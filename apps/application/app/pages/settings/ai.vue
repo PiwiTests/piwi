@@ -149,13 +149,14 @@ const ROLE_META = [
   },
 ] as const;
 
-// The local Claude CLI provider is only offered in the desktop app (or when a
-// stored/env config already selected it, so it stays visible and editable).
+// The local Claude CLI provider is offered where the server may run it (the
+// desktop app, or a server with PIWI_CLAUDE_CLI_PATH), or when a stored/env
+// config already selected it, so it stays visible and editable.
 const isDesktop = useIsDesktop();
 const usesClaudeCli = computed(() =>
   Object.values(settings.value?.roles ?? {}).some((r) => r?.provider === 'claude-cli'),
 );
-const showClaudeCli = computed(() => isDesktop || usesClaudeCli.value);
+const showClaudeCli = computed(() => isDesktop || Boolean(settings.value?.claudeCliAvailable) || usesClaudeCli.value);
 
 const providerOptions = computed(() => {
   const opts = [

@@ -145,7 +145,7 @@ export default eventHandler(async (event) => {
       if (provider === 'claude-cli' && !claudeCliEnabled()) {
         throw apiError({
           statusCode: 400,
-          message: `Role "${role}": the local Claude CLI is only available in the Piwi desktop app`,
+          message: `Role "${role}": the local Claude CLI is only available in the Piwi desktop app, or on a server with PIWI_CLAUDE_CLI_PATH set`,
         });
       }
       const model = cfg.model?.trim() || '';

@@ -8,6 +8,7 @@
  * end to end with a scripted CLI run.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { createServer, type AddressInfo } from 'node:net';
 import { getRequestHeader, type H3Event } from 'h3';
 import { openTempDb, type TempDb } from './temp-db';
 import type { User } from '../../server/database/schema';
@@ -51,6 +52,8 @@ function request(opts: {
   peer?: string;
   /** The port the request arrived on, when its socket knows one. */
   localPort?: number;
+  /** The address it arrived on; the IPv4 loopback for a socket with a port, by default. */
+  localAddress?: string;
   body?: unknown;
   params?: Record<string, string>;
 }): H3Event {
@@ -62,11 +65,24 @@ function request(opts: {
     node: {
       req: {
         headers: { host: '127.0.0.1:3000', ...opts.headers },
-        socket: { remoteAddress: opts.peer ?? '127.0.0.1', localPort: opts.localPort },
+        socket: {
+          remoteAddress: opts.peer ?? '127.0.0.1',
+          localPort: opts.localPort,
+          localAddress: opts.localAddress ?? (opts.localPort ? '127.0.0.1' : undefined),
+        },
       },
       res: { setHeader: () => {}, getHeader: () => undefined },
     },
   } as unknown as H3Event;
+}
+
+/** A port nothing listens on: one the system just handed out and took back. */
+async function closedPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as AddressInfo).port;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
 }
 
 const noTools: AssistantTurnTools = {
@@ -145,16 +161,39 @@ describe('the turn token', () => {
     expect(local({}, '10.0.0.5')).toBe(false);
   });
 
-  test('the CLI calls this server on the loopback address, at the port the request arrived on, never a host it named', () => {
-    vi.stubEnv('NITRO_PORT', '4123');
+  test('the CLI calls this server on the loopback address, at the port the request arrived on, never a host it named', async () => {
+    vi.stubEnv('NITRO_PORT', String(await closedPort()));
     const named = { path: '/', headers: { host: 'piwi.example.com' } };
     try {
-      expect(tokens.assistantLoopbackBaseUrl(request({ ...named, localPort: 8080 }))).toBe('http://127.0.0.1:8080');
-      // A socket with no port (a dev server's worker): the port the environment names.
-      expect(tokens.assistantLoopbackBaseUrl(request(named))).toBe('http://127.0.0.1:4123');
+      expect(await tokens.assistantLoopbackBaseUrl(request({ ...named, localPort: 8080 }))).toBe(
+        'http://127.0.0.1:8080',
+      );
+      const mapped = request({ ...named, localPort: 8080, localAddress: '::ffff:127.0.0.1' });
+      expect(await tokens.assistantLoopbackBaseUrl(mapped)).toBe('http://127.0.0.1:8080');
+      const v6 = request({ ...named, localPort: 8080, localAddress: '::1' });
+      expect(await tokens.assistantLoopbackBaseUrl(v6)).toBe('http://[::1]:8080');
+      // A socket with no port (a dev server's worker): the port the environment names, on the
+      // IPv4 loopback when nothing answers there.
+      expect(await tokens.assistantLoopbackBaseUrl(request(named))).toBe(`http://127.0.0.1:${process.env.NITRO_PORT}`);
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  test('the loopback address is the one a server answers on, as nuxt dev on Windows answers on ::1 alone', async () => {
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      // `::1` refuses (or has no IPv6 at all), so the next address that answers is the one.
+      expect(await tokens.answeringLoopbackHost(port, ['::1', '127.0.0.1'])).toBe('127.0.0.1');
+      // Found once, it is kept for the port.
+      expect(await tokens.answeringLoopbackHost(port, ['::1'])).toBe('127.0.0.1');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+    // With nothing answering, the first address: the CLI then reports it could not reach it.
+    expect(await tokens.answeringLoopbackHost(await closedPort(), ['127.0.0.1', '::1'])).toBe('127.0.0.1');
   });
 });
 
@@ -534,8 +573,10 @@ describe("the CLI's arguments for a turn", () => {
   });
 
   test('a proxy never carries the calls to this server, and the prompt carries the conversation first', () => {
-    expect(withLoopbackNoProxy({ NO_PROXY: 'corp.example' }).NO_PROXY).toBe('corp.example,127.0.0.1,localhost,::1');
-    expect(withLoopbackNoProxy({}).no_proxy).toBe('127.0.0.1,localhost,::1');
+    expect(withLoopbackNoProxy({ NO_PROXY: 'corp.example' }).NO_PROXY).toBe(
+      'corp.example,127.0.0.1,localhost,::1,[::1]',
+    );
+    expect(withLoopbackNoProxy({}).no_proxy).toBe('127.0.0.1,localhost,::1,[::1]');
     expect(claudeCodePrompt([], 'Why?')).toBe('Why?');
     expect(
       claudeCodePrompt(
@@ -731,7 +772,7 @@ describe('runClaudeCodeTurn', () => {
   test("the CLI calls the endpoint under the app's base path", async () => {
     vi.stubGlobal('useRuntimeConfig', () => ({ ai: {}, app: { baseURL: '/piwi/' }, public: {} }));
     try {
-      const baseUrl = tokens.assistantLoopbackBaseUrl(request({ path: '/', localPort: 8080 }));
+      const baseUrl = await tokens.assistantLoopbackBaseUrl(request({ path: '/', localPort: 8080 }));
       expect(baseUrl).toBe('http://127.0.0.1:8080/piwi');
       const { cli, runs } = scriptedCli(async (_endpoint, run) => run.onText('Done.'));
       await claudeCodeTurn(cli, { baseUrl });

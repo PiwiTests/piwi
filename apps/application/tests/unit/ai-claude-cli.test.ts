@@ -402,7 +402,9 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
       const started = Date.now();
       const result = await runClaudeCliAgent(role, agentRun([]));
       expect(result).toMatchObject({ outcome: 'failed', model: '', inputTokens: null });
-      expect(result.error).toMatch(/could not reach this server's assistant tools \(failed\)/);
+      expect(result.error).toMatch(
+        /could not reach this server's assistant tools at http:\/\/127\.0\.0\.1:3000 \(failed\)/,
+      );
       expect(Date.now() - started).toBeLessThan(10_000);
     });
 

@@ -72,7 +72,7 @@ export default eventHandler(async (event) => {
             question: parsed.data.text,
             context: parsed.data.context ?? null,
             reply: recorded?.ok ? recorded.reply : null,
-            baseUrl: assistantLoopbackBaseUrl(event),
+            baseUrl: await assistantLoopbackBaseUrl(event),
             emit: (e) => send(assistantFrame(e)),
           });
         } catch (err) {

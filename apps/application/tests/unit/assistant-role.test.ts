@@ -125,6 +125,21 @@ describe('the assistant role from the environment', () => {
   });
 });
 
+describe('the Claude Code CLI in Settings', () => {
+  test('a server offers it once PIWI_CLAUDE_CLI_PATH points at it, as the desktop app does', async () => {
+    vi.stubEnv('PIWI_DESKTOP_TOKEN', '');
+    vi.stubEnv('NUXT_PUBLIC_DESKTOP', '');
+    vi.stubEnv('PIWI_CLAUDE_CLI_PATH', '');
+    try {
+      expect((await readAiSettings(db)).claudeCliAvailable).toBe(false);
+      vi.stubEnv('PIWI_CLAUDE_CLI_PATH', String.raw`C:\Users\me\AppData\Local\Microsoft\WinGet\Links\claude.exe`);
+      expect((await readAiSettings(db)).claudeCliAvailable).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('resolveAssistantLimits', () => {
   test('defaults with nothing set', () => {
     expect(limits.resolveAssistantLimits({})).toEqual({
