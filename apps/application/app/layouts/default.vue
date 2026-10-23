@@ -147,6 +147,7 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
       value: `project-${project.id}`,
       type: 'link' as const,
       to: `/projects/${project.id}`,
+      'data-tour': 'nav-project',
       active: isActive,
     };
   }
@@ -202,6 +203,7 @@ const links = computed(() => {
       label: 'Documentation',
       icon: 'i-lucide-book-marked',
       to: DOCS_BASE_URL,
+      'data-tour': 'nav-documentation',
       target: '_blank',
     },
   ];
@@ -212,6 +214,7 @@ const links = computed(() => {
       label: 'MCP server',
       icon: 'i-lucide-bot',
       to: '/mcp',
+      'data-tour': 'nav-mcp',
       onSelect: () => {
         open.value = false;
       },
@@ -225,6 +228,7 @@ const links = computed(() => {
       label: 'Setup',
       icon: 'i-lucide-rocket',
       to: '/setup',
+      'data-tour': 'nav-setup',
       onSelect: () => {
         open.value = false;
       },
@@ -234,6 +238,7 @@ const links = computed(() => {
     label: 'API Docs',
     icon: 'i-lucide-book-open',
     to: '/docs',
+    'data-tour': 'nav-api-docs',
     // `/docs` is a normal Nuxt page in every mode — it renders the API reference
     // in-app from the generated OpenAPI spec, so ordinary client navigation works.
     onSelect: () => {
@@ -246,6 +251,7 @@ const links = computed(() => {
         label: 'Home',
         icon: 'i-lucide-house',
         to: '/',
+        'data-tour': 'nav-home',
         onSelect: () => {
           open.value = false;
         },
@@ -254,6 +260,7 @@ const links = computed(() => {
         label: 'Analytics',
         icon: 'i-lucide-chart-line',
         to: '/analytics',
+        'data-tour': 'nav-analytics',
         active: route.path === '/analytics' || route.path.startsWith('/analytics/'),
         onSelect: () => {
           open.value = false;
@@ -266,6 +273,7 @@ const links = computed(() => {
               label: 'Quality reports',
               icon: 'i-lucide-file-chart-column',
               to: '/reports',
+              'data-tour': 'nav-quality-reports',
               onSelect: () => {
                 open.value = false;
               },
@@ -275,6 +283,7 @@ const links = computed(() => {
         label: 'Projects',
         icon: 'i-lucide-folder',
         to: '/projects',
+        'data-tour': 'nav-projects',
         onSelect: () => {
           open.value = false;
         },
@@ -517,7 +526,11 @@ onMounted(async () => {
       <template #default="{ collapsed }">
         <DesktopNavButtons v-if="collapsed" collapsed class="self-center" />
 
-        <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
+        <UDashboardSearchButton
+          :collapsed="collapsed"
+          class="bg-transparent ring-default"
+          data-tour="command-palette"
+        />
 
         <UNavigationMenu
           :key="currentProjectId ?? undefined"
@@ -542,6 +555,7 @@ onMounted(async () => {
           <ULink
             v-if="!collapsed"
             to="/settings/about"
+            data-tour="app-version"
             class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-center"
             title="View version and build info"
           >

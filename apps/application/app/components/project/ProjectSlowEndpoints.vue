@@ -58,7 +58,7 @@ const sorting = useViewState<SortingState>('performance:endpoints-sorting', () =
 </script>
 
 <template>
-  <UCard v-if="!fixturesDeclined" data-shot="slow-endpoints">
+  <UCard v-if="!fixturesDeclined" data-shot="slow-endpoints" data-tour="project-slow-endpoints">
     <template #header>
       <div class="flex items-center justify-between gap-3 flex-wrap">
         <div>

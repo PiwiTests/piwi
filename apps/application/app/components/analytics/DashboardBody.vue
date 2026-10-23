@@ -315,7 +315,12 @@ function widgetMenu(b: number, w: number) {
   const others = draft.value!.bands.map((x, i) => ({ x, i })).filter(({ i }) => i !== b);
   return [
     [
-      { label: 'Configure', icon: 'i-lucide-settings-2', onSelect: () => openConfig(b, w) },
+      {
+        label: 'Configure',
+        icon: 'i-lucide-settings-2',
+        onSelect: () => openConfig(b, w),
+        'data-tour': 'widget-configure',
+      },
       {
         label: widget.size === 'full' ? 'Half width' : 'Full width',
         icon: 'i-lucide-move-horizontal',
@@ -452,6 +457,7 @@ const headerActions = computed(() => {
       color: 'neutral',
       title: 'Edit this dashboard',
       onClick: startEditing,
+      attrs: { 'data-tour': 'dashboard-edit' },
     });
   } else {
     actions.push({
@@ -471,6 +477,7 @@ const headerActions = computed(() => {
       color: 'neutral',
       title: 'Export this scope as a quality report',
       onClick: () => (reportOpen.value = true),
+      attrs: { 'data-tour': 'dashboard-export' },
     });
     if (canScheduleReports.value) {
       actions.push({
@@ -480,6 +487,7 @@ const headerActions = computed(() => {
         color: 'neutral',
         title: 'Schedule a quality report of this scope',
         onClick: () => (scheduleOpen.value = true),
+        attrs: { 'data-tour': 'dashboard-schedule' },
       });
     }
   }
@@ -675,7 +683,7 @@ useViewScroll(() => dashboardPanelBody('analytics'));
 
   <UDashboardPanel v-else id="analytics">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="analytics-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb
@@ -725,7 +733,7 @@ useViewScroll(() => dashboardPanelBody('analytics'));
             <template v-if="view.description"> · </template>{{ view.visibility === 'shared' ? 'Shared' : 'Private' }},
             by {{ view.ownerName }}</template
           >
-          <span v-if="hiddenProjects > 0" data-testid="dashboard-hidden-projects">
+          <span v-if="hiddenProjects > 0" data-testid="dashboard-hidden-projects" data-tour="dashboard-hidden-projects">
             <template v-if="isSaved && (view.description || view.ownerName)"> · </template>{{ hiddenProjects }}
             {{ hiddenProjects === 1 ? 'project' : 'projects' }} hidden (no access)
           </span>
@@ -827,6 +835,7 @@ useViewScroll(() => dashboardPanelBody('analytics'));
                     icon="i-lucide-ellipsis"
                     :aria-label="`Widget actions: ${widget.title}`"
                     :data-testid="`widget-menu-${widget.key}`"
+                    data-tour="widget-menu"
                   />
                 </UDropdownMenu>
               </div>

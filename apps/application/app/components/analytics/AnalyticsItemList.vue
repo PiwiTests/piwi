@@ -21,7 +21,13 @@ const cardTitle = computed(
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-list" :title="cardTitle" help="analytics.list" data-shot="analytics-list">
+  <SectionCard
+    icon="i-lucide-list"
+    :title="cardTitle"
+    help="analytics.list"
+    data-tour="analytics-list"
+    data-shot="analytics-list"
+  >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the list: ${errorMessage(error)}`">
       <template #action>

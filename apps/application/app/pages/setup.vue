@@ -105,7 +105,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
 <template>
   <UDashboardPanel id="setup">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="setup-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb :items="[{ label: 'Setup', icon: 'i-lucide-rocket', to: '/setup' }]" />
@@ -137,7 +137,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
 
         <!-- What a team wants Piwi for — declining a module declines its
              capabilities, which regroups the ladder below. -->
-        <CapabilityPresets help="setup.presets" />
+        <CapabilityPresets help="setup.presets" data-tour="capability-presets" />
 
         <UCard data-shot="setup-ladder">
           <template #header>

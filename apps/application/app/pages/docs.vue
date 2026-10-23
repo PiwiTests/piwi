@@ -37,7 +37,7 @@ const {
 <template>
   <UDashboardPanel id="docs">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="api-reference-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb :items="[{ label: 'API Reference', icon: 'i-lucide-book-open' }]" />

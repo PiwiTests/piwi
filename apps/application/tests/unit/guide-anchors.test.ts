@@ -1,11 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { CAPABILITY_BY_ID } from '#shared/capabilities';
 import { GUIDE_ANCHOR_BY_ID, GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
 import { DEMO_USERS } from '~/demo/demo-users';
 import { revealQuery, routeOnPage } from '~/utils/guide/stops';
+import { PAGES, sentenceProblem, vueFiles } from './guide-anchor-source';
 
 /**
  * The guide anchor registry (`shared/guide-anchors/`) against the dashboard's
@@ -15,37 +13,19 @@ import { revealQuery, routeOnPage } from '~/utils/guide/stops';
  * query the reveal needs, and its sentences fit.
  */
 
-const appDir = fileURLToPath(new URL('../../app', import.meta.url));
-
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const MAX_SENTENCE = 160;
 
-/** Every `.vue` file of the app, by its path from `app/` with `/` separators. */
-const vueFiles = (readdirSync(appDir, { recursive: true }) as string[])
-  .filter((path) => path.endsWith('.vue'))
-  .map((path) => ({ path: path.split(sep).join('/'), source: readFileSync(join(appDir, path), 'utf8') }));
-
-/** Each static `data-tour` value in the app's components, with the file of each element that sets it. */
+/**
+ * Each static `data-tour` value in the app's components, with the file of each
+ * element that sets it: a template's `data-tour="…"`, or the `'data-tour': '…'`
+ * key of an item a component passes to a menu (a sidebar or menu entry).
+ */
 const dataTourFiles = new Map<string, string[]>();
 for (const { path, source } of vueFiles) {
-  for (const match of source.matchAll(/(?<![:\w-])data-tour="([^"]*)"/g)) {
-    dataTourFiles.set(match[1]!, [...(dataTourFiles.get(match[1]!) ?? []), path]);
+  for (const match of source.matchAll(/(?<![:\w-])data-tour="([^"]*)"|'data-tour':\s*'([^']*)'/g)) {
+    const value = match[1] ?? match[2]!;
+    dataTourFiles.set(value, [...(dataTourFiles.get(value) ?? []), path]);
   }
-}
-
-/** Every page of `app/pages` as a pattern: `index.vue` is `/`, `projects/[id]/index.vue` is `/projects/[id]`. */
-const PAGES = new Set(
-  vueFiles
-    .filter(({ path }) => path.startsWith('pages/'))
-    .map(({ path }) => `/${path.slice('pages/'.length, -'.vue'.length).replace(/(^|\/)index$/, '')}`),
-);
-
-/** Why `text` is not one sentence of at most `MAX_SENTENCE` characters, or null when it is. */
-function sentenceProblem(text: string): string | null {
-  if (text.length > MAX_SENTENCE) return `${text.length} characters, over ${MAX_SENTENCE}`;
-  if (!/^[A-Z].*\.$/.test(text)) return 'it does not start with a capital and end with a period';
-  if (/[.!?]\s/.test(text)) return 'more than one sentence';
-  return null;
 }
 
 describe('guide anchor ids', () => {
@@ -79,7 +59,9 @@ describe('guide anchor ids', () => {
 
   test('every data-tour is a static, kebab-case value', () => {
     expect([...dataTourFiles.keys()].filter((value) => !KEBAB.test(value))).toEqual([]);
-    const bound = vueFiles.filter(({ source }) => /(?<![\w-])(?:v-bind)?:data-tour\b/.test(source));
+    const bound = vueFiles.filter(({ source }) =>
+      /(?<![\w-])(?:v-bind)?:data-tour\b|['"]data-tour['"]\s*:\s*(?=\S)(?!'[^']*'\s*[,}\n])/.test(source),
+    );
     expect(
       bound.map(({ path }) => path),
       'a bound data-tour cannot be found in the source',

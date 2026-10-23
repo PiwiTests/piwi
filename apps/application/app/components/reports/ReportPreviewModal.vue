@@ -107,7 +107,7 @@ const downloadItems = computed(() => [
       :ui="{ content: 'sm:max-w-4xl' }"
     >
       <template #body>
-        <div class="space-y-4" data-testid="report-preview">
+        <div class="space-y-4" data-testid="report-preview" data-tour="report-preview">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
             <USelect
               v-model="dashboard"
@@ -147,6 +147,7 @@ const downloadItems = computed(() => [
               icon="i-lucide-download"
               trailing-icon="i-lucide-chevron-down"
               data-testid="report-download"
+              data-tour="report-download"
             >
               Download
             </UButton>

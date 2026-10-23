@@ -59,8 +59,13 @@ const resetToDefaults = () => persist({ settings: null }, 'Reset to defaults');
 
 <template>
   <CapabilityDeclinedGuard capability="auto-heal" label="Auto-heal">
-    <div class="space-y-6">
-      <SectionCard icon="i-lucide-bandage" title="Auto-heal pull requests" help="settings.auto-heal">
+    <div class="space-y-6" data-tour="auto-heal-page">
+      <SectionCard
+        icon="i-lucide-bandage"
+        title="Auto-heal pull requests"
+        help="settings.auto-heal"
+        data-tour="auto-heal-settings"
+      >
         <template #subtitle>
           When a locator breaks on the default branch and healing has a high-confidence replacement, Piwi opens the fix
           pull request itself — a deterministic one-line locator edit per broken call site. No AI-generated code is ever
@@ -158,7 +163,9 @@ const resetToDefaults = () => persist({ settings: null }, 'Reset to defaults');
                 label="Reset to defaults"
                 @click="resetToDefaults"
               />
-              <UButton color="primary" :loading="saving" icon="i-lucide-save" @click="save">Save</UButton>
+              <UButton color="primary" :loading="saving" icon="i-lucide-save" data-tour="save-auto-heal" @click="save"
+                >Save</UButton
+              >
             </div>
           </div>
         </template>

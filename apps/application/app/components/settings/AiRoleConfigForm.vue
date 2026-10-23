@@ -215,7 +215,15 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
       </UFormField>
 
       <div v-if="providerResolved" class="flex justify-end">
-        <UButton size="xs" color="neutral" variant="soft" icon="i-lucide-plug" :loading="testing" @click="emit('test')">
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-plug"
+          :loading="testing"
+          data-tour="test-ai-connection"
+          @click="emit('test')"
+        >
           Test connection
         </UButton>
       </div>

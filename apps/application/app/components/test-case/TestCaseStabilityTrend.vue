@@ -90,6 +90,7 @@ const subtitle = computed(() => {
     :legend="legend"
     :export-data="exportData"
     data-shot="test-case-trend"
+    data-tour="test-trend"
   >
     <template #actions>
       <USelect

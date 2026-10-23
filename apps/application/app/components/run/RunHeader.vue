@@ -169,6 +169,7 @@ function onLabelKeydown(e: KeyboardEvent) {
     :title="`Run #${testRun?.id}`"
     :badges="incidentBadges"
     data-shot="run-header"
+    data-tour="run-header"
   >
     <template #badges-extra>
       <!-- The label editor sits right after the title. -->
@@ -339,7 +340,11 @@ function onLabelKeydown(e: KeyboardEvent) {
     </template>
 
     <template #details>
-      <div v-if="testRun?.shardTotal && testRun.shardTotal > 1" class="flex items-center gap-1.5">
+      <div
+        v-if="testRun?.shardTotal && testRun.shardTotal > 1"
+        class="flex items-center gap-1.5"
+        data-tour="run-shards"
+      >
         <span class="text-muted">Shards</span>
         <span class="font-medium">{{ testRun.shardsFinished ?? 0 }}/{{ testRun.shardTotal }}</span>
         <HelpHint topic="run.partial" />
@@ -376,7 +381,7 @@ function onLabelKeydown(e: KeyboardEvent) {
           <DurationValue :ms="totalWastedTime" class="font-medium text-amber-600 dark:text-amber-400" />
         </span>
       </div>
-      <div class="flex items-start gap-1.5">
+      <div class="flex items-start gap-1.5" data-tour="run-retention">
         <span class="text-muted shrink-0 inline-flex items-center gap-1">Retention <HelpHint topic="run.keep" /></span>
         <span v-if="testRun?.keptAt">
           {{ describeKeep(testRun) }}
@@ -388,7 +393,12 @@ function onLabelKeydown(e: KeyboardEvent) {
         </span>
         <span v-else>Not kept — retention deletes it once it is old enough</span>
       </div>
-      <div v-if="ingestNotes.length" class="flex items-start gap-1.5" data-shot="run-ingest-health">
+      <div
+        v-if="ingestNotes.length"
+        class="flex items-start gap-1.5"
+        data-shot="run-ingest-health"
+        data-tour="run-ingest"
+      >
         <span class="text-muted shrink-0 inline-flex items-center gap-1"
           >Ingest <HelpHint topic="run.ingestHealth"
         /></span>
@@ -412,7 +422,12 @@ function onLabelKeydown(e: KeyboardEvent) {
           </li>
         </ul>
       </div>
-      <div v-if="coverageGaps.length" class="flex items-start gap-1.5" data-shot="run-coverage-gaps">
+      <div
+        v-if="coverageGaps.length"
+        class="flex items-start gap-1.5"
+        data-shot="run-coverage-gaps"
+        data-tour="run-coverage-gaps"
+      >
         <span class="text-muted shrink-0 inline-flex items-center gap-1"
           >Coverage <HelpHint topic="run.coverageIncomplete"
         /></span>
@@ -434,7 +449,7 @@ function onLabelKeydown(e: KeyboardEvent) {
           <UBadge v-for="tag in tags" :key="tag" color="neutral" variant="soft" size="xs">{{ tag }}</UBadge>
         </div>
       </div>
-      <div class="flex items-start gap-1.5">
+      <div class="flex items-start gap-1.5" data-tour="run-links">
         <span class="text-muted mt-0.5 inline-flex items-center gap-1">Links <HelpHint topic="run.metadata" /></span>
         <EntityLinks
           entity-type="test_run"

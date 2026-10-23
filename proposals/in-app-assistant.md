@@ -9,7 +9,21 @@ and the docs do not.
 **Status.** Proposed 2026-10-22. **PR 1 built 2026-10-22**: the guide engine (`useGuide`), extracted from the demo
 tour, which runs on it unchanged; the anchor registry in `shared/guide-anchors/` with the tour's 26 anchors; and its
 three checks, against the source, the seed and the built demo. As built, an anchor lists every page it renders on
-(several components render on more than one), and a sample names its demo persona by id. **PR 4 built 2026-10-22**,
+(several components render on more than one), and a sample names its demo persona by id. **PR 2 built 2026-10-23**: the
+anchor coverage, 334 anchors in eleven area files (layout 14, home 8, analytics 59, projects 66, runs 26, executions 24,
+clusters 33, test cases 12, setup 18, settings 72, demo 2), each with a `kind`: 37 pages, 40 tabs, 38 settings fields,
+139 blocks, 3 rows, 67 actions and 10 sidebar destinations. `guide-anchor-coverage.test.ts` reads from the source every
+page, tab the URL selects, settings field, help topic set on a block and sidebar destination, and fails on one no anchor
+covers. 33 exemptions remain, each with its reason, all of them items no seeded screen renders: 8 pages (5 sign-in and
+connect pages outside the dashboard layout, 3 that only redirect) and 25 help topics or fields (6 widgets no built-in or
+seeded dashboard holds; share links, OAuth providers and SMTP the demo does not configure, authentication it never turns
+off and the AI it always simulates; 7 states the seed holds none of; 2 views of the Screen tab held in a component's
+state). As built, a `data-tour` is also a static key on a menu item, on a `NavbarActions` action's `attrs` or in a
+static map spread with `v-bind`; a route names a built-in dashboard by its key (`/analytics/d/engineering`), which the
+server's route check accepts with no entity to check; each section of the fix toolbox has its anchor on its toggle,
+which an `unfold` clicks only while it reads folded; the built-demo check fails an anchor whose computed opacity is 0,
+so a hover-only control is no anchor; and the 3 desktop anchors are checked by `check-demo-runtime.mjs --desktop`, on a
+desktop-mode dev server with the mocked Tauri bridge. **PR 4 built 2026-10-22**,
 the server side with no panel yet: the `assistant` role; the loop with tool calling (native for Anthropic and
 OpenAI-compatible servers; a JSON action mode, one tool call or the answer per reply, for a server that refuses tools
 and for the Claude Code CLI until PR 7); the read tools routed per page with `find_tools` and `get_instance_config`;

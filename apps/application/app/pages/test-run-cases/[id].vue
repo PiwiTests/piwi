@@ -615,6 +615,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
             description: quarantineLossText.value,
             icon: 'i-lucide-shield-alert',
             color: 'warning',
+            'data-tour': 'quarantine-test',
             onSelect: toggleQuarantine,
           },
     );
@@ -628,6 +629,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
     copies.push({
       label: 'Copy retry command',
       icon: 'i-lucide-clipboard',
+      'data-tour': 'copy-retry-command',
       onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
     });
   }
@@ -783,6 +785,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               class="text-xs text-gray-500 hover:text-primary mr-2 flex items-center gap-1 shrink-0"
               title="View this test's history across runs"
               aria-label="Test history"
+              data-tour="execution-test-history"
             >
               <UIcon name="i-lucide-trending-up" class="size-3.5" />
               <span class="hidden xl:inline">Test history</span>
@@ -808,6 +811,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 icon="i-lucide-ellipsis-vertical"
                 aria-label="More actions"
                 title="More actions"
+                data-tour="execution-more-actions"
               />
             </UDropdownMenu>
           </div>
@@ -822,7 +826,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
         <SituationBlock help="case.situation" :edge="statusEdge">
           <!-- Line 1: identity kicker — status, the test's title path (file › describe › title), marks, quarantine -->
           <template #identity>
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1" data-tour="execution-heading">
               <StatusChip :status="testCase?.status ?? ''" :retries="testCase?.retries" class="shrink-0" />
               <!-- The path in the meta style, the title in the body style -->
               <TestTitlePath

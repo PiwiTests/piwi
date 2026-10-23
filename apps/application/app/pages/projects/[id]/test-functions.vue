@@ -392,7 +392,7 @@ function describeSteps(entry: TestFunctionInfo): string {
 <template>
   <UDashboardPanel id="project-test-functions">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="project-test-functions-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <BreadcrumbNav

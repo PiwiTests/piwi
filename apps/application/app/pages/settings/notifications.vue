@@ -198,9 +198,14 @@ const eventLabel = notificationEventLabel;
 
 <template>
   <CapabilityDeclinedGuard capability="notifications" label="Notifications">
-    <div class="space-y-6">
+    <div class="space-y-6" data-tour="notifications-page">
       <!-- SMTP status (read-only; connection details are admin-only) -->
-      <SectionCard icon="i-lucide-mail" title="SMTP email delivery" help="settings.smtp">
+      <SectionCard
+        icon="i-lucide-mail"
+        title="SMTP email delivery"
+        help="settings.smtp"
+        data-tour="smtp-email-delivery"
+      >
         <template #subtitle>
           Configure SMTP via environment variables. The connection cannot be changed here.
         </template>
@@ -277,7 +282,14 @@ PIWI_SMTP_PASS=secret"
         data-tour="notification-channels"
       >
         <template #actions>
-          <UButton size="sm" icon="i-lucide-plus" @click="showNewChannel = !showNewChannel"> Add channel </UButton>
+          <UButton
+            size="sm"
+            icon="i-lucide-plus"
+            data-tour="add-notification-channel"
+            @click="showNewChannel = !showNewChannel"
+          >
+            Add channel
+          </UButton>
         </template>
 
         <NotificationChannelForm
@@ -349,7 +361,13 @@ PIWI_SMTP_PASS=secret"
       </SectionCard>
 
       <!-- Subscriptions -->
-      <SectionCard icon="i-lucide-bell" title="Subscriptions" :count="subs.length" help="notifications.subscriptions">
+      <SectionCard
+        icon="i-lucide-bell"
+        title="Subscriptions"
+        :count="subs.length"
+        help="notifications.subscriptions"
+        data-tour="notification-subscriptions"
+      >
         <div v-if="subs.length === 0" class="text-sm text-muted py-4 text-center">
           No subscriptions yet. Use the <strong>Subscribe</strong> bell on a project page to get started.
         </div>

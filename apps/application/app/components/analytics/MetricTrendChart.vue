@@ -156,6 +156,7 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
     :title="cardTitle"
     :legend="legend"
     help="analytics.metric"
+    data-tour="analytics-metric"
     :export-data="exportData"
     data-shot="analytics-metric"
   >

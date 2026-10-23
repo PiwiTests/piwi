@@ -81,6 +81,7 @@ const menuItems = computed(() =>
           class="hidden lg:flex lg:w-52 lg:shrink-0 lg:sticky lg:top-0"
           :ui="{ separator: 'hidden' }"
           data-shot="settings-nav"
+          data-tour="settings-nav"
         />
         <div class="flex min-w-0 flex-1 flex-col gap-4 sm:gap-6 lg:gap-12 lg:max-w-4xl">
           <NuxtPage />

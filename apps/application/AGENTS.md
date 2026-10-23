@@ -556,7 +556,7 @@ Where to add things in subsystems whose wiring spans several files:
 | Trace-file import                  | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Quality report language            | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only                                                                                                                           |
 | Issue automation criterion         | The rule field and its check in `shared/integrations/automation.ts` (`AutoCreateRule`, `resolveAutoCreateRule`, `evaluateAutoCreate`, `describeAutoCreateRule`); the fact it reads in `gatherAutoCreateFacts` (`shared/handlers/tracker-automation.ts`, shared with the demo preview); the form in `app/utils/tracker-binding-form.ts` and `AutoCreateRulesEditor.vue`; the table on `apps/docs/features/issue-automation.md`. The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules, never re-implement them                                                                                       |
-| Guide anchor                       | Its entry in the area file of `shared/guide-anchors/` (`id`, `pages`, `reveal`, `describes`, `shownWhen`, `requires`, `doc`, `sample`; a new area file is one import and one spread in `index.mjs`), and the static `data-tour` value on the one element it names. Rules under [Guide anchors](#guide-anchors)                                                                                                                                                                                                                                                                                                                                                                      |
+| Guide anchor                       | Its entry in the area file of `shared/guide-anchors/` (`id`, `kind`, `pages`, `reveal`, `describes`, `shownWhen`, `requires`, `help`, `doc`, `sample`), or an exemption there for an item no anchor covers, and the static `data-tour` value on the one element it names; a new area file is one import and one `GUIDE_AREAS` entry in `index.mjs`. Rules under [Guide anchors](#guide-anchors)                                                                                                                                                                                                                                                                                     |
 | Guided tour stop / role / language | A stop: its entry in `TOUR_PROFILES` (`app/utils/demo-tour/profiles.ts`), its title and body under its id in every `copy.<code>.ts`, and the guide anchor it points at. A role: its id in `TourProfileId` (`types.ts`), its `TOUR_PROFILES` entry, and its label, hint and stops in every copy file. A language: its code in `TOUR_LANGUAGES` and `TOUR_LANGUAGE_INFO` (`languages.ts`), and a `copy.<code>.ts` registered in `TOUR_COPY` (`copy.ts`). A role or language is also named in the _Live demo_ paragraph of `apps/docs/features/ui-overview.md`. Rules under [Guided tour](#guided-tour)                                                                                |
 
 ## Subsystem invariants
@@ -905,19 +905,27 @@ tour as a guide (`GuideRun`, its stops with their copy) that the guide engine ru
 A guide is a list of stops, each a driver.js popover on one element of a page; the demo's guided tour is one. A guide
 points only at **guide anchors**: the registry in `shared/guide-anchors/` lists every element a guide can name, and
 nothing else can be pointed at. It is plain ESM, like `shared/demo/demo-examples.mjs`, so the app, the tests and
-`scripts/check-demo-runtime.mjs` read the same file: one `.mjs` file per area of the dashboard (`home`, `analytics`,
-`projects`, `runs`, `executions`, `clusters`, `test-cases`, `setup`, `settings`, and `demo` for the demo banner),
-joined in `index.mjs` (a new area is one import and one spread there), with the entry shape in `index.d.mts`. An
-entry has:
+`scripts/check-demo-runtime.mjs` read the same file: one `.mjs` file per area of the dashboard (`layout`, `home`,
+`analytics`, `projects`, `runs`, `executions`, `clusters`, `test-cases`, `setup`, `settings`, and `demo` for the demo
+banner), each exporting its anchors and its coverage exemptions, joined in `index.mjs` as `GUIDE_AREAS` (a new area is
+one import and one entry there), with the entry shape in `index.d.mts`. An entry has:
 
 - `id`, the value of the element's `data-tour` attribute;
+- `kind`, what it names (`GUIDE_ANCHOR_KINDS`): `page` (a page's heading area), `tab` (a tab's panel, selected by its
+  `query` reveal), `block` (a section or card), `row` (one row of a list, the first one shown), `field` (a settings
+  field), `action` (a primary action button, or the button opening a menu) or `nav` (a sidebar destination);
 - `pages`, the patterns of `app/pages` it renders on (`/test-run-cases/[id]`, `/`), the main one first, or `['*']` for
-  the layout and the demo banner;
+  the layout and the demo banner; a route opens a pattern when each `[param]` is an id, or for `/analytics/d/[id]` a
+  built-in dashboard's key (`/analytics/d/engineering`; `PARAM_KEYS` in `shared/guide-stops.ts`, read from
+  `BUILTIN_DASHBOARDS`);
 - `reveal`, what the engine does before the anchor shows, in order: `{ query }` (a tab or pane selected through the
-  URL), `{ unfold: <anchor> }` (clicks the first `aria-expanded="false"` toggle of a folded section),
-  `{ open: <anchor> }` (clicks the opener of a menu, drawer or modal when the anchor is not rendered);
+  URL), `{ unfold: <anchor> }` (clicks the anchor, the toggle of a folded section, while it reads
+  `aria-expanded="false"`; an open section, or an anchor that is no toggle, stays as it is),
+  `{ open: <anchor> }` (clicks the opener of a menu, drawer or modal when the anchor is not rendered; one step per
+  level, as for the user menu's Open in IDE settings);
 - `describes` and `shownWhen`: one sentence each, in the docs' voice, on what the block shows and when it renders;
-- `requires`: the capability, permission, desktop shell or demo build it needs; `doc`: its docs page;
+- `requires`: the capability, permission, desktop shell or demo build it needs; `help`: the `HELP_TOPICS` key of the
+  inline help the block carries; `doc`: its docs page;
 - `sample`: a seeded demo route where it renders (with every `query` its reveal needs), the persona to act as and
   the `expect` the seed must hold there.
 
@@ -929,18 +937,57 @@ it. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup
 run's `dataset`, which is what the checks read; `app/assets/css/guide.css` themes it (`piwi-guide*` classes).
 
 - **One element per anchor**: an anchor's `data-tour` value is static (never a bound `:data-tour`), kebab-case, names
-  the content, and is set on exactly one element in exactly one component. An element can carry both `data-tour`
-  and the harness's `data-shot`. A demo-only anchor (`requires.demo`) is set in a component under
-  `app/components/demo/`.
-- **Three checks hold every anchor.** `tests/unit/guide-anchors.test.ts` checks the registry against the source:
+  the content, and is set on exactly one element in exactly one component: a template's `data-tour="…"`, or a static
+  `'data-tour': '…'` key the component hands on: on an item of a Nuxt UI menu (the sidebar's and the user menu's
+  items), which passes it to the item's link; in a `NavbarActions` action's `attrs`; or in a static
+  `attrs: { 'data-tour': '…' }` (or a map of them) spread with `v-bind`, as `settings/ai.vue`'s `ROLE_META` puts one
+  on each role's form and `Toolbox.vue`'s `SECTION_ANCHORS` on each section's toggle. The value stays a literal the
+  source test reads, never a computed string. An element can carry both `data-tour` and the harness's `data-shot`. A
+  demo-only anchor (`requires.demo`) is set in a component under `app/components/demo/`.
+- **Four checks hold every anchor.** `tests/unit/guide-anchors.test.ts` checks the registry against the source:
   each id is the `data-tour` of exactly one element and every `data-tour` is an anchor, each page is a file of
   `app/pages`, a reveal names anchors on the same page, the sample route opens one of its pages with its reveal's
   query, the sentences fit (≤ 160 characters, one sentence) and the capability exists.
+  `tests/unit/guide-anchor-coverage.test.ts` checks the coverage below, each `kind` and each `help` key.
   `tests/unit/demo-seed-consistency.test.ts` checks each sample's `expect` against the generated seed, as for a demo
   example. `scripts/check-demo-runtime.mjs` opens every sample in the built demo as its persona, runs the reveal and
-  finds the anchor visible once scrolled into view, one check per anchor.
+  finds the anchor visible once scrolled into view, one check per anchor; an element that is, or sits in, one with a
+  computed opacity of 0 fails it, so a control shown only while the pointer is over its row is no anchor (anchor what
+  always shows, such as the Failure inbox's keyboard line).
+- **Every block someone could ask about has an anchor.** The coverage test reads what each rule asks for from the
+  source (`tests/unit/guide-anchor-source.ts`) and fails listing every item no anchor covers, with the files that
+  set it and the pages it renders on:
+  - `page`: every page pattern of `app/pages` has an anchor of kind `page` listing it;
+  - `tab`: every tab the URL selects has an anchor of kind `tab` on its page whose `query` reveal is exactly the
+    tab's: the project page's tabs, Failures segments and Settings sections, the run's, test's and bug report's tabs,
+    and the execution's evidence tabs (`TAB_LISTS`, each read from its list in the code; a new tab list the URL
+    selects gets an entry there). A tab held only in a component's state has no URL to reveal it, so it is a block;
+  - `field`: every field of `SETTINGS_PAGES` has an anchor of kind `field` on its page whose `help` is the field's;
+  - `help`: every help topic a `.vue` file sets statically (`help="…"`, `<HelpHint topic="…">`, a literal in a bound
+    `:help` or `:topic`, `help: '…'` in the script) is the `help` of an anchor;
+  - `nav`: every destination of the sidebar's items in `app/layouts/default.vue`, which the command palette lists
+    too, carries the `data-tour` of an anchor of kind `nav`.
+- **An item that gets no anchor is exempted** in its area file's exemptions: `{ rule, key, reason }`, the key as the
+  report names it (`/projects/[id]?tab=runs`, `case.network`, `ai.diagnosis`) and the reason in one sentence. The
+  test fails on an exemption that names no item, names one an anchor covers, or repeats another.
+- **Each item belongs to one area**, whose agent or change covers it: a page, tab or field by its page's path; a help
+  topic by the directory of the component setting it (`COMPONENT_DIR_AREAS`), else `COMPONENT_AREAS` for a component
+  that renders on another area's pages, the first area a `components/shared/` component renders on, and
+  `TOPIC_AREAS` for a topic set in several areas; a sidebar destination is `layout`. With `GUIDE_AREA=<area>` set,
+  `npx vitest run tests/unit/guide-anchor-coverage.test.ts` asserts that area's items, anchors and exemptions only.
+- **Check new anchors on a running server**:
+  `node scripts/check-demo-runtime.mjs --url http://localhost:3000 --area <area>` (or `--anchors <id,id,…>`, or
+  both) opens each sample on the dev server, once it hydrates, instead of the built demo. It skips an anchor whose sample acts as a persona or that needs the demo build, since authentication
+  is off on a dev server; `npm run app:seed:dev` gives that server the demo's seeded ids. `--anchors-only` checks the
+  same selection in the built demo, without the tours and the other checks. With no flag, the script checks
+  everything in the built demo, as CI does.
+- **An anchor of the desktop app** (`requires.desktop`, its sample on `surface: 'desktop'`) is skipped by those runs
+  and checked by `node scripts/check-demo-runtime.mjs --desktop`: the screenshot harness's desktop mode, a dev server
+  started with `NUXT_PUBLIC_DESKTOP=true` on a throwaway copy of the demo seed (booted on port 3050 for the run), with
+  its mocked Tauri bridge (`scripts/lib/desktop-bridge.mjs`) and a linked folder. `--area` and `--anchors` narrow it;
+  `--url` drives a desktop server already running instead.
 - **A change that moves, renames or removes an anchored element updates the registry in the same commit**, and the
-  guides pointing at it (the tour's stops) with it. A new anchor ships with its sample and passes all three checks.
+  guides pointing at it (the tour's stops) with it. A new anchor ships with its sample and passes all four checks.
 - **The engine never lets `scrollIntoView` run**: the dashboard scrolls inside its content panel, and
   `scrollIntoView` would shift the layout around it, so the engine scrolls the target's panels itself and stubs
   driver.js's own call on the target and the popover. driver.js, its CSS and `guide.css` load only when the first

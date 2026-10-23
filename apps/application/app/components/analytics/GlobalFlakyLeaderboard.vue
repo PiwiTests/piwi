@@ -30,6 +30,7 @@ function flakeSummary(row: AnalyticsFlakyRow): string {
     :count="rows?.length || undefined"
     subtitle="Across all projects, sorted by impact"
     help="analytics.flaky-leaderboard"
+    data-tour="analytics-flaky-leaderboard"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load flaky tests: ${errorMessage(error)}`">

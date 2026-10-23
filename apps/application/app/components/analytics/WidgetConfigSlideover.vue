@@ -248,7 +248,7 @@ function apply() {
           <UInputNumber v-model="options.limit" :min="5" :max="25" class="w-full" aria-label="Rows" />
         </UFormField>
 
-        <div class="space-y-3 border-t border-default pt-4">
+        <div class="space-y-3 border-t border-default pt-4" data-tour="widget-scope">
           <div class="flex items-center gap-1">
             <h3 class="text-xs font-medium text-muted">This widget’s scope</h3>
             <HelpHint topic="dashboards.widget-scope" />

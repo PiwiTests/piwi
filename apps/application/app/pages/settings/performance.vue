@@ -12,7 +12,7 @@
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-tour="performance-page">
     <WastedTimeCard />
     <TimeoutHygieneCard />
     <CiCostCard />

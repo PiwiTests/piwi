@@ -83,6 +83,7 @@ async function handleDelete() {
     :count="markers.length"
     icon="i-lucide-milestone"
     help="project.timeline"
+    data-tour="project-timeline"
     subtitle="Dated events overlaid on the analytics charts"
   >
     <template #actions>

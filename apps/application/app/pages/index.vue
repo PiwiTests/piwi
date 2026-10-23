@@ -268,7 +268,7 @@ useViewScroll(() => dashboardPanelBody('home'));
 <template>
   <UDashboardPanel id="home">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="home-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }]" />

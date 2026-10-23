@@ -197,7 +197,11 @@ defineExpose({ reveal });
 
     <template v-if="content !== null">
       <CoverageClassLegend v-if="classes" :kinds="classLegend" />
-      <p v-else class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+      <p
+        v-else
+        class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted"
+        data-tour="coverage-source-marks"
+      >
         <span class="inline-flex items-center gap-1.5">
           <span class="inline-block h-3 w-[3px] bg-coverage-run" aria-hidden="true" />{{ executedTitle }}
         </span>

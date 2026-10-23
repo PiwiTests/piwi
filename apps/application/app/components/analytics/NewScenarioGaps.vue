@@ -14,6 +14,7 @@ const s = sentencesFor('en');
     icon="i-lucide-map-pin-plus"
     :title="title ?? 'New scenario gaps'"
     help="analytics.new-gaps"
+    data-tour="analytics-new-gaps"
     data-shot="analytics-new-gaps"
   >
     <LoadingState v-if="pending" />

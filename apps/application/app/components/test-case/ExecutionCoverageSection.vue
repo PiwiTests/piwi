@@ -137,7 +137,11 @@ function markText(row: CoverageRow): string {
       <p v-else-if="failed" class="text-xs text-muted">The coverage of this execution could not be read.</p>
 
       <template v-else-if="!hasFiles">
-        <p class="text-xs text-muted inline-flex items-center gap-1" data-testid="coverage-none">
+        <p
+          class="text-xs text-muted inline-flex items-center gap-1"
+          data-testid="coverage-none"
+          data-tour="execution-coverage-none"
+        >
           <template v-if="incomplete">This execution's coverage is no longer stored.</template>
           <template v-else>This execution recorded no coverage.</template>
           <HelpHint :topic="incomplete ? 'case.coverage-incomplete' : 'case.coverage-none'" />

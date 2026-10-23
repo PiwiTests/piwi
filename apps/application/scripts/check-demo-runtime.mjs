@@ -13,6 +13,27 @@
  * Run from the `application/` directory, after `npm run app:generate:demo`:
  *   node scripts/check-demo-runtime.mjs
  *
+ * Flags, to check guide anchors while adding them:
+ *   --url <base>         drive a running server (`--url http://localhost:3000`)
+ *                        instead of serving the built demo. Only the anchor
+ *                        checks run, and an anchor whose sample acts as a
+ *                        persona or that needs the demo build is skipped, as
+ *                        authentication is off on a dev server.
+ *   --anchors <id,id,…>  check only these anchors.
+ *   --area <name>        check only the anchors of this area file of
+ *                        `shared/guide-anchors/` (`layout`, `runs`, …); with
+ *                        --anchors, the anchors either names.
+ *   --anchors-only       skip the guided tours and the other checks.
+ *   --desktop            check the anchors whose sample is in the desktop app
+ *                        (`sample.surface: 'desktop'`), which every other run
+ *                        skips, in the screenshot harness's desktop mode: a
+ *                        dev server started with NUXT_PUBLIC_DESKTOP=true on a
+ *                        throwaway copy of the demo seed, booted on port 3050
+ *                        for the run, and its mocked Tauri bridge with a
+ *                        linked folder. With --url, the server it names (one
+ *                        started with NUXT_PUBLIC_DESKTOP=true and the demo's
+ *                        seeded ids).
+ *
  * Exits non-zero on the first failed check.
  */
 
@@ -22,17 +43,38 @@ import { existsSync } from 'node:fs';
 import { join, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { GUIDE_ANCHORS } from '../shared/guide-anchors/index.mjs';
+import { parseArgs } from 'node:util';
+import { GUIDE_ANCHOR_BY_ID, GUIDE_ANCHORS, GUIDE_AREAS } from '../shared/guide-anchors/index.mjs';
+import { waitForHydration } from './lib/page-waits.mjs';
+import { READY_INSPECTION, bridgeScript } from './lib/desktop-bridge.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..', '.output', 'public');
 const PORT = Number(process.env.DEMO_CHECK_PORT || 4173);
 
+const { values: flags } = parseArgs({
+  options: {
+    url: { type: 'string' },
+    anchors: { type: 'string' },
+    area: { type: 'string' },
+    'anchors-only': { type: 'boolean', default: false },
+    desktop: { type: 'boolean', default: false },
+  },
+});
+
+/** Where `--desktop` boots its server without `--url`: off 3000, where a dev server may run. */
+const DESKTOP_PORT = 3050;
+/** The running server to drive: `--url`, else the one `--desktop` boots; null to serve the built demo. */
+const SERVER = flags.url ? new URL(flags.url) : flags.desktop ? new URL(`http://localhost:${DESKTOP_PORT}`) : null;
+/** Where the anchors this run checks have their sample (`sample.surface`). */
+const SURFACE = flags.desktop ? 'desktop' : 'demo';
+const ANCHORS_ONLY = flags['anchors-only'] || SERVER !== null;
+
 // The demo is deployed under /demo/, and that base path is exactly what the
 // service worker scopes itself to — serving it at the root would hide the class
 // of bug this check exists to catch.
-const BASE = '/demo/';
-const ORIGIN = `http://localhost:${PORT}`;
+const BASE = SERVER ? SERVER.pathname.replace(/\/?$/, '/') : '/demo/';
+const ORIGIN = SERVER ? SERVER.origin : `http://localhost:${PORT}`;
 
 const CONTENT_TYPES = {
   '.html': 'text/html',
@@ -273,18 +315,57 @@ async function checkGuidedTour(browser, watch) {
 // Every anchor of the guide registry (`shared/guide-anchors/`) whose sample is
 // on the demo, opened at its sample route as its persona, its reveal clicked as
 // the guide engine clicks it, then found visible once scrolled into view. Each
-// persona gets its own browser and each route loads once.
+// persona gets its own browser and each route loads once, again after an
+// anchor whose reveal opened a menu or a modal.
 
-/** The toggle of a folded section, as the guide engine finds it (`useGuide`). */
+/** The toggle of a folded section, which an `unfold` step names and the guide engine clicks (`useGuide`). */
 const FOLDED_TOGGLE = 'button[aria-expanded="false"], [role="button"][aria-expanded="false"]';
 /** How long an anchor, or the element its reveal clicks, has to render once its page loads. */
 const ANCHOR_WAIT_MS = 60000;
 
-/** The demo's anchors by persona (null: the default one), then by sample route, in registry order. */
-function anchorsBySample() {
+/** The anchors `--anchors` and `--area` name, every anchor when neither is given; exits on an unknown one. */
+function selectedAnchors() {
+  if (!flags.anchors && !flags.area) return GUIDE_ANCHORS;
+  const ids = new Set(
+    (flags.anchors ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+  const unknown = [...ids].filter((id) => !GUIDE_ANCHOR_BY_ID.has(id));
+  const area = flags.area ? GUIDE_AREAS.find(({ id }) => id === flags.area) : null;
+  if (unknown.length > 0 || area === undefined) {
+    if (unknown.length > 0) console.error(`No guide anchor named ${unknown.join(', ')}.`);
+    if (area === undefined) {
+      console.error(`No area "${flags.area}": one of ${GUIDE_AREAS.map(({ id }) => id).join(', ')}.`);
+    }
+    process.exit(1);
+  }
+  return GUIDE_ANCHORS.filter((anchor) => ids.has(anchor.id) || area?.anchors.includes(anchor));
+}
+
+/** Why a running server cannot show `anchor` (`--url`), or null when it can. */
+function skippedOnServer(anchor) {
+  if (!SERVER) return null;
+  if (anchor.requires?.demo) return 'needs the demo build';
+  if (anchor.sample.persona !== undefined) return `acts as persona ${anchor.sample.persona}`;
+  return null;
+}
+
+/** `anchors` by persona (null: the default one), then by sample route, in registry order. */
+function anchorsBySample(anchors) {
   const personas = new Map();
-  for (const anchor of GUIDE_ANCHORS) {
-    if ((anchor.sample.surface ?? 'demo') !== 'demo') continue;
+  for (const anchor of anchors) {
+    if ((anchor.sample.surface ?? 'demo') !== SURFACE) {
+      if (SURFACE === 'demo')
+        console.log(`  – guide anchor ${anchor.id} skipped: its sample is in the desktop app (--desktop)`);
+      continue;
+    }
+    const skipped = skippedOnServer(anchor);
+    if (skipped) {
+      console.log(`  – guide anchor ${anchor.id} skipped: it ${skipped}`);
+      continue;
+    }
     const persona = anchor.sample.persona ?? null;
     const routes = personas.get(persona) ?? new Map();
     personas.set(persona, routes);
@@ -297,11 +378,10 @@ function anchorsBySample() {
 async function revealAnchor(page, anchor) {
   for (const step of anchor.reveal ?? []) {
     if ('unfold' in step) {
-      const section = page.locator(`[data-tour="${step.unfold}"]`).first();
-      await section.waitFor({ state: 'attached', timeout: ANCHOR_WAIT_MS });
-      await section.evaluate((node, folded) => {
-        const toggle = node.matches(folded) ? node : node.querySelector(folded);
-        if (toggle instanceof HTMLElement) toggle.click();
+      const toggle = page.locator(`[data-tour="${step.unfold}"]`).first();
+      await toggle.waitFor({ state: 'attached', timeout: ANCHOR_WAIT_MS });
+      await toggle.evaluate((node, folded) => {
+        if (node instanceof HTMLElement && node.matches(folded)) node.click();
       }, FOLDED_TOGGLE);
     }
     if ('open' in step) {
@@ -312,7 +392,27 @@ async function revealAnchor(page, anchor) {
   }
 }
 
-/** One check: `anchor` renders at its sample, visible with a box in the viewport once scrolled into view. */
+/** How long an anchor that is fading in has to stop being fully transparent. */
+const OPAQUE_WAIT_MS = 3000;
+
+/**
+ * Whether `element` is not fully transparent: neither it nor an element
+ * holding it has a computed opacity of 0 (a control shown only while the
+ * pointer is over its row), which Playwright's visibility ignores.
+ */
+async function becomesOpaque(page, element) {
+  const opaque = (node) => {
+    for (let n = node; n; n = n.parentElement) if (getComputedStyle(n).opacity === '0') return false;
+    return true;
+  };
+  const handle = await element.elementHandle();
+  return page.waitForFunction(opaque, handle, { timeout: OPAQUE_WAIT_MS }).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** One check: `anchor` renders at its sample, visible and not transparent, with a box in the viewport once scrolled into view. */
 async function checkAnchor(page, anchor) {
   const label = `guide anchor ${anchor.id} shows at ${anchor.sample.route}`;
   try {
@@ -322,43 +422,289 @@ async function checkAnchor(page, anchor) {
     await element.scrollIntoViewIfNeeded({ timeout: 10000 });
     const box = await element.boundingBox();
     const visible = await element.isVisible();
+    const opaque = visible && (await becomesOpaque(page, element));
     const inView = box !== null && box.width > 0 && box.height > 0 && box.y < WIDE.height && box.y + box.height > 0;
     const where = box ? `a ${Math.round(box.width)}×${Math.round(box.height)} box at y ${Math.round(box.y)}` : 'no box';
-    check(visible && inView, label, visible && inView ? '' : visible ? where : 'not visible');
+    const problem = !visible ? 'not visible' : !opaque ? 'fully transparent (opacity 0)' : inView ? '' : where;
+    check(problem === '', label, problem);
   } catch (error) {
     check(false, label, String(error).split('\n')[0].slice(0, 160));
   }
 }
 
 /**
- * Every demo anchor at its sample: one browser context per persona, which
+ * Each of `anchors` at its sample: one browser context per persona, which
  * stores that persona as the demo's "Acting as" user and the tour's prompt as
  * dismissed before any page loads. `watch` attaches the checks every page of
- * the demo gets.
+ * the demo gets. Returns how many anchors it checked.
  */
-async function checkGuideAnchors(browser, watch) {
-  for (const [persona, routes] of anchorsBySample()) {
+async function checkGuideAnchors(browser, watch, anchors) {
+  let checked = 0;
+  for (const [persona, routes] of anchorsBySample(anchors)) {
     const context = await browser.newContext({ viewport: WIDE, locale: 'en-US' });
     await context.addInitScript((id) => {
+      // The page itself only: a sandboxed frame (a DOM snapshot) may not touch storage.
+      if (window !== window.top) return;
       if (id === null) localStorage.removeItem('piwi-demo-user-id');
       else localStorage.setItem('piwi-demo-user-id', String(id));
       localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() }));
     }, persona);
+    if (SURFACE === 'desktop') {
+      await context.addInitScript(bridgeScript({ link: { path: READY_INSPECTION.path, exists: true } }));
+    }
     const page = await context.newPage();
+    // A dev server compiles each page on its first visit.
+    if (SERVER) page.setDefaultNavigationTimeout(90_000);
     watch(page);
     try {
       for (const [route, anchors] of routes) {
-        await page.goto(`${ORIGIN}${BASE}${route.replace(/^\//, '')}`, { waitUntil: 'domcontentloaded' });
-        for (const anchor of anchors) await checkAnchor(page, anchor);
+        let loaded = false;
+        for (const anchor of anchors) {
+          if (!loaded) {
+            await page.goto(`${ORIGIN}${BASE}${route.replace(/^\//, '')}`, { waitUntil: 'domcontentloaded' });
+            // A server renders the page before it hydrates; the demo renders it in the browser.
+            if (SERVER) await waitForHydration(page);
+          }
+          await checkAnchor(page, anchor);
+          checked++;
+          // What an `open` step opened stays open over the page.
+          loaded = !anchor.reveal?.some((step) => 'open' in step);
+        }
       }
     } finally {
       await context.close();
     }
   }
+  return checked;
+}
+
+// ── The demo's flows ───────────────────────────────────────────────────────
+
+/**
+ * The demo's own flows, on `page`: the service worker, the in-browser API, the
+ * exports, the quality report, the report snapshots, the saved dashboards, the
+ * flake profile and the Flake Lab, and a file's coverage page.
+ */
+async function checkDemoFlows(page) {
+  await page.goto(`${ORIGIN}${BASE}`, { waitUntil: 'domcontentloaded' });
+  check(await waitForServiceWorker(page), 'the service worker installs and takes control');
+
+  // The in-browser API must answer under the demo's own base path.
+  const menu = await page.evaluate(async () => {
+    const r = await fetch('/demo/api/projects/menu');
+    return { status: r.status, count: r.ok ? ((await r.json())?.items?.length ?? 0) : 0 };
+  });
+  check(menu.status === 200, 'the in-browser API answers', `status ${menu.status}`);
+  check(menu.count > 0, 'the seeded database has projects', `${menu.count} projects`);
+
+  // Find a cluster to export, rather than hard-coding an id the seed may move.
+  const clusterId = await page.evaluate(async () => {
+    const menu = await (await fetch('/demo/api/projects/menu')).json();
+    for (const p of menu.items ?? []) {
+      const clusters = await (await fetch(`/demo/api/projects/${p.id}/failure-clusters`)).json();
+      const first = (Array.isArray(clusters) ? clusters : (clusters?.items ?? []))[0];
+      if (first?.id) return first.id;
+    }
+    return null;
+  });
+  if (!check(clusterId != null, 'the seed contains a failure cluster to export')) throw new Error('no cluster');
+
+  await page.goto(`${ORIGIN}${BASE}failure-clusters/${clusterId}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(4000);
+
+  const exportButton = page.getByRole('button', { name: 'Export', exact: true });
+  if (!check((await exportButton.count()) === 1, 'exactly one Export button is on the page')) {
+    throw new Error(`found ${await exportButton.count()} Export buttons`);
+  }
+
+  // The download itself is the point: a root-relative URL would escape the
+  // service worker's scope and 404 against the static host.
+  await exportButton.click();
+  await page.waitForTimeout(400);
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30000 }),
+    page.getByRole('button', { name: 'ZIP — with all evidence', exact: true }).click(),
+  ]);
+  const path = await download.path();
+  const bytes = path ? (await readFile(path)).length : 0;
+  check(bytes > 1000, 'the ZIP export downloads', `${bytes} bytes as ${download.suggestedFilename()}`);
+  check(download.suggestedFilename().endsWith('.zip'), 'the download is named as a ZIP');
+
+  // The PDF is generated the same way — entirely in the service worker, with
+  // no browser print — so prove it produces a real %PDF document in-browser.
+  await exportButton.click();
+  await page.waitForTimeout(400);
+  const [pdfDownload] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30000 }),
+    page.getByRole('button', { name: 'PDF — formatted document', exact: true }).click(),
+  ]);
+  const pdfPath = await pdfDownload.path();
+  const pdfBytes = pdfPath ? await readFile(pdfPath) : Buffer.alloc(0);
+  check(
+    pdfBytes.length > 1000,
+    'the PDF export downloads',
+    `${pdfBytes.length} bytes as ${pdfDownload.suggestedFilename()}`,
+  );
+  check(pdfDownload.suggestedFilename().endsWith('.pdf'), 'the download is named as a PDF');
+  check(pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-', 'the PDF is a real vector document');
+
+  // The analytics page is the Overview dashboard; its Export previews a quality
+  // report built in the service worker and downloads it as a PDF.
+  await page.goto(`${ORIGIN}${BASE}analytics`, { waitUntil: 'domcontentloaded' });
+  const tile = page.getByTestId('stat-test-pass-rate');
+  await tile.waitFor({ timeout: 60000 }).catch(() => {});
+  check(await tile.isVisible(), 'the analytics page shows the headline tiles');
+  const preview = page.getByTestId('report-view');
+  for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
+    await page.getByRole('button', { name: 'Export', exact: true }).first().click();
+    await preview.waitFor({ timeout: 3000 }).catch(() => {});
+  }
+  check(await preview.isVisible(), 'Export previews the quality report');
+  await page.getByTestId('report-download').click();
+  const [reportPdf] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30000 }),
+    page.getByRole('menuitem', { name: 'PDF' }).click(),
+  ]);
+  const reportPath = await reportPdf.path();
+  const reportBytes = reportPath ? await readFile(reportPath) : Buffer.alloc(0);
+  check(
+    reportBytes.subarray(0, 5).toString('latin1') === '%PDF-',
+    'the quality report downloads as a PDF',
+    `${reportBytes.length} bytes as ${reportPdf.suggestedFilename()}`,
+  );
+
+  // The same report as an Excel workbook, built in the service worker, and one
+  // section's workbook, built in the page: both are ZIP archives (`PK`).
+  await page.getByTestId('report-download').click();
+  const [reportXlsx] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30000 }),
+    page.getByRole('menuitem', { name: 'Excel' }).click(),
+  ]);
+  const xlsxPath = await reportXlsx.path();
+  const xlsxBytes = xlsxPath ? await readFile(xlsxPath) : Buffer.alloc(0);
+  check(
+    xlsxBytes.subarray(0, 2).toString('latin1') === 'PK' && reportXlsx.suggestedFilename().endsWith('.xlsx'),
+    'the quality report downloads as an Excel workbook',
+    `${xlsxBytes.length} bytes as ${reportXlsx.suggestedFilename()}`,
+  );
+  const [sectionXlsx] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30000 }),
+    preview.locator('[data-testid^="report-section-xlsx-"]').first().click(),
+  ]);
+  const sectionPath = await sectionXlsx.path();
+  const sectionBytes = sectionPath ? await readFile(sectionPath) : Buffer.alloc(0);
+  check(
+    sectionBytes.subarray(0, 2).toString('latin1') === 'PK',
+    'a report section downloads as its own Excel workbook',
+    `${sectionBytes.length} bytes as ${sectionXlsx.suggestedFilename()}`,
+  );
+
+  // The Reports page lists the two report snapshots the demo seeds when its
+  // database opens, and one opens on its own page.
+  await page.goto(`${ORIGIN}${BASE}reports`, { waitUntil: 'domcontentloaded' });
+  const snapshots = page.getByTestId('snapshot-list').locator('li');
+  await snapshots
+    .first()
+    .waitFor({ timeout: 60000 })
+    .catch(() => {});
+  check(
+    (await snapshots.count()) === 2,
+    'the Reports page lists the two seeded snapshots',
+    `${await snapshots.count()}`,
+  );
+  check(await page.getByTestId('schedule-list').isVisible(), 'the Reports page lists the seeded schedule');
+  await page.getByTestId('snapshot-list').getByRole('link').first().click();
+  const snapshotView = page.getByTestId('report-view');
+  await snapshotView.waitFor({ timeout: 60000 }).catch(() => {});
+  check(await snapshotView.isVisible(), 'a report snapshot opens on its page');
+
+  // The seeded saved dashboards: the switcher lists them, and one renders its
+  // widgets through the saved dashboard's own widget route.
+  await page.goto(`${ORIGIN}${BASE}analytics/d/1`, { waitUntil: 'domcontentloaded' });
+  const switcher = page.getByTestId('dashboard-switcher');
+  await switcher.waitFor({ timeout: 60000 }).catch(() => {});
+  check((await switcher.textContent())?.includes('Checkout team') === true, 'a seeded saved dashboard opens');
+  const note = page.locator('[data-shot="analytics-note"]').getByText('Sprint goal');
+  await note.waitFor({ timeout: 60000 }).catch(() => {});
+  check(await note.isVisible(), 'the saved dashboard renders its widgets');
+  await switcher.click();
+  const switcherMenu = page.getByTestId('dashboard-switcher-menu');
+  await switcherMenu.waitFor({ timeout: 30000 }).catch(() => {});
+  check(
+    (await switcherMenu.textContent())?.includes('Wasted CI by browser') === true,
+    'the switcher lists the seeded dashboards',
+  );
+
+  // A flaky test's Flakiness tab reads its flake profile in the service worker:
+  // the seeded checkout flake ranks the slower cart first.
+  await page.goto(`${ORIGIN}${BASE}test-cases/9?tab=flakiness`, { waitUntil: 'domcontentloaded' });
+  const suspect = page.getByTestId('flake-suspect').first();
+  await suspect.waitFor({ timeout: 60000 }).catch(() => {});
+  check(
+    (await suspect.textContent())?.includes('GET /api/cart slower') === true,
+    'the Flakiness tab ranks the seeded slow cart first',
+    (await suspect.textContent().catch(() => '')) ?? '',
+  );
+
+  // The seeded pagination flake's verify experiment held, so its tab reads verified fixed.
+  await page.goto(`${ORIGIN}${BASE}test-cases/35?tab=flakiness`, { waitUntil: 'domcontentloaded' });
+  const verifiedFix = page.getByTestId('flake-verified-fix');
+  await verifiedFix.waitFor({ timeout: 60000 }).catch(() => {});
+  check(
+    (await verifiedFix.getAttribute('data-holding').catch(() => null)) === 'true',
+    'the seeded pagination flake reads verified fixed',
+  );
+
+  // The project's Flake Lab tab places it, and lists its three experiments.
+  await page.goto(`${ORIGIN}${BASE}projects/3?tab=flake-lab`, { waitUntil: 'domcontentloaded' });
+  const labRow = page.locator('[data-testid="flake-lab-test"][data-state="verified"]');
+  await labRow.waitFor({ timeout: 60000 }).catch(() => {});
+  check(
+    (await labRow.textContent().catch(() => ''))?.includes('Table pagination works correctly') === true,
+    'the project’s Flake Lab tab lists the pagination test as verified fixed',
+  );
+  check(
+    (await page.getByTestId('flake-lab-experiments').getByTestId('flake-experiment').count()) === 3,
+    'the project’s Flake Lab tab lists its experiments',
+  );
+
+  // A file's coverage page reads the file at its blob from the canned repository,
+  // and lists the one test of three that ran line 37.
+  await page.goto(`${ORIGIN}${BASE}projects/5/coverage?file=api/Users/UsersEndpoints.cs&line=37`, {
+    waitUntil: 'domcontentloaded',
+  });
+  const fileView = page.locator('[data-shot="coverage-file"]');
+  await fileView
+    .locator('[data-line="37"][data-selected]')
+    .waitFor({ timeout: 60000 })
+    .catch(() => {});
+  check(
+    (await fileView
+      .locator('[data-line="35"] [data-tests]')
+      .getAttribute('data-tests')
+      .catch(() => null)) === '3',
+    'a file’s coverage page shows its source with the tests of each line',
+  );
+  check(
+    (await fileView.locator('[data-coverage-test]').count()) === 1,
+    'a file’s coverage page lists the tests of the selected line',
+  );
+}
+
+/**
+ * The server `--desktop` drives without `--url`: the screenshot harness's
+ * desktop mode (`NUXT_PUBLIC_DESKTOP=true`) on a throwaway copy of the demo
+ * seed, so each sample's ids open the demo's entities.
+ */
+async function startDesktopServer() {
+  const { APP_DIR, seedThrowawayDb, startServer } = await import('./lib/dev-server.mjs');
+  const env = seedThrowawayDb(join(APP_DIR, '.data', 'check-desktop'));
+  return startServer({ mode: 'desktop', port: DESKTOP_PORT, env });
 }
 
 async function main() {
-  if (!existsSync(ROOT)) {
+  const anchors = selectedAnchors();
+  if (!SERVER && !existsSync(ROOT)) {
     console.error(`No build at ${ROOT}. Run "npm run app:generate:demo" first.`);
     process.exit(1);
   }
@@ -367,7 +713,7 @@ async function main() {
   // and the worker installs, but every query answers 500 — say which step is
   // missing rather than leaving a bare error to interpret.
   const seedPaths = [join(ROOT, 'demo', 'seed.sql'), join(ROOT, 'seed.sql')];
-  if (!seedPaths.some((p) => existsSync(p))) {
+  if (!SERVER && !seedPaths.some((p) => existsSync(p))) {
     console.error(`No seed at ${seedPaths[0]}. Run "npm run app:seed:demo" and then "npm run app:generate:demo".`);
     process.exit(1);
   }
@@ -375,8 +721,9 @@ async function main() {
   const require = createRequire(import.meta.url);
   const { chromium } = require('playwright');
 
-  const server = await serve();
-  console.log(`Serving the built demo at ${ORIGIN}${BASE}\n`);
+  const server = SERVER ? null : await serve();
+  const desktopServer = flags.desktop && !flags.url ? await startDesktopServer() : null;
+  console.log(SERVER ? `Driving the server at ${ORIGIN}${BASE}\n` : `Serving the built demo at ${ORIGIN}${BASE}\n`);
 
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
@@ -397,226 +744,29 @@ async function main() {
   };
   watch(page);
 
+  let checkedAnchors = 0;
   try {
-    await page.goto(`${ORIGIN}${BASE}`, { waitUntil: 'domcontentloaded' });
-    check(await waitForServiceWorker(page), 'the service worker installs and takes control');
-
-    // The in-browser API must answer under the demo's own base path.
-    const menu = await page.evaluate(async () => {
-      const r = await fetch('/demo/api/projects/menu');
-      return { status: r.status, count: r.ok ? ((await r.json())?.items?.length ?? 0) : 0 };
-    });
-    check(menu.status === 200, 'the in-browser API answers', `status ${menu.status}`);
-    check(menu.count > 0, 'the seeded database has projects', `${menu.count} projects`);
-
-    // Find a cluster to export, rather than hard-coding an id the seed may move.
-    const clusterId = await page.evaluate(async () => {
-      const menu = await (await fetch('/demo/api/projects/menu')).json();
-      for (const p of menu.items ?? []) {
-        const clusters = await (await fetch(`/demo/api/projects/${p.id}/failure-clusters`)).json();
-        const first = (Array.isArray(clusters) ? clusters : (clusters?.items ?? []))[0];
-        if (first?.id) return first.id;
-      }
-      return null;
-    });
-    if (!check(clusterId != null, 'the seed contains a failure cluster to export')) throw new Error('no cluster');
-
-    await page.goto(`${ORIGIN}${BASE}failure-clusters/${clusterId}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(4000);
-
-    const exportButton = page.getByRole('button', { name: 'Export', exact: true });
-    if (!check((await exportButton.count()) === 1, 'exactly one Export button is on the page')) {
-      throw new Error(`found ${await exportButton.count()} Export buttons`);
+    if (!ANCHORS_ONLY) {
+      await checkDemoFlows(page);
+      await checkGuidedTour(browser, watch);
     }
+    checkedAnchors = await checkGuideAnchors(browser, watch, anchors);
 
-    // The download itself is the point: a root-relative URL would escape the
-    // service worker's scope and 404 against the static host.
-    await exportButton.click();
-    await page.waitForTimeout(400);
-    const [download] = await Promise.all([
-      page.waitForEvent('download', { timeout: 30000 }),
-      page.getByRole('button', { name: 'ZIP — with all evidence', exact: true }).click(),
-    ]);
-    const path = await download.path();
-    const bytes = path ? (await readFile(path)).length : 0;
-    check(bytes > 1000, 'the ZIP export downloads', `${bytes} bytes as ${download.suggestedFilename()}`);
-    check(download.suggestedFilename().endsWith('.zip'), 'the download is named as a ZIP');
-
-    // The PDF is generated the same way — entirely in the service worker, with
-    // no browser print — so prove it produces a real %PDF document in-browser.
-    await exportButton.click();
-    await page.waitForTimeout(400);
-    const [pdfDownload] = await Promise.all([
-      page.waitForEvent('download', { timeout: 30000 }),
-      page.getByRole('button', { name: 'PDF — formatted document', exact: true }).click(),
-    ]);
-    const pdfPath = await pdfDownload.path();
-    const pdfBytes = pdfPath ? await readFile(pdfPath) : Buffer.alloc(0);
-    check(
-      pdfBytes.length > 1000,
-      'the PDF export downloads',
-      `${pdfBytes.length} bytes as ${pdfDownload.suggestedFilename()}`,
-    );
-    check(pdfDownload.suggestedFilename().endsWith('.pdf'), 'the download is named as a PDF');
-    check(pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-', 'the PDF is a real vector document');
-
-    // The analytics page is the Overview dashboard; its Export previews a quality
-    // report built in the service worker and downloads it as a PDF.
-    await page.goto(`${ORIGIN}${BASE}analytics`, { waitUntil: 'domcontentloaded' });
-    const tile = page.getByTestId('stat-test-pass-rate');
-    await tile.waitFor({ timeout: 60000 }).catch(() => {});
-    check(await tile.isVisible(), 'the analytics page shows the headline tiles');
-    const preview = page.getByTestId('report-view');
-    for (let attempt = 0; attempt < 20 && !(await preview.isVisible()); attempt++) {
-      await page.getByRole('button', { name: 'Export', exact: true }).first().click();
-      await preview.waitFor({ timeout: 3000 }).catch(() => {});
+    if (!SERVER) {
+      check(
+        escapedApiUrls.size === 0,
+        'every API request stays inside the demo base path',
+        [...escapedApiUrls].slice(0, 3).join(', '),
+      );
     }
-    check(await preview.isVisible(), 'Export previews the quality report');
-    await page.getByTestId('report-download').click();
-    const [reportPdf] = await Promise.all([
-      page.waitForEvent('download', { timeout: 30000 }),
-      page.getByRole('menuitem', { name: 'PDF' }).click(),
-    ]);
-    const reportPath = await reportPdf.path();
-    const reportBytes = reportPath ? await readFile(reportPath) : Buffer.alloc(0);
-    check(
-      reportBytes.subarray(0, 5).toString('latin1') === '%PDF-',
-      'the quality report downloads as a PDF',
-      `${reportBytes.length} bytes as ${reportPdf.suggestedFilename()}`,
-    );
-
-    // The same report as an Excel workbook, built in the service worker, and one
-    // section's workbook, built in the page: both are ZIP archives (`PK`).
-    await page.getByTestId('report-download').click();
-    const [reportXlsx] = await Promise.all([
-      page.waitForEvent('download', { timeout: 30000 }),
-      page.getByRole('menuitem', { name: 'Excel' }).click(),
-    ]);
-    const xlsxPath = await reportXlsx.path();
-    const xlsxBytes = xlsxPath ? await readFile(xlsxPath) : Buffer.alloc(0);
-    check(
-      xlsxBytes.subarray(0, 2).toString('latin1') === 'PK' && reportXlsx.suggestedFilename().endsWith('.xlsx'),
-      'the quality report downloads as an Excel workbook',
-      `${xlsxBytes.length} bytes as ${reportXlsx.suggestedFilename()}`,
-    );
-    const [sectionXlsx] = await Promise.all([
-      page.waitForEvent('download', { timeout: 30000 }),
-      preview.locator('[data-testid^="report-section-xlsx-"]').first().click(),
-    ]);
-    const sectionPath = await sectionXlsx.path();
-    const sectionBytes = sectionPath ? await readFile(sectionPath) : Buffer.alloc(0);
-    check(
-      sectionBytes.subarray(0, 2).toString('latin1') === 'PK',
-      'a report section downloads as its own Excel workbook',
-      `${sectionBytes.length} bytes as ${sectionXlsx.suggestedFilename()}`,
-    );
-
-    // The Reports page lists the two report snapshots the demo seeds when its
-    // database opens, and one opens on its own page.
-    await page.goto(`${ORIGIN}${BASE}reports`, { waitUntil: 'domcontentloaded' });
-    const snapshots = page.getByTestId('snapshot-list').locator('li');
-    await snapshots
-      .first()
-      .waitFor({ timeout: 60000 })
-      .catch(() => {});
-    check(
-      (await snapshots.count()) === 2,
-      'the Reports page lists the two seeded snapshots',
-      `${await snapshots.count()}`,
-    );
-    check(await page.getByTestId('schedule-list').isVisible(), 'the Reports page lists the seeded schedule');
-    await page.getByTestId('snapshot-list').getByRole('link').first().click();
-    const snapshotView = page.getByTestId('report-view');
-    await snapshotView.waitFor({ timeout: 60000 }).catch(() => {});
-    check(await snapshotView.isVisible(), 'a report snapshot opens on its page');
-
-    // The seeded saved dashboards: the switcher lists them, and one renders its
-    // widgets through the saved dashboard's own widget route.
-    await page.goto(`${ORIGIN}${BASE}analytics/d/1`, { waitUntil: 'domcontentloaded' });
-    const switcher = page.getByTestId('dashboard-switcher');
-    await switcher.waitFor({ timeout: 60000 }).catch(() => {});
-    check((await switcher.textContent())?.includes('Checkout team') === true, 'a seeded saved dashboard opens');
-    const note = page.locator('[data-shot="analytics-note"]').getByText('Sprint goal');
-    await note.waitFor({ timeout: 60000 }).catch(() => {});
-    check(await note.isVisible(), 'the saved dashboard renders its widgets');
-    await switcher.click();
-    const switcherMenu = page.getByTestId('dashboard-switcher-menu');
-    await switcherMenu.waitFor({ timeout: 30000 }).catch(() => {});
-    check(
-      (await switcherMenu.textContent())?.includes('Wasted CI by browser') === true,
-      'the switcher lists the seeded dashboards',
-    );
-
-    // A flaky test's Flakiness tab reads its flake profile in the service worker:
-    // the seeded checkout flake ranks the slower cart first.
-    await page.goto(`${ORIGIN}${BASE}test-cases/9?tab=flakiness`, { waitUntil: 'domcontentloaded' });
-    const suspect = page.getByTestId('flake-suspect').first();
-    await suspect.waitFor({ timeout: 60000 }).catch(() => {});
-    check(
-      (await suspect.textContent())?.includes('GET /api/cart slower') === true,
-      'the Flakiness tab ranks the seeded slow cart first',
-      (await suspect.textContent().catch(() => '')) ?? '',
-    );
-
-    // The seeded pagination flake's verify experiment held, so its tab reads verified fixed.
-    await page.goto(`${ORIGIN}${BASE}test-cases/35?tab=flakiness`, { waitUntil: 'domcontentloaded' });
-    const verifiedFix = page.getByTestId('flake-verified-fix');
-    await verifiedFix.waitFor({ timeout: 60000 }).catch(() => {});
-    check(
-      (await verifiedFix.getAttribute('data-holding').catch(() => null)) === 'true',
-      'the seeded pagination flake reads verified fixed',
-    );
-
-    // The project's Flake Lab tab places it, and lists its three experiments.
-    await page.goto(`${ORIGIN}${BASE}projects/3?tab=flake-lab`, { waitUntil: 'domcontentloaded' });
-    const labRow = page.locator('[data-testid="flake-lab-test"][data-state="verified"]');
-    await labRow.waitFor({ timeout: 60000 }).catch(() => {});
-    check(
-      (await labRow.textContent().catch(() => ''))?.includes('Table pagination works correctly') === true,
-      'the project’s Flake Lab tab lists the pagination test as verified fixed',
-    );
-    check(
-      (await page.getByTestId('flake-lab-experiments').getByTestId('flake-experiment').count()) === 3,
-      'the project’s Flake Lab tab lists its experiments',
-    );
-
-    // A file's coverage page reads the file at its blob from the canned repository,
-    // and lists the one test of three that ran line 37.
-    await page.goto(`${ORIGIN}${BASE}projects/5/coverage?file=api/Users/UsersEndpoints.cs&line=37`, {
-      waitUntil: 'domcontentloaded',
-    });
-    const fileView = page.locator('[data-shot="coverage-file"]');
-    await fileView
-      .locator('[data-line="37"][data-selected]')
-      .waitFor({ timeout: 60000 })
-      .catch(() => {});
-    check(
-      (await fileView
-        .locator('[data-line="35"] [data-tests]')
-        .getAttribute('data-tests')
-        .catch(() => null)) === '3',
-      'a file’s coverage page shows its source with the tests of each line',
-    );
-    check(
-      (await fileView.locator('[data-coverage-test]').count()) === 1,
-      'a file’s coverage page lists the tests of the selected line',
-    );
-
-    await checkGuidedTour(browser, watch);
-    await checkGuideAnchors(browser, watch);
-
-    check(
-      escapedApiUrls.size === 0,
-      'every API request stays inside the demo base path',
-      [...escapedApiUrls].slice(0, 3).join(', '),
-    );
 
     check(pageErrors.length === 0, 'no uncaught page errors', pageErrors[0] ?? '');
   } catch (error) {
     check(false, 'the demo run completed', String(error).split('\n')[0].slice(0, 160));
   } finally {
     await browser.close();
-    server.close();
+    server?.close();
+    desktopServer?.stop();
   }
 
   console.log('');
@@ -624,6 +774,10 @@ async function main() {
     console.error(`✗ ${failures.length} demo runtime check(s) failed:`);
     for (const f of failures) console.error(`  - ${f}`);
     process.exit(1);
+  }
+  if (ANCHORS_ONLY) {
+    console.log(`✓ ${checkedAnchors} guide anchor(s) show at their samples on ${ORIGIN}${BASE}.`);
+    return;
   }
   console.log(
     '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab, every guided tour and every guide anchor all work.',

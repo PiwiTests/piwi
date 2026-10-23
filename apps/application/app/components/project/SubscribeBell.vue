@@ -287,6 +287,7 @@ const bellSubscribed = computed(() =>
       :color="bellSubscribed ? 'primary' : 'neutral'"
       :variant="bellSubscribed ? 'soft' : 'outline'"
       title="Notification subscriptions for this project"
+      data-tour="subscribe-bell"
     />
 
     <template #content>
@@ -328,7 +329,12 @@ const bellSubscribed = computed(() =>
       </div>
 
       <!-- Channel subscriptions -->
-      <div v-if="shouldFetch" class="p-3 space-y-3" :class="cookie ? 'border-t border-default' : ''">
+      <div
+        v-if="shouldFetch"
+        class="p-3 space-y-3"
+        :class="cookie ? 'border-t border-default' : ''"
+        data-tour="project-subscriptions"
+      >
         <div class="flex items-center justify-between">
           <span class="font-medium text-sm inline-flex items-center gap-1">
             {{ cookie ? 'Channel subscriptions' : 'Notifications' }} <HelpHint topic="notifications.subscribe" />

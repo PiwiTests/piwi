@@ -24,6 +24,7 @@ function deltaMeta(delta: number | null): { icon: string; class: string } | null
     title="Portfolio health"
     :count="rows?.length || undefined"
     help="analytics.portfolio"
+    data-tour="analytics-portfolio"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the portfolio: ${errorMessage(error)}`">

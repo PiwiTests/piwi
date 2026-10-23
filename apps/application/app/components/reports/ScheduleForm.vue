@@ -378,7 +378,7 @@ async function save() {
           :include-share-link="includeShareLink && !!shareSettings?.enabled"
           :include-narrative="includeNarrative"
         />
-        <form v-else class="space-y-4" data-testid="schedule-form" @submit.prevent="save">
+        <form v-else class="space-y-4" data-testid="schedule-form" data-tour="schedule-form" @submit.prevent="save">
           <UAlert
             v-if="demoMode"
             icon="i-lucide-info"
@@ -512,7 +512,7 @@ async function save() {
             </div>
           </UFormField>
 
-          <UFormField>
+          <UFormField data-tour="schedule-narrative">
             <template #label>
               <span class="inline-flex items-center gap-1">AI narrative <HelpHint topic="reports.narrative" /></span>
             </template>

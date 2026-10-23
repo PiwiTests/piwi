@@ -191,7 +191,7 @@ const authEnabled = computed(() => config.public.authEnabled);
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-tour="account-page">
     <UAlert
       v-if="!authEnabled"
       color="warning"
@@ -209,7 +209,12 @@ const authEnabled = computed(() => config.public.authEnabled);
 
     <template v-else-if="me?.user">
       <!-- Display name section -->
-      <SectionCard icon="i-lucide-user" title="Display name" help="account.display-name">
+      <SectionCard
+        icon="i-lucide-user"
+        title="Display name"
+        help="account.display-name"
+        data-tour="account-display-name"
+      >
         <UFormField label="Display name" name="name">
           <UInput v-model="nameField" placeholder="Your display name (optional)" class="w-full" />
         </UFormField>
@@ -222,7 +227,7 @@ const authEnabled = computed(() => config.public.authEnabled);
       </SectionCard>
 
       <!-- Email section -->
-      <SectionCard icon="i-lucide-mail" title="Email address" help="account.email">
+      <SectionCard icon="i-lucide-mail" title="Email address" help="account.email" data-tour="account-email">
         <div class="space-y-3">
           <div
             v-if="me.user.emailVerified"
@@ -323,7 +328,13 @@ const authEnabled = computed(() => config.public.authEnabled);
       </SectionCard>
 
       <!-- Change password section -->
-      <SectionCard v-if="!isOAuthOnly" icon="i-lucide-lock" title="Change password" help="account.password">
+      <SectionCard
+        v-if="!isOAuthOnly"
+        icon="i-lucide-lock"
+        title="Change password"
+        help="account.password"
+        data-tour="account-password"
+      >
         <div class="space-y-4">
           <UFormField label="Current password" name="currentPassword">
             <UInput
@@ -371,7 +382,13 @@ const authEnabled = computed(() => config.public.authEnabled);
       </SectionCard>
 
       <!-- API keys section -->
-      <SectionCard icon="i-lucide-key" title="API keys" help="settings.api-keys" data-shot="account-api-keys">
+      <SectionCard
+        icon="i-lucide-key"
+        title="API keys"
+        help="settings.api-keys"
+        data-shot="account-api-keys"
+        data-tour="account-api-keys"
+      >
         <ApiKeysManager :user-id="me.user.id" />
       </SectionCard>
     </template>

@@ -51,6 +51,7 @@ const dbBackendLabel = computed(() => {
          desktop, stacked and centered on phones. -->
     <div
       class="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left"
+      data-tour="about-page"
     >
       <BrandLogo class="h-14 sm:h-16" />
       <div class="text-sm text-muted">

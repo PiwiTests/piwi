@@ -800,7 +800,14 @@ const clustersRefreshKey = ref(0);
 
 // === NAVBAR MORE MENU ===
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'error'; onSelect: () => void; to?: string }[] = [];
+  const items: {
+    label: string;
+    icon: string;
+    color?: 'error';
+    onSelect: () => void;
+    to?: string;
+    'data-tour'?: string;
+  }[] = [];
   if (canEditSettings.value)
     items.push({ label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => goToTab('settings') });
   items.push({
@@ -833,6 +840,7 @@ const moreMenuItems = computed(() => {
     items.push({
       label: 'Schedule a quality report…',
       icon: 'i-lucide-calendar-clock',
+      'data-tour': 'project-schedule-report',
       onSelect: () => (scheduleOpen.value = true),
     });
   if (canDeleteProject.value)
@@ -898,6 +906,7 @@ const moreMenuItems = computed(() => {
                 icon="i-lucide-ellipsis-vertical"
                 aria-label="More actions"
                 title="More actions"
+                data-tour="project-more-actions"
               />
             </UDropdownMenu>
           </div>
@@ -929,6 +938,7 @@ const moreMenuItems = computed(() => {
           help="project.filters"
           test-id="project-filters"
           data-shot="project-filters"
+          data-tour="project-filters"
           @reset="resetFilters"
         >
           <FilterBar
@@ -972,7 +982,7 @@ const moreMenuItems = computed(() => {
         </UDashboardToolbar>
 
         <!-- RUNS TAB -->
-        <div v-if="activeTab === 'runs'">
+        <div v-if="activeTab === 'runs'" data-tour="project-runs-tab">
           <p v-if="drill" class="text-xs text-muted mb-2" data-testid="analytics-drill">
             From Analytics<template v-if="drillText">: {{ drillText }}</template> ·
             <button
@@ -990,6 +1000,7 @@ const moreMenuItems = computed(() => {
             help="project.runs-trend"
             :legend="legendOf(RUN_STATUS_SERIES)"
             data-shot="run-trend"
+            data-tour="project-run-trend"
           >
             <template #actions>
               <UButton
@@ -999,13 +1010,14 @@ const moreMenuItems = computed(() => {
                 variant="outline"
                 icon="i-lucide-milestone"
                 :label="`Markers (${markers.length})`"
+                data-tour="project-markers"
                 @click="markersOpen = true"
               />
             </template>
             <TestRunsChart :test-runs="filteredRuns" :markers="visibleMarkers" @marker-click="handleMarkerClick" />
           </ChartCard>
 
-          <UCard class="mt-4" data-shot="runs-table">
+          <UCard class="mt-4" data-shot="runs-table" data-tour="project-runs-table">
             <div
               v-if="selectedRunIds.length > 0"
               class="flex items-center gap-3 px-3 py-2 mb-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800"
@@ -1242,7 +1254,7 @@ const moreMenuItems = computed(() => {
         </div>
 
         <!-- TESTS TAB -->
-        <div v-if="activeTab === 'tests'">
+        <div v-if="activeTab === 'tests'" data-tour="project-tests-tab">
           <ProjectTestCasesTable
             :project-id="projectId"
             :project-name="project?.name"
@@ -1253,7 +1265,7 @@ const moreMenuItems = computed(() => {
         </div>
 
         <!-- FAILURES TAB -->
-        <div v-if="activeTab === 'failures'" class="space-y-4">
+        <div v-if="activeTab === 'failures'" class="space-y-4" data-tour="project-failures-tab">
           <div class="flex">
             <div class="inline-flex rounded-lg border border-default p-0.5 bg-elevated/40">
               <button
@@ -1281,6 +1293,7 @@ const moreMenuItems = computed(() => {
             />
             <FailureClustersList
               :key="clustersRefreshKey"
+              data-tour="failure-clusters-list"
               :project-id="String(projectId)"
               :initial-status="drill?.status ?? undefined"
               :scope="runScope"
@@ -1290,6 +1303,7 @@ const moreMenuItems = computed(() => {
 
           <FlakyTestsList
             v-else-if="failureSegment === 'flaky'"
+            data-tour="flaky-tests-list"
             :project-id="String(projectId)"
             :scope="runScope"
             :project-name="project?.name"
@@ -1299,6 +1313,7 @@ const moreMenuItems = computed(() => {
 
           <QuarantineTable
             v-else
+            data-tour="quarantine-list"
             :project-id="String(projectId)"
             :project-name="project?.name"
             hide-candidates
@@ -1307,22 +1322,23 @@ const moreMenuItems = computed(() => {
         </div>
 
         <!-- FLAKE LAB TAB -->
-        <div v-if="activeTab === 'flake-lab'">
+        <div v-if="activeTab === 'flake-lab'" data-tour="project-flake-lab-tab">
           <FlakeLabPanel :project-id="Number(projectId)" :scope="runScope" :project-name="project?.name" />
         </div>
 
         <!-- GAPS TAB -->
-        <div v-if="activeTab === 'gaps'">
+        <div v-if="activeTab === 'gaps'" data-tour="project-gaps-tab">
           <GapsPanel :project-id="Number(projectId)" />
         </div>
 
         <!-- PERFORMANCE TAB -->
-        <div v-if="activeTab === 'performance'" class="space-y-4">
+        <div v-if="activeTab === 'performance'" class="space-y-4" data-tour="project-performance-tab">
           <ChartCard
             title="Performance trend"
             subtitle="Duration metrics per run, newest on the right"
             help="project.performance"
             data-shot="performance-trend"
+            data-tour="project-performance-trend"
           >
             <template #actions>
               <USelect
@@ -1426,7 +1442,12 @@ const moreMenuItems = computed(() => {
         </div>
 
         <!-- SETTINGS TAB -->
-        <ProjectSettingsPanel v-if="activeTab === 'settings' && project" :project="project" @saved="refresh()" />
+        <ProjectSettingsPanel
+          v-if="activeTab === 'settings' && project"
+          :project="project"
+          data-tour="project-settings-tab"
+          @saved="refresh()"
+        />
       </div>
     </template>
   </UDashboardPanel>

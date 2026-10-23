@@ -86,7 +86,7 @@ function testOpen(filePath: string) {
 <template>
   <UModal v-model:open="settingsOpen" :ui="{ content: 'max-w-lg' }">
     <template #header>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2" data-tour="open-in-ide-settings">
         <UIcon name="i-lucide-external-link" class="size-5 text-primary" />
         <h2 class="text-base font-semibold">Open in IDE</h2>
         <HelpHint topic="ide.open" />

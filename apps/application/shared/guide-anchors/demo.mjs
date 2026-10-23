@@ -4,6 +4,7 @@
 export const DEMO_ANCHORS = [
   {
     id: 'demo-personas',
+    kind: 'action',
     pages: ['*'],
     describes:
       'The demo banner’s Acting as menu, which reloads the demo as one of its seeded people to show what each role sees.',
@@ -13,6 +14,7 @@ export const DEMO_ANCHORS = [
   },
   {
     id: 'demo-simulator',
+    kind: 'action',
     pages: ['*'],
     describes:
       'The demo banner’s Simulate a test run control, which streams a new run into the demo the way the reporter does from CI.',
@@ -21,3 +23,6 @@ export const DEMO_ANCHORS = [
     sample: { route: '/' },
   },
 ];
+
+/** @type {readonly import('./index.d.mts').GuideAnchorExemption[]} */
+export const DEMO_EXEMPTIONS = [];

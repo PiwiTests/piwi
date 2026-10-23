@@ -115,6 +115,7 @@ const activeSummary = computed(() => {
     :resettable="!isDefault"
     test-id="analytics-filters"
     data-shot="analytics-scope-bar"
+    data-tour="analytics-filters"
     @reset="reset"
   >
     <dl class="grid gap-y-3 gap-x-4 sm:grid-cols-[4rem_minmax(0,1fr)] sm:items-start">
@@ -184,6 +185,7 @@ const activeSummary = computed(() => {
               v-model="allBranches"
               help="analytics.branch-policy"
               data-testid="analytics-branch-policy"
+              data-tour="analytics-branch-policy"
             />
           </template>
         </FilterBar>

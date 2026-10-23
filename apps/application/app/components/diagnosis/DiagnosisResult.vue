@@ -357,6 +357,7 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
     <div
       v-if="diagnosis && diagnosis.status === 'completed'"
       class="space-y-3 rounded-lg border border-default p-4 max-sm:p-2 bg-elevated/30"
+      data-tour="diagnosis-result"
     >
       <!-- Header: confidence gauge + category/severity badges + summary -->
       <div class="flex items-start gap-3">

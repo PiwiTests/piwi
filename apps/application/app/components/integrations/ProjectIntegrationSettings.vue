@@ -321,7 +321,11 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
         </div>
 
         <!-- Jira fields: values for what the issue type requires, and optional defaults -->
-        <div v-if="form.connectionId && form.projectKey && form.issueType" data-shot="binding-jira-fields">
+        <div
+          v-if="form.connectionId && form.projectKey && form.issueType"
+          data-shot="binding-jira-fields"
+          data-tour="issue-tracker-required-fields"
+        >
           <p class="text-xs font-medium text-muted mb-2 flex items-center gap-1">
             Jira fields <HelpHint topic="integrations.required-fields" />
           </p>
@@ -360,7 +364,7 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
         <!-- Sync policies -->
         <div data-shot="binding-sync-policies">
           <p class="text-xs font-medium text-muted mb-2">Keep the ticket honest</p>
-          <div class="mb-4" data-shot="binding-write-scope">
+          <div class="mb-4" data-shot="binding-write-scope" data-tour="issue-tracker-run-scope">
             <p class="text-sm font-semibold text-highlighted mb-2 flex items-center gap-1">
               Runs that write to the ticket <HelpHint topic="integrations.run-scope" />
             </p>
@@ -500,7 +504,11 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
         </div>
 
         <!-- Automatic creation -->
-        <div class="rounded-lg border border-default p-3 space-y-4" data-shot="binding-auto-create">
+        <div
+          class="rounded-lg border border-default p-3 space-y-4"
+          data-shot="binding-auto-create"
+          data-tour="issue-tracker-auto-create"
+        >
           <div class="space-y-2">
             <p class="text-sm font-semibold text-highlighted flex items-center gap-1">
               Automatic creation <HelpHint topic="integrations.auto-create" />

@@ -58,7 +58,7 @@ const deliveryLine = computed(() => {
 <template>
   <UDashboardPanel id="report-snapshot">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="report-snapshot-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <BreadcrumbNav
@@ -77,6 +77,7 @@ const deliveryLine = computed(() => {
               icon="i-lucide-download"
               trailing-icon="i-lucide-chevron-down"
               data-testid="snapshot-download"
+              data-tour="report-snapshot-download"
             >
               <span class="hidden sm:inline">Download</span>
             </UButton>

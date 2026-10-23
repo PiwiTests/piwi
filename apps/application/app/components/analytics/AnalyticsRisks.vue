@@ -15,6 +15,7 @@ const lines = computed(() => (risks.value ? sentencesFor('en').risks(risks.value
     :title="title ?? 'Risks'"
     :count="lines.length || undefined"
     help="analytics.risks"
+    data-tour="analytics-risks"
     data-shot="analytics-risks"
   >
     <LoadingState v-if="pending" />

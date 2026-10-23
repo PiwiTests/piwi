@@ -140,7 +140,7 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-tour="groups-page">
     <UAlert
       v-if="!config.public.authEnabled"
       icon="i-lucide-info"
@@ -150,9 +150,15 @@ async function confirmDelete() {
       description="Groups and their roles apply once authentication is enabled with PIWI_AUTH_ENABLED. Until then every visitor can do everything on every project."
     />
 
-    <SectionCard title="Groups" :count="groups.length" help="settings.groups" data-shot="groups-table">
+    <SectionCard
+      title="Groups"
+      :count="groups.length"
+      help="settings.groups"
+      data-shot="groups-table"
+      data-tour="groups-list"
+    >
       <template v-if="groups.length > 0" #actions>
-        <UButton label="Add group" icon="i-lucide-plus" size="sm" @click="openCreate" />
+        <UButton label="Add group" icon="i-lucide-plus" size="sm" data-tour="add-group" @click="openCreate" />
       </template>
 
       <ErrorState v-if="error" :text="`Couldn't load the groups: ${errorMessage(error)}`">

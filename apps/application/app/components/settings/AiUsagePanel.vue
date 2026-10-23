@@ -48,7 +48,7 @@ function formatCount(n: number): string {
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-activity" title="AI usage" data-shot="ai-usage">
+  <SectionCard icon="i-lucide-activity" title="AI usage" data-shot="ai-usage" data-tour="ai-usage">
     <template #actions>
       <USelect v-model="days" :items="periodOptions" size="sm" class="w-36" />
     </template>

@@ -72,7 +72,12 @@ async function resetToDefaults() {
   <div class="space-y-6">
     <EnvManagedAlert v-if="envManaged" :env-vars="envVars" />
 
-    <SectionCard icon="i-lucide-hourglass" title="Wasted-time patterns" help="settings.wasted-time">
+    <SectionCard
+      icon="i-lucide-hourglass"
+      title="Wasted-time patterns"
+      help="settings.wasted-time"
+      data-tour="wasted-time-patterns"
+    >
       <template #subtitle>
         Define which wait steps count as <strong>wasted time</strong>. A wait is wasted when any pattern below matches
         its step title or its source location. Patterns are case-insensitive and support <code>*</code> and

@@ -60,6 +60,7 @@ import {
   coverageSceneSource,
 } from './lib/coverage-scene.mjs';
 import { ORDER_SCENE, orderSceneSource } from './lib/coverage-insights-scene.mjs';
+import { READY_INSPECTION, bridgeScript } from './lib/desktop-bridge.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -742,19 +743,6 @@ const REPRO_SCENE_STEPS = (() => {
     ],
   };
 })();
-
-/** What the mocked `desktop_inspect_folder` reports unless a scene overrides it. */
-const READY_INSPECTION = {
-  path: '/home/dev/code/acme-checkout',
-  exists: true,
-  packageName: '@acme/checkout',
-  suggestedName: 'checkout-web',
-  playwrightConfig: 'playwright.config.ts',
-  playwrightInstalled: true,
-  reporterInstalled: true,
-  reporterConfigured: true,
-  configuredProjectName: 'checkout-web',
-};
 
 /**
  * Scenes: one entry per user-facing feature (or state of it) worth showing.
@@ -5858,52 +5846,6 @@ async function openCoverageScene(page, goto, settle) {
   await section.getByRole('button', { name: 'Show the source of api/Users/UsersEndpoints.cs' }).click();
   await section.locator('[data-coverage-source] [data-not-executed]').first().waitFor({ timeout: 30_000 });
   await settle();
-}
-
-/** Mocked Tauri IPC bridge, shaped per scene. Mirrors the real shell's commands. */
-function bridgeScript(scene) {
-  const inspection = scene.inspection ?? READY_INSPECTION;
-  const link = scene.link ?? null;
-  const importableRuns = scene.importableRuns ?? [];
-  const pickedFiles = scene.pickedFiles ?? [];
-  return `
-    window.__mockLink = ${JSON.stringify(link)};
-    window.__TAURI__ = {
-      core: {
-        invoke: (cmd, args) => {
-          switch (cmd) {
-            case 'desktop_pick_folder':
-              return Promise.resolve(${JSON.stringify(inspection.path)});
-            case 'desktop_inspect_folder':
-              return Promise.resolve({ ...${JSON.stringify(inspection)}, path: args.path });
-            case 'desktop_find_importable_runs':
-              return Promise.resolve(${JSON.stringify(importableRuns)});
-            case 'desktop_pick_import_files':
-              return Promise.resolve(${JSON.stringify(pickedFiles)});
-            case 'desktop_get_project_link':
-              return Promise.resolve(window.__mockLink);
-            case 'desktop_set_project_link':
-              window.__mockLink = args.path ? { path: args.path, exists: true } : null;
-              return Promise.resolve(null);
-            case 'desktop_open_window':
-              return Promise.resolve(null);
-            case 'desktop_save_download':
-              return Promise.resolve('~/Downloads/' + (args?.filename ?? 'download'));
-            case 'desktop_get_service_settings':
-              return Promise.resolve({ run_in_background: false, start_on_login: false });
-            case 'desktop_check_update':
-              return Promise.resolve({ state: 'unsupported' });
-            case 'desktop_mcp_clients':
-              return Promise.resolve([]);
-            default:
-              return Promise.resolve(null);
-          }
-        },
-      },
-      event: { listen: () => Promise.resolve(() => {}) },
-      window: { getCurrentWindow: () => ({ label: 'main' }) },
-    };
-  `;
 }
 
 /** Attributes the region capture puts on the page, and takes off again. */

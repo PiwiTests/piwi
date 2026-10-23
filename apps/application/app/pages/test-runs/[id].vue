@@ -711,7 +711,14 @@ function handleSelectTestCase(id: number) {
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'error'; disabled?: boolean; onSelect: () => void }[] = [];
+  const items: {
+    label: string;
+    icon: string;
+    color?: 'error';
+    disabled?: boolean;
+    'data-tour'?: string;
+    onSelect: () => void;
+  }[] = [];
   items.push({
     label: 'Copy run summary',
     icon: 'i-lucide-clipboard',
@@ -720,7 +727,12 @@ const moreMenuItems = computed(() => {
   items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
   const kept = !!testRun.value?.keptAt;
   if (!kept) {
-    items.push({ label: 'Keep forever…', icon: 'i-lucide-lock', onSelect: () => (isKeepOpen.value = true) });
+    items.push({
+      label: 'Keep forever…',
+      icon: 'i-lucide-lock',
+      'data-tour': 'run-keep',
+      onSelect: () => (isKeepOpen.value = true),
+    });
   } else if (canRelease(testRun.value?.projectId)) {
     items.push({
       label: 'Release keep',
@@ -798,6 +810,7 @@ const moreMenuItems = computed(() => {
                 icon="i-lucide-ellipsis-vertical"
                 aria-label="More actions"
                 title="More actions"
+                data-tour="run-more-actions"
               />
             </UDropdownMenu>
           </div>
@@ -825,6 +838,7 @@ const moreMenuItems = computed(() => {
           <TestCasesList
             ref="testCasesListRef"
             data-shot="failure-clusters"
+            data-tour="run-tests"
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
             :test-cases="dedupedDisplayCases"
@@ -842,6 +856,7 @@ const moreMenuItems = computed(() => {
 
         <template #tab-changes>
           <ChangesView
+            data-tour="run-changes"
             :test-run="testRun"
             :test-cases="displayTestCases"
             :cluster-meta="clusterMeta"
@@ -852,7 +867,7 @@ const moreMenuItems = computed(() => {
         </template>
 
         <template #tab-workers>
-          <div class="space-y-6 p-1">
+          <div class="space-y-6 p-1" data-tour="run-workers">
             <WorkersTimeline
               :test-cases="isLive ? throttledTestCases : displayTestCases"
               :setup-steps="testRun?.setupSteps ?? null"
@@ -875,6 +890,7 @@ const moreMenuItems = computed(() => {
 
         <template #tab-resources>
           <RunResources
+            data-tour="run-resources"
             :run-id="Number(runId)"
             :project-key="testRun?.projectId"
             :project-name="testRun?.project?.name"

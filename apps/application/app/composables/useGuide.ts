@@ -41,8 +41,10 @@ const CENTERED_ELEMENT_ID = 'driver-dummy-element';
 const PARENT_NO_SCROLL_CLASS = 'driver-active-element-parent-no-scroll';
 /** The attributes driver.js writes on a highlighted element and removes when the guide moves on. */
 const DRIVER_ARIA = ['aria-haspopup', 'aria-expanded', 'aria-controls'] as const;
-/** The toggle of a folded section: a `<button>`, or a `role="button"` header such as `CollapsibleSectionCard`'s. */
-const FOLDED_TOGGLE = 'button[aria-expanded="false"], [role="button"][aria-expanded="false"]';
+/** The toggle of a section that folds: a `<button>`, or a `role="button"` header such as `CollapsibleSectionCard`'s. */
+const SECTION_TOGGLE = 'button, [role="button"]';
+/** Where `aria-expanded` is in a `savedAria` entry. */
+const EXPANDED_AT = DRIVER_ARIA.indexOf('aria-expanded');
 /** The path drawing the spotlight's edge, beside driver.js's own in its overlay. */
 const RING_CLASS = 'piwi-guide-ring';
 /** On the ring while the stop shows centered, with nothing to outline. */
@@ -169,13 +171,21 @@ async function rendered(selector: string, timeoutMs: number): Promise<Element | 
   return found;
 }
 
-/** Opens the folded section `section` (an anchor id), when it is folded. */
-async function unfold(section: string): Promise<void> {
-  const host = await rendered(anchorSelector(section), REVEAL_WAIT_MS);
-  const toggle = host?.matches(FOLDED_TOGGLE) ? host : host?.querySelector(FOLDED_TOGGLE);
-  if (!(toggle instanceof HTMLElement)) return;
+/**
+ * Opens the section whose toggle is the anchor `section`, when the toggle
+ * reads `aria-expanded="false"`; an open section, or an anchor that is no
+ * toggle (a section that never folds), stays as it is. A toggle the guide
+ * highlights carries driver.js's `aria-expanded`, so its own value is read
+ * from `savedAria`, and updated there once it opened.
+ */
+async function unfold(run: RunningGuide, section: string): Promise<void> {
+  const toggle = await rendered(anchorSelector(section), REVEAL_WAIT_MS);
+  if (!(toggle instanceof HTMLElement) || !toggle.matches(SECTION_TOGGLE)) return;
+  const saved = run.savedAria.get(toggle);
+  if ((saved ? saved[EXPANDED_AT] : toggle.getAttribute('aria-expanded')) !== 'false') return;
   toggle.click();
   await nextTick();
+  if (saved) saved[EXPANDED_AT] = toggle.getAttribute('aria-expanded');
 }
 
 /** Clicks `opener` (an anchor id), the button opening the menu, drawer or modal holding `target`, when `target` is not rendered. */
@@ -191,7 +201,7 @@ async function open(opener: string, target: string): Promise<void> {
 async function reveal(run: RunningGuide, anchor: GuideAnchor): Promise<void> {
   for (const step of anchor.reveal ?? []) {
     if (running !== run) return;
-    if ('unfold' in step) await unfold(step.unfold);
+    if ('unfold' in step) await unfold(run, step.unfold);
     if ('open' in step) await open(step.open, anchor.id);
   }
 }

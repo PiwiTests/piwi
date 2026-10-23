@@ -361,7 +361,7 @@ const nearestSentence = computed(() => {
 <template>
   <UDashboardPanel id="project-coverage">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="project-coverage-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <BreadcrumbNav
@@ -416,7 +416,10 @@ const nearestSentence = computed(() => {
             :branch="summary.branch"
             :link="{ branch: linkContext.branch, area: linkContext.area }"
           />
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div
+            class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+            data-tour="coverage-file-heading"
+          >
             <div class="min-w-0 space-y-1">
               <nav class="flex flex-wrap items-center gap-1 text-xs text-muted" aria-label="Folder">
                 <NuxtLink :to="coverageLink(projectId, linkContext)" class="hover:underline">Repository</NuxtLink>

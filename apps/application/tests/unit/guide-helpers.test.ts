@@ -136,6 +136,15 @@ describe('routeOnPage', () => {
     expect(routeOnPage('/projects/new', '/projects/[id]')).toBe(false);
   });
 
+  test('takes a built-in dashboard key for a dashboard, and no other word', () => {
+    expect(routeOnPage('/analytics/d/1', '/analytics/d/[id]')).toBe(true);
+    expect(routeOnPage('/analytics/d/engineering', '/analytics/d/[id]')).toBe(true);
+    expect(routeOnPage('/analytics/d/gaps-digest?period=7d', '/analytics/d/[id]')).toBe(true);
+    expect(routeOnPage('/analytics/d/marketing', '/analytics/d/[id]')).toBe(false);
+    expect(routeOnPage('/analytics/d/engineering-2', '/analytics/d/[id]')).toBe(false);
+    expect(routeOnPage('/projects/engineering', '/projects/[id]')).toBe(false);
+  });
+
   test('matches every route on every page', () => {
     expect(routeOnPage('/test-runs/14', '*')).toBe(true);
   });

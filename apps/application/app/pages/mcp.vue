@@ -216,7 +216,7 @@ const windsurfSnippet = computed(() =>
 <template>
   <UDashboardPanel>
     <template #header>
-      <UDashboardNavbar title="MCP server" />
+      <UDashboardNavbar title="MCP server" data-tour="mcp-page" />
     </template>
 
     <template #body>
@@ -445,7 +445,7 @@ const windsurfSnippet = computed(() =>
           </SectionCard>
 
           <!-- What it is -->
-          <SectionCard icon="i-lucide-bot" title="What it provides" help="mcp.tools">
+          <SectionCard icon="i-lucide-bot" title="What it provides" help="mcp.tools" data-tour="mcp-tools">
             <div class="flex items-start justify-between gap-3 mb-4">
               <p class="text-sm text-gray-500 dark:text-gray-400">
                 Tools are grouped by module. Turn on <strong>Core tools only</strong> to connect a client with just the
@@ -564,6 +564,7 @@ const windsurfSnippet = computed(() =>
             title="Agent skills"
             help="mcp.skills"
             data-shot="mcp-agent-skills"
+            data-tour="mcp-skills"
           >
             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
               The tools above give an agent read access to your results; <strong>skills</strong> tell it what to
@@ -578,7 +579,13 @@ const windsurfSnippet = computed(() =>
           </SectionCard>
 
           <!-- Authentication -->
-          <SectionCard icon="i-lucide-key" title="Authentication" help="mcp.auth" data-shot="mcp-authentication">
+          <SectionCard
+            icon="i-lucide-key"
+            title="Authentication"
+            help="mcp.auth"
+            data-shot="mcp-authentication"
+            data-tour="mcp-auth"
+          >
             <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
               <template v-if="oauthAvailable">
                 <p>

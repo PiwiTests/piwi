@@ -103,6 +103,7 @@ const exportData = computed(() =>
     :title="title ?? 'Coverage trend'"
     :subtitle="subtitle"
     help="analytics.coverage-trend"
+    data-tour="analytics-coverage-trend"
     :legend="legend"
     :export-data="exportData"
     data-shot="analytics-coverage-trend"
