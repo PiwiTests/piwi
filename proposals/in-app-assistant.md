@@ -41,7 +41,12 @@ no page header is shared, and the page context does not yet list the anchors ren
 (`/api/assistant/conversations/{id}/mcp`) serving exactly that answer's toolbox, behind a token minted for the user,
 the conversation and the answer, accepted from this machine only and revoked when the answer ends; the desktop guard
 lets that route through on that token alone, and the desktop token never reaches the CLI. On the desktop app the model
-may read source files, only inside the folder linked to a project the user reads. Every question is
+may read source files, only inside the folder linked to a project the user reads. **PR 9 built 2026-10-23**: 150
+questions over the demo seed (`tests/live/assistant-questions.ts`), each with the tools a good answer calls, the facts
+it must state (each traced to the seed or the docs, which a zero-token unit test checks), the blocks and, for show-me
+questions, the anchors it should use; and a live spec that asks them all against a real model and scores each answer
+(`npm run app:test:assistant:live`, on demand only). It has run only against a scripted mock model so far: the pass
+threshold (0.6) is a starting point to tune on the first real run. Every question is
 decided ([Decisions](#decisions), D1–D8): guides point only at a closed registry of anchors, every anchor tested;
 finding elements from the page's ARIA snapshot is deferred to
 [a later step](#later-finding-elements-from-the-pages-aria-snapshot), which keeps the measurements behind that choice;
