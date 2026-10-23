@@ -90,6 +90,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/ui-overview',
       },
       {
+        title: 'Guides',
+        summary:
+          'Step-by-step walkthroughs of common tasks on your own dashboard, from a first run to the Flake Lab, with no AI model.',
+        needs: [],
+        where: 'Command palette → Guides; the assistant panel',
+        doc: 'features/guides',
+      },
+      {
         title: 'Branches',
         summary: 'Branch as a first-class dimension: filter by it, and compare against a baseline computed per branch.',
         needs: [],
@@ -208,7 +216,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Assistant',
         summary:
-          'Questions about your runs, failures and setup answered by your AI model from the read tools agents use, with your access; it reads and never changes anything.',
+          'Questions about your runs, failures and setup answered by your AI model from the read tools agents use, with your access; a change it proposes runs only when you click Apply.',
         needs: ['llm'],
         where: 'API reference → Assistant',
         doc: 'features/assistant',

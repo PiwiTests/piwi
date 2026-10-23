@@ -54,4 +54,5 @@ defineProps<{
     :message-id="messageId"
   />
   <AssistantNavigateBlock v-else-if="block.kind === 'navigate'" :route="block.route" :label="block.label" />
+  <AssistantProposal v-else-if="block.kind === 'proposal'" :block="block" :message-id="messageId" :known="known" />
 </template>

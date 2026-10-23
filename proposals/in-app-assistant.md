@@ -23,7 +23,17 @@ static map spread with `v-bind`; a route names a built-in dashboard by its key (
 server's route check accepts with no entity to check; each section of the fix toolbox has its anchor on its toggle,
 which an `unfold` clicks only while it reads folded; the built-demo check fails an anchor whose computed opacity is 0,
 so a hover-only control is no anchor; and the 3 desktop anchors are checked by `check-demo-runtime.mjs --desktop`, on a
-desktop-mode dev server with the mocked Tauri bridge. **PR 4 built 2026-10-22**,
+desktop-mode dev server with the mocked Tauri bridge. **PR 3 built 2026-10-23**: the first list's 15 authored guides
+in `app/utils/guides/`, 3 to 6 stops each, listed on every instance by the command palette's Guides group and by the
+assistant panel when its conversation is empty or it cannot answer, each filtered by its `requires`; a stop on an
+entity's page names one of 8 resolvers (the project updated last, the newest finished run, a failure of the newest
+failed run, a failure with a locator fix, the open cluster seen last, the flakiest test and its project, the first
+saved dashboard the user can edit), and one whose resolver finds nothing shows centered at once with its anchor's
+`shownWhen` (the engine's `absent` stop); `authored-guides.test.ts` checks every bold label against the source of the
+stop's component or page, and `check-demo-runtime.mjs` starts every guide from the palette in the built demo. As
+built, the demo's four tours keep their own format; a guide stays off anchors inside a popover, which the engine's
+focus on **Next** closes, and inside a modal; and the engine scrolls a stop's target back into view when content
+loading above pushes it out, until the user scrolls, clicks or types. **PR 4 built 2026-10-22**,
 the server side with no panel yet: the `assistant` role; the loop with tool calling (native for Anthropic and
 OpenAI-compatible servers; a JSON action mode, one tool call or the answer per reply, for a server that refuses tools
 and for the Claude Code CLI until PR 7); the read tools routed per page with `find_tools` and `get_instance_config`;
@@ -37,7 +47,16 @@ at the run's commit; replies stored on their block; checklist ticks through thei
 panel beside the page (full screen on a phone) opened from the sidebar and the command palette, with "Ask about this
 page" suggestions and **What it read** under each answer. As built, the launcher sits under the sidebar's search, since
 no page header is shared, and the page context does not yet list the anchors rendered on the page (PR 6 adds it).
-**PR 7 built 2026-10-23**: with the Claude Code CLI, one run writes the whole answer through a per-answer MCP endpoint
+**PR 6 built 2026-10-23**: proposal cards, a `proposal` block made by `propose_change` from a closed registry of ten
+actions (`shared/assistant-actions.ts`: resolve, ignore and reopen a cluster; quarantine and release a test; diagnose a
+cluster or an execution; keep a run; a capability decision for the instance or for a project), each an existing REST
+route and the permission it declares, which a test reads from the route's file; a card shows only when the user holds
+that permission on its target's project, its **Apply** calls the route from the browser with the user's session and
+records the outcome (`PATCH …/messages/:messageId/proposal`), and a question's picks end in one card each;
+`explain_setting`, with `HELP_TOPICS` and `SETTINGS_PAGES` moved to `shared/`; and the anchors rendered on the page in
+the question's context, which `find_anchors` ranks first. As built, filing an issue is no card, since its route needs
+the tracker binding and required fields its dialog fills, and no card declines AI or the assistant, which the assistant
+rides on. **PR 7 built 2026-10-23**: with the Claude Code CLI, one run writes the whole answer through a per-answer MCP endpoint
 (`/api/assistant/conversations/{id}/mcp`) serving exactly that answer's toolbox, behind a token minted for the user,
 the conversation and the answer, accepted from this machine only and revoked when the answer ends; the desktop guard
 lets that route through on that token alone, and the desktop token never reaches the CLI. On the desktop app the model

@@ -20,6 +20,7 @@ import {
   type AssistantMessageView,
   type AssistantPageContext,
   type AssistantReply,
+  type AssistantProposalOutcomeInput,
   type AssistantToolCall,
 } from '#shared/assistant';
 import type { DrizzleDB } from './db';
@@ -314,6 +315,44 @@ export async function tickAssistantChecklist(
   message.blocks[index] = ticked;
   await saveBlocks(db, message.id, message.blocks);
   return ticked;
+}
+
+type ProposalBlock = Extract<AssistantBlock, { kind: 'proposal' }>;
+
+type AssistantProposalRecord = { ok: true; block: ProposalBlock } | { ok: false; status: 404 | 409; message: string };
+
+/**
+ * Record what became of a `proposal` block of one of the owner's answers:
+ * applied, dismissed, or failed with the route's answer. Another user's
+ * conversation, and a message or block it does not hold, are a 404; a
+ * proposal already applied or dismissed is a 409, while a failed one can be
+ * applied again.
+ */
+export async function recordAssistantProposalOutcome(
+  db: DrizzleDB,
+  ownerId: AssistantOwner,
+  conversationId: number,
+  messageId: number,
+  outcome: AssistantProposalOutcomeInput,
+): Promise<AssistantProposalRecord> {
+  const message = await findOwnedAnswer(db, ownerId, conversationId, messageId);
+  const index = message?.blocks.findIndex((b) => b.kind === 'proposal' && b.id === outcome.blockId) ?? -1;
+  const block = message?.blocks[index];
+  if (!message || block?.kind !== 'proposal') return { ok: false, status: 404, message: 'Proposal not found' };
+  if (block.outcome && block.outcome.status !== 'failed') {
+    return { ok: false, status: 409, message: `This change was already ${block.outcome.status}` };
+  }
+  const recorded: ProposalBlock = {
+    ...block,
+    outcome: {
+      status: outcome.status,
+      ...(outcome.result ? { result: outcome.result } : {}),
+      at: new Date().toISOString(),
+    },
+  };
+  message.blocks[index] = recorded;
+  await saveBlocks(db, message.id, message.blocks);
+  return { ok: true, block: recorded };
 }
 
 /** Remember the tools `find_tools` added, offered for the rest of the conversation. */

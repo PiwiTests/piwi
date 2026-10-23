@@ -242,8 +242,9 @@ recapture to change it.
 ### Inline help (MUST follow)
 
 Any new **block-level** shared component with a header MUST accept an optional `help?: HelpTopicKey` prop (typed from
-`app/utils/help-content.ts`) and render `<HelpHint v-if="help" :topic="help" />`. Add copy by adding one entry to the
-`HELP_TOPICS` registry — never hardcode hint strings at call sites. Hint text is Markdown (`app/utils/help-markdown.ts`):
+`shared/help-content.ts`, re-exported by `app/utils/help-content.ts`) and render
+`<HelpHint v-if="help" :topic="help" />`. Add copy by adding one entry to the `HELP_TOPICS` registry — never hardcode
+hint strings at call sites. Hint text is Markdown (`app/utils/help-markdown.ts`):
 put identifiers and commands in `code`, and when a hint can't stay to 1–2 sentences, give it a lead sentence and a
 `- **Label** — …` list instead of a wall of prose (it then opens wider and scrolls). Document only non-obvious blocks
 (skip counters, search boxes, basic CRUD forms, theme switcher). When adding a hint, **remove the always-on prose it
@@ -256,7 +257,8 @@ Playwright's substring `getByRole('button', { name })` matches both.
 
 ### Settings surface (MUST follow)
 
-Settings pages are driven by the `SETTINGS_PAGES` registry in `app/utils/settings-metadata.ts`; `useSettingsNav` and
+Settings pages are driven by the `SETTINGS_PAGES` registry in `shared/settings-metadata.ts` (re-exported by
+`app/utils/settings-metadata.ts`, and read by the assistant's `explain_setting`); `useSettingsNav` and
 `useSettingsEnvState` derive from it. To add a page or field: (1) add the env var to `shared/piwi-env-vars.ts`,
 (2) add or extend the `HELP_TOPICS` entry with its `envVars`, (3) add the `fields` entry to `SETTINGS_PAGES`,
 (4) render with `SettingsField`. Never hand-roll an env-managed `UAlert` or lock icon — use `EnvManagedBadge` /
@@ -932,9 +934,12 @@ one import and one entry there), with the entry shape in `index.d.mts`. An entry
 The engine is `app/composables/useGuide.ts`: `start(run)` takes a `GuideRun` (`app/utils/guide/types.ts`: an id, a
 language, the stops with their copy, the words of the popover's controls) and opens each stop's route (else its
 anchor's main page when that is a fixed path), runs the anchor's reveal, scrolls the panels holding it and highlights
-it. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup). The popover carries `data-guide`,
-`data-guide-stop`, `data-guide-anchor` (empty when centered), `data-guide-settled` once settled, `lang` and the
-run's `dataset`, which is what the checks read; `app/assets/css/guide.css` themes it (`piwi-guide*` classes).
+it. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup). A stop whose anchor does not render
+shows centered, with the anchor's `shownWhen` under its body; an `absent` stop does so at once, without opening a page
+or waiting. Until the user scrolls, clicks or types, the engine scrolls a target that content loading above pushed out
+of view back into it. The popover carries `data-guide`, `data-guide-stop`, `data-guide-anchor` (empty when centered),
+`data-guide-settled` once settled, `lang` and the run's `dataset`, which is what the checks read;
+`app/assets/css/guide.css` themes it (`piwi-guide*` classes).
 
 - **One element per anchor**: an anchor's `data-tour` value is static (never a bound `:data-tour`), kebab-case, names
   the content, and is set on exactly one element in exactly one component: a template's `data-tour="…"`, or a static
@@ -987,11 +992,45 @@ run's `dataset`, which is what the checks read; `app/assets/css/guide.css` theme
   its mocked Tauri bridge (`scripts/lib/desktop-bridge.mjs`) and a linked folder. `--area` and `--anchors` narrow it;
   `--url` drives a desktop server already running instead.
 - **A change that moves, renames or removes an anchored element updates the registry in the same commit**, and the
-  guides pointing at it (the tour's stops) with it. A new anchor ships with its sample and passes all four checks.
+  guides pointing at it (the tour's stops, the authored guides' stops) with it. A new anchor ships with its sample and
+  passes all four checks.
 - **The engine never lets `scrollIntoView` run**: the dashboard scrolls inside its content panel, and
   `scrollIntoView` would shift the layout around it, so the engine scrolls the target's panels itself and stubs
   driver.js's own call on the target and the popover. driver.js, its CSS and `guide.css` load only when the first
   guide starts (`loadEngine`).
+
+### Authored guides
+
+Fixed guides for the tasks people ask about most (report a first run, configure AI, connect Jira, run the Flake Lab,
+…), which need no model: the command palette's **Guides** group (`useAuthoredGuides().paletteGroups()`, in
+`layouts/default.vue`) and the assistant panel's empty and unavailable states (`AuthoredGuideList`) list them on every
+instance, each filtered by its `requires` against the capability states and `canAnywhere`. `app/utils/guides/` holds
+them, all pure: `guides.ts` (`AUTHORED_GUIDES`, each guide's id, title, summary, lucide icon, keywords, `requires` and
+stops), `resolvers.ts` (`GUIDE_RESOLVERS`) and `run.ts` (the `GuideRun` the engine plays, `guide-<id>` on its popover).
+
+- **A stop names a registry anchor**, never a demo-only or desktop-only one, on the anchor's main page when that is a
+  fixed path, else on the `page` a resolver fills (the anchor's main page by default). Its docs link is the anchor's
+  `doc`. The guide's `requires` covers each stop's anchor: the anchor's capability is the guide's, and every role
+  holding the guide's permission holds the anchor's.
+- **An entity's page comes from a resolver**, never a seeded id: `GUIDE_RESOLVERS` is a closed set (the project
+  updated last, the newest finished run, a failure of the newest failed run, a failure with a locator fix, the open
+  cluster seen last, the flakiest test and its project, the first saved dashboard the user can edit), each reading API
+  routes the demo serves too. A resolver that finds nothing makes its stops `absent`. A new resolver lists the pages it
+  fills, and every one must find its entity in the demo seed, or the built-demo walk fails.
+- **Limits**: 3–7 stops; a title ≤ 60 characters and a body ≤ 360, a guide title ≤ 60 and a one-line summary ≤ 80;
+  English, in the docs' voice ([`apps/docs/AGENTS.md`](../docs/AGENTS.md#voice)); `**bold**` the only markup, a
+  dashboard label bold and spelled as the screen shows it. A stop on the page the guide is already on adds no query
+  value, since a page reads its `?tab=` when it opens. No stop on an anchor inside a popover (the engine's focus on
+  **Next** closes it) or a modal.
+- **Checks**: `tests/unit/authored-guides.test.ts` (the anchors, pages, resolvers, `requires`, limits, and every bold
+  label against the source of the component setting the stop's anchor, the component carrying it or the page's
+  files, so a renamed label fails; the resolvers on stubbed routes; the docs page listing every guide),
+  `tests/guides.spec.ts` (the palette and the panel with no model, a declined capability), and
+  `scripts/check-demo-runtime.mjs`, which starts every guide from the palette in the built demo and walks it, each stop
+  highlighted on its anchor and in view, one guide at 390 px.
+- **A change to a screen a guide stop shows updates the guide in the same commit**, as for the tour: moving or
+  renaming an anchored element, renaming a label a stop puts in bold, a change that makes a resolver find nothing in
+  the seed. A new guide, or a renamed one, updates the table of `apps/docs/features/guides.md`.
 
 ## MCP tool conventions (MUST follow)
 
@@ -1081,7 +1120,21 @@ composed guide through `useGuide`.
   route on one of its anchor's pages, its ids readable by the user (`checkRouteEntities`, as `checkEntityScope` checks
   an MCP tool's), a route wherever the anchor's page has an id the user is not on, at most 7 stops, copy within the
   tour's limits with `**bold**` only. A `navigate` route is checked the same way. A page with another kind of `[id]`
-  gets its `ROUTE_ENTITIES` line, or its routes are refused.
+  gets its `ROUTE_ENTITIES` line, or its routes are refused. The question's context lists the anchors rendered on the
+  page (`renderedAnchors`, the visible `data-tour` values), which `find_anchors` ranks first.
+- **A change is a proposal the user applies; the model never writes.** `propose_change` makes a `proposal` block from
+  the closed registry `ASSISTANT_ACTIONS` (`shared/assistant-actions.ts`), shown only when the action's parameters
+  pass its schema, its target is an entity of the conversation of the kind it changes, and the user holds its
+  permission on the target's project (on the instance when it has no target). **Apply** calls the action's own REST
+  route from the browser with the user's session (`assistantActionRequest`), then records the outcome through
+  `PATCH …/messages/:messageId/proposal`. A new action is one registry entry naming an existing route, its method, the
+  permission that route declares in `x-required-permission` and the pure path and body builders;
+  `tests/unit/assistant-actions.test.ts` reads each route's file and fails on a route or permission that does not
+  match. Never add an action whose route does not exist yet, nor one the browser could not call with a click.
+- **`explain_setting`** (`server/utils/assistant/settings.ts`) reads `SETTINGS_PAGES` and `HELP_TOPICS` from
+  `shared/`. Which variables the environment sets, and a field's value, go only to a user who may open its page; a
+  value comes from a `READERS` line that reads it as that page's own endpoint does, a secret only as set or not set, a
+  variable's value never.
 
 ## Performance
 

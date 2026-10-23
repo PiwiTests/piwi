@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import type { PatchValidation } from '#shared/patch';
+import type { AssistantActionId } from '#shared/assistant-actions';
 
 /** The longest question the assistant accepts, in characters. */
 export const ASSISTANT_MAX_QUESTION_CHARS = 4000;
@@ -13,12 +14,17 @@ const shortRecord = z
   .record(z.string().max(60), z.string().max(200))
   .refine((record) => Object.keys(record).length <= 20, 'At most 20 entries');
 
+/** The most guide anchors a question's context lists, and the longest id it takes. */
+export const ASSISTANT_MAX_PAGE_ANCHORS = 300;
+export const ASSISTANT_MAX_ANCHOR_CHARS = 60;
+
 /**
  * The page a question was asked on, as the browser sends it: the route, the
  * `app/pages` pattern it matched, the route parameters (the entity ids), the
- * query (tab, evidence, filters) and the project the page shows, when it shows
- * one. The server hands it to the model as data and picks the page's tools by
- * its pattern.
+ * query (tab, evidence, filters), the project the page shows, when it shows
+ * one, and the guide anchors rendered on it (the `data-tour` values visible
+ * when the question was asked). The server hands it to the model as data,
+ * picks the page's tools by its pattern and ranks the page's anchors first.
  */
 export const assistantPageContextSchema = z.object({
   route: z.string().max(500),
@@ -26,6 +32,7 @@ export const assistantPageContextSchema = z.object({
   params: shortRecord.optional(),
   query: shortRecord.optional(),
   projectId: z.number().int().positive().nullish(),
+  anchors: z.array(z.string().max(ASSISTANT_MAX_ANCHOR_CHARS)).max(ASSISTANT_MAX_PAGE_ANCHORS).optional(),
 });
 
 export type AssistantPageContext = z.infer<typeof assistantPageContextSchema>;
@@ -57,6 +64,19 @@ export const assistantChecklistTickSchema = z.object({
   stepId: z.string().max(60),
   done: z.boolean(),
 });
+
+/** What became of a `proposal` block: applied (its route answered), dismissed, or failed (the route refused it). */
+export type AssistantProposalStatus = 'applied' | 'dismissed' | 'failed';
+
+/** The body that records what became of a `proposal` block of an answer. */
+export const assistantProposalOutcomeSchema = z.object({
+  blockId: z.string().max(60),
+  status: z.enum(['applied', 'dismissed', 'failed']),
+  /** What the route answered, in one line: why it refused, for a failed apply. */
+  result: z.string().trim().max(300).optional(),
+});
+
+export type AssistantProposalOutcomeInput = z.infer<typeof assistantProposalOutcomeSchema>;
 
 /** The body that starts a conversation; the title defaults to the first question. */
 export const assistantConversationCreateSchema = z.object({
@@ -127,6 +147,15 @@ export interface AssistantChoice {
   checked?: boolean;
 }
 
+/** What became of a proposal, once the user applied or dismissed it. */
+export interface AssistantProposalOutcome {
+  status: AssistantProposalStatus;
+  /** What the route answered, in one line: why it refused, for a failed apply. */
+  result?: string;
+  /** When it was recorded, as an ISO timestamp. */
+  at: string;
+}
+
 /** One step of a `checklist` block. */
 export interface AssistantChecklistStep {
   id: string;
@@ -146,6 +175,9 @@ export interface AssistantChecklistStep {
  * the conversation named that entity. Block ids are kebab-case, unique within
  * their message. A `question` or `options` block ends the answer: the user's
  * pick comes back as the next question's `reply`, and is stored on the block.
+ * A `proposal` is a change the user applies with a click: the panel calls its
+ * action's route (`shared/assistant-actions.ts`) and stores the outcome on the
+ * block; the model never applies it.
  */
 export type AssistantBlock =
   | { kind: 'text'; text: string }
@@ -166,7 +198,23 @@ export type AssistantBlock =
     }
   | { kind: 'checklist'; id: string; title: string; steps: AssistantChecklistStep[] }
   | { kind: 'guide'; id: string; guide: AssistantGuidePlan }
-  | { kind: 'navigate'; id: string; route: string; label: string };
+  | { kind: 'navigate'; id: string; route: string; label: string }
+  | {
+      kind: 'proposal';
+      id: string;
+      action: AssistantActionId;
+      /** At most 60 characters. */
+      title: string;
+      /** What changes, in one or two sentences. */
+      change: string;
+      /** The entity it changes, from a tool result; null for an instance-wide change. */
+      target: AssistantEntityRef | null;
+      /** The target's project, which the action's route may name; null for an instance-wide change. */
+      projectId: number | null;
+      /** The action's parameters, checked against its schema. */
+      params: Record<string, unknown>;
+      outcome?: AssistantProposalOutcome;
+    };
 
 /** The route of an entity's page. */
 export function assistantEntityRoute(entity: Pick<AssistantEntityRef, 'type' | 'id'>): string {

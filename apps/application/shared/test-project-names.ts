@@ -20,6 +20,7 @@ export const PROJECT = {
   API_KEY_SUBMIT: 'api-key-submit-test',
   ASSISTANT_CLAUDE_CODE: 'assistant-claude-code-test',
   ASSISTANT_PANEL: 'assistant-panel-test',
+  ASSISTANT_PROPOSALS: 'assistant-proposals-test',
   ASSISTANT: 'assistant-test',
   AUTH_ROLE_CHECKS: 'auth-role-checks-test',
   AUTH_TEST: 'auth-test-project',

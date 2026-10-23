@@ -134,6 +134,21 @@ describe('findAnchors', () => {
     expect(home.find((a) => a.id === 'run-incident')).toMatchObject({ needsRoute: true });
   });
 
+  test('ranks the anchors the page rendered first, then the others, best first', () => {
+    const query = 'flaky tests quarantine';
+    const elsewhere = guides.findAnchors(query, facts(ADMIN_ACCESS), null).anchors;
+    const last = elsewhere.filter((a) => a.pages[0] !== '*').at(-1)!;
+    expect(elsewhere[0]!.id).not.toBe(last.id);
+    const rendered = guides.findAnchors(query, facts(ADMIN_ACCESS), {
+      route: '/',
+      page: '/',
+      anchors: [last.id, 'nav-home', 'no-such-anchor'],
+    }).anchors;
+    expect(rendered[0]).toMatchObject({ id: last.id, onThisPage: true });
+    expect(rendered.filter((a) => a.onThisPage).map((a) => a.id)).toEqual([last.id]);
+    expect(rendered.slice(1).map((a) => a.id)).toEqual(elsewhere.filter((a) => a.id !== last.id).map((a) => a.id));
+  });
+
   test('answers a query nothing matches with a note', () => {
     expect(guides.findAnchors('zzzz qqqq', facts(ADMIN_ACCESS), null)).toEqual({
       anchors: [],

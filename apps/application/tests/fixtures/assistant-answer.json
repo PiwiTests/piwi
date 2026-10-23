@@ -220,6 +220,21 @@
       "event": "block",
       "data": {
         "block": {
+          "kind": "proposal",
+          "id": "resolve",
+          "action": "resolve-cluster",
+          "title": "Resolve the cart cluster once the fix is in",
+          "change": "The cluster leaves the failure inbox with your note; a failure after the fix sets it back to open.",
+          "target": { "type": "cluster", "id": 3, "label": "Cart total is stale after removing an item" },
+          "projectId": 1,
+          "params": { "note": "Fixed by waiting for the cart call" }
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
           "kind": "question",
           "id": "next-tests",
           "prompt": "Which flaky tests should I look at next?",

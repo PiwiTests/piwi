@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Assistant'],
     summary: 'Read one of your assistant conversations',
     description:
-      "One of the caller's conversations with its messages in order. Each message has its `role` (`user`, `assistant`), its `blocks` in order (`{ kind: 'text', text }`, and the blocks other than text an answer sent: `code`, `command`, `patch`, `entity`, `options` with the `picked` option, `question` with the user's `answer`, `checklist` with each step's `done`, `guide`, `navigate`), the page `context` a question was asked on, the `toolCalls` an answer made (`{ name, arguments, summary, error?, entities? }`), its `provider`, `model`, `inputTokens`, `outputTokens`, `status` (`completed`, `failed`) and `error`. Another user's conversation is a 404, administrators included. 403 when the assistant is declined.",
+      "One of the caller's conversations with its messages in order. Each message has its `role` (`user`, `assistant`), its `blocks` in order (`{ kind: 'text', text }`, and the blocks other than text an answer sent: `code`, `command`, `patch`, `entity`, `options` with the `picked` option, `question` with the user's `answer`, `checklist` with each step's `done`, `guide`, `navigate`, `proposal` with its `outcome` once applied, dismissed or failed), the page `context` a question was asked on, the `toolCalls` an answer made (`{ name, arguments, summary, error?, entities? }`), its `provider`, `model`, `inputTokens`, `outputTokens`, `status` (`completed`, `failed`) and `error`. Another user's conversation is a 404, administrators included. 403 when the assistant is declined.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'signed-in',
   },

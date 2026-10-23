@@ -1,8 +1,9 @@
 /**
  * The assistant in demo mode (`server/api/assistant`): the status, and the
  * conversations kept in the in-browser database through the server's shared
- * handler, with the replies to questions and the checklist ticks recorded on
- * their blocks as the server records them. The demo calls no model, so a
+ * handler, with the replies to questions, the checklist ticks and the
+ * outcomes of proposed changes recorded on their blocks as the server records
+ * them. The demo calls no model, so a
  * question is answered with {@link DEMO_ASSISTANT_ANSWER}, streamed in the
  * server's event format and stored like a real answer.
  */
@@ -14,6 +15,7 @@ import {
   getAssistantConversation,
   isAssistantDeclined,
   listAssistantConversations,
+  recordAssistantProposalOutcome,
   recordAssistantReply,
   tickAssistantChecklist,
 } from '#shared/handlers/assistant';
@@ -22,6 +24,7 @@ import {
   assistantChecklistTickSchema,
   assistantConversationCreateSchema,
   assistantFrame,
+  assistantProposalOutcomeSchema,
   assistantQuestionSchema,
   type AssistantStatus,
 } from '#shared/assistant';
@@ -146,4 +149,14 @@ export async function apiTickAssistantChecklist(id: number, messageId: number, b
   const block = await tickAssistantChecklist(await getDemoDb(), ownerId, id, messageId, parsed.data);
   if (!block) throw demoHttpError(404, 'Checklist step not found');
   return { block };
+}
+
+/** PATCH /api/assistant/conversations/:id/messages/:messageId/proposal */
+export async function apiRecordAssistantProposal(id: number, messageId: number, body: unknown, ownerId: number | null) {
+  await requireNotDeclined();
+  const parsed = assistantProposalOutcomeSchema.safeParse(body);
+  if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+  const recorded = await recordAssistantProposalOutcome(await getDemoDb(), ownerId, id, messageId, parsed.data);
+  if (!recorded.ok) throw demoHttpError(recorded.status, recorded.message);
+  return { block: recorded.block };
 }

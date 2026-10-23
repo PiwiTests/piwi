@@ -1,9 +1,9 @@
 /**
  * The page a question is asked on, as the browser sends it with the question:
- * the route, the `app/pages` pattern it matched, its parameters and query, and
- * the project the page shows.
+ * the route, the `app/pages` pattern it matched, its parameters and query, the
+ * project the page shows, and the guide anchors rendered on it.
  */
-import type { AssistantPageContext } from '#shared/assistant';
+import { ASSISTANT_MAX_ANCHOR_CHARS, ASSISTANT_MAX_PAGE_ANCHORS, type AssistantPageContext } from '#shared/assistant';
 
 /** The parts of the current route the context is built from (vue-router's route, reduced to plain values). */
 export interface AssistantRouteSnapshot {
@@ -78,4 +78,27 @@ export function assistantPageContext(route: AssistantRouteSnapshot): AssistantPa
     ...(query ? { query } : {}),
     projectId: page ? projectIdOf(page, params) : null,
   };
+}
+
+/** Whether an element renders: not inside a hidden ancestor, with a box. */
+function isRendered(element: Element): boolean {
+  return typeof element.checkVisibility === 'function'
+    ? element.checkVisibility({ visibilityProperty: true })
+    : element.getClientRects().length > 0;
+}
+
+/**
+ * The guide anchors rendered under `root` (the page): the `data-tour` value of
+ * each element that renders, once, in document order, within the bounds the
+ * context's schema takes.
+ */
+export function renderedAnchors(root: Pick<ParentNode, 'querySelectorAll'>): string[] {
+  const ids = new Set<string>();
+  for (const element of root.querySelectorAll('[data-tour]')) {
+    const id = element.getAttribute('data-tour');
+    if (!id || id.length > ASSISTANT_MAX_ANCHOR_CHARS || ids.has(id) || !isRendered(element)) continue;
+    ids.add(id);
+    if (ids.size === ASSISTANT_MAX_PAGE_ANCHORS) break;
+  }
+  return [...ids];
 }

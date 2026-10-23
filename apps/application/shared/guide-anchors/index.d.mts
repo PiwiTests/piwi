@@ -64,7 +64,7 @@ export interface GuideAnchor {
   /** When it does not always render, the condition in one sentence. */
   shownWhen?: string;
   requires?: { capability?: CapabilityId; permission?: Permission; desktop?: true; demo?: true };
-  /** The key in `HELP_TOPICS` (`app/utils/help-content.ts`) of the inline help the block carries. */
+  /** The key in `HELP_TOPICS` (`shared/help-content.ts`) of the inline help the block carries. */
   help?: string;
   /** Docs page and optional anchor, written as a single-quoted `doc: '…'` literal so docs-drift.test.ts resolves it. */
   doc?: string;

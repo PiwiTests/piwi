@@ -64,6 +64,7 @@ export const EXPECTED_BLOCK_KINDS = [
   'checklist',
   'guide',
   'navigate',
+  'proposal',
 ] as const satisfies readonly Exclude<AssistantBlock['kind'], 'text'>[];
 
 export type ExpectedBlockKind = (typeof EXPECTED_BLOCK_KINDS)[number];

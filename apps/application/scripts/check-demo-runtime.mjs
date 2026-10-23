@@ -23,7 +23,8 @@
  *   --area <name>        check only the anchors of this area file of
  *                        `shared/guide-anchors/` (`layout`, `runs`, …); with
  *                        --anchors, the anchors either names.
- *   --anchors-only       skip the guided tours and the other checks.
+ *   --anchors-only       skip the guided tours, the authored guides and the
+ *                        other checks.
  *   --desktop            check the anchors whose sample is in the desktop app
  *                        (`sample.surface: 'desktop'`), which every other run
  *                        skips, in the screenshot harness's desktop mode: a
@@ -39,7 +40,7 @@
 
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -306,6 +307,176 @@ async function checkGuidedTour(browser, watch) {
     await walkTour(page, 'platform', { lang: 'fr' });
   } catch (error) {
     check(false, 'the guided tour checks completed', String(error).split('\n')[0].slice(0, 160));
+  } finally {
+    await context.close();
+  }
+}
+
+// ── The authored guides ────────────────────────────────────────────────────
+// Every authored guide (`app/utils/guides/guides.ts`), started from the command
+// palette as a user starts one, on the stops it finds in the seed. Like the
+// tours above, everything reads the guide as it renders, but for the list of
+// guides, which the assistant panel shows and the source must match.
+
+/** The authored guides' ids, from their source: each guide's `id` sits four spaces in. */
+function authoredGuideIds() {
+  const source = readFileSync(join(__dirname, '..', 'app', 'utils', 'guides', 'guides.ts'), 'utf8');
+  return [...source.matchAll(/^ {4}id: '([a-z0-9-]+)',$/gm)].map((match) => match[1]);
+}
+
+/** How long a stop's anchor has to come into view once its popover settled: content may still load above it. */
+const IN_VIEW_WAIT_MS = 5000;
+
+/** The authored guides the assistant panel lists, as `{ id, title }`, in its order. */
+async function listedGuides(page) {
+  const launcher = page.getByRole('button', { name: 'Ask Piwi' });
+  if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+  await launcher.click();
+  const panel = page.getByRole('dialog', { name: 'Ask Piwi' });
+  await panel.locator('[data-guide-list]').waitFor({ timeout: 30000 });
+  const guides = await panel.locator('[data-guide-id]').evaluateAll((buttons) =>
+    buttons.map((button) => ({
+      id: button.dataset.guideId,
+      title: button.querySelector('span span')?.textContent?.trim() ?? '',
+    })),
+  );
+  // In the demo, the panel's header sits under the demo banner: Escape closes it.
+  await page.keyboard.press('Escape');
+  await panel.waitFor({ state: 'hidden', timeout: 10000 });
+  return guides;
+}
+
+/** Opens the command palette with its shortcut, types `title` and picks the guide it finds first. */
+async function startGuideFromPalette(page, title) {
+  await page.keyboard.press('Control+KeyK');
+  const input = page.getByPlaceholder('Type a command or search…');
+  await input.waitFor({ timeout: 10000 });
+  await input.fill(title);
+  const guides = page.getByRole('group', { name: 'Guides' });
+  await guides.getByRole('option').first().filter({ hasText: title }).waitFor({ timeout: 10000 });
+  // The palette filters as you type; let the list settle before picking from it.
+  await page.waitForTimeout(300);
+  await guides.getByRole('option').first().click();
+}
+
+/**
+ * Walks the authored guide `id` that is starting with Next until Done. Each
+ * stop must show its anchor highlighted and in view (a stop shown centered
+ * fails: every resolver finds its entity in the seed), a title, progress one
+ * further, and with `inViewport`, the popover entirely on screen. Then Done
+ * must end it.
+ */
+async function walkAuthoredGuide(page, id, { inViewport = false } = {}) {
+  let shown = 0;
+  let total = 0;
+  let last = null;
+  // A guide has at most 7 stops; the bound only stops a broken one from looping.
+  for (let step = 0; step < 10; step++) {
+    const selector = last ? `${TOUR_SETTLED}:not([data-guide-stop="${last}"])` : TOUR_SETTLED;
+    const popover = page.locator(selector);
+    await popover.waitFor({ timeout: 60000 });
+    await page
+      .waitForFunction(
+        (sel) => {
+          const anchor = document.querySelector(sel)?.dataset.guideAnchor;
+          const box =
+            anchor && document.querySelector(`.driver-active-element[data-tour="${anchor}"]`)?.getBoundingClientRect();
+          return !anchor || (box && box.bottom > 0 && box.top < innerHeight);
+        },
+        selector,
+        { timeout: IN_VIEW_WAIT_MS },
+      )
+      .catch(() => {});
+    const stop = await popover.evaluate((node) => {
+      const anchor = node.dataset.guideAnchor ?? '';
+      const element = anchor ? document.querySelector(`.driver-active-element[data-tour="${anchor}"]`) : null;
+      const box = element?.getBoundingClientRect();
+      const own = node.getBoundingClientRect();
+      return {
+        id: node.dataset.guideStop ?? '',
+        guide: node.dataset.guide ?? '',
+        anchor,
+        note: node.querySelector('.piwi-guide-note')?.textContent?.trim() ?? '',
+        title: node.querySelector('.driver-popover-title')?.textContent?.trim() ?? '',
+        progress: node.querySelector('.driver-popover-progress-text')?.textContent?.trim() ?? '',
+        highlighted: Boolean(
+          box && box.width > 0 && box.height > 0 && box.bottom > 0 && box.top < innerHeight && box.left < innerWidth,
+        ),
+        onScreen: own.left >= 0 && own.top >= 0 && own.right <= innerWidth && own.bottom <= innerHeight,
+        last: Boolean(node.querySelector('.driver-popover-done-btn')),
+      };
+    });
+    const [current, of] = (stop.progress.match(/\d+/g) ?? []).map(Number);
+    total ||= of;
+    const problems = [];
+    if (stop.guide !== `guide-${id}`) problems.push(`the ${stop.guide} guide's popover`);
+    if (!stop.anchor) problems.push(`shown centered${stop.note ? ` (${stop.note})` : ''}`);
+    else if (!stop.highlighted) problems.push(`"${stop.anchor}" is not highlighted in view`);
+    if (!stop.title) problems.push('no title');
+    if (current !== shown + 1 || of !== total) problems.push(`progress "${stop.progress}"`);
+    if (inViewport && !stop.onScreen) problems.push('the popover leaves the viewport');
+    check(
+      problems.length === 0,
+      `${id} guide ${stop.progress}: ${stop.id} → ${stop.anchor || '(centered)'}`,
+      problems.join('; '),
+    );
+    shown = current;
+    last = stop.id;
+    if (stop.last || shown >= total) break;
+    await popover.locator('.driver-popover-next-btn').click();
+  }
+  await page.locator('.driver-popover-done-btn').click();
+  await page
+    .locator('.driver-popover')
+    .waitFor({ state: 'detached', timeout: 10000 })
+    .catch(() => {});
+  const ended = await page.evaluate(
+    () => !document.querySelector('.driver-popover') && !document.body.classList.contains('driver-active'),
+  );
+  check(
+    ended && shown === total,
+    `the ${id} guide ends on Done after its ${total} stops`,
+    shown !== total ? `${shown} shown` : ended ? '' : 'the popover is still up',
+  );
+}
+
+/**
+ * Every authored guide, as the demo's default persona (an administrator, who
+ * is offered all of them): the assistant panel lists each guide of the source,
+ * and each one started from the palette walks its stops; one again at phone
+ * width. `watch` attaches the checks every page of the demo gets.
+ */
+async function checkAuthoredGuides(browser, watch) {
+  const context = await browser.newContext({ viewport: WIDE, locale: 'en-US' });
+  await context.addInitScript(() => {
+    if (window !== window.top) return;
+    localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() }));
+  });
+  const page = await context.newPage();
+  watch(page);
+  try {
+    await page.goto(`${ORIGIN}${BASE}`, { waitUntil: 'domcontentloaded' });
+    await page.locator('[data-cluster-row]').first().waitFor({ timeout: 60000 });
+    const guides = await listedGuides(page);
+    const sourceIds = authoredGuideIds();
+    const missing = sourceIds.filter((id) => !guides.some((guide) => guide.id === id));
+    check(
+      sourceIds.length > 0 && missing.length === 0,
+      `the assistant panel lists the ${sourceIds.length} authored guides`,
+      missing.length ? `missing ${missing.join(', ')}` : '',
+    );
+    for (const guide of guides) {
+      await startGuideFromPalette(page, guide.title);
+      await walkAuthoredGuide(page, guide.id);
+    }
+    const phoneGuide = guides.find((guide) => guide.id === 'run-flake-lab');
+    if (check(Boolean(phoneGuide), 'the run-flake-lab guide is listed, for the phone walk')) {
+      await page.setViewportSize(PHONE);
+      await startGuideFromPalette(page, phoneGuide.title);
+      await walkAuthoredGuide(page, phoneGuide.id, { inViewport: true });
+    }
+  } catch (error) {
+    check(false, 'the authored guide checks completed', String(error).split('\n')[0].slice(0, 160));
   } finally {
     await context.close();
   }
@@ -749,6 +920,7 @@ async function main() {
     if (!ANCHORS_ONLY) {
       await checkDemoFlows(page);
       await checkGuidedTour(browser, watch);
+      await checkAuthoredGuides(browser, watch);
     }
     checkedAnchors = await checkGuideAnchors(browser, watch, anchors);
 
@@ -780,7 +952,7 @@ async function main() {
     return;
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab, every guided tour and every guide anchor all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab, every guided tour, every authored guide and every guide anchor all work.',
   );
 }
 

@@ -27,6 +27,8 @@ const WIDE_QUERY = '(min-width: 640px)';
 const POPOVER_CLASS = 'piwi-guide';
 /** The popover's docs link. */
 const DOCS_CLASS = 'piwi-guide-docs';
+/** The line under a centered stop's body saying when its anchor shows. */
+const NOTE_CLASS = 'piwi-guide-note';
 /** On `<body>` while the guide moves to another stop: the popover is hidden until the next one renders. */
 const MOVING_CLASS = 'piwi-guide-moving';
 /** On `<body>` while the guide moves to another page: the overlay is a plain wash, with no cutout. */
@@ -35,6 +37,8 @@ const PAGING_CLASS = 'piwi-guide-paging';
 const SETTLED_ATTRIBUTE = 'data-guide-settled';
 /** How often the shown target is checked for having moved, or been replaced by the page. */
 const TARGET_CHECK_MS = 250;
+/** What the user does to move the page: after one, the guide no longer scrolls its target back into view. */
+const USER_INPUT_EVENTS = ['wheel', 'touchmove', 'pointerdown', 'keydown'] as const;
 /** The element driver.js highlights for a stop it shows centered. */
 const CENTERED_ELEMENT_ID = 'driver-dummy-element';
 /** The class driver.js gives a highlighted element's parent while it stops that parent from scrolling. */
@@ -56,12 +60,16 @@ const SVG_ATTRS =
 const CLOSE_ICON = `<svg ${SVG_ATTRS}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
 /** Lucide's `arrow-up-right`, after the docs link, which opens a new tab. */
 const EXTERNAL_ICON = `<svg ${SVG_ATTRS}><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>`;
+/** Lucide's `info`, before the line saying when a centered stop's anchor shows. */
+const INFO_ICON = `<svg ${SVG_ATTRS}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`;
 
 /** A guide in progress; one at a time, in the browser only. */
 interface RunningGuide {
   guide: GuideRun;
   /** Each stop's anchor from the registry, by stop index; `undefined` for a stop shown centered. */
   anchors: (GuideAnchor | undefined)[];
+  /** The `shownWhen` of each stop's anchor, by stop index: said under the body when the stop shows centered. */
+  notes: (string | undefined)[];
   driver?: Driver;
   /** A move to another stop is under way: Next, Back and the arrow keys wait for its popover. */
   moving: boolean;
@@ -69,6 +77,8 @@ interface RunningGuide {
   navigating: boolean;
   /** The cutout is travelling to its target: scrolling does not redraw the stop meanwhile. */
   travelling: boolean;
+  /** The user scrolled, clicked or typed since the stop showed: the guide leaves its target where they put it. */
+  userActed: boolean;
   /** The height of the last popover shown, for making room above the next target. */
   popoverHeight: number;
   /** The stop shown has no target: the popover is centered. */
@@ -206,6 +216,15 @@ async function reveal(run: RunningGuide, anchor: GuideAnchor): Promise<void> {
   }
 }
 
+/** The line saying when an anchor shows, under the body of a stop shown centered for want of it. */
+function noteLine(text: string): HTMLParagraphElement {
+  const line = document.createElement('p');
+  line.className = NOTE_CLASS;
+  line.insertAdjacentHTML('afterbegin', INFO_ICON);
+  line.append(text);
+  return line;
+}
+
 function docsLink(doc: string, label: string): HTMLAnchorElement {
   const link = document.createElement('a');
   link.className = DOCS_CLASS;
@@ -307,10 +326,16 @@ export function useGuide() {
     stop();
     const run: RunningGuide = {
       guide,
-      anchors: guide.stops.map((guideStop) => (guideStop.anchor ? findGuideAnchor(guideStop.anchor) : undefined)),
+      anchors: guide.stops.map((guideStop) =>
+        guideStop.anchor && !guideStop.absent ? findGuideAnchor(guideStop.anchor) : undefined,
+      ),
+      notes: guide.stops.map((guideStop) =>
+        guideStop.anchor ? findGuideAnchor(guideStop.anchor)?.shownWhen : undefined,
+      ),
       moving: false,
       navigating: false,
       travelling: false,
+      userActed: false,
       popoverHeight: POPOVER_HEIGHT_GUESS,
       centered: false,
       savedAria: new Map(),
@@ -349,6 +374,7 @@ export function useGuide() {
     if (running !== run || run.moving || !guideStop) return;
     const anchor = run.anchors[index];
     run.moving = true;
+    run.userActed = false;
     document.body.classList.add(MOVING_CLASS);
     run.driver?.getState('popover')?.wrapper.removeAttribute(SETTLED_ATTRIBUTE);
     try {
@@ -401,7 +427,9 @@ export function useGuide() {
    * shortcut); redraws the stop when a panel scrolls (driver.js follows the
    * window's scrolling only), once per frame; and every `TARGET_CHECK_MS`,
    * redraws it when its target moved without a scroll (content loading above
-   * it) and looks the target up again when the page replaced it.
+   * it), scrolls the target back into view when it left it before the user
+   * scrolled, clicked or typed, and looks the target up again when the page
+   * replaced it.
    */
   function watchPage(run: RunningGuide): void {
     const removeGuard = router.afterEach((to, from, failure) => {
@@ -417,6 +445,9 @@ export function useGuide() {
         redrawn = false;
       });
     };
+    const onUserInput = () => {
+      run.userActed = true;
+    };
     let lastBox = '';
     const checkTarget = () => {
       const instance = run.driver;
@@ -427,18 +458,23 @@ export function useGuide() {
         void goTo(run, instance.getActiveIndex() ?? 0);
         return;
       }
-      const { top, left, width, height } = element.getBoundingClientRect();
+      const { top, left, width, height, bottom } = element.getBoundingClientRect();
+      if (!run.userActed && height > 0 && (bottom <= 0 || top >= window.innerHeight)) scrollToTarget(element, 0);
       const box = `${top} ${left} ${width} ${height}`;
       if (box !== lastBox) instance.refresh();
       lastBox = box;
     };
     window.addEventListener('popstate', onHistory);
     document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    for (const type of USER_INPUT_EVENTS) window.addEventListener(type, onUserInput, { capture: true, passive: true });
     const timer = window.setInterval(checkTarget, TARGET_CHECK_MS);
     run.cleanups.push(
       removeGuard,
       () => window.removeEventListener('popstate', onHistory),
       () => document.removeEventListener('scroll', onScroll, { capture: true }),
+      () => {
+        for (const type of USER_INPUT_EVENTS) window.removeEventListener(type, onUserInput, { capture: true });
+      },
       () => window.clearInterval(timer),
     );
   }
@@ -518,9 +554,10 @@ export function useGuide() {
    * Finishes a popover driver.js just rendered: what a check reads (`lang`,
    * `data-guide`, `data-guide-stop`, `data-guide-anchor`, empty for a stop
    * shown centered, and the guide's own `dataset`), the localized close button,
-   * the docs link, room above the target for a popover that opens above it,
-   * room under it for one that opens below it (every popover below `sm`), and
-   * focus on Next.
+   * on a stop shown centered for want of its anchor the line saying when the
+   * anchor shows, the docs link, room above the target for a popover that
+   * opens above it, room under it for one that opens below it (every popover
+   * below `sm`), and focus on Next.
    */
   function decorate(run: RunningGuide, popover: PopoverDOM, index: number | undefined, element?: Element): void {
     const { words } = run.guide;
@@ -538,7 +575,10 @@ export function useGuide() {
     closeButton.innerHTML = CLOSE_ICON;
     closeButton.setAttribute('aria-label', words.close);
     closeButton.title = words.close;
+    // Under the body: the line saying when the anchor shows, on a stop shown centered for want of it, then the docs link.
+    const note = centered && index !== undefined ? run.notes[index] : undefined;
     if (guideStop?.doc) description.after(docsLink(guideStop.doc, words.docs));
+    if (note) description.after(noteLine(note));
     run.moving = false;
     document.body.classList.remove(MOVING_CLASS, PAGING_CLASS);
     run.popoverHeight = wrapper.offsetHeight;

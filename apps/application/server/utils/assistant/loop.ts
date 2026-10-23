@@ -12,7 +12,7 @@
  * count); `maxOutputTokens` per model call; `turnTimeoutMs` for the whole
  * turn; and the tokens the daily caps leave, checked before each model call.
  */
-import type { AssistantBlock, AssistantEvent, AssistantMessageView } from '#shared/assistant';
+import type { AssistantBlock, AssistantEvent, AssistantMessageView, AssistantProposalStatus } from '#shared/assistant';
 import { assistantMessageText } from '#shared/assistant';
 import type { ResolvedAiRole } from '~~/types/api';
 import {
@@ -32,6 +32,13 @@ const HISTORY_EXCHANGES = 10;
 
 /** The most characters of one earlier answer a question carries. */
 const HISTORY_ANSWER_CHARS = 4000;
+
+/** What became of a proposal, as the history says it. */
+const PROPOSAL_OUTCOMES: Record<AssistantProposalStatus, string> = {
+  applied: 'the user applied it',
+  dismissed: 'the user dismissed it',
+  failed: 'applying it failed',
+};
 
 /** A block other than text, in a line the model reads in the history: what it showed, and the user's pick. */
 function blockLine(block: AssistantBlock): string {
@@ -67,6 +74,12 @@ function blockLine(block: AssistantBlock): string {
       return `[Card: ${block.entity.label}]`;
     case 'navigate':
       return `[Link: ${block.label} (${block.route})]`;
+    case 'proposal': {
+      const on = block.target ? ` on ${block.target.label}` : '';
+      const failure = block.outcome?.status === 'failed' && block.outcome.result ? `: ${block.outcome.result}` : '';
+      const outcome = block.outcome ? `${PROPOSAL_OUTCOMES[block.outcome.status]}${failure}` : 'not applied yet';
+      return `[Proposed: ${block.title} (${block.action}${on}); ${outcome}]`;
+    }
   }
 }
 

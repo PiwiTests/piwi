@@ -1,7 +1,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { assistantFrame, type AssistantBlock, type AssistantEvent, type AssistantMessageView } from '#shared/assistant';
+import {
+  assistantFrame,
+  assistantPageContextSchema,
+  type AssistantBlock,
+  type AssistantEvent,
+  type AssistantMessageView,
+} from '#shared/assistant';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
 import {
   ASSISTANT_STREAM_CUT,
@@ -13,7 +19,7 @@ import {
   type AssistantDraft,
 } from '../../app/utils/assistant/events';
 import { assistantGuideId, assistantGuideRun } from '../../app/utils/assistant/guide';
-import { assistantPageContext, assistantPagePattern } from '../../app/utils/assistant/page-context';
+import { assistantPageContext, assistantPagePattern, renderedAnchors } from '../../app/utils/assistant/page-context';
 import {
   answerableMessageId,
   assistantKnownEntities,
@@ -212,6 +218,39 @@ describe('the page context', () => {
       query: {},
     });
     expect(context.projectId).toBeNull();
+  });
+
+  test('takes at most 300 rendered anchors, each of at most 60 characters', () => {
+    const page = { route: '/', page: '/' };
+    const ids = (n: number, length = 12) => Array.from({ length: n }, (_, i) => `a${i}`.padEnd(length, 'x'));
+    expect(assistantPageContextSchema.safeParse({ ...page, anchors: ids(300, 60) }).success).toBe(true);
+    expect(assistantPageContextSchema.safeParse({ ...page, anchors: ids(301) }).success).toBe(false);
+    expect(assistantPageContextSchema.safeParse({ ...page, anchors: ids(1, 61) }).success).toBe(false);
+    expect(assistantPageContextSchema.safeParse(page).success).toBe(true);
+  });
+
+  test("lists the page's rendered anchors once each, in order, within the schema's bounds", () => {
+    const element = (id: string | null, rendered = true) => ({
+      getAttribute: () => id,
+      checkVisibility: () => rendered,
+    });
+    const root = (elements: ReturnType<typeof element>[]) => ({ querySelectorAll: () => elements }) as never;
+    expect(
+      renderedAnchors(
+        root([
+          element('project-health'),
+          element('failure-inbox-row'),
+          element('project-health'),
+          element('folded-away', false),
+          element(''),
+          element('x'.repeat(61)),
+          element('nav-home'),
+        ]),
+      ),
+    ).toEqual(['project-health', 'failure-inbox-row', 'nav-home']);
+    const many = renderedAnchors(root(Array.from({ length: 320 }, (_, i) => element(`anchor-${i}`))));
+    expect(many).toHaveLength(300);
+    expect(assistantPageContextSchema.safeParse({ route: '/', anchors: many }).success).toBe(true);
   });
 });
 

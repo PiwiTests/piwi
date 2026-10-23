@@ -124,13 +124,17 @@ function needsRoute(anchor: GuideAnchor, route: string | null | undefined): bool
 }
 
 /**
- * The anchors matching a query that render for this user, best first: each
- * query word found in the id, the description, the help topic, the kind or
- * the condition scores, and an anchor of the current page breaks ties.
+ * The anchors matching a query that render for this user: those on the
+ * user's page first, then the others, each best first. Each query word found
+ * in the id, the description, the help topic, the kind or the condition
+ * scores. The page's anchors are the ones the browser listed as rendered when
+ * the question was asked, or, without that list, those of the page its route
+ * opens; the layout's, on every page, are not counted as the page's.
  */
 export function findAnchors(query: string, facts: AnchorFacts, context: AssistantPageContext | null) {
   const wanted = words(query);
   const projectId = context?.projectId ?? null;
+  const rendered = context?.anchors ? new Set(context.anchors) : null;
   const scored = GUIDE_ANCHORS.filter((anchor) => !anchorUnavailable(anchor, facts, projectId))
     .map((anchor) => {
       const fields: Array<[string, number]> = [
@@ -145,11 +149,11 @@ export function findAnchors(query: string, facts: AnchorFacts, context: Assistan
         (n, w) => n + tokens.reduce((m, [t, weight]) => m + (matches(w, t) ? weight : 0), 0),
         0,
       );
-      const here = rendersOn(anchor, context?.route) && anchor.pages[0] !== '*';
-      return { anchor, score: score > 0 && here ? score + 0.5 : score, here };
+      const here = anchor.pages[0] !== '*' && (rendered ? rendered.has(anchor.id) : rendersOn(anchor, context?.route));
+      return { anchor, score, here };
     })
     .filter((m) => m.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => Number(b.here) - Number(a.here) || b.score - a.score)
     .slice(0, FIND_ANCHORS_LIMIT);
   if (scored.length === 0) {
     return {
@@ -175,7 +179,8 @@ export function findAnchors(query: string, facts: AnchorFacts, context: Assistan
 /** The outcome of checking a route's entities: the project it shows, or why it cannot be opened. */
 type RouteCheck = { ok: true; projectId: number | null } | { ok: false; error: string };
 
-async function projectExists(db: DbClient, id: number): Promise<number | null> {
+/** The project's id when it exists, else null: a project's own project, as the other resolvers find an entity's. */
+export async function projectExists(db: DbClient, id: number): Promise<number | null> {
   const [row] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, id)).limit(1);
   return row?.id ?? null;
 }

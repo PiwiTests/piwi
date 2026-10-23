@@ -5,7 +5,11 @@
 export interface GuideStop {
   /** Stable, kebab-case, unique within its guide. */
   id: string;
-  /** The id of the guide anchor the popover points at. Omitted, the popover is centered on the page. */
+  /**
+   * The id of the guide anchor the popover points at. Omitted, the popover is
+   * centered on the page; centered for want of its anchor, the popover adds
+   * the anchor's `shownWhen` under its body.
+   */
   anchor?: string;
   /**
    * The route the stop opens, from the app's root (`/test-run-cases/37`); the
@@ -14,6 +18,12 @@ export interface GuideStop {
    * and stays on the current page otherwise.
    */
   route?: string;
+  /**
+   * The anchor has nothing to show it on here (a guide found no entity whose
+   * page holds it): the stop shows centered at once, with the anchor's
+   * `shownWhen`, and opens no page.
+   */
+  absent?: boolean;
   /** Plain text; `**bold**` is the only markup. */
   title: string;
   /** Plain text; `**bold**` is the only markup. */

@@ -1,9 +1,10 @@
 /**
  * The tools the assistant offers a model. They are the MCP read tools, called
  * in-process with the asking user's `McpContext`, so the assistant reads no
- * more than the user can in the dashboard; three of its own, `find_tools`,
- * `get_instance_config` and `find_anchors`; and the block tools its answer is
- * made of besides text (`blocks.ts`).
+ * more than the user can in the dashboard; four of its own, `find_tools`,
+ * `get_instance_config`, `explain_setting` and `find_anchors`; and the block
+ * tools its answer is made of besides text (`blocks.ts`), `propose_change`
+ * among them, whose card the user applies: the model itself never writes.
  *
  * The model is never offered a tool that declares a permission (the write and
  * triage tools, the diagnosis runs) nor a desktop-only tool but
@@ -33,6 +34,7 @@ import { AssistantEntitySet, extractEntities } from './entities';
 import { findAnchors, loadAnchorFacts, type AnchorFacts } from './guides';
 import { getInstanceConfig } from './instance-config';
 import { ASSISTANT_LOCAL_SOURCE_TOOL } from './local-source';
+import { EXPLAIN_SETTING, explainSetting } from './settings';
 
 /** The read tools every question is offered. */
 export const CORE_ASSISTANT_TOOLS: readonly McpToolName[] = [
@@ -179,6 +181,7 @@ export function assistantToolNames(readTools: readonly McpTool[]): string[] {
     ...readTools.map((t) => t.name),
     FIND_TOOLS.name,
     GET_INSTANCE_CONFIG.name,
+    EXPLAIN_SETTING.name,
     FIND_ANCHORS.name,
     ...BLOCK_TOOL_DEFS.map((t) => t.name),
   ];
@@ -272,6 +275,9 @@ export function createAssistantToolbox(opts: {
     if (call.invalidArguments !== undefined) return { data: null, error: 'The arguments were not a JSON object' };
     if (call.name === FIND_TOOLS.name) return { data: findTools(String(call.arguments.query ?? '')) };
     if (call.name === GET_INSTANCE_CONFIG.name) return { data: await getInstanceConfig(opts.db, opts.ctx) };
+    if (call.name === EXPLAIN_SETTING.name) {
+      return { data: await explainSetting(opts.db, opts.ctx, String(call.arguments.fieldId ?? '')) };
+    }
     if (call.name === FIND_ANCHORS.name) {
       return { data: findAnchors(String(call.arguments.query ?? ''), await anchorFacts(), context) };
     }
@@ -339,6 +345,7 @@ export function createAssistantToolbox(opts: {
           .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
         FIND_TOOLS,
         GET_INSTANCE_CONFIG,
+        EXPLAIN_SETTING,
         FIND_ANCHORS,
         ...BLOCK_TOOL_DEFS,
       ];

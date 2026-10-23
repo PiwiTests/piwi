@@ -184,7 +184,7 @@ describe('the question set', () => {
 
 describe('tools', () => {
   test('every expected tool is a read tool of the catalog or one of the assistant’s own', () => {
-    expect(OWN_TOOLS).toEqual(new Set(['find_tools', 'get_instance_config', 'find_anchors']));
+    expect(OWN_TOOLS).toEqual(new Set(['find_tools', 'get_instance_config', 'explain_setting', 'find_anchors']));
     expect(
       each((q) => q.tools.filter((name) => !READ_TOOLS.has(name) && !OWN_TOOLS.has(name)).map((n) => `${q.id}: ${n}`)),
     ).toEqual([]);

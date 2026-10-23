@@ -4,7 +4,9 @@
  * usable, and a full-screen sheet below it. It keeps its conversation across
  * navigation, says when the assistant cannot answer (and where AI is set up,
  * to those who can change it), lists the user's conversations, and shows the
- * open one with the answer being written and the input under it.
+ * open one with the answer being written and the input under it. Its empty
+ * state, and the one saying the assistant cannot answer, list the authored
+ * guides, which need no model; starting one closes the panel.
  */
 import { assistantDraftMessage } from '~/utils/assistant/events';
 
@@ -129,32 +131,35 @@ watch(open, (isOpen) => {
           </template>
         </ErrorState>
         <LoadingState v-else-if="!status" />
-        <div v-else-if="!available" class="space-y-3 py-6 text-center" data-assistant-unavailable>
-          <template v-if="status.reason === 'declined'">
-            <p class="text-sm text-highlighted leading-relaxed">The assistant is turned off on this instance.</p>
-          </template>
-          <template v-else>
-            <p class="text-sm text-highlighted leading-relaxed">
-              The assistant answers with an AI model, and none is configured on this instance yet.
-            </p>
-            <UButton
-              v-if="can('settings:manage')"
-              to="/settings/ai"
-              color="neutral"
-              variant="outline"
-              label="Set up AI in Settings"
-              trailing-icon="i-lucide-arrow-right"
-              @click="open = false"
-            />
-            <p v-else class="text-xs text-muted">An administrator sets one up in Settings → AI.</p>
-          </template>
+        <div v-else-if="!available" class="space-y-4" data-assistant-unavailable>
+          <div class="space-y-3 py-6 text-center">
+            <template v-if="status.reason === 'declined'">
+              <p class="text-sm text-highlighted leading-relaxed">The assistant is turned off on this instance.</p>
+            </template>
+            <template v-else>
+              <p class="text-sm text-highlighted leading-relaxed">
+                The assistant answers with an AI model, and none is configured on this instance yet.
+              </p>
+              <UButton
+                v-if="can('settings:manage')"
+                to="/settings/ai"
+                color="neutral"
+                variant="outline"
+                label="Set up AI in Settings"
+                trailing-icon="i-lucide-arrow-right"
+                @click="open = false"
+              />
+              <p v-else class="text-xs text-muted">An administrator sets one up in Settings → AI.</p>
+            </template>
+          </div>
+          <AuthoredGuideList @start="open = false" />
         </div>
         <AssistantConversationList v-else-if="view === 'list'" />
         <ErrorState v-else-if="conversationError" :text="conversationError" />
         <div v-else-if="empty" class="space-y-4" data-assistant-empty>
           <p class="text-sm text-highlighted leading-relaxed">
             Ask about your runs, failures and setup. The assistant reads them with your access, through the same read
-            tools coding agents use, and never changes anything.
+            tools coding agents use, and changes nothing unless you apply a change it proposes.
           </p>
           <div class="space-y-1.5">
             <p class="text-sm font-semibold text-highlighted">Ask about this page</p>
@@ -171,6 +176,7 @@ watch(open, (isOpen) => {
               />
             </div>
           </div>
+          <AuthoredGuideList @start="open = false" />
         </div>
         <div v-else class="space-y-5">
           <AssistantMessage

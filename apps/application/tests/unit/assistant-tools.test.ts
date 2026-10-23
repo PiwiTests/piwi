@@ -111,6 +111,7 @@ describe('the toolbox', () => {
     expect(names.slice(names.indexOf('find_tools'))).toEqual([
       'find_tools',
       'get_instance_config',
+      'explain_setting',
       'find_anchors',
       'show_code',
       'show_command',
@@ -121,6 +122,7 @@ describe('the toolbox', () => {
       'checklist',
       'show_guide',
       'navigate',
+      'propose_change',
     ]);
     expect(names).toContain('list_projects');
     expect(names).not.toContain('get_coverage');

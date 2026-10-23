@@ -12,10 +12,10 @@
  *   time. The page is NOT hand-written; edit this file instead.
  * - `docs/.vitepress/components/EnvWizard.vue` — the interactive configuration
  *   generator on the docs site reads this registry directly.
- * - `app/utils/help-content.ts` — `HelpTopic.envVars` is typed as
+ * - `shared/help-content.ts` — `HelpTopic.envVars` is typed as
  *   `PiwiEnvVarName[]`, so a help tooltip can never reference an env var that
  *   does not exist here.
- * - `app/utils/settings-metadata.ts` — settings fields reference env vars by
+ * - `shared/settings-metadata.ts` — settings fields reference env vars by
  *   typed name.
  * - `app/components/shared/EnvManagedBadge.vue` / `EnvManagedAlert.vue` —
  *   tooltips/banners render the name + description.

@@ -3,11 +3,13 @@
  * sends to make each one: the schema of every block tool and the checks that
  * need no database (lengths and counts, kebab-case ids unique within the
  * answer, at most one recommended option, entities from the conversation's
- * tool results). A block that fails a check is never sent; the model reads why.
- * The server adds what needs the instance: a guide's anchors and routes, a
- * patch's validation, a page's route.
+ * tool results, a proposal's action and parameters). A block that fails a
+ * check is never sent; the model reads why. The server adds what needs the
+ * instance: a guide's anchors and routes, a patch's validation, a page's
+ * route, a proposal's permission on its target's project.
  */
 import { z } from 'zod';
+import { ASSISTANT_ACTIONS, ASSISTANT_ACTION_IDS } from '#shared/assistant-actions';
 import type {
   AssistantBlock,
   AssistantChoice,
@@ -186,6 +188,21 @@ export const ASSISTANT_BLOCK_INPUTS = {
     route: z.string().trim().min(1).max(500).describe("A dashboard route from the app's root, with real ids"),
     label: label.describe('What the link opens, in a few words'),
   }),
+  propose_change: z.object({
+    id: blockId,
+    action: z.enum(ASSISTANT_ACTION_IDS).describe('One of the actions this tool lists'),
+    title: title.describe('The change, at most 60 characters: "Resolve the cart cluster"'),
+    change: z.string().trim().min(1).max(L.promptChars).describe('What changes once applied, in one or two sentences'),
+    target: entityInput
+      .optional()
+      .describe(
+        'The entity it changes, of the kind its action names, which a tool result named; omitted when the action takes none',
+      ),
+    params: z
+      .record(z.string(), z.unknown())
+      .default({})
+      .describe("The action's parameters, as its line lists them; {} when it takes none"),
+  }),
 } as const;
 
 export type AssistantBlockTool = keyof typeof ASSISTANT_BLOCK_INPUTS;
@@ -291,6 +308,38 @@ const BUILDERS: {
   },
   show_guide: (i) => ({ ok: true, block: { kind: 'guide', id: i.id, guide: { title: i.title, stops: i.stops } } }),
   navigate: (i) => ({ ok: true, block: { kind: 'navigate', id: i.id, route: i.route, label: i.label } }),
+  propose_change: (i, env, unknownEntity) => {
+    const action = ASSISTANT_ACTIONS[i.action];
+    const params = action.params.safeParse(i.params);
+    if (!params.success) {
+      const where = (path: PropertyKey[]) => (path.length ? `params.${path.join('.')}` : 'params');
+      return refusal(params.error.issues.map((p) => `${where(p.path)}: ${p.message}`).join('; '));
+    }
+    let target: AssistantEntityRef | null = null;
+    if (action.target === null) {
+      if (i.target) return refusal(`target: ${i.action} changes the whole instance and takes no target`);
+    } else {
+      if (!i.target) return refusal(`target: ${i.action} needs the ${action.target} it changes`);
+      if (i.target.type !== action.target) {
+        return refusal(`target: ${i.action} changes a ${action.target}, not a ${i.target.type}`);
+      }
+      target = env.entity(i.target.type, i.target.id) ?? null;
+      if (!target) return refusal(unknownEntity(i.target, 'target')!);
+    }
+    return {
+      ok: true,
+      block: {
+        kind: 'proposal',
+        id: i.id,
+        action: i.action,
+        title: i.title,
+        change: i.change,
+        target,
+        projectId: null,
+        params: params.data as Record<string, unknown>,
+      },
+    };
+  },
 };
 
 /**

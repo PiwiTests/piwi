@@ -1509,8 +1509,17 @@ async function openAssistantAnswer(page, goto, path = '/') {
     if (pathname.endsWith('/messages')) {
       return route.fulfill({ headers: { 'Content-Type': 'text/event-stream' }, body: frames });
     }
+    if (pathname.endsWith('/proposal')) {
+      const { blockId, status } = request.postDataJSON();
+      const block = fixture.answer.find((e) => e.event === 'block' && e.data.block.id === blockId)?.data.block;
+      return route.fulfill({ json: { block: { ...block, outcome: { status, at: new Date().toISOString() } } } });
+    }
     return route.fallback();
   });
+  // The fixture's proposal resolves cluster 3, which the scene's server need not hold: its route answers here.
+  await page.route('**/api/failure-clusters/3/status', (route) =>
+    route.fulfill({ json: { id: 3, status: 'resolved' } }),
+  );
   await goto(path);
   const launcher = page.getByRole('button', { name: 'Ask Piwi' });
   if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
@@ -1594,6 +1603,77 @@ const SCENES = [
       'assistant-panel-phone.png',
       'assistant-panel-palette.png',
     ],
+  },
+  {
+    name: 'assistant-proposal',
+    description:
+      'A change the assistant proposes, in the panel on the fixed answer: the card with Apply and Dismiss, then the same card applied, at 1280 and 390 px',
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto);
+      const card = panel.locator('[data-assistant-block="proposal"]');
+      const showCard = async (width) => {
+        await page.setViewportSize({ width, height: 860 });
+        await card.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+        await settle();
+      };
+      await showCard(1280);
+      await shoot('wide', { of: '[data-shot="assistant-panel"]' });
+      await showCard(390);
+      await shoot('phone', { of: '[data-shot="assistant-panel"]' });
+      await card.getByRole('button', { name: 'Apply', exact: true }).click();
+      await card.getByText('Applied').waitFor();
+      await showCard(390);
+      await shoot('phone-applied', { of: '[data-shot="assistant-panel"]' });
+      await showCard(1280);
+      await shoot('wide-applied', { of: '[data-shot="assistant-panel"]' });
+    },
+    outputs: [
+      'assistant-proposal-wide.png',
+      'assistant-proposal-phone.png',
+      'assistant-proposal-phone-applied.png',
+      'assistant-proposal-wide-applied.png',
+    ],
+  },
+  {
+    name: 'guides',
+    description:
+      "The command palette's Guides group, then the first stop of the Flake Lab guide started from it, at 1280 and 390 px",
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      const input = page.getByPlaceholder('Type a command or search…');
+      const guides = page.getByRole('group', { name: 'Guides' });
+      const showGuides = async () => {
+        await page.keyboard.press('Control+KeyK');
+        await guides.waitFor({ timeout: 30_000 });
+        // The group follows Go to: scroll the palette's list to it.
+        await guides.evaluate((group) => group.scrollIntoView({ block: 'start' }));
+        await settle();
+      };
+      const startFlakeLab = async () => {
+        await input.fill('Run the Flake Lab');
+        await guides.getByRole('option').first().filter({ hasText: 'Run the Flake Lab' }).waitFor();
+        await page.waitForTimeout(300);
+        await guides.getByRole('option').first().click();
+        await page
+          .locator('.piwi-guide[data-guide="guide-run-flake-lab"][data-guide-settled]')
+          .waitFor({ timeout: 60_000 });
+        await settle();
+      };
+      await showGuides();
+      await shoot('palette');
+      await startFlakeLab();
+      await shoot('stop');
+      await page.keyboard.press('Escape');
+      await page.setViewportSize({ width: 390, height: 844 });
+      await showGuides();
+      await shoot('palette-phone');
+      await startFlakeLab();
+      await shoot('stop-phone');
+    },
+    outputs: ['guides-palette.png', 'guides-stop.png', 'guides-palette-phone.png', 'guides-stop-phone.png'],
   },
   {
     name: 'user-menu-piwi-tools',

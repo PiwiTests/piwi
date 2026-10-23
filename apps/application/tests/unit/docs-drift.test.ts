@@ -689,7 +689,7 @@ describe('docs site structure', () => {
       featurePageSources.some((contents) => link.test(contents)),
       `no features/ page links /${recipe}`,
     ).toBe(true);
-    expect(helpRecipes.has(recipe), `no help topic in app/utils/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
+    expect(helpRecipes.has(recipe), `no help topic in shared/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
   });
 });
 

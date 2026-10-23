@@ -41,8 +41,12 @@ type SearchResult = {
   }[];
 };
 const searchResults = ref<SearchResult | null>(null);
-/** The palette's own items (pages, project tabs) match as `/api/search` does: ignoring case and accents. */
-const searchFuse = { fuseOptions: { ignoreDiacritics: true } };
+/**
+ * The palette's own items (pages, project tabs) match as `/api/search` does:
+ * ignoring case and accents; a guide also by its keywords. A group lists up
+ * to 20 items, so every guide shows before anything is typed.
+ */
+const searchFuse = { fuseOptions: { ignoreDiacritics: true, keys: ['keywords'] }, resultLimit: 20 };
 
 /** Counts searches, so the answer to an older query never replaces a newer one. */
 let searchRequest = 0;
@@ -327,6 +331,9 @@ function runStatusIcon(status: string) {
 const assistant = useAssistant();
 const assistantGroups = computed(() => assistant.paletteGroups(searchTerm.value));
 
+// The authored guides the user may start, on every instance: they need no model.
+const authoredGuides = await useAuthoredGuides();
+
 const groups = computed<CommandPaletteGroup[]>(() => {
   const staticGroups: CommandPaletteGroup[] = [
     {
@@ -334,6 +341,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       label: 'Go to',
       items: links.value.flat().map((item) => toCommandPaletteItem(item)),
     },
+    ...authoredGuides.paletteGroups(),
     {
       id: 'code',
       label: 'Code',

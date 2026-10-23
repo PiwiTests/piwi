@@ -21,8 +21,9 @@ import {
   refusedAssistantDraft,
   type AssistantDraft,
 } from '~/utils/assistant/events';
+import { assistantActionRequest } from '#shared/assistant-actions';
 import { assistantGuideRun } from '~/utils/assistant/guide';
-import { assistantPageContext } from '~/utils/assistant/page-context';
+import { assistantPageContext, renderedAnchors } from '~/utils/assistant/page-context';
 import { answerableMessageId, assistantKnownEntities, type AssistantReplyQuestion } from '~/utils/assistant/replies';
 import { assistantSuggestionsFor } from '~/utils/assistant/suggestions';
 
@@ -75,6 +76,11 @@ function answered(block: AssistantBlock, reply: AssistantReply): AssistantBlock 
   return block;
 }
 
+type ProposalBlock = Extract<AssistantBlock, { kind: 'proposal' }>;
+
+/** What became of a proposal, as the panel records it. */
+type ProposalOutcome = { status: 'applied' | 'dismissed' | 'failed'; result?: string };
+
 /** `block` with checklist step `stepId` ticked or not. */
 function ticked(block: AssistantBlock, stepId: string, done: boolean): AssistantBlock {
   if (block.kind !== 'checklist') return block;
@@ -88,8 +94,8 @@ function ticked(block: AssistantBlock, stepId: string, done: boolean): Assistant
  * the page it was asked on and reads the answer's Server-Sent Events with
  * `fetch` and a reader (the demo's service worker answers it the same way),
  * applying the events once per frame. Replies to `question` and `options`
- * blocks, checklist ticks and the **Show me** of a composed guide go through
- * here too.
+ * blocks, checklist ticks, the **Show me** of a composed guide and the
+ * **Apply** and **Dismiss** of a proposed change go through here too.
  */
 export function useAssistant() {
   const config = useRuntimeConfig();
@@ -318,7 +324,8 @@ export function useAssistant() {
   async function ask(text: string, reply?: AssistantReply): Promise<void> {
     const question = text.trim().slice(0, ASSISTANT_MAX_QUESTION_CHARS);
     if (!question || busy.value) return;
-    const context = pageContext();
+    const anchors = renderedAnchors(document);
+    const context: AssistantPageContext = { ...pageContext(), ...(anchors.length ? { anchors } : {}) };
     view.value = 'conversation';
     exchange.value = {
       question: {
@@ -366,18 +373,26 @@ export function useAssistant() {
     if (reply) await ask(reply.text, reply.reply);
   }
 
+  /** Changes block `blockId` of message `messageId` in the open conversation, when it is still `conversationId`. */
+  function changeBlock(
+    conversationId: number,
+    messageId: number,
+    blockId: string,
+    change: (block: AssistantBlock) => AssistantBlock,
+  ): void {
+    if (conversation.value?.id !== conversationId) return;
+    conversation.value = {
+      ...conversation.value,
+      messages: withBlock(conversation.value.messages, messageId, blockId, change),
+    };
+  }
+
   /** Ticks or unticks a checklist step, saved with the conversation; a refused tick is undone. */
   async function tick(messageId: number, blockId: string, stepId: string, done: boolean): Promise<void> {
     const target = conversation.value;
     if (!target || messageId <= 0) return;
-    /** Sets the block in the open conversation, when it is still `target`. */
-    const update = (change: (block: AssistantBlock) => AssistantBlock) => {
-      if (conversation.value?.id !== target.id) return;
-      conversation.value = {
-        ...conversation.value,
-        messages: withBlock(conversation.value.messages, messageId, blockId, change),
-      };
-    };
+    const update = (change: (block: AssistantBlock) => AssistantBlock) =>
+      changeBlock(target.id, messageId, blockId, change);
     update((block) => ticked(block, stepId, done));
     try {
       const saved = await $fetch<{ block: Extract<AssistantBlock, { kind: 'checklist' }> }>(
@@ -389,6 +404,58 @@ export function useAssistant() {
       update((block) => ticked(block, stepId, !done));
       toast.add({ title: 'The step could not be saved', description: errorMessage(error), color: 'error' });
     }
+  }
+
+  /**
+   * Shows `outcome` on a proposal at once and saves it with the conversation.
+   * A dismissal the server refused is undone; a change already applied stays
+   * shown as applied, and the toast says the conversation could not keep it.
+   */
+  async function recordProposal(messageId: number, block: ProposalBlock, outcome: ProposalOutcome): Promise<void> {
+    const target = conversation.value;
+    if (!target || messageId <= 0) return;
+    const update = (change: (block: AssistantBlock) => AssistantBlock) =>
+      changeBlock(target.id, messageId, block.id, change);
+    update((b) => (b.kind === 'proposal' ? { ...b, outcome: { ...outcome, at: new Date().toISOString() } } : b));
+    try {
+      const saved = await $fetch<{ block: ProposalBlock }>(
+        `/api/assistant/conversations/${target.id}/messages/${messageId}/proposal`,
+        { method: 'PATCH', body: { blockId: block.id, ...outcome } },
+      );
+      if (saved?.block) update(() => saved.block);
+    } catch (error) {
+      if (outcome.status === 'dismissed') update(() => block);
+      toast.add({
+        title: outcome.status === 'dismissed' ? 'The proposal could not be dismissed' : 'The outcome was not saved',
+        description: errorMessage(error),
+        color: 'error',
+      });
+    }
+  }
+
+  /**
+   * **Apply**: calls the proposed change's own route with the user's session,
+   * as the dashboard's button for it does, records the outcome (applied, or
+   * failed with what the route answered) and, once applied, refreshes the
+   * page's data so it shows the change.
+   */
+  async function applyProposal(messageId: number, block: ProposalBlock): Promise<void> {
+    if (messageId <= 0) return;
+    const request = assistantActionRequest(block);
+    let outcome: ProposalOutcome;
+    try {
+      await $fetch(request.path, { method: request.method, ...(request.body ? { body: request.body } : {}) });
+      outcome = { status: 'applied' };
+    } catch (error) {
+      outcome = { status: 'failed', result: errorMessage(error, 'The change could not be applied.').slice(0, 300) };
+    }
+    await recordProposal(messageId, block, outcome);
+    if (outcome.status === 'applied') await refreshNuxtData();
+  }
+
+  /** **Dismiss**: records that the user declined the proposed change; nothing is called. */
+  async function dismissProposal(messageId: number, block: ProposalBlock): Promise<void> {
+    await recordProposal(messageId, block, { status: 'dismissed' });
   }
 
   /** **Show me**: closes the panel, which would cover the page, and plays the composed guide `plan`. */
@@ -454,6 +521,8 @@ export function useAssistant() {
     ask,
     sendReply,
     tick,
+    applyProposal,
+    dismissProposal,
     showGuide,
     paletteGroups,
   };

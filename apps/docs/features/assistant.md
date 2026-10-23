@@ -1,6 +1,6 @@
 ---
 title: Assistant
-description: "Ask about your runs, failures and setup: your AI model answers from the read tools agents use, with your access, and never changes anything."
+description: "Ask about your runs, failures and setup: your AI model answers from the read tools agents use, with your access, and changes nothing unless you click Apply on a change it proposes."
 lang: en-US
 ---
 
@@ -11,7 +11,8 @@ lang: en-US
 The assistant answers questions about this instance: why a run failed, which tests are flaky, what a setting does,
 whether a capability is on. Your AI model writes the answer from the same read tools the [MCP server](./mcp) gives
 coding agents, called with the access of the person asking, and from Piwi's documentation bundled with the server,
-so it can say only what the data and the docs say. It reads; it never changes anything.
+so it can say only what the data and the docs say. It changes nothing until you click **Apply** on a change it
+proposes.
 
 ## Asking a question
 
@@ -20,9 +21,9 @@ type a question and pick **Ask Piwi**. The palette also offers a few **Ask about
 are on, and so does an empty conversation. The panel opens beside the page, or over the whole screen on a phone, and
 keeps its conversation while you move between pages, so you can follow a link in an answer and read on.
 
-Each question carries the page it was asked on: its address, which page it is, its tab and filters, and the project it
-shows. "Why did this fail?" asked on an execution needs no ids. The clock icon lists your conversations, to reopen or
-delete one; the pen starts a new one.
+Each question carries the page it was asked on: its address, which page it is, its tab and filters, the project it
+shows and the parts of it a guide can point at. "Why did this fail?" asked on an execution needs no ids. The clock
+icon lists your conversations, to reopen or delete one; the pen starts a new one.
 
 The answer streams in as it is written, with a line for each tool it calls. The same conversations can be asked over
 the API: the API reference (`/docs` in your instance, or the [demo's](https://piwitests.dev/demo/docs)) lists the
@@ -44,15 +45,24 @@ An answer is text and blocks, each drawn by the dashboard's own components; the 
 - **Options**: two to four ways to solve the problem, each with its trade-off and effort, one marked recommended.
   **Choose** sends your pick as the next question.
 - **A question** with radio buttons or checkboxes and an **Other** field. **Answer** sends your picks back in words and
-  as the ids of the choices, so the model reads exactly what you picked; the question then shows your answer.
+  by id, so the model reads exactly what you picked.
 - **A checklist**: steps to do in order, some with their command. Your ticks are saved with the conversation.
 - **Show me**: a guide on your own screens. The panel closes and a popover walks you through the parts of the
-  dashboard the answer is about, each with a link to its docs page. A guide can point only at the parts of the
-  dashboard Piwi lists for guides, each checked by its tests, never at an element the model picked.
+  dashboard the answer is about, each with a link to its docs page. It points only at parts of the dashboard Piwi
+  lists and tests for guides, never at an element the model picked.
 - **A link** to the page to open next.
+- **A proposed change** to apply with a click ([below](#proposed-changes)).
 
 Under each answer, **What it read** unfolds the tools it called, one line each, and names the model. The line under
 the question field names the model too, and says that your question and what the assistant reads are sent to it.
+
+## Proposed changes
+
+Asked to do something ("resolve this cluster"), the assistant answers with a card per change, with **Apply** and
+**Dismiss**. Nothing runs until you click **Apply**: the dashboard sends the request its own button sends, with your
+session, and reloads the page. The card keeps what became of it, or why it was refused. A card can resolve, ignore or
+reopen a failure cluster, quarantine or release a test, start a diagnosis, keep a run or decline a capability, and
+shows only when you hold the permission it needs; to act on several tests, it first lets you tick them.
 
 ## What it reads
 
@@ -60,11 +70,11 @@ Each question is offered a core set of read tools (search, projects, runs, failu
 flaky tests, fix plans and the documentation), the tools of the page the question was asked on, and any it adds with
 `find_tools`. `get_instance_config` tells it how this instance is set up: the capabilities' states, the AI roles'
 providers and models (never a key), the connected issue trackers and whether authentication is on. Storage and
-retention are shown to administrators only.
+retention are shown to administrators only. `explain_setting` explains a settings field and its `PIWI_*` variables;
+which are set, and its value, go only to those who can open its page, a secret only as set or not.
 
 - **Your access.** The tools run as you: a Member reads only the projects they hold a role on, as in the dashboard.
-- **No writes.** No tool that changes anything is offered, not even a diagnosis run. To change something, it tells you
-  where in the dashboard to do it.
+- **No writes.** No tool that changes anything is offered; you apply a change yourself ([above](#proposed-changes)).
 - **Tool results are data.** Test titles, error text, console lines and commit messages reach the model as data,
   never as instructions, and each result is cut to 12,000 characters.
 - **Sources.** The answer names the tool results and the docs sections it used and links the runs, clusters and tests

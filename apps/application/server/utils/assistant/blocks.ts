@@ -4,12 +4,14 @@
  * A block tool's call is checked before anything reaches the browser: its
  * shape and limits (`shared/assistant-blocks.ts`), then what needs the
  * instance: a guide's anchors and routes, a page's route, a patch's
- * validation at its run's commit. A call that fails is answered with why,
- * so the model can fix it once.
+ * validation at its run's commit, a proposal's permission on its target's
+ * project. A call that fails is answered with why, so the model can fix it
+ * once.
  */
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { AssistantPageContext } from '#shared/assistant';
+import type { AssistantEntityType, AssistantPageContext } from '#shared/assistant';
+import { ASSISTANT_ACTIONS, ASSISTANT_ACTION_IDS } from '#shared/assistant-actions';
 import {
   ASSISTANT_BLOCK_INPUTS,
   blockGuides,
@@ -18,11 +20,13 @@ import {
   type AssistantToolBlock,
 } from '#shared/assistant-blocks';
 import { parseUnifiedDiff } from '#shared/patch';
+import { can } from '#shared/permissions';
 import type { DbClient } from '../../database';
 import { failureClusters, testRunsCases } from '../../database/schema';
 import type { AiToolDef } from '../ai-tool-calls';
 import type { McpContext } from '../mcp/tools';
 import {
+  resolveCaseProjectId,
   resolveClusterProjectId,
   resolveRunProjectId,
   resolveTestRunCaseProjectId,
@@ -30,7 +34,35 @@ import {
 } from '../project-access';
 import { validatePatchAtRun } from '../run-sources';
 import type { AssistantEntitySet } from './entities';
-import { checkGuidePlan, checkNavigateRoute, checkRouteEntities, type AnchorFacts, type GuideCheckEnv } from './guides';
+import {
+  checkGuidePlan,
+  checkNavigateRoute,
+  checkRouteEntities,
+  projectExists,
+  type AnchorFacts,
+  type GuideCheckEnv,
+} from './guides';
+
+/** A zod schema's properties in one line for a tool description: `{ note?: string, decision: "a" | "b" }`. */
+function paramsLine(schema: z.ZodType): string {
+  const json = z.toJSONSchema(schema, { io: 'input' }) as {
+    properties?: Record<string, { type?: string; enum?: unknown[] }>;
+    required?: string[];
+  };
+  const required = new Set(json.required ?? []);
+  const fields = Object.entries(json.properties ?? {}).map(([name, field]) => {
+    const type = field.enum ? field.enum.map((v) => JSON.stringify(v)).join(' | ') : (field.type ?? 'value');
+    return `${name}${required.has(name) ? '' : '?'}: ${type}`;
+  });
+  return fields.length ? `{ ${fields.join(', ')} }` : '{}';
+}
+
+/** The actions `propose_change` offers, one line each, for its description. */
+const ACTION_LINES = ASSISTANT_ACTION_IDS.map((id) => {
+  const action = ASSISTANT_ACTIONS[id];
+  const target = action.target ? `target: ${action.target}` : 'no target';
+  return `- ${id} (${target}; params: ${paramsLine(action.params)}): ${action.description}`;
+}).join('\n');
 
 const BLOCK_TOOL_DESCRIPTIONS: Record<AssistantBlockTool, string> = {
   show_code:
@@ -50,6 +82,7 @@ const BLOCK_TOOL_DESCRIPTIONS: Record<AssistantBlockTool, string> = {
     "Show me: a walkthrough on the dashboard's real screens, each stop an anchor find_anchors returned, with a short title and body. For 'where is…' and 'how do I … in the dashboard'.",
   navigate:
     "Offer a link that opens a page of the dashboard: a route from the app's root with real ids from tool results.",
+  propose_change: `Propose a change the user applies with a click: a card naming the action, its target and what changes, with Apply and Dismiss. Nothing changes until the user clicks Apply, and you never apply it yourself, so never say it is done. One card per target ("quarantine these three tests" is three cards). The target must be an entity a tool result of this conversation named, and the user must hold the action's permission on its project; a refusal says which permission is missing. The actions:\n${ACTION_LINES}`,
 };
 
 /** A zod schema as a tool's input schema: JSON Schema of what the model sends, without the `$schema` line. */
@@ -70,7 +103,7 @@ export const BLOCK_TOOL_DEFS: readonly AiToolDef[] = (Object.keys(BLOCK_TOOL_DES
 export const FIND_ANCHORS: AiToolDef = {
   name: 'find_anchors',
   description:
-    "Search the dashboard's guide anchors, everything a guide (show_guide) can point at: pages, tabs, sections, settings fields, primary actions and sidebar links. Returns the ones this user can see, each with its id, the pages it renders on (the first is its main page), what it shows, when it shows, whether it is on the user's current page, and whether a stop at it needs a route with a real id.",
+    "Search the dashboard's guide anchors, everything a guide (show_guide) can point at: pages, tabs, sections, settings fields, primary actions and sidebar links. Returns the ones this user can see, those on the user's page first, each with its id, the pages it renders on (the first is its main page), what it shows, when it shows, whether it is on the user's current page, and whether a stop at it needs a route with a real id.",
   inputSchema: {
     type: 'object',
     properties: { query: { type: 'string', description: 'What to point at, in a few words (e.g. "flaky tests tab")' } },
@@ -116,6 +149,44 @@ async function patchRun(
     .from(failureClusters)
     .where(eq(failureClusters.id, target.id));
   return row?.runId ?? null;
+}
+
+/** The project an entity a proposal targets belongs to; null when it is missing. */
+const PROJECT_OF: Record<AssistantEntityType, (db: DbClient, id: number) => Promise<number | null>> = {
+  project: projectExists,
+  run: resolveRunProjectId,
+  execution: resolveTestRunCaseProjectId,
+  cluster: resolveClusterProjectId,
+  'test-case': resolveCaseProjectId,
+};
+
+/**
+ * Whether the user can apply a proposal here: its capability not declined on
+ * the instance, its target readable, and the action's permission held on the
+ * target's project (on the instance for an action with no target). The
+ * target's project, or why not.
+ */
+async function proposalProject(
+  block: Extract<AssistantToolBlock, { kind: 'proposal' }>,
+  env: BlockToolEnv,
+): Promise<{ projectId: number | null } | { error: string }> {
+  const action = ASSISTANT_ACTIONS[block.action];
+  if (action.capability) {
+    const state = (await env.anchorFacts()).states[action.capability];
+    if (state === 'declined' || state === 'not-applicable') {
+      return { error: `action: ${block.action} needs the ${action.capability} capability, ${state} on this instance` };
+    }
+  }
+  const lacks = (where: string) => ({
+    error: `action: ${block.action} needs the ${action.permission} permission${where}, which the user does not hold; do not propose it: say so, and that someone holding it can make the change`,
+  });
+  if (!block.target) return can(env.ctx.access, action.permission) ? { projectId: null } : lacks('');
+  const { type, id } = block.target;
+  const projectId = await PROJECT_OF[type](env.db, id);
+  if (projectId === null || !scopeAllows(env.ctx.scope, projectId)) {
+    return { error: `target: ${type} ${id} is missing or not readable by the user` };
+  }
+  return can(env.ctx.access, action.permission, projectId) ? { projectId } : lacks(` on project ${projectId}`);
 }
 
 /** Run one block tool: the checked block, or why it was refused. */
@@ -164,6 +235,12 @@ export async function runBlockTool(
     const runId = await patchRun(env.db, env.ctx, target);
     if (runId === null) return { error: `target: ${target.type} ${target.id} is missing or not readable by the user` };
     block = { ...block, validation: await validatePatchAtRun(env.db, runId, block.patch) };
+  }
+
+  if (block.kind === 'proposal') {
+    const checked = await proposalProject(block, env);
+    if ('error' in checked) return checked;
+    block = { ...block, projectId: checked.projectId };
   }
 
   return { block };
