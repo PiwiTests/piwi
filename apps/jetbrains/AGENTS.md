@@ -24,9 +24,10 @@ while it does not run. The service's process gets the IDE's HTTP proxy for the i
 (`PiwiLspServerDescriptor.proxyEnvironment`: the default `ProxySelector`, which holds the IDE's proxy settings, asked
 for that address, else for a public one), as `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` with this machine's names (`Glue.proxyEnvironment`), which the
 service's `src/http.ts` reads. The platform stops a service whose start failed: it sends the open files on a pooled
-thread, and a tab opened or closed meanwhile throws a `ConcurrentModificationException` there. A service that stops
-within 30 s of its start is started again two seconds later, unless another one starts or runs, or Node.js is the
-problem; three times in five minutes at most (`PiwiProjectService.watchServer`, `Glue.restartsService`).
+thread, and a tab opened or closed meanwhile throws a `ConcurrentModificationException` there. A service whose process
+ends within 30 s of its start is started again two seconds later, unless another one starts or runs, or Node.js is the
+problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServerProcess` hands the process to
+`PiwiProjectService.watchServer`; `Glue.restartsService`).
 
 - **Nothing starts in an untrusted project.** In a project opened in safe mode (`PiwiProjectService.trusted`, the
   platform's `isTrusted`), the plugin starts no editor service, runs no command (`PiwiCommands.run`, `startRun`) and
@@ -266,6 +267,8 @@ problem; three times in five minutes at most (`PiwiProjectService.watchServer`, 
   up at run time or not used. Its test framework is pinned (`platformTestFrameworkVersion`: it is published with
   IntelliJ IDEA's build numbers, just after WebStorm's), and the test sandbox disables the Swagger plugin, whose test
   service ships with its own tests only.
+- **No internal API** (`@ApiStatus.Internal`, such as `LspServerManager.addLspServerManagerListener`): the Marketplace
+  refuses an upload that uses one, and `verifyPlugin` fails on it (`INTERNAL_API_USAGES`).
 - **An API deprecated on the newest platform is replaced by one 2024.1 has too**: the Marketplace's Plugin Verifier
   counts every use. `Application.runReadAction(Computable)` rather than `ReadAction.compute`,
   `ActionManager.tryToExecute` rather than `ActionUtil.invokeAction`, a `SimpleListCellRenderer` subclass rather than
