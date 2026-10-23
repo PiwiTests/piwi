@@ -34,9 +34,10 @@ watch(
   },
   { immediate: true },
 );
-function goToProjectRuns() {
+// A marker clicked on the history chart opens in the project's markers panel.
+function openProjectMarker(markerId: number) {
   const pid = testCase.value?.project?.id;
-  if (pid) navigateTo(`/projects/${pid}?tab=runs`);
+  if (pid) navigateTo(`/projects/${pid}?tab=runs&marker=${markerId}`);
 }
 
 useHead(
@@ -256,7 +257,7 @@ useViewScroll(
               :data="historyData"
               :height="200"
               :markers="historyMarkers"
-              @marker-click="goToProjectRuns"
+              @marker-click="openProjectMarker"
             />
             <p v-else class="text-center py-4 text-sm text-gray-400">Need at least 2 runs to show a trend.</p>
 

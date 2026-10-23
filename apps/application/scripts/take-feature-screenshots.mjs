@@ -1405,6 +1405,29 @@ function screenshotLightboxScene(width, suffix) {
   };
 }
 
+function markersPanelScene(width, suffix) {
+  return {
+    name: `markers-panel${suffix}`,
+    description: `The timeline markers panel: the markers as a vertical list, then the edit form in place, at ${width} px`,
+    tags: ['desktop'],
+    route: '/projects/1',
+    viewport: { width, height: 1000 },
+    async run({ page, settle, shoot }) {
+      const open = page.getByRole('button', { name: /Markers \(/ });
+      await open.waitFor({ timeout: 60_000 });
+      await settle();
+      await open.click();
+      await page.locator('[data-shot="markers-panel"]').waitFor();
+      await settle();
+      await shoot('list');
+      await page.getByRole('button', { name: 'Edit Enabled strict CSP in production' }).click();
+      await page.getByTestId('marker-form').waitFor();
+      await settle();
+      await shoot('form');
+    },
+  };
+}
+
 function quarantineDismissScene(width, suffix) {
   return {
     name: `quarantine-dismiss${suffix}`,
@@ -3561,6 +3584,34 @@ const SCENES = [
     of: '[data-shot="run-trend"]',
     pad: 12,
   },
+  {
+    name: 'run-trend-marker-tooltip',
+    description:
+      'Run trend: hovering a timeline marker line shows its category, label, date, environment and description',
+    tags: ['desktop'],
+    route: '/projects/1',
+    viewport: { width: 1400, height: 900 },
+    charts: true,
+    async run({ page, settle, shoot }) {
+      const marker = page.locator('[data-shot="run-trend"] [data-testid="chart-marker"]').nth(4);
+      await marker.waitFor({ timeout: 60_000 });
+      await settle();
+      const box = await marker.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.getByTestId('chart-marker-tooltip').waitFor();
+      const boxes = [
+        await page.locator('[data-shot="run-trend"]').boundingBox(),
+        await page.getByTestId('chart-marker-tooltip').boundingBox(),
+      ];
+      const x = Math.max(0, Math.min(...boxes.map((b) => b.x)) - 12);
+      const y = Math.max(0, Math.min(...boxes.map((b) => b.y)) - 12);
+      const right = Math.max(...boxes.map((b) => b.x + b.width)) + 12;
+      const bottom = Math.max(...boxes.map((b) => b.y + b.height)) + 12;
+      await shoot('', { of: false, clip: { x, y, width: right - x, height: bottom - y } });
+    },
+  },
+  markersPanelScene(1280, ''),
+  markersPanelScene(390, '-mobile'),
   {
     name: 'run-skip-kinds',
     description: 'Run page: the count bar draws skipped and fixme in two greys; the Tests list filters by tag',
