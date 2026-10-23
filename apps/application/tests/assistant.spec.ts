@@ -336,8 +336,12 @@ test.describe.serial('Assistant', () => {
     const userTurn = sent.at(-1)!;
     expect(userTurn.role).toBe('user');
     expect(userTurn.content).toContain('This answers your question "Which project?"');
-    expect(userTurn.content).toContain(`"picked":[{"id":"mine","label":${JSON.stringify(label)}`);
-    expect(userTurn.content).toContain(`"entity":{"type":"project","id":${project}`);
+    // Parsed, not matched as text: PostgreSQL stores the block as jsonb, which orders its keys its own way.
+    const reply = /<user_reply>\n(.*)\n<\/user_reply>/s.exec(userTurn.content ?? '')?.[1];
+    expect(JSON.parse(reply ?? 'null')).toEqual({
+      prompt: 'Which project?',
+      picked: [{ id: 'mine', label, entity: { type: 'project', id: project, label } }],
+    });
     expect(sent.at(-2)).toMatchObject({ role: 'assistant' });
     expect(sent.at(-2)!.content).toContain('[Asked: Which project?');
 
