@@ -20,7 +20,6 @@ import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-i
 import type { NextStep } from '#shared/next-step';
 import type { DidNotRunExplanation } from '#shared/did-not-run';
 import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
-import { shouldNudgeFixtures } from '#shared/capability-nudge';
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { issueLineForm } from '~/utils/issue-line';
@@ -211,11 +210,8 @@ const suspectSentence = computed(() =>
 
 const blockedTests = computed(() => (testCase.value as { blockedTests?: BlockedCaseRef[] } | null)?.blockedTests ?? []);
 
-// The capture-fixtures nudge: one contextual line under the headline that offers
-// to decline the fixtures, shown only to an administrator, only where fixtures
-// are undecided for the project, and only when the leading clue (or a timeout)
-// would have used what the fixtures capture. It replaces the evidence footer's
-// naming line on this page.
+// The project's capability states: the evidence footer's decline controls and
+// the nudge on missing capture fixtures read them.
 const {
   state: projectCapState,
   isHidden: capHidden,
@@ -234,25 +230,12 @@ const isTimeoutFailure = computed(() => {
   const s = testCase.value?.status;
   return s === 'timedout' || s === 'timedOut';
 });
-const showFixturesNudge = computed(
-  () =>
-    canDecideCap.value &&
-    shouldNudgeFixtures({
-      clueSection: defaultHint.value.section,
-      isTimeout: isTimeoutFailure.value,
-      fixturesState: projectCapState('fixtures'),
-    }),
-);
-const nudgeDeciding = ref(false);
-async function declineFixturesForProject() {
-  if (nudgeDeciding.value) return;
-  nudgeDeciding.value = true;
-  try {
-    await decideProjectCap('fixtures', 'declined');
-  } finally {
-    nudgeDeciding.value = false;
-  }
-}
+// What the nudge on missing capture fixtures reads: the leading clue, a timeout and the project's fixtures state.
+const nudgeFacts = computed(() => ({
+  clueSection: defaultHint.value.section,
+  isTimeout: isTimeoutFailure.value,
+  fixturesState: projectCapState('fixtures'),
+}));
 
 /** A locator-resolution failure of this execution — the only case the Locator fix section applies to. */
 const isLocatorFailure = computed(() =>
@@ -615,6 +598,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
             description: quarantineLossText.value,
             icon: 'i-lucide-shield-alert',
             color: 'warning',
+            'data-tour': 'quarantine-test',
             onSelect: toggleQuarantine,
           },
     );
@@ -628,6 +612,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
     copies.push({
       label: 'Copy retry command',
       icon: 'i-lucide-clipboard',
+      'data-tour': 'copy-retry-command',
       onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
     });
   }
@@ -783,6 +768,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               class="text-xs text-gray-500 hover:text-primary mr-2 flex items-center gap-1 shrink-0"
               title="View this test's history across runs"
               aria-label="Test history"
+              data-tour="execution-test-history"
             >
               <UIcon name="i-lucide-trending-up" class="size-3.5" />
               <span class="hidden xl:inline">Test history</span>
@@ -808,6 +794,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 icon="i-lucide-ellipsis-vertical"
                 aria-label="More actions"
                 title="More actions"
+                data-tour="execution-more-actions"
               />
             </UDropdownMenu>
           </div>
@@ -822,7 +809,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
         <SituationBlock help="case.situation" :edge="statusEdge">
           <!-- Line 1: identity kicker — status, the test's title path (file › describe › title), marks, quarantine -->
           <template #identity>
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1" data-tour="execution-heading">
               <StatusChip :status="testCase?.status ?? ''" :retries="testCase?.retries" class="shrink-0" />
               <!-- The path in the meta style, the title in the body style -->
               <TestTitlePath
@@ -873,18 +860,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :latest="situation.latest"
               :repository-url="repositoryUrl"
             />
-            <!-- The capture-fixtures nudge, at the point where their absence is felt. -->
-            <p v-if="showFixturesNudge" data-shot="fixtures-nudge" class="mt-2 text-xs text-muted">
-              Capture fixtures would have recorded the network activity behind this failure.
-              <button
-                type="button"
-                :class="SENTENCE_LINK_CLASS"
-                :disabled="nudgeDeciding"
-                @click="declineFixturesForProject"
-              >
-                Not for this project
-              </button>
-            </p>
           </template>
 
           <!-- Line 3: most likely — the one explanation, by the rule both failure pages follow; for a test that did not run, why -->
@@ -953,6 +928,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
           </template>
         </SituationBlock>
 
+        <AssistantNudge page="/test-run-cases/[id]" :facts="nudgeFacts" class="max-sm:rounded-none max-sm:border-x-0" />
+
         <!-- ── Evidence ───────────────────────────────────────────────── -->
         <!-- Hidden while the card renders nothing (a test that never ran), so it adds no gap. -->
         <div ref="evidenceEl" class="scroll-mt-4 empty:hidden">
@@ -962,7 +939,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
             :traces="(traceData as TraceInfo[]) ?? []"
             :has-trace="hasTrace"
             :default-hint="defaultHint"
-            :suppress-fixtures-footer="showFixturesNudge"
             :fixtures-state="projectCapState('fixtures')"
             :coverage-state="projectCapState('coverage')"
             :suspect-lines="suspectLinesData ?? null"

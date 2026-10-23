@@ -213,9 +213,11 @@ the scene name _is_ the image name and `npm run app:screens:docs` regenerates ev
 **Every scene declares the surface it captures** via `mode`: `web` (the default) is the dashboard as a browser serves
 it; `tour` is the web server with the demo's guided tour switched on (`NUXT_PUBLIC_DEMO_TOUR=true`), for scenes of the
 tour itself; `desktop` is the Tauri shell — the server runs with `NUXT_PUBLIC_DESKTOP=true` and the built-in mocked
-Tauri bridge is injected, so no shell build is needed (shape the mock per scene with `link` / `inspection`). Pick `web`
-for anything a browser user sees: desktop-only chrome such as the sidebar's back/forward pair would otherwise
-misrepresent the app in a full-viewport capture. A run covering several modes boots one server per mode, web first.
+Tauri bridge is injected, so no shell build is needed (shape the mock per scene with `link` / `inspection`); `demo` is
+the built demo SPA (`npm run app:generate:demo` first), served from its `/demo/` sub-path, for what only the demo
+build does, such as its assistant's prepared answers. Pick `web` for anything a browser user sees: desktop-only chrome
+such as the sidebar's back/forward pair would otherwise misrepresent the app in a full-viewport capture. A run covering
+several modes boots one server per mode, web first.
 
 | Command                          | Purpose                                                            |
 | -------------------------------- | ------------------------------------------------------------------ |
@@ -242,8 +244,9 @@ recapture to change it.
 ### Inline help (MUST follow)
 
 Any new **block-level** shared component with a header MUST accept an optional `help?: HelpTopicKey` prop (typed from
-`app/utils/help-content.ts`) and render `<HelpHint v-if="help" :topic="help" />`. Add copy by adding one entry to the
-`HELP_TOPICS` registry — never hardcode hint strings at call sites. Hint text is Markdown (`app/utils/help-markdown.ts`):
+`shared/help-content.ts`, re-exported by `app/utils/help-content.ts`) and render
+`<HelpHint v-if="help" :topic="help" />`. Add copy by adding one entry to the `HELP_TOPICS` registry — never hardcode
+hint strings at call sites. Hint text is Markdown (`app/utils/help-markdown.ts`):
 put identifiers and commands in `code`, and when a hint can't stay to 1–2 sentences, give it a lead sentence and a
 `- **Label** — …` list instead of a wall of prose (it then opens wider and scrolls). Document only non-obvious blocks
 (skip counters, search boxes, basic CRUD forms, theme switcher). When adding a hint, **remove the always-on prose it
@@ -256,7 +259,8 @@ Playwright's substring `getByRole('button', { name })` matches both.
 
 ### Settings surface (MUST follow)
 
-Settings pages are driven by the `SETTINGS_PAGES` registry in `app/utils/settings-metadata.ts`; `useSettingsNav` and
+Settings pages are driven by the `SETTINGS_PAGES` registry in `shared/settings-metadata.ts` (re-exported by
+`app/utils/settings-metadata.ts`, and read by the assistant's `explain_setting`); `useSettingsNav` and
 `useSettingsEnvState` derive from it. To add a page or field: (1) add the env var to `shared/piwi-env-vars.ts`,
 (2) add or extend the `HELP_TOPICS` entry with its `envVars`, (3) add the `fields` entry to `SETTINGS_PAGES`,
 (4) render with `SettingsField`. Never hand-roll an env-managed `UAlert` or lock icon — use `EnvManagedBadge` /
@@ -556,7 +560,8 @@ Where to add things in subsystems whose wiring spans several files:
 | Trace-file import                  | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Quality report language            | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only                                                                                                                           |
 | Issue automation criterion         | The rule field and its check in `shared/integrations/automation.ts` (`AutoCreateRule`, `resolveAutoCreateRule`, `evaluateAutoCreate`, `describeAutoCreateRule`); the fact it reads in `gatherAutoCreateFacts` (`shared/handlers/tracker-automation.ts`, shared with the demo preview); the form in `app/utils/tracker-binding-form.ts` and `AutoCreateRulesEditor.vue`; the table on `apps/docs/features/issue-automation.md`. The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules, never re-implement them                                                                                       |
-| Guided tour stop / role / language | A stop: its entry in `TOUR_PROFILES` (`app/utils/demo-tour/profiles.ts`), its title and body under its id in every `copy.<code>.ts`, and the `data-tour` attribute it targets. A role: its id in `TourProfileId` (`types.ts`), its `TOUR_PROFILES` entry, and its label, hint and stops in every copy file. A language: its code in `TOUR_LANGUAGES` and `TOUR_LANGUAGE_INFO` (`languages.ts`), and a `copy.<code>.ts` registered in `TOUR_COPY` (`copy.ts`). A role or language is also named in the _Live demo_ paragraph of `apps/docs/features/ui-overview.md`. Rules under [Guided tour](#guided-tour)                                                                         |
+| Guide anchor                       | Its entry in the area file of `shared/guide-anchors/` (`id`, `kind`, `pages`, `reveal`, `describes`, `shownWhen`, `requires`, `help`, `doc`, `sample`), or an exemption there for an item no anchor covers, and the static `data-tour` value on the one element it names; a new area file is one import and one `GUIDE_AREAS` entry in `index.mjs`. Rules under [Guide anchors](#guide-anchors)                                                                                                                                                                                                                                                                                     |
+| Guided tour stop / role / language | A stop: its entry in `TOUR_PROFILES` (`app/utils/demo-tour/profiles.ts`), its title and body under its id in every `copy.<code>.ts`, and the guide anchor it points at. A role: its id in `TourProfileId` (`types.ts`), its `TOUR_PROFILES` entry, and its label, hint and stops in every copy file. A language: its code in `TOUR_LANGUAGES` and `TOUR_LANGUAGE_INFO` (`languages.ts`), and a `copy.<code>.ts` registered in `TOUR_COPY` (`copy.ts`). A role or language is also named in the _Live demo_ paragraph of `apps/docs/features/ui-overview.md`. Rules under [Guided tour](#guided-tour)                                                                                |
 
 ## Subsystem invariants
 
@@ -873,21 +878,20 @@ popover on one element per screen that links its docs page. It speaks English, F
 browser's language, or the one picked in the toast); the dashboard stays in English.
 
 `app/utils/demo-tour/` holds the data, all pure: `profiles.ts` (`TOUR_PROFILES`, each stop's `route`, `expect`,
-`target`, `unfold`, `side`, `align`, `doc`), `copy.<code>.ts` registered in `copy.ts` (`TOUR_COPY`, every word the
-tour says, one file per language), `languages.ts` (`TOUR_LANGUAGES`, `TOUR_LANGUAGE_INFO`, `pickTourLanguage`),
-`types.ts`, `markup.ts` (escaping, `**bold**`) and `prompt-state.ts` (what a browser decided, stored under
-`localStorage['piwi-demo-tour']`, and when to ask again). `app/composables/useDemoTour.ts` holds the prompt's state and
-the language, stores the decision, and drives driver.js across a tour's pages; `app/components/demo/` has `DemoTour`
-(host, auto-prompt), `DemoTourPrompt` (the toast) and `DemoTourButton` (banner); `app/assets/css/demo-tour.css` themes
-the popover.
+`anchor`, `side`, `align`, `doc`), `copy.<code>.ts` registered in `copy.ts` (`TOUR_COPY`, every word the tour says,
+one file per language), `languages.ts` (`TOUR_LANGUAGES`, `TOUR_LANGUAGE_INFO`, `pickTourLanguage`), `types.ts` and
+`prompt-state.ts` (what a browser decided, stored under `localStorage['piwi-demo-tour']`, and when to ask again).
+`app/composables/useDemoTour.ts` holds the prompt's state and the language, stores the decision, and starts a role's
+tour as a guide (`GuideRun`, its stops with their copy) that the guide engine runs ([Guide anchors](#guide-anchors));
+`app/components/demo/` has `DemoTour` (host, auto-prompt), `DemoTourPrompt` (the toast) and `DemoTourButton`
+(banner).
 
 - **The switch is `runtimeConfig.public.demoTour`**, on in the demo build and off in every other, and `app.vue`
   mounts the tour only when it is on. `NUXT_PUBLIC_DEMO_TOUR=true` turns it on for a dev server, which is what the
   screenshot harness's `tour` mode does.
-- **`data-tour="<id>"` attributes are the tour's API**, as `data-shot` is the harness's: a stop's `target` and
-  `unfold` name one. A value is static (never a bound `:data-tour`), kebab-case, names the content, and is set in
-  exactly one component. Never remove or rename one without updating its stop: `tests/unit/demo-tour.test.ts` fails
-  naming the stop whose target is gone, and names an attribute no stop uses.
+- **A stop points at a guide anchor**: its `anchor` is the id of an entry of `shared/guide-anchors/`, whose reveal
+  opens what holds it (a tab through the URL, a folded section). `tests/unit/demo-tour.test.ts` fails naming a stop
+  whose anchor is not in the registry, or whose route is none of its anchor's pages.
 - **A stop's `route` opens a seeded screen, and its `expect` names the entity it shows**, in the demo examples'
   vocabulary; `tests/unit/demo-seed-consistency.test.ts` checks it against the generated seed like a demo example. A
   seed change that moves the entity updates the stop, never the check. A stop with no `route` stays on the current
@@ -898,23 +902,151 @@ the popover.
   every copy file: the compiler refuses a missing or extra key, `demo-tour.test.ts` an empty string, an untranslated
   body and a stop with no copy. A dashboard label is `**bold**` and stays in English exactly as the screen spells it;
   the test checks that every language names the same bold labels as the English, in order. `**bold**` is the only
-  markup, and a translation keeps the English's placeholders. The voice is the docs'
+  markup (`app/utils/guide/markup.ts`), and a translation keeps the English's placeholders. The voice is the docs'
   ([`apps/docs/AGENTS.md`](../docs/AGENTS.md#voice)): informative, specific, never promotional. 4–7 stops a tour; a
   title ≤ 60 characters and a body ≤ 360 in every language. French says _vous_, German _Sie_, Spanish _tú_; product
   names are never translated.
 - **A change to a toured screen updates the tour in the same commit**, its copy in every language included, exactly
-  like the docs and the demo: moving or renaming a targeted element, renaming a label a stop quotes in bold, a seed
+  like the docs and the demo: moving or renaming an anchored element, renaming a label a stop quotes in bold, a seed
   change under a stop. A new feature that serves a role may replace a stop; it never grows a tour past 7.
 - **Adding a language** works like a quality report language: its code in `TOUR_LANGUAGES` and its
   `TOUR_LANGUAGE_INFO` entry, then a `copy.<code>.ts` (copy `copy.fr.ts`) registered in `TOUR_COPY` — the compiler asks
   for the file, then for every key — and its English name in the _Live demo_ paragraph of
   `apps/docs/features/ui-overview.md`, which `docs-drift.test.ts` checks for every role and language.
+- Verify with `npm run app:generate:demo && npm run app:check:demo:runtime`: it walks every tour in the built demo
+  (the prompt, **Later**, the banner button, each stop's anchor highlighted, one tour in French, one at phone width).
+
+## Guide anchors
+
+A guide is a list of stops, each a driver.js popover on one element of a page; the demo's guided tour is one. A guide
+points only at **guide anchors**: the registry in `shared/guide-anchors/` lists every element a guide can name, and
+nothing else can be pointed at. It is plain ESM, like `shared/demo/demo-examples.mjs`, so the app, the tests and
+`scripts/check-demo-runtime.mjs` read the same file: one `.mjs` file per area of the dashboard (`layout`, `home`,
+`analytics`, `projects`, `runs`, `executions`, `clusters`, `test-cases`, `setup`, `settings`, and `demo` for the demo
+banner), each exporting its anchors and its coverage exemptions, joined in `index.mjs` as `GUIDE_AREAS` (a new area is
+one import and one entry there), with the entry shape in `index.d.mts`. An entry has:
+
+- `id`, the value of the element's `data-tour` attribute;
+- `kind`, what it names (`GUIDE_ANCHOR_KINDS`): `page` (a page's heading area), `tab` (a tab's panel, selected by its
+  `query` reveal), `block` (a section or card), `row` (one row of a list, the first one shown), `field` (a settings
+  field), `action` (a primary action button, or the button opening a menu) or `nav` (a sidebar destination);
+- `pages`, the patterns of `app/pages` it renders on (`/test-run-cases/[id]`, `/`), the main one first, or `['*']` for
+  the layout and the demo banner; a route opens a pattern when each `[param]` is an id, or for `/analytics/d/[id]` a
+  built-in dashboard's key (`/analytics/d/engineering`; `PARAM_KEYS` in `shared/guide-stops.ts`, read from
+  `BUILTIN_DASHBOARDS`);
+- `reveal`, what the engine does before the anchor shows, in order: `{ query }` (a tab or pane selected through the
+  URL), `{ unfold: <anchor> }` (clicks the anchor, the toggle of a folded section, while it reads
+  `aria-expanded="false"`; an open section, or an anchor that is no toggle, stays as it is),
+  `{ open: <anchor> }` (clicks the opener of a menu, drawer or modal when the anchor is not rendered; one step per
+  level, as for the user menu's Open in IDE settings);
+- `describes` and `shownWhen`: one sentence each, in the docs' voice, on what the block shows and when it renders;
+- `requires`: the capability, permission, desktop shell or demo build it needs; `help`: the `HELP_TOPICS` key of the
+  inline help the block carries; `doc`: its docs page;
+- `sample`: a seeded demo route where it renders (with every `query` its reveal needs), the persona to act as and
+  the `expect` the seed must hold there.
+
+The engine is `app/composables/useGuide.ts`: `start(run)` takes a `GuideRun` (`app/utils/guide/types.ts`: an id, a
+language, the stops with their copy, the words of the popover's controls) and opens each stop's route (else its
+anchor's main page when that is a fixed path), runs the anchor's reveal, scrolls the panels holding it and highlights
+it. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup). A stop whose anchor does not render
+shows centered, with the anchor's `shownWhen` under its body; an `absent` stop does so at once, without opening a page
+or waiting. A stop whose anchor sits in what an `open` step opened (`opensLayer`) marks its popover
+`data-dismissable-layer`, so Reka UI counts it as a layer opened from that one: Next taking focus leaves a popover
+holding the anchor open (`scripts/check-demo-runtime.mjs` plays a guide in the run's **Details** popover to hold it).
+Until the user scrolls, clicks or types, the engine scrolls a target that content loading above pushed out of view
+back into it. The popover carries `data-guide`, `data-guide-stop`, `data-guide-anchor` (empty when centered),
+`data-guide-settled` once settled, `lang` and the run's `dataset`, which is what the checks read;
+`app/assets/css/guide.css` themes it (`piwi-guide*` classes).
+
+- **One element per anchor**: an anchor's `data-tour` value is static (never a bound `:data-tour`), kebab-case, names
+  the content, and is set on exactly one element in exactly one component: a template's `data-tour="…"`, or a static
+  `'data-tour': '…'` key the component hands on: on an item of a Nuxt UI menu (the sidebar's and the user menu's
+  items), which passes it to the item's link; in a `NavbarActions` action's `attrs`; or in a static
+  `attrs: { 'data-tour': '…' }` (or a map of them) spread with `v-bind`, as `settings/ai.vue`'s `ROLE_META` puts one
+  on each role's form and `Toolbox.vue`'s `SECTION_ANCHORS` on each section's toggle. The value stays a literal the
+  source test reads, never a computed string. An element can carry both `data-tour` and the harness's `data-shot`. A
+  demo-only anchor (`requires.demo`) is set in a component under `app/components/demo/`.
+- **Four checks hold every anchor.** `tests/unit/guide-anchors.test.ts` checks the registry against the source:
+  each id is the `data-tour` of exactly one element and every `data-tour` is an anchor, each page is a file of
+  `app/pages`, a reveal names anchors on the same page, the sample route opens one of its pages with its reveal's
+  query, the sentences fit (≤ 160 characters, one sentence) and the capability exists.
+  `tests/unit/guide-anchor-coverage.test.ts` checks the coverage below, each `kind` and each `help` key.
+  `tests/unit/demo-seed-consistency.test.ts` checks each sample's `expect` against the generated seed, as for a demo
+  example. `scripts/check-demo-runtime.mjs` opens every sample in the built demo as its persona, runs the reveal and
+  finds the anchor visible once scrolled into view, one check per anchor; an element that is, or sits in, one with a
+  computed opacity of 0 fails it, so a control shown only while the pointer is over its row is no anchor (anchor what
+  always shows, such as the Failure inbox's keyboard line).
+- **Every block someone could ask about has an anchor.** The coverage test reads what each rule asks for from the
+  source (`tests/unit/guide-anchor-source.ts`) and fails listing every item no anchor covers, with the files that
+  set it and the pages it renders on:
+  - `page`: every page pattern of `app/pages` has an anchor of kind `page` listing it;
+  - `tab`: every tab the URL selects has an anchor of kind `tab` on its page whose `query` reveal is exactly the
+    tab's: the project page's tabs, Failures segments and Settings sections, the run's, test's and bug report's tabs,
+    and the execution's evidence tabs (`TAB_LISTS`, each read from its list in the code; a new tab list the URL
+    selects gets an entry there). A tab held only in a component's state has no URL to reveal it, so it is a block;
+  - `field`: every field of `SETTINGS_PAGES` has an anchor of kind `field` on its page whose `help` is the field's;
+  - `help`: every help topic a `.vue` file sets statically (`help="…"`, `<HelpHint topic="…">`, a literal in a bound
+    `:help` or `:topic`, `help: '…'` in the script) is the `help` of an anchor;
+  - `nav`: every destination of the sidebar's items in `app/layouts/default.vue`, which the command palette lists
+    too, carries the `data-tour` of an anchor of kind `nav`.
+- **An item that gets no anchor is exempted** in its area file's exemptions: `{ rule, key, reason }`, the key as the
+  report names it (`/projects/[id]?tab=runs`, `case.network`, `ai.diagnosis`) and the reason in one sentence. The
+  test fails on an exemption that names no item, names one an anchor covers, or repeats another.
+- **Each item belongs to one area**, whose agent or change covers it: a page, tab or field by its page's path; a help
+  topic by the directory of the component setting it (`COMPONENT_DIR_AREAS`), else `COMPONENT_AREAS` for a component
+  that renders on another area's pages, the first area a `components/shared/` component renders on, and
+  `TOPIC_AREAS` for a topic set in several areas; a sidebar destination is `layout`. With `GUIDE_AREA=<area>` set,
+  `npx vitest run tests/unit/guide-anchor-coverage.test.ts` asserts that area's items, anchors and exemptions only.
+- **Check new anchors on a running server**:
+  `node scripts/check-demo-runtime.mjs --url http://localhost:3000 --area <area>` (or `--anchors <id,id,…>`, or
+  both) opens each sample on the dev server, once it hydrates, instead of the built demo. It skips an anchor whose sample acts as a persona or that needs the demo build, since authentication
+  is off on a dev server; `npm run app:seed:dev` gives that server the demo's seeded ids. `--anchors-only` checks the
+  same selection in the built demo, without the tours and the other checks. With no flag, the script checks
+  everything in the built demo, as CI does.
+- **An anchor of the desktop app** (`requires.desktop`, its sample on `surface: 'desktop'`) is skipped by those runs
+  and checked by `node scripts/check-demo-runtime.mjs --desktop`: the screenshot harness's desktop mode, a dev server
+  started with `NUXT_PUBLIC_DESKTOP=true` on a throwaway copy of the demo seed (booted on port 3050 for the run), with
+  its mocked Tauri bridge (`scripts/lib/desktop-bridge.mjs`) and a linked folder. `--area` and `--anchors` narrow it;
+  `--url` drives a desktop server already running instead.
+- **A change that moves, renames or removes an anchored element updates the registry in the same commit**, and the
+  guides pointing at it (the tour's stops, the authored guides' stops) with it. A new anchor ships with its sample and
+  passes all four checks.
 - **The engine never lets `scrollIntoView` run**: the dashboard scrolls inside its content panel, and
   `scrollIntoView` would shift the layout around it, so the engine scrolls the target's panels itself and stubs
-  driver.js's own call on the target and the popover. driver.js, its CSS and `demo-tour.css` load only when the first
-  tour starts (`loadEngine`).
-- Verify with `npm run app:generate:demo && npm run app:check:demo:runtime`: it walks every tour in the built demo
-  (the prompt, **Later**, the banner button, each stop's target highlighted, one tour in French, one at phone width).
+  driver.js's own call on the target and the popover. driver.js, its CSS and `guide.css` load only when the first
+  guide starts (`loadEngine`).
+
+### Authored guides
+
+Fixed guides for the tasks people ask about most (report a first run, configure AI, connect Jira, run the Flake Lab,
+…), which need no model: the command palette's **Guides** group (`useAuthoredGuides().paletteGroups()`, in
+`layouts/default.vue`) and the assistant panel's empty and unavailable states (`AuthoredGuideList`) list them on every
+instance, each filtered by its `requires` against the capability states and `canAnywhere`. `app/utils/guides/` holds
+them, all pure: `guides.ts` (`AUTHORED_GUIDES`, each guide's id, title, summary, lucide icon, keywords, `requires` and
+stops), `resolvers.ts` (`GUIDE_RESOLVERS`) and `run.ts` (the `GuideRun` the engine plays, `guide-<id>` on its popover).
+
+- **A stop names a registry anchor**, never a demo-only or desktop-only one, on the anchor's main page when that is a
+  fixed path, else on the `page` a resolver fills (the anchor's main page by default). Its docs link is the anchor's
+  `doc`. The guide's `requires` covers each stop's anchor: the anchor's capability is the guide's, and every role
+  holding the guide's permission holds the anchor's.
+- **An entity's page comes from a resolver**, never a seeded id: `GUIDE_RESOLVERS` is a closed set (the project
+  updated last, the newest finished run, a failure of the newest failed run, a failure with a locator fix, the open
+  cluster seen last, the flakiest test and its project, the first saved dashboard the user can edit), each reading API
+  routes the demo serves too. A resolver that finds nothing makes its stops `absent`. A new resolver lists the pages it
+  fills, and every one must find its entity in the demo seed, or the built-demo walk fails.
+- **Limits**: 3–7 stops; a title ≤ 60 characters and a body ≤ 360, a guide title ≤ 60 and a one-line summary ≤ 80;
+  English, in the docs' voice ([`apps/docs/AGENTS.md`](../docs/AGENTS.md#voice)); `**bold**` the only markup, a
+  dashboard label bold and spelled as the screen shows it. A stop on the page the guide is already on adds no query
+  value, since a page reads its `?tab=` when it opens. No stop on an anchor inside a modal.
+- **Checks**: `tests/unit/authored-guides.test.ts` (the anchors, pages, resolvers, `requires`, limits, and every bold
+  label against the source of the component setting the stop's anchor, the component carrying it or the page's
+  files, so a renamed label fails; the resolvers on stubbed routes; the docs page listing every guide),
+  `tests/guides.spec.ts` (the palette and the panel with no model, a declined capability), and
+  `scripts/check-demo-runtime.mjs`, which starts every guide from the palette in the built demo and walks it, each stop
+  highlighted on its anchor and in view, one guide at 390 px.
+- **A change to a screen a guide stop shows updates the guide in the same commit**, as for the tour: moving or
+  renaming an anchored element, renaming a label a stop puts in bold, a change that makes a resolver find nothing in
+  the seed. A new guide, or a renamed one, updates the table of `apps/docs/features/guides.md`.
 
 ## MCP tool conventions (MUST follow)
 
@@ -951,6 +1083,115 @@ the docs pages and `CHANGELOG.md` bundled as Nitro server assets (`nitro.serverA
 Dockerfile copies both in) and from the registries the docs site renders — never from prose written for the tool,
 so they cannot say anything the docs do not. How this instance is configured (storage, retention, capability
 states) is deployment shape, shown to administrators only, like the Setup page.
+
+## Assistant
+
+The in-app assistant answers questions with the `assistant` AI role (the diagnosis role when unset) by calling the MCP
+tools in-process: the loop and its tools in `server/utils/assistant/`, the model calls with tools in
+`server/utils/ai-tool-calls.ts`, the routes under `server/api/assistant/`, the wire shapes in `shared/assistant.ts`
+and the conversations in `shared/handlers/assistant.ts` (shared with the demo). The panel (`app/components/assistant/`,
+`useAssistant`, its pure parts in `app/utils/assistant/`) renders every block with the dashboard's own components,
+links a `piwi:` entity only when it is in the conversation's known entities (`assistantKnownEntities`), and plays a
+composed guide through `useGuide`.
+
+- **The model is offered read tools only.** `assistantReadTools` drops every tool that declares a `permission` and
+  every desktop-only tool but `read_local_source` on the desktop app, which the assistant wraps to read only inside
+  the folder linked to a project the user reads (`server/utils/assistant/local-source.ts`), so a new write tool is
+  never offered. `apply_locator_fix` and `import_local_report` write and stay out. Never add a tool that writes to the
+  assistant's set, not even through `find_tools`.
+- **Tools run with the asking user's context.** The route builds the `McpContext` with `requestMcpContext`, as `/mcp`
+  does, and both filter the catalog with `toolsForCaller` (`server/utils/mcp/catalog.ts`). Never call a handler with a
+  wider context than the caller's.
+- **With the Claude Code CLI, one CLI run writes the answer** (`server/utils/assistant/claude-code.ts`, when
+  `claudeCliRunsAgents` finds the options in `claude --help`; otherwise the CLI answers step by step in the JSON
+  action mode). Its only MCP server is the answer's endpoint, `POST /api/assistant/conversations/:id/mcp`
+  (`turn-mcp.ts`), which serves that answer's toolbox and runs each call through the same answer as the loop
+  (`answer.ts`: the events, the tool-call limit, nothing after a question block). It authenticates with a token
+  minted per user, conversation and answer (`turn-token.ts`), kept as a hash in memory, revoked when the answer ends
+  and refused past its time limit, for another conversation, on any other route and from a host, origin or peer that
+  is not loopback. The token goes to the CLI in a `--mcp-config` file, never on its command line; never hand the CLI
+  the desktop token or an API key. On the desktop app the guard lets that one route through on that token alone
+  (`presentsAssistantTurnToken`); any other route keeps needing the desktop token.
+- **A conversation is never returned to another user**, administrators included. Every read in
+  `shared/handlers/assistant.ts` is narrowed to the owner (`assistantOwnerOf`: the user's id, or null with
+  authentication off), and a miss answers 404.
+- **Tool routing** is `CORE_ASSISTANT_TOOLS` and `PAGE_TOOLS` (an `app/pages` pattern → tool names) in
+  `server/utils/assistant/tools.ts`; `tests/unit/assistant-tools.test.ts` checks every name is a read tool and every
+  pattern a page.
+- **Usage outlives a conversation.** Each answer that called a model writes an `assistant_usage` row, which the daily
+  caps and Settings → AI → AI usage read; deleting a conversation never deletes it.
+- **An answer's blocks are checked on the server, against limits kept in one place.** Every block but text is a call
+  to a block tool (`server/utils/assistant/blocks.ts`); `shared/assistant-blocks.ts` holds `ASSISTANT_BLOCK_LIMITS`,
+  the zod schema of each tool's arguments (its input schema is derived from it, so the model reads the same limits)
+  and the checks that need no database. A block that fails is never sent: the tool result says why. A `question` or
+  `options` block ends the answer; the user's pick comes back as the next question's `reply`, recorded on the block
+  (`recordAssistantReply`) and handed to the model as data.
+- **Entities come from tool results only.** `extractEntities` (`server/utils/assistant/entities.ts`) reads each read
+  tool's result by the field conventions of the MCP tools (the tool's own `id`, by `TOOL_ENTITY`; objects under keys
+  such as `project` or `recentExecutions`; the `…Id` fields), and the tool call stores them. The conversation's set
+  is the stored calls of all its answers: a card, a choice or a patch target outside it is refused, and the panel
+  links `piwi:<type>/<id>` only to one in it. A read tool whose top-level `id` is an entity gets its `TOOL_ENTITY` line.
+- **Guide plans are checked server-side** (`server/utils/assistant/guides.ts`), and `find_anchors` filters the same
+  way: registry anchors only, their `requires` holding for this user and instance (never a demo-only one; on a
+  project's pages a capability follows that project's states, read by `readProjectStates`), each route on one of its
+  anchor's pages, its ids readable by the user (`checkRouteEntities`, as `checkEntityScope` checks
+  an MCP tool's), a route wherever the anchor's page has an id the user is not on, at most 7 stops, copy within the
+  tour's limits with `**bold**` only. A `navigate` route is checked the same way. A page with another kind of `[id]`
+  gets its `ROUTE_ENTITIES` line, or its routes are refused. The question's context lists the anchors rendered on the
+  page (`renderedAnchors`, the visible `data-tour` values), which `find_anchors` ranks first.
+- **A change is a proposal the user applies; the model never writes.** `propose_change` makes a `proposal` block from
+  the closed registry `ASSISTANT_ACTIONS` (`shared/assistant-actions.ts`), shown only when the action's parameters
+  pass its schema, its target is an entity of the conversation of the kind it changes, its capability is declined
+  neither for the target's project nor on the instance (a project may enable one the instance declined), and the user
+  holds its permission on the target's project (on the instance when it has no target). **Apply** calls the action's own REST
+  route from the browser with the user's session (`assistantActionRequest`), then records the outcome through
+  `PATCH …/messages/:messageId/proposal`. A new action is one registry entry naming an existing route, its method, the
+  permission that route declares in `x-required-permission` and the pure path and body builders;
+  `tests/unit/assistant-actions.test.ts` reads each route's file and fails on a route or permission that does not
+  match. Never add an action whose route does not exist yet, nor one the browser could not call with a click.
+- **`explain_setting`** (`server/utils/assistant/settings.ts`) reads `SETTINGS_PAGES` and `HELP_TOPICS` from
+  `shared/`. Which variables the environment sets, and a field's value, go only to a user who may open its page; a
+  value comes from a `READERS` line that reads it as that page's own endpoint does, a secret only as set or not set, a
+  variable's value never.
+- **The demo answers prepared questions, each computed from the seed.** With no model, the demo's assistant answers
+  `DEMO_ASSISTANT_QUESTIONS` (`shared/demo/assistant-questions.mjs`: each question's answer, the pages it is offered
+  on, which are the demo's **Ask about this page** suggestions, and a seeded sample route). `app/demo/api/assistant-match.ts`
+  matches a typed question to an answer by its words and its page; `app/demo/api/assistant-answers.ts` computes the
+  answer from the in-browser database through the shared handlers the read tools call, each read streamed as the
+  `tool` the server's assistant would call, with the entities it named, its blocks made through
+  `checkAssistantBlock`, its guides from `rankAnchors` (on a project's pages, with that project's capability states,
+  as the server reads them) and the authored guides, its proposals held to the action's capability and permission on
+  the target's project, and a reply to one of its blocks answered with the follow-up. A question no
+  answer matches gets the page's prepared questions to pick from and the authored guides that fit it. Never write a
+  seeded fact into an answer: read it. `tests/unit/demo-assistant-answers.test.ts` computes every answer at its sample
+  on the generated seed and `scripts/check-demo-runtime.mjs` asks one of each from the panel in the built demo; a seed
+  change that breaks one updates the answer or its sample, never the check.
+
+### Nudges
+
+A nudge is the one thing the assistant shows unasked: a suggestion on a page, offering an authored guide (**Show me**)
+or a question the panel opens on and asks (**Ask**), when a rule over what the page already loaded holds.
+
+- **One registry**: `NUDGES` in `app/utils/nudges/nudges.ts`, all pure. A nudge has an id, its page (a pattern of
+  `app/pages`), its rule over that page's facts (`NudgePageFacts`), its offer, its words (a title ≤ 60 characters and
+  one or two plain sentences, in the docs' voice) and its `requires`; a guide offer also needs its guide's `requires`,
+  a question an AI model. Its id is in `ASSISTANT_NUDGE_IDS` (`shared/assistant-nudges.ts`), the only ids the
+  dismissal routes accept, which their meta's `enum` lists. A new nudge is its id there and in both routes' `enum`,
+  its `NUDGES` entry, its page placing `<AssistantNudge page="…" :facts="…">` and its row on
+  `apps/docs/features/guides.md`; `tests/unit/assistant-nudges.test.ts` checks the ids, the placement, the copy and
+  each rule both ways.
+- **No model call, ever, and no fetch of its own**: a rule reads only what its page already loaded.
+- **The budget keeps them rare**: a page view shows one nudge at most and asks the budget once, and a browser shows at
+  most `NUDGE_BUDGET` (3) in seven days, counted in `localStorage['piwi-nudges']` (`app/utils/nudges/budget.ts`).
+  Never raise it to make room for a nudge.
+- **A dismissal lives on the server**, one row per owner and nudge in `assistant_nudge_dismissals` (the owner as
+  `assistantOwnerOf` reads it: null with authentication off, when a dismissal holds for the whole instance), through
+  `shared/handlers/assistant-nudges.ts`, shared with the demo; deleting a user deletes theirs. Never keep one in the
+  browser alone: **Don't show again** holds in every browser.
+- **Declining the assistant hides only the nudges that ask it**: a guide needs no model, so a nudge offering one keeps
+  showing while the `assistant` capability (or AI) is declined, and the dismissal routes keep answering; a question's
+  nudge shows only while the assistant can answer (`canAsk`). The card renders in the browser only, after the page's
+  first paint.
 
 ## Performance
 

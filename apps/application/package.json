@@ -26,6 +26,7 @@
     "app:test": "playwright test",
     "app:test:ai:live": "playwright test --config=tests/live/playwright.config.ts",
     "app:test:jira:live": "playwright test --config=tests/live/jira-live.config.ts",
+    "app:test:assistant:live": "playwright test --config=tests/live/assistant-live.config.ts",
     "app:test:unit": "cross-env NODE_OPTIONS=--expose-gc vitest run",
     "app:test:unit:coverage": "cross-env NODE_OPTIONS=--expose-gc vitest run --coverage",
     "app:test:ui": "playwright test --ui",

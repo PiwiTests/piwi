@@ -2,7 +2,7 @@
  * Helpers for the role-based AI settings surface (GET/PUT /api/settings/ai).
  *
  * Storage: the `ai` app-setting holds `{ autoDiagnose, roles }` where each role
- * (`diagnosis` | `research` | `embedding`) has its own provider config, or a
+ * (`diagnosis` | `research` | `embedding` | `assistant`) has its own provider config, or a
  * `reuse` pointer to inherit another role's provider/key/baseUrl. A stored
  * setting may instead hold flat fields (`provider`, `model`, `researchModel`,
  * …); `storedRoles()` maps those onto roles on read.
@@ -11,11 +11,12 @@
 import { eq } from 'drizzle-orm';
 import { getAppSetting } from './app-settings';
 import { canEncryptSecrets } from './crypto';
+import { claudeCliEnabled } from './ai-claude-cli';
 import { projects } from '../database/schema';
 import type { AiModelRole, AiProvider, AiRoleSettings, AiSettings } from '~~/types/api';
 import type { DbClient } from '../database';
 
-export const AI_ROLES: AiModelRole[] = ['diagnosis', 'research', 'embedding'];
+export const AI_ROLES: AiModelRole[] = ['diagnosis', 'research', 'embedding', 'assistant'];
 
 /** The environment-managed AI response language, or null. */
 export function envAiLanguage(): string | null {
@@ -96,6 +97,11 @@ export function rolesFromLegacy(flat: {
   embeddingModel?: string;
   embeddingBaseUrl?: string;
   embeddingApiKey?: string;
+  assistantModel?: string;
+  assistantProvider?: string;
+  assistantBaseUrl?: string;
+  assistantApiKey?: string;
+  assistantTemperature?: string | number;
 }): Partial<Record<AiModelRole, RawStoredRole>> {
   const roles: Partial<Record<AiModelRole, RawStoredRole>> = {};
   if (flat.provider) {
@@ -129,6 +135,20 @@ export function rolesFromLegacy(flat: {
       baseUrl: flat.embeddingBaseUrl || flat.baseUrl,
       apiKey: flat.embeddingApiKey || flat.apiKey,
     };
+  }
+  if (flat.assistantModel) {
+    // Like research: with no provider, base URL or key of its own, the assistant reuses the main role's.
+    const temperature = parseEnvTemperature(flat.assistantTemperature);
+    roles.assistant =
+      flat.assistantProvider || flat.assistantBaseUrl || flat.assistantApiKey
+        ? {
+            provider: flat.assistantProvider || flat.provider,
+            model: flat.assistantModel,
+            baseUrl: flat.assistantBaseUrl || flat.baseUrl,
+            apiKey: flat.assistantApiKey || flat.apiKey,
+            temperature,
+          }
+        : { reuse: 'diagnosis', model: flat.assistantModel, temperature };
   }
   return roles;
 }
@@ -217,6 +237,7 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
       diagnosis: toRoleSettings(roleMap.diagnosis),
       research: toRoleSettings(roleMap.research),
       embedding: toRoleSettings(roleMap.embedding),
+      assistant: toRoleSettings(roleMap.assistant),
     },
     autoDiagnose,
     hasScmToken,
@@ -225,5 +246,6 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
     language,
     languageEnvManaged,
     canStoreSecrets: canEncryptSecrets(),
+    claudeCliAvailable: claudeCliEnabled(),
   };
 }

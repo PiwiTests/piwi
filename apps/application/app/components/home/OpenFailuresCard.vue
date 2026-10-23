@@ -562,7 +562,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-inbox" title="Failure inbox" help="home.failure-inbox">
+  <SectionCard icon="i-lucide-inbox" title="Failure inbox" help="home.failure-inbox" data-tour="failure-inbox">
     <template #actions>
       <UButton
         v-if="hasMore && !expanded"
@@ -965,7 +965,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     </div>
 
     <!-- Keyboard hints (hidden on touch) -->
-    <p v-if="hints.any" class="mt-3 text-[11px] text-gray-400 [@media(hover:none)]:hidden">
+    <p
+      v-if="hints.any"
+      class="mt-3 text-[11px] text-gray-400 [@media(hover:none)]:hidden"
+      data-tour="failure-inbox-triage"
+    >
       <span class="font-mono">j/k</span> move ·
       <span v-if="hints.select"><span class="font-mono">x</span> select · </span>
       <template v-if="hints.triage">

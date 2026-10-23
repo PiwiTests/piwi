@@ -111,7 +111,7 @@ async function onChange(subject: AccessSubject, projectId: number | null, role: 
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-tour="permissions-page">
     <UAlert
       v-if="data && !data.authEnabled"
       icon="i-lucide-info"
@@ -121,7 +121,12 @@ async function onChange(subject: AccessSubject, projectId: number | null, role: 
       description="Project roles apply once authentication is enabled with PIWI_AUTH_ENABLED. Until then every visitor can do everything on every project."
     />
 
-    <SectionCard title="Permissions" help="settings.permissions" data-shot="permission-grid">
+    <SectionCard
+      title="Permissions"
+      help="settings.permissions"
+      data-shot="permission-grid"
+      data-tour="permission-grid"
+    >
       <ErrorState v-if="error" :text="`Couldn't load the permission grid: ${errorMessage(error)}`">
         <template #action>
           <UButton size="sm" color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="refresh()">

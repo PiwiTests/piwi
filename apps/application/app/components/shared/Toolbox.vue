@@ -52,6 +52,18 @@ watch([defaultOpen, () => props.lead], () => {
   openKey.value = initialOpen();
 });
 
+// Each section's guide anchor: on its toggle, which a guide clicks to unfold it,
+// or on its card when it leads.
+const SECTION_ANCHORS: Record<FixSectionKey, Record<string, string>> = {
+  diagnosis: { 'data-tour': 'fix-section-diagnosis' },
+  'locator-fix': { 'data-tour': 'fix-section-locator-fix' },
+  verify: { 'data-tour': 'fix-section-verify' },
+  reproduce: { 'data-tour': 'fix-section-reproduce' },
+  'fixed-before': { 'data-tour': 'fix-section-fixed-before' },
+  blocked: { 'data-tour': 'fix-section-blocked' },
+  'fix-plan': { 'data-tour': 'fix-section-fix-plan' },
+};
+
 function toggle(key: FixSectionKey) {
   openKey.value = openKey.value === key ? null : key;
 }
@@ -100,7 +112,7 @@ defineExpose({ openSection, scrollToSection });
 <template>
   <!-- The next step's section, as a card of its own -->
   <div v-if="leadKey" ref="leadEl" class="scroll-mt-4">
-    <SectionCard :title="FIX_SECTION_LABELS[leadKey]" data-shot="fix-lead">
+    <SectionCard :title="FIX_SECTION_LABELS[leadKey]" data-shot="fix-lead" v-bind="SECTION_ANCHORS[leadKey]">
       <template v-if="$slots[`${leadKey}-actions`]" #actions>
         <slot :name="`${leadKey}-actions`" />
       </template>
@@ -127,6 +139,7 @@ defineExpose({ openSection, scrollToSection });
             type="button"
             class="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:outline-2 focus-visible:outline-primary"
             :aria-expanded="openKey === s.key"
+            v-bind="SECTION_ANCHORS[s.key]"
             @click="toggle(s.key)"
           >
             <UIcon

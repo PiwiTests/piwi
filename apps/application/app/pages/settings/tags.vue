@@ -149,15 +149,22 @@ async function handleDeleteTag() {
 
 <template>
   <CapabilityDeclinedGuard capability="tags" label="Tags">
-    <div class="space-y-6">
+    <div class="space-y-6" data-tour="tags-page">
       <!-- Tags table -->
-      <SectionCard v-if="allTags.length > 0" title="Tags" :count="allTags.length" help="settings.tags">
+      <SectionCard
+        v-if="allTags.length > 0"
+        title="Tags"
+        :count="allTags.length"
+        help="settings.tags"
+        data-tour="tags-list"
+      >
         <template #actions>
           <UButton
             v-if="canManageTags"
             label="Add tag"
             icon="i-lucide-tag"
             size="sm"
+            data-tour="add-tag"
             @click="isAddTagModalOpen = true"
           />
         </template>

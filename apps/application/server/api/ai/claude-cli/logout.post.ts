@@ -14,7 +14,11 @@ export default eventHandler(async (event) => {
   await requireAuth(event);
 
   if (!claudeCliEnabled()) {
-    throw apiError({ statusCode: 400, message: 'The local Claude CLI is only available in the Piwi desktop app' });
+    throw apiError({
+      statusCode: 400,
+      message:
+        'The local Claude CLI is only available in the Piwi desktop app, or on a server with PIWI_CLAUDE_CLI_PATH set',
+    });
   }
 
   const result = await runClaudeLogout();

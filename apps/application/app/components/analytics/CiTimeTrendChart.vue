@@ -77,6 +77,7 @@ const subtitle = computed(() => {
     title="CI time"
     :subtitle="subtitle"
     help="analytics.ci-time"
+    data-tour="analytics-ci-time"
     :export-data="exportData"
   >
     <template #actions>

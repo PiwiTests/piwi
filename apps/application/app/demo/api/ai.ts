@@ -1023,7 +1023,7 @@ export async function apiGetAiSettings() {
     reuse: null,
   };
   return {
-    roles: { diagnosis: demoRole, research: null, embedding: null },
+    roles: { diagnosis: demoRole, research: null, embedding: null, assistant: null },
     autoDiagnose: false,
     hasScmToken: scmRows.length > 0,
     envManaged: true,
@@ -1031,6 +1031,7 @@ export async function apiGetAiSettings() {
     language: null,
     languageEnvManaged: false,
     canStoreSecrets: true,
+    claudeCliAvailable: false,
   };
 }
 

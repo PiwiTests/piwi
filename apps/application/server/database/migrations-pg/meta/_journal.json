@@ -967,6 +967,13 @@
       "when": 1792693003548,
       "tag": "0137_test_runs_cases_repeat_each_index",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1792762219415,
+      "tag": "0138_assistant",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,294 @@
+{
+  "status": {
+    "available": true,
+    "reason": null,
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "toolMode": "native"
+  },
+  "conversation": {
+    "id": 501,
+    "title": "",
+    "createdAt": "2026-10-22T09:00:00.000Z",
+    "updatedAt": "2026-10-22T09:00:00.000Z"
+  },
+  "question": "Why does the cart test keep failing on main?",
+  "answer": [
+    {
+      "event": "tool",
+      "data": {
+        "name": "get_run",
+        "summary": "Read run #12",
+        "entities": [{ "type": "run", "id": 12, "label": "Run #12" }]
+      }
+    },
+    {
+      "event": "tool",
+      "data": {
+        "name": "get_cluster",
+        "summary": "Read failure cluster #3",
+        "entities": [{ "type": "cluster", "id": 3, "label": "Cart total is stale after removing an item" }]
+      }
+    },
+    {
+      "event": "tool",
+      "data": {
+        "name": "list_flaky_tests",
+        "summary": "List the flaky tests of checkout-web",
+        "entities": [
+          { "type": "test-case", "id": 21, "label": "cart › removes an item" },
+          { "type": "test-case", "id": 22, "label": "checkout › applies a coupon" }
+        ]
+      }
+    },
+    {
+      "event": "text",
+      "data": { "text": "## What failed\n\n[Run #12](piwi:run/12) failed 3 of its 48 tests, and the three " }
+    },
+    {
+      "event": "text",
+      "data": {
+        "text": "belong to one failure cluster, [Cart total is stale after removing an item](piwi:cluster/3). The test checks the total before the cart call returns:\n\n1. It clicks **Remove** on the second item.\n2. It expects `cart-total` to read `$18.00` at once, while the request is still in flight.\n\nThe tool results name no [Run #99](piwi:run/99), so this answer says nothing about it."
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "entity",
+          "id": "run-12",
+          "entity": { "type": "run", "id": 12, "label": "Run #12" },
+          "status": "failed",
+          "detail": "3 of 48 tests failed · main"
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "code",
+          "id": "assertion",
+          "title": "The check that fails",
+          "language": "typescript",
+          "code": "await page.getByRole('button', { name: 'Remove' }).nth(1).click();\nawait expect(page.getByTestId('cart-total')).toHaveText('$18.00');"
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "patch",
+          "id": "fix",
+          "title": "Wait for the cart call before the check",
+          "patch": "--- a/tests/cart.spec.ts\n+++ b/tests/cart.spec.ts\n@@ -14,5 +14,7 @@ test('removes an item', async ({ page }) => {\n   await page.goto('/cart');\n-  await page.getByRole('button', { name: 'Remove' }).nth(1).click();\n+  const removed = page.waitForResponse((r) => r.url().includes('/api/cart') && r.request().method() === 'DELETE');\n+  await page.getByRole('button', { name: 'Remove' }).nth(1).click();\n+  await removed;\n   await expect(page.getByTestId('cart-total')).toHaveText('$18.00');\n });",
+          "validation": { "status": "applies", "filesChecked": 1, "filesInPatch": 1, "errors": [] }
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "command",
+          "id": "repeat",
+          "title": "Run the test five times on your machine",
+          "command": {
+            "bash": "PIWI_RUN_LABEL=local npx playwright test tests/cart.spec.ts --repeat-each=5",
+            "powershell": "$env:PIWI_RUN_LABEL = 'local'; npx playwright test tests/cart.spec.ts --repeat-each=5"
+          }
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "options",
+          "id": "ways",
+          "prompt": "Three ways to make the test reliable:",
+          "options": [
+            {
+              "id": "wait-response",
+              "title": "Wait for the cart response",
+              "summary": "Wait for the DELETE call to the cart before the check, as the patch does.",
+              "tradeoff": "Ties the test to the cart route",
+              "effort": "small",
+              "recommended": true
+            },
+            {
+              "id": "longer-timeout",
+              "title": "Give the check a longer timeout",
+              "summary": "toHaveText retries until its timeout; a longer one covers the slow call.",
+              "tradeoff": "Hides a slow endpoint behind a longer wait",
+              "effort": "small"
+            },
+            {
+              "id": "quarantine",
+              "title": "Quarantine it while you fix it",
+              "summary": "The test keeps running and reporting, and stops failing the run.",
+              "tradeoff": "The failure stays until someone fixes it",
+              "effort": "small",
+              "guide": {
+                "title": "Quarantine a flaky test",
+                "stops": [
+                  {
+                    "anchor": "flaky-test-row",
+                    "route": "/projects/1?tab=flaky-tests",
+                    "title": "The flaky tests",
+                    "body": "Each row is a test that passed and failed on the same code; its menu has **Quarantine**."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "checklist",
+          "id": "verify",
+          "title": "Check the fix",
+          "steps": [
+            {
+              "id": "apply",
+              "text": "Apply the patch in your clone",
+              "command": { "bash": "git apply piwi-assistant-fix.patch" }
+            },
+            { "id": "repeat", "text": "Run the test five times" },
+            {
+              "id": "watch",
+              "text": "Watch the project on the next run",
+              "guide": {
+                "title": "Where the next run shows",
+                "stops": [
+                  {
+                    "anchor": "project-health",
+                    "route": "/",
+                    "title": "Project health",
+                    "body": "Each project’s last 20 runs, failing projects first."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "guide",
+          "id": "where",
+          "guide": {
+            "title": "Where this failure shows on your screens",
+            "stops": [
+              {
+                "anchor": "project-health",
+                "route": "/",
+                "title": "Project health",
+                "body": "Each project’s last 20 runs: **checkout-web** leads the table while the cart test fails."
+              },
+              {
+                "anchor": "failure-inbox-row",
+                "route": "/",
+                "title": "The failure inbox",
+                "body": "One row per open failure cluster; the cart cluster is among them until a run passes."
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "navigate",
+          "id": "open-cluster",
+          "route": "/failure-clusters/3",
+          "label": "Open the failure cluster"
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "proposal",
+          "id": "resolve",
+          "action": "resolve-cluster",
+          "title": "Resolve the cart cluster once the fix is in",
+          "change": "The cluster leaves the failure inbox with your note; a failure after the fix sets it back to open.",
+          "target": { "type": "cluster", "id": 3, "label": "Cart total is stale after removing an item" },
+          "projectId": 1,
+          "params": { "note": "Fixed by waiting for the cart call" }
+        }
+      }
+    },
+    {
+      "event": "block",
+      "data": {
+        "block": {
+          "kind": "question",
+          "id": "next-tests",
+          "prompt": "Which flaky tests should I look at next?",
+          "multiple": true,
+          "other": true,
+          "choices": [
+            {
+              "id": "t21",
+              "label": "cart › removes an item",
+              "entity": { "type": "test-case", "id": 21, "label": "cart › removes an item" },
+              "checked": true
+            },
+            {
+              "id": "t22",
+              "label": "checkout › applies a coupon",
+              "detail": "Failed 4 of its last 20 runs",
+              "entity": { "type": "test-case", "id": 22, "label": "checkout › applies a coupon" }
+            },
+            { "id": "t23", "label": "search › filters by price", "detail": "Failed 2 of its last 20 runs" }
+          ]
+        }
+      }
+    },
+    {
+      "event": "done",
+      "data": {
+        "messageId": 101,
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "toolMode": "native",
+        "inputTokens": 6120,
+        "outputTokens": 840,
+        "costUsd": null
+      }
+    }
+  ],
+  "replyAnswer": [
+    {
+      "event": "text",
+      "data": {
+        "text": "Then start with **cart › removes an item**: the patch above fixes it. **checkout › applies a coupon** fails the same way after the coupon call."
+      }
+    },
+    {
+      "event": "done",
+      "data": {
+        "messageId": 102,
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "toolMode": "native",
+        "inputTokens": 7040,
+        "outputTokens": 96,
+        "costUsd": null
+      }
+    }
+  ]
+}

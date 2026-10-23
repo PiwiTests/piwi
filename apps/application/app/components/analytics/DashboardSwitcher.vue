@@ -43,6 +43,7 @@ watch(open, (isOpen) => {
       class="min-w-0 max-w-[14rem] sm:max-w-xs"
       :title="`Dashboard: ${current.name}`"
       data-testid="dashboard-switcher"
+      data-tour="dashboard-switcher"
     >
       <span class="truncate">{{ current.name }}</span>
     </UButton>

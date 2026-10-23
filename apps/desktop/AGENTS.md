@@ -35,6 +35,12 @@ installers ship side by side: the `.msi` installs per machine (admin); the NSIS 
   the token. The start answers only an extension's JSON request and keeps at most
   three waiting; the poll answers only with the secret the start gave; the token goes out once, after **Allow** in the
   window (`DesktopPickerPairingModal`), behind the guard. A route added to that list needs the same care.
+  One more route passes on a token other than the desktop token: an assistant answer's MCP endpoint
+  (`POST /api/assistant/conversations/:id/mcp`), which the Claude Code CLI the server starts calls with the token
+  minted for that one answer (`presentsAssistantTurnToken` in `server/utils/assistant/turn-token.ts`). It opens that
+  conversation's endpoint only, only while the answer runs, and only for a loopback host, origin and peer; the CLI is
+  never given the desktop token. Anything else the CLI or a turn needs goes through that endpoint, never a new open
+  route.
 - **The reporter discovery file is a cross-package contract.** The shell publishes `{ url, token, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit; `@piwitests/reporter` reads it from `src/internal/config/desktop.ts`,

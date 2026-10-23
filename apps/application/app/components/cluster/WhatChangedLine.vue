@@ -82,7 +82,7 @@ const summary = computed(() => {
 </script>
 
 <template>
-  <p data-shot="what-changed" class="flex flex-wrap items-center gap-x-2 gap-y-1">
+  <p data-shot="what-changed" data-tour="what-changed-line" class="flex flex-wrap items-center gap-x-2 gap-y-1">
     <!-- Resolving: the context has not arrived yet, or is being fetched with no diff yet -->
     <template v-if="!contextLoaded || (contextLoading && !scmChanges)">
       <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin shrink-0" />

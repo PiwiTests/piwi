@@ -19,7 +19,7 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save AI settings',
     description:
-      'Updates the per-role AI configuration (diagnosis, research, embedding), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. An `apiKey` or `scmToken` is encrypted at rest, so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset. Requires `settings:manage` (administrators only). Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
+      'Updates the per-role AI configuration (diagnosis, research, embedding, assistant), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. An `apiKey` or `scmToken` is encrypted at rest, so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset. Requires `settings:manage` (administrators only). Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
     'x-required-permission': 'settings:manage',
   },
 });
@@ -145,7 +145,7 @@ export default eventHandler(async (event) => {
       if (provider === 'claude-cli' && !claudeCliEnabled()) {
         throw apiError({
           statusCode: 400,
-          message: `Role "${role}": the local Claude CLI is only available in the Piwi desktop app`,
+          message: `Role "${role}": the local Claude CLI is only available in the Piwi desktop app, or on a server with PIWI_CLAUDE_CLI_PATH set`,
         });
       }
       const model = cfg.model?.trim() || '';

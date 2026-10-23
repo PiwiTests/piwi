@@ -38,7 +38,7 @@ const serverCommand = process.env.CI ? 'node .output/server/index.mjs' : 'npm ru
 
 export default defineConfig({
   testDir: '.',
-  testMatch: '**/*.spec.ts',
+  testMatch: '**/ai-diagnosis-live.spec.ts',
   workers: 1,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

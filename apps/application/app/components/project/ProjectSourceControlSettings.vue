@@ -98,6 +98,7 @@ async function removeToken() {
 
         <UFormField
           name="scmToken"
+          data-tour="project-scm-token"
           :description="
             hasToken
               ? 'Leave empty to keep the stored token, or enter a new value to replace it.'
@@ -154,6 +155,7 @@ async function removeToken() {
 
         <UFormField
           name="ciRerun"
+          data-tour="project-ci-rerun"
           description="Let reporters and admins re-run a cluster's affected tests in CI from its page, using the SCM token above. Off by default; fill in the block for your provider."
         >
           <template #label>

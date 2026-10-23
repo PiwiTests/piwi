@@ -864,7 +864,7 @@ defineExpose({ scrollToCase });
           <HelpHint topic="run.test-cases" />
         </span>
         <div class="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:items-center sm:gap-3">
-          <div class="flex items-center gap-1.5 min-w-0">
+          <div class="flex items-center gap-1.5 min-w-0" data-tour="run-tests-group-by">
             <span class="text-xs text-muted whitespace-nowrap">Group by</span>
             <USelect
               v-model="groupBy"

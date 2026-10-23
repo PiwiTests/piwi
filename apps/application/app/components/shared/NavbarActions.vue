@@ -17,6 +17,8 @@ export interface NavbarAction {
   loading?: boolean;
   disabled?: boolean;
   onClick?: () => void;
+  /** Extra attributes for the button, such as the `'data-tour'` of a guide anchor. */
+  attrs?: Record<string, string>;
 }
 
 withDefaults(
@@ -35,6 +37,7 @@ withDefaults(
     <UButton
       v-for="action in actions"
       :key="action.label"
+      v-bind="action.attrs"
       :icon="action.icon"
       :size="size"
       :color="action.color"

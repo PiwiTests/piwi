@@ -119,7 +119,12 @@ const growthSubtitle = computed(() => {
 <template>
   <div class="space-y-6" data-shot="storage-analysis">
     <!-- Headline usage -->
-    <SectionCard icon="i-lucide-hard-drive" title="Storage usage" help="settings.storage-stats">
+    <SectionCard
+      icon="i-lucide-hard-drive"
+      title="Storage usage"
+      help="settings.storage-stats"
+      data-tour="storage-usage"
+    >
       <template #actions>
         <UButton
           icon="i-lucide-refresh-cw"

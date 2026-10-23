@@ -409,6 +409,21 @@ import {
   apiGetAiUsage,
   apiListAiModels,
 } from './ai';
+import {
+  apiAskAssistant,
+  apiAssistantStatus,
+  apiCreateAssistantConversation,
+  apiDeleteAssistantConversation,
+  apiGetAssistantConversation,
+  apiListAssistantConversations,
+  apiRecordAssistantProposal,
+  apiTickAssistantChecklist,
+} from './assistant';
+import {
+  apiDismissAssistantNudge,
+  apiListAssistantNudgeDismissals,
+  apiUndoAssistantNudgeDismissal,
+} from './assistant-nudges';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { demoHttpError } from './http-error';
 import {
@@ -1741,6 +1756,83 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/settings\/ai\/usage$/,
     permission: 'settings:manage',
     handler: (_, __, q) => apiGetAiUsage(q?.get('days') ?? null),
+  },
+  // Assistant — the status and the acting user's own conversations
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/status$/,
+    handler: () => apiAssistantStatus(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/conversations$/,
+    handler: async (_m, _b, _q, ctx) => apiListAssistantConversations(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/assistant\/conversations$/,
+    handler: async (_m, body, _q, ctx) => apiCreateAssistantConversation(body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)$/,
+    handler: async (m, _b, _q, ctx) => apiGetAssistantConversation(+m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)$/,
+    handler: async (m, _b, _q, ctx) => apiDeleteAssistantConversation(+m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/messages$/,
+    handler: async (m, body, _q, ctx) =>
+      apiAskAssistant(+m[1]!, body, {
+        ownerId: ctx?.actingUserId ?? null,
+        access: ctx?.access ?? ADMIN_ACCESS,
+        scope: ctx?.scope ?? 'all',
+        get: async <T>(path: string, query?: Record<string, string | number>) =>
+          (await handleDemoRequest(
+            path,
+            'GET',
+            undefined,
+            query ? new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)])).toString() : undefined,
+            ctx?.actingUserId ?? null,
+          )) as T,
+      }),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/messages\/(\d+)\/checklist$/,
+    handler: async (m, body, _q, ctx) => apiTickAssistantChecklist(+m[1]!, +m[2]!, body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/messages\/(\d+)\/proposal$/,
+    handler: async (m, body, _q, ctx) => apiRecordAssistantProposal(+m[1]!, +m[2]!, body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/nudge-dismissals$/,
+    handler: async (_m, _b, _q, ctx) => apiListAssistantNudgeDismissals(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/assistant\/nudge-dismissals\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => apiDismissAssistantNudge(m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/assistant\/nudge-dismissals\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => apiUndoAssistantNudgeDismissal(m[1]!, ctx?.actingUserId ?? null),
+  },
+  // An answer's MCP endpoint takes the token of an answer the Claude Code CLI writes; the demo writes none.
+  {
+    method: 'POST',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
+    handler: () => {
+      throw demoHttpError(401, 'This endpoint takes the token of a running answer');
+    },
   },
   {
     method: 'GET',

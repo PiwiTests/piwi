@@ -97,7 +97,7 @@ async function handleDelete() {
 </script>
 
 <template>
-  <div data-shot="markers-panel">
+  <div data-shot="markers-panel" data-tour="project-timeline">
     <div v-if="view === 'form'" class="space-y-4">
       <div class="flex items-center gap-2">
         <UButton

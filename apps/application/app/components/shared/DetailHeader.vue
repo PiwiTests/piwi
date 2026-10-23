@@ -66,6 +66,7 @@ defineProps<{
           trailing-icon="i-lucide-chevron-down"
           label="Details"
           class="shrink-0"
+          data-tour="run-details"
         />
         <template #content>
           <div class="p-3 space-y-2 text-sm max-w-sm">

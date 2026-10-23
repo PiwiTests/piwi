@@ -39,6 +39,7 @@ import {
   failureDiagnoses,
   mcpToolCalls,
   prFeedbackPosts,
+  assistantMessages,
 } from '../../server/database/schema';
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
@@ -85,7 +86,8 @@ export type SetupCapabilityId =
   | 'flake-lab'
   | 'resources'
   | 'agent-diagnoses'
-  | 'agent-write-log';
+  | 'agent-write-log'
+  | 'assistant';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -401,6 +403,8 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
       ),
     // The agents' write log: active once a write tool was called over MCP. It spans projects.
     'agent-write-log': () => exists(db, db.select({ id: mcpToolCalls.id }).from(mcpToolCalls).limit(1)),
+    // The assistant: active once a question was stored. Conversations are private and span projects.
+    assistant: () => exists(db, db.select({ id: assistantMessages.id }).from(assistantMessages).limit(1)),
   };
 }
 
@@ -438,6 +442,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'resources',
   'agent-diagnoses',
   'agent-write-log',
+  'assistant',
 ];
 
 /**

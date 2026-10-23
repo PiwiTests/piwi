@@ -217,13 +217,14 @@ function errorMessage(err: unknown): string {
 
 <template>
   <CapabilityDeclinedGuard capability="integrations" label="Integrations">
-    <div class="space-y-6" data-shot="integrations-settings">
+    <div class="space-y-6" data-shot="integrations-settings" data-tour="integrations-page">
       <SectionCard
         v-for="provider in INTEGRATION_PROVIDER_LIST"
         :key="provider.name"
         :icon="provider.icon"
         :title="provider.label"
         help="settings.integrations"
+        data-tour="integration-connections"
       >
         <template #subtitle>
           Connect {{ provider.label }} so pinned links unfurl with a title and status, and refresh through the
@@ -255,6 +256,7 @@ function errorMessage(err: unknown): string {
               v-for="conn in connectionsFor(provider.name)"
               :key="conn.id"
               class="rounded-lg border border-default p-3 sm:p-4 space-y-3"
+              data-tour="integration-connection"
             >
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="text-sm font-medium text-highlighted">{{ conn.name }}</span>
@@ -305,6 +307,7 @@ function errorMessage(err: unknown): string {
                   icon="i-lucide-plug"
                   :loading="testing === conn.id"
                   label="Test connection"
+                  data-tour="test-integration-connection"
                   @click="testConnection(conn)"
                 />
                 <template v-if="conn.managedBy === 'db'">
@@ -389,13 +392,14 @@ function errorMessage(err: unknown): string {
               size="sm"
               icon="i-lucide-plus"
               :label="`Connect ${provider.label}`"
+              data-tour="connect-integration"
               @click="openCreate(provider.name)"
             />
           </div>
         </div>
 
         <template #footer>
-          <p class="text-xs text-muted">
+          <p class="text-xs text-muted" data-tour="integration-private-host">
             A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private host
             works.
             <HelpHint topic="settings.integrations.private-host" />

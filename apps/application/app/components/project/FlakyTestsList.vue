@@ -284,6 +284,7 @@ function flakyBadges(test: FlakyTest) {
               color="warning"
               icon="i-lucide-shield-alert"
               :loading="quarantiningId === test.testCaseId"
+              data-tour="flaky-test-quarantine"
               @click="quarantineTest(test)"
             >
               Quarantine

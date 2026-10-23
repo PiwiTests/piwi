@@ -307,7 +307,7 @@ function saveSmoke(testCaseIds: number[]) {
 <template>
   <UDashboardPanel id="project-selections">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="project-selections-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <BreadcrumbNav

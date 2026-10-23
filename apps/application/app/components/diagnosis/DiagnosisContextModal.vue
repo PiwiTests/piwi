@@ -151,7 +151,7 @@ function sectionHeading(s: ContextSection): string {
     @update:open="(v) => emit('update:open', v)"
   >
     <template #header>
-      <div class="flex items-center justify-between w-full">
+      <div class="flex items-center justify-between w-full" data-tour="diagnosis-context">
         <div class="flex items-center gap-2">
           <span class="font-semibold inline-flex items-center gap-1">
             Context sent to AI <HelpHint topic="cluster.context-preview" />

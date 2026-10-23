@@ -66,7 +66,15 @@ async function submit() {
 
       <template #footer>
         <div class="flex justify-end">
-          <UButton type="submit" icon="i-lucide-check" :loading="saving" :disabled="!dirty">Save changes</UButton>
+          <UButton
+            type="submit"
+            icon="i-lucide-check"
+            :loading="saving"
+            :disabled="!dirty"
+            data-tour="project-settings-save"
+          >
+            Save changes
+          </UButton>
         </div>
       </template>
     </SectionCard>

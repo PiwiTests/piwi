@@ -78,6 +78,7 @@ const reclaimLabel = computed(() => {
     title="Wasted CI time"
     :subtitle="subtitle"
     help="analytics.wasted-time"
+    data-tour="analytics-wasted-time"
     :legend="legendItems"
     :export-data="exportData"
   >

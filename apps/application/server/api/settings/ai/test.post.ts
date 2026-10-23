@@ -1,7 +1,8 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { resolveAiConfig, callAiProvider, storedKeyFor } from '../../../utils/ai-provider';
+import { assistantRole, resolveAiConfig, callAiProvider, storedKeyFor } from '../../../utils/ai-provider';
 import { embedTexts } from '../../../utils/ai-embeddings';
+import { AI_ROLES } from '../../../utils/ai-settings';
 import type { AiModelRole, AiProvider, ResolvedAiRole } from '~~/types/api';
 
 defineRouteMeta({
@@ -9,7 +10,7 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Test AI provider connection',
     description:
-      'Sends a connectivity test to the configured AI provider for a given model role (`diagnosis`, `research`, or `embedding` — the embedding role is probed via the embeddings endpoint). Accepts optional role, provider, apiKey, model, and baseUrl in the request body; omitted fields fall back to the saved configuration. Requires `settings:manage` (administrators only). Soft-fail: a reachable provider that rejects the probe (bad key, wrong model, network error) returns HTTP 200 with `{ success: false, error }` — the request was processed, only the provider call failed. HTTP error statuses are reserved for request-level problems (unconfigured role → 503).',
+      'Sends a connectivity test to the configured AI provider for a given model role (`diagnosis`, `research`, `embedding` or `assistant` — the embedding role is probed via the embeddings endpoint). Accepts optional role, provider, apiKey, model, and baseUrl in the request body; omitted fields fall back to the saved configuration. Requires `settings:manage` (administrators only). Soft-fail: a reachable provider that rejects the probe (bad key, wrong model, network error) returns HTTP 200 with `{ success: false, error }` — the request was processed, only the provider call failed. HTTP error statuses are reserved for request-level problems (unconfigured role → 503).',
     'x-required-permission': 'settings:manage',
     responses: {
       '200': {
@@ -44,7 +45,7 @@ export default eventHandler(async (event) => {
     temperature?: number | null;
   } | null;
 
-  const role: AiModelRole = body?.role === 'research' || body?.role === 'embedding' ? body.role : 'diagnosis';
+  const role: AiModelRole = AI_ROLES.includes(body?.role as AiModelRole) ? (body!.role as AiModelRole) : 'diagnosis';
 
   const db = await getDatabase();
   const resolved = await resolveAiConfig(db);
@@ -52,7 +53,8 @@ export default eventHandler(async (event) => {
   let config: ResolvedAiRole | null;
 
   if (!body?.provider) {
-    config = resolved ? resolved.roles[role] : null;
+    // An unset assistant role answers with the diagnosis model, so that is the one to probe.
+    config = resolved ? (role === 'assistant' ? assistantRole(resolved) : resolved.roles[role]) : null;
   } else {
     // Form values win; a blank key falls back to the saved key for this role
     // (users leave the field empty to keep the stored secret), then to the

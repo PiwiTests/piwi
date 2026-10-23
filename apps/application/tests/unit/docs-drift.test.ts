@@ -139,13 +139,13 @@ describe('docs pages the app deep-links into', () => {
   // docs URLs from bare string literals that nothing else validates, so a
   // renamed heading breaks them silently in production.
 
-  // Every .vue/.ts file under app/ and shared/ — any of them may carry a
+  // Every .vue/.ts/.mjs file under app/ and shared/ — any of them may carry a
   // `doc: '…'` registry field or a static `DocLink to="…"`.
   const walkSources = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) return walkSources(path);
-      return /\.(vue|ts)$/.test(entry.name) ? [relative(repoRoot, path)] : [];
+      return /\.(vue|ts|mjs)$/.test(entry.name) ? [relative(repoRoot, path)] : [];
     });
   const sources = [
     ...walkSources(join(repoRoot, 'apps/application/app')),
@@ -689,7 +689,7 @@ describe('docs site structure', () => {
       featurePageSources.some((contents) => link.test(contents)),
       `no features/ page links /${recipe}`,
     ).toBe(true);
-    expect(helpRecipes.has(recipe), `no help topic in app/utils/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
+    expect(helpRecipes.has(recipe), `no help topic in shared/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
   });
 });
 

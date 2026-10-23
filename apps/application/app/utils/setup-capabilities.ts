@@ -287,4 +287,15 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     icon: 'i-lucide-scroll-text',
     doc: 'features/mcp',
   },
+  {
+    id: 'assistant',
+    title: 'Assistant',
+    summary:
+      'Questions about your runs, failures and setup answered by your AI model from the same read tools agents use, with your access. Conversations stay private to whoever asked.',
+    how: 'Uses the AI provider configured in Settings, with its own model if you set one. Decline to turn it off for everyone.',
+    icon: 'i-lucide-message-circle-question-mark',
+    doc: 'features/assistant',
+    to: '/settings/ai',
+    toLabel: 'Configure AI',
+  },
 ];

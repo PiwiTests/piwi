@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import {
@@ -9,13 +9,16 @@ import {
   cliEnv,
   cmdShimTarget,
   getClaudeCliStatus,
+  claudeCliRunsAgents,
   getUsageTotals,
   isDesktopRuntime,
   resetClaudeCliCache,
   resolveClaudeBinary,
   resolveClaudeBinaryDeep,
+  runClaudeCliAgent,
   streamClaudeCli,
 } from '../../server/utils/ai-claude-cli';
+import type { ClaudeCliAgentRun } from '../../server/utils/ai-claude-cli';
 import type { ResolvedAiRole } from '../../types/api';
 import type { StreamChunk } from '../../server/utils/ai-provider';
 
@@ -33,7 +36,11 @@ if (args.includes('--help')) {
   const base = ['--print', '--output-format', '--system-prompt', '--model', '--verbose', '--include-partial-messages'];
   const hardening = process.env.CLAUDE_STUB_ANCIENT ? [] : ['--tools', '--strict-mcp-config'];
   const extra = process.env.CLAUDE_STUB_OLD || process.env.CLAUDE_STUB_ANCIENT ? [] : ['--restricted'];
-  process.stdout.write('Usage: claude [options]\\nOptions:\\n  ' + base.concat(hardening, extra).join('\\n  ') + '\\n');
+  // CLAUDE_STUB_AGENT models a CLI that can run an assistant turn with an MCP server attached.
+  const agent = process.env.CLAUDE_STUB_AGENT
+    ? ['--mcp-config <configs...>', '--allowedTools, --allowed-tools <tools...>', '--permission-mode <mode> (choices: "default", "dontAsk")']
+    : [];
+  process.stdout.write('Usage: claude [options]\\nOptions:\\n  ' + base.concat(hardening, extra, agent).join('\\n  ') + '\\n');
   process.exit(0);
 }
 if (args[0] === 'auth' && args[1] === 'status') {
@@ -46,7 +53,42 @@ if (args[0] === 'auth' && args[1] === 'logout') { process.exit(0); }
 let input = '';
 process.stdin.on('data', (d) => (input += d));
 process.stdin.on('end', () => {
-  if (outFmt === 'stream-json') {
+  if (outFmt === 'stream-json' && args.includes('--mcp-config')) {
+    // An assistant turn: report what the run was given as its text, as Claude Code streams it.
+    const line = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+    const configPath = args[args.indexOf('--mcp-config') + 1];
+    const config = JSON.parse(require('node:fs').readFileSync(configPath, 'utf8'));
+    const status = process.env.CLAUDE_STUB_MCP_STATUS || 'connected';
+    line({ type: 'system', subtype: 'init', mcp_servers: [{ name: 'piwi', status }] });
+    if (status !== 'connected') { setTimeout(() => process.exit(0), 20000); return; }
+    const seen = JSON.stringify({ args, config, configPath, prompt: input, noProxy: process.env.NO_PROXY });
+    if (process.env.CLAUDE_STUB_HANG) {
+      // Two model turns reported as Claude Code streams them, then no result before the run is killed:
+      // each message's usage as it starts and as it grows, and on its whole message (once per content block).
+      const usage = (output) => ({ input_tokens: 10, cache_creation_input_tokens: 200, cache_read_input_tokens: 1000, output_tokens: output });
+      const message = (id, output, content) => ({ id, type: 'message', role: 'assistant', model: 'claude-sonnet-5', content, usage: usage(output) });
+      line({ type: 'stream_event', event: { type: 'message_start', message: message('msg_1', 1, []) } });
+      line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Looking.' } } });
+      line({ type: 'assistant', message: message('msg_1', 5, [{ type: 'text', text: 'Looking.' }]) });
+      line({ type: 'assistant', message: message('msg_1', 5, [{ type: 'tool_use', name: 'mcp__piwi__list_projects' }]) });
+      line({ type: 'stream_event', event: { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 40 } } });
+      line({ type: 'stream_event', event: { type: 'message_start', message: message('msg_2', 1, []) } });
+      line({ type: 'stream_event', event: { type: 'message_delta', delta: {}, usage: { output_tokens: 12 } } });
+      setTimeout(() => process.exit(0), 20000);
+      return;
+    }
+    if (process.env.CLAUDE_STUB_NO_PARTIAL) {
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: seen }, { type: 'tool_use', name: 'x' }] } });
+    } else {
+      line({ type: 'stream_event', event: { type: 'message_start' } });
+      line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: seen } } });
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: seen }] } });
+    }
+    const subtype = process.env.CLAUDE_STUB_SUBTYPE || 'success';
+    line({ type: 'result', subtype, is_error: subtype !== 'success', result: 'final', total_cost_usd: 0.03,
+      usage: { input_tokens: 20, output_tokens: 9, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 },
+      modelUsage: { 'claude-sonnet-5': {} } });
+  } else if (outFmt === 'stream-json') {
     const line = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
     line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello ' } } });
     line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'world' } } });
@@ -91,6 +133,11 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     delete process.env.CLAUDE_STUB_OLD;
     delete process.env.CLAUDE_STUB_ANCIENT;
     delete process.env.CLAUDE_STUB_HELP_FAIL;
+    delete process.env.CLAUDE_STUB_AGENT;
+    delete process.env.CLAUDE_STUB_MCP_STATUS;
+    delete process.env.CLAUDE_STUB_NO_PARTIAL;
+    delete process.env.CLAUDE_STUB_SUBTYPE;
+    delete process.env.CLAUDE_STUB_HANG;
     delete process.env.PIWI_DESKTOP_TOKEN;
     delete process.env.NUXT_PUBLIC_DESKTOP;
     resetClaudeCliCache();
@@ -279,6 +326,117 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     process.env.CLAUDE_STUB_LOGGED_IN = '0';
     resetClaudeCliCache();
     await expect(callClaudeCli(role, { system: 'x', user: 'y' })).rejects.toThrow(/sign/i);
+  });
+  describe('an assistant turn', () => {
+    const TOKEN = 'pwt_turn_token';
+    const URL = 'http://127.0.0.1:3000/api/assistant/conversations/7/mcp';
+    function agentRun(text: string[]): ClaudeCliAgentRun {
+      return {
+        system: 'rules',
+        prompt: 'Which projects report here?',
+        server: { url: URL, token: TOKEN },
+        tools: ['list_projects', 'ask'],
+        maxTurns: 12,
+        timeoutMs: 15_000,
+        onText: (t) => text.push(t),
+      };
+    }
+
+    it('runs only when the CLI can attach an MCP server and allow its tools', async () => {
+      expect(await claudeCliRunsAgents()).toBe(false);
+      process.env.CLAUDE_STUB_AGENT = '1';
+      resetClaudeCliCache();
+      expect(await claudeCliRunsAgents()).toBe(true);
+      process.env.PIWI_CLAUDE_CLI_PATH = join(dir, 'does-not-exist');
+      resetClaudeCliCache();
+      expect(await claudeCliRunsAgents()).toBe(false);
+    });
+
+    it('attaches the turn endpoint alone through a private file, streams the text and reports usage', async () => {
+      process.env.CLAUDE_STUB_AGENT = '1';
+      const text: string[] = [];
+      const result = await runClaudeCliAgent(role, agentRun(text));
+      expect(result).toMatchObject({
+        outcome: 'answered',
+        error: null,
+        model: 'claude-sonnet-5',
+        inputTokens: 120,
+        outputTokens: 9,
+        costUsd: 0.03,
+      });
+      // Streamed once, by its deltas: the whole message that follows them is not written again.
+      expect(text).toHaveLength(1);
+      const seen = JSON.parse(text[0]!) as {
+        args: string[];
+        config: unknown;
+        configPath: string;
+        prompt: string;
+        noProxy: string;
+      };
+      expect(seen.config).toEqual({
+        mcpServers: { piwi: { type: 'http', url: URL, headers: { Authorization: `Bearer ${TOKEN}` } } },
+      });
+      expect(seen.args.join(' ')).not.toContain(TOKEN);
+      expect(seen.args[seen.args.indexOf('--tools') + 1]).toBe('');
+      expect(seen.args).toContain('--strict-mcp-config');
+      expect(seen.args[seen.args.indexOf('--allowedTools') + 1]).toBe('mcp__piwi__list_projects,mcp__piwi__ask');
+      expect(seen.args[seen.args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
+      expect(seen.args[seen.args.indexOf('--max-turns') + 1]).toBe('12');
+      expect(seen.prompt).toBe('Which projects report here?');
+      expect(seen.noProxy).toContain('127.0.0.1');
+      // The config, and its token, are gone once the run ends.
+      expect(existsSync(seen.configPath)).toBe(false);
+    });
+
+    it('writes each message whole when the CLI streams no partial messages', async () => {
+      process.env.CLAUDE_STUB_AGENT = '1';
+      process.env.CLAUDE_STUB_NO_PARTIAL = '1';
+      const text: string[] = [];
+      expect((await runClaudeCliAgent(role, agentRun(text))).outcome).toBe('answered');
+      expect(JSON.parse(text.join('')).prompt).toBe('Which projects report here?');
+    });
+
+    it('stops at once a run whose MCP server did not connect', async () => {
+      process.env.CLAUDE_STUB_AGENT = '1';
+      process.env.CLAUDE_STUB_MCP_STATUS = 'failed';
+      const started = Date.now();
+      const result = await runClaudeCliAgent(role, agentRun([]));
+      expect(result).toMatchObject({ outcome: 'failed', model: '', inputTokens: null });
+      expect(result.error).toMatch(
+        /could not reach this server's assistant tools at http:\/\/127\.0\.0\.1:3000 \(failed\)/,
+      );
+      expect(Date.now() - started).toBeLessThan(10_000);
+    });
+
+    it('reports a run out of turns, and a failed one, with what they spent', async () => {
+      process.env.CLAUDE_STUB_AGENT = '1';
+      process.env.CLAUDE_STUB_SUBTYPE = 'error_max_turns';
+      expect(await runClaudeCliAgent(role, agentRun([]))).toMatchObject({ outcome: 'max-turns', outputTokens: 9 });
+      process.env.CLAUDE_STUB_SUBTYPE = 'error_during_execution';
+      expect(await runClaudeCliAgent(role, agentRun([]))).toMatchObject({ outcome: 'failed', error: 'final' });
+    });
+
+    it('a run killed past its time limit reports what its messages spent', async () => {
+      process.env.CLAUDE_STUB_AGENT = '1';
+      process.env.CLAUDE_STUB_HANG = '1';
+      const text: string[] = [];
+      const result = await runClaudeCliAgent(role, { ...agentRun(text), timeoutMs: 1500 });
+      expect(text).toEqual(['Looking.']);
+      // Each message counted once, at the most it reported: 1,210 input tokens each, 40 and 12 output.
+      expect(result).toMatchObject({
+        outcome: 'timeout',
+        model: 'claude-sonnet-5',
+        inputTokens: 2420,
+        outputTokens: 52,
+        cacheReadInputTokens: 2000,
+        cacheCreationInputTokens: 400,
+        costUsd: null,
+      });
+    });
+
+    it('refuses a CLI that cannot attach only the turn server', async () => {
+      await expect(runClaudeCliAgent(role, agentRun([]))).rejects.toThrow(/Update Claude Code/);
+    });
   });
 });
 

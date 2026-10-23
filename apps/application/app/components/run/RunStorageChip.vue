@@ -27,6 +27,7 @@ const { onOpenReport } = useDesktopReportLink();
       type="button"
       class="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 -my-0.5 -ml-1.5 text-muted hover:text-default hover:bg-elevated/60 transition-colors cursor-pointer"
       title="Stored reports & artifacts"
+      data-tour="run-storage"
     >
       <UIcon name="i-lucide-database" class="size-3.5 text-dimmed shrink-0" />
       <span class="tabular-nums whitespace-nowrap">
@@ -38,7 +39,7 @@ const { onOpenReport } = useDesktopReportLink();
       <UIcon name="i-lucide-chevron-down" class="size-3 text-dimmed shrink-0" />
     </button>
     <template #content>
-      <div class="p-3 w-72 space-y-2">
+      <div class="p-3 w-72 space-y-2" data-tour="run-stored-artifacts">
         <p class="text-xs font-medium text-muted inline-flex items-center gap-1">
           Stored artifacts <HelpHint topic="run.reports" />
         </p>

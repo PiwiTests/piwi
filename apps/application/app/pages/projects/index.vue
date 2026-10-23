@@ -226,7 +226,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
 <template>
   <UDashboardPanel id="projects">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="projects-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }, { label: 'Projects' }]" />
@@ -235,7 +235,14 @@ const columns: TableColumn<ProjectWithStats>[] = [
           <NavbarActions
             :actions="[
               ...(can('project:create')
-                ? [{ label: 'New project', icon: 'i-lucide-plus', onClick: () => (isNewProjectModalOpen = true) }]
+                ? [
+                    {
+                      label: 'New project',
+                      icon: 'i-lucide-plus',
+                      onClick: () => (isNewProjectModalOpen = true),
+                      attrs: { 'data-tour': 'new-project' },
+                    },
+                  ]
                 : []),
               { label: 'Refresh', icon: 'i-lucide-refresh-cw', variant: 'outline', onClick: () => refresh() },
             ]"
@@ -259,7 +266,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
           :ui="{ base: 'w-full' }"
         />
 
-        <div v-if="allTags.length > 0" class="flex flex-wrap items-center gap-2">
+        <div v-if="allTags.length > 0" class="flex flex-wrap items-center gap-2" data-tour="projects-tag-filter">
           <span class="text-sm text-muted shrink-0 inline-flex items-center gap-1">
             Filter by tag (any match): <HelpHint topic="projects.tag-filter" />
           </span>

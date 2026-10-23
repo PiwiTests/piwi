@@ -121,7 +121,7 @@ function detailLine(s: FlakeSuspect): string | null {
 </script>
 
 <template>
-  <div class="space-y-4" data-shot="flakiness-tab">
+  <div class="space-y-4" data-shot="flakiness-tab" data-tour="test-flakiness">
     <SectionCard
       icon="i-lucide-search-check"
       title="Suspects"

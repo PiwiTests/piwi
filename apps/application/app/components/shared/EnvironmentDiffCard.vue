@@ -79,6 +79,7 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
     :count="meaningful.length || undefined"
     help="environment-diff"
     :subtitle="baselineNote"
+    data-tour="environment-diff"
   >
     <template v-if="storageKey" #folded>
       <span>{{ foldedText }}</span>

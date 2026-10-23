@@ -30,6 +30,8 @@ const config: KnipConfig = {
         'scripts/perf/*.mjs',
         'tests/globalSetup.ts',
         'tests/globalTeardown.ts',
+        // The fake Claude Code CLI the server runs in `assistant-claude-code.spec.ts`.
+        'tests/fixtures/fake-claude.mjs',
         'drizzle.config.pg.ts',
         // Dashboard widgets are imported from `#components` by `app/utils/analytics-widgets.ts`.
         'app/components/analytics/*.vue',

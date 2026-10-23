@@ -44,7 +44,7 @@ function save() {
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-coins" title="Cost of a CI minute" help="settings.ci-cost">
+  <SectionCard icon="i-lucide-coins" title="Cost of a CI minute" help="settings.ci-cost" data-tour="ci-minute-cost">
     <template #subtitle>
       Wasted CI time is shown as money next to the minutes wherever it appears once a cost is set.
     </template>

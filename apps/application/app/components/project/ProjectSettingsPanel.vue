@@ -184,20 +184,35 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
     />
 
     <div class="min-w-0 flex-1 max-w-4xl space-y-4">
-      <ProjectGeneralSettings v-if="active === 'general'" :project="project" @saved="emit('saved')" />
+      <ProjectGeneralSettings
+        v-if="active === 'general'"
+        :project="project"
+        data-tour="project-settings-general"
+        @saved="emit('saved')"
+      />
 
-      <ProjectMembersSettings v-else-if="active === 'members'" :project-id="project.id" />
+      <ProjectMembersSettings
+        v-else-if="active === 'members'"
+        :project-id="project.id"
+        data-tour="project-settings-members"
+      />
 
       <ProjectSourceControlSettings
         v-else-if="active === 'source-control'"
         :project="project"
         :show-generated-specs="!isHidden('bug-reports')"
+        data-tour="project-settings-source-control"
         @saved="emit('saved')"
       />
 
-      <ProjectAiSettings v-else-if="active === 'ai'" :project="project" @saved="emit('saved')" />
+      <ProjectAiSettings
+        v-else-if="active === 'ai'"
+        :project="project"
+        data-tour="project-settings-ai"
+        @saved="emit('saved')"
+      />
 
-      <template v-else-if="active === 'capabilities'">
+      <div v-else-if="active === 'capabilities'" class="space-y-4" data-tour="project-settings-capabilities">
         <ProjectCapabilityDecisions
           :project-id="project.id"
           :initial="project.capabilities ?? null"
@@ -209,25 +224,40 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
           :show-server-probes="showServerProbes"
           @saved="emit('saved')"
         />
-      </template>
+      </div>
 
-      <ProjectCoverageSettings v-else-if="active === 'coverage'" :project="project" @saved="emit('saved')" />
+      <ProjectCoverageSettings
+        v-else-if="active === 'coverage'"
+        :project="project"
+        data-tour="project-settings-coverage"
+        @saved="emit('saved')"
+      />
 
       <ProjectTargetsForm
         v-else-if="active === 'targets'"
         :project-id="project.id"
         :targets="project.targets ?? null"
+        data-tour="project-settings-targets"
         @saved="emit('saved')"
       />
 
-      <ProjectIntegrationSettings v-else-if="active === 'issue-tracker'" :project-id="project.id" />
+      <ProjectIntegrationSettings
+        v-else-if="active === 'issue-tracker'"
+        :project-id="project.id"
+        data-tour="project-settings-issue-tracker"
+      />
 
-      <ProjectUrlPatternsForm v-else-if="active === 'browser-extension'" :project-id="project.id" />
+      <ProjectUrlPatternsForm
+        v-else-if="active === 'browser-extension'"
+        :project-id="project.id"
+        data-tour="project-settings-browser-extension"
+      />
 
       <DesktopProjectFolderSection
         v-else-if="active === 'local-folder'"
         :project-id="project.id"
         :project-name="project.name"
+        data-tour="project-settings-local-folder"
       />
     </div>
   </div>

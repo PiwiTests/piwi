@@ -91,7 +91,7 @@ beforeAll(async () => {
 describe('getAiUsageSummary', () => {
   test('counts each version by creation time, not by when it was rated', async () => {
     const summary = await getAiUsageSummary(db, 30, NOW);
-    expect(summary.totals).toEqual({ diagnoses: 3, inputTokens: 140, outputTokens: 20 });
+    expect(summary.totals).toEqual({ diagnoses: 3, assistantTurns: 0, inputTokens: 140, outputTokens: 20 });
     expect(summary.byModel).toHaveLength(2);
     expect(summary.byModel[0]).toMatchObject({ provider: 'openai', model: 'm', diagnoses: 2, failed: 0 });
   });

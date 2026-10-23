@@ -26,6 +26,7 @@ const SEVERITY_META: Record<AnalyticsInsightSeverity, { icon: string; class: str
     title="Insights"
     :count="insights?.length || undefined"
     help="analytics.insights"
+    data-tour="analytics-insights"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load insights: ${errorMessage(error)}`">

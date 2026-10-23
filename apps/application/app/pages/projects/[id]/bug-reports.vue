@@ -66,6 +66,7 @@ useHead(
             :count="loading ? null : items.length"
             help="project.bug-reports"
             data-shot="bug-report-list"
+            data-tour="bug-report-list"
           >
             <template #subtitle>
               Sent from the

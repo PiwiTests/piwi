@@ -38,7 +38,7 @@ const tokenLabel = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-lg border border-default bg-elevated/30 px-2.5 py-2">
+  <div class="rounded-lg border border-default bg-elevated/30 px-2.5 py-2" data-tour="diagnosis-context-strip">
     <div v-if="loading && !sections.length" class="flex items-center gap-2 text-xs text-gray-400">
       <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin" />
       Building context…

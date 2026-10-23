@@ -52,11 +52,6 @@ const props = defineProps<{
   };
   /** Inline-help topic for the card header. */
   help?: HelpTopicKey;
-  /**
-   * The page's contextual nudge already offers the fixtures decision under the
-   * headline, so the footer sentence stays off to avoid saying it twice.
-   */
-  suppressFixturesFooter?: boolean;
   /** The project's resolved fixtures state, from the page's capability composable. */
   fixturesState?: CapabilityState;
   /** Whether the viewer may write the footer's decline decisions. */
@@ -280,9 +275,8 @@ const hasNoEvidence = computed(
 
 // The footer names the sources the capture fixtures would add, shown only while
 // the project has not decided on them. A declined project drops it entirely (the
-// tabs are already gone), and the page's nudge suppresses it when it offers the
-// same decision under the headline.
-const showFixturesFooter = computed(() => !props.suppressFixturesFooter && fixturesState.value === 'undecided');
+// tabs are already gone).
+const showFixturesFooter = computed(() => fixturesState.value === 'undecided');
 
 function computeDefault(): TabValue {
   // A pass that needed a retry leads with what differed between its attempts.
@@ -547,6 +541,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             :title="traceViewUnavailable ?? 'Open the Playwright trace of this execution in the trace viewer'"
             :disabled="!!traceViewUnavailable"
             class="ml-auto"
+            data-tour="open-trace"
             @click="onViewTrace"
           />
           <template #fallback>
@@ -589,7 +584,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       <!-- One view: the axis (for a failed execution) over a single steps table,
            with network / console / backend items interleaved by time. A passing
            execution shows the same table without the axis or offsets. -->
-      <div v-if="activeTab === 'timeline'" ref="timelineWrap" class="scroll-mt-4">
+      <div v-if="activeTab === 'timeline'" ref="timelineWrap" class="scroll-mt-4" data-tour="evidence-timeline">
         <FailureTimelineCard
           embedded
           :test-runs-case-id="testRunsCaseId"
@@ -610,13 +605,13 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
 
       <!-- ── Attempts ─────────────────────────────────────────────── -->
       <!-- Lazy: this card mounts only when the tab opens, fetching the diff then. -->
-      <div v-else-if="activeTab === 'attempts'" class="scroll-mt-4">
+      <div v-else-if="activeTab === 'attempts'" class="scroll-mt-4" data-tour="evidence-attempts">
         <AttemptsCard :test-runs-case-id="testRunsCaseId" :attempts="attemptsList" :project-id="projectKey ?? null" />
       </div>
 
       <!-- ── Screen ───────────────────────────────────────────────── -->
       <!-- One strip of views of the page at the failure, then the files. -->
-      <div v-else-if="activeTab === 'screen'" data-shot="screen-evidence" class="space-y-4">
+      <div v-else-if="activeTab === 'screen'" data-shot="screen-evidence" data-tour="evidence-screen" class="space-y-4">
         <div ref="screenViewsWrap" class="scroll-mt-4">
           <FailingStepSnapshot
             v-model:view="screenView"
@@ -670,7 +665,12 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
 
       <!-- ── Source ───────────────────────────────────────────────── -->
       <!-- The test's source, then what it ran where the project records coverage. -->
-      <div v-else-if="activeTab === 'source'" ref="sourceWrap" class="scroll-mt-4 space-y-6">
+      <div
+        v-else-if="activeTab === 'source'"
+        ref="sourceWrap"
+        class="scroll-mt-4 space-y-6"
+        data-tour="evidence-source"
+      >
         <TestSourceCard
           v-if="sourceHasData"
           embedded
@@ -696,7 +696,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       </div>
 
       <!-- ── Network ──────────────────────────────────────────────── -->
-      <div v-else-if="activeTab === 'network'" ref="networkWrap" class="scroll-mt-4">
+      <div v-else-if="activeTab === 'network'" ref="networkWrap" class="scroll-mt-4" data-tour="evidence-network">
         <TestCaseNetworkRequests
           v-if="networkRequests.length > 0 || hasTrace"
           ref="networkComp"
@@ -716,7 +716,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       </div>
 
       <!-- ── Console ──────────────────────────────────────────────── -->
-      <div v-else-if="activeTab === 'console'" ref="consoleWrap" class="scroll-mt-4">
+      <div v-else-if="activeTab === 'console'" ref="consoleWrap" class="scroll-mt-4" data-tour="evidence-console">
         <TestCaseConsoleCard
           v-if="consoleLogs.length"
           embedded
@@ -730,7 +730,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       </div>
 
       <!-- ── State ────────────────────────────────────────────────── -->
-      <div v-else-if="activeTab === 'state'" class="space-y-4">
+      <div v-else-if="activeTab === 'state'" class="space-y-4" data-tour="evidence-state">
         <div ref="pageStateWrap" class="scroll-mt-4">
           <PageStateCard v-if="pageState" embedded :page-state="pageState" />
           <SectionCard v-else embedded title="">
@@ -744,7 +744,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
 
       <!-- ── Locators ─────────────────────────────────────────────── -->
       <!-- Lazy: fetched when the tab opens. -->
-      <div v-else-if="activeTab === 'locators'" class="scroll-mt-4">
+      <div v-else-if="activeTab === 'locators'" class="scroll-mt-4" data-tour="evidence-locators">
         <ExecutionLocatorsCard
           :test-runs-case-id="testRunsCaseId"
           :project-key="projectKey"
@@ -753,7 +753,12 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       </div>
 
       <!-- ── Performance ──────────────────────────────────────────── -->
-      <div v-else-if="activeTab === 'performance'" ref="performanceWrap" class="scroll-mt-4">
+      <div
+        v-else-if="activeTab === 'performance'"
+        ref="performanceWrap"
+        class="scroll-mt-4"
+        data-tour="evidence-performance"
+      >
         <TestCasePerformancePanel
           embedded
           :performance-hints="performanceHints"

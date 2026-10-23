@@ -4,8 +4,6 @@
  * at the commit of the run the failure was seen in, and the stored diagnosis
  * notifies like one Piwi produced. The write itself is the shared handler.
  */
-import { eq } from 'drizzle-orm';
-import { testRuns } from '../database/schema';
 import type { AgentDiagnosisInput, AgentDiagnosisTarget } from '#shared/agent-diagnosis';
 import type { HandbackActor } from '#shared/handback-outcomes';
 import {
@@ -15,31 +13,10 @@ import {
   type ResolvedDiagnosisTarget,
 } from '#shared/handlers/agent-diagnosis';
 import { isDiagnosisRunning, isDiagnosisRunningForExecution } from './ai-diagnosis';
-import { createScmProvider } from './scm';
-import { normalizeGitUrl } from './scm/git-url';
 import { emitNotification } from './notifications/emit';
 import { enqueueDiagnosisPolicies } from './integrations/policies';
-import type { RunMetadata } from './run-json-types';
+import { loadRunSources } from './run-sources';
 import type { DbClient } from '../database';
-
-/** Read the files a patch names at the commit of a run; null without SCM. */
-async function loadRunSources(db: DbClient, runId: number, paths: string[]): Promise<Map<string, string> | null> {
-  const [run] = await db
-    .select({ projectId: testRuns.projectId, metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.id, runId));
-  const scm = (run?.metadata as RunMetadata | null)?.scm;
-  const repositoryUrl = normalizeGitUrl(scm?.remoteUrl ?? null);
-  if (!run || !repositoryUrl || !scm?.commit) return null;
-  const provider = await createScmProvider(repositoryUrl, db, run.projectId);
-  if (!provider) return null;
-  const files = new Map<string, string>();
-  for (const path of paths) {
-    const file = await provider.fetchFileAtRef(path, scm.commit).catch(() => null);
-    if (file && !file.truncated) files.set(path, file.content);
-  }
-  return files;
-}
 
 /**
  * Record an agent's diagnosis on a cluster or a failure and send

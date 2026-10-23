@@ -39,7 +39,8 @@ export type CapabilityId =
   | 'flake-lab'
   | 'resources'
   | 'agent-diagnoses'
-  | 'agent-write-log';
+  | 'agent-write-log'
+  | 'assistant';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -61,11 +62,11 @@ export interface CapabilityDef {
   /** Detection id in `setup-status.ts`, when evidence exists for it. */
   detection: SetupCapabilityId | null;
   /**
-   * The capability's evidence arrives passively from ingest, not from a user
-   * turning it on (the Test Map's graph nodes are written on every run). For
-   * such a capability a decline holds over that data, so declining it actually
-   * turns the surface off; every other capability keeps the "data always wins"
-   * rule.
+   * The capability's evidence does not mean a team chose it: it arrives
+   * passively from ingest (the Test Map's graph nodes are written on every run)
+   * or from use (a question someone asked the assistant). For such a capability
+   * a decline holds over that data, so declining it actually turns the surface
+   * off; every other capability keeps the "data always wins" rule.
    */
   passiveData?: boolean;
   /** A capability that is declined whenever this one is (rides on it). */
@@ -291,6 +292,17 @@ export const CAPABILITIES: CapabilityDef[] = [
     since: '0.46.0',
     doc: 'features/mcp',
   },
+  {
+    id: 'assistant',
+    module: 'agents',
+    levels: ['instance'],
+    needs: ['llm'],
+    detection: 'assistant',
+    passiveData: true,
+    follows: 'ai',
+    since: '0.59.0',
+    doc: 'features/assistant',
+  },
 ];
 
 /** The registry keyed by id, for a direct lookup. */
@@ -329,7 +341,7 @@ export const CAPABILITY_PRESETS: CapabilityPreset[] = [
     description: 'Notifications, quarantine, pull-request feedback, issue tracking and the Test Map.',
   },
   { module: 'healing', label: 'Fix faster', description: 'Locator healing and auto-heal pull requests.' },
-  { module: 'agents', label: 'Let agents in', description: 'AI diagnosis over your real diff.' },
+  { module: 'agents', label: 'Let agents in', description: 'AI diagnosis over your real diff, and the assistant.' },
 ];
 
 /** Facts about one capability in one context, gathered by the shared handler. */

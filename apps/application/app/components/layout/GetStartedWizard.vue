@@ -188,7 +188,7 @@ const goFurtherOpen = ref(false);
 </script>
 
 <template>
-  <UCard>
+  <UCard data-tour="get-started-wizard">
     <template #header>
       <div class="flex items-center gap-3">
         <div class="p-2 bg-primary/10 rounded-lg shrink-0">

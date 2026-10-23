@@ -77,6 +77,7 @@ const exportData = computed(() =>
     :title="title ?? 'Flaky debt'"
     :subtitle="subtitle"
     help="analytics.flaky-debt"
+    data-tour="analytics-flaky-debt"
     :legend="legend"
     :export-data="exportData"
     data-shot="analytics-flaky-debt"

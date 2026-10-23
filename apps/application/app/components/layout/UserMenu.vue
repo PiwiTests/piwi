@@ -132,6 +132,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
       {
         label: 'Open in IDE…',
         icon: 'i-lucide-external-link',
+        'data-tour': 'user-menu-open-in-ide',
         onSelect: (e: Event) => {
           e.preventDefault();
           openIdeSettings();
@@ -240,6 +241,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
   >
     <UButton
       data-shot="user-menu"
+      data-tour="user-menu"
       v-bind="{
         ...user,
         label: collapsed ? undefined : user?.name,

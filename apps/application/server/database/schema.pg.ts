@@ -2712,3 +2712,104 @@ export const runDeliveries = pgTable(
     runIdx: index('idx_run_deliveries_run_id').on(t.runId),
   }),
 );
+
+// In-app assistant conversations. A conversation belongs to the user who
+// started it and is returned to nobody else, administrators included; with
+// authentication off every visitor is the same virtual administrator and
+// `owner_id` is null. Pruned PIWI_ASSISTANT_RETENTION_DAYS after its last message.
+export const assistantConversations = pgTable(
+  'assistant_conversations',
+  {
+    id: serial('id').primaryKey(),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'cascade' }), // null when authentication is off
+    title: text('title').notNull().default(''), // the first question, cut to one line
+    extraTools: jsonb('extra_tools'), // tool names find_tools added for the rest of the conversation
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' }) // the last message; the retention horizon
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    ownerIdx: index('idx_assistant_conversations_owner').on(t.ownerId, t.updatedAt),
+    updatedIdx: index('idx_assistant_conversations_updated').on(t.updatedAt),
+  }),
+);
+
+// One question or one answer of a conversation: its blocks (`{ blocks }`, what
+// the panel redraws), the page it was asked on, the tools the answer called with
+// their arguments, and the model and tokens of the answer.
+export const assistantMessages = pgTable(
+  'assistant_messages',
+  {
+    id: serial('id').primaryKey(),
+    conversationId: integer('conversation_id')
+      .notNull()
+      .references(() => assistantConversations.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(), // 'user' | 'assistant'
+    content: jsonb('content').notNull(), // { blocks: AssistantBlock[] }
+    context: jsonb('context'), // AssistantPageContext of a question
+    toolCalls: jsonb('tool_calls'), // AssistantToolCall[] of an answer
+    provider: text('provider'),
+    model: text('model'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    status: text('status').notNull().default('completed'), // 'completed' | 'failed'
+    error: text('error'),
+    durationMs: integer('duration_ms'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    conversationIdx: index('idx_assistant_messages_conversation').on(t.conversationId, t.id),
+  }),
+);
+
+// One row per assistant answer, for the daily token caps and the AI usage
+// summary. It holds no content and outlives a deleted conversation, so deleting
+// one never gives its tokens back; pruned on the conversations' horizon.
+export const assistantUsage = pgTable(
+  'assistant_usage',
+  {
+    id: serial('id').primaryKey(),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }), // null when authentication is off
+    provider: text('provider'),
+    model: text('model'),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    status: text('status').notNull(), // 'completed' | 'failed'
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    createdIdx: index('idx_assistant_usage_created').on(t.createdAt),
+    ownerIdx: index('idx_assistant_usage_owner').on(t.ownerId, t.createdAt),
+  }),
+);
+
+// The nudges a user dismissed for good: one row per owner and nudge, so a nudge
+// dismissed in one browser stays dismissed in every other. With authentication
+// off every visitor is the same virtual administrator and `owner_id` is null, so
+// a dismissal holds for the whole instance.
+export const assistantNudgeDismissals = pgTable(
+  'assistant_nudge_dismissals',
+  {
+    id: serial('id').primaryKey(),
+    ownerId: integer('owner_id').references(() => users.id, { onDelete: 'cascade' }), // null when authentication is off
+    nudgeId: text('nudge_id').notNull(), // one of ASSISTANT_NUDGE_IDS (shared/assistant-nudges.ts)
+    dismissedAt: timestamp('dismissed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    ownerIdx: uniqueIndex('idx_assistant_nudge_dismissals_owner')
+      .on(t.ownerId, t.nudgeId)
+      .where(sql`owner_id IS NOT NULL`),
+    sharedIdx: uniqueIndex('idx_assistant_nudge_dismissals_shared')
+      .on(t.nudgeId)
+      .where(sql`owner_id IS NULL`),
+  }),
+);

@@ -138,7 +138,7 @@ useViewScroll(
       <div class="flex flex-col gap-4 p-4" data-shot="test-case-detail">
         <!-- Header: title, a single facts line, and the two actions. The title
              wraps and the actions drop below it on phones. -->
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4" data-tour="test-case-header">
           <div class="flex-1 min-w-0 space-y-2">
             <h1 class="text-xl font-bold break-words" :title="testCase?.displayTitle ? testCase.title : undefined">
               <TestIdChip v-if="testCase?.externalId" :external-id="testCase.externalId" class="mr-2 align-middle" />{{
@@ -192,6 +192,7 @@ useViewScroll(
 
           <div class="flex flex-wrap items-center gap-2 shrink-0">
             <DesktopRunLocallyButton
+              data-tour="test-reproduce-locally"
               :project-id="testCase?.project?.id"
               :project-label="testCase?.project?.label ?? testCase?.project?.name"
               :cases="reproduceCases"
@@ -205,7 +206,11 @@ useViewScroll(
               :label="testLabel(testCase)"
               @merged="refresh()"
             />
-            <NuxtLink v-if="testCase?.lastExecutionId" :to="`/test-run-cases/${testCase.lastExecutionId}`">
+            <NuxtLink
+              v-if="testCase?.lastExecutionId"
+              :to="`/test-run-cases/${testCase.lastExecutionId}`"
+              data-tour="test-latest-execution"
+            >
               <UButton size="sm" variant="outline" trailing-icon="i-lucide-arrow-right">Latest execution</UButton>
             </NuxtLink>
           </div>
@@ -243,13 +248,14 @@ useViewScroll(
           :project-label="testCase.project?.label ?? testCase.project?.name ?? null"
         />
 
-        <template v-else>
+        <div v-else class="flex flex-col gap-4" data-tour="test-overview">
           <!-- Duration trend, with the execution strip as its footer row -->
           <ChartCard
             v-if="historyData && historyData.length"
             title="Duration trend"
             icon="i-lucide-trending-up"
             help="case.history-chart"
+            data-tour="test-duration-trend"
             :legend="historyData.length > 1 ? legendOf(CASE_STATUS_SERIES) : undefined"
           >
             <TestCaseHistoryChart
@@ -352,14 +358,20 @@ useViewScroll(
           </SectionCard>
 
           <!-- Entity links -->
-          <SectionCard v-if="testCase?.links?.length" icon="i-lucide-link" title="Links" help="shared.entity-links">
+          <SectionCard
+            v-if="testCase?.links?.length"
+            icon="i-lucide-link"
+            title="Links"
+            help="shared.entity-links"
+            data-tour="test-links"
+          >
             <EntityLinks
               entity-type="test_case"
               :entity-id="Number(testCaseId)"
               :links="(testCase.links as any) ?? null"
             />
           </SectionCard>
-        </template>
+        </div>
       </div>
     </template>
   </UDashboardPanel>

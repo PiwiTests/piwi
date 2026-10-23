@@ -41,8 +41,12 @@ type SearchResult = {
   }[];
 };
 const searchResults = ref<SearchResult | null>(null);
-/** The palette's own items (pages, project tabs) match as `/api/search` does: ignoring case and accents. */
-const searchFuse = { fuseOptions: { ignoreDiacritics: true } };
+/**
+ * The palette's own items (pages, project tabs) match as `/api/search` does:
+ * ignoring case and accents; a guide also by its keywords. A group lists up
+ * to 20 items, so every guide shows before anything is typed.
+ */
+const searchFuse = { fuseOptions: { ignoreDiacritics: true, keys: ['keywords'] }, resultLimit: 20 };
 
 /** Counts searches, so the answer to an older query never replaces a newer one. */
 let searchRequest = 0;
@@ -90,7 +94,7 @@ useNotificationStream();
 useDashboard();
 
 const { canSeeAdmin } = useAuth();
-const { isHidden: capHidden } = await useInstanceCapabilities();
+const { isHidden: capHidden, state: capState } = await useInstanceCapabilities();
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {
@@ -147,6 +151,7 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
       value: `project-${project.id}`,
       type: 'link' as const,
       to: `/projects/${project.id}`,
+      'data-tour': 'nav-project',
       active: isActive,
     };
   }
@@ -202,6 +207,7 @@ const links = computed(() => {
       label: 'Documentation',
       icon: 'i-lucide-book-marked',
       to: DOCS_BASE_URL,
+      'data-tour': 'nav-documentation',
       target: '_blank',
     },
   ];
@@ -212,6 +218,7 @@ const links = computed(() => {
       label: 'MCP server',
       icon: 'i-lucide-bot',
       to: '/mcp',
+      'data-tour': 'nav-mcp',
       onSelect: () => {
         open.value = false;
       },
@@ -225,6 +232,7 @@ const links = computed(() => {
       label: 'Setup',
       icon: 'i-lucide-rocket',
       to: '/setup',
+      'data-tour': 'nav-setup',
       onSelect: () => {
         open.value = false;
       },
@@ -234,6 +242,7 @@ const links = computed(() => {
     label: 'API Docs',
     icon: 'i-lucide-book-open',
     to: '/docs',
+    'data-tour': 'nav-api-docs',
     // `/docs` is a normal Nuxt page in every mode — it renders the API reference
     // in-app from the generated OpenAPI spec, so ordinary client navigation works.
     onSelect: () => {
@@ -246,6 +255,7 @@ const links = computed(() => {
         label: 'Home',
         icon: 'i-lucide-house',
         to: '/',
+        'data-tour': 'nav-home',
         onSelect: () => {
           open.value = false;
         },
@@ -254,6 +264,7 @@ const links = computed(() => {
         label: 'Analytics',
         icon: 'i-lucide-chart-line',
         to: '/analytics',
+        'data-tour': 'nav-analytics',
         active: route.path === '/analytics' || route.path.startsWith('/analytics/'),
         onSelect: () => {
           open.value = false;
@@ -266,6 +277,7 @@ const links = computed(() => {
               label: 'Quality reports',
               icon: 'i-lucide-file-chart-column',
               to: '/reports',
+              'data-tour': 'nav-quality-reports',
               onSelect: () => {
                 open.value = false;
               },
@@ -275,6 +287,7 @@ const links = computed(() => {
         label: 'Projects',
         icon: 'i-lucide-folder',
         to: '/projects',
+        'data-tour': 'nav-projects',
         onSelect: () => {
           open.value = false;
         },
@@ -314,6 +327,16 @@ function runStatusIcon(status: string) {
   return 'i-lucide-circle';
 }
 
+// The assistant's palette items: Ask Piwi with the typed text as the question, and the page's suggestions.
+// None when the assistant is declined.
+const assistant = useAssistant();
+const assistantGroups = computed(() =>
+  capState('assistant') === 'declined' ? [] : assistant.paletteGroups(searchTerm.value),
+);
+
+// The authored guides the user may start, on every instance: they need no model.
+const authoredGuides = await useAuthoredGuides();
+
 const groups = computed<CommandPaletteGroup[]>(() => {
   const staticGroups: CommandPaletteGroup[] = [
     {
@@ -321,6 +344,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       label: 'Go to',
       items: links.value.flat().map((item) => toCommandPaletteItem(item)),
     },
+    ...authoredGuides.paletteGroups(),
     {
       id: 'code',
       label: 'Code',
@@ -363,6 +387,8 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       })),
     });
   }
+
+  staticGroups.unshift(...assistantGroups.value);
 
   if (!searchResults.value) return staticGroups;
 
@@ -517,7 +543,13 @@ onMounted(async () => {
       <template #default="{ collapsed }">
         <DesktopNavButtons v-if="collapsed" collapsed class="self-center" />
 
-        <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
+        <UDashboardSearchButton
+          :collapsed="collapsed"
+          class="bg-transparent ring-default"
+          data-tour="command-palette"
+        />
+
+        <AssistantLauncher :collapsed="collapsed" @open="open = false" />
 
         <UNavigationMenu
           :key="currentProjectId ?? undefined"
@@ -542,6 +574,7 @@ onMounted(async () => {
           <ULink
             v-if="!collapsed"
             to="/settings/about"
+            data-tour="app-version"
             class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-center"
             title="View version and build info"
           >
@@ -581,5 +614,8 @@ onMounted(async () => {
 
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />
+
+    <!-- The assistant's panel: opened from the sidebar's Ask Piwi and the command palette, kept across navigation -->
+    <AssistantPanel />
   </UDashboardGroup>
 </template>

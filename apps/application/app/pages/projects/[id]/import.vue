@@ -114,6 +114,7 @@ const finishedCount = computed(() => entries.value.filter((e) => ['imported', 'd
           icon="i-lucide-import"
           help="project.import"
           subtitle="Backfill runs recorded before you started using Piwi, from Playwright's own blob reports."
+          data-tour="import-runs"
         >
           <div class="space-y-4">
             <div class="text-sm text-gray-600 dark:text-gray-400 space-y-2">
@@ -197,6 +198,7 @@ const finishedCount = computed(() => entries.value.filter((e) => ['imported', 'd
               <UButton
                 label="Choose files"
                 icon="i-lucide-folder-open"
+                data-tour="import-choose-files"
                 variant="outline"
                 size="sm"
                 class="mt-2"

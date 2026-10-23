@@ -10,8 +10,8 @@ import { PROJECT } from '#shared/test-project-names';
  * on the default test server, so the virtual admin sees the controls.
  */
 
-// A plain assertion failure — not a timeout and no network clue — so the footer
-// shows rather than the contextual nudge, and no network evidence is captured.
+// A plain assertion failure — not a timeout and no network clue — so no nudge
+// shows above the evidence, and no network evidence is captured.
 const ASSERTION_ERROR =
   'Error: expect(received).toBe(expected)\n\nExpected: 3\nReceived: 2\n    at tests/cart.spec.ts:8:20';
 

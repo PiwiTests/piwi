@@ -12,10 +12,19 @@ import * as http from 'http';
 import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
 import type { AiDiagnosisResult } from '#shared/ai-diagnosis';
+import { lockAiSettings } from './utils/ai-settings-lock';
 
 // Force all tests in this file into a single serial worker so the two describe
 // blocks don't interfere with each other's AI config state.
 test.describe.configure({ mode: 'serial' });
+
+// Other specs point Settings → AI at their own mock model; hold it for this whole file.
+let releaseAiSettings = () => {};
+test.beforeAll(async () => {
+  test.setTimeout(10 * 60_000);
+  releaseAiSettings = await lockAiSettings();
+});
+test.afterAll(() => releaseAiSettings());
 
 // ── Mock HTTP server ──────────────────────────────────────────────────────────
 

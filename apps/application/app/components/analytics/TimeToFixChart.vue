@@ -67,6 +67,7 @@ const exportData = computed(() =>
     icon="i-lucide-wrench"
     :title="title ?? 'Time to fix'"
     help="analytics.time-to-fix"
+    data-tour="analytics-time-to-fix"
     :legend="legend"
     :export-data="exportData"
     data-shot="analytics-time-to-fix"

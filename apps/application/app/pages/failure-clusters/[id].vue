@@ -445,6 +445,9 @@ const gitLogCommand = computed(() =>
 );
 const { copy: copyGitLog } = useCopy();
 
+// What the nudge on a diagnosis without the code changes reads: the diagnosis and the commits its context could read.
+const nudgeFacts = computed(() => ({ diagnosed: Boolean(clusterDiagnosis.value), scm: contextCoverage.value?.scm }));
+
 // ── Bulk actions (More menu) ─────────────────────────────────────────────────
 const quarantineAll = ref<{ trigger: () => void } | null>(null);
 const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.quarantined));
@@ -492,6 +495,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
       description: coverageLossPreview(quarantineLossFor(pendingQuarantineIds.value), 'quarantine')?.headline,
       icon: 'i-lucide-shield-alert',
       color: 'warning',
+      'data-tour': 'quarantine-all-tests',
       onSelect: () => quarantineAll.value?.trigger(),
     });
   if (canRerun.value && rerunInfo.value?.available)
@@ -522,6 +526,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
     copies.push({
       label: 'Show context',
       icon: 'i-lucide-eye',
+      'data-tour': 'diagnosis-show-context',
       onSelect: () => void onDiagnosisPanel((panel) => panel.openContext()),
     });
   copies.push({
@@ -682,6 +687,7 @@ const breadcrumbItems = computed(() => [
               icon="i-lucide-ellipsis-vertical"
               aria-label="More actions"
               title="More actions"
+              data-tour="cluster-more-actions"
             />
           </UDropdownMenu>
         </template>
@@ -694,7 +700,7 @@ const breadcrumbItems = computed(() => [
         <SituationBlock help="cluster.state" :edge="stateEdge">
           <!-- Line 1: identity kicker — cluster #, error type, project, owner -->
           <template #identity>
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1" data-tour="cluster-heading">
               <span class="text-highlighted">Failure cluster #{{ clusterId }}</span>
               <template v-if="errorTypeLabel">
                 <span aria-hidden="true">·</span>
@@ -826,6 +832,12 @@ const breadcrumbItems = computed(() => [
             <ClusterFactsLine ref="factsLine" :cluster="cluster" :signature-line="signatureLine" @refresh="refresh" />
           </template>
         </SituationBlock>
+
+        <AssistantNudge
+          page="/failure-clusters/[id]"
+          :facts="nudgeFacts"
+          class="max-sm:rounded-none max-sm:border-x-0"
+        />
 
         <!-- ── The fix the next step points at, then the context and the evidence, then More ways to fix ── -->
         <Toolbox ref="toolbox" lead :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">

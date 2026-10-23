@@ -73,6 +73,7 @@ const subtitle = computed(() =>
     title="In the Test Map"
     icon="i-lucide-radar"
     help="coverage.test-map"
+    data-tour="coverage-file-test-map"
     data-shot="coverage-file-test-map"
   >
     <template #subtitle>

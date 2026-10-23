@@ -76,6 +76,11 @@ const rows = computed<LadderRow[]>(() =>
 
 const activeCount = computed(() => rows.value.filter((r) => r.active).length);
 
+// The nudge on undecided capabilities counts the optional rows with neither data nor a decision.
+const nudgeFacts = computed(() =>
+  isLoading.value ? null : { undecided: rows.value.filter((r) => !r.isCore && r.state === 'undecided').length },
+);
+
 const GROUPS: { id: 'active' | 'available' | 'notset'; label: string }[] = [
   { id: 'active', label: 'Active' },
   { id: 'available', label: 'Available' },
@@ -105,7 +110,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
 <template>
   <UDashboardPanel id="setup">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="setup-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb :items="[{ label: 'Setup', icon: 'i-lucide-rocket', to: '/setup' }]" />
@@ -137,7 +142,9 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
 
         <!-- What a team wants Piwi for — declining a module declines its
              capabilities, which regroups the ladder below. -->
-        <CapabilityPresets help="setup.presets" />
+        <CapabilityPresets help="setup.presets" data-tour="capability-presets" />
+
+        <AssistantNudge page="/setup" :facts="nudgeFacts" />
 
         <UCard data-shot="setup-ladder">
           <template #header>

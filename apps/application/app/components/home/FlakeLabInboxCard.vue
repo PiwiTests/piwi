@@ -22,7 +22,12 @@ function rate(item: FlakeLabInboxItem): string | null {
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-flask-conical" title="Flaky tests waiting in the Flake Lab" help="home.flake-lab">
+  <SectionCard
+    icon="i-lucide-flask-conical"
+    title="Flaky tests waiting in the Flake Lab"
+    help="home.flake-lab"
+    data-tour="flake-lab-inbox"
+  >
     <ul class="divide-y divide-default text-sm" data-testid="flake-lab-inbox">
       <li
         v-for="item in items"
@@ -46,6 +51,7 @@ function rate(item: FlakeLabInboxItem): string | null {
           icon="i-lucide-clipboard"
           class="self-start sm:self-auto shrink-0"
           :title="item.command"
+          data-tour="flake-lab-inbox-command"
           @click="copy(item.command, { toast: 'Lab command copied' })"
         >
           Copy command

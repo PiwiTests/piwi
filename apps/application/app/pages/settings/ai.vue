@@ -21,6 +21,7 @@ const roles = reactive<Record<RoleKey, RoleForm>>({
   diagnosis: blankRole(),
   research: blankRole(),
   embedding: blankRole(),
+  assistant: blankRole(),
 });
 
 const autoDiagnose = ref(false);
@@ -47,17 +48,20 @@ const testingRoles = reactive<Record<RoleKey, boolean>>({
   diagnosis: false,
   research: false,
   embedding: false,
+  assistant: false,
 });
 
 const modelsRecord = reactive<Record<RoleKey, ModelInfo[]>>({
   diagnosis: [],
   research: [],
   embedding: [],
+  assistant: [],
 });
 const loadingModels = reactive<Record<RoleKey, boolean>>({
   diagnosis: false,
   research: false,
   embedding: false,
+  assistant: false,
 });
 
 function resolvedProvider(role: RoleKey): string {
@@ -86,12 +90,14 @@ async function loadModels(role: RoleKey) {
   }
 }
 
+// `attrs` puts each role's guide anchor on its form.
 const ROLE_META = [
   {
     key: 'diagnosis',
     title: 'Diagnosis model',
     icon: 'i-lucide-stethoscope',
     help: 'settings.ai-provider',
+    attrs: { 'data-tour': 'ai-diagnosis-model' },
     optional: false,
     enableLabel: '',
     blurb: 'The main model that writes the final diagnosis. Required to enable AI features.',
@@ -104,6 +110,7 @@ const ROLE_META = [
     title: 'Research model',
     icon: 'i-lucide-search',
     help: 'settings.ai-research',
+    attrs: { 'data-tour': 'ai-research-model' },
     optional: true,
     enableLabel: 'Two-stage diagnosis',
     blurb:
@@ -117,6 +124,7 @@ const ROLE_META = [
     title: 'Embedding model',
     icon: 'i-lucide-vector-square',
     help: 'settings.embedding-model',
+    attrs: { 'data-tour': 'ai-embedding-model' },
     optional: true,
     enableLabel: 'Semantic clustering',
     blurb: 'Embeds failures so semantically-similar errors group together (used by failure clustering).',
@@ -125,15 +133,30 @@ const ROLE_META = [
     modelPlaceholderAnthropic: '— Anthropic has no embeddings API —',
     modelPlaceholderOpenai: 'e.g. text-embedding-3-small',
   },
+  {
+    key: 'assistant',
+    title: 'Assistant model',
+    icon: 'i-lucide-message-circle-question-mark',
+    help: 'settings.ai-assistant',
+    attrs: { 'data-tour': 'ai-assistant-model' },
+    optional: true,
+    enableLabel: 'Separate assistant model',
+    blurb:
+      'The model the in-app assistant answers questions with. Off, the assistant uses the diagnosis model; a faster, cheaper model suits conversation.',
+    reuseTargets: ['diagnosis', 'research'],
+    modelPlaceholderAnthropic: 'e.g. claude-haiku-4-5',
+    modelPlaceholderOpenai: 'e.g. gpt-4o-mini, qwen2.5',
+  },
 ] as const;
 
-// The local Claude CLI provider is only offered in the desktop app (or when a
-// stored/env config already selected it, so it stays visible and editable).
+// The local Claude CLI provider is offered where the server may run it (the
+// desktop app, or a server with PIWI_CLAUDE_CLI_PATH), or when a stored/env
+// config already selected it, so it stays visible and editable.
 const isDesktop = useIsDesktop();
 const usesClaudeCli = computed(() =>
   Object.values(settings.value?.roles ?? {}).some((r) => r?.provider === 'claude-cli'),
 );
-const showClaudeCli = computed(() => isDesktop || usesClaudeCli.value);
+const showClaudeCli = computed(() => isDesktop || Boolean(settings.value?.claudeCliAvailable) || usesClaudeCli.value);
 
 const providerOptions = computed(() => {
   const opts = [
@@ -368,7 +391,7 @@ function resetLimits() {
 
 <template>
   <CapabilityDeclinedGuard capability="ai" label="AI diagnosis">
-    <div class="space-y-6">
+    <div class="space-y-6" data-tour="ai-page">
       <EnvManagedAlert v-if="envManaged" :env-vars="aiEnvVars" />
 
       <div v-if="!canStoreSecrets" class="space-y-2" data-testid="ai-no-secret-key">
@@ -390,7 +413,12 @@ function resetLimits() {
         <CodeBlock :code="secretKeyCommand" lang="bash" />
       </div>
 
-      <SectionCard icon="i-lucide-sparkles" title="Model providers" help="settings.ai-provider">
+      <SectionCard
+        icon="i-lucide-sparkles"
+        title="Model providers"
+        help="settings.ai-provider"
+        data-tour="ai-model-providers"
+      >
         <template #subtitle>
           Configure a complete provider for each model role. Optional roles can reuse another role's provider so you
           don't re-enter credentials.
@@ -403,6 +431,7 @@ function resetLimits() {
             v-for="meta in ROLE_META"
             :key="meta.key"
             v-model="roles[meta.key]"
+            v-bind="meta.attrs"
             :meta="meta"
             :has-api-key="hasStoredKey(meta.key)"
             :can-store-secrets="canStoreSecrets"
@@ -420,7 +449,12 @@ function resetLimits() {
             @test="testRole(meta.key)"
           />
 
-          <SettingsField label="Auto-diagnose" help="settings.auto-diagnose" :env-managed="envManaged">
+          <SettingsField
+            label="Auto-diagnose"
+            help="settings.auto-diagnose"
+            :env-managed="envManaged"
+            data-tour="ai-auto-diagnose"
+          >
             <div class="flex items-center gap-3">
               <USwitch v-model="autoDiagnose" :disabled="envManaged || !diagnosisConfigured" />
               <span class="text-sm text-gray-500">
@@ -430,7 +464,11 @@ function resetLimits() {
             </div>
           </SettingsField>
 
-          <SettingsField label="Diagnosis notifications" help="settings.ai-notifications">
+          <SettingsField
+            label="Diagnosis notifications"
+            help="settings.ai-notifications"
+            data-tour="ai-diagnosis-notifications"
+          >
             <ClientOnly>
               <div class="flex items-center gap-3">
                 <template v-if="!notifSupported">
@@ -464,14 +502,16 @@ function resetLimits() {
 
         <template #footer>
           <div class="flex items-center gap-2 justify-end">
-            <UButton color="primary" :loading="saving" icon="i-lucide-save" @click="save"> Save </UButton>
+            <UButton color="primary" :loading="saving" icon="i-lucide-save" data-tour="save-ai-providers" @click="save">
+              Save
+            </UButton>
           </div>
         </template>
       </SectionCard>
 
       <AiUsagePanel />
 
-      <SectionCard title="Repository access" help="project.scm-token">
+      <SectionCard title="Repository access" help="project.scm-token" data-tour="ai-repository-access">
         <template #subtitle> Optional — required for private repositories. Per-project tokens override this. </template>
 
         <UFormField
@@ -502,7 +542,7 @@ function resetLimits() {
         </template>
       </SectionCard>
 
-      <SectionCard title="Global analysis instructions" help="settings.ai-instructions">
+      <SectionCard title="Global analysis instructions" help="settings.ai-instructions" data-tour="ai-instructions">
         <UTextarea
           v-model="customInstructions"
           :rows="6"
@@ -524,7 +564,7 @@ function resetLimits() {
         </template>
       </SectionCard>
 
-      <SectionCard title="Response language">
+      <SectionCard title="Response language" data-tour="ai-response-language">
         <template #subtitle>
           The language the AI writes its prose in — diagnosis, root cause, cluster titles. Code, locators, file paths
           and error text stay verbatim. Leave blank for English.
@@ -551,7 +591,7 @@ function resetLimits() {
         </template>
       </SectionCard>
 
-      <SectionCard title="Diagnosis context limits" help="settings.ai-limits">
+      <SectionCard title="Diagnosis context limits" help="settings.ai-limits" data-tour="ai-context-limits">
         <template #subtitle> Leave a field empty to use its default; env-managed fields are read-only. </template>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
@@ -588,7 +628,12 @@ function resetLimits() {
         </template>
       </SectionCard>
 
-      <SectionCard icon="i-lucide-shield-check" title="Privacy notice" help="settings.privacy">
+      <SectionCard
+        icon="i-lucide-shield-check"
+        title="Privacy notice"
+        help="settings.privacy"
+        data-tour="ai-privacy-notice"
+      >
         <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
           <p>When diagnosing a failure cluster, the following data is sent to the configured LLM provider:</p>
           <ul class="list-disc list-inside space-y-1 ml-2">

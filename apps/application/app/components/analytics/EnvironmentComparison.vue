@@ -44,6 +44,7 @@ const exportData = computed(() => {
     :title="title ?? 'Environment comparison'"
     subtitle="Test pass rate and run success per environment"
     help="analytics.environment-comparison"
+    data-tour="analytics-environment-comparison"
     :legend="legend"
     :export-data="exportData"
     data-shot="analytics-environment-comparison"
