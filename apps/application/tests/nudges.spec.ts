@@ -124,6 +124,12 @@ test.describe('Nudges', () => {
     try {
       await openExecution(page);
       await expect(nudge(page)).toBeVisible();
+      // The assistant itself is gone: no Ask Piwi in the sidebar or the command palette.
+      await expect(page.getByRole('button', { name: 'Ask Piwi' })).toHaveCount(0);
+      await page.getByRole('button', { name: /^Search…/ }).click();
+      await page.getByPlaceholder('Type a command or search…').fill('Why did it fail?');
+      await expect(page.getByRole('option', { name: /Ask Piwi/ })).toHaveCount(0);
+      await page.keyboard.press('Escape');
       await nudge(page).getByRole('button', { name: "Don't show again" }).click();
       await expect(nudge(page)).toHaveCount(0);
       const dismissed = (await (await request.get('/api/assistant/nudge-dismissals')).json()) as {

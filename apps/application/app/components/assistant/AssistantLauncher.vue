@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * The sidebar's **Ask Piwi** button, under the search: opens the assistant's
- * panel. Absent when the assistant is declined on this instance; in the
+ * panel. Absent when the assistant is declined on this instance, which the
+ * capability states already say, so a page load asks for no status; in the
  * collapsed rail it is an icon with a tooltip, like the search beside it.
  */
 defineProps<{ collapsed?: boolean }>();
@@ -11,7 +12,7 @@ const emit = defineEmits<{
   open: [];
 }>();
 
-const { status, loadStatus, openPanel } = useAssistant();
+const { status, openPanel } = useAssistant();
 const { state } = await useInstanceCapabilities();
 
 const declined = computed(() => state('assistant') === 'declined' || status.value?.reason === 'declined');
@@ -20,8 +21,6 @@ function launch(): void {
   emit('open');
   void openPanel();
 }
-
-onMounted(() => void loadStatus());
 </script>
 
 <template>

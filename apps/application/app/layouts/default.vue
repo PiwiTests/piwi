@@ -94,7 +94,7 @@ useNotificationStream();
 useDashboard();
 
 const { canSeeAdmin } = useAuth();
-const { isHidden: capHidden } = await useInstanceCapabilities();
+const { isHidden: capHidden, state: capState } = await useInstanceCapabilities();
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {
@@ -328,8 +328,11 @@ function runStatusIcon(status: string) {
 }
 
 // The assistant's palette items: Ask Piwi with the typed text as the question, and the page's suggestions.
+// None when the assistant is declined.
 const assistant = useAssistant();
-const assistantGroups = computed(() => assistant.paletteGroups(searchTerm.value));
+const assistantGroups = computed(() =>
+  capState('assistant') === 'declined' ? [] : assistant.paletteGroups(searchTerm.value),
+);
 
 // The authored guides the user may start, on every instance: they need no model.
 const authoredGuides = await useAuthoredGuides();
