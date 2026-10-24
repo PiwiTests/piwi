@@ -7,6 +7,7 @@ import { sessionFromEvents, type RawCaptureEvent } from '@piwitests/core/recordi
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { renderSpec, stepLocator } from '@piwitests/core/codegen';
 import { playwrightLocator } from '../e2e/playwright-locator.js';
+import { findNode, pressPanelControl, type DomNode } from './panel.js';
 import { labFile, type Scenario } from './scenarios.js';
 
 /**
@@ -72,8 +73,24 @@ interface Lab {
   ctl: Page;
 }
 
+/**
+ * A new browser profile, Chrome's password manager off: after a login it
+ * shows a tab-modal warning about a password found in a data breach, and the
+ * tab takes no input while it is up, neither the scenario's nor the replay's.
+ */
+function newProfile(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'piwi-lab-'));
+  mkdirSync(path.join(dir, 'Default'), { recursive: true });
+  const preferences = {
+    credentials_enable_service: false,
+    profile: { password_manager_enabled: false, password_manager_leak_detection: false },
+  };
+  writeFileSync(path.join(dir, 'Default', 'Preferences'), JSON.stringify(preferences));
+  return dir;
+}
+
 async function launch(): Promise<Lab> {
-  const ctx = await chromium.launchPersistentContext(mkdtempSync(path.join(tmpdir(), 'piwi-lab-')), {
+  const ctx = await chromium.launchPersistentContext(newProfile(), {
     channel: 'chromium',
     viewport: LAB.viewport,
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
@@ -198,7 +215,7 @@ export async function replay(scenario: Scenario, doc: PiwiSteps, run = 0): Promi
         if (tab && locator && !answered.has(handed.step)) {
           answered.add(handed.step);
           await playwrightLocator(tab, locator).fill(secrets.shift()!);
-          await pressInReplayPanel(tab, 'hand-over-done');
+          await pressPanelControl(tab, 'hand-over-done');
         }
       } else if (handed) {
         // Any other step handed to the person waits for them: in the lab, nobody comes.
@@ -238,41 +255,6 @@ export async function replay(scenario: Scenario, doc: PiwiSteps, run = 0): Promi
     };
   } finally {
     await ctx.close();
-  }
-}
-
-type DomNode = { backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
-
-/** The node carrying `attribute` (with `value`, when given) anywhere in the page, closed shadow roots included. */
-function findNode(root: DomNode, attribute: string, value?: string): number | null {
-  const attrs = root.attributes ?? [];
-  for (let i = 0; i < attrs.length; i += 2) {
-    if (attrs[i] === attribute && (value === undefined || attrs[i + 1] === value)) return root.backendNodeId;
-  }
-  for (const child of [...(root.children ?? []), ...(root.shadowRoots ?? [])]) {
-    const found = findNode(child, attribute, value);
-    if (found) return found;
-  }
-  return null;
-}
-
-/** Clicks the replay panel's control `key` (`data-piwi-control`), inside its closed shadow root. */
-async function pressInReplayPanel(page: Page, key: string): Promise<boolean> {
-  const cdp = await page.context().newCDPSession(page);
-  try {
-    const { root } = (await cdp.send('DOM.getDocument', { depth: -1, pierce: true })) as { root: DomNode };
-    const backendNodeId = findNode(root, 'data-piwi-control', key);
-    if (!backendNodeId) return false;
-    const { object } = (await cdp.send('DOM.resolveNode', { backendNodeId })) as { object: { objectId: string } };
-    await cdp.send('Runtime.callFunctionOn', {
-      objectId: object.objectId,
-      functionDeclaration: 'function () { this.click(); }',
-    });
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await cdp.detach().catch(() => undefined);
   }
 }
 

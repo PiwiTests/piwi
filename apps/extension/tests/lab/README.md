@@ -61,8 +61,9 @@ lab test also has Playwright's own report (`npx playwright show-report tests/lab
 ## How it works
 
 - `harness.ts` copies `dist/` into `out/ext-<worker>/` with the scenarios' origins as host permissions (the grant a
-  person gives in the popup), launches Chromium with it, and talks to the background script from an extension page,
-  as the popup does: `piwi-start-recording`, then `piwi-start-replay`.
+  person gives in the popup), launches Chromium with it in a new profile, Chrome's password manager off (its warning
+  about a leaked password, after a login, makes the tab ignore input), and talks to the background script from an
+  extension page, as the popup does: `piwi-start-recording`, then `piwi-start-replay`.
 - The scenario drives the page with Playwright's trusted input, at a person's pace. The recorder's events are read from
   session storage and turned into steps by the same code as the review panel.
 - The replay starts in a fresh browser on the scenario's first page and runs until it is done or stops. It passes when
