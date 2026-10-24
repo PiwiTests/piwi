@@ -16,7 +16,7 @@ import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { STEP_CSS, stepView } from '../shared/step-view.js';
 import { relayEvidence } from '../shared/bug-relay.js';
-import { classifyInputKind, ownNavigation } from './record-capture.js';
+import { classifyInputKind, isActionKind, lastActionOf, ownNavigation } from './record-capture.js';
 import { isSensitiveField, rememberChangedFields } from './sensitive-fields.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
 import { parentElementOrShadowHost } from './engine-aria.js';
@@ -1136,28 +1136,11 @@ function scheduleHudRefresh(): void {
  */
 let captureError: string | null = null;
 
-/** The capture events that are the person's own actions, any of which can lead to another page. */
-const ACTION_KINDS: ReadonlySet<RawCaptureEvent['kind']> = new Set([
-  'click',
-  'dblclick',
-  'input',
-  'change',
-  'files',
-  'drop',
-  'keydown',
-]);
-
-/** When the person's last action was recorded, on this page or the pages before it; null before the first. */
+/** When the person's last action was recorded, unless a page was reached since (`lastActionOf`); else null. */
 let lastActionAt: number | null = null;
 
-/** The time of the last action among `events`, the recording's so far. */
-function lastActionOf(events: readonly RawCaptureEvent[]): number | null {
-  for (let i = events.length - 1; i >= 0; i--) if (ACTION_KINDS.has(events[i]!.kind)) return events[i]!.timestamp;
-  return null;
-}
-
 function captureEvent(event: RawCaptureEvent): void {
-  if (ACTION_KINDS.has(event.kind)) lastActionAt = event.timestamp;
+  if (isActionKind(event.kind)) lastActionAt = event.timestamp;
   void appendRecordingEvent(event)
     .then(() => {
       captureError = null;

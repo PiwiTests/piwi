@@ -28,13 +28,36 @@ export function isPasswordInput(tagName: string, typeAttr: string | null): boole
 /** How soon after an action of the person a move through the history or a reload still follows from it. */
 export const ACTION_LED_NAVIGATION_MS = 1_500;
 
+/** The capture events that are the person's own actions, any of which can lead to another page. */
+const ACTION_KINDS: ReadonlySet<string> = new Set(['click', 'dblclick', 'input', 'change', 'files', 'drop', 'keydown']);
+
+/** Whether a capture event of `kind` is an action of the person. */
+export function isActionKind(kind: string): boolean {
+  return ACTION_KINDS.has(kind);
+}
+
+/**
+ * When the person's last action among `events` (the recording's so far) was
+ * recorded, if no page was reached since: one reached since is where that
+ * action led, and a move through the history after it is the person's own.
+ */
+export function lastActionOf(events: readonly { kind: string; timestamp: number }[]): number | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const { kind, timestamp } = events[i]!;
+    if (kind === 'navigate') return null;
+    if (ACTION_KINDS.has(kind)) return timestamp;
+  }
+  return null;
+}
+
 /**
  * Whether a page the recorder attaches to is a step of its own: reached
  * through the history (`back_forward`, as the browser's navigation entry or
  * a page restored from the back/forward cache says) or by reloading, more
  * than {@link ACTION_LED_NAVIGATION_MS} after the person's last action
- * (`lastActionAt`, null when none was recorded). A page an action led to (a
- * link's `history.back()`, a form that reloads) is not.
+ * (`lastActionAt`, null when none was recorded since the last page was
+ * reached). A page an action led to (a link's `history.back()`, a form that
+ * reloads) is not.
  */
 export function ownNavigation(
   type: string | null | undefined,

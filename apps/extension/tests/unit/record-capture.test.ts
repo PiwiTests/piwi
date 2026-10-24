@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   ACTION_LED_NAVIGATION_MS,
   classifyInputKind,
-  ownNavigation,
   isPasswordInput,
+  lastActionOf,
+  ownNavigation,
 } from '../../src/content/record-capture.js';
 
 describe('classifyInputKind', () => {
@@ -58,5 +59,20 @@ describe('ownNavigation', () => {
     expect(ownNavigation('back_forward', 10_000, 10_000 - ACTION_LED_NAVIGATION_MS + 1)).toBeNull();
     expect(ownNavigation('navigate', 10_000, null)).toBeNull();
     expect(ownNavigation(undefined, 10_000, null)).toBeNull();
+  });
+});
+
+describe('lastActionOf', () => {
+  const at = (kind: string, timestamp: number) => ({ kind, timestamp });
+
+  it('is the time of the last action, a hover or a viewport aside', () => {
+    expect(lastActionOf([at('navigate', 1), at('click', 2), at('hover', 3), at('viewport', 4)])).toBe(2);
+    expect(lastActionOf([at('navigate', 1), at('keydown', 2), at('input', 3)])).toBe(3);
+  });
+
+  it('is none once a page was reached after it, where that action led', () => {
+    expect(lastActionOf([at('navigate', 1), at('click', 2), at('navigate', 3)])).toBeNull();
+    expect(lastActionOf([at('navigate', 1)])).toBeNull();
+    expect(lastActionOf([])).toBeNull();
   });
 });

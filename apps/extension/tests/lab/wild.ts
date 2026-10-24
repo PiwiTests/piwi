@@ -28,6 +28,20 @@ async function addTodos(page: Page, ...todos: string[]): Promise<void> {
 
 const bug = { mode: 'bug', settleMs: 2000 } as const;
 
+/**
+ * Acts until the page shows it took the action: for a page that drops input
+ * for a while after it changed. Input the page never receives reaches no
+ * recorder either, so the recording holds the action once.
+ */
+async function until(page: Page, act: () => Promise<void>, took: () => Promise<boolean>): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await act();
+    await pause(page, 700);
+    if (await took()) return;
+  }
+  throw new Error('The page never took the action.');
+}
+
 export const WILD_SCENARIOS: Scenario[] = [
   // TodoMVC: every row's checkbox is named "Toggle Todo", its delete button shows on hover only.
   {
@@ -483,9 +497,12 @@ export const WILD_SCENARIOS: Scenario[] = [
       await page.getByRole('button', { name: 'Login' }).click();
       await page.waitForURL(/inventory/);
       // In a browser profile of its own, the shop takes no input for a few seconds after the login.
-      await pause(page, 5000);
-      await page.locator('[data-test="add-to-cart-sauce-labs-backpack"]').click();
-      await pause(page, 500);
+      await pause(page, 2000);
+      await until(
+        page,
+        () => page.locator('[data-test="add-to-cart-sauce-labs-backpack"]').click(),
+        () => page.locator('[data-test="remove-sauce-labs-backpack"]').isVisible(),
+      );
       await page.locator('[data-test="add-to-cart-sauce-labs-bike-light"]').click();
       await pause(page, 500);
       await page.locator('[data-test="shopping-cart-link"]').click();
@@ -517,9 +534,17 @@ export const WILD_SCENARIOS: Scenario[] = [
       await page.keyboard.press('Enter');
       await page.waitForURL(/inventory/);
       // In a browser profile of its own, the shop takes no input for a few seconds after the login.
-      await pause(page, 5000);
-      await page.locator('[data-test="product-sort-container"]').selectOption('lohi');
-      await pause(page);
+      await pause(page, 2000);
+      // A closed native select changes with the arrow keys, as a person's keyboard changes it.
+      const sort = page.locator('[data-test="product-sort-container"]');
+      await until(
+        page,
+        async () => {
+          await sort.focus();
+          await page.keyboard.press('ArrowDown');
+        },
+        async () => (await sort.inputValue()) !== 'az',
+      );
       await page.getByText('Sauce Labs Onesie').click();
       await pause(page);
       await page.getByRole('button', { name: 'Back to products' }).click();

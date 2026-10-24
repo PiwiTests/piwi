@@ -226,12 +226,10 @@ test.describe('record-panel.js', () => {
     await page.click('#submit');
     await page.waitForURL('**/dashboard');
     await attach();
-    // The person looks at the page, then goes back with the browser and reloads.
-    await page.waitForTimeout(1_600);
+    // The person goes back with the browser at once, then reloads.
     await page.goBack();
     await page.waitForURL('**/login');
     await attach();
-    await page.waitForTimeout(1_600);
     await page.reload();
     await attach();
     // A link that goes back as it is clicked: the click is the step.

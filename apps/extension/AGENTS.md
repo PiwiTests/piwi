@@ -471,6 +471,9 @@ recorder takes:
 - **An element with a role and no name** (an unlabelled checkbox) gets its bare role as a last candidate
   (`rankElement`, score 12, below everything `generateAlternatives` builds), which `checkLocators` narrows or keeps
   with `.first()`/`.nth()`: never no locator at all, which the replay could not play.
+- **A name longer than 80 characters** (a link around a whole card: its title, summary and tags) is written by the
+  words it starts with, 60 characters at most (`shortName`): Playwright matches a name as a substring, so it finds the
+  same element, which `checkLocators` checks.
 - **Multi-pick** (`derivePattern`, `multi-pick-derive.ts`) shares `repeatedContainers` with the ladder: picks
   sharing a role, each alone in its container, the containers siblings of one kind (rows of one table, cards of one
   grid), give the container's pattern, `getByTestId('product-card').getByRole('button', { name: 'Add to cart' })`
@@ -665,8 +668,8 @@ made clickable around it, else the `<svg>`. `record.spec.ts` records both and ha
 A page the person reaches through the browser's Back or Forward (the document's navigation entry, a page restored
 from the back/forward cache, a `popstate` in a page that routes itself) or by reloading records its `navigate` event
 with `navigation` (`ownNavigation`, `record-capture.ts`), which `normalizeSteps` turns into a `goto` to that page; one
-an action led to (a link that calls `history.back()`, within `ACTION_LED_NAVIGATION_MS` of the last recorded action)
-does not. The replay and the spec go there again with a goto.
+an action led to does not: a link that calls `history.back()`, within `ACTION_LED_NAVIGATION_MS` of the last recorded
+action with no page reached since (`lastActionOf`). The replay and the spec go there again with a goto.
 
 ## Hovers a click depends on
 
