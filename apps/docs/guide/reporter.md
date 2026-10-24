@@ -34,9 +34,35 @@ $env:PIWI_DASHBOARD_URL='http://localhost:3000'; $env:PIWI_API_KEY='your-api-key
 
 This is a trial path: you get results and your configured traces and screenshots, but not the [capture fixtures](#capture-fixtures) or [`wrapConfig`](#installing-via-wrapconfig)'s capture defaults. On Playwright before 1.63 the flag does not exist; configure the reporter normally instead. [`piwi run`](/reference/cli#select-run) makes the same append automatically when the config has no Piwi reporter.
 
+## Installing via wrapConfig
+
+`wrapConfig` wraps your whole Playwright config in one call: it injects the reporter, chains Piwi's [global setup](#global-setup-phase), and defaults the failure-evidence capture options. It is the recommended setup, and what `npx @piwitests/reporter init` and the dashboard's **Setup** page write for you.
+
+```typescript
+import { defineConfig } from '@playwright/test'
+import { wrapConfig } from '@piwitests/reporter'
+
+export default wrapConfig(
+  defineConfig({
+    testDir: './tests',
+    // no `screenshot` / `trace` needed: wrapConfig fills them in
+  }),
+  {
+    serverUrl: 'http://localhost:3000',
+    projectName: 'my-project',
+  },
+)
+```
+
+The first argument is your Playwright config; the second is the [Piwi options](#configuration-options). On top of injecting the reporter, `wrapConfig`:
+
+- Sets `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` on the **top-level** `use` block when each is unset (a value you set, `'off'` included, and per-project `use` blocks are kept). They unlock the DOM snapshot, full call stack, full network with bodies and the visual diff **without** the capture fixtures. On Playwright 1.63 or later `trace` becomes `{ mode: 'retain-on-failure', snapshots: { dom: true, aria: true } }`, adding the per-action aria tree for the [Screen tab and the page diff](/features/evidence#aria-and-screen-snapshots). The `screen` snapshot kind stays opt-in; see [what `screen` adds per action](/operate/storage#trace-snapshots). Opt out with `defaultCapture: false` (or `PIWI_DEFAULT_CAPTURE=false`); the reporter logs one line at the start of the run naming whatever it defaulted.
+- Forwards the CI-gate option `failOnFlakyTests` into Playwright's native config so a flaky-only run exits non-zero locally.
+- Forwards the `PIWI_*` variables into the global setup process, so registering the run uses the reporter's server and credentials.
+
 ## Basic configuration
 
-Add the reporter to your `playwright.config.ts`:
+When a config cannot be wrapped, add the reporter entry yourself, and set the capture options `wrapConfig` would:
 
 ```typescript
 import { defineConfig } from '@playwright/test'
@@ -57,36 +83,11 @@ export default defineConfig({
 })
 ```
 
-The `use` block is Playwright's, not Piwi's: `trace`, `screenshot` and `video` decide what Playwright records, and the reporter uploads whatever exists, including what a test attaches itself with `testInfo.attach()`. Leave `screenshot` at its default (`'off'`) and the failure evidence has no screenshot to show. Videos can be large, so pair `retain-on-failure` with [storage cleanup](/operate/storage#storage-management).
+The `use` block is Playwright's: the reporter uploads what Playwright records, and what a test attaches with `testInfo.attach()`. Videos can be large, so pair `retain-on-failure` with [storage cleanup](/operate/storage#storage-management).
 
 ::: tip You don't also need Playwright's `html` reporter
-The dashboard rebuilds the run from the data this reporter collects, so it is complete without Playwright's `html` reporter. Running `html` alongside only repeats end-of-run work (and, run locally, opens a browser on failure). If you still want Playwright's standalone report, keep it and Piwi uploads it with the run (`uploadReport`).
+The dashboard is complete without it: running it alongside only repeats end-of-run work (and opens a browser on a local failure). Keep it if you want the standalone report, and Piwi uploads it with the run (`uploadReport`).
 :::
-
-## Installing via wrapConfig
-
-`wrapConfig` wraps your whole Playwright config in one call: it injects the reporter, chains Piwi's [global setup](#global-setup-phase), and defaults the failure-evidence capture options. It is what `npx @piwitests/reporter init` writes for you.
-
-```typescript
-import { defineConfig } from '@playwright/test'
-import { wrapConfig } from '@piwitests/reporter'
-
-export default defineConfig(
-  wrapConfig(
-    {
-      testDir: './tests',
-      // no `screenshot` / `trace` needed: wrapConfig fills them in
-    },
-    { serverUrl: 'http://localhost:3000', projectName: 'my-project' },
-  ),
-)
-```
-
-The first argument is your Playwright config; the second is the [Piwi options](#configuration-options). On top of injecting the reporter, `wrapConfig`:
-
-- Sets `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` on the **top-level** `use` block when each is unset. A value you set yourself is kept, including `'off'`, and per-project `use` blocks are left alone. These two options unlock the DOM snapshot, full call stack, full network with bodies and the visual diff **without** the capture fixtures. On Playwright 1.63 or later `trace` becomes `{ mode: 'retain-on-failure', snapshots: { dom: true, aria: true } }`, adding the per-action aria tree for the [Screen tab and the page diff](/features/evidence#aria-and-screen-snapshots). The `screen` snapshot kind stays opt-in; see [what `screen` adds per action](/operate/storage#trace-snapshots). Opt out with `defaultCapture: false` (or `PIWI_DEFAULT_CAPTURE=false`); the reporter logs one line at the start of the run naming whatever it defaulted.
-- Forwards the CI-gate option `failOnFlakyTests` into Playwright's native config so a flaky-only run exits non-zero locally.
-- Forwards the `PIWI_*` variables into the global setup process, so registering the run uses the reporter's server and credentials.
 
 <a id="performance-metrics-web-vitals"></a>
 
@@ -106,12 +107,20 @@ records on its own.
 
 ### Finding the desktop app automatically
 
-If nothing sets a server at all (no `serverUrl`, no `apiKey`, and neither `PIWI_DASHBOARD_URL` nor `PIWI_API_KEY` in
-the environment), the reporter looks for a running [desktop app](/features/desktop) on the same machine and uploads
-there. The app publishes its loopback URL and access token to `~/.piwi/desktop.json`
-(`%USERPROFILE%\.piwi\desktop.json` on Windows) while it runs, and deletes the file on quit. This is the lowest
-precedence step, so a CI job or a project pointed at a hosted dashboard is never redirected. Set `enabled: false` to
-opt out; `PIWI_DESKTOP_CONFIG` overrides the path.
+If nothing sets a server (no `serverUrl` or `apiKey`, no `PIWI_DASHBOARD_URL` or `PIWI_API_KEY`), the reporter
+uploads to the [desktop app](/features/desktop) running on the same machine, which publishes its loopback URL and
+access token to `~/.piwi/desktop.json` (`%USERPROFILE%\.piwi\desktop.json` on Windows) while it runs.
+`PIWI_DESKTOP_CONFIG` overrides the path. A CI job or a project pointed at another dashboard is never redirected,
+unless it opts in below.
+
+### Local runs to the desktop app, CI to a team server
+
+With `desktopApp: 'prefer'`, a run that is not on CI lands in the desktop app whenever it is running, even with
+`serverUrl` set, so developers' local runs stay out of a shared dashboard; CI runs, and local runs with the app closed,
+go to `serverUrl` with its credentials. The URL and the token always move together. A run is on CI when a CI
+provider's variable is set, or `CI` is anything but `false` or `0`. `'off'` never uses the app. `PIWI_DESKTOP_APP`
+overrides the option: `off` sends one local run to `serverUrl`. `init --desktop-app prefer` writes it, as does
+**Local runs go to the desktop app** on **Setup**.
 
 ## Sharding
 
@@ -122,42 +131,25 @@ same `projectName`. `runLabel` is the manual override when your CI isn't detecte
 ## Live streaming
 
 By default, the reporter streams results as tests complete: the run appears when the suite starts, each test's trace and
-attachments upload when it finishes (`liveFileUploads`), and while the run is open on the dashboard, its page shows the
-step each running test is on. When a test's final attempt fails, the reporter prints its headline and a link right away;
+attachments upload when it finishes (`liveFileUploads`), and the run's page shows the step each running test is on. When a test's final attempt fails, the reporter prints its headline and a link right away;
 at the end it prints `View run: <url>` (see [CI → Getting the run URL back out](./ci#getting-the-run-url-back-out-of-ci)).
 A server that does not support streaming gets the batch upload instead.
 
 ### Disabling streaming
 
-To send all results at the end of the run:
-
-```typescript
-['@piwitests/reporter', {
-  serverUrl: 'http://localhost:3000',
-  projectName: 'my-project',
-  streaming: false,
-}]
-```
+`streaming: false` sends all results at the end of the run.
 
 ### Tuning batch parameters
 
-Control how frequently results are sent during streaming:
-
-```typescript
-['@piwitests/reporter', {
-  serverUrl: 'http://localhost:3000',
-  projectName: 'my-project',
-  streamingBatchSize: 10,     // send every 10 queued events (test begin/end and live steps)
-  streamingBatchDelay: 5000,  // or every 5 seconds
-}]
-```
+`streamingBatchSize` (default 20 queued events) and `streamingBatchDelay` (default
+2000 ms) set how often results are sent while streaming.
 
 ## Global setup phase
 
 By default a run appears on the dashboard when the first test starts. If your config has a `globalSetup` step
 (seeding a database, authenticating, building the app), register the run before it so the dashboard shows an
 **initializing** state during setup. `wrapConfig` does this for you; otherwise export `createGlobalSetup` from the
-file `globalSetup` points to; it reads its options from the reporter entry:
+file `globalSetup` points to (`globalSetup: './global-setup.ts'`); it reads its options from the reporter entry:
 
 ```typescript
 // global-setup.ts
@@ -168,20 +160,12 @@ export default createGlobalSetup({}, async (config) => {
 })
 ```
 
-```typescript
-// playwright.config.ts
-export default defineConfig({
-  globalSetup: './global-setup.ts',
-  reporter: [['list'], ['@piwitests/reporter', { serverUrl: 'http://localhost:3000', projectName: 'my-project' }]],
-})
-```
-
 Registration is best-effort: if the server is unreachable, the run is created when tests begin. Playwright's UI mode
 (`--ui`) skips registration, since it swaps the reporter out; your own setup still runs.
 
 ## Multiple reports
 
-Attach multiple report types to a single test run. Each report appears as a separate button in the dashboard UI.
+Each report type listed in `reports` appears as its own button on the run.
 
 ```typescript
 export default defineConfig({
@@ -208,17 +192,8 @@ as an archive. Any other type is accepted too, read from `dir` or else `<type>-r
 
 ## With authentication enabled
 
-When the dashboard has authentication enabled, pass an **API key**: create one in the dashboard (see
-[API keys](/operate/api-keys)), store it in a CI secret, and give it to the reporter as `apiKey` or
-`PIWI_API_KEY`:
-
-```typescript
-['@piwitests/reporter', {
-  serverUrl: 'https://piwi.example.com',
-  projectName: 'my-project',
-  apiKey: process.env.PIWI_API_KEY,
-}]
-```
+When the dashboard has authentication enabled, pass an **API key**: create one ([API keys](/operate/api-keys);
+**Setup** creates one in place), keep it in a CI secret, and pass it as `PIWI_API_KEY` or the `apiKey` option.
 
 The key is sent as an `Authorization: Bearer` header. `username` and `password` (`PIWI_USERNAME`, `PIWI_PASSWORD`)
 work too (the reporter logs in once and reuses the session); prefer an API key in CI.

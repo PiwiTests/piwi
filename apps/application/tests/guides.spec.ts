@@ -62,7 +62,7 @@ test.describe('Guides', () => {
     await expect(popover).toBeVisible({ timeout: 30_000 });
     await expect(popover).toHaveAttribute('data-guide-stop', 'wizard');
     await expect(popover).toHaveAttribute('data-guide-anchor', 'get-started-wizard');
-    await expect(popover).toContainText('One command, or a few steps');
+    await expect(popover).toContainText('Three ways to the same setup');
     await expect(popover.getByRole('link', { name: 'Read the docs' })).toHaveAttribute('href', /guide\/reporter/);
     await expect(page).toHaveURL(/\/setup$/);
     await expect(page.locator('[data-tour="get-started-wizard"].driver-active-element')).toBeVisible();

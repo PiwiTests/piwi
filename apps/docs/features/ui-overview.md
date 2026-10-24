@@ -127,8 +127,9 @@ other sections and the [fix plan](./fix-plans); the occurrence chart and the act
 
 ## Setup
 
-`/setup`, administrators only: the reporter setup steps and a checklist of which optional capabilities this instance
-actually uses, judged from the data it holds ([Choose what you use](/operate/capabilities)).
+`/setup`, administrators only: the [connect wizard](/guide/getting-started#_2-connect-your-suite) and a checklist of
+which optional capabilities this instance actually uses, judged from the data it holds
+([Choose what you use](/operate/capabilities)).
 
 ## Settings
 

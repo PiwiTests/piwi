@@ -2,8 +2,8 @@
 /**
  * Setup — the permanent home for "how do I connect this, and what else can it do?".
  *
- * This page keeps the connect wizard reachable after the first run lands and
- * pairs it with the capability ladder: every optional capability grouped by
+ * This page opens on the connect wizard, reachable after the first run lands,
+ * and pairs it with the capability ladder: every optional capability grouped by
  * whether it is active, available, not set up yet or declined, with the one
  * place to decline a capability for this instance or to reconsider one.
  */
@@ -120,8 +120,12 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
 
     <template #body>
       <div class="flex flex-col gap-4 w-full lg:max-w-4xl mx-auto">
-        <!-- Desktop build: connecting to this local instance comes before the
-             generic reporter steps, since the token/URL are specific to it. -->
+        <!-- Connecting a suite comes first, on every build: it is what an
+             instance with no runs needs, and the setup to come back to. -->
+        <GetStartedWizard />
+
+        <!-- Desktop build: this app's own address and token, for the runs
+             discovery does not reach, then the rest of the local wiring. -->
         <template v-if="isDesktop">
           <DesktopReporterCard v-if="reporterConfig" :url="reporterConfig.url" :token="reporterConfig.token" />
           <DesktopPickerCard v-if="reporterConfig" :url="reporterConfig.url" :token="reporterConfig.token" />
@@ -137,8 +141,6 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
           <DataLocationCard v-if="stats" :database="stats.databaseLocation" :storage="stats.storageLocation" />
           <DesktopServiceCard />
         </template>
-
-        <GetStartedWizard />
 
         <!-- What a team wants Piwi for — declining a module declines its
              capabilities, which regroups the ladder below. -->

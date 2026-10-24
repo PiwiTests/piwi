@@ -78,9 +78,9 @@ export const HELP_TOPICS = {
     doc: 'features/ui-overview#home',
   },
   'home.get-started': {
-    title: 'Get started',
-    text: 'Wire the Piwi reporter into your Playwright config to start sending results here. The wizard generates the snippet for you.',
-    doc: 'guide/reporter',
+    title: 'Reporter setup',
+    text: 'Every path ends in the same setup: `wrapConfig` around your Playwright config and the capture fixtures in your specs. The reporter entry alone keeps your runs; the two add the failure evidence, the network and console capture and locator healing.',
+    doc: 'guide/getting-started#_2-connect-your-suite',
   },
   'home.failure-inbox': {
     title: 'Failure inbox',
