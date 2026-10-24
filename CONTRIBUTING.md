@@ -106,6 +106,8 @@ BREAKING CHANGE: unverified accounts can no longer sign in.
 2. **`commitlint` check** (the `PR lint` workflow) — lints every commit in a PR's range on push.
 3. **`title` check** (the `PR lint` workflow) — lints the PR title itself, since that's what becomes the squash-merge commit subject. This is the check that actually gates `main`.
 
+Dependabot's commits and pull requests (labelled `dependencies`) are exempt from both checks: it writes its own messages and capitalises "Bump" in some of them.
+
 ## Releases
 
 Merging a release-please PR (titled `chore(main): release X.Y.Z`) tags the release, and the tag starts `release.yml`, which publishes it. This requires one repository secret, **`RELEASE_PLEASE_TOKEN`** — without it, releases silently stop at the tag and `release.yml` never runs. `release-please.yml` writes the release PR, the tag and the release with it alone: it is a Personal Access Token (classic `repo` scope, or fine-grained with `Contents: read/write` + `Pull requests: read/write`) or a GitHub App installation token, added at `Settings → Secrets and variables → Actions`. This is required because GitHub's anti-recursion protection means a tag created with the default `GITHUB_TOKEN` does **not** trigger other `on: push: tags` workflows — `release.yml` would never run even though the tag exists. A PAT/App token isn't subject to that restriction.
