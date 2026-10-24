@@ -1093,13 +1093,14 @@ apply the cursor in memory on the same axis as the emitted cursor, or paging loo
 
 **Descriptions** — Markdown, written for the agent, built with `md()` in `shared/mcp-tools.ts` (a string per
 paragraph, a string array per bulleted list) or a plain string when one sentence says it all. The first paragraph is
-one sentence saying what the tool returns or does: `toolSummary` makes it the row of the `/mcp` page (which shows the
-rest and the parameters once the row is opened) and of the generated docs table. Then when to use it (and what to
-prefer), the result fields an agent must know to read the answer, and the edge cases; never what the input schema's
-parameter descriptions already say (paging, defaults, filters). Tool names, arguments, fields and values go in
-backticks, and a tool with a `permission` ends with a paragraph naming it, such as _Requires `triage:write`
-(Maintainer and above on the project)._ `tests/unit/mcp-tool-descriptions.test.ts` checks the summary, the
-permission paragraph and the backticks.
+one sentence, with no bold, saying what the tool returns or does: `toolSummary` makes it the muted line of the `/mcp`
+page's row (which shows the rest and the parameters once the row is opened) and of the generated docs table. Then when
+to use it (and what to prefer), the result fields an agent must know to read the answer, and the edge cases; never what
+the input schema's parameter descriptions already say (paging, defaults, filters). The page renders bold, code, links
+and lists only, so no single-asterisk emphasis. Tool names, arguments, fields and values go in backticks, and a tool
+with a `permission` ends with a paragraph naming it, such as _Requires `triage:write` (Maintainer and above on the
+project)._ `tests/unit/mcp-tool-descriptions.test.ts` checks the summary, the emphasis, the permission paragraph and
+that other tools' names are in backticks.
 
 **Tools about Piwi itself** — `describe_piwi` and `get_release_notes` (`server/utils/mcp/about-piwi.ts`) answer from
 the docs pages and `CHANGELOG.md` bundled as Nitro server assets (`nitro.serverAssets` in `nuxt.config.ts`; the

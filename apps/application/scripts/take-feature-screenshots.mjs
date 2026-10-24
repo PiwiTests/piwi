@@ -4970,13 +4970,14 @@ const SCENES = [
     description: 'MCP page: one tool opened, its Markdown description and parameters',
     route: '/mcp',
     viewport: { width: 1280, height: 2400 },
+    of: '[data-shot="mcp-tool-get_fix_plan"]',
     pad: 12,
-    run: async ({ page, shoot }) => {
-      const toggle = page.locator('[data-shot="mcp-tool-modules"] button', { hasText: 'get_fix_plan' });
-      await toggle.click();
-      const opened = '[data-shot="mcp-tool-modules"] div:has(> button[aria-expanded="true"])';
-      await page.locator(opened).waitFor();
-      await shoot(undefined, { of: opened });
+    run: async ({ page, shoot, settle }) => {
+      const tool = page.locator('[data-shot="mcp-tool-get_fix_plan"]');
+      await tool.getByRole('button', { expanded: false }).click();
+      await tool.getByRole('button', { expanded: true }).waitFor();
+      await settle();
+      await shoot();
     },
   },
   {

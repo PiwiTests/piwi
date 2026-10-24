@@ -17,9 +17,17 @@ describe('MCP tool descriptions', () => {
     const summary = toolSummary(tool.description);
     expect(summary).not.toContain('\n');
     expect(summary).toMatch(/\.$/);
+    expect(summary, 'a second sentence').not.toMatch(/[.?!]\s+[A-Z`]/);
     expect(summary.length).toBeLessThanOrEqual(170);
-    // The `/mcp` page renders the summary inside the row's toggle button.
+    // The `/mcp` page renders the summary as the row's muted line, inside its toggle button.
     expect(summary).not.toMatch(/\]\(/);
+    expect(summary).not.toContain('**');
+  });
+
+  test.each(TOOLS.map((t) => [t.name, t] as const))('%s uses only the Markdown the page renders', (_name, tool) => {
+    // `MarkdownPreview` renders **bold**, `code`, links and lists; a single-asterisk span would show its asterisks.
+    const outsideCode = tool.description.replace(/`[^`]*`/g, '');
+    expect(outsideCode).not.toMatch(/(?<!\*)\*[^*\s][^*]*\*(?!\*)/);
   });
 
   test.each(TOOLS.filter((t) => toolPermissions(t).length).map((t) => [t.name, t] as const))(
@@ -31,7 +39,8 @@ describe('MCP tool descriptions', () => {
     },
   );
 
-  test('every tool name a description mentions is in code', () => {
+  test('every other tool a description names is in code', () => {
+    // A one-word name such as `search` is also a plain word, so only names with an underscore are checked.
     const names = TOOLS.map((t) => t.name).filter((name) => name.includes('_'));
     const bare = TOOLS.flatMap((tool) =>
       names

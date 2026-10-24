@@ -24,7 +24,11 @@ const parameters = computed(() =>
 </script>
 
 <template>
-  <div class="rounded-md border border-default" :class="muted ? '' : 'bg-elevated/50'">
+  <div
+    class="rounded-md border border-default"
+    :class="muted ? '' : 'bg-elevated/50'"
+    :data-shot="`mcp-tool-${tool.name}`"
+  >
     <button
       type="button"
       class="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
@@ -55,10 +59,10 @@ const parameters = computed(() =>
         <p class="text-sm font-semibold text-highlighted mb-1.5">Parameters</p>
         <dl v-if="parameters.length" class="grid gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
           <template v-for="p in parameters" :key="p.name">
-            <dt class="min-w-0 text-xs">
-              <code class="font-mono text-highlighted break-all">{{ p.name }}</code
+            <dt class="min-w-0">
+              <code class="font-mono text-sm text-highlighted break-all">{{ p.name }}</code
               >{{ ' ' }}
-              <span class="text-muted">{{ p.type }}{{ p.required ? ', required' : '' }}</span>
+              <span class="text-xs text-muted">{{ p.type }}{{ p.required ? ', required' : '' }}</span>
             </dt>
             <dd class="min-w-0 text-xs text-muted max-sm:mb-1">
               <!-- eslint-disable-next-line vue/no-v-html -->

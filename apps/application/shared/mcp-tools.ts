@@ -1184,8 +1184,8 @@ export const MCP_TOOL_DEFS = [
     capability: 'ai',
     permission: 'ai:run',
     description: md(
-      'Run Piwi’s AI diagnosis of one failing execution, as the failure page’s **Diagnose** does, and return it: category, confidence, root cause and suggested fix.',
-      'When the execution is in a cluster, the cluster’s evidence grounds the diagnosis; use `run_cluster_diagnosis` for the root cause a whole cluster shares. Returns the existing completed diagnosis unless `force` is set, and refuses an execution that did not fail. Needs an AI provider configured on this instance.',
+      'Run Piwi’s AI diagnosis of one failing execution and return it: category, confidence, root cause and suggested fix.',
+      'It is the failure page’s **Diagnose**. When the execution is in a cluster, the cluster’s evidence grounds the diagnosis; use `run_cluster_diagnosis` for the root cause a whole cluster shares. Returns the existing completed diagnosis unless `force` is set, and refuses an execution that did not fail. Needs an AI provider configured on this instance.',
       'Requires `ai:run` (Maintainer and above on the project).',
     ),
     inputSchema: {
@@ -1332,8 +1332,8 @@ export const MCP_TOOL_DEFS = [
     capability: 'quarantine',
     permission: 'quarantine:write',
     description: md(
-      'Dismiss Piwi’s proposal to quarantine a test, or to release it from quarantine, as the dashboard’s **Dismiss** does.',
-      '`proposal` is:',
+      'Dismiss Piwi’s proposal to quarantine a test, or to release it from quarantine.',
+      'It is the dashboard’s **Dismiss**. `proposal` is:',
       [
         '`quarantine`: for a quarantine candidate, one of the costliest flaky tests by the CI minutes their flakiness wastes, which the flaky list marks proposed',
         '`release`: for a quarantined test whose passing streak or verified fix earned its way out (`list_open_clusters` with queue `quarantine-ready` finds their clusters)',
@@ -1362,8 +1362,8 @@ export const MCP_TOOL_DEFS = [
     capability: 'quarantine',
     permission: 'quarantine:write',
     description: md(
-      'Quarantine one test or release it, as the dashboard’s **Quarantine** and **Release** do.',
-      'A quarantined test keeps running and reporting: quarantine only removes it from the CI gate’s verdict, so its passing streak can earn its release. Pass `quarantined: true` with an optional `reason`, or `quarantined: false` to release it (the quarantine stays in its history). Quarantining a test already in quarantine changes nothing and keeps its streak; releasing a test not in quarantine fails.',
+      'Quarantine one test, or release it from quarantine.',
+      'It is the dashboard’s **Quarantine** and **Release**. A quarantined test keeps running and reporting: quarantine only removes it from the CI gate’s verdict, so its passing streak can earn its release. Pass `quarantined: true` with an optional `reason`, or `quarantined: false` to release it (the quarantine stays in its history). Quarantining a test already in quarantine changes nothing and keeps its streak; releasing a test not in quarantine fails.',
       'When the project records coverage, `uniqueCoverage` summarizes the code only this test runs among the other non-quarantined tests: what quarantining it leaves uncovered, or what releasing it covers again (`get_coverage_loss` lists it all). To quarantine every test of a cluster, use `triage_cluster`.',
       'Requires `quarantine:write` (Maintainer and above on the project).',
     ),
@@ -1402,8 +1402,8 @@ export const MCP_TOOL_DEFS = [
     capability: 'scm',
     permission: 'run:control',
     description: md(
-      'Re-run exactly a failure cluster’s affected tests in CI, as the cluster page’s **Re-run in CI** does.',
-      'It dispatches the project’s configured workflow or pipeline with the project’s source-control token, and returns the provider and the URL to watch the runs (the re-run’s own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository.',
+      'Re-run exactly a failure cluster’s affected tests in CI.',
+      'It is the cluster page’s **Re-run in CI**: it dispatches the project’s configured workflow or pipeline with the project’s source-control token, and returns the provider and the URL to watch the runs (the re-run’s own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository.',
       'Requires `run:control` (Maintainer and above on the project).',
     ),
     inputSchema: {
@@ -1535,8 +1535,8 @@ export const MCP_TOOL_DEFS = [
     capability: 'integrations',
     permission: 'link:write',
     description: md(
-      'Link an existing ticket or pull request to a failure cluster, an execution, a test case, a run or a bug report, as the **Links** panel does.',
-      'Any http or https URL works; one from a connected tracker is matched to its connection and shows its live status. Returns the stored link. To file a new Jira issue, use `create_issue`.',
+      'Link an existing ticket or pull request to a failure cluster, an execution, a test case, a run or a bug report.',
+      'It is the **Links** panel’s action. Any http or https URL works; one from a connected tracker is matched to its connection and shows its live status. Returns the stored link. To file a new Jira issue, use `create_issue`.',
       'Requires `link:write` (Contributor and above on the project).',
     ),
     inputSchema: {
@@ -1560,8 +1560,8 @@ export const MCP_TOOL_DEFS = [
     capability: 'integrations',
     permission: 'link:write',
     description: md(
-      'Remove a ticket or pull request link from a failure cluster, an execution, a test case, a run or a bug report, as the **Links** panel does.',
-      'Pass the entity and the URL `link_issue` took (`list_links` shows them). Every link of that entity to that URL is removed; the ticket itself is untouched. Fails when the entity has no link to the URL. Returns how many links were removed.',
+      'Remove a ticket or pull request link from a failure cluster, an execution, a test case, a run or a bug report.',
+      'It is the **Links** panel’s action. Pass the entity and the URL `link_issue` took (`list_links` shows them). Every link of that entity to that URL is removed; the ticket itself is untouched. Fails when the entity has no link to the URL. Returns how many links were removed.',
       'Requires `link:write` (Contributor and above on the project).',
     ),
     inputSchema: {
