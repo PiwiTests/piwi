@@ -321,6 +321,12 @@ export interface RunCommand {
    * project whose `@piwitests/reporter` does not pause at them. Absent otherwise.
    */
   notice?: string;
+  /**
+   * The run pauses in the browser at a `page.pause()` of a spec it runs, where Piwi's pause bar offers **Pick a
+   * locator**: the client names its Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints
+   * (`PIWI_PAUSE_AT`). Absent otherwise.
+   */
+  pauses?: boolean;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -1066,6 +1072,17 @@ export interface RecordRequested {
 }
 
 export const RECORD_REQUESTED_NOTIFICATION = 'piwi/recordRequested';
+
+/**
+ * `piwi/declineRecord` (notification, client to server): the client does not start a recording a test asked for
+ * (`RecordRequested`), with why; the test hears it at once and goes on.
+ */
+export interface DeclineRecordParams {
+  handoff: string;
+  message: string;
+}
+
+export const DECLINE_RECORD_NOTIFICATION = 'piwi/declineRecord';
 
 /**
  * Where the recorded block goes, decided from the file's text when the recording starts. The client writes the block

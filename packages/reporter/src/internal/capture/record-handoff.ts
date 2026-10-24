@@ -34,8 +34,14 @@ type Source = { page: Page; frame: Frame };
 
 type Handler = (source: Source, payload: unknown) => unknown;
 
-/** The binding of each context the recorder was loaded into, and the recording it relays to; none when idle. */
-const relays = new WeakMap<BrowserContext, { recording: Handler | null }>();
+/**
+ * The binding of each context the recorder was loaded into, the recording it relays to (none when idle), and whether
+ * the recorder's init script stays in the context, on a Playwright that cannot remove it.
+ */
+const relays = new WeakMap<BrowserContext, { recording: Handler | null; lingering: boolean }>();
+
+/** What `addInitScript` gives back from Playwright 1.56: the script's removal. Older versions give nothing. */
+type Removable = { dispose?: () => Promise<unknown> } | void;
 
 /**
  * The answer to a call of the binding while no recording runs in the context, as the editor answers outside one: the
@@ -93,6 +99,8 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
     let calls = 0;
     let recording = false;
     let settled = false;
+    /** The recorder's init script, while this recording runs. */
+    let initScript: Removable;
     const send = (message: HandoffToEditor) => {
       if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
     };
@@ -115,6 +123,8 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
       }
       context.off('page', onPage);
       page.off('close', onClose);
+      // The documents the test loads from now on are its own again, where Playwright can remove the script.
+      void Promise.resolve(initScript?.dispose?.()).catch(() => undefined);
       socket.end();
       resolve(recording ? null : said);
     };
@@ -129,15 +139,20 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
     const load = async (bundle: string) => {
       let relay = relays.get(context);
       if (!relay) {
-        const created: { recording: Handler | null } = { recording: null };
+        const created: { recording: Handler | null; lingering: boolean } = { recording: null, lingering: false };
         relays.set(context, created);
         relay = created;
         await context.exposeBinding(IDE_RECORDER_BINDING, (source, payload: unknown) =>
           created.recording ? created.recording(source, payload) : idleAnswer(payload),
         );
-        await context.addInitScript({ path: bundle });
       }
       relay.recording = relayed;
+      // Removed when the recording ends, where Playwright can; added once per context where it cannot.
+      if (!relay.lingering) {
+        initScript = (await context.addInitScript({ path: bundle })) as Removable;
+        if (typeof initScript?.dispose !== 'function') relay.lingering = true;
+        else if (settled) void Promise.resolve(initScript.dispose()).catch(() => undefined);
+      }
       // The init script loads it into the next documents; this one gets it now.
       await page.evaluate(fs.readFileSync(bundle, 'utf-8'));
       recording = true;

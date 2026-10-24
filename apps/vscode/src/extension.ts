@@ -798,8 +798,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let lastRun: RunCommand | null = null;
 
   /**
-   * Run a test command: its notice shown once, and, with breakpoints (`PIWI_PAUSE_AT`), the Send to editor pairing
-   * the picker posts a pick to (`PIWI_EDITOR_SEND`).
+   * Run a test command: its notice shown once, and, when it can pause in the browser (breakpoints, `PIWI_PAUSE_AT`, or
+   * a `page.pause()`, `RunCommand.pauses`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`).
    */
   const startRun = async (command: RunCommand) => {
     if (command.notice && !noticesShown.has(command.notice)) {
@@ -807,7 +807,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
     }
     let env = command.env;
-    if (env?.PIWI_PAUSE_AT) {
+    if (env?.PIWI_PAUSE_AT || command.pauses) {
       const address = await runPairing().catch(() => null);
       if (address) env = { ...env, PIWI_EDITOR_SEND: address };
     }

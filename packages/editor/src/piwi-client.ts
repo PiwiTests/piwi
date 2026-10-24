@@ -545,7 +545,9 @@ export class PiwiClient {
     const items: CatalogCase[] = [];
     for (let page = 0; page < MAX_CATALOG_PAGES; page++) {
       const body = await this.get<{ items?: CatalogCase[]; total?: number }>(
-        `/api/projects/${projectId}/test-cases?limit=${CATALOG_PAGE}&offset=${page * CATALOG_PAGE}`,
+        // By title: an order the cases' own columns give, which a run landing meanwhile does not move, and which picks
+        // each page before reading its executions.
+        `/api/projects/${projectId}/test-cases?sort=title&dir=asc&limit=${CATALOG_PAGE}&offset=${page * CATALOG_PAGE}`,
       );
       const got = body.items ?? [];
       items.push(...got);

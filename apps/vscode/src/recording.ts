@@ -15,6 +15,8 @@ import {
   PAGE_CANDIDATES_REQUEST,
   RECORD_REQUEST,
   RECORD_REQUESTED_NOTIFICATION,
+  DECLINE_RECORD_NOTIFICATION,
+  type DeclineRecordParams,
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
   STOP_RECORDING_REQUEST,
@@ -679,11 +681,20 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
    * why; the test goes on.
    */
   const recordFromTest = async (asked: RecordRequested) => {
+    /** The test hears at once why no recording starts, and goes on. */
+    const decline = (message: string) =>
+      void lc
+        .sendNotification(DECLINE_RECORD_NOTIFICATION, {
+          handoff: asked.handoff,
+          message,
+        } satisfies DeclineRecordParams)
+        .catch(() => {});
     let document: vscode.TextDocument;
     try {
       document = await vscode.workspace.openTextDocument(vscode.Uri.parse(asked.uri));
     } catch (e) {
       void vscode.window.showWarningMessage(`Piwi: could not open the file to record into: ${(e as Error).message}`);
+      decline(`the editor could not open the file: ${(e as Error).message}`);
       return;
     }
     const at = new vscode.Position(asked.line, 0);
@@ -691,6 +702,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     const uri = document.uri.toString();
     if (opening.has(uri) || runningIn(uri)) {
       void vscode.window.showInformationMessage('Piwi: this file is being recorded into already.');
+      decline(`${path.basename(document.uri.fsPath)} is being recorded into already.`);
       return;
     }
     opening.add(uri);
@@ -703,7 +715,10 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
         handoff: asked.handoff,
         language: vscode.env.language,
       });
-      if (!answer) return;
+      if (!answer) {
+        decline('the editor could not start the recording.');
+        return;
+      }
       const { result, since } = answer;
       if (!result.ok || !result.sessionId || !result.placement) {
         void vscode.window.showWarningMessage(`Piwi: ${result.message}`);

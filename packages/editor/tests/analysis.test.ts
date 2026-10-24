@@ -5,6 +5,7 @@ import {
   breakpointsNotice,
   callEndLine,
   caseOfCall,
+  withoutComments,
   flakeLabLens,
   headedCommand,
   locatorChainOnLine,
@@ -400,11 +401,30 @@ describe('caseOfCall', () => {
     { id: 3, title: 'refunds', suitePath: null },
   ];
 
-  test('takes the case of the same title in the same describe blocks, else the first of that title', () => {
+  test('takes the case of the same title in the same describe blocks, else one whose blocks the catalog does not say', () => {
     expect(caseOfCall(cases, { title: 'pays', suite: ['cart', 'as a guest'] })?.id).toBe(2);
     expect(caseOfCall(cases, { title: 'pays', suite: ['cart'] })?.id).toBe(1);
-    expect(caseOfCall(cases, { title: 'pays', suite: ['checkout'] })?.id).toBe(1);
+    // A test of that title in other describe blocks is another test: it has no case yet.
+    expect(caseOfCall(cases, { title: 'pays', suite: ['checkout'] })).toBeUndefined();
     expect(caseOfCall(cases, { title: 'refunds', suite: [] })?.id).toBe(3);
+    expect(caseOfCall(cases, { title: 'refunds', suite: ['returns'] })?.id).toBe(3);
     expect(caseOfCall(cases, { title: 'ships', suite: [] })).toBeUndefined();
+  });
+});
+
+describe('withoutComments', () => {
+  test('blanks line and block comments, keeping the lines, a URL and the code', () => {
+    const text = [
+      '// await page.pause();',
+      "await page.goto('https://shop.test/cart'); // to the cart",
+      '/* await page.pause();',
+      '   still a comment */ await page.pause();',
+    ].join('\n');
+    expect(withoutComments(text).split('\n')).toEqual([
+      '',
+      "await page.goto('https://shop.test/cart'); ",
+      ' '.repeat('/* await page.pause();'.length),
+      '                      await page.pause();',
+    ]);
   });
 });

@@ -13,7 +13,7 @@ clients stay thin and both editors give the same answers.
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
+  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`, `piwi/commandEnded` and `piwi/declineRecord` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
   `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested` and `piwi/coverageChanged` notifications it
   sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
@@ -256,7 +256,10 @@ clients stay thin and both editors give the same answers.
   record attaches with the channel's token, its file, line and project's `testIdAttribute` and `baseURL`
   (`@piwitests/core/ide-recorder`, one line of JSON a message); the client hears it as `piwi/recordRequested`, and
   starts it with `piwi/record` naming the `handoff` (`RecordParams.handoff`), which takes it out of the waiting ones;
-  one not taken in 30 s (`HANDOFF_WAIT_MS`), or whose `piwi/record` is refused, hears why. The session (`attach` in
+  one not taken in 30 s (`HANDOFF_WAIT_MS`), one the client declines (`piwi/declineRecord`: the file is being
+  recorded into, or cannot be opened), or whose `piwi/record` is refused, hears why at once. A run whose spec holds a
+  `page.pause()` outside a comment (`withoutComments`) runs headed with `RunCommand.pauses`, for which the client
+  names its Send to editor pairing as for breakpoints. The session (`attach` in
   `sessions.ts`) writes the block on a new line above the paused statement (`placementBefore` in
   `page-candidates.ts`: the line it starts on, a chain broken over lines included), renders it with `continuePage`
   (no opening `goto`, viewport size, nor first navigation, which only says where the recording began) on the page

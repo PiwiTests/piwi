@@ -81,6 +81,7 @@ import {
   TEST_CALL,
   testCalls,
   caseOfCall,
+  withoutComments,
   testsReaching,
   timeoutEdit,
   timeoutMessage,
@@ -120,6 +121,7 @@ import {
   forgetShared,
   type ResponseCache,
   type BranchFailure,
+  type BranchFailures,
   type BranchResolved,
   type CatalogCase,
   type FileCoverage,
@@ -175,6 +177,7 @@ import {
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
   RECORD_REQUESTED_NOTIFICATION,
+  DECLINE_RECORD_NOTIFICATION,
   REFRESH_REQUEST,
   REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
@@ -221,6 +224,7 @@ import {
   type PageCandidatesResult,
   type RecordParams,
   type RecordRequested,
+  type DeclineRecordParams,
   type RecordResult,
   type RecordingCommandParams,
   type RenderStepsParams,
@@ -2460,6 +2464,27 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * latest result: the run in progress the service follows while it runs the test and once it ended it, else the
    * failure, the pass, or the catalog's status. Null for a test the catalog does not know.
    */
+  /** The tests failing in a read of the failures, and those that failed in the latest complete run and passed since. */
+  const failuresByCase = new WeakMap<
+    BranchFailures,
+    { failingNow: Map<number, BranchFailure>; fixedNow: Map<number, BranchResolved> }
+  >();
+  const byCase = (failures: BranchFailures | null) => {
+    if (!failures) return { failingNow: new Map<number, BranchFailure>(), fixedNow: new Map<number, BranchResolved>() };
+    let held = failuresByCase.get(failures);
+    if (!held) {
+      const failingNow = new Map<number, BranchFailure>();
+      for (const f of failures.failures) if (!failingNow.has(f.testCaseId)) failingNow.set(f.testCaseId, f);
+      // On every project they failed on.
+      const fixedNow = new Map<number, BranchResolved>();
+      for (const r of failures.resolved ?? [])
+        if (!failingNow.has(r.testCaseId) && !fixedNow.has(r.testCaseId)) fixedNow.set(r.testCaseId, r);
+      held = { failingNow, fixedNow };
+      failuresByCase.set(failures, held);
+    }
+    return held;
+  };
+
   const specTests = (
     context: PiwiContext,
     file: string,
@@ -2474,13 +2499,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     failure?: TestFailure;
     status: TestLineStatus | null;
   }> => {
-    const failingNow = new Map<number, BranchFailure>();
-    for (const f of context.failures?.failures ?? [])
-      if (!failingNow.has(f.testCaseId)) failingNow.set(f.testCaseId, f);
-    /** The tests that failed in the latest complete run and passed since, on every project they failed on. */
-    const fixedNow = new Map<number, BranchResolved>();
-    for (const r of context.failures?.resolved ?? [])
-      if (!failingNow.has(r.testCaseId) && !fixedNow.has(r.testCaseId)) fixedNow.set(r.testCaseId, r);
+    const { failingNow, fixedNow } = byCase(context.failures);
     return testCalls(lines).map((call) => {
       const found = caseOfCall(cases, call);
       if (!found) return { call, status: null };
@@ -2867,10 +2886,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     for (const location of params?.locations ?? []) {
       if (isTestLocation(location)) specs.add(path.join(context.root, location.slice(0, location.lastIndexOf(':'))));
     }
-    const pauses = [...specs].some((spec) => PAGE_PAUSE.test(readText(spec) ?? ''));
+    const pauses = [...specs].some((spec) => PAGE_PAUSE.test(withoutComments(readText(spec) ?? '')));
     return {
       ...command,
-      ...(pauses ? headedCommand(command.command, command.args) : {}),
+      ...(pauses ? { ...headedCommand(command.command, command.args), pauses: true } : {}),
       env: { ...command.env, [RECORD_CHANNEL_ENV]: recordChannel.value },
     };
   };
@@ -3133,10 +3152,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     const configFile = context ? playwrightConfigFile(context.root) : null;
     if (!file || !context || !configFile) {
-      return {
-        ok: false,
-        message: 'No Playwright config holds this file: open the folder of its playwright.config.ts.',
-      };
+      const message = 'No Playwright config holds this file: open the folder of its playwright.config.ts.';
+      if (params.handoff) recordChannel?.refuse(params.handoff, message);
+      return { ok: false, message };
     }
     // A recording a test asked for is that test's, in its file.
     const handoff = params.handoff ? (recordChannel?.take(params.handoff) ?? null) : null;
@@ -3155,6 +3173,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       },
       handoff,
     );
+  });
+
+  connection.onNotification(DECLINE_RECORD_NOTIFICATION, (params: DeclineRecordParams) => {
+    if (typeof params?.handoff === 'string') recordChannel?.refuse(params.handoff, String(params.message ?? ''));
   });
 
   connection.onRequest(STOP_RECORDING_REQUEST, async (params: StopRecordingParams) => {

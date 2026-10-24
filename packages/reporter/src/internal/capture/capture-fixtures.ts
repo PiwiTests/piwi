@@ -1363,10 +1363,10 @@ async function pauseInPlace(page: Page, playwrightPause: () => Promise<void>, lo
         { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG },
         async (picked) => {
           console.log(`[piwi] Locator picked: ${picked.picked.locator}`);
-          await postPickToEditor(process.env[PIWI_LOCAL_DEBUG_ENV.editorSend], {
-            kind: 'locator',
-            text: picked.picked.locator,
-          });
+          await postPickToEditor(
+            process.env[PIWI_LOCAL_DEBUG_ENV.editorSend],
+            pickPayload(picked.picked.locator, location),
+          );
         },
         recorderAt(page, testInfo, location, 'pause'),
       ),

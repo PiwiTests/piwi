@@ -42,7 +42,8 @@ const RUN_TASK_TYPE = 'piwi';
 /** A command a run profile started: its config, its ref, and how far it got. */
 interface ProfilePart {
   root: string;
-  ref: string;
+  /** The ref of its command, once the command started. */
+  ref: string | null;
   /** The run in progress Piwi follows for it, once it started. */
   liveRunId: number | null;
   /** Its exit code once its task ended; undefined until then. */
@@ -59,6 +60,8 @@ interface ProfileRun {
   tests: Map<vscode.TestItem, TreeTest>;
   shown: Set<vscode.TestItem>;
   parts: ProfilePart[];
+  /** While its commands are being started: it does not end before the last one started. */
+  starting: boolean;
 }
 
 /** The run in progress of a Playwright config, as its own test run, or as the one of the profile that started it. */
@@ -97,6 +100,8 @@ export class TestExplorer implements vscode.Disposable {
   /** What the published results stand for (`resultsKey`); null before the first. */
   private published: string | null = null;
   private readonly profiles = new Set<ProfileRun>();
+  /** The exit codes of commands that ended while a profile run was starting them, by ref, until it takes them. */
+  private readonly endedEarly = new Map<string, number | null>();
   private readonly followed = new Map<string, Followed>();
   private chain: Promise<void> = Promise.resolve();
   private queued: Promise<void> | null = null;
@@ -177,6 +182,9 @@ export class TestExplorer implements vscode.Disposable {
 
   /** A test run's task ended, with its exit code: the profile run that started it settles once its run is read. */
   taskEnded(ref: string, exitCode: number | null): void {
+    const known = [...this.profiles].some((profile) => profile.parts.some((p) => p.ref === ref));
+    // A command that ended before its profile run heard its ref: the profile run takes the end with the ref.
+    if (!known && [...this.profiles].some((profile) => profile.starting)) this.endedEarly.set(ref, exitCode);
     for (const profile of this.profiles) {
       const part = profile.parts.find((p) => p.ref === ref);
       if (!part || part.exitCode !== undefined) continue;
@@ -246,7 +254,7 @@ export class TestExplorer implements vscode.Disposable {
 
   private ask(params: TestItemsParams): Promise<TestItemsResult | null> {
     if (this.disposed) return Promise.resolve(null);
-    return this.lc.sendRequest<TestItemsResult>(TEST_ITEMS_REQUEST, params).catch(() => null);
+    return this.lc.sendRequest<TestItemsResult>(TEST_ITEMS_REQUEST, params).then(asEditorUris, () => null);
   }
 
   /** Whether the tree holds a spec. */
@@ -383,7 +391,7 @@ export class TestExplorer implements vscode.Disposable {
 
   /** End a profile run once each of its commands ended and settled, with a result for every test (`unfollowedOutcome`). */
   private finishProfile(profile: ProfileRun): void {
-    if (!this.profiles.has(profile)) return;
+    if (!this.profiles.has(profile) || profile.starting) return;
     if (!profile.parts.every((p) => p.settled && p.exitCode !== undefined)) return;
     this.profiles.delete(profile);
     const outcome = unfollowedOutcome(profile.parts.map((p) => p.exitCode ?? null));
@@ -419,20 +427,30 @@ export class TestExplorer implements vscode.Disposable {
       return;
     }
     for (const item of picked.keys()) run.enqueued(item);
-    const profile: ProfileRun = { run, tests: picked, shown: new Set(), parts: [] };
+    const profile: ProfileRun = { run, tests: picked, shown: new Set(), parts: [], starting: true };
+    // Followed from the start: a command's run, or its end, may come while the next command starts.
+    this.profiles.add(profile);
     for (const args of testRunsOf([...picked.values()], repeat)) {
+      const part: ProfilePart = {
+        root: args.root!,
+        ref: null,
+        liveRunId: null,
+        exitCode: undefined,
+        settled: false,
+        timer: null,
+      };
+      profile.parts.push(part);
       const command = await this.runTests(args).catch(() => null);
       if (command?.ref) {
-        profile.parts.push({
-          root: args.root!,
-          ref: command.ref,
-          liveRunId: null,
-          exitCode: undefined,
-          settled: false,
-          timer: null,
-        });
+        part.ref = command.ref;
+        if (this.endedEarly.has(command.ref)) {
+          const exitCode = this.endedEarly.get(command.ref)!;
+          this.endedEarly.delete(command.ref);
+          this.taskEnded(command.ref, exitCode);
+        }
         continue;
       }
+      profile.parts.splice(profile.parts.indexOf(part), 1);
       for (const [item, test] of picked) {
         if (test.root !== args.root) continue;
         profile.shown.add(item);
@@ -441,11 +459,14 @@ export class TestExplorer implements vscode.Disposable {
         run.errored(item, new vscode.TestMessage(message));
       }
     }
+    profile.starting = false;
+    if (![...this.profiles].some((p) => p.starting)) this.endedEarly.clear();
     if (!profile.parts.length) {
+      this.profiles.delete(profile);
       run.end();
       return;
     }
-    this.profiles.add(profile);
+    this.finishProfile(profile);
     token.onCancellationRequested(() => {
       for (const execution of vscode.tasks.taskExecutions) {
         const definition = execution.task.definition;
@@ -455,6 +476,19 @@ export class TestExplorer implements vscode.Disposable {
       }
     });
   }
+}
+
+/**
+ * An answer with each spec's URI spelled as VS Code spells a document's (`c%3A`, `%40`…), which the tree compares
+ * them with: the service spells them as Node does.
+ */
+function asEditorUris(answer: TestItemsResult): TestItemsResult {
+  return {
+    contexts: answer.contexts.map((c) => ({
+      ...c,
+      specs: c.specs.map((s) => ({ ...s, uri: vscode.Uri.parse(s.uri).toString() })),
+    })),
+  };
 }
 
 /** A tree that could not be drawn stays as it was; the reads after it go on. */

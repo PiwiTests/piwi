@@ -104,6 +104,8 @@ export class RecordChannel {
       channel.close();
       return null;
     }
+    // A connection the machine fails to accept (out of file descriptors) loses that test's hand-off, not the service.
+    server.on('error', () => {});
     server.unref();
     return channel;
   }

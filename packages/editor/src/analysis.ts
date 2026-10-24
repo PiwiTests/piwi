@@ -775,7 +775,8 @@ export function testCalls(lines: string[]): TestCall[] {
 
 /**
  * The catalog's case of a test call: the one of its title in the same describe blocks (`suitePath`, joined by `\x1f`),
- * else the first of its title.
+ * else the first of its title whose describe blocks the catalog does not say (an older instance). A case of its title
+ * in other describe blocks is another test.
  */
 export function caseOfCall<T extends { title: string; suitePath?: string | null }>(
   cases: readonly T[],
@@ -783,7 +784,14 @@ export function caseOfCall<T extends { title: string; suitePath?: string | null 
 ): T | undefined {
   const suite = call.suite.join('\x1f');
   const titled = cases.filter((c) => c.title === call.title);
-  return titled.find((c) => (c.suitePath ?? '') === suite) ?? titled[0];
+  return titled.find((c) => (c.suitePath ?? '') === suite) ?? titled.find((c) => typeof c.suitePath !== 'string');
+}
+
+/** A source text with its comments blanked out, line breaks kept; strings are left as they are. */
+export function withoutComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\])\/\/.*$/gm, '$1');
 }
 
 /**

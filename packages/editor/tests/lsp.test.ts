@@ -330,7 +330,7 @@ beforeAll(async () => {
     if (u === '/api/projects/7/test-cases?limit=1000' && slowKey) {
       return res.end(JSON.stringify({ items: [{ tags: ['smoke', 'checkout'], feature: 'Payments' }] }));
     }
-    if (u === '/api/projects/7/test-cases?limit=1000&offset=0') {
+    if (u === '/api/projects/7/test-cases?sort=title&dir=asc&limit=1000&offset=0') {
       // The whole catalog: a path from a working directory above the config's folder, and a spec no longer there.
       return res.end(
         JSON.stringify({
@@ -1503,10 +1503,57 @@ describe('recording from a paused test', () => {
         locations: ['tests/paused.spec.ts:3'],
       })) as RunCommand;
       expect(command.command).toBe('npx playwright test tests/paused.spec.ts:3 --headed');
+      expect(command.pauses).toBe(true);
       expect(parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)).not.toBeNull();
+      // A page.pause() left in a comment pauses nothing.
+      write('tests/paused.spec.ts', paused.replace('  await page.pause();', '  // await page.pause();'));
+      const commented = (await client.sendRequest('piwi/runArgs', {
+        uri: uri('tests/paused.spec.ts'),
+        testIds: [],
+        locations: ['tests/paused.spec.ts:3'],
+      })) as RunCommand;
+      expect(commented.command).toBe('npx playwright test tests/paused.spec.ts:3');
+      expect(commented.pauses).toBeUndefined();
     } finally {
       fs.rmSync(path.join(dir, 'tests/paused.spec.ts'));
     }
+  });
+
+  test('a hand-off the editor declines is refused at once, with why', async () => {
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+    })) as RunCommand;
+    const channel = parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)!;
+    const requested = new Promise<RecordRequested>((resolve) => {
+      const listener = client.onNotification('piwi/recordRequested', (params: RecordRequested) => {
+        listener.dispose();
+        resolve(params);
+      });
+    });
+    const socket = net.connect(channel.path);
+    socket.setEncoding('utf8');
+    let heard = '';
+    socket.on('data', (chunk: string) => (heard += chunk));
+    const closed = new Promise<void>((resolve) => socket.on('close', () => resolve()));
+    socket.write(
+      `${JSON.stringify({
+        type: 'attach',
+        token: channel.token,
+        file: path.join(dir, 'tests/checkout.spec.ts'),
+        line: 3,
+        reason: 'breakpoint',
+        testIdAttribute: null,
+        baseURL: null,
+      })}\n`,
+    );
+    const { handoff } = await requested;
+    await client.sendNotification('piwi/declineRecord', {
+      handoff,
+      message: 'checkout.spec.ts is being recorded into already.',
+    });
+    await closed;
+    expect(JSON.parse(heard)).toEqual({ type: 'refused', message: 'checkout.spec.ts is being recorded into already.' });
   });
 
   test('a test asking to record is put to the editor, which starts it naming the hand-off', async () => {

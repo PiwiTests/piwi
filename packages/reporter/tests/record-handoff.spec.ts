@@ -160,6 +160,34 @@ describe('recording from a paused test', () => {
     }
   });
 
+  it('removes the recorder from the documents loaded after a recording, where Playwright can', async () => {
+    const { page, context } = fakePage();
+    const dispose = vi.fn(async () => {});
+    context.addInitScript.mockImplementation(async () => ({ dispose }) as never);
+    const editor = await startEditor((message, send) => {
+      if (message.type === 'attach') send({ type: 'load', bundle });
+      if (message.type === 'loaded') send({ type: 'stop' });
+    });
+    try {
+      const options = {
+        page: page as never,
+        testInfo: testInfo as never,
+        location: 'tests/cart.spec.ts:12:5',
+        reason: 'pause' as const,
+        channel: editor.channel,
+      };
+      expect(await recordFromHere(options)).toBeNull();
+      expect(dispose).toHaveBeenCalledOnce();
+      // The next recording loads it again, for its own time.
+      expect(await recordFromHere(options)).toBeNull();
+      expect(context.addInitScript).toHaveBeenCalledTimes(2);
+      expect(dispose).toHaveBeenCalledTimes(2);
+      expect(context.exposeBinding).toHaveBeenCalledOnce();
+    } finally {
+      await editor.close();
+    }
+  });
+
   it('says why when the editor does not take the recording, or cannot be reached', async () => {
     const { page } = fakePage();
     const editor = await startEditor((message, send) => {

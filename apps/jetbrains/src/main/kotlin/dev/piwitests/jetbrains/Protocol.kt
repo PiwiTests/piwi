@@ -151,7 +151,9 @@ data class RunCommandArgs(val cwd: String, val command: String, val env: Map<Str
 /**
  * A command line that runs tests. `ref` is the ref its run carries (`PIWI_ORIGIN_REF` in `env`), which
  * `piwi/commandEnded` names once the command ends; null from an older service. `notice` is a sentence to show once
- * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them.
+ * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them. `pauses`
+ * says the run pauses at a `page.pause()` of a spec it runs, where a locator can be picked: the plugin names its
+ * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`).
  */
 data class RunCommand(
     val cwd: String? = null,
@@ -160,6 +162,7 @@ data class RunCommand(
     val env: Map<String, String>? = null,
     val ref: String? = null,
     val notice: String? = null,
+    val pauses: Boolean? = null,
 )
 
 /**
@@ -494,6 +497,9 @@ data class RecordParams(
  */
 data class RecordRequested(val handoff: String? = null, val uri: String? = null, val line: Int = 0, val reason: String? = null)
 
+/** `piwi/declineRecord`: the plugin does not start the recording a test asked for, with why; the test goes on. */
+data class DeclineRecordParams(val handoff: String, val message: String)
+
 /**
  * Where the recorded block goes: its first line (0-based), whether that line is a new one inserted first (otherwise
  * a blank line the block takes the place of), and what every line of the block that is not empty starts with.
@@ -742,4 +748,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setBaseline")
     fun setBaseline(params: SetBaselineParams)
+
+    @JsonNotification("piwi/declineRecord")
+    fun declineRecord(params: DeclineRecordParams)
 }
