@@ -317,6 +317,9 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
 ## Troubleshooting
 
 - **DB locked?** Stop other processes touching `.data/piwi.db` (the dev server holds it — `app:seed:dev` needs it down).
+- **Typecheck out of memory?** `npm run app:typecheck` gives the checker a 4 GB heap: it needs about 3 GB, since the
+  app's program also type-checks the server code the demo and the typed API responses import. Running `nuxt typecheck`
+  or `vue-tsc` yourself needs the same `NODE_OPTIONS=--max-old-space-size=4096`.
 - **Port 3000 in use?** `PORT=3001 npm run app:dev` (Linux/macOS) or `$env:PORT=3001; npm run app:dev` (PowerShell).
 - **Tests failing?** Make sure no dev server is on port 3000 — the Playwright config starts its own.
 - **Reporter not found?** `npm link` in `packages/reporter/`, then in the target project.
