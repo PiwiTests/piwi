@@ -1,5 +1,7 @@
 export default {
   extends: ['@commitlint/config-conventional'],
+  // Dependabot's commits are merged as Dependabot writes them, a capitalised "Bump" included.
+  ignores: [(message) => message.includes('Signed-off-by: dependabot[bot]')],
   rules: {
     'type-enum': [
       2,

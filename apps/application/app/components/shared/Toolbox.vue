@@ -19,8 +19,6 @@ import type { HelpTopicKey } from '~/utils/help-content';
 import type { NextStepKind } from '#shared/next-step';
 import { FIX_SECTION_LABELS, FIX_SECTION_ORDER, fixSectionForNextStep, type FixSectionKey } from '~/utils/fix-sections';
 
-export type { FixSectionKey } from '~/utils/fix-sections';
-
 const props = defineProps<{
   /** Which sections have content; the toolbox renders them in its canonical order. */
   sections: FixSectionKey[];

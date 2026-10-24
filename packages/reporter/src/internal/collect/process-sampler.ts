@@ -29,8 +29,6 @@ import type { RoleUsage, SeriesPoint, WireRunProfile } from '@piwitests/core/wir
  * never reported as zero.
  */
 
-export type { RoleUsage };
-
 /** What a run cost the machine it ran on. */
 export type RunProfile = WireRunProfile;
 

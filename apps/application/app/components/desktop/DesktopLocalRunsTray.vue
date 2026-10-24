@@ -32,7 +32,7 @@ function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
 
-const now = useTimestamp({ interval: 1000 });
+const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 
 function duration(run: LocalRun): string {
   const ms = (run.finishedAt ?? now.value) - run.startedAt;

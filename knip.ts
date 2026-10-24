@@ -14,7 +14,9 @@ delete process.env.CI;
 const config: KnipConfig = {
   // Report exports nothing imports; an export used only inside its own module is not flagged.
   ignoreExportsUsedInFile: true,
-  ignoreBinaries: ['tauri', 'playwright'],
+  // System commands the scripts run: Windows' `tasklist`, and ImageMagick's `import` and `Xvfb` for the JetBrains
+  // screenshots.
+  ignoreBinaries: ['tasklist', 'import', 'Xvfb'],
   workspaces: {
     '.': {
       // The JetBrains plugin is not a workspace: its screenshot script is read from the root.
@@ -37,13 +39,13 @@ const config: KnipConfig = {
         'app/components/analytics/*.vue',
         // drizzle-kit reads every table the schema exports.
         'server/database/schema.*.ts',
+        // What `#components` resolves to under Vitest (vitest.config.ts): Nuxt resolves it everywhere else.
+        'tests/unit/stubs/nuxt-components.ts',
       ],
-      // `vue`, `h3` and `nitropack` come with Nuxt; Nuxt Icon loads the installed `@iconify-json/*`
-      // collections; `nuxt typecheck` runs `vue-tsc`. `@emnapi/*` keeps the runtime of the WASM fallback
-      // bindings (oxc, Tailwind's oxide) in the lockfile, which `npm ci` needs on every platform.
+      // `nitropack` comes with Nuxt; Nuxt Icon loads the installed `@iconify-json/*` collections; `nuxt typecheck`
+      // runs `vue-tsc`. `@emnapi/*` keeps the runtime of the WASM fallback bindings (oxc, Tailwind's oxide) in the
+      // lockfile, which `npm ci` needs on every platform.
       ignoreDependencies: [
-        'vue',
-        'h3',
         'nitropack',
         '@iconify-json/lucide',
         '@iconify-json/simple-icons',

@@ -282,10 +282,12 @@ function renderDiagnosis(diagnosis: Record<string, any> | null): RawHtml {
 
   const evidence = (det.evidence ?? []) as unknown[];
   if (evidence.length) {
-    parts.push(html`<h3>Evidence</h3>
-      <ul>
-        ${evidence.map((e) => html`<li>${String(e)}</li>`)}
-      </ul>`);
+    parts.push(
+      html`<h3>Evidence</h3>
+        <ul>
+          ${evidence.map((e) => html`<li>${String(e)}</li>`)}
+        </ul>`,
+    );
   }
 
   const fix = (det.suggestedFix ?? null) as Record<string, any> | null;
@@ -313,10 +315,11 @@ function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl'
 
   const shots = figures(
     'screenshot',
-    (a, url) => html`<figure>
-      <img class="shot" src="${url}" alt="${a.name}" />
-      <figcaption>${a.name}</figcaption>
-    </figure>`,
+    (a, url) =>
+      html`<figure>
+        <img class="shot" src="${url}" alt="${a.name}" />
+        <figcaption>${a.name}</figcaption>
+      </figure>`,
   );
   if (shots.length)
     out.push(
@@ -326,10 +329,11 @@ function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl'
 
   const videos = figures(
     'video',
-    (a, url) => html`<figure>
-      <video controls preload="metadata" src="${url}"></video>
-      <figcaption>${a.name} — does not play in a printed PDF</figcaption>
-    </figure>`,
+    (a, url) =>
+      html`<figure>
+        <video controls preload="metadata" src="${url}"></video>
+        <figcaption>${a.name} — does not play in a printed PDF</figcaption>
+      </figure>`,
   );
   if (videos.length)
     out.push(
@@ -375,11 +379,12 @@ function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl'
 function renderSteps(steps: unknown): RawHtml {
   if (!Array.isArray(steps) || !steps.length) return raw('');
   const rows = (steps as Record<string, any>[]).map(
-    (step) => html`<tr>
-      <td>${String(step.title ?? '')}</td>
-      <td>${String(step.category ?? '')}</td>
-      <td class="num">${fmtDuration(step.duration)}</td>
-    </tr>`,
+    (step) =>
+      html`<tr>
+        <td>${String(step.title ?? '')}</td>
+        <td>${String(step.category ?? '')}</td>
+        <td class="num">${fmtDuration(step.duration)}</td>
+      </tr>`,
   );
   return html`<div class="scroll">
     <table>
@@ -400,10 +405,11 @@ function renderSteps(steps: unknown): RawHtml {
 function renderConsole(logs: unknown): RawHtml {
   if (!Array.isArray(logs) || !logs.length) return raw('');
   const rows = (logs as Record<string, any>[]).map(
-    (l) => html`<tr>
-      <td class="num ${statusClass(l.type ?? 'log')}"><span class="tag">${String(l.type ?? 'log')}</span></td>
-      <td>${String(l.text ?? '')}</td>
-    </tr>`,
+    (l) =>
+      html`<tr>
+        <td class="num ${statusClass(l.type ?? 'log')}"><span class="tag">${String(l.type ?? 'log')}</span></td>
+        <td>${String(l.text ?? '')}</td>
+      </tr>`,
   );
   return html`<div class="scroll">
     <table>
@@ -423,12 +429,13 @@ function renderConsole(logs: unknown): RawHtml {
 function renderNetwork(requests: unknown): RawHtml {
   if (!Array.isArray(requests) || !requests.length) return raw('');
   const rows = (requests as Record<string, any>[]).map(
-    (r) => html`<tr>
-      <td class="num">${String(r.method ?? '')}</td>
-      <td class="num ${httpClass(r.status)}"><span class="tag">${String(r.status ?? '')}</span></td>
-      <td class="num">${fmtDuration(r.duration)}</td>
-      <td>${String(r.url ?? '')}</td>
-    </tr>`,
+    (r) =>
+      html`<tr>
+        <td class="num">${String(r.method ?? '')}</td>
+        <td class="num ${httpClass(r.status)}"><span class="tag">${String(r.status ?? '')}</span></td>
+        <td class="num">${fmtDuration(r.duration)}</td>
+        <td>${String(r.url ?? '')}</td>
+      </tr>`,
   );
   return html`<div class="scroll">
     <table>
@@ -451,14 +458,16 @@ function renderCase(exportCase: ExportCase, opts: RenderOptions, index: number, 
   const d = exportCase.detail as Record<string, any>;
   const parts: (RawHtml | string)[] = [];
 
-  parts.push(html`<header>
-    ${total > 1 ? html`<p class="eyebrow">Case ${index + 1} of ${total}</p>` : ''}
-    <h2>
-      ${exportCase.title}
-      <span class="badge ${statusClass(exportCase.status)}">${exportCase.status}</span>
-    </h2>
-    <p class="meta"><code>${exportCase.location ?? exportCase.filePath ?? ''}</code></p>
-  </header>`);
+  parts.push(
+    html`<header>
+      ${total > 1 ? html`<p class="eyebrow">Case ${index + 1} of ${total}</p>` : ''}
+      <h2>
+        ${exportCase.title}
+        <span class="badge ${statusClass(exportCase.status)}">${exportCase.status}</span>
+      </h2>
+      <p class="meta"><code>${exportCase.location ?? exportCase.filePath ?? ''}</code></p>
+    </header>`,
+  );
 
   parts.push(facts(caseFacts(exportCase)));
 
@@ -517,12 +526,13 @@ function renderClusterHeader(bundle: ExportBundle): RawHtml {
 function renderOmissions(bundle: ExportBundle): RawHtml {
   if (!bundle.omitted.length) return raw('');
   const rows = bundle.omitted.map(
-    (o) => html`<tr>
-      <td>${o.name}</td>
-      <td>${o.kind}</td>
-      <td class="num">${fmtBytes(o.bytes)}</td>
-      <td>${OMISSION_REASONS[o.reason] ?? o.reason}</td>
-    </tr>`,
+    (o) =>
+      html`<tr>
+        <td>${o.name}</td>
+        <td>${o.kind}</td>
+        <td class="num">${fmtBytes(o.bytes)}</td>
+        <td>${OMISSION_REASONS[o.reason] ?? o.reason}</td>
+      </tr>`,
   );
   return details(
     `Omitted from this export (${bundle.omitted.length})`,

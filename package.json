@@ -19,18 +19,23 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.2.1",
+    "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.0",
-    "@types/node": "^26.1.1",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@types/node": "^26.6.5",
+    "@vitest/coverage-v8": "^4.1.12",
     "husky": "^9.0.0",
-    "knip": "^5.88.1",
-    "oxfmt": "^0.59.0",
-    "oxlint": "^1.74.0",
+    "knip": "^6.41.0",
+    "oxfmt": "^0.74.0",
+    "oxlint": "^1.89.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.28.2"
+    }
   }
 }

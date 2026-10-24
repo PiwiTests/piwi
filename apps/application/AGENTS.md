@@ -288,7 +288,7 @@ summaries, list rows). Dense tables and code views are exempt only where a rule 
 
 - **Four text styles per block, no more**: a heading (`text-lg sm:text-xl font-semibold text-highlighted`, at most
   one per block), a body (`text-sm text-highlighted leading-relaxed`, every sentence), a label (`text-sm font-semibold
-text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
+  text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
   commit — is the body or meta style in `font-mono`. One exception: the commit range of a _What changed_ setup gap
   (`a1b2c3d..e4f5a6b since the last passing run`) is a line of meta facts with no sentence, and keeps the meta font
   so the cluster block stays within its text-style budget. Nothing else in the block: no `text-toned`/`text-dimmed`
@@ -317,7 +317,7 @@ text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts,
   with the primary color and that the page shows at most one solid primary button. A card's header icon
   (`CARD_ICON_CLASS`, marked `data-card-icon`) is the one exception.
 - **Links inside a sentence keep the sentence's color**: `underline decoration-dotted underline-offset-2
-hover:decoration-solid`. `text-primary` links belong in navigation lists and tables, not in prose.
+  hover:decoration-solid`. `text-primary` links belong in navigation lists and tables, not in prose.
 - **Badges are for exceptions, at most two per screen** — the status chip and one exceptional state (_Quarantined_, a
   did-not-run cause). A strength, a confidence, an error type, a tag or a mark such as `@fixme` is plain meta text,
   never a chip. Two red chips on one screen is a bug.

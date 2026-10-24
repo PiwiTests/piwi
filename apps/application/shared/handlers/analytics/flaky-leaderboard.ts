@@ -33,25 +33,23 @@ export async function getAnalyticsFlakyLeaderboard(
         // A test filter that matches nothing in a project leaves none of its tests.
         testCaseIds: testCaseIds ? (testCaseIds.get(project.id) ?? new Set()) : undefined,
       });
-      return flaky.map(
-        (test): AnalyticsFlakyRow => ({
-          projectId: project.id,
-          projectName: project.name,
-          projectLabel: project.label,
-          testCaseId: test.testCaseId,
-          latestRunsCaseId: test.latestRunsCaseId,
-          title: test.title,
-          filePath: test.filePath,
-          totalRuns: test.totalRuns,
-          retryPassRuns: test.retryPassRuns,
-          alternations: test.alternations,
-          score: test.score,
-          rootCause: test.rootCause,
-          impact: test.impact,
-          wastedCiMinutes: test.wastedCiMinutes,
-          lastFlakeAt: test.lastFlakeAt,
-        }),
-      );
+      return flaky.map((test): AnalyticsFlakyRow => ({
+        projectId: project.id,
+        projectName: project.name,
+        projectLabel: project.label,
+        testCaseId: test.testCaseId,
+        latestRunsCaseId: test.latestRunsCaseId,
+        title: test.title,
+        filePath: test.filePath,
+        totalRuns: test.totalRuns,
+        retryPassRuns: test.retryPassRuns,
+        alternations: test.alternations,
+        score: test.score,
+        rootCause: test.rootCause,
+        impact: test.impact,
+        wastedCiMinutes: test.wastedCiMinutes,
+        lastFlakeAt: test.lastFlakeAt,
+      }));
     }),
   );
 

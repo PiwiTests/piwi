@@ -1,4 +1,4 @@
-import { monitorEventLoopDelay, performance, type EventLoopUtilization, type IntervalHistogram } from 'node:perf_hooks';
+import { monitorEventLoopDelay, performance, type EventLoopUtilization, type ELDHistogram } from 'node:perf_hooks';
 import type { RoleCost } from '@piwitests/core/wire';
 import { ProcFs, descendantsOf, roleOf, type ProcessRole } from '../support/system-readers.js';
 
@@ -46,7 +46,7 @@ function round1(value: number): number {
 }
 
 export class WorkerMetrics {
-  private readonly histogram: IntervalHistogram | null;
+  private readonly histogram: ELDHistogram | null;
   private readonly linux: boolean;
   private loop: EventLoopUtilization | null = null;
   private usage: NodeJS.ResourceUsage | null = null;
@@ -60,7 +60,7 @@ export class WorkerMetrics {
     platform: NodeJS.Platform = process.platform,
   ) {
     this.linux = platform === 'linux' && proc.available();
-    let histogram: IntervalHistogram | null = null;
+    let histogram: ELDHistogram | null = null;
     try {
       histogram = monitorEventLoopDelay({ resolution: 20 });
       histogram.enable();

@@ -33,13 +33,6 @@ import { emitRailwayTemplate } from '#shared/deploy/railway';
 import { emitRenderBlueprint } from '#shared/deploy/render';
 
 export {
-  DATA_MOUNT,
-  DEFAULT_DISK_GB,
-  DEFAULT_IMAGE,
-  DEFAULT_NAME,
-  DEFAULT_PORT,
-  HEALTH_PATH,
-  qualifyImage,
   quoteDotenvValue,
   quotePowershellValue,
   quoteShellValue,
