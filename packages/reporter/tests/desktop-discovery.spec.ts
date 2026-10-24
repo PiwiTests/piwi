@@ -7,7 +7,7 @@ import { defaultDesktopConfigPath, readDesktopConfig } from '../src/internal/con
 
 const DESKTOP_URL = 'http://127.0.0.1:3000';
 const DESKTOP_TOKEN = `pd_${'a'.repeat(64)}`;
-const TOUCHED_ENV = ['PIWI_DESKTOP_CONFIG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY'];
+const TOUCHED_ENV = ['PIWI_DESKTOP_CONFIG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME'];
 
 let tmpDir: string;
 let configPath: string;
@@ -108,6 +108,40 @@ describe('desktop discovery', () => {
       expect(opts.apiKey).toBe('pd_ci_secret');
       expect(opts.serverUrl).toBe(undefined);
       expect(usedDesktopDiscovery()).toBe(false);
+    });
+
+    it('never overrides a connection in the config folder .env', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      fs.writeFileSync(
+        path.join(tmpDir, '.env'),
+        'PIWI_DASHBOARD_URL=https://piwi.example.com\nPIWI_API_KEY=pd_dotenv\n',
+      );
+      const opts = resolveOptions({}, tmpDir);
+      expect(opts.serverUrl).toBe('https://piwi.example.com');
+      expect(opts.apiKey).toBe('pd_dotenv');
+      expect(usedDesktopDiscovery()).toBe(false);
+    });
+
+    it('never pairs a key from the config folder .env with the desktop URL', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      fs.writeFileSync(path.join(tmpDir, '.env'), 'PIWI_API_KEY=pd_dotenv\n');
+      const opts = resolveOptions({}, tmpDir);
+      expect(opts.apiKey).toBe('pd_dotenv');
+      expect(opts.serverUrl).toBe(undefined);
+      expect(usedDesktopDiscovery()).toBe(false);
+    });
+
+    it('still adopts the desktop app when the config folder .env names no server', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      fs.writeFileSync(
+        path.join(tmpDir, '.env'),
+        'PIWI_PROJECT_NAME=from-dotenv\nPIWI_DASHBOARD_URL=\nPIWI_API_KEY=\n',
+      );
+      const opts = resolveOptions({}, tmpDir);
+      expect(opts.projectName).toBe('from-dotenv');
+      expect(opts.serverUrl).toBe(DESKTOP_URL);
+      expect(opts.apiKey).toBe(DESKTOP_TOKEN);
+      expect(usedDesktopDiscovery()).toBe(true);
     });
 
     it('treats an explicit apiKey: null as unset', () => {

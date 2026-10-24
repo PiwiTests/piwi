@@ -1,7 +1,15 @@
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import { applyOptionsToEnv, originEnv, resolveOptions } from '../src/internal/config/env.js';
+import type { PlaywrightTestConfig } from '@playwright/test';
+import { applyOptionsToEnv, originEnv, resolveOptions, usedDotEnv } from '../src/internal/config/env.js';
+import { wrapConfig } from '../src/public/config-wrapper.js';
+import { createGlobalSetup } from '../src/public/global-setup.js';
+import { PiwiDashboardReporter } from '../src/public/reporter.js';
+import { getSetupFilePath } from '../src/internal/support/setup-file.js';
+import type { PiwiDashboardOptions } from '../src/public/options.js';
+import { startServer, jsonRes, fakeConfig, fakeSuite, type FakeServer } from './_helpers.js';
 
 const PIWI_KEYS = [
   'PIWI_DASHBOARD_URL',
@@ -236,6 +244,154 @@ describe('coverage options and their variables', () => {
     applyOptionsToEnv({ collectPerformanceMetrics: false, coverage: { browser: 'files', server: 'lines' } });
     expect(process.env.PIWI_COVERAGE_BROWSER).toBe('off');
     expect(process.env.PIWI_COVERAGE_SERVER).toBe('off');
+  });
+});
+
+describe("the config folder's .env", () => {
+  let saved: NodeJS.ProcessEnv = {};
+  let configDir = '';
+  let server: FakeServer | null = null;
+  const projectName = `piwi-dotenv-${process.pid}`;
+
+  beforeEach(() => {
+    saved = { ...process.env };
+    for (const key of Object.keys(process.env)) if (key.startsWith('PIWI_')) delete process.env[key];
+    process.env.PIWI_DESKTOP_CONFIG = NO_DESKTOP_APP;
+    configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-dotenv-'));
+  });
+  afterEach(async () => {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+    fs.rmSync(configDir, { recursive: true, force: true });
+    fs.rmSync(getSetupFilePath(projectName), { force: true });
+    if (server) await server.close();
+    server = null;
+  });
+
+  function writeDotEnv(text: string): void {
+    fs.writeFileSync(path.join(configDir, '.env'), text);
+  }
+
+  function connection(opts: PiwiDashboardOptions): Pick<PiwiDashboardOptions, 'serverUrl' | 'apiKey' | 'projectName'> {
+    return { serverUrl: opts.serverUrl, apiKey: opts.apiKey, projectName: opts.projectName };
+  }
+
+  it('reads the connection `piwi init` writes', () => {
+    writeDotEnv(
+      'PIWI_DASHBOARD_URL=http://dotenv-host:3000\nPIWI_API_KEY=pd_dotenv\nPIWI_PROJECT_NAME=dotenv-project\n',
+    );
+    const opts = resolveOptions({}, configDir);
+    expect(connection(opts)).toEqual({
+      serverUrl: 'http://dotenv-host:3000',
+      apiKey: 'pd_dotenv',
+      projectName: 'dotenv-project',
+    });
+    expect(usedDotEnv()).toEqual({
+      file: path.join(configDir, '.env'),
+      keys: ['PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME'],
+    });
+  });
+
+  it('parses the file as the CLI commands do: export, quotes and comments', () => {
+    writeDotEnv('# Piwi\nexport PIWI_API_KEY="pd_quoted"\nPIWI_DASHBOARD_URL=http://dotenv-host:3000 # local\n');
+    const opts = resolveOptions({}, configDir);
+    expect(opts.apiKey).toBe('pd_quoted');
+    expect(opts.serverUrl).toBe('http://dotenv-host:3000');
+  });
+
+  it('fills only what the options and the environment leave unset', () => {
+    writeDotEnv(
+      'PIWI_DASHBOARD_URL=http://dotenv-host:3000\nPIWI_API_KEY=pd_dotenv\nPIWI_PROJECT_NAME=dotenv-project\n',
+    );
+    process.env.PIWI_API_KEY = 'pd_env';
+    const opts = resolveOptions({ serverUrl: 'http://config-host:3000' }, configDir);
+    expect(connection(opts)).toEqual({
+      serverUrl: 'http://config-host:3000',
+      apiKey: 'pd_env',
+      projectName: 'dotenv-project',
+    });
+    expect(usedDotEnv()?.keys).toEqual(['PIWI_PROJECT_NAME']);
+  });
+
+  it('reads no other variable, and skips an empty value', () => {
+    writeDotEnv(
+      'PIWI_API_KEY=\nPIWI_STREAMING=false\nPIWI_VERBOSE=true\nPIWI_USERNAME=dotenv-user\nPIWI_CAPTURE_LOCATORS=false\n',
+    );
+    const opts = resolveOptions({}, configDir);
+    expect(opts.apiKey).toBe(null);
+    expect(opts.streaming).toBe(true);
+    expect(opts.verbose).toBe(false);
+    expect(opts.username).toBe(null);
+    expect(opts.captureLocators).toBe(true);
+    expect(usedDotEnv()).toBe(null);
+  });
+
+  it('reads no file without a config folder, nor when the folder has none', () => {
+    writeDotEnv('PIWI_API_KEY=pd_dotenv\n');
+    expect(resolveOptions({}).apiKey).toBe(null);
+    expect(usedDotEnv()).toBe(null);
+
+    fs.rmSync(path.join(configDir, '.env'));
+    expect(resolveOptions({}, configDir).apiKey).toBe(null);
+    expect(usedDotEnv()).toBe(null);
+  });
+
+  it('resolves one connection in the reporter and in the global setup that wrapConfig bridges to', () => {
+    writeDotEnv('PIWI_DASHBOARD_URL=http://dotenv-host:3000\nPIWI_API_KEY=pd_dotenv\n');
+    const cases: Array<[PiwiDashboardOptions, Pick<PiwiDashboardOptions, 'serverUrl' | 'apiKey' | 'projectName'>]> = [
+      [
+        { serverUrl: 'http://config-host:3000', projectName: 'mine' },
+        { serverUrl: 'http://config-host:3000', apiKey: 'pd_dotenv', projectName: 'mine' },
+      ],
+      [{ projectName: 'mine' }, { serverUrl: 'http://dotenv-host:3000', apiKey: 'pd_dotenv', projectName: 'mine' }],
+    ];
+    for (const [piwiOptions, expected] of cases) {
+      for (const key of Object.keys(process.env)) if (key.startsWith('PIWI_')) delete process.env[key];
+      process.env.PIWI_DESKTOP_CONFIG = NO_DESKTOP_APP;
+      // wrapConfig, as Playwright loads the config.
+      applyOptionsToEnv(piwiOptions);
+      // The reporter, constructed with its entry's options and the folder Playwright adds.
+      const reporter = resolveOptions({ ...piwiOptions, configDir }, configDir);
+      // The global setup, with the options it finds in the reporters array, then with none.
+      const setup = resolveOptions({ ...piwiOptions }, configDir);
+      const setupFromEnv = resolveOptions({}, configDir);
+      expect(connection(reporter)).toEqual(expected);
+      expect(connection(setup)).toEqual(expected);
+      expect(connection(setupFromEnv)).toEqual(expected);
+    }
+  });
+
+  it('sends the key to the dashboard from the global setup and the reporter', async () => {
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/setup') return jsonRes(res, 200, { runId: 7, setupToken: 'setup-tok' });
+      if (req.url === '/api/test-runs/7/begin') return jsonRes(res, 200, { runId: 7, streamToken: 'stream-tok' });
+      return jsonRes(res, 404, {});
+    });
+    writeDotEnv(`PIWI_DASHBOARD_URL=${server.url}\nPIWI_API_KEY=pd_dotenv\n`);
+    const configFile = path.join(configDir, 'playwright.config.ts');
+    const piwiOptions: PiwiDashboardOptions = {
+      projectName,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      uploadManifest: false,
+      sampleAriaOnPass: false,
+    };
+    const config = wrapConfig<PlaywrightTestConfig>({}, piwiOptions);
+
+    await createGlobalSetup()({ configFile, reporter: config.reporter });
+    const reporter = new PiwiDashboardReporter({ ...piwiOptions, configDir });
+    reporter.onBegin(fakeConfig({ configFile }), fakeSuite());
+    const deadline = Date.now() + 3000;
+    while (!server.requests.some((r) => r.url === '/api/test-runs/7/begin') && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    const request = (url: string) => server!.requests.find((r) => r.url === url);
+    expect(request('/api/test-runs/setup')?.headers.authorization).toBe('Bearer pd_dotenv');
+    // The reporter begins the run the global setup registered, under the same project.
+    expect(request('/api/test-runs/7/begin')?.headers.authorization).toBe('Bearer pd_dotenv');
+    expect(JSON.parse(request('/api/test-runs/7/begin')!.body).setupToken).toBe('setup-tok');
   });
 });
 

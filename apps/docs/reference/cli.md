@@ -39,6 +39,8 @@ Several commands read connection settings from the environment as a fallback: `P
 
 Wire a Playwright project up to a dashboard. It installs the reporter as a dev dependency, wraps `export default defineConfig(...)` with [`wrapConfig(...)`](/guide/reporter#installing-via-wrapconfig), creates the [capture-fixtures](/guide/capture-fixtures) file, records `PIWI_*` connection settings in `.env` / `.env.example` (and `.gitignore`), and installs the [agent skills](/features/agent-skills). **Every step is idempotent** — safe to re-run — and a config shape it will not rewrite is reported as `manual` with the exact change to make. See the [one-command setup](/guide/getting-started#fast-path-one-command) in Getting started.
 
+The `.env` it writes sits next to the Playwright config, where `npx playwright test` reads it: the reporter takes `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` from it for whatever the config and the environment leave unset, so the config needs no dotenv loading ([Values from `.env`](/reference/reporter-options#values-from-env)). The file stays out of git; in CI, set the same variables as secrets.
+
 ```bash
 npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project
 ```
@@ -47,7 +49,7 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 |---|---|
 | `--server-url <url>` | Dashboard URL to write into the config (env `PIWI_DASHBOARD_URL`, default `http://localhost:3000`) |
 | `--project <name>` | Project name to report under (default: your package/folder name) |
-| `--api-key <key>` | API key to write into `.env` (env `PIWI_API_KEY`). Omit to leave a `.env.example` placeholder you fill in yourself |
+| `--api-key <key>` | API key to write into `.env` (env `PIWI_API_KEY`), where the reporter reads it. Omit to leave a `.env.example` placeholder you fill in yourself |
 | `--cwd <path>` | Project root to operate on (default: current directory) |
 | `--skills <list>` | Comma-separated skills to install, or `all` / `none` (default: the four workflow skills) |
 | `--skills-dir <path>` | Directory to install skills into (default: `.claude/skills`) |

@@ -279,7 +279,8 @@ export class StreamManager {
       if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
         this.logger.warn(
           `Live streaming could not start: the dashboard at ${this.options.serverUrl} requires authentication. ` +
-            `Set the reporter's \`apiKey\` option (or PIWI_API_KEY) — create a key under Settings → Users on the dashboard. ` +
+            `Set the reporter's \`apiKey\` option, or PIWI_API_KEY in the environment or in the .env file next to ` +
+            `the Playwright config — create a key under Settings → Users on the dashboard. ` +
             `Falling back to batch upload at the end of the run.`,
         );
       } else {
