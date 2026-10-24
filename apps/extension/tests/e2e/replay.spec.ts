@@ -522,7 +522,7 @@ test.describe('replay-panel.js', () => {
         contentType: 'text/html',
         // The page swapped the buttons' texts since the recording, as one that makes them up on each load does.
         body: `<!doctype html><html><body>
-          <a id="save" class="button success" href="#saved" onclick="document.getElementById('out').textContent = 'saved'">bar</a>
+          <a id="save" data-testid="save" class="button success" href="#saved" onclick="document.getElementById('out').textContent = 'saved'">bar</a>
           <a id="drop" class="button alert" href="#dropped" onclick="document.getElementById('out').textContent = 'dropped'">foo</a>
           <output id="out"></output>
         </body></html>`,
@@ -542,8 +542,8 @@ test.describe('replay-panel.js', () => {
             text: 'foo',
             alternatives: [
               { locator: "getByRole('link', { name: 'foo' })", method: 'getByRole', score: 90 },
+              { locator: "getByTestId('save')", method: 'getByTestId', score: 80 },
               { locator: "locator('#save')", method: 'locator', score: 65 },
-              { locator: "locator('.success')", method: 'locator', score: 40 },
             ],
           },
           value: null,
@@ -560,7 +560,7 @@ test.describe('replay-panel.js', () => {
     await expect.poll(() => replayState(page).then((s) => s.status), { timeout: 30_000 }).toBe('done');
     await expect(page.locator('#out')).toHaveText('saved');
     expect((await replayState(page)).results[1]!.detail).toBe(
-      "Found with locator('#save'), which the other recorded locators agree on: getByRole('link', { name: 'foo' }), the locator the test is written with, finds another element.",
+      "Found with getByTestId('save'), which the other recorded locators agree on: getByRole('link', { name: 'foo' }), the locator the test is written with, finds another element.",
     );
   });
 

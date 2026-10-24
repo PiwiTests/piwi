@@ -591,6 +591,18 @@ describe('chooseElement', () => {
     });
   });
 
+  it('weighs a brittle locator’s vote less: two by position do not outvote the spec’s own', () => {
+    const brittle = (locator: string, ...found: string[]): LocatorLook<string> => ({ locator, found, weight: 0.5 });
+    expect(chooseElement([look('spec', 'alice'), brittle('nth', 'bob'), brittle('class', 'bob')], any)?.element).toBe(
+      'alice',
+    );
+    expect(chooseElement([look('spec'), brittle('nth', 'bob')], any)).toEqual({
+      element: 'bob',
+      locator: 'nth',
+      votes: 0.5,
+    });
+  });
+
   it('breaks a tie for the better-ranked locator', () => {
     expect(chooseElement([look('spec'), look('first', 'x'), look('second', 'y')], any)?.locator).toBe('first');
   });

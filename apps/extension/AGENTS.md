@@ -194,8 +194,9 @@ never overwritten by a step that was waiting.
 `resolveForAction` (`replay-actions.ts`) looks for the element with every locator it was recorded with
 (`locatorsOf`: the spec's own, `stepLocator` with `locators: 'stable'`, first, then the other alternatives in their
 recorded rank), all on one engine per poll. `chooseElement` (`replay-core.ts`, pure, unit-tested) decides: each
-locator that finds one element alone votes for it, the spec's own with 1.5 votes, so two others agreeing outvote it;
-another locator votes only for an element of the recorded tag or role (`fitsTarget`); the most votes win, the
+locator that finds one element alone votes for it, the spec's own with 1.5 votes, another with 1, or 0.5 when the
+stability rules call it brittle (`voteWeight`: a position, a CSS class), so only two steady ones agreeing outvote the
+spec's; another locator votes only for an element of the recorded tag or role (`fitsTarget`); the most votes win, the
 better-ranked locator on a tie. A label that changed, an id made up on each load, or a second element sharing a name
 leaves the others to find it, and the step's result says which locator did (`foundWith` in `replay-panel.ts`,
 `replay_foundWith*`); a step none finds keeps the reason in the spec's own locator's words. The element is then waited

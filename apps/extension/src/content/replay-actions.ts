@@ -1,5 +1,6 @@
 import { safeLocator, stepLocator } from '@piwitests/core/codegen';
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
+import { assessLocatorChain } from '@piwitests/core/locator-stability';
 import type { RecordedStep, RecordedTarget } from '@piwitests/core/recording';
 import { t, tn } from '../shared/i18n.js';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
@@ -111,6 +112,11 @@ export function locatorsOf(target: RecordedTarget | null | undefined): string[] 
   return [...new Set([stepLocator(target, { locators: 'stable' }), ...others])].filter((l): l is string => !!l);
 }
 
+/** What a locator's vote weighs: half for one the stability rules call brittle (a position, a CSS class). */
+function voteWeight(locator: string): number {
+  return assessLocatorChain(parseLocatorChain(locator)).level === 'brittle' ? 0.5 : 1;
+}
+
 /** Whether an element another locator finds is the kind recorded: the same tag, or the same role. */
 function fitsTarget(engine: LocatorEngine, element: Element, target: RecordedTarget): boolean {
   if (element.tagName.toLowerCase() === target.tagName.toLowerCase()) return true;
@@ -163,17 +169,19 @@ export async function resolveForAction(
   const locators = locatorsOf(target);
   const primary = locators[0];
   if (!primary || !target) return { ok: false, reason: t('replay_reasonNoLocator') };
+  const weights = locators.map(voteWeight);
   const deadline = Date.now() + timeout;
   let reason = '';
   for (;;) {
     const engine = pageEngine({ strict: true });
     let frames = 0;
     const looks = locators.map((locator, rank) => {
+      const weight = weights[rank];
       try {
-        return { locator, found: engine.queryAll(parseLocatorChain(locator)) };
+        return { locator, weight, found: engine.queryAll(parseLocatorChain(locator)) };
       } catch (e) {
         if (rank === 0) frames = e instanceof LocatorEngineError ? (e.matched ?? 0) : 0;
-        return { locator, found: [] };
+        return { locator, weight, found: [] };
       }
     });
     const choice = chooseElement(looks, (element) => fitsTarget(engine, element, target));

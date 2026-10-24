@@ -33,6 +33,8 @@ export interface LocatorLook<T> {
   locator: string;
   /** Every element it finds; none when it finds nothing or cannot be evaluated here. */
   found: readonly T[];
+  /** What its vote weighs, from 0 to 1: less for a locator that breaks with the data (a position). 1 when absent. */
+  weight?: number;
 }
 
 /** The element a step acts on, the best-ranked locator that found it alone, and how many found it alone. */
@@ -49,11 +51,12 @@ const SPEC_LOCATOR_VOTE = 1.5;
  * Which element a step acts on, from what each of its recorded locators finds
  * now, the spec's own first and the others in their recorded rank. Every
  * locator that finds one element alone votes for it, the spec's own with more
- * weight; one of the others votes only for an element that `fits` what was
- * recorded (its tag or its role). The element with the most votes wins, the
- * one the better-ranked locator found on a tie. A text that changed, an id
- * made up on each load or a second element sharing a name leaves the others to
- * find it. Null when no locator finds one element alone.
+ * weight, a brittle one with less (`weight`); one of the others votes only for
+ * an element that `fits` what was recorded (its tag or its role). The element
+ * with the most votes wins, the one the better-ranked locator found on a tie.
+ * A text that changed, an id made up on each load or a second element sharing
+ * a name leaves the others to find it. Null when no locator finds one element
+ * alone.
  */
 export function chooseElement<T>(
   looks: readonly LocatorLook<T>[],
@@ -64,7 +67,7 @@ export function chooseElement<T>(
     if (look.found.length !== 1) return;
     const element = look.found[0]!;
     if (rank > 0 && !fits(element)) return;
-    const vote = rank === 0 ? SPEC_LOCATOR_VOTE : 1;
+    const vote = rank === 0 ? SPEC_LOCATOR_VOTE : (look.weight ?? 1);
     const counted = tally.get(element);
     if (counted) counted.votes += vote;
     else tally.set(element, { element, locator: look.locator, votes: vote });
