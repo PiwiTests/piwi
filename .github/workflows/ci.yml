@@ -533,6 +533,33 @@ jobs:
           path: apps/application/blob-report
           retention-days: 3
 
+  # The execution and failure-cluster pages against their legibility budgets (apps/application/AGENTS.md, "Measure
+  # it."), on this build and a database seeded from the demo seed.
+  measure:
+    name: Failure page budgets
+    needs: [changes, build]
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          playwright: shell
+
+      - name: Download build output
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-output
+
+      - name: Measure the failure pages against their budgets
+        working-directory: apps/application
+        run: npm run app:measure -- --build .output --check
+
   # Installs the packed @piwitests/server and @piwitests/reporter into a new project,
   # starts the server with `npx @piwitests/server` and runs a suite through the reporter
   # (scripts/package-smoke.mjs). Windows and macOS catch what breaks only on their paths
@@ -777,7 +804,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, checks, e2e, package-smoke, demo, aspnet, container, docs, extension, vscode, jetbrains, desktop, perf-base, perf]
+    needs: [versions, changes, build, checks, e2e, measure, package-smoke, demo, aspnet, container, docs, extension, vscode, jetbrains, desktop, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
