@@ -95,3 +95,8 @@ updates:
       interval: weekly
     commit-message:
       prefix: "build"
+    ignore:
+      # Node 24 is the major the desktop app bundles and the root package.json's engines name: the image stays on it.
+      - dependency-name: "node"
+        update-types:
+          - "version-update:semver-major"

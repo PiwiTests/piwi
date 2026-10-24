@@ -27,7 +27,7 @@ permissions:
 
 env:
   # Match the runtime the app is built and tested against (apps/application/engines).
-  PIWI_NODE_VERSION: 24.22.0
+  PIWI_NODE_VERSION: 24.22.1
 
 jobs:
   desktop:
