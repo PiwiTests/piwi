@@ -384,7 +384,12 @@ describe('parseCaptureEvent', () => {
     expect(parseCaptureEvent(viewport)).toEqual(viewport);
     const input = ev({ kind: 'change', target: target(), value: 'FR', checked: false, inputType: 'select' });
     expect(parseCaptureEvent(input)).toEqual(input);
-    const back = ev({ kind: 'navigate', value: 'https://x.test/cart', navigation: 'history' });
+    const back = ev({
+      kind: 'navigate',
+      value: 'https://x.test/cart',
+      pageUrl: 'https://x.test/cart',
+      navigation: 'history',
+    });
     expect(parseCaptureEvent(back)).toEqual(back);
   });
 
@@ -393,6 +398,18 @@ describe('parseCaptureEvent', () => {
       ev({ kind: 'navigate', value: 'https://x.test/' }),
     );
     expect(parseCaptureEvent(ev({ kind: 'click', navigation: 'reload' }))).toEqual(ev({ kind: 'click' }));
+  });
+
+  test('a navigation’s cause is kept only to the http(s) address the event was sent from', () => {
+    for (const [value, pageUrl] of [
+      ['https://elsewhere.test/', 'https://x.test/'],
+      ['javascript:alert(1)', 'javascript:alert(1)'],
+      ['file:///etc/passwd', 'file:///etc/passwd'],
+    ]) {
+      expect(parseCaptureEvent(ev({ kind: 'navigate', value, pageUrl, navigation: 'reload' }))).toEqual(
+        ev({ kind: 'navigate', value, pageUrl }),
+      );
+    }
   });
 
   test('every kind the recorder sends is known, and nothing else', () => {

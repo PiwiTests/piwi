@@ -83,6 +83,16 @@ const CASES: HoverCase[] = [
     hovers: 1,
   },
   {
+    name: 'a button rendered with a new copy of the element the pointer is on',
+    page: 'hover-tile.html',
+    act: async (page) => {
+      await page.getByRole('img', { name: 'Blue mug' }).hover();
+      await page.getByRole('button', { name: 'Quick view' }).click();
+    },
+    result: 'Quick view of the blue mug',
+    hovers: 1,
+  },
+  {
     name: 'an element swapped for another as the pointer enters it',
     page: 'hover-swap.html',
     act: async (page) => {

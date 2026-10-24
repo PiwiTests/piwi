@@ -289,7 +289,7 @@ test.describe('locator engine matches Playwright', () => {
   test('an element with a role and no name still gets a locator, kept by position', async ({ page }) => {
     await servePages(page, ORIGIN, {
       'unnamed.html': `<!doctype html><html><body>
-        <form id="checkboxes"><input type="checkbox"> checkbox 1<br><input type="checkbox" checked> checkbox 2</form>
+        <form id="checkboxes"><input type="checkbox" class="css-1a2b3c4d"> checkbox 1<br><input type="checkbox" class="css-1a2b3c4d" checked> checkbox 2</form>
       </body></html>`,
     });
     await page.goto(`${ORIGIN}/unnamed.html`);

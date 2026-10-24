@@ -1,10 +1,7 @@
 /**
- * Pure helpers for the recorder — classifying a DOM element's input kind, and
- * telling a page the person reached on their own — split out of `record-panel.ts` (the entry point, which calls
- * `probeElementAttrs`/`generateAlternatives` and therefore can't be
- * reconstructed via `Function.prototype.toString()` per the two-strategy
- * rule in `extension/AGENTS.md`) so this half stays plain-unit-testable with
- * no DOM at all.
+ * The recorder's decisions that need no page: the input kind a tag and type
+ * make, whether a field is a password, and whether a page reached through
+ * the history or by reloading is a step of the person's own.
  */
 
 export type InputKind = 'checkbox' | 'radio' | 'select' | 'text' | null;

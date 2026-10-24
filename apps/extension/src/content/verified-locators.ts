@@ -233,11 +233,12 @@ export function rankElement(el: Element, options: RankOptions = {}): RankedEleme
     { ...attrs, ...structure, selectorCounts: undefined, accessibleName: shortName(accessibleName) },
     { role, testIdAttribute },
   );
-  // An element with a role and no name (an unlabelled checkbox) still gets a candidate, which `checkLocators`
-  // narrows or keeps by position.
+  // An element with a role and no name (an unlabelled checkbox) still gets a candidate, ranked by its score among
+  // the others, which `checkLocators` narrows or keeps by position.
   const bare = role && !accessibleName ? renderLocatorChain({ calls: [byRole(role, level)] }) : null;
   if (bare && !ranked.some((r) => r.locator === bare)) {
     ranked.push({ locator: bare, method: 'getByRole', args: level != null ? { role, level } : { role }, score: 12 });
+    ranked.sort((a, b) => b.score - a.score);
   }
   return { attrs, accessibleName, role, ranked };
 }

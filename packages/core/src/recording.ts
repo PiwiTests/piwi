@@ -704,7 +704,8 @@ function parseViewport(v: unknown): RawCaptureEvent['viewport'] | null {
  * alternatives that parse. Null when it has no known `kind`, no `pageUrl`
  * string, no finite `timestamp`, or an assertion without a known matcher. A
  * password field's value is never kept; a viewport out of bounds is left out,
- * and so is `view`.
+ * and so is `view`. A navigation's cause stays on a navigate event to the
+ * http(s) address the event was sent from only.
  */
 export function parseCaptureEvent(value: unknown): RawCaptureEvent | null {
   if (!isRecord(value)) return null;
@@ -731,7 +732,12 @@ export function parseCaptureEvent(value: unknown): RawCaptureEvent | null {
   if (value.dropTarget !== undefined) event.dropTarget = parseTarget(value.dropTarget);
   const viewport = parseViewport(value.viewport);
   if (viewport) event.viewport = viewport;
-  if (kind === 'navigate' && (value.navigation === 'history' || value.navigation === 'reload')) {
+  if (
+    kind === 'navigate' &&
+    (value.navigation === 'history' || value.navigation === 'reload') &&
+    event.value === event.pageUrl &&
+    /^https?:\/\//i.test(event.pageUrl)
+  ) {
     event.navigation = value.navigation;
   }
   return event;

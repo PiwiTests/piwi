@@ -482,9 +482,9 @@ recorder takes:
   `deriveTopLocator` (assertions, the Tested
   elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
   call so the engine's caches serve the whole scan.
-- **An element with a role and no name** (an unlabelled checkbox) gets its bare role as a last candidate
-  (`rankElement`, score 12, below everything `generateAlternatives` builds), which `checkLocators` narrows or keeps
-  with `.first()`/`.nth()`: never no locator at all, which the replay could not play.
+- **An element with a role and no name** (an unlabelled checkbox) gets its bare role as a candidate (`rankElement`,
+  score 12, ranked among the others: above a hashed class's CSS), which `checkLocators` narrows or keeps with
+  `.first()`/`.nth()`: never no locator at all, which the replay could not play.
 - **A step is never lost to its locators**: a recorded target whose candidates cannot be checked against the page
   (`checkLocators` throwing on a tree it does not expect) keeps its ranked candidates as they are
   (`recordedAlternatives`, `record-panel.ts`), and a click whose hover search throws is recorded without hovers.
@@ -687,15 +687,28 @@ the keyboard (`bug-report.spec.ts` reaches them by Tab).
 
 A press records the control it is part of (`nearestActionable`, `record-panel.ts`): the element or its nearest
 actionable ancestor. Inside a tree item, whose expand arrow and label act apart, it is the part of the item where the
-page made the pointer a hand (`pointerRegion`: the outermost element showing `cursor: pointer` that its parent does not,
-unless the item shows one itself); for an icon's drawing (an SVG `<path>`) in no control at all, the element the page
-made clickable around it, else the `<svg>`. `record.spec.ts` records both and has Playwright click their locators.
+page made the pointer a hand (`compositePart`, `pointerRegion`: the outermost element showing `cursor: pointer` that its
+parent does not, unless the item or the body shows one itself), when that part is under half the item's width and
+something locates it, else the item. For an icon's drawing (an SVG `<path>`) in no control at all, it is the outermost
+element around the icon, still within `ICON_SLACK` of its size, that shows a pointer cursor and has a locator, else the
+`<svg>` (`iconControl`): a row the icon sits in is not its control. A drawing in an SVG larger than `ICON_MAX` (a
+chart, a map) records itself. `record.spec.ts` records them and has Playwright click their locators.
 
-A page the person reaches through the browser's Back or Forward (the document's navigation entry, a page restored
-from the back/forward cache, a `popstate` in a page that routes itself) or by reloading records its `navigate` event
-with `navigation` (`ownNavigation`, `record-capture.ts`), which `normalizeSteps` turns into a `goto` to that page; one
-an action led to does not: a link that calls `history.back()`, within `ACTION_LED_NAVIGATION_MS` of the last recorded
-action with no page reached since (`lastActionOf`). The replay and the spec go there again with a goto.
+A page the person reaches through the browser's Back or Forward, or by reloading, records its `navigate` event with
+`navigation`, which `normalizeSteps` turns into a `goto` to that page; one a page or an action led to does not:
+
+- **Within a page that routes itself**, the Navigation API's `navigate` event says which moves through the history are
+  the person's (`userInitiated`): not the page's `history.back()`, nor a hash it sets. Without the API, a `popstate`
+  counts unless it comes within `ACTION_LED_NAVIGATION_MS` of the person's last action (`ownNavigation`,
+  `record-capture.ts`).
+- **A page that loads**, from its navigation entry or the back/forward cache (timed at its `pageshow`), counts unless it
+  loads within `ACTION_LED_NAVIGATION_MS` of the last action with no page reached since (`lastActionOf`). The last
+  action is the last press (a page can move on `pointerdown`) or recorded step; the browser's own Back, Forward and
+  reload shortcuts are not recorded as key presses (`BROWSER_NAVIGATION_KEYS`).
+- **While paused** no navigation is a step. `parseCaptureEvent` keeps `navigation` only on an event to the http(s)
+  address it was sent from.
+
+The replay and the spec go there again with a goto.
 
 ## Hovers a click depends on
 

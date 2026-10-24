@@ -150,6 +150,24 @@ const FIELD_EDIT_KEYS = new Set([
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 
 /**
+ * The browser's own Back, Forward and reload shortcuts, as `recordedKey` names
+ * them: the page they reach is the step, unless the page keeps the key for a
+ * shortcut of its own (`preventDefault`).
+ */
+const BROWSER_NAVIGATION_KEYS: ReadonlySet<string> = new Set(
+  IS_MAC
+    ? [
+        'ControlOrMeta+[',
+        'ControlOrMeta+]',
+        'ControlOrMeta+ArrowLeft',
+        'ControlOrMeta+ArrowRight',
+        'ControlOrMeta+r',
+        'ControlOrMeta+Shift+r',
+      ]
+    : ['Alt+ArrowLeft', 'Alt+ArrowRight', 'ControlOrMeta+r', 'ControlOrMeta+Shift+r', 'ControlOrMeta+F5'],
+);
+
+/**
  * A key press as Playwright writes it, or null when it only types, edits or
  * moves the focus: Enter, Escape and the arrows in a list (`RECORDED_KEYS`),
  * a shortcut with a modifier (`ControlOrMeta+K`, portable between Ctrl and
@@ -288,39 +306,97 @@ function fieldTarget(el: Element): RecordedTarget {
 /** Controls that hold controls of their own a person aims at apart: a tree item's expand arrow, its label. */
 const COMPOSITE_CONTROLS = '[role="treeitem"]';
 
+function showsPointer(node: Element): boolean {
+  return getComputedStyle(node).cursor === 'pointer';
+}
+
 /**
  * Where the page made the pointer a hand on the way up from `el` to `stop`
  * (left out): the outermost element showing a pointer cursor its parent does
- * not show. Null when there is none, or when `stop` shows one too, which its
- * content then only inherits.
+ * not show. Null when there is none, or when `stop` (or the page's body)
+ * shows one too, which its content then only inherits.
  */
-function pointerRegion(el: Element, stop: Element | null): Element | null {
-  const pointer = (node: Element) => getComputedStyle(node).cursor === 'pointer';
-  if (stop && pointer(stop)) return null;
+function pointerRegion(el: Element, stop: Element): Element | null {
+  if (showsPointer(stop)) return null;
   let region: Element | null = null;
   for (let node: Element | undefined = el; node && node !== stop; node = parentElementOrShadowHost(node)) {
-    if (node === node.ownerDocument.body || node === node.ownerDocument.documentElement) return null;
-    if (pointer(node)) region = node;
+    if (node === node.ownerDocument.body || node === node.ownerDocument.documentElement) {
+      return showsPointer(node) ? null : region;
+    }
+    if (showsPointer(node)) region = node;
     else if (region) break;
   }
   return region;
 }
 
+/** Whether something on the page can find `el`: a step needs at least one locator. */
+function locatable(el: Element): boolean {
+  return deriveRecordedTarget(el).alternatives.length > 0;
+}
+
+/**
+ * The part of a tree item a press inside it aims at: the region the page made
+ * clickable on its own when it is narrower than half the item (its expand
+ * arrow) and something can find it, else the item.
+ */
+function compositePart(el: Element, item: Element): Element {
+  const region = pointerRegion(el, item);
+  if (!region) return item;
+  const part = region.getBoundingClientRect();
+  return part.width * 2 <= item.getBoundingClientRect().width && locatable(region) ? region : item;
+}
+
+/** The largest side an SVG drawing has to be an icon, in CSS pixels: a larger one is a chart or a map. */
+const ICON_MAX = 64;
+/** How much wider or taller than its icon an element around it may be and still be the icon's own control. */
+const ICON_SLACK = 24;
+/** What names an element on its own, the way a page names an icon's control: an id, a title, a label, a role. */
+const NAMED_ON_ITS_OWN =
+  '[id], [title], [aria-label], [aria-labelledby], [role]:not([role="none"], [role="presentation"])';
+
+/**
+ * The control an icon's drawing (an SVG `<path>`) in no control at all
+ * stands for, among the elements around the icon still about its size: the
+ * outermost where the page made the pointer a hand (its parent shows no
+ * pointer cursor), else, the pointer coming from further out (a row that opens
+ * as a whole), the nearest that names itself, else the icon. A drawing in a
+ * larger SVG (a chart, a map) stands for itself. Each must have a locator.
+ */
+function iconControl(el: SVGElement): Element {
+  let svg: SVGSVGElement | null = el instanceof SVGSVGElement ? el : el.ownerSVGElement;
+  while (svg?.ownerSVGElement) svg = svg.ownerSVGElement;
+  if (!svg) return el;
+  const icon = svg.getBoundingClientRect();
+  if (icon.width > ICON_MAX || icon.height > ICON_MAX) return el;
+  const around: Element[] = [];
+  for (let node = parentElementOrShadowHost(svg); node; node = parentElementOrShadowHost(node)) {
+    if (node === node.ownerDocument.body) break;
+    const box = node.getBoundingClientRect();
+    if (box.width > icon.width + ICON_SLACK || box.height > icon.height + ICON_SLACK) break;
+    around.push(node);
+  }
+  const startsPointer = (node: Element): boolean => {
+    const parent = parentElementOrShadowHost(node);
+    return showsPointer(node) && !(parent && showsPointer(parent));
+  };
+  const clickable = around.filter(startsPointer).pop();
+  if (clickable && locatable(clickable)) return clickable;
+  return around.find((node) => node.matches(NAMED_ON_ITS_OWN) && locatable(node)) ?? svg;
+}
+
 /**
  * The control `el` is part of: itself or its nearest actionable ancestor, out
  * through the hosts of the shadow roots it is in. Inside a tree item, the
- * part the page made clickable on its own (its expand arrow); for an icon's
- * drawing in no control at all, the element the page made clickable around
- * it, else the icon.
+ * part it aims at (`compositePart`); for an icon's drawing in no control at
+ * all, the control the icon stands for (`iconControl`).
  */
 function nearestActionable(el: Element): Element {
   const selector = actionableSelector();
   for (let node: Element | undefined = el; node; node = parentElementOrShadowHost(node)) {
     if (!node.matches(selector)) continue;
-    return node !== el && node.matches(COMPOSITE_CONTROLS) ? (pointerRegion(el, node) ?? node) : node;
+    return node !== el && node.matches(COMPOSITE_CONTROLS) ? compositePart(el, node) : node;
   }
-  if (el instanceof SVGElement) return pointerRegion(el, null) ?? el.closest('svg') ?? el;
-  return el;
+  return el instanceof SVGElement ? iconControl(el) : el;
 }
 
 /** What a person points at when the pointer enters `entered`: the control around it, if inside `within`. */
@@ -1403,6 +1479,8 @@ function attachListeners(): void {
     (e) => {
       if (e.isTrusted) enterInForm = null;
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+      // A page can move on a press, before its click.
+      lastActionAt = Date.now();
       watchShadowRoots(e);
       const raw = deepTarget(e);
       if (!raw) {
@@ -1417,16 +1495,38 @@ function attachListeners(): void {
     opts,
   );
 
-  // Back or Forward within a page that routes itself: the address changes, and no page loads.
-  window.addEventListener(
-    'popstate',
-    (e) => {
-      if (!e.isTrusted || capturePaused()) return;
-      const navigation = ownNavigation('back_forward', Date.now(), lastActionAt);
-      if (navigation) captureEvent(buildEvent('navigate', null, { value: location.href, navigation }));
-    },
-    opts,
-  );
+  // Back or Forward within a page that routes itself: the address changes, and
+  // no page loads. The Navigation API tells the person's (`userInitiated`)
+  // from the page's own `history.back()` and hash changes; without it, a
+  // `popstate` long enough after the person's last action is theirs.
+  const pageNavigation = (window as { navigation?: Navigation }).navigation;
+  if (pageNavigation) {
+    pageNavigation.addEventListener(
+      'navigate',
+      (e) => {
+        if (!e.isTrusted || capturePaused()) return;
+        if (e.navigationType !== 'traverse' || !e.userInitiated || !e.destination.sameDocument) return;
+        const url = e.destination.url;
+        // The page may still cancel it.
+        setTimeout(() => {
+          if (!e.defaultPrevented) {
+            captureEvent(buildEvent('navigate', null, { value: url, pageUrl: url, navigation: 'history' }));
+          }
+        }, 0);
+      },
+      opts,
+    );
+  } else {
+    window.addEventListener(
+      'popstate',
+      (e) => {
+        if (!e.isTrusted || capturePaused()) return;
+        const navigation = ownNavigation('back_forward', Date.now(), lastActionAt);
+        if (navigation) captureEvent(buildEvent('navigate', null, { value: location.href, navigation }));
+      },
+      opts,
+    );
+  }
 
   document.addEventListener(
     'pointerover',
@@ -1557,7 +1657,12 @@ function attachListeners(): void {
       if (key === 'Enter' && focused instanceof HTMLInputElement && focused.form) {
         enterInForm = { form: focused.form, at: performance.now() };
       }
-      captureEvent(buildEvent('keydown', el, { value: key, view: viewForAction(el) }));
+      const press = () => captureEvent(buildEvent('keydown', el, { value: key, view: viewForAction(el) }));
+      if (!BROWSER_NAVIGATION_KEYS.has(key)) press();
+      else
+        setTimeout(() => {
+          if (e.defaultPrevented) press();
+        }, 0);
     },
     opts,
   );
@@ -1629,7 +1734,7 @@ function installStopListener(): void {
  * an already-stopped recording still shows something useful instead of
  * nothing.
  */
-async function runRecordPanel(restored = false): Promise<void> {
+async function runRecordPanel(restoredAt: number | null = null): Promise<void> {
   const g = recorderGlobals();
   installPageShowListener();
   // Each run waits for the one before it: this script is injected both by the
@@ -1640,7 +1745,7 @@ async function runRecordPanel(restored = false): Promise<void> {
   // widened session-storage access yet, which is transient.
   g.__piwiRecordPanelRun = (g.__piwiRecordPanelRun ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => initRecordPanel(restored))
+    .then(() => initRecordPanel(restoredAt))
     .catch((err: unknown) => {
       console.warn('[Piwi Picker] recorder failed to start on this page:', err);
     });
@@ -1658,7 +1763,7 @@ function installPageShowListener(): void {
   if (g.__piwiRecordPageShow) return;
   g.__piwiRecordPageShow = true;
   window.addEventListener('pageshow', (e) => {
-    if (e.persisted) void runRecordPanel(true);
+    if (e.persisted) void runRecordPanel(Date.now());
   });
 }
 
@@ -1783,8 +1888,12 @@ function watchViewport(kept: ViewportSize, signal: AbortSignal): void {
   });
 }
 
-/** `restored`: the page came back from the back/forward cache, and attaches as a page the recording reaches. */
-async function initRecordPanel(restored: boolean): Promise<void> {
+/**
+ * `restoredAt`: when the page came back from the back/forward cache; it then
+ * attaches as a page the recording reaches.
+ */
+async function initRecordPanel(restoredAt: number | null): Promise<void> {
+  const restored = restoredAt != null;
   // Before any session-storage read — see `session-access.ts`. The catalog
   // override and the recorder's settings load alongside, so the HUD paints no
   // later for them.
@@ -1826,9 +1935,11 @@ async function initRecordPanel(restored: boolean): Promise<void> {
   // through the history or by reloading — see `normalizeSteps`.
   lastActionAt = lastActionOf(state.events);
   const entry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
-  const navigation = restored
-    ? ownNavigation('back_forward', Date.now(), lastActionAt)
-    : ownNavigation(entry?.type, performance.timeOrigin, lastActionAt);
+  const navigation = capturePaused()
+    ? null
+    : restored
+      ? ownNavigation('back_forward', restoredAt, lastActionAt)
+      : ownNavigation(entry?.type, performance.timeOrigin, lastActionAt);
   await appendRecordingEvent(
     buildEvent('navigate', null, { value: location.href, ...(navigation ? { navigation } : {}) }),
   );
