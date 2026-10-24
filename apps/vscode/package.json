@@ -832,7 +832,7 @@
     "@piwitests/core": "*",
     "@piwitests/editor": "*",
     "@playwright/test": "^1.64.1",
-    "@types/vscode": "~1.140.0",
+    "@types/vscode": "~1.91.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.2",

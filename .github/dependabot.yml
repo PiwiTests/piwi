@@ -12,6 +12,23 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7, the native compiler, has no compiler API: vue-tsc, tsup's declaration build and the tests that
+      # parse source with `typescript` need one.
+      - dependency-name: "typescript"
+        versions: [">= 7.0.0"]
+      # The VS Code API the extension types against is the oldest it supports, apps/vscode's engines.vscode: the two
+      # move together, by hand.
+      - dependency-name: "@types/vscode"
+      # vue-tsc 3.3.12 and 3.3.13 lose a v-for's variables and a v-if's narrowing inside a component's slot, and fail
+      # the dashboard's typecheck on code 3.3.11 accepts.
+      - dependency-name: "vue-tsc"
+        versions: ["3.3.12", "3.3.13"]
+      # @libsql/client 0.18 runs a local database on a pool of connections and rolls back a connection's open
+      # transaction when it goes back to the pool: the per-connection pragmas (sqlite-connections.ts) and the
+      # migration repair's transaction (migration-targets.ts) are written for 0.17's single connection.
+      - dependency-name: "@libsql/client"
+        versions: [">= 0.18.0"]
     groups:
       minor-and-patch:
         update-types:
