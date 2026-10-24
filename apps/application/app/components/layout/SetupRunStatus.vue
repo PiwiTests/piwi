@@ -2,7 +2,9 @@
 /**
  * The connect wizard's live line: waiting for the first run, a run reporting
  * right now, or the run that reported last, kept current by the run stream so
- * the page answers "did it work?" without a reload.
+ * the page answers "did it work?" without a reload. While it waits or a run
+ * reports, it also reads the runs again every 15 seconds, for a run that
+ * reported before the stream connected or through a proxy that holds it back.
  */
 import type { TestRunForChart } from '~~/types/api';
 import { firstRunStatus } from '~/utils/first-run-status';
@@ -19,6 +21,17 @@ const {
 });
 
 useRunStream(() => refresh());
+
+const POLL_MS = 15_000;
+let poll: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  poll = setInterval(() => {
+    if (document.visibilityState === 'visible' && status.value.kind !== 'reported') refresh();
+  }, POLL_MS);
+});
+onUnmounted(() => {
+  if (poll) clearInterval(poll);
+});
 
 const loading = computed(() => fetchStatus.value === 'idle' || fetchStatus.value === 'pending');
 const status = computed(() => firstRunStatus(runs.value ?? []));

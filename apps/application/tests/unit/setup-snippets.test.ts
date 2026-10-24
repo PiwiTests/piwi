@@ -1,5 +1,11 @@
 import { describe, test, expect } from 'vitest';
-import { initCommand, normalizeProjectName, setupSnippets, type SetupChoices } from '../../app/utils/setup-snippets';
+import {
+  initCommand,
+  normalizeProjectName,
+  normalizeServerUrl,
+  setupSnippets,
+  type SetupChoices,
+} from '../../app/utils/setup-snippets';
 // The reporter's own `init` writers, from source.
 import { fixturesContents, wrapPlaywrightConfig } from '../../../../packages/reporter/src/cli/configure';
 import { parseInitArgs } from '../../../../packages/reporter/src/cli/init';
@@ -57,8 +63,23 @@ describe('setup snippets', () => {
   test('a project name with spaces stays one argument, and shell characters are dropped', () => {
     expect(normalizeProjectName('  ')).toBe('my-project');
     expect(normalizeProjectName('my "app" $HOME')).toBe('my app HOME');
+    expect(normalizeProjectName('QA!team %PATH%')).toBe('QAteam PATH');
     expect(initCommand({ ...WEB, projectName: 'Web shop' })).toContain('--project "Web shop"');
     expect(setupSnippets({ ...WEB, projectName: 'Web shop' }).config).toContain("projectName: 'Web shop',");
+  });
+
+  test('a server URL is used only when a shell and a quote can carry it as written', () => {
+    expect(normalizeServerUrl(' https://piwi.acme.dev/ ')).toBe('https://piwi.acme.dev');
+    expect(normalizeServerUrl('http://10.0.0.5:3000')).toBe('http://10.0.0.5:3000');
+    for (const raw of [
+      '',
+      'piwi.acme.dev',
+      'https://piwi.acme.dev/$(whoami)',
+      "https://a.dev/'x",
+      'https://a.dev/ b',
+    ]) {
+      expect(normalizeServerUrl(raw), raw).toBe(null);
+    }
   });
 
   test('the agent prompt runs init with --json and never carries a key', () => {

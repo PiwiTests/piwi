@@ -1,23 +1,27 @@
 <script setup lang="ts">
 /**
  * Creates the reporter's API key in place, for the signed-in user, and shows it
- * once, as the line the CI secret takes. The key carries its owner's access;
- * Settings → Account lists and revokes it like any other.
+ * once, as the line the CI secret takes. The key carries its owner's access, so
+ * the button shows only to a user whose uploads may create a project, as the
+ * first run does; Settings → Account lists and revokes it like any other.
  */
 import type { CreateApiKeyResponse } from '~~/types/api';
+import { projectScopeFor } from '#shared/permissions';
 
 const props = defineProps<{
   /** Names the key after the project it reports, so the keys list says what each one is for. */
   projectName: string;
 }>();
 
-const { authState } = useAuth();
+const { authState, access, isAdmin } = useAuth();
 const toast = useToast();
 
 const creating = ref(false);
 const createdKey = ref<string | null>(null);
 
 const userId = computed(() => authState.value.user?.id ?? null);
+/** A key of this user can create the project its first run names: an upload role on every project. */
+const canCreateProjects = computed(() => !!access.value && projectScopeFor(access.value, 'run:submit') === 'all');
 
 async function create() {
   if (!userId.value || creating.value) return;
@@ -47,7 +51,7 @@ async function create() {
         your shell for a local run.
       </p>
       <UButton
-        v-if="userId"
+        v-if="userId && canCreateProjects"
         color="neutral"
         variant="outline"
         size="sm"
@@ -57,7 +61,16 @@ async function create() {
       >
         Create a key for {{ projectName }}
       </UButton>
-      <p v-else class="text-xs text-muted">Sign in to create one, or ask an administrator for a key.</p>
+      <p v-if="userId && canCreateProjects" class="text-xs text-muted">
+        The key carries your access{{ isAdmin ? ': an administrator’s' : '' }}. For CI, a key of an account holding only
+        the Uploader role on all projects gives away less:
+        <NuxtLink v-if="isAdmin" to="/settings/users" :class="SENTENCE_LINK_CLASS">create one on Users</NuxtLink
+        ><template v-else>ask an administrator for one</template>.
+      </p>
+      <p v-else class="text-xs text-muted">
+        Ask an administrator for a key of an account holding the Uploader role on all projects: the first run creates
+        its project, which {{ userId ? 'your access cannot' : 'needs a signed-in account' }}.
+      </p>
     </template>
     <template v-else>
       <p class="text-sm text-highlighted leading-relaxed">

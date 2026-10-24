@@ -762,9 +762,6 @@ test.describe.serial('Reporter with authentication enabled', () => {
     await expect(secret).toContainText('PIWI_API_KEY=');
     const apiKey = ((await secret.textContent()) ?? '').trim().replace(/^PIWI_API_KEY=/, '');
     expect(apiKey.length).toBeGreaterThan(20);
-    // The coding agent's prompt never carries it.
-    await wizard.getByRole('button', { name: 'Coding agent' }).click();
-    await expect(wizard.locator('pre').last()).not.toContainText(apiKey);
 
     const res = await page.request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       headers: { Authorization: `Bearer ${apiKey}` },

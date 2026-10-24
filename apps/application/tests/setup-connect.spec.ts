@@ -39,19 +39,23 @@ test.describe('Connect wizard', () => {
   });
 
   test('the status line names a run as soon as one reports', async ({ page, request }) => {
-    // Only this test's project counts, so another worker's run never takes the line.
+    // Only this attempt's run of this test's project counts, so another worker's
+    // run, or a retry's earlier one, never takes the line.
+    const since = Date.now() - 1000;
     await page.route('**/api/test-runs/recent*', async (route) => {
       const response = await route.fetch();
-      const body = (await response.json()) as { items: Array<{ projectName?: string }> };
-      await route.fulfill({
-        response,
-        json: { items: body.items.filter((run) => run.projectName === PROJECT.SETUP_CONNECT) },
-      });
+      const body = (await response.json()) as { items: Array<{ projectName?: string; startTime: string }> };
+      const items = body.items.filter(
+        (run) => run.projectName === PROJECT.SETUP_CONNECT && new Date(run.startTime).getTime() >= since,
+      );
+      await route.fulfill({ response, json: { items } });
     });
+    const stream = page.waitForResponse((response) => response.url().includes('/api/stream'));
     await page.goto('/setup');
     await waitForHydration(page);
     const status = page.locator('[data-shot="setup-run-status"]');
     await expect(status).toContainText('Waiting for the first run');
+    await stream;
 
     const res = await request.post('/api/test-runs/submit', {
       data: {

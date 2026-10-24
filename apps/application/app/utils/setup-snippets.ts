@@ -36,12 +36,23 @@ export const FIXTURES_FILE = 'tests/fixtures.ts';
 
 /**
  * A project name as the wizard writes it into a shell command and a config:
- * trimmed, without the characters a shell would expand or a quote would end,
- * and the default name when nothing is left.
+ * trimmed, without the characters a shell would expand inside double quotes
+ * (bash, PowerShell, cmd) or a quote would end, and the default name when
+ * nothing is left.
  */
 export function normalizeProjectName(raw: string): string {
-  const name = raw.replace(/["'`$\\]/g, '').trim();
+  const name = raw.replace(/["'`$\\!%]/g, '').trim();
   return name || DEFAULT_PROJECT_NAME;
+}
+
+/**
+ * A dashboard URL the wizard can write into a command and a config: an http(s)
+ * address with none of the characters a shell or a quote would act on, without
+ * its trailing slashes; `null` for anything else.
+ */
+export function normalizeServerUrl(raw: string): string | null {
+  const url = raw.trim().replace(/\/+$/, '');
+  return /^https?:\/\/[^\s"'`$\\!%<>|&;^]+$/.test(url) ? url : null;
 }
 
 /** A command-line argument, double-quoted when it holds anything but a plain word. */
@@ -118,7 +129,7 @@ function agentPrompt(choices: SetupChoices): string {
     '',
     `1. From the Playwright project's root, run \`${initCommand(choices)} --json\` and read the JSON it prints.`,
     '2. Finish every step it reports as "manual": each one carries the exact change to make.',
-    `3. Make every spec import \`test\` and \`expect\` from the fixtures file it created (${FIXTURES_FILE}) instead of \`@playwright/test\`. If the suite already builds its own \`test\` with \`test.extend\`, add \`piwiFixtures\` to that one instead of creating a second.`,
+    `3. Make every spec import \`test\` and \`expect\` from the fixtures file it created (${FIXTURES_FILE}, or tests/fixtures.js in a JavaScript project) instead of \`@playwright/test\`. If the suite already builds its own \`test\` with \`test.extend\`, add \`piwiFixtures\` to that one instead of creating a second.`,
     choices.needsApiKey
       ? '4. Once I confirm PIWI_API_KEY is set, run `npx playwright test` and give me the `View run:` link it prints at the end.'
       : '4. Run `npx playwright test` and give me the `View run:` link it prints at the end.',

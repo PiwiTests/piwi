@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { DESKTOP_DOWNLOAD_URL } from '#shared/companion-links';
 import { docsUrl } from '#shared/docs';
-import { DEFAULT_PROJECT_NAME, FIXTURES_FILE, normalizeProjectName, setupSnippets } from '~/utils/setup-snippets';
+import {
+  DEFAULT_PROJECT_NAME,
+  FIXTURES_FILE,
+  normalizeProjectName,
+  normalizeServerUrl,
+  setupSnippets,
+} from '~/utils/setup-snippets';
 import { CARD_ICON_CLASS, SEGMENTED_SELECTED_CLASS, SENTENCE_LINK_CLASS } from '~/utils';
 
 /**
@@ -41,14 +47,16 @@ const teamServer = ref(false);
 const teamServerUrl = ref('');
 const TEAM_SERVER_PLACEHOLDER = 'https://piwi.example.com';
 
+/** The team server's address once it is a usable URL: until then the snippets stay the desktop app's own. */
+const teamServerAddress = computed(() => (teamServer.value ? normalizeServerUrl(teamServerUrl.value) : null));
+
 const choices = computed(() => {
   if (isDesktop) {
-    const url = teamServerUrl.value.trim().replace(/\/+$/, '') || TEAM_SERVER_PLACEHOLDER;
     return {
       projectName: projectName.value,
-      serverUrl: teamServer.value ? url : null,
-      preferDesktopApp: teamServer.value,
-      needsApiKey: teamServer.value,
+      serverUrl: teamServerAddress.value,
+      preferDesktopApp: !!teamServerAddress.value,
+      needsApiKey: !!teamServerAddress.value,
     };
   }
   return {
@@ -73,7 +81,7 @@ const reporterEntryOpen = ref(false);
 /** Where the first run lands, said once under the run command. */
 const runNote = computed(() => {
   if (isDesktop) {
-    return teamServer.value
+    return teamServerAddress.value
       ? 'It appears here while this app runs. On CI, with PIWI_API_KEY set from a secret, it goes to the team server.'
       : 'It appears here while this app runs: the reporter finds the app on its own.';
   }
@@ -163,14 +171,18 @@ const showCapabilities = computed(() => canSeeAdmin.value && props.showCapabilit
             Local runs come to this app while it runs; CI runs, and runs with this app closed, go to your team's Piwi
             server.
           </p>
-          <UInput
-            v-if="teamServer"
-            v-model="teamServerUrl"
-            class="w-full"
-            type="url"
-            :placeholder="TEAM_SERVER_PLACEHOLDER"
-            aria-label="Team server URL"
-          />
+          <template v-if="teamServer">
+            <UInput
+              v-model="teamServerUrl"
+              class="w-full"
+              type="url"
+              :placeholder="TEAM_SERVER_PLACEHOLDER"
+              aria-label="Team server URL"
+            />
+            <p v-if="!teamServerAddress" class="text-xs text-muted">
+              The snippets below add it once it reads as an http or https address.
+            </p>
+          </template>
         </div>
 
         <SetupApiKey v-if="!isDesktop && authEnabled" :project-name="project" class="md:col-span-2" />

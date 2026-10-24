@@ -19,7 +19,7 @@ defineProps<{
       <span v-if="!last" class="w-px flex-1 mt-2 bg-accented" aria-hidden="true" />
     </div>
     <div class="flex-1 min-w-0 space-y-2 pt-0.5">
-      <h4 class="text-sm font-semibold text-highlighted">{{ title }}</h4>
+      <h3 class="text-sm font-semibold text-highlighted">{{ title }}</h3>
       <slot />
     </div>
   </li>
