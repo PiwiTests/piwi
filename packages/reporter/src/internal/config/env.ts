@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import type { PiwiDashboardOptions } from '../../public/options.js';
 import { defaultDesktopConfigPath, readDesktopConfig } from './desktop.js';
 import { readDotEnv } from './dotenv.js';
+import { detectCi } from '../support/ci.js';
 
 /**
  * Built-in option defaults, merged *under* any user-provided or env-derived
@@ -49,6 +50,7 @@ const DEFAULTS: PiwiDashboardOptions = {
  */
 export const PIWI_ENV_KEYS = {
   serverUrl: 'PIWI_DASHBOARD_URL',
+  desktopApp: 'PIWI_DESKTOP_APP',
   projectName: 'PIWI_PROJECT_NAME',
   verbose: 'PIWI_VERBOSE',
   apiKey: 'PIWI_API_KEY',
@@ -290,7 +292,23 @@ export interface DotEnvUse {
   keys: string[];
 }
 
+type DesktopAppMode = NonNullable<PiwiDashboardOptions['desktopApp']>;
+
+const DESKTOP_APP_MODES: ReadonlyArray<DesktopAppMode> = ['prefer', 'fallback', 'off'];
+
+/**
+ * The `desktopApp` mode in force: `PIWI_DESKTOP_APP` over the option, and
+ * `'fallback'` when neither names a known mode.
+ */
+function desktopAppMode(option: unknown, envValue: string | undefined): DesktopAppMode {
+  const fromEnv = envValue?.trim().toLowerCase();
+  if (DESKTOP_APP_MODES.includes(fromEnv as DesktopAppMode)) return fromEnv as DesktopAppMode;
+  if (DESKTOP_APP_MODES.includes(option as DesktopAppMode)) return option as DesktopAppMode;
+  return 'fallback';
+}
+
 let desktopDiscovered = false;
+let desktopReplacedServerUrl: string | null = null;
 let dotEnvUse: DotEnvUse | null = null;
 
 /**
@@ -300,6 +318,14 @@ let dotEnvUse: DotEnvUse | null = null;
  */
 export function usedDesktopDiscovery(): boolean {
   return desktopDiscovered;
+}
+
+/**
+ * The configured server the last `resolveOptions` call set aside for the
+ * desktop app under `desktopApp: 'prefer'`, or `null` when it replaced none.
+ */
+export function desktopReplacedServer(): string | null {
+  return desktopReplacedServerUrl;
 }
 
 /**
@@ -313,8 +339,8 @@ export function usedDotEnv(): DotEnvUse | null {
 /**
  * Merge raw user options with defaults, reading from `PIWI_*` env vars when
  * options are not provided, then from the `.env` file in `configDir` for the
- * connection, and falling back to the running desktop app when nothing points
- * at a server at all.
+ * connection, and turning to the running desktop app as `desktopApp` says:
+ * by default only when nothing points at a server at all.
  *
  * Env semantics: env vars fill in values the caller didn't provide (fallback).
  * They're applied to `raw` *before* the `DEFAULTS` merge so a built-in default
@@ -325,7 +351,8 @@ export function usedDotEnv(): DotEnvUse | null {
  * setup both pass it, so the two processes read the same file and resolve the
  * same connection; without it, no `.env` file is read.
  *
- * `PIWI_VERBOSE` wins over both the default *and* an explicit user option.
+ * `PIWI_VERBOSE` and `PIWI_DESKTOP_APP` win over both the default *and* an
+ * explicit user option.
  */
 export function resolveOptions(raw: Record<string, any>, configDir?: string): PiwiDashboardOptions {
   const env = process.env;
@@ -359,19 +386,28 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
     if (keys.length > 0) dotEnvUse = { file, keys };
   }
 
-  // Last resort, below every option, env var and `.env` value: adopt the
-  // desktop app running on this machine. URL and token move together and only
-  // when *neither* is configured anywhere else, so an explicit config or a CI
-  // secret is never redirected at the local app, and a hosted `serverUrl` can
-  // never be paired with the desktop's local token.
+  // Below everything else: the desktop app running on this machine. URL and
+  // token always move together, so a hosted `serverUrl` is never paired with
+  // the desktop's local token, nor the desktop with a hosted credential.
+  // `'fallback'` adopts it only when *neither* is configured anywhere else, so
+  // an explicit config, a `.env` value or a CI secret is never redirected;
+  // `'prefer'` also sets a configured server aside for it outside CI.
   desktopDiscovered = false;
+  desktopReplacedServerUrl = null;
+  const mode = desktopAppMode(mergedRaw.desktopApp, env[PIWI_ENV_KEYS.desktopApp]);
+  mergedRaw.desktopApp = mode;
   const serverUrlUnset = mergedRaw.serverUrl === undefined;
   const apiKeyUnset = mergedRaw.apiKey === undefined || mergedRaw.apiKey === null;
-  if (serverUrlUnset && apiKeyUnset) {
+  const nothingConfigured = serverUrlUnset && apiKeyUnset;
+  const preferLocally = mode === 'prefer' && !detectCi(env);
+  if (mode !== 'off' && (nothingConfigured || preferLocally)) {
     const desktop = readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath());
     if (desktop) {
+      if (!serverUrlUnset && mergedRaw.serverUrl !== desktop.url) desktopReplacedServerUrl = mergedRaw.serverUrl;
       mergedRaw.serverUrl = desktop.url;
       mergedRaw.apiKey = desktop.token;
+      mergedRaw.username = null;
+      mergedRaw.password = null;
       desktopDiscovered = true;
     }
   }
@@ -415,6 +451,9 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
 export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   const env = process.env;
   if (options.serverUrl !== undefined) env[PIWI_ENV_KEYS.serverUrl] = options.serverUrl;
+  // `PIWI_DESKTOP_APP` overrides the option, so one already set is kept.
+  if (options.desktopApp !== undefined && !env[PIWI_ENV_KEYS.desktopApp])
+    env[PIWI_ENV_KEYS.desktopApp] = options.desktopApp;
   if (options.projectName !== undefined) env[PIWI_ENV_KEYS.projectName] = options.projectName!;
   if (options.verbose !== undefined) env[PIWI_ENV_KEYS.verbose] = String(options.verbose);
   if (options.apiKey) env[PIWI_ENV_KEYS.apiKey] = options.apiKey;

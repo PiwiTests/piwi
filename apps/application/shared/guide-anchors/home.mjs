@@ -82,7 +82,7 @@ export const HOME_ANCHORS = [
     kind: 'block',
     pages: ['/setup', '/'],
     describes:
-      'The Get started wizard: the one-command init, then the steps that install the reporter, wire the Playwright config and send a first run.',
+      'The reporter setup wizard: one command, a coding-agent prompt or the steps by hand, each wiring wrapConfig and the capture fixtures.',
     shownWhen: 'On Setup, and on Home while the instance has no project.',
     help: 'home.get-started',
     doc: 'guide/reporter',

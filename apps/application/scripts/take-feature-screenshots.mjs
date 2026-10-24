@@ -1438,6 +1438,34 @@ function markersPanelScene(width, suffix) {
   };
 }
 
+/** The connect wizard on Setup: each of its three paths, then local runs sent to the desktop app. */
+function setupConnectScene(width, suffix) {
+  return {
+    name: `setup-connect${suffix}`,
+    description: `Connect wizard on Setup: one command, a coding agent, by hand, and the desktop-app switch, at ${width} px`,
+    tags: ['desktop'],
+    route: '/setup',
+    viewport: { width, height: 2400 },
+    async run({ page, settle, shoot }) {
+      const wizard = '[data-shot="get-started-wizard"]';
+      await page.locator(wizard).waitFor({ timeout: 60_000 });
+      await page.getByRole('textbox', { name: 'Project name' }).fill('checkout');
+      await settle();
+      await shoot('command', { of: wizard, pad: 12 });
+      await page.getByRole('button', { name: 'Coding agent' }).click();
+      await settle();
+      await shoot('agent', { of: wizard, pad: 12 });
+      await page.getByRole('button', { name: 'By hand' }).click();
+      await settle();
+      await shoot('manual', { of: wizard, pad: 12 });
+      await page.getByRole('button', { name: 'One command' }).click();
+      await page.getByRole('switch', { name: 'Local runs go to the desktop app' }).click();
+      await settle();
+      await shoot('prefer-desktop', { of: wizard, pad: 12 });
+    },
+  };
+}
+
 function quarantineDismissScene(width, suffix) {
   return {
     name: `quarantine-dismiss${suffix}`,
@@ -4957,13 +4985,67 @@ const SCENES = [
     of: '[data-shot="companion-tools"]',
     pad: 12,
   },
+  setupConnectScene(1280, ''),
+  setupConnectScene(390, '-phone'),
   {
-    name: 'wizard-fast-path',
-    description: 'Get-started wizard: the one-command init fast path above the manual steps',
+    name: 'home-empty-connect',
+    description:
+      'Home on an instance with no project yet: the connect wizard waiting for the first run, then the run reporting',
+    tags: ['desktop'],
+    route: '/settings',
+    viewport: { width: 1280, height: 2000 },
+    async run({ page, settle, shoot }) {
+      let runs = [];
+      for (const api of ['projects/overview', 'failure-clusters', 'gaps/inbox', 'flake-lab/inbox']) {
+        await page.route(`**/api/${api}*`, (route) => route.fulfill({ json: { items: [] } }));
+      }
+      await page.route('**/api/test-runs/recent*', (route) => route.fulfill({ json: { items: runs } }));
+      // A client-side navigation, so the routes above answer the page's first fetch, not the server render.
+      await page.locator('a[href="/"]').first().click();
+      const wizard = '[data-shot="get-started-wizard"]';
+      await page.locator(wizard).waitFor({ timeout: 60_000 });
+      await page.getByText('Waiting for the first run').waitFor();
+      await settle();
+      await shoot('waiting', { of: wizard, pad: 12 });
+      runs = [
+        {
+          id: 1,
+          projectName: 'checkout',
+          status: 'running',
+          startTime: new Date().toISOString(),
+          passedTests: 3,
+          failedTests: 0,
+          skippedTests: 0,
+          didNotRunTests: 0,
+          flakyTests: 0,
+          totalTests: 12,
+        },
+      ];
+      await page.locator('a[href="/settings/account"], a[href="/projects"]').first().click();
+      await page.locator('a[href="/"]').first().click();
+      await page.getByText('A run of checkout is reporting now').waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('reporting', { of: '[data-shot="setup-run-status"]', pad: 16 });
+    },
+  },
+  {
+    name: 'setup-connect-desktop',
+    description:
+      'Connect wizard (desktop app): the one command with no URL, then with CI reporting to a team server and local runs kept in the app',
+    tags: ['desktop'],
+    mode: 'desktop',
     route: '/setup',
-    viewport: { width: 1280, height: 2600 },
-    of: '[data-shot="wizard-fast-path"]',
-    pad: 12,
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, settle, shoot }) {
+      const wizard = '[data-shot="get-started-wizard"]';
+      await page.locator(wizard).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('', { of: wizard, pad: 12 });
+      await page.getByRole('switch', { name: 'CI reports to a team server' }).click();
+      await page.getByRole('textbox', { name: 'Team server URL' }).fill('https://piwi.acme.dev');
+      await settle();
+      await shoot('team-server', { of: wizard, pad: 12 });
+    },
   },
   {
     name: 'mcp-tool-details',

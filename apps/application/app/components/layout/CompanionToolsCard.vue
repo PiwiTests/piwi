@@ -54,7 +54,8 @@ const isDesktop = useIsDesktop();
           <h3 class="font-medium mb-1">Desktop app</h3>
           <p class="text-sm text-gray-600 dark:text-gray-400">
             This same dashboard as a local app — no Docker or Node needed, and the reporter finds it automatically when
-            nothing else is configured. For one developer's own history on a laptop.
+            nothing else is configured. With <code>desktopApp: 'prefer'</code>, a developer's local runs land there
+            while CI keeps reporting here.
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
             <UButton :to="DESKTOP_DOWNLOAD_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">

@@ -48,7 +48,9 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 | Flag | Description |
 |---|---|
 | `--server-url <url>` | Dashboard URL to write into the config (env `PIWI_DASHBOARD_URL`, default `http://localhost:3000`) |
+| `--no-server-url` | Write no URL into the config: the reporter finds the [desktop app](/features/desktop) running on the machine, or reads `PIWI_DASHBOARD_URL` |
 | `--project <name>` | Project name to report under (default: your package/folder name) |
+| `--desktop-app <mode>` | Write [`desktopApp`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server) into the config: `prefer` sends local runs to the desktop app while it runs, and CI runs to `--server-url`; `fallback` or `off` |
 | `--api-key <key>` | API key to write into `.env` (env `PIWI_API_KEY`), where the reporter reads it. Omit to leave a `.env.example` placeholder you fill in yourself |
 | `--cwd <path>` | Project root to operate on (default: current directory) |
 | `--skills <list>` | Comma-separated skills to install, or `all` / `none` (default: the four workflow skills) |

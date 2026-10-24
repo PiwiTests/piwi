@@ -746,6 +746,50 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(res.status()).toBe(401);
   });
 
+  test('the connect wizard creates an API key in place, and the key submits a run', async ({ page }) => {
+    const login = await page.request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'admin', password: 'adminpassword123' },
+    });
+    expect(login.ok()).toBeTruthy();
+
+    await page.goto(`${AUTH_SERVER_URL}/setup`);
+    await waitForHydration(page);
+    const wizard = page.locator('[data-tour="get-started-wizard"]');
+    await wizard.getByRole('textbox', { name: 'Project name' }).fill(PROJECT.SETUP_CONNECT_KEY);
+    await wizard.getByRole('button', { name: `Create a key for ${PROJECT.SETUP_CONNECT_KEY}` }).click();
+
+    const secret = wizard.locator('[data-shot="setup-api-key"] pre');
+    await expect(secret).toContainText('PIWI_API_KEY=');
+    const apiKey = ((await secret.textContent()) ?? '').trim().replace(/^PIWI_API_KEY=/, '');
+    expect(apiKey.length).toBeGreaterThan(20);
+
+    const res = await page.request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      data: {
+        projectName: PROJECT.SETUP_CONNECT_KEY,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 100,
+        totalTests: 0,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [],
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+
+    // Revoke it, as Account would, so the admin keeps no stray key.
+    const me = (await (await page.request.get(`${AUTH_SERVER_URL}/api/auth/me`)).json()) as { user: { id: number } };
+    const keys = (await (await page.request.get(`${AUTH_SERVER_URL}/api/users/${me.user.id}/api-keys`)).json()) as {
+      items: Array<{ id: number; name: string }>;
+    };
+    const created = keys.items.find((key) => key.name === `Playwright reporter — ${PROJECT.SETUP_CONNECT_KEY}`);
+    expect(created).toBeDefined();
+    const revoke = await page.request.delete(`${AUTH_SERVER_URL}/api/users/${me.user.id}/api-keys/${created!.id}`);
+    expect(revoke.ok()).toBeTruthy();
+  });
+
   // ---------------------------------------------------------------------------
   // Share links — the one anonymous read path on an auth-enabled server.
   // ---------------------------------------------------------------------------

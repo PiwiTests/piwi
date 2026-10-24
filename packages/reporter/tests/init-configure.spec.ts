@@ -51,6 +51,18 @@ export default defineConfig({
     expect(edit.text).toContain('wrapConfig(');
   });
 
+  it('writes desktopApp when it is given', () => {
+    const edit = wrapPlaywrightConfig(CLEAN_CONFIG, {
+      serverUrl: 'https://piwi.example.com',
+      projectName: 'checkout',
+      desktopApp: 'prefer',
+    });
+    expect(edit.text).toContain(
+      "serverUrl: 'https://piwi.example.com',\n    projectName: 'checkout',\n    desktopApp: 'prefer',",
+    );
+    expect(wrapPlaywrightConfig(CLEAN_CONFIG, { projectName: 'checkout' }).text).not.toContain('desktopApp');
+  });
+
   it('omits serverUrl from the literal when it is not provided', () => {
     const edit = wrapPlaywrightConfig(CLEAN_CONFIG, { projectName: 'checkout' });
     expect(edit.status).toBe('updated');

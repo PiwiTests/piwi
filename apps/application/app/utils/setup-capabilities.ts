@@ -54,7 +54,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     id: 'reporter',
     title: 'Results arriving',
     summary: 'Your Playwright runs are reaching this dashboard and their history is being kept.',
-    how: 'Follow the four steps above to add the reporter to your Playwright config.',
+    how: 'Connect your Playwright suite with the wizard above: one command, a coding agent or a few steps by hand.',
     icon: 'i-lucide-antenna',
     doc: 'guide/reporter',
   },
@@ -63,7 +63,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Capture fixtures',
     summary:
       'Network timing, Web Vitals, console errors and ARIA snapshots, captured per test. Powers slow endpoints, performance trends and the richer AI diagnosis context.',
-    how: 'Extend your Playwright `test` with `piwiFixtures` — see "Go further" above.',
+    how: 'Extend your Playwright `test` with `piwiFixtures`: step 3 of "By hand" in the wizard above, or `init`, which creates the file.',
     icon: 'i-lucide-radio',
     doc: 'guide/capture-fixtures',
   },

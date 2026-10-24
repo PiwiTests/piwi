@@ -7,6 +7,7 @@ import type { SuiteConfigEntry } from '../../types.js';
 import { isRunOriginKind, parseRunOriginRef, RUN_ORIGIN_METADATA_KEY, type RunOrigin } from '@piwitests/core/wire';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
 import { configDirFromConfig } from '../support/test-paths.js';
+import { detectCi } from '../support/ci.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -120,23 +121,6 @@ export function resolveScmBaseBranch(env: Env): string | undefined {
 
   const trimmed = target?.trim();
   return trimmed ? normalizeRef(trimmed) : undefined;
-}
-
-/**
- * True when the environment is a CI job: one of the providers `collectCiInfo`
- * names, or any system that sets `CI`.
- */
-export function detectCi(env: Env): boolean {
-  return Boolean(
-    env.JENKINS_URL ||
-    env.GITHUB_ACTIONS ||
-    env.GITLAB_CI ||
-    env.CIRCLECI ||
-    env.TRAVIS ||
-    env.TF_BUILD ||
-    env.BITBUCKET_BUILD_NUMBER ||
-    (env.CI && env.CI !== 'false' && env.CI !== '0'),
-  );
 }
 
 /**

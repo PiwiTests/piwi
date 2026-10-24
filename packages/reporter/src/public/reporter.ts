@@ -5,6 +5,7 @@ import type { FullConfig, Suite, TestCase, TestResult, FullResult, TestStep } fr
 import {
   resolveOptions,
   usedDesktopDiscovery,
+  desktopReplacedServer,
   usedDotEnv,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
@@ -150,6 +151,8 @@ export class PiwiDashboardReporter {
   private readonly listMode: boolean;
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
+  /** The configured server `desktopApp: 'prefer'` set aside for the desktop app, if any. */
+  private readonly desktopReplaced: string | null;
   /** The config folder's `.env` file and the connection variables taken from it, if any. */
   private readonly viaDotEnv: DotEnvUse | null;
   private isFullRun = true;
@@ -201,6 +204,7 @@ export class PiwiDashboardReporter {
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
+    this.desktopReplaced = desktopReplacedServer();
     this.viaDotEnv = usedDotEnv();
     this.coverageSettings = coverageSettings(this.options);
 
@@ -261,7 +265,11 @@ export class PiwiDashboardReporter {
     // Nothing in the config pointed at a server, so results are going to the
     // desktop app found on this machine — say so rather than uploading silently.
     if (this.viaDesktopApp) {
-      this.logger.info(`Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`);
+      this.logger.info(
+        this.desktopReplaced
+          ? `Using the desktop app running at ${this.options.serverUrl} instead of ${this.desktopReplaced} (desktopApp: 'prefer', not on CI).`
+          : `Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`,
+      );
     }
     if (this.viaDotEnv) this.logger.debug(`Read ${this.viaDotEnv.keys.join(', ')} from ${this.viaDotEnv.file}.`);
     this.startTime = new Date().toISOString();

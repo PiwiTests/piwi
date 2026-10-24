@@ -230,6 +230,10 @@ other `curl` examples may stay bash-only. `.env` file contents are not shell com
   one that builds part of it updates its Status paragraph. When a proposal counts as shipped, and the steps of the
   move: [`adr/AGENTS.md`](adr/AGENTS.md#when-a-proposal-has-shipped).
 - User-facing docs live in `apps/docs/` (VitePress → GitHub Pages); `README.md` is the landing page.
+- **Setup snippets lead with `wrapConfig` and the capture fixtures**, in the docs and in the app: that is what
+  `npx @piwitests/reporter init` writes, and what the connect wizard (`GetStartedWizard`) shows. The bare reporter
+  entry appears only as the fallback for a config that cannot be wrapped, saying what it gives up. The wizard's
+  snippets come from `app/utils/setup-snippets.ts`, which `tests/unit/setup-snippets.test.ts` holds to `init`'s output.
 - **Repository links point at `https://github.com/PiwiTests/piwi`**: docs, package metadata (`repository`,
   `RepositoryUrl`), app links, the desktop updater endpoints. Two names stay as they are: the container image
   `ghcr.io/piwitests/platform`, which users pull by name, and the links release-please already wrote into

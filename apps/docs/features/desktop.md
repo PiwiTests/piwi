@@ -47,11 +47,12 @@ tray tooltip.
 
 ## Sending results to it
 
-While the app runs, the reporter finds it by itself: a config with only a `projectName` reports here. The app writes
-its address and a local access token to `~/.piwi/desktop.json`, and the reporter reads that file only when neither
-the config, its `.env` nor the environment sets a server URL or an API key, so a project pointed at a shared
-dashboard, or a CI job, is never redirected. [Finding the desktop app automatically](/guide/reporter#finding-the-desktop-app-automatically)
-has the details.
+While the app runs, the reporter finds it by itself: a config with only a `projectName` reports here. It reads the
+address and token the app writes to `~/.piwi/desktop.json` only when nothing else sets a server, so a CI job is never
+redirected ([details](/guide/reporter#finding-the-desktop-app-automatically)). A suite that reports to a shared dashboard sends
+its local runs here with
+[`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the snippets on
+**Setup** carry once you turn on **CI reports to a team server**.
 
 When the tests run as another user or in a container, **Setup → Send results to this app** gives the
 address (port 3000 unless it is taken) and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not in

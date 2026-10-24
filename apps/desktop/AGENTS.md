@@ -41,7 +41,7 @@ installers ship side by side: the `.msi` installs per machine (admin); the NSIS 
   conversation's endpoint only, only while the answer runs, and only for a loopback host, origin and peer; the CLI is
   never given the desktop token. Anything else the CLI or a turn needs goes through that endpoint, never a new open
   route.
-- **The reporter discovery file is a cross-package contract.** The shell publishes `{ url, token, projects }` to
+- **The reporter discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit; `@piwitests/reporter` reads it from `src/internal/config/desktop.ts`,
   `src-tauri/src/mcp_stdio.rs` resolves the app's address from it on every message, the editor service

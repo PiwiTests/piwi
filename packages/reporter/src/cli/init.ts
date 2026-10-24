@@ -22,10 +22,15 @@ import { runPackageManager } from '../internal/support/playwright-spawn.js';
 
 const DEFAULT_SERVER_URL = 'http://localhost:3000';
 
+const DESKTOP_APP_MODES = ['prefer', 'fallback', 'off'] as const;
+type DesktopAppMode = (typeof DESKTOP_APP_MODES)[number];
+
 interface InitOptions {
   root: string;
   serverUrl: string;
   projectName: string;
+  /** `--desktop-app`, as given: validated by `runInit`. */
+  desktopApp: string | null;
   apiKey: string | null;
   skillsDir: string;
   skillSlugs: ReadonlyArray<string>;
@@ -55,7 +60,11 @@ What it does (each step is idempotent and safe to re-run):
 Options:
   --server-url <url>   Dashboard URL to write into the config (env PIWI_DASHBOARD_URL,
                        default ${DEFAULT_SERVER_URL})
+  --no-server-url      Write no URL into the config: the reporter finds the Piwi desktop
+                       app running on this machine, or reads PIWI_DASHBOARD_URL
   --project <name>     Project name to report under (default: your package/folder name)
+  --desktop-app <mode> Write desktopApp into the config: "prefer" sends local runs to the
+                       Piwi desktop app while it runs, and CI runs to --server-url
   --api-key <key>      API key to write into .env (env PIWI_API_KEY), where the reporter
                        reads it. Omit to keep it a .env.example placeholder you fill in
                        yourself.
@@ -100,9 +109,13 @@ export function parseInitArgs(argv: string[], env: NodeJS.ProcessEnv, cwd: strin
   const detected = detectProject(root);
   return {
     root,
-    serverUrl: (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? DEFAULT_SERVER_URL).replace(/\/$/, ''),
+    serverUrl: argv.includes('--no-server-url')
+      ? ''
+      : (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? DEFAULT_SERVER_URL).replace(/\/$/, ''),
     projectName: readOption(argv, '--project') ?? detected.suggestedProjectName,
-    apiKey: readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null,
+    desktopApp: argv.includes('--desktop-app') ? (readOption(argv, '--desktop-app') ?? '') : null,
+    // The desktop app needs no key, and a key with no URL keeps the reporter from finding it.
+    apiKey: argv.includes('--no-server-url') ? null : (readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null),
     skillsDir: readOption(argv, '--skills-dir') ?? DEFAULT_SKILLS_DIR,
     skillSlugs: resolveSkillSlugs(readOption(argv, '--skills')),
     install: !argv.includes('--no-install'),
@@ -169,11 +182,26 @@ function stepConfig(project: ProjectShape, opts: InitOptions): StepResult {
     };
 
   const rel = path.relative(project.root, project.configPath) || path.basename(project.configPath);
-  const edit = wrapPlaywrightConfig(readFileOr(project.configPath, ''), {
+  const source = readFileOr(project.configPath, '');
+  const desktopApp = (opts.desktopApp as DesktopAppMode | null) ?? undefined;
+  const edit = wrapPlaywrightConfig(source, {
     serverUrl: opts.serverUrl,
     projectName: opts.projectName,
+    desktopApp,
   });
   if (edit.status === 'updated' && !opts.dryRun) fs.writeFileSync(project.configPath, edit.text);
+  if (
+    edit.status === 'already' &&
+    desktopApp &&
+    !new RegExp(`\\bdesktopApp\\s*:\\s*['"\`]${desktopApp}['"\`]`).test(source)
+  ) {
+    return {
+      step,
+      file: rel,
+      status: 'manual',
+      detail: `The Piwi reporter is already wired in — add \`desktopApp: '${desktopApp}'\` to its options`,
+    };
+  }
   return { step, file: rel, status: edit.status, detail: edit.detail };
 }
 
@@ -228,10 +256,9 @@ function stepEnv(project: ProjectShape, opts: InitOptions): StepResult[] {
   // placeholder in .env.example is the thing to fill in.
   if (opts.apiKey) {
     const envPath = path.join(project.root, '.env');
-    const env = upsertEnvKeys(readFileOr(envPath, ''), [
-      ['PIWI_DASHBOARD_URL', opts.serverUrl],
-      ['PIWI_API_KEY', opts.apiKey],
-    ]);
+    const entries: Array<[string, string]> = [['PIWI_API_KEY', opts.apiKey]];
+    if (opts.serverUrl) entries.unshift(['PIWI_DASHBOARD_URL', opts.serverUrl]);
+    const env = upsertEnvKeys(readFileOr(envPath, ''), entries);
     if (env.added.length && !opts.dryRun) fs.writeFileSync(envPath, env.text);
     results.push({
       step: 'env',
@@ -257,7 +284,7 @@ function stepEnv(project: ProjectShape, opts: InitOptions): StepResult[] {
 /** Guidance the user acts on after the mechanical steps, tailored to what happened. */
 function nextSteps(opts: InitOptions, steps: StepResult[]): string[] {
   const out: string[] = [];
-  if (!opts.apiKey) {
+  if (!opts.apiKey && opts.serverUrl) {
     out.push(
       'If your dashboard has authentication on, create an API key (Settings → Account → API keys) and ' +
         'put it in .env as PIWI_API_KEY: the reporter reads it from the .env next to your Playwright config. ' +
@@ -268,7 +295,19 @@ function nextSteps(opts: InitOptions, steps: StepResult[]): string[] {
     out.push('Finish the steps marked [manual] above — each one carries the exact change to make.');
   }
   out.push('In your specs, import `test` (and `expect`) from your fixtures file instead of `@playwright/test`.');
-  out.push(`Run \`npx playwright test\` — the run should appear at ${opts.serverUrl}.`);
+  if (!opts.serverUrl) {
+    out.push(
+      'Run `npx playwright test` — the run appears in the Piwi desktop app while it is running. ' +
+        'Elsewhere, set PIWI_DASHBOARD_URL to the dashboard the runs go to.',
+    );
+  } else if (opts.desktopApp === 'prefer') {
+    out.push(
+      `Run \`npx playwright test\` — the run appears in the Piwi desktop app while it is running, ` +
+        `and at ${opts.serverUrl} on CI or with the app closed.`,
+    );
+  } else {
+    out.push(`Run \`npx playwright test\` — the run should appear at ${opts.serverUrl}.`);
+  }
   out.push(
     'For a machine-readable check, set PIWI_OUTPUT_FILE=piwi-run.json and read runUrl from that file after the run.',
   );
@@ -287,6 +326,10 @@ export async function runInit(
   }
 
   const opts = parseInitArgs(argv, env, cwd);
+  if (opts.desktopApp !== null && !DESKTOP_APP_MODES.includes(opts.desktopApp as DesktopAppMode)) {
+    console.error(`--desktop-app must be one of ${DESKTOP_APP_MODES.join(', ')} (got "${opts.desktopApp}")`);
+    return 1;
+  }
   const project = detectProject(opts.root);
   const steps: StepResult[] = [];
 
@@ -323,6 +366,7 @@ export async function runInit(
             configPath: project.configPath ? path.relative(project.root, project.configPath) : null,
             projectName: opts.projectName,
             serverUrl: opts.serverUrl,
+            desktopApp: opts.desktopApp,
           },
           steps,
           nextSteps: guidance,
