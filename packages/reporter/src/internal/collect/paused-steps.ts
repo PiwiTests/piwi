@@ -1,18 +1,17 @@
-import * as path from 'node:path';
 import type { PauseRecord } from '../capture/pause-at.js';
 
 /**
  * The time a test spent stopped at Piwi's pause bar, out of its steps. A stop
  * holds a Playwright call before it runs, so the call's step and every step
- * around it last as long as the person looked at the page; the test runner
- * already leaves that time out of the test's duration. Taking it out of the
- * steps too keeps the durations, the slowest step and the timeline's hook
- * sections to the test's own time.
+ * around it last as long as the person looked at the page, and every step
+ * after it starts that much later; the test runner already leaves that time
+ * out of the test's duration. Taking it out of the steps too keeps the
+ * durations, the slowest step and the timeline's hook sections to the test's
+ * own time.
  */
 
 /** A Playwright step as the reporter reads it. */
 interface StepLike {
-  location?: { file: string; line: number };
   startTime?: Date | number;
   duration: number;
   steps?: StepLike[];
@@ -42,58 +41,54 @@ function startOf(step: StepLike): number | null {
   return typeof step.startTime === 'number' ? step.startTime : null;
 }
 
-/**
- * The steps from the outermost to the step of the call `pause` held: the deepest step at the stop's file and line
- * that was running for the whole stop. Empty when none was.
- */
-function pausedChain(steps: StepLike[], pause: PauseRecord, file: string, line: number): StepLike[] {
-  let found: StepLike[] = [];
-  const visit = (list: StepLike[], above: StepLike[]) => {
-    for (const step of list) {
-      const chain = [...above, step];
-      const start = startOf(step);
-      if (
-        step.location?.file === file &&
-        step.location.line === line &&
-        start !== null &&
-        start <= pause.startedAt &&
-        start + step.duration >= pause.startedAt + pause.duration &&
-        chain.length > found.length
-      ) {
-        found = chain;
-      }
-      if (step.steps?.length) visit(step.steps, chain);
-    }
-  };
-  visit(steps, []);
-  return found;
+/** The spans the test stood stopped, `[start, end]` in epoch ms, in order, overlapping stops joined. */
+function stoppedSpans(pauses: readonly PauseRecord[]): Array<[number, number]> {
+  const spans: Array<[number, number]> = pauses
+    .filter((p) => p.duration > 0)
+    .map((p) => [p.startedAt, p.startedAt + p.duration] as [number, number])
+    .sort((a, b) => a[0] - b[0]);
+  const joined: Array<[number, number]> = [];
+  for (const [start, end] of spans) {
+    const last = joined[joined.length - 1];
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else joined.push([start, end]);
+  }
+  return joined;
+}
+
+/** How long the test stood stopped before `at`, in ms. */
+function stoppedBefore(spans: ReadonlyArray<[number, number]>, at: number): number {
+  let ms = 0;
+  for (const [start, end] of spans) ms += Math.max(0, Math.min(at, end) - start);
+  return ms;
 }
 
 /**
- * `steps` with the time each stop held a call taken out of the call's step and every step around it. A stop no step
- * matches is left out; the steps no stop touched are returned as they are, and `steps` itself is never changed.
- * Call sites are relative to `cwd`, the working directory the test worker shares with the reporter.
+ * `steps` on the test's own clock: each step loses the time the test stood stopped while it ran, and starts earlier
+ * by the time it stood stopped before it began, so a step that ran across a stop (the held call's, the steps around
+ * it, a wait started before it) lasts its own time and the steps after a stop fit the test's duration. The steps no
+ * stop moved are returned as they are, and `steps` itself is never changed.
  */
-export function withoutPausedTime<T extends StepLike>(
-  steps: T[],
-  pauses: readonly PauseRecord[],
-  cwd: string = process.cwd(),
-): T[] {
-  const taken = new Map<StepLike, number>();
-  for (const pause of pauses) {
-    const m = /^(.+):(\d+):\d+$/.exec(pause.location);
-    if (!m) continue;
-    for (const step of pausedChain(steps, pause, path.resolve(cwd, m[1]!), Number(m[2]))) {
-      taken.set(step, (taken.get(step) ?? 0) + pause.duration);
+export function withoutPausedTime<T extends StepLike>(steps: T[], pauses: readonly PauseRecord[]): T[] {
+  const spans = stoppedSpans(pauses);
+  if (spans.length === 0) return steps;
+  const move = <S extends StepLike>(step: S): S => {
+    const children = step.steps?.length ? copy(step.steps) : step.steps;
+    const start = startOf(step);
+    const before = start === null ? 0 : stoppedBefore(spans, start);
+    // An unfinished step (duration -1) keeps its duration.
+    const during = start === null ? 0 : stoppedBefore(spans, start + Math.max(0, step.duration)) - before;
+    if (before === 0 && during === 0 && children === step.steps) return step;
+    const moved: S = { ...step, steps: children };
+    if (during > 0) moved.duration = Math.max(0, step.duration - during);
+    if (start !== null && before > 0) {
+      moved.startTime = step.startTime instanceof Date ? new Date(start - before) : start - before;
     }
-  }
-  if (taken.size === 0) return steps;
-  const copy = <S extends StepLike>(list: S[]): S[] =>
-    list.map((step) => {
-      const ms = taken.get(step);
-      if (ms === undefined) return step;
-      const children = step.steps?.length ? copy(step.steps) : step.steps;
-      return { ...step, duration: Math.max(0, step.duration - ms), steps: children };
-    });
+    return moved;
+  };
+  const copy = <S extends StepLike>(list: S[]): S[] => {
+    const moved = list.map(move);
+    return moved.some((step, i) => step !== list[i]) ? moved : list;
+  };
   return copy(steps);
 }

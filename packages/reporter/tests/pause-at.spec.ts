@@ -12,12 +12,14 @@ import {
   goOn,
   parsePauseAt,
   pauseHere,
+  pauseGateFromTestInfo,
   pausePlace,
   pauseSkipReason,
   pickPayload,
   postPickToEditor,
   resetPauseLogs,
   stopCallSite,
+  watchStops,
   withTestTimeoutHeld,
   type PausePoint,
   type PauseRecord,
@@ -29,6 +31,8 @@ import type { LocatorSnapshot } from '../src/internal/capture/locator-healing.js
 import { jsonRes, startServer } from './_helpers.js';
 
 const PROBE = { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG };
+/** The capture fixtures' own folder: a frame there is this package's, never the test's. */
+const CAPTURE_DIR = path.join(__dirname, '..', 'src', 'internal', 'capture');
 
 describe('parsePauseAt', () => {
   const cwd = path.resolve('/work/shop');
@@ -108,6 +112,20 @@ describe('the pause gate', () => {
     for (const pwdebug of ['', '0', 'false', 'console']) {
       expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug })).toBeNull();
     }
+  });
+
+  it('never pauses under --debug, --debug=cli included, which sets no PWDEBUG', () => {
+    expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'cli' })).toBe(
+      "Playwright's debugger runs the test (--debug=cli) — run without --debug",
+    );
+    expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'inspector' })).toMatch(/--debug=inspector/);
+    expect(pauseSkipReason({ ci: undefined, headless: false, debug: undefined })).toBeNull();
+    const testInfo = {
+      project: { use: { headless: false } },
+      _configInternal: { configCLIOverrides: { debug: 'cli' } },
+    };
+    expect(pauseGateFromTestInfo(testInfo as never).debug).toBe('cli');
+    expect(pauseGateFromTestInfo({ project: { use: {} } } as never).debug).toBeUndefined();
   });
 });
 
@@ -252,16 +270,22 @@ describe('postPickToEditor', () => {
  */
 function fakePausePage(
   answers: Array<string | null>,
-  opts: { breakAt?: number; navigateAt?: number; pick?: Record<string, unknown> } = {},
+  opts: { breakAt?: number; navigateAt?: number; pick?: Record<string, unknown>; holdBar?: boolean } = {},
 ) {
   const shown: unknown[] = [];
   let takes = 0;
   let navigated = false;
+  // With `holdBar`, the bar stays up unanswered until it is taken down.
+  let takeDown: (() => void) | null = null;
   const g = globalThis as Record<string, unknown>;
   const page = {
     evaluate: vi.fn(async (fn: unknown, arg?: unknown) => {
       if (fn === showPauseBar) shown.push(arg);
       else if (fn === takePauseState) {
+        if (opts.holdBar) {
+          takeDown?.();
+          return null;
+        }
         if (opts.breakAt !== undefined && takes === opts.breakAt) throw new Error('Target page has been closed');
         if (opts.navigateAt === takes && !navigated) {
           navigated = true;
@@ -274,7 +298,9 @@ function fakePausePage(
       return null;
     }),
     evaluateHandle: vi.fn(async () => ({ evaluate: async () => opts.pick, dispose: async () => {} })),
-    waitForFunction: vi.fn(async (_predicate: unknown) => {}),
+    waitForFunction: vi.fn((_predicate: unknown) =>
+      opts.holdBar ? new Promise<void>((resolve) => (takeDown = resolve)) : Promise.resolve(),
+    ),
     waitForLoadState: vi.fn(async () => {}),
     isClosed: () => opts.breakAt !== undefined && takes >= opts.breakAt,
   };
@@ -403,16 +429,16 @@ function fakeDebuggerContext() {
       goOnFromStop();
     },
   };
-  /** A call the debugger can stop before it runs. */
-  const call = async (title: string, pauseCall = false) => {
+  /** A call the debugger can stop before it runs, at `place` or where the test body made it. */
+  const call = async (title: string, pauseCall = false, place?: ReturnType<typeof callerPlace>) => {
     if (!armed && !(pauseCall && enabled)) return;
     armed = false;
-    paused = { location: callerPlace(), title };
+    paused = { location: place ?? callerPlace(), title };
     const done = new Promise<void>((resolve) => (release = resolve));
     for (const listener of listeners) listener();
     await done;
   };
-  return { debuggerApi, call, steered };
+  return { debuggerApi, call, steered, paused: () => paused !== null };
 }
 
 describe('breakpoints in the capture fixtures', () => {
@@ -442,13 +468,14 @@ describe('breakpoints in the capture fixtures', () => {
     body: (page: Record<string, (...a: unknown[]) => any>) => Promise<void>,
     headless: unknown = false,
     pick?: Record<string, unknown>,
+    more: { holdBar?: boolean; clickPlacedAt?: ReturnType<typeof callerPlace> } = {},
   ) {
-    const { page: pausePage, shown } = fakePausePage(answers, { pick });
+    const { page: pausePage, shown } = fakePausePage(answers, { pick, holdBar: more.holdBar });
     const stops = fakeDebuggerContext();
     const calls: string[] = [];
     const fakeLocator = {
       click: vi.fn(async () => {
-        await stops.call("Click getByText('Pay')");
+        await stops.call("Click getByText('Pay')", false, more.clickPlacedAt);
         calls.push('click');
       }),
       highlight: vi.fn(async () => {}),
@@ -498,6 +525,8 @@ describe('breakpoints in the capture fixtures', () => {
     };
     fakePage.context = () => fakeContext;
     const attached: Record<string, unknown[]> = {};
+    /** The calls made by the time each attachment was attached. */
+    const callsAtAttach: Record<string, string[]> = {};
     const testInfo = {
       status: 'passed',
       retry: 0,
@@ -505,6 +534,7 @@ describe('breakpoints in the capture fixtures', () => {
       project: { use: { headless } },
       attach: vi.fn(async (name: string, b: { body: Buffer }) => {
         attached[name] = JSON.parse(String(b.body)) as unknown[];
+        callsAtAttach[name] = [...calls];
       }),
       annotations: [],
     };
@@ -522,6 +552,10 @@ describe('breakpoints in the capture fixtures', () => {
       calls,
       steered: stops.steered,
       call: stops.call,
+      debuggerApi: stops.debuggerApi,
+      paused: stops.paused,
+      evaluated: pausePage.evaluate.mock.calls.map((c) => c[0]),
+      callsAtAttach,
       locators: (attached[ATTACHMENT_NAMES.locators] ?? []) as LocatorSnapshot[],
       pauses: (attached[ATTACHMENT_NAMES.pauses] ?? []) as PauseRecord[],
     };
@@ -714,5 +748,132 @@ describe('breakpoints in the capture fixtures', () => {
     ).toEqual([
       '[piwi] PIWI_PAUSE_AT is set but breakpoints are skipped: the browser is headless — re-run with --headed (or set use: { headless: false })',
     ]);
+  });
+
+  it('leaves a page.pause() it does not take over to Playwright and its Inspector, never resuming it', async () => {
+    const start = thisLine();
+    let kept: Record<string, (...a: unknown[]) => any> | null = null;
+    const run = await runWithBreakpoints(`${here}:${start + 4}`, ['resume'], async (page) => {
+      kept = page;
+      await page.goto!('/cart');
+    });
+    expect(run.steered).toEqual(['pause', 'next']);
+    // After the test, as in an `afterAll`, with the context still armed.
+    const pausing = kept!.pause!() as Promise<void>;
+    await vi.waitFor(() => expect(run.paused()).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(run.calls).toEqual(['goto', 'pause null']);
+    expect(run.steered).toEqual(['pause', 'next']);
+    // The person resumes it from the Inspector.
+    await run.debuggerApi.resume();
+    await pausing;
+  });
+
+  it('finds the test’s line of a locator call Playwright places in this package’s own files', async () => {
+    const start = thisLine();
+    const run = await runWithBreakpoints(
+      `${here}:${start + 6}`,
+      ['resume'],
+      async (page) => {
+        await page.goto!('/cart');
+        await page.getByText!('Pay').click();
+      },
+      false,
+      undefined,
+      // Where Playwright places a call the proxy makes when this package's frames are not boxed.
+      { clickPlacedAt: { file: path.join(CAPTURE_DIR, 'quiet-capture.ts'), line: 108, column: 3 } },
+    );
+    expect(run.shown.map(place)).toEqual([`pause-at.spec.ts:${start + 6}`]);
+    expect(run.pauses).toEqual([
+      expect.objectContaining({ location: expect.stringMatching(`^${here}:${start + 6}:`), reason: 'breakpoint' }),
+    ]);
+  });
+
+  it('takes the bar down when the test ends under it, and keeps the stop', async () => {
+    const start = thisLine();
+    let click: Promise<unknown> | null = null;
+    const run = await runWithBreakpoints(
+      `${here}:${start + 8}`,
+      [],
+      async (page) => {
+        // As when a wait started before the stop runs out: the test ends with the click still stopped.
+        const evaluate = page.evaluate as unknown as { mock: { calls: unknown[][] } };
+        click = page.getByText!('Pay').click();
+        await vi.waitFor(() => expect(evaluate.mock.calls.map((c) => c[0])).toContain(showPauseBar));
+      },
+      false,
+      undefined,
+      { holdBar: true },
+    );
+    expect(run.shown).toHaveLength(1);
+    expect(run.evaluated.filter((fn) => fn === showPauseBar || fn === takePauseState)).toEqual([
+      showPauseBar,
+      takePauseState,
+    ]);
+    expect(run.pauses).toEqual([
+      expect.objectContaining({ location: expect.stringMatching(`^${here}:${start + 8}:`), reason: 'breakpoint' }),
+    ]);
+    // The click was held through teardown, and goes on with nothing to stop it.
+    expect(run.callsAtAttach[ATTACHMENT_NAMES.pauses]).toEqual([]);
+    await click;
+    expect(run.calls).toEqual(['click']);
+    expect(run.steered).toEqual(['pause', 'resume']);
+  });
+});
+
+describe('the Inspector switch', () => {
+  const env = { ...process.env };
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  /** A context of a connection whose client instrumentation is `instrumentation`. */
+  function watchedContext(instrumentation: object) {
+    const dbg = {
+      on: () => {},
+      pausedDetails: () => null,
+      requestPause: async () => {},
+      next: async () => {},
+      resume: async () => {},
+    };
+    return { debugger: dbg, _instrumentation: instrumentation };
+  }
+
+  it('keeps Playwright’s Inspector closed at the stops Piwi answers, and open while its own page.pause() runs', () => {
+    delete process.env.PW_CODEGEN_NO_INSPECTOR;
+    const listeners: Array<Record<string, (...a: unknown[]) => void>> = [];
+    const instrumentation = { addListener: (l: Record<string, (...a: unknown[]) => void>) => listeners.push(l) };
+    expect(watchStops(watchedContext(instrumentation) as never, () => {})).toBe(true);
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+    const [listener] = listeners;
+    // Piwi's own page.pause() passes the test hook: the Inspector stays closed.
+    listener!.onWillPause!({ keepTestTimeout: true });
+    listener!.onApiCallBegin!({}, { type: 'BrowserContext', method: 'pause' });
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+    // Playwright's own: open from the call until it ends.
+    listener!.onWillPause!({ keepTestTimeout: false });
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
+    const pause = {};
+    listener!.onApiCallBegin!(pause, { type: 'BrowserContext', method: 'pause' });
+    listener!.onApiCallBegin!({}, { type: 'Frame', method: 'click' });
+    listener!.onApiCallEnd!({});
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
+    listener!.onApiCallEnd!(pause);
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+    // Another context of the same connection: one listener.
+    watchStops(watchedContext(instrumentation) as never, () => {});
+    expect(listeners).toHaveLength(1);
+  });
+
+  it('leaves a switch set outside Piwi as it is, and never sets one without the instrumentation', () => {
+    process.env.PW_CODEGEN_NO_INSPECTOR = 'yes';
+    const listeners: Array<Record<string, (...a: unknown[]) => void>> = [];
+    watchStops(watchedContext({ addListener: (l: never) => listeners.push(l) }) as never, () => {});
+    listeners[0]!.onWillPause!({ keepTestTimeout: false });
+    listeners[0]!.onApiCallBegin!({}, { type: 'BrowserContext', method: 'pause' });
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('yes');
+    delete process.env.PW_CODEGEN_NO_INSPECTOR;
+    expect(watchStops(watchedContext({}) as never, () => {})).toBe(true);
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
   });
 });

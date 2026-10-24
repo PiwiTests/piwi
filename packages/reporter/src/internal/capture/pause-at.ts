@@ -10,17 +10,17 @@ import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 /**
  * Breakpoints from the editor: `PIWI_PAUSE_AT` lists lines (`file:line`,
  * semicolon-separated, relative to the working directory or absolute), and a
- * call on one of them that acts on or checks the page (a navigation, a click, a
- * key press, an assertion) stops before it runs, through Playwright's debugger
- * (`context.debugger`), with Piwi's pause bar in the browser: Resume, Step,
- * Pick a locator, Finish. A locator picked there is folded into the run's
- * snapshots, printed, and posted to the editor that started the run
- * (`PIWI_EDITOR_SEND`, its Send to editor pairing address) with the line it was
- * picked at.
+ * call on one of them that Playwright's debugger can stop at (a navigation, a
+ * click, a key press, an assertion, a read such as `textContent`) stops before
+ * it runs, through that debugger (`context.debugger`), with Piwi's pause bar in
+ * the browser: Resume, Step, Pick a locator, Finish. A locator picked there is
+ * folded into the run's snapshots, printed, and posted to the editor that
+ * started the run (`PIWI_EDITOR_SEND`, its Send to editor pairing address) with
+ * the line it was picked at.
  *
  * Local-only, like the failure-time overlay (`inspect-on-failure.ts`): a
- * headed browser, never under CI, never under Playwright's Inspector
- * (`PWDEBUG`). Every attempt pauses.
+ * headed browser, never under CI, never under Playwright's own debugger
+ * (`PWDEBUG`, `--debug`). Every attempt pauses.
  */
 
 /** The lines a run pauses at, keyed the way `captureCallerLocation` writes a call site, without its column. */
@@ -113,11 +113,17 @@ export interface PauseGate {
   headless: unknown;
   /** Raw `PWDEBUG` env value: Playwright's Inspector drives the debugger unless it is unset, empty, `0`, `false` or `console`. */
   pwdebug?: string | undefined;
+  /** The run's `--debug` mode (`inspector`, `cli`), as the runner hands it to the worker; unset without `--debug`. */
+  debug?: unknown;
 }
+
+type ConfigInternal = { _configInternal?: { configCLIOverrides?: { debug?: unknown } } };
 
 export function pauseGateFromTestInfo(testInfo: TestInfo): PauseGate {
   const use = (testInfo.project?.use ?? {}) as { headless?: unknown };
-  return { ci: process.env.CI, headless: use.headless, pwdebug: process.env.PWDEBUG };
+  // A Playwright internal, feature-checked: the one place the worker sees `--debug=cli`.
+  const debug = (testInfo as unknown as ConfigInternal)._configInternal?.configCLIOverrides?.debug;
+  return { ci: process.env.CI, headless: use.headless, pwdebug: process.env.PWDEBUG, debug };
 }
 
 /** Why a run with breakpoints does not pause; null when it does. */
@@ -127,6 +133,8 @@ export function pauseSkipReason(gate: PauseGate): string | null {
     return 'the browser is headless — re-run with --headed (or set use: { headless: false })';
   if (gate.pwdebug && !['0', 'false', 'console'].includes(gate.pwdebug))
     return "Playwright's Inspector runs the test (PWDEBUG) — run without --debug";
+  if (typeof gate.debug === 'string' && gate.debug)
+    return `Playwright's debugger runs the test (--debug=${gate.debug}) — run without --debug`;
   return null;
 }
 
@@ -204,18 +212,83 @@ export function contextDebugger(context: BrowserContext): ContextDebugger | null
 const WATCHED = new WeakSet<BrowserContext>();
 
 /**
- * Hand each stop of a context's debugger to `onStop`, once per context. In a headed browser Playwright opens its
- * Inspector at a stop: `PW_CODEGEN_NO_INSPECTOR` keeps it closed in this worker, since Piwi's bar answers the stops.
- * False on a Playwright without a debugger.
+ * Hand each stop of a context's debugger to `onStop`, once per context, with Playwright's Inspector kept closed at the
+ * stops Piwi answers (`keepInspectorClosed`). False on a Playwright without a debugger.
  */
 export function watchStops(context: BrowserContext, onStop: (context: BrowserContext) => void): boolean {
   const dbg = contextDebugger(context);
   if (!dbg) return false;
   if (WATCHED.has(context)) return true;
   WATCHED.add(context);
-  process.env.PW_CODEGEN_NO_INSPECTOR ??= '1';
+  keepInspectorClosed(context);
   dbg.on('pausedstatechanged', () => onStop(context));
   return true;
+}
+
+/** The switch Playwright reads at each stop of a headed context's debugger: set, its Inspector stays closed. */
+const NO_INSPECTOR_ENV = 'PW_CODEGEN_NO_INSPECTOR';
+
+/** The listener side of a Playwright connection's client instrumentation (an internal, feature-checked). */
+interface ClientInstrumentation {
+  addListener(listener: object): void;
+}
+
+/** A Playwright object, as it reaches its connection's instrumentation. */
+type ChannelOwner = { _instrumentation?: Partial<ClientInstrumentation> };
+
+const inspectorSwitch = {
+  /** Set by Piwi, so Piwi's to clear. */
+  set: false,
+  /** A `page.pause()` Piwi does not take over is about to reach Playwright. */
+  pauseStarting: false,
+  /** The API calls of those `page.pause()` that are running. */
+  pauses: new Set<object>(),
+  /** The instrumentations listened to. */
+  listened: new WeakSet<object>(),
+};
+
+function syncInspectorSwitch(): void {
+  const open = inspectorSwitch.pauseStarting || inspectorSwitch.pauses.size > 0;
+  if (!open && process.env[NO_INSPECTOR_ENV] === undefined) {
+    process.env[NO_INSPECTOR_ENV] = '1';
+    inspectorSwitch.set = true;
+  } else if (open && inspectorSwitch.set) {
+    if (process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
+    inspectorSwitch.set = false;
+  }
+}
+
+/**
+ * Keep Playwright's Inspector closed in this worker at the debugger stops Piwi answers, and open while a `page.pause()`
+ * Piwi does not take over runs: Playwright reads `PW_CODEGEN_NO_INSPECTOR` at each stop, and opens its Inspector at a
+ * stop of a headed context without it. Piwi's own `page.pause()` passes Playwright's `__testHookKeepTestTimeout`, which
+ * tells the two apart in the connection's client instrumentation. Without that instrumentation the switch stays off,
+ * and the Inspector opens beside the bar.
+ */
+function keepInspectorClosed(context: BrowserContext): void {
+  const instrumentation = (context as unknown as ChannelOwner)._instrumentation;
+  if (!instrumentation || typeof instrumentation.addListener !== 'function') return;
+  if (!inspectorSwitch.listened.has(instrumentation)) {
+    inspectorSwitch.listened.add(instrumentation);
+    instrumentation.addListener({
+      onWillPause: (options?: { keepTestTimeout?: boolean }) => {
+        if (options?.keepTestTimeout) return;
+        inspectorSwitch.pauseStarting = true;
+        syncInspectorSwitch();
+      },
+      // The pause call begins right after `onWillPause`, in the same turn.
+      onApiCallBegin: (call: object, channel?: { type?: string; method?: string }) => {
+        if (!inspectorSwitch.pauseStarting) return;
+        inspectorSwitch.pauseStarting = false;
+        if (channel?.type === 'BrowserContext' && channel.method === 'pause') inspectorSwitch.pauses.add(call);
+        else syncInspectorSwitch();
+      },
+      onApiCallEnd: (call: object) => {
+        if (inspectorSwitch.pauses.delete(call)) syncInspectorSwitch();
+      },
+    });
+  }
+  syncInspectorSwitch();
 }
 
 /**
@@ -349,12 +422,25 @@ const MAX_NAVIGATED = 10;
 /** How long the highlight may take before the bar shows without it. */
 const HIGHLIGHT_MS = 2000;
 
+/** `run`, or undefined as soon as `ended` aborts. */
+function unlessEnded<T>(run: Promise<T>, ended: AbortSignal | undefined): Promise<T | undefined> {
+  if (!ended) return run;
+  return Promise.race([
+    run,
+    new Promise<undefined>((resolve) => {
+      if (ended.aborted) resolve(undefined);
+      else ended.addEventListener('abort', () => resolve(undefined), { once: true });
+    }),
+  ]);
+}
+
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
  * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended. Returns
- * the answer that ends the stop: `resume`, `step` or `finish`; `resume` when the page breaks, never throwing. The bar
- * and the highlight are gone once it returns. Every page call it makes must run inside an internal call.
+ * the answer that ends the stop: `resume`, `step` or `finish`; `resume` when the page breaks or `ended` aborts (the
+ * test ended under the bar), never throwing. The bar and the highlight are gone once it returns. Every page call it
+ * makes must run inside an internal call.
  */
 export async function pauseHere(
   page: Page,
@@ -362,6 +448,7 @@ export async function pauseHere(
   probe: PickerProbe,
   onPick: (pick: PickedLocator) => void | Promise<void>,
   onRecord?: () => Promise<void>,
+  ended?: AbortSignal,
 ): Promise<PauseAnswer> {
   let shown: unknown = null;
   try {
@@ -394,8 +481,10 @@ export async function pauseHere(
     let navigated = 0;
     for (;;) {
       try {
+        if (ended?.aborted) return 'resume';
         await page.evaluate(showPauseBar, arg);
-        await page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 });
+        await unlessEnded(page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }), ended);
+        if (ended?.aborted) return 'resume';
         const choice = (await page.evaluate(takePauseState)) as PauseChoice | null;
         navigated = 0;
         if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
@@ -415,6 +504,8 @@ export async function pauseHere(
     return 'resume';
   } finally {
     try {
+      // The bar a test ended under is taken down here, unanswered.
+      if (ended?.aborted) await page.evaluate(takePauseState);
       const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
       // Feature-detected: an older Playwright has neither a disposable highlight nor `page.hideHighlight`.
       const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;

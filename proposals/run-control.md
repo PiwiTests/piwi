@@ -14,12 +14,13 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 to 9 are not. The build differs from the
 text in four ways. A headed browser opens Playwright's Inspector at every stop of `context.debugger`, so the worker sets
-`PW_CODEGEN_NO_INSPECTOR`, and a run under the Inspector (`--debug`, `PWDEBUG`) ignores the breakpoints. The runner
-suspends the test timeout only for a context the running test made: at a stop in one made before it (a `beforeAll`
-page), the worker holds the timeout through the runner's own counter (`_setIgnoreTimeouts`, feature-checked). The
-reporter takes the time each stop held out of the steps' durations, from the `piwi-pauses` attachment, before they are
-sent, so the server is unchanged and the run is not marked interactive yet; D10's rule on notifications waits for the
-runs that can pause outside the editor. `page.pause()` is a stop of the debugger at its line (`page-pause`), taken over
+`PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to Playwright runs, and a run under Playwright's own
+debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the breakpoints. The runner suspends the test timeout only for
+a context the running test made: at a stop in one made before it (a `beforeAll` page), the worker holds the timeout
+through the runner's own counter (`_setIgnoreTimeouts`, feature-checked). The reporter takes the time each stop held
+out of the steps' durations and start times, from the `piwi-pauses` attachment, before they are sent, so the server is
+unchanged and the run is not marked interactive yet; D10's rule on notifications waits for the runs that can pause
+outside the editor. `page.pause()` is a stop of the debugger at its line (`page-pause`), taken over
 in any headed run with breakpoints as well as in one the editor started. The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
@@ -236,16 +237,19 @@ by Piwi (Part 5).
 ### 1.2 What changes for the developer
 
 - **Every call that acts on or checks the page pauses**: a breakpoint on `await page.goto('/checkout')`,
-  `await page.keyboard.press('Tab')` or `await expect(page).toHaveURL(…)` works; today they do nothing. Waits and
-  reads do not: `waitForTimeout`, `waitForSelector` and `title()` carry no pause flag in Playwright's protocol, so a
-  breakpoint on such a line, or on a line with no Playwright call, still does nothing, and the IDE marks it (Part 3).
+  `await page.keyboard.press('Tab')` or `await expect(page).toHaveURL(…)` works; today they do nothing. An element's
+  reads stop too (`textContent`, `inputValue`, `isVisible`). `waitForTimeout`, `waitForSelector`, `title()` and the
+  waits Playwright runs in the test's process (`waitForEvent`, `waitForURL`) carry no pause flag in Playwright's
+  protocol, so a breakpoint on such a line, or on a line with no Playwright call, still does nothing, and the IDE marks
+  it (Part 3).
 - **Pause takes effect at the next call it can stop at.** A test inside a long call (a `waitForTimeout`, an assertion polling for
   its timeout) shows **Pausing…** until that call returns.
 - **Headless runs pause** (spike A ran headless). The pause bar needs a window; a headless pause is shown in the IDE
   and in Piwi Picker, with an image of the page (Part 6). Under CI, nothing pauses, as today.
 - **The test timeout and the per-call budgets** are the runner's business: a 5 s pause did not fail a test with a 4 s
   timeout, and 3 s pauses did not spend 1 s `actionTimeout` and `expect.timeout` budgets. `rearmedTimeout` and the
-  timeout lift in `pauseHere` go.
+  timeout lift in `pauseHere` go. A wait started before the stop (`expect.poll`, `toPass`, `waitForRequest`) keeps its
+  own deadline and can fail the test during the stop; the bar then comes down before the failure is read.
 - **`page.pause()`**, in a run with a channel, stays Piwi's, as a stop at its line with the reason `page-pause`.
 
 ### 1.3 Internal calls, and what they cost if missing
@@ -361,8 +365,8 @@ Every protocol change lands with both clients, per the service's rule; the reque
   `⏸ Paused · Fill "WELCOME10" getByLabel('Coupon') · attempt 2`.
 - **Breakpoints during the run**: VS Code's `vscode.debug.onDidChangeBreakpoints` and JetBrains'
   `XBreakpointListener` send the new set; today's run reads them once, at its start. A breakpoint on a line whose
-  calls never stop (no Playwright call, or only a wait or a read such as `waitForSelector`) is marked as never
-  stopping.
+  calls never stop (no Playwright call, or only a call without the pause flag, such as `waitForSelector`) is marked as
+  never stopping.
 - **Run to Cursor** from the caret: `run-to` on the caret's line, in a spec or a page object.
 - **A run that is not stopped** keeps its live gutter ([`editor-local-runs.md`](../adr/editor-local-runs.md), Part 7).
 

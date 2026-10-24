@@ -45,10 +45,11 @@ Two **external contracts** beyond the npm API:
   (`internal/capture/api-requests.ts`).
   A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) stops each context
   through `context.debugger` before every call it can stop at, with `PW_CODEGEN_NO_INSPECTOR`
-  set in the worker, shows the pause bar at the calls on those lines and reads its answer
-  from the `__piwiPauseState` page global, attaches the stops as `piwi-pauses`
-  (`internal/collect/paused-steps.ts` takes their time out of the steps' durations), and
-  posts a locator picked meanwhile to the editor's
+  set in the worker except while a `page.pause()` it leaves to Playwright runs (a listener on the
+  connection's client instrumentation sees those), shows the pause bar at the calls on those
+  lines and reads its answer from the `__piwiPauseState` page global, attaches the stops as
+  `piwi-pauses` (`internal/collect/paused-steps.ts` takes their time out of the steps'
+  durations and start times), and posts a locator picked meanwhile to the editor's
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,
   **Record here** and `page.pause()` connect to the editor service's local socket and relay
   the recorder's binding calls over it (`internal/capture/record-handoff.ts`).
@@ -172,7 +173,7 @@ src/
                 coverage field, the wait before its result streams, the run's
                 coverage), blob-ids (the git blob of each covered file),
                 paused-steps (the time a test stood stopped at the pause bar,
-                out of its steps' durations)
+                out of its steps' durations and start times)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)

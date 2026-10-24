@@ -365,9 +365,13 @@ jobs:
       - name: Knip
         run: npm run knip
 
+      # The breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows, under a display: the full build.
+      - name: Install the full Chromium build
+        run: npx playwright install chromium --no-shell
+
       - name: Test reporter
         working-directory: packages/reporter
-        run: npm run reporter:test:coverage
+        run: xvfb-run -a npm run reporter:test:coverage
 
       # Full AI-step pipeline (resolve → compile → replay) end to end against a
       # real browser, with a stub standing in for the LLM: no network, no tokens.

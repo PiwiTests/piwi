@@ -57,7 +57,8 @@ every comparison is made on one machine; a `report` job joins their results into
   `--prefer-offline --no-audit --fund=false`.
 - **Playwright's headless shell is cached by Playwright version** (`playwright: shell`). The full Chromium build
   (`playwright: full`) is installed on every run: its workflows run on pull requests only, where a cache serves its own
-  pull request alone.
+  pull request alone. The checks job installs it too, beside the shell, for the reporter's breakpoint run, which opens
+  Chromium's windows under `xvfb-run`.
 - **Least privilege.** `permissions: contents: read` on every workflow; anything more on the job that needs it. A job
   that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails the run.
 - **Publishing only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or

@@ -127,14 +127,14 @@ data class CoverageResult(
 data class EditorBreakpoint(val uri: String, val line: Int)
 
 /**
- * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a locator
- * action or assertion on their line, headed, with Piwi's pause bar, when their file is under the Playwright config's
- * folder. `root` names the Playwright config's folder to run them with; without it, the config of `uri`. `coverage`
- * `server`, set by a server file's coverage lens, has the run record the backend's coverage by line; `browser`, set by
- * a browser file's, the browser's coverage by function. `locations` names tests by where their `test(…)` call starts
- * (`TestAtResult.location`), in place of `testIds`: a test the instance does not know yet runs too, without an
- * instance. `repeat` runs each test that many times without retries (`--repeat-each=3 --retries=0`), headless, and
- * the run's end says how many of those runs passed.
+ * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a call on
+ * their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion), headed, with Piwi's
+ * pause bar, when their file is under the Playwright config's folder. `root` names the Playwright config's folder to
+ * run them with; without it, the config of `uri`. `coverage` `server`, set by a server file's coverage lens, has the
+ * run record the backend's coverage by line; `browser`, set by a browser file's, the browser's coverage by function.
+ * `locations` names tests by where their `test(…)` call starts (`TestAtResult.location`), in place of `testIds`: a
+ * test the instance does not know yet runs too, without an instance. `repeat` runs each test that many times without
+ * retries (`--repeat-each=3 --retries=0`), headless, and the run's end says how many of those runs passed.
  */
 data class RunTestsArgs(
     val uri: String,

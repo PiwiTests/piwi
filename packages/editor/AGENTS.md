@@ -148,8 +148,8 @@ clients stay thin and both editors give the same answers.
   `pauseAtValue` in `src/analysis.ts`), and `--headed`
   is appended to the arguments and the command unless it carries `--headed`, `--ui` or `--debug` (`headedCommand`);
   the client adds its Send to editor address as `PIWI_EDITOR_SEND`. The reporter's capture fixtures pause the run
-  before a locator action or assertion on those lines, with Piwi's pause bar, and post a locator picked there to that
-  address with its file and line. Each refresh reads the version of `@piwitests/reporter` the context's folder
+  before a call Playwright's debugger stops at on those lines (a navigation, an action, a read, an assertion), with
+  Piwi's pause bar, and post a locator picked there to that address with its file and line. Each refresh reads the version of `@piwitests/reporter` the context's folder
   installs (`reporterVersion` in `src/workspace.ts`: its `node_modules`, else a folder's above it up to the
   repository root), which `piwi/runStatus` carries as `reporterVersion`; with breakpoints and a reporter older than
   `PAUSE_REPORTER_VERSION` (0.48.0), `RunCommand.notice` says so, which the client shows once as a warning while the
