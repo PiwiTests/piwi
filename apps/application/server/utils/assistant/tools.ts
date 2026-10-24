@@ -73,6 +73,7 @@ export const PAGE_TOOLS: Readonly<Record<string, readonly McpToolName[]>> = {
     'preview_selection',
     'suggest_selections',
     'analyze_selections',
+    'get_impacted_tests',
   ],
   '/projects/[id]/coverage': [
     'get_coverage_summary',

@@ -116,9 +116,10 @@ test to copy.
 
 ## Where it is used
 
-- **[Impact-from-diff](./test-selection#impact-from-diff)** maps a changed file to the tests that executed it; a changed
-  file no test reached still widens the run to the whole suite, since code reach misses top-level code, server code
-  without [server coverage](./server-coverage) and type-only modules.
+- **[Impact-from-diff](./change-impact)** maps a changed file to the tests that executed it, and
+  with function or line coverage to the tests that ran the changed lines ([line level](./change-impact#line-level));
+  a changed file no test reached still widens the run to the whole suite, since code reach misses top-level code,
+  server code without [server coverage](./server-coverage) and type-only modules.
 - **[Uncovered changes](./uncovered-changes)** counts a changed file as reached when a test executed it.
 - **[Locator preflight](./preflight)** calls a break *likely* only when one of its tests reaches the changed file.
 - **[Coverage in the editor](./editor-coverage)** marks the lines tests ran and the ones none runs, in VS Code and the
@@ -154,5 +155,5 @@ The [API](https://piwitests.dev/demo/docs) (`/docs` on your instance) serves the
 - [Server coverage](./server-coverage): the code each test ran in an ASP.NET Core backend
 - [Coverage cost](/reference/coverage-cost): what each mode costs
 - [Capture fixtures](/guide/capture-fixtures): what else the fixtures record
-- [Test selection](./test-selection): impact-from-diff
+- [Impact from a diff](./change-impact): the tests a change affects
 - [Privacy & data flow](/guide/privacy): what the reporter sends

@@ -21,18 +21,40 @@
  * Code reach only adds tests: it leaves out module top-level code, server
  * modules and type-only modules, so a file it never saw may still be run by
  * every test.
+ *
+ * **Line level.** When the caller sends a modified file's changed lines and its
+ * base blob, the tests that reach it only through coverage are narrowed to
+ * those whose recorded coverage of that version ran the changed lines
+ * (`#shared/line-impact`); a test the coverage cannot rule out stays, at file
+ * level. A test file, failure frames and route reach are never narrowed.
  */
 import { eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { resolveCasePayloadContents } from './case-payloads';
+import {
+  MAX_COVERAGE_RANGES,
+  normalizeLineRanges,
+  type CoverageFile,
+  type CoverageRuntime,
+  type LineRange,
+} from '@piwitests/core/coverage';
 import { sameFilePath } from '@piwitests/core/locator-break';
 import { loadCodeReachPairs } from './code-reach';
+import { getFileVersions, getRecordedFragments, incompleteCoverageTests } from './coverage';
 import { resolveSelectionDefinition } from '#shared/handlers/selections';
+import { lineImpact, sameBlob, type LineImpactDecision, type LineImpactVersion } from '#shared/line-impact';
 import type { ResolvedSelection, SelectionDefinition, SelectionFormat, SelectionRankBy } from '#shared/selection';
 
 /** Documentation extensions: a changed file with one of these that maps to no test runs nothing. */
 const DOCUMENTATION_EXTENSIONS = new Set(['md', 'mdx', 'markdown', 'txt', 'rst', 'adoc']);
+/** Changed files read at line level at most; the others stay at file level. */
+const MAX_LINE_LEVEL_FILES = 100;
+/** Changes a request carries at most. */
+const MAX_CHANGES = 5000;
+/** Changed files the per-file breakdown lists at most, and tests per file. */
+const MAX_IMPACT_FILES = 200;
+const MAX_FILE_TESTS = 100;
 
 function normalizePath(p: string): string {
   return p.replace(/\\/g, '/').replace(/^\.\//, '').trim();
@@ -100,6 +122,65 @@ async function loadSourceReach(db: DrizzleDB, projectId: number): Promise<Map<nu
   return reach;
 }
 
+/** A modified file's change as a diff gives it, read on its base side. */
+export interface ImpactChange {
+  /** Repository-relative path. */
+  filePath: string;
+  /** The file's git blob id before the change, full or abbreviated. */
+  blob: string;
+  /** The changed lines on the base side (`hunkBaseLines`). */
+  lines: LineRange[];
+}
+
+/**
+ * The `changes` of an impact request: entries with a path, a hexadecimal blob
+ * id of at least seven characters and line ranges; anything else is dropped.
+ */
+export function parseImpactChanges(raw: unknown): ImpactChange[] {
+  if (!Array.isArray(raw)) return [];
+  const changes: ImpactChange[] = [];
+  for (const entry of raw.slice(0, MAX_CHANGES)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { filePath, blob, lines } = entry as Record<string, unknown>;
+    if (typeof filePath !== 'string' || !filePath.trim() || filePath.length > 500) continue;
+    if (typeof blob !== 'string' || !/^[0-9a-f]{7,64}$/i.test(blob)) continue;
+    const ranges = normalizeLineRanges(Array.isArray(lines) ? lines.slice(0, MAX_COVERAGE_RANGES) : []);
+    if (ranges.length > 0) changes.push({ filePath, blob: blob.toLowerCase(), lines: ranges });
+  }
+  return changes;
+}
+
+/**
+ * How a test is selected through a changed file: it is the file's test file
+ * (`test-file`), it failed inside it (`frames`), it called a route the file
+ * handles (`route`), it ran a changed line (`lines`) or a function around one
+ * (`functions`), or its coverage reaches the file and cannot rule it out (`file`).
+ */
+export type ImpactVia = 'test-file' | 'frames' | 'route' | LineImpactDecision['via'];
+
+export interface ImpactFileTest {
+  testCaseId: number;
+  via: ImpactVia;
+  /** The changed lines it ran, for `lines` and `functions`. */
+  lines?: LineRange[];
+}
+
+/** What one changed file selects. */
+export interface ImpactFile {
+  filePath: string;
+  /** `lines` when its coverage-reached tests were narrowed to the changed lines, `file` when not, `none` when no test maps to it. */
+  level: 'lines' | 'file' | 'none';
+  /** The tests it selects (capped), finest evidence first. */
+  tests: ImpactFileTest[];
+  testCount: number;
+  /** At line level: tests that reach the file and ran none of its changed lines. */
+  ruledOut?: number;
+  /** At line level: changed lines outside every function known in the version, which select every test reaching it. */
+  fileLevelLines?: LineRange[];
+  /** At line level: changed lines inside functions no test reaching the file ran. */
+  notRun?: LineRange[];
+}
+
 export interface ImpactResolution extends ResolvedSelection {
   impact: {
     changedFiles: number;
@@ -109,19 +190,90 @@ export interface ImpactResolution extends ResolvedSelection {
     widened: boolean;
     /** Changed files that forced the full suite (capped): mapped to no test, or only through source frames. */
     unmappedSourceFiles: string[];
+    /** Changed files narrowed at line level. */
+    lineLevelFiles: number;
+    /** What each changed file selects (capped). */
+    files: ImpactFile[];
   };
+}
+
+/** How a test reaches a changed file, before any narrowing: through coverage, in a runtime, or another edge. */
+type Reach = 'test-file' | 'frames' | 'route' | CoverageRuntime;
+
+const VIA_ORDER: ImpactVia[] = ['test-file', 'lines', 'functions', 'frames', 'route', 'file'];
+
+/** The reach a test is selected by at file level: its finest edge. */
+function fileLevelVia(reach: Set<Reach>): ImpactVia {
+  if (reach.has('test-file')) return 'test-file';
+  if (reach.has('frames')) return 'frames';
+  if (reach.has('browser') || reach.has('server')) return 'file';
+  return 'route';
+}
+
+/**
+ * Narrow the tests reaching one changed file through coverage alone to those
+ * whose recorded coverage of the base version ran its changed lines. Null when
+ * no recorded coverage of the file names its base version.
+ */
+async function narrowByLines(db: DrizzleDB, projectId: number, change: ImpactChange, reach: Map<number, Set<Reach>>) {
+  const recorded = await getRecordedFragments(db, projectId, change.filePath, '');
+  if (!recorded.some((r) => sameBlob(r.file.blob, change.blob))) return null;
+
+  const tests = new Map<number, Map<CoverageRuntime, CoverageFile[]>>();
+  const runs: Array<{ testCaseId: number; runId: number }> = [];
+  for (const [testCaseId, how] of reach) {
+    const runtimes = [...how].filter((r): r is CoverageRuntime => r === 'browser' || r === 'server');
+    if (runtimes.length !== how.size) continue;
+    const byRuntime = new Map<CoverageRuntime, CoverageFile[]>(runtimes.map((r) => [r, []]));
+    for (const fragment of recorded) {
+      const runId = fragment.tests.get(testCaseId);
+      if (runId === undefined) continue;
+      byRuntime.get(fragment.file.runtime)?.push(fragment.file);
+      if (runId != null) runs.push({ testCaseId, runId });
+    }
+    tests.set(testCaseId, byRuntime);
+  }
+
+  const atBase = recorded.filter((r) => sameBlob(r.file.blob, change.blob));
+  const stored = await getFileVersions(
+    db,
+    projectId,
+    atBase.map((r) => ({ path: r.file.path, runtime: r.file.runtime, blob: r.file.blob! })),
+  );
+  const versions: LineImpactVersion[] = (['browser', 'server'] as const).flatMap((runtime) => {
+    const own = stored.filter((v) => v.runtime === runtime);
+    if (own.length === 0) return [];
+    return [{ runtime, executable: own.flatMap((v) => v.lines), functions: own.flatMap((v) => v.functions) }];
+  });
+
+  const first = lineImpact({ changed: change.lines, blob: change.blob, tests, versions });
+  if (first.ruledOut.length === 0) return first;
+  // A capture that was incomplete cannot say a line did not run.
+  const ruledOut = new Set(first.ruledOut);
+  const incomplete = await incompleteCoverageTests(
+    db,
+    runs.filter((r) => ruledOut.has(r.testCaseId)),
+  );
+  if (incomplete.size === 0) return first;
+  return lineImpact({ changed: change.lines, blob: change.blob, tests, versions, incomplete });
 }
 
 /**
  * Resolve which tests a set of changed files impacts, then materialize a command
  * for them via the normal resolver (through an `ids` selection, or the whole
- * suite when widening).
+ * suite when widening). `changes` adds the changed lines of modified files, which
+ * narrows their coverage-reached tests at line level.
  */
 export async function resolveImpact(
   db: DrizzleDB,
   projectId: number,
   changedFiles: string[],
-  options: { format?: SelectionFormat; shard?: { index: number; total: number }; order?: SelectionRankBy } = {},
+  options: {
+    format?: SelectionFormat;
+    shard?: { index: number; total: number };
+    order?: SelectionRankBy;
+    changes?: ImpactChange[];
+  } = {},
 ): Promise<ImpactResolution> {
   const files = [...new Set(changedFiles.map(normalizePath).filter(Boolean))];
 
@@ -132,7 +284,14 @@ export async function resolveImpact(
   const reach = await loadSourceReach(db, projectId);
   const codeReach = await loadCodeReachPairs(db, projectId);
 
-  const matched = new Set<number>();
+  // Per changed file, each test that reaches it and how.
+  const reachOf = new Map<string, Map<number, Set<Reach>>>(files.map((f) => [f, new Map()]));
+  const addReach = (changed: string, testCaseId: number, how: Reach) => {
+    const tests = reachOf.get(changed)!;
+    const set = tests.get(testCaseId);
+    if (set) set.add(how);
+    else tests.set(testCaseId, new Set([how]));
+  };
   const mappedFiles = new Set<string>();
   // Files mapped by an edge that names every test using them: the test file itself, or code reach.
   const fullyMappedFiles = new Set<string>();
@@ -141,7 +300,7 @@ export async function resolveImpact(
     const filePath = normalizePath(testCase.filePath);
     for (const changed of files) {
       if (pathsMatch(filePath, changed)) {
-        matched.add(testCase.id);
+        addReach(changed, testCase.id, 'test-file');
         mappedFiles.add(changed);
         fullyMappedFiles.add(changed);
       }
@@ -150,26 +309,64 @@ export async function resolveImpact(
   for (const [caseId, reachedFiles] of reach) {
     for (const changed of files) {
       if (reachedFiles.some((reached) => pathsMatch(reached, changed))) {
-        matched.add(caseId);
+        addReach(changed, caseId, 'frames');
         mappedFiles.add(changed);
       }
     }
   }
 
   // Many tests reach the same files: match each distinct file once.
-  const testsByFile = new Map<string, Set<number>>();
+  const pairsByFile = new Map<string, typeof codeReach>();
   for (const pair of codeReach) {
-    const tests = testsByFile.get(pair.file);
-    if (tests) tests.add(pair.testCaseId);
-    else testsByFile.set(pair.file, new Set([pair.testCaseId]));
+    const pairs = pairsByFile.get(pair.file);
+    if (pairs) pairs.push(pair);
+    else pairsByFile.set(pair.file, [pair]);
   }
-  for (const [file, tests] of testsByFile) {
+  for (const [file, pairs] of pairsByFile) {
     for (const changed of files) {
       if (!sameFilePath(file, changed)) continue;
-      for (const id of tests) matched.add(id);
+      for (const pair of pairs) addReach(changed, pair.testCaseId, pair.via === 'route' ? 'route' : pair.runtime);
       mappedFiles.add(changed);
       fullyMappedFiles.add(changed);
     }
+  }
+
+  // Narrow each modified file's coverage-reached tests to the changed lines they ran.
+  const changes = new Map<string, ImpactChange>();
+  for (const change of options.changes ?? []) {
+    const path = normalizePath(change.filePath);
+    if (reachOf.has(path) && change.blob && change.lines.length > 0) changes.set(path, { ...change, filePath: path });
+  }
+  const matched = new Set<number>();
+  const breakdown: ImpactFile[] = [];
+  let lineLevelFiles = 0;
+  let lineLevelReads = 0;
+  for (const [changed, tests] of reachOf) {
+    const change = changes.get(changed);
+    const readLines =
+      change && lineLevelReads < MAX_LINE_LEVEL_FILES && [...tests.values()].some((how) => !how.has('test-file'));
+    if (readLines) lineLevelReads++;
+    const narrowed = readLines ? await narrowByLines(db, projectId, change, tests) : null;
+    if (narrowed) lineLevelFiles++;
+    const ruledOut = new Set(narrowed?.ruledOut);
+    const selected: ImpactFileTest[] = [];
+    for (const [testCaseId, how] of tests) {
+      const decision = narrowed?.selected.get(testCaseId);
+      if (decision)
+        selected.push({ testCaseId, via: decision.via, ...(decision.lines ? { lines: decision.lines } : {}) });
+      else if (!ruledOut.has(testCaseId)) selected.push({ testCaseId, via: fileLevelVia(how) });
+    }
+    for (const t of selected) matched.add(t.testCaseId);
+    selected.sort((a, b) => VIA_ORDER.indexOf(a.via) - VIA_ORDER.indexOf(b.via) || a.testCaseId - b.testCaseId);
+    breakdown.push({
+      filePath: changed,
+      level: narrowed ? 'lines' : tests.size > 0 ? 'file' : 'none',
+      tests: selected.slice(0, MAX_FILE_TESTS),
+      testCount: selected.length,
+      ...(narrowed
+        ? { ruledOut: narrowed.ruledOut.length, fileLevelLines: narrowed.fileLevel, notRun: narrowed.notRun }
+        : {}),
+    });
   }
 
   const unmapped = files.filter((f) => !mappedFiles.has(f) && !DOCUMENTATION_EXTENSIONS.has(fileExtension(f)));
@@ -209,6 +406,8 @@ export async function resolveImpact(
       mappedFiles: mappedFiles.size,
       widened,
       unmappedSourceFiles: widening.slice(0, 50),
+      lineLevelFiles,
+      files: breakdown.slice(0, MAX_IMPACT_FILES),
     },
   };
 }

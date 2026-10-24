@@ -67,6 +67,28 @@ describe('parseUnifiedDiff', () => {
     expect(files[2]!.oldPath).toBe('old.ts');
   });
 
+  test('reads the blob ids of the index line, none for a side that does not exist', () => {
+    const text = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      'index 3f2a91c..9b0e1d4 100644',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1 +1 @@',
+      '-a',
+      '+b',
+      'diff --git a/src/new.ts b/src/new.ts',
+      'new file mode 100644',
+      'index 0000000000000000000000000000000000000000..E69DE29BB2D1D6434B8B29AE775AD8C2E48C5391',
+      '--- /dev/null',
+      '+++ b/src/new.ts',
+    ].join('\n');
+    const files = parseUnifiedDiff(text);
+    expect(files.map((f) => [f.path, f.oldBlob, f.newBlob])).toEqual([
+      ['src/a.ts', '3f2a91c', '9b0e1d4'],
+      ['src/new.ts', undefined, 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'],
+    ]);
+  });
+
   test('a removed line that starts with dashes stays a removed line', () => {
     const text = ['--- a/x.md', '+++ b/x.md', '@@ -1,2 +1,1 @@', '--- a rule', '-second', '+only'].join('\n');
     const [file] = parseUnifiedDiff(text);

@@ -802,6 +802,34 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'get_impacted_tests',
+    module: 'workflow',
+    description:
+      "The tests a change impacts, the ones to run and the first to check for updates, before any test runs. Send your working diff (`git diff --full-index <base>`, unified format, where the base is the commit the change starts from): each changed file selects the tests defined in it (`test-file`), those that failed inside it (`frames`), those that called a route it handles (`route`) and those whose coverage reaches it. With recorded coverage of the file's base version, a modified file's coverage-reached tests narrow to those that ran a changed line (`lines`) or a function around one (`functions`); a test its coverage cannot rule out stays (`file`: another version, no ranges, an incomplete capture, or a change outside every function, listed in `fileLevelLines`). Each file gives its `level` (`lines`, `file` or `none`), its tests with how and the changed lines they ran (1-based, `12-15,20`), `ruledOut` (tests that reach it and ran none of the changed lines) and `notRun` (changed lines inside functions no test ran: the lines a new test should cover, see write-the-missing-test). A changed file that maps to no test widens the selection to the whole suite (`widened`, with a warning), never silently skipping it. Returns a ready `playwright test` command. Pass `changedFiles` instead of `diff` for file-level impact only.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID' },
+        diff: {
+          type: 'string',
+          description:
+            'The change as a unified diff (`git diff --full-index <base>` output); its `index` lines name each base version',
+        },
+        changedFiles: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Repository-relative paths of the changed files, instead of diff (file level only)',
+        },
+        format: {
+          type: 'string',
+          enum: ['args', 'grep', 'files', 'json'],
+          description: 'Command materialization (default args)',
+        },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
     name: 'list_open_clusters',
     module: 'core',
     description:

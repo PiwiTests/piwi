@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import type * as ChildProcess from 'node:child_process';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { parseSelectArgs, parseDuration, runRun } from '../src/cli/select.js';
@@ -250,5 +250,43 @@ describe('runRun', () => {
     dashboard(true);
     await runRun(['smoke', '--project', 'web'], env);
     expect(lastSpawn().env.PIWI_SHARD).toBeUndefined();
+  });
+
+  it('impact sends every changed file, and the changed base lines of modified files', async () => {
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { stdio: 'pipe' })
+        .toString()
+        .trim();
+    git('init', '-q', '-b', 'main');
+    fs.writeFileSync('cart.ts', 'export function total(items) {\n  let sum = 0;\n  for (const i of items) sum += i;\n  return sum;\n}\n');
+    fs.writeFileSync('old-name.ts', 'export const a = 1;\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    const base = git('rev-parse', 'HEAD:cart.ts');
+    fs.writeFileSync('cart.ts', 'export function total(items) {\n  let sum = 0;\n  for (const i of items) sum += i * 2;\n  return sum;\n}\n');
+    git('mv', 'old-name.ts', 'new-name.ts');
+
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/api/projects/menu')) {
+          return new Response(JSON.stringify({ items: [{ id: 7, name: 'Web' }] }), { status: 200 });
+        }
+        bodies.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({
+            ...RESOLUTION,
+            key: 'impact',
+            impact: { changedFiles: 3, mappedFiles: 1, widened: false, unmappedSourceFiles: [], lineLevelFiles: 1 },
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+    expect(await runRun(['impact', '--base', 'HEAD', '--project', 'web'], env)).toBe(0);
+    expect((bodies[0]!.changedFiles as string[]).sort()).toEqual(['cart.ts', 'new-name.ts', 'old-name.ts']);
+    expect(bodies[0]!.changes).toEqual([{ filePath: 'cart.ts', blob: base, lines: [[3, 3]] }]);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('1 file(s) narrowed by line coverage'));
   });
 });

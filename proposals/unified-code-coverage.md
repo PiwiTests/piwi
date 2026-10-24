@@ -24,8 +24,12 @@ export of a commit's combined coverage (2026-10-17). From part 4, uncovered chan
 are built on 2026-10-21 with [`coverage-and-the-test-map.md`](../adr/coverage-and-the-test-map.md): every changed file
 the head commit's combined coverage counts carries the changed lines no suite ran, named in the pull-request comment
 and returned by `get_change_coverage`, and the gate's line form is `--min-patch-coverage`, warn-only, with no new
-flag. Not built yet: browser lines (PR 6), the Istanbul adapter (D13), line-level impact (part 4) and the rest of
-part 6. Each test's coverage is shown on the execution page and per file on a page of its own
+flag. Line-level impact (part 4) is built on 2026-10-24: `piwi run impact` and `piwi preflight` send each modified
+file's base blob and changed base lines, and a test that reaches the file only through coverage is kept when its
+coverage of that version ran a changed statement or a function around a changed line; a change outside every known
+function, coverage of another version or with no ranges, and an incomplete capture stay at file level. The MCP tool
+`get_impacted_tests` takes a diff and returns the same answer per file, with the changed lines no test ran. Not built
+yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Each test's coverage is shown on the execution page and per file on a page of its own
 ([`test-coverage-view.md`](../adr/test-coverage-view.md)). The study's measurements came from
 a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
 written to spend its CPU in business logic (the **pricing application**). New wire fields, options and endpoints
