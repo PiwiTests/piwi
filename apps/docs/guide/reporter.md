@@ -60,7 +60,7 @@ export default defineConfig({
 The `use` block is Playwright's, not Piwi's: `trace`, `screenshot` and `video` decide what Playwright records, and the reporter uploads whatever exists, including what a test attaches itself with `testInfo.attach()`. Leave `screenshot` at its default (`'off'`) and the failure evidence has no screenshot to show. Videos can be large, so pair `retain-on-failure` with [storage cleanup](/operate/storage#storage-management).
 
 ::: tip You don't also need Playwright's `html` reporter
-The dashboard rebuilds the run from the data this reporter collects, so it is complete without Playwright's `html` reporter. Running `html` alongside only repeats end-of-run work (and, run locally, opens a browser on failure). If you still want Playwright's standalone report, keep it and Piwi uploads it with the run (`uploadReport`).
+The dashboard rebuilds the run from what this reporter collects, so it is complete without Playwright's `html` reporter, which only repeats end-of-run work (and, run locally, opens a browser on failure). Keep it if you want the standalone report: Piwi uploads it with the run (`uploadReport`).
 :::
 
 ## Installing via wrapConfig
@@ -100,18 +100,19 @@ capture, failure-time ARIA snapshots and the locator snapshots behind [locator h
 
 Options go in the reporter's entry in `playwright.config.ts`, or in `wrapConfig`'s second argument. Most options can
 also be set with a `PIWI_*` environment variable, which fills in an option you left unset: an option in the config
-wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside `wrapConfig`. [Reporter options](/reference/reporter-options)
+wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside `wrapConfig`. `PIWI_DASHBOARD_URL`,
+`PIWI_API_KEY` and `PIWI_PROJECT_NAME` also come from the config folder's
+[`.env`](/reference/reporter-options#values-from-env), below the environment. [Reporter options](/reference/reporter-options)
 lists every option with its default and its variable, and [Test metadata](/reference/test-metadata) what the reporter
 records on its own.
 
 ### Finding the desktop app automatically
 
-If nothing sets a server at all (no `serverUrl`, no `apiKey`, and neither `PIWI_DASHBOARD_URL` nor `PIWI_API_KEY` in
-the environment), the reporter looks for a running [desktop app](/features/desktop) on the same machine and uploads
-there. The app publishes its loopback URL and access token to `~/.piwi/desktop.json`
-(`%USERPROFILE%\.piwi\desktop.json` on Windows) while it runs, and deletes the file on quit. This is the lowest
-precedence step, so a CI job or a project pointed at a hosted dashboard is never redirected. Set `enabled: false` to
-opt out; `PIWI_DESKTOP_CONFIG` overrides the path.
+If neither the config, the environment nor that `.env` sets a server URL or an API key, the reporter looks for a
+running [desktop app](/features/desktop) on the same machine and uploads there. The app publishes its loopback URL and
+access token to `~/.piwi/desktop.json` (`%USERPROFILE%\.piwi\desktop.json` on Windows) while it runs, and deletes the
+file on quit. This is the lowest precedence step, so a CI job or a project pointed at a hosted dashboard is never
+redirected. Set `enabled: false` to opt out; `PIWI_DESKTOP_CONFIG` overrides the path.
 
 ## Sharding
 
@@ -141,7 +142,7 @@ To send all results at the end of the run:
 
 ### Tuning batch parameters
 
-Control how frequently results are sent during streaming:
+How often results are sent:
 
 ```typescript
 ['@piwitests/reporter', {
@@ -181,7 +182,7 @@ Registration is best-effort: if the server is unreachable, the run is created wh
 
 ## Multiple reports
 
-Attach multiple report types to a single test run. Each report appears as a separate button in the dashboard UI.
+Each report attached to a run gets its own dashboard button.
 
 ```typescript
 export default defineConfig({
@@ -209,8 +210,8 @@ as an archive. Any other type is accepted too, read from `dir` or else `<type>-r
 ## With authentication enabled
 
 When the dashboard has authentication enabled, pass an **API key**: create one in the dashboard (see
-[API keys](/operate/api-keys)), store it in a CI secret, and give it to the reporter as `apiKey` or
-`PIWI_API_KEY`:
+[API keys](/operate/api-keys)), store it in a CI secret (locally, in `.env`), and give it to the reporter as `apiKey`
+or `PIWI_API_KEY`:
 
 ```typescript
 ['@piwitests/reporter', {

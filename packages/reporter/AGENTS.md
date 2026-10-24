@@ -12,9 +12,10 @@ per-directory responsibilities.
 2. **Wire types** (`src/types/wire.ts`) — the JSON exchanged with the server. A change here is a server-contract change
    and must land with the matching dashboard change; `apps/application/tests/unit/wire-shared-drift.test.ts` pins the two
    together.
-3. **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`), `piwi-*` attachment names
-   (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, `[Piwi Dashboard]`-prefixed log output, the
-   `__piwiProbeElement` global the capture fixtures install into every instrumented page
+3. **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and
+   `PIWI_PROJECT_NAME` also from the `.env` in the Playwright config's folder, below the environment), `piwi-*`
+   attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, `[Piwi Dashboard]`-prefixed log
+   output, the `__piwiProbeElement` global the capture fixtures install into every instrumented page
    (`internal/capture/capture-fixtures.ts`), the `beforeunload` listener code reach adds to each document of a covered
    page in its own isolated world, where the debugger stops to read the coverage as the document is left
    (`internal/capture/code-reach.ts`), the boxed stack prefix `internal/capture/quiet-capture.ts` registers

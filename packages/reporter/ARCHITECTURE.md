@@ -24,7 +24,9 @@ Two **external contracts** beyond the npm API:
   `@piwitests/core/wire`; the per-case `WireTestCase`/stream union stay here and are
   kept compatible with the server's `TestCasePayload`/`StreamEventPayload` by the
   dashboard's `wire-shared-drift.test.ts`. A change here is a server-contract change.
-- **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`), `piwi-*` testInfo
+- **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`), with `PIWI_DASHBOARD_URL`,
+  `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also read from the `.env` in the Playwright config's folder,
+  below the environment, by the reporter and the global setup alike, `piwi-*` testInfo
   attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`,
   `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`), and the
   `__piwiProbeElement` page global the capture fixtures seed via `addInitScript`
@@ -182,7 +184,8 @@ src/
                 pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the pause bar,
                 a pick posted to PIWI_EDITOR_SEND), record-handoff (Record here:
                 the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL)
-    config/     env (PIWI_* ↔ options, and the probe and flake-lab variables)
+    config/     env (PIWI_* ↔ options, and the probe and flake-lab variables),
+                desktop (the desktop app's discovery file), dotenv (the `.env` reader)
     probe/      probe mode: plan matching, faults, the shared route interception
                 (a matcher over route keys + an action), server-probe signing
     flake/      flake mode: the arm's plan, its conditions on the target's first
