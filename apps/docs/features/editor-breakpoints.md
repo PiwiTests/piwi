@@ -30,6 +30,11 @@ It is not Playwright's inspector, and no debugger attaches: the test waits in th
 | **Record here** | Records what you do in the page into the editor, above the paused line: [Record from a pause](#record-from-a-pause) |
 | **Finish** | Runs on without pausing again in this test |
 
+<figure>
+  <img src="/screenshots/picker-pause.png" alt="A shop page in the browser, paused before a click on Checkout: the button highlighted, Piwi's pause bar at the top with Resume, Step, Pick a locator, Record here and Finish">
+  <figcaption>A run paused before the click on <strong>Checkout</strong>: the element highlighted, and Piwi's bar at the top of the page.</figcaption>
+</figure>
+
 The page under the bar stays live: scroll it, open the browser's developer tools, or click through it before you
 resume. The test timeout stops while the test is paused, and the test has the time it had left once it resumes.
 

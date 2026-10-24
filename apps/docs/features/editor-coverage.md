@@ -82,6 +82,11 @@ this file`, and so does the hover on a marked line. A test that reaches the file
 branch, takes the marks away. A file nothing can observe, and a project whose code reach is missing or cut short, show
 nothing.
 
+<figure>
+  <img src="/screenshots/vscode-uncovered.png" alt="VS Code: a server route no test reaches, its lines changed since main marked orange, the top lens and the hover saying why">
+  <figcaption>A server route no test requests: the lines changed since <code>main</code> are marked, and the hover says why.</figcaption>
+</figure>
+
 ## Lenses and hover
 
 - **Top of the file**: `Reached by 6 tests · 1 failing · 41 of 63 lines run · 3 lines changed since the coverage run`.

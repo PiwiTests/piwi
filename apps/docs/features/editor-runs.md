@@ -43,6 +43,11 @@ folders and `test.describe` blocks, each test with its latest result, and for a 
 or the runs laid over it change, and a run in progress is a test run of its own, each test shown as it begins and
 ends. The view's gutter shows each test's result in place of Piwi's icon; the line keeps Piwi's hover.
 
+<figure>
+  <img src="/screenshots/vscode-testing.png" alt="VS Code: the Testing view lists the spec's tests with their latest results, and a failing test's error is peeked at its line in the spec">
+  <figcaption>The Testing view with the latest run's results, and why <strong>pays by card</strong> failed, at its line.</figcaption>
+</figure>
+
 **Run with Piwi**, the view's run profile, runs the tests you pick as the commands above do, one command per
 Playwright config with your breakpoints, and **Verify ×3 with Piwi** runs them three times. A test the run gave Piwi no
 result for, such as one the instance does not know yet, passes when the command exited with 0 and is an error

@@ -37,7 +37,8 @@ Shared by the two editor scripts:
 
 - **The fixture project**, `apps/vscode/scripts/lib/editor-fixture.mjs`: a small shop's Playwright suite, `acme-mugs`,
   with a page object whose line 15 holds a brittle locator (`locator('.btn-primary').nth(1)`), two tests failing on
-  the latest CI run, a local run since that fixed a third, a flaky catalog test, and a service the tests reach. It is
+  the latest CI run, a local run since that fixed a third, a flaky catalog test, a service the tests reach, and two
+  Nitro server routes, one the checkout tests request and one none does (the `uncovered` scene changes it). It is
   a git repository with one commit, so the branch and commit the service reports exist. It carries type stubs for
   `@playwright/test` and `@piwitests/reporter` under `node_modules/` and a `tsconfig.json`, so neither editor's
   TypeScript service reports errors of its own.

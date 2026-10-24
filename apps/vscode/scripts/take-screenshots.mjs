@@ -19,6 +19,8 @@ import {
   PAGE_OBJECT_FILE,
   PROJECT,
   SPEC_FILE,
+  UNCOVERED_ROUTE_EDIT,
+  UNCOVERED_ROUTE_FILE,
   startStub,
   writeWorkspace,
 } from './lib/editor-fixture.mjs';
@@ -129,6 +131,58 @@ const SCENES = {
     await settle(page, 1500);
     await shoot(page, 'hover');
   },
+
+  /** The Testing view: the spec's tests with the latest run's results, and a failure's message at its line. */
+  async testing(page) {
+    await openFile(page, SPEC_FILE);
+    await clearNotifications(page);
+    await showPanel(page, false);
+    await command(page, 'Testing: Focus on Test Explorer View');
+    const tree = page.getByRole('tree', { name: 'Test Explorer' });
+    for (const name of ['tests (Failed)', `${path.basename(SPEC_FILE)} (Failed)`, 'checkout (Failed)']) {
+      const item = tree.getByRole('treeitem', { name });
+      await item.waitFor({ timeout: 60_000 });
+      await item.click();
+      if ((await item.getAttribute('aria-expanded')) !== 'true') await page.keyboard.press('ArrowRight');
+    }
+    await tree.getByRole('treeitem', { name: 'pays by card (Failed)' }).click();
+    await settle(page);
+    await shoot(page, 'testing');
+  },
+
+  /** A server route no test reaches, changed since the default branch: its uncovered change, and why on hover. */
+  async uncovered(page, workspace) {
+    fs.writeFileSync(path.join(workspace, UNCOVERED_ROUTE_FILE), UNCOVERED_ROUTE_EDIT);
+    // The hover below its line, so the marked lines above it stay in view.
+    const settingsFile = path.join(workspace, '.vscode', 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, 'editor.hover.above': false }, null, 2));
+    await openFile(page, UNCOVERED_ROUTE_FILE);
+    await clearNotifications(page);
+    await showPanel(page, false);
+    await command(page, 'View: Show Explorer');
+    await page.locator('.monaco-editor .view-lines').first().click();
+    await goToLine(page, 1);
+    // A keyword: TypeScript says nothing about it, so the hover is Piwi's alone.
+    const token = page
+      .locator('.monaco-editor .view-line', { hasText: 'return' })
+      .first()
+      .locator('span', { hasText: /^return$/ })
+      .first();
+    const hover = page.locator('.monaco-hover:not(.hidden)').first();
+    // The mark comes once the service has compared the file with the default branch.
+    for (let tries = 0; ; tries++) {
+      await token.hover();
+      await hover.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+      if (await hover.filter({ hasText: 'uncovered change' }).count()) break;
+      if (tries > 20) throw new Error('no uncovered change in the hover');
+      await page.mouse.move(10, 400);
+      await settle(page, 1000);
+    }
+    await settle(page, 800);
+    await shoot(page, 'uncovered');
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+  },
 };
 
 async function main() {
@@ -161,7 +215,7 @@ async function main() {
     const names = Object.keys(SCENES).filter((name) => only.length === 0 || only.includes(name));
     for (const name of names) {
       try {
-        await SCENES[name](page);
+        await SCENES[name](page, workspace);
       } catch (error) {
         // The window as it stands says what the scene ran into.
         const failed = path.join(os.tmpdir(), `vscode-${name}-failed.png`);

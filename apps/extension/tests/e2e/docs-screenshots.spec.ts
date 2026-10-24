@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { test as base, expect, launchWithExtension } from './fixtures.js';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
+import { showPauseBar } from '@piwitests/picker-dom';
 import { DIST, SHOP_ORIGIN, injectCoverage, openShop, stubCoverageChrome } from './coverage-fixtures.js';
 import { openDevtoolsPage, selectElement } from './devtools-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
@@ -18,7 +19,8 @@ import { stubChromeStorage } from './recording-stub.js';
  * The store images (`picker-pick`, `picker-popup`, `picker-lint`,
  * `picker-record`) are a 1280 × 800 viewport captured at 2× and written at
  * 1280 px wide, the size the stores take; the overlay and the DevTools pane
- * are the docs' alone, at their own sizes. The harness in
+ * are the docs' alone, at their own sizes. `picker-pause` is the docs' too:
+ * the reporter's pause bar, at the stores' size. The harness in
  * `apps/application/scripts/take-feature-screenshots.mjs` lists them all as
  * external so `--check` leaves them alone.
  */
@@ -130,6 +132,24 @@ test('picker-popup', async ({ context, extensionId }) => {
     .png()
     .toBuffer();
   await sharp(composed).resize({ width: VIEWPORT.width }).png().toFile(path.join(SCREENSHOTS, 'picker-popup.png'));
+});
+
+// The pause bar of a test paused at a breakpoint in a run the editor started: the reporter's, on the shop page, with
+// the element of the paused action highlighted as Playwright highlights it, and Record here offered.
+test('picker-pause', async ({ context }) => {
+  const page = await shopPage(context);
+  await page.getByRole('button', { name: 'Checkout' }).highlight();
+  await page.evaluate(showPauseBar, {
+    place: 'cart.spec.ts:12',
+    attempt: null,
+    action: 'click',
+    locator: "getByRole('button', { name: 'Checkout' })",
+    record: true,
+  });
+  const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
+  await bar.getByRole('button', { name: 'Record here' }).hover();
+  await page.waitForTimeout(500);
+  await shoot(page, 'picker-pause');
 });
 
 test('picker-record', async ({ context }) => {
