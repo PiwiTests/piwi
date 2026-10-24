@@ -19,7 +19,7 @@ const props = defineProps<{
   fixme?: number;
   didNotRun: number;
   total: number;
-  /** The status filters currently active, shared with the Tests tab chips. */
+  /** The status filters currently active, which the Tests list applies. */
   activeStatuses: string[];
 }>();
 
