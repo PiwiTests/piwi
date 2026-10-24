@@ -7,7 +7,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
-import { configureSqliteConnections } from '../../server/database/sqlite-connections';
+import { configureSqliteConnections, sqliteClientConfig } from '../../server/database/sqlite-connections';
 import { eq } from 'drizzle-orm';
 
 vi.mock('../../server/storage', () => ({
@@ -40,7 +40,7 @@ afterAll(() => rmSync(tmpDir, { recursive: true, force: true }));
 let db: Db;
 beforeEach(async () => {
   // Configured as the server configures its client: writes wait for an open transaction.
-  const client = createClient({ url: `file:${join(tmpDir, `test-${++dbCount}.db`)}` });
+  const client = createClient(sqliteClientConfig(`file:${join(tmpDir, `test-${++dbCount}.db`)}`));
   await configureSqliteConnections(client);
   db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });

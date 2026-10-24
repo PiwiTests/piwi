@@ -1,4 +1,4 @@
-import type { Client, InValue } from '@libsql/client';
+import type { Client, InValue, Transaction } from '@libsql/client';
 import type { Sql } from 'postgres';
 import {
   SCRATCH_TABLE,
@@ -23,9 +23,18 @@ const postgresTableExists = async (query: Query, table: string) =>
 
 // ── SQLite ────────────────────────────────────────────────────────────────
 
+const sqliteQuery =
+  (executor: Client | Transaction): Query =>
+  async (sql, params = []) =>
+    (await executor.execute({ sql, args: params as InValue[] })).rows as unknown as Row[];
+
+/**
+ * `client` must have a single connection (`concurrency: 1`, or a `:memory:`
+ * database): the repair turns foreign keys off on it before its transaction
+ * begins there.
+ */
 export function sqliteMigrationTarget(client: Client, migrate: () => Promise<void>): MigrationTarget {
-  const query: Query = async (sql, params = []) =>
-    (await client.execute({ sql, args: params as InValue[] })).rows as unknown as Row[];
+  const query = sqliteQuery(client);
   return {
     dialect: 'sqlite',
     resetHint:
@@ -41,16 +50,23 @@ export function sqliteMigrationTarget(client: Client, migrate: () => Promise<voi
     async repair(work) {
       // Same sequence as the libSQL migrator: foreign keys are off for the
       // transaction, so a table rebuild (DROP TABLE, then rename a copy) does
-      // not cascade to the rows that reference the table.
+      // not cascade to the rows that reference the table. The pragma does
+      // nothing inside a transaction, so it runs before the transaction begins.
       await client.execute('PRAGMA foreign_keys=OFF');
       try {
-        await client.execute('BEGIN IMMEDIATE');
+        const tx = await client.transaction('write');
         try {
-          await work(sqliteSession(query));
-          await client.execute('COMMIT');
-        } catch (error) {
-          await client.execute('ROLLBACK');
-          throw error;
+          const txQuery = sqliteQuery(tx);
+          const [foreignKeys] = await txQuery('PRAGMA foreign_keys');
+          if (Number(foreignKeys?.foreign_keys) !== 0) {
+            throw new Error(
+              'foreign keys are enforced in the repair transaction: its client has more than one connection',
+            );
+          }
+          await work(sqliteSession(txQuery));
+          await tx.commit();
+        } finally {
+          tx.close();
         }
       } finally {
         await client.execute('PRAGMA foreign_keys=ON');

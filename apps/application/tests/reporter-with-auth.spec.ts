@@ -47,9 +47,8 @@ test.describe.serial('Reporter with authentication enabled', () => {
   // when running in CI. Skip all tests in this file when not in CI.
   test.skip(!process.env.CI, 'Auth server tests only run in CI (see playwright.config.ts webServer)');
 
-  // The auth server opens its database file when it starts, so the file stays in
-  // place: libSQL opens a new connection after each transaction, and one opened
-  // on a deleted path starts an empty database.
+  // The auth server keeps its database file open from the moment it starts, so
+  // the file stays in place.
   test.beforeAll(() => {
     safeRmSync(STORAGE_PATH, { recursive: true, force: true });
   });

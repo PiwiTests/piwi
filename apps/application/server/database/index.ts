@@ -6,7 +6,7 @@ import * as sqliteSchema from './schema.sqlite';
 import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
-import { configureSqliteConnections } from './sqlite-connections';
+import { configureSqliteConnections, sqliteClientConfig } from './sqlite-connections';
 import { isOtelTracingEnabled, traceSqlStatements } from '../utils/otel';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -166,7 +166,7 @@ async function openDatabase(): Promise<DB> {
       // Create client with WAL mode for better concurrent read/write performance.
       // The local-file entry: the package's main one also loads its remote clients.
       const { createClient } = await import('@libsql/client/sqlite3');
-      const client = createClient({ url: dbUrl });
+      const client = createClient(sqliteClientConfig(dbUrl));
       if (isFreshDatabase) {
         // Must be set before the first table is created (a no-op on existing
         // databases unless a full VACUUM runs) — enables `PRAGMA
@@ -183,8 +183,14 @@ async function openDatabase(): Promise<DB> {
         try {
           const migrationsFolder = await resolveMigrationsFolder('migrations');
           console.log(`[Database] Running SQLite migrations from ${migrationsFolder}`);
-          const target = sqliteMigrationTarget(client, () => migrate(db, { migrationsFolder }));
-          await applyMigrations(target, migrationsFolder);
+          // A history repair needs a client with a single connection.
+          const migrationClient = createClient(sqliteClientConfig(dbUrl, 1));
+          try {
+            const target = sqliteMigrationTarget(migrationClient, () => migrate(db, { migrationsFolder }));
+            await applyMigrations(target, migrationsFolder);
+          } finally {
+            migrationClient.close();
+          }
           console.log('[Database] SQLite migrations completed successfully');
           try {
             const { updated, merged } = await reclusterFailureFingerprints(db);
