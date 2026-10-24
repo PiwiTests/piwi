@@ -84,6 +84,9 @@ interface SelectArgs {
 /** The reserved key that resolves the working-tree diff's impact, not a saved selection. */
 const IMPACT_KEY = 'impact';
 
+/** Playwright arguments that run no test and pass: no arguments at all would run the whole suite. */
+const NOTHING_TO_RUN_ARGS = ['--pass-with-no-tests', '--grep-invert', '.'];
+
 /** Flags that consume the following token as their value. */
 const VALUE_FLAGS = new Set([
   '--server-url',
@@ -312,7 +315,11 @@ async function runSelectImpact(args: SelectArgs): Promise<number> {
     return EXIT_OK;
   }
   // Widened = run everything, which is the empty (no-filter) arg list.
-  console.log(impact.impact.widened ? '' : impact.materialization.args.join(' '));
+  if (impact.impact.widened) console.log('');
+  else if (impact.estimate.count === 0) {
+    console.error(`piwi select: no tests impacted — printing arguments that run none`);
+    console.log(NOTHING_TO_RUN_ARGS.join(' '));
+  } else console.log(impact.materialization.args.join(' '));
   return EXIT_OK;
 }
 

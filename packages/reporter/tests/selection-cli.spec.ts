@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import type * as ChildProcess from 'node:child_process';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { parseSelectArgs, parseDuration, runRun } from '../src/cli/select.js';
+import { parseSelectArgs, parseDuration, runRun, runSelect } from '../src/cli/select.js';
 import { readSelectionStamp } from '../src/internal/support/selection-env.js';
 
 vi.mock('node:child_process', async (importOriginal) => {
@@ -258,12 +258,18 @@ describe('runRun', () => {
         .toString()
         .trim();
     git('init', '-q', '-b', 'main');
-    fs.writeFileSync('cart.ts', 'export function total(items) {\n  let sum = 0;\n  for (const i of items) sum += i;\n  return sum;\n}\n');
+    fs.writeFileSync(
+      'cart.ts',
+      'export function total(items) {\n  let sum = 0;\n  for (const i of items) sum += i;\n  return sum;\n}\n',
+    );
     fs.writeFileSync('old-name.ts', 'export const a = 1;\n');
     git('add', '.');
     git('commit', '-q', '-m', 'init');
     const base = git('rev-parse', 'HEAD:cart.ts');
-    fs.writeFileSync('cart.ts', 'export function total(items) {\n  let sum = 0;\n  for (const i of items) sum += i * 2;\n  return sum;\n}\n');
+    fs.writeFileSync(
+      'cart.ts',
+      'export function total(items) {\n  let sum = 0;\n  for (const i of items) sum += i * 2;\n  return sum;\n}\n',
+    );
     git('mv', 'old-name.ts', 'new-name.ts');
 
     const bodies: Array<Record<string, unknown>> = [];
@@ -296,5 +302,41 @@ describe('runRun', () => {
     expect((bodies[0]!.changedFiles as string[]).sort()).toEqual(['cart.ts', 'new-name.ts', 'old-name.ts']);
     expect(bodies[0]!.changes).toEqual([{ filePath: 'cart.ts', blob: base, lines: [[3, 3]] }]);
     expect(stderr).toHaveBeenCalledWith(expect.stringContaining('1 file(s) narrowed by line coverage'));
+  });
+
+  it.each([
+    ['no test is impacted', { count: 0, widened: false }, '--pass-with-no-tests --grep-invert .'],
+    ['some are', { count: 2, widened: false }, 'a.spec.ts:3 b.spec.ts:9'],
+    ['the change widened to the whole suite', { count: 2, widened: true }, ''],
+  ])('select impact prints the Playwright arguments when %s', async (_case, { count, widened }, printed) => {
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { stdio: 'pipe' });
+    git('init', '-q', '-b', 'main');
+    fs.writeFileSync('README.md', 'one\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    fs.writeFileSync('README.md', 'two\n');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/api/projects/menu')) {
+          return new Response(JSON.stringify({ items: [{ id: 7, name: 'Web' }] }), { status: 200 });
+        }
+        return new Response(
+          JSON.stringify({
+            ...RESOLUTION,
+            key: 'impact',
+            estimate: { count, totalDurationMs: null },
+            materialization: count === 0 ? { format: 'args', args: [], command: '' } : RESOLUTION.materialization,
+            impact: { changedFiles: 1, mappedFiles: 0, widened, unmappedSourceFiles: [] },
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+    const stdout = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    expect(await runSelect(['impact', '--base', 'HEAD', '--project', 'web'], env)).toBe(0);
+    // Composed as `playwright test $(piwi select impact …)`, an empty line runs the whole suite.
+    expect(stdout).toHaveBeenCalledWith(printed);
   });
 });

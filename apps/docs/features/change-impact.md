@@ -21,8 +21,10 @@ npx @piwitests/reporter run impact --base origin/main
 
 It fails safe, widening to the full suite with a warning, when a changed file maps to no test (stylesheets too) or
 only through source frames, which miss passing tests. A docs-only change runs nothing. `piwi select impact` prints
-the Playwright arguments instead of running them, and [`piwi preflight --run`](/features/preflight) runs the same
-tests along with those of the locators the change breaks.
+the Playwright arguments instead of running them, for a job that passes them to `playwright test`: nothing when the
+run widens, and `--pass-with-no-tests --grep-invert .` when no test is impacted, under which Playwright runs none and
+passes.
+[`piwi preflight --run`](/features/preflight) runs the same tests along with those of the locators the change breaks.
 
 ## Line level
 
