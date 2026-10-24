@@ -1,0 +1,653 @@
+# Run control from Piwi Picker and the editor
+
+A plan to steer a running Playwright test from outside it: pause it now, step it, run it to a line, resume it, and
+write code from where it stands, from Piwi Picker (the browser extension), from the IDE, from the page itself and from
+the desktop app. The question was whether the browser extension could control a test run Playwright started, whether
+that means loading the extension into the browser Playwright drives, and whether the code made there could land in
+the IDE plugin. It can; the extension does not need to be in that browser, and should not be; and the code lands in
+the IDE through the paths that already exist. Since Playwright 1.59, pausing, stepping and resuming a test is public
+API (`browserContext.debugger`), which every Piwi user has: the reporter requires `@playwright/test` 1.64.1. A spike
+paused a running test from an extension page in a second browser, held it for 4.5 s, longer than its 4 s timeout,
+stepped it and let it pass.
+
+**Status.** Proposed 2026-10-24. Nothing is built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
+for the feasibility claims; they are not part of the repository. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
+The contracts it would add are entry D60 of [`1.0-stabilization.md`](1.0-stabilization.md).
+
+**Summary.** Piwi already pauses a run the editor starts at the editor's breakpoints, with a bar in the page that picks
+a locator for that line or records the steps that come next ([`editor-local-runs.md`](../adr/editor-local-runs.md),
+[`record-from-the-ide.md`](record-from-the-ide.md)). That pause is set before the run, on locator actions only, in
+headed runs only, and only the page knows it is paused. This plan makes the pause a shared, live state every Piwi
+surface can see and change:
+
+- **Pause a running test now**, before its next Playwright call of any kind (a navigation, a key press, an assertion),
+  from the IDE, from Piwi Picker, or, in Chrome and Edge, with a keyboard shortcut that works while the test's window
+  has focus.
+- **Step, run to the caret, resume**, and add or remove breakpoints while the run goes on.
+- **See where it stands**: the paused line as the execution point in the editor, the paused page in Piwi Picker's
+  window, headless runs and runs in a dev container included.
+- **Write code from there**: a locator, recorded steps, an assertion (an ARIA snapshot of a region among them), a
+  mock of a request the page made, all rendered by the editor service and written at the paused line by the IDE.
+- **From the developer's own browser**: Chrome, Edge or Firefox, with nothing of Piwi in the browser the test drives.
+- **The same for the desktop app's runs** (reproduce, bisect, Flake Lab, bug reports), and a failure page in the
+  dashboard that opens the test in the editor, paused at the failing line.
+
+Of the four things [`ROADMAP.md`](../ROADMAP.md) says Piwi is for, this serves the third, **hand back a fix**: the
+locator, the missing steps or the assertion are made on the live page, at the place the test stopped or failed, and
+land in the code there. It reaches the second through **Debug in my editor** from a failure cluster. It is a delivery
+route, like the editor extensions it extends.
+
+## The short answer
+
+The question assumed the extension would have to be loaded into the browser Playwright launches. There are three
+places Piwi's controls can live, and that one is the weakest:
+
+| Where the controls live | What it takes | Verdict |
+| --- | --- | --- |
+| **Piwi Picker inside the test's browser** (`--load-extension`) | Playwright's bundled Chromium only: Google Chrome and Microsoft Edge removed the flag (Chrome 137). A persistent context only (`launchPersistentContext`): one profile per worker or per test, no `storageState` option, so a suite that signs in through `use.storageState` loses its sign-in, and a context the test makes with `browser.newContext()` gets no extension. Firefox and WebKit cannot load it. | No. It changes how the suite runs to add controls Piwi already injects while paused. [`record-from-the-ide.md`](record-from-the-ide.md) D1 reached the same conclusion for recording. |
+| **Piwi Picker in the developer's own browser, as a remote control** | A local hub (the process that started the run) and a paired WebSocket. | Yes. One extension controls Chromium, Firefox and WebKit runs alike, headed or headless, and is never in the test's page, its screenshots or its accessibility tree. Spike C. |
+| **In the page, while paused** (the pause bar, the picker, the recorder) | Scripts injected through Playwright while the test waits. | Yes, as today, and only while paused (D7). |
+
+The browser extension is the right place for a **Pause** button: while the test acts, nothing of Piwi may be in its
+page, and the IDE is often behind the test's window. A small Piwi Picker window beside it, or a global shortcut,
+reaches the run without touching the page.
+
+## How the pieces connect
+
+```mermaid
+flowchart LR
+  subgraph machine["The developer's machine (or their dev container)"]
+    subgraph run["A test run"]
+      W["Each worker:<br/>capture fixtures"] -->|"context.debugger:<br/>pause, step, run to, resume"| B[("The test's browser")]
+      W -.->|"pause bar, picker, recorder:<br/>only while stopped"| B
+    end
+    H{{"The hub: the process that started the run<br/>(editor service, or the desktop app's server)"}}
+    W <-->|"run channel<br/>PIWI_RUN_CHANNEL"| H
+    IDE["VS Code / JetBrains client:<br/>execution point, controls, writes the code"] <-->|"LSP: piwi/runSessionChanged,<br/>piwi/runControl"| H
+    PP["Piwi Picker, in the developer's own browser:<br/>Runs window, global shortcut, live view"] <-->|"paired WebSocket:<br/>origin and token"| H
+    PW["playwright-cli, Playwright's dashboard"] -.->|"bind on request"| B
+  end
+  R["The reporter"] -->|"results, live steps"| I[("Team instance")]
+  I -.->|"Debug in my editor"| IDE
+```
+
+Three channels are new: the run channel between each worker and the hub (Part 2), the session between the hub and
+the IDE clients over the protocol they already speak (Part 3), and a WebSocket between the hub and Piwi Picker
+(Part 4). What exists keeps its job: the reporter sends results and live steps to the instance, Send to editor still
+takes a locator or a recording from Piwi Picker to the editor, and the desktop app's pairing still carries bug reports.
+Control never leaves the machine.
+
+## What the reader gets
+
+In WebStorm, `tests/checkout.spec.ts`, **Run this test** above `test('pays with a coupon')`. Chromium opens; the test
+signs in from the project's `storageState` and fills the cart. Beside it, the Piwi Picker window (opened once from the
+toolbar popup's **Runs**) follows the run:
+
+```
+Piwi · checkout.spec.ts › pays with a coupon · chromium · attempt 1
+● Running · Click getByRole('link', { name: 'Checkout' })            Pause
+```
+
+The coupon field looks wrong. **Pause** in that window, or Ctrl+Shift+5 from any window (a Chrome shortcut): the test
+stops before its next Playwright call, here a fill in a page object.
+
+```
+checkout.page.ts                                                       ← opened by the editor at the paused line
+ 29     async applyCoupon(code: string) {
+ 30 ▶     await this.page.getByLabel('Coupon').fill(code);              ← the execution point
+        ⏸ Paused · Fill "WELCOME10" getByLabel('Coupon') · Resume · Step · Run to Cursor · Pick · Record · Assert
+ 31       await this.page.getByRole('button', { name: 'Apply' }).click();
+```
+
+The test's page shows Piwi's pause bar; the Piwi Picker window shows the same place, an image of the page and the
+same buttons. **Pick** in either and click the field: `getByLabel('Coupon')` on line 30 becomes
+`getByRole('textbox', { name: 'Coupon code' })`, the locator the picker verified finds that field alone. **Run to
+Cursor** with the caret on line 42 of the spec: the test runs on and stops there. **Assert**, then the order summary:
+
+```ts
+await expect(page.getByRole('region', { name: 'Order summary' })).toMatchAriaSnapshot(`
+  - heading "Order summary" [level=2]
+  - text: Red shoes €80.00 Coupon WELCOME10 −€8.00
+  - text: Total €72.00
+`);
+```
+
+is written above line 42, read from the paused page. **Resume**: the test passes. The run reaches the instance as an
+interactive run: its results count, its paused calls stay out of the timing figures.
+
+The same test in a dev container, headless: the run still pauses, the editor still shows the execution point, and the
+Piwi Picker window shows a live view of the page in place of a window nobody can see. **Pick** and **Record** work on
+that view; the steps land in the editor as before.
+
+This is the end state of the [Delivery](#delivery). The first release (PRs 1 and 2) has Pause, Step, Run to Cursor and
+Resume in both IDEs, on top of today's pause bar.
+
+## What exists
+
+| Piece | Where | What it gives this plan |
+| --- | --- | --- |
+| Breakpoints in the browser | `packages/reporter/src/internal/capture/pause-at.ts`, `capture-fixtures.ts` (`pausesAt`, `pauseBefore`, `pauseInPlace`), [`editor-local-runs.md`](../adr/editor-local-runs.md) Part 4 | `PIWI_PAUSE_AT` lists lines; the locator proxy holds a locator action or assertion on one of them before it runs and lifts the test timeout. Headed runs only, never under CI. The lines are fixed when the run starts. |
+| The pause bar | `packages/picker-dom/src/overlay-pause.ts` (`showPauseBar`, `pauseAnswered`, `takePauseState`) | Resume, Step, Pick a locator, Record here, Finish. A plain element at the top of the page; the worker reads its answer from a page global, polled every 250 ms. Nothing outside the page knows the test is paused. |
+| The record channel | `packages/core/src/ide-recorder.ts`, `packages/editor/src/recorder/handoff.ts`, `packages/reporter/src/internal/capture/record-handoff.ts` | A socket the editor service listens on (a Unix socket in a user-only folder, a named pipe on Windows), named in every run it builds as `PIWI_RECORD_CHANNEL=<path>#<token>`; one JSON message per line, each checked field by field. A test connects to it only when **Record here** is clicked. |
+| A pick lands on its line | `postPickToEditor` (`PIWI_EDITOR_SEND`), `piwi/applyPick`, `replaceLocatorOnLine` | A locator confirmed at a pause replaces the locator chain on that line, in the file as it stands. |
+| Recording into the editor | `packages/editor/src/recorder/`, `record-ide.js`, `renderSpec` (`packages/core/src/codegen.ts`) | One recorder, one generator: the catalog, the test id attribute, `this.page` in a page object, no password written down. |
+| The editor's own runs | `piwi/runArgs` (`PIWI_ORIGIN=editor`, `PIWI_ORIGIN_REF`), `run-stream.ts`, `run-watch.ts`, `piwi/runStatusChanged` | The editor knows each run it starts by its ref, and follows it through the instance's event stream. |
+| Send to editor | `@piwitests/core/editor-send`, `apps/vscode/src/send-listener.ts` (`POST /piwi/send` on `127.0.0.1`), `PiwiSendHandler.kt` (`/api/piwi/send` on the IDE's built-in server) | A paired, token-protected way for the extension to reach the editor. One request, nothing live. In VS Code, one window holds the port. |
+| The desktop app's pairing and runs | `desktop-settings.ts`, `@piwitests/core/desktop-proof`, `~/.piwi/desktop.json`, `apps/desktop/src-tauri/src/runner.rs` | Piwi Picker reaches the app on the loopback interface after a challenge only the token's holder answers; the app runs the linked folder's Playwright for reproduce, bisect and Flake Lab. |
+| The extension's surfaces | `apps/extension/src/popup/`, `src/devtools/panel*.ts`, `src/background/debugger.ts` | A popup, a settings page, a DevTools panel that mirrors a recording and a replay with Pause, Continue and Stop; the rules for the `debugger` permission. |
+| Internal calls | `internalCall` (`packages/reporter/src/internal/capture/quiet-capture.ts`) | Playwright's `_wrapApiCall(…, { internal: true })`, feature-checked: a call that is no step of the test. The pause already runs inside one. |
+| Live steps to the instance | the reporter's `step-begin` / `step-end` stream, the run page's **Live activity** | What each worker is doing, on the dashboard, a second or so behind. |
+
+### What Playwright added in 1.59 to 1.64
+
+| API | What it does | What it changes for Piwi |
+| --- | --- | --- |
+| `browserContext.debugger`: `requestPause()`, `next()`, `runTo({ file, line })`, `resume()`, `pausedDetails()`, the `pausedstatechanged` event (1.59) | Pauses the context before its next call, from any client: `pausedDetails()` names the call (`Click getByRole('button', { name: 'Pay' })`) and its place in the user's code. The test runner suspends the test timeout while a context is paused (`runAfterCreateBrowserContext` in `playwright/lib/index.js`), and reports the test's duration without the pause. | The pause Piwi needs, public. It covers every call, not only locator actions, and headless runs (D2). |
+| `browser.bind(title, { workspaceDir, host, port })`, `browserType.connect(endpoint)` from several clients (1.59) | A launched browser becomes reachable by other clients, which see its contexts and pages. The descriptor is written to `~/.cache/ms-playwright/b/<guid>`. `PLAYWRIGHT_DASHBOARD=1` binds each test worker's browser as `worker-<n>`. | Interoperability with Playwright's own tools (D11), and the road not taken for the channel (D4). |
+| `page.screencast`: `start({ onFrame })`, `stop()` (1.59) | JPEG frames of a page as it paints. | A view of a paused headless page (Part 6). |
+| `npx playwright test --debug=cli`, `playwright-cli attach`, `pause-at`, `step-over`, `resume`; `playwright-cli show` (1.59; bundled as `npx playwright cli` since 1.62) | Agents attach to a test paused at its start and step it; the dashboard lists bound browsers with a live view, Pause, Step and Resume. | Playwright's answer for agents and for a generic live view. Piwi does not rebuild it (D11). |
+| `browserType.connectOverCDP({ noDefaults })` (1.60); the Playwright Extension for Chrome (`playwright-cli attach --extension`) | Attach to the developer's everyday Chrome without changing its state, through an extension that relays the protocol over `chrome.debugger`. | The precedent for the reverse direction, an extension handing a tab to a local Playwright client: out of this plan ([Not in this plan](#not-in-this-plan)). |
+
+Microsoft's Playwright extension for VS Code shows the browser of a run, picks locators and records at the cursor;
+it is VS Code only. WebStorm debugs Playwright tests with its JavaScript debugger, which stops the test's code, not
+its browser.
+
+## Decisions
+
+| | Decision | Why |
+| --- | --- | --- |
+| D1 | Piwi Picker stays out of the browser the test drives. It controls runs from the developer's own browser, through a hub on the same machine. | See [The short answer](#the-short-answer): loading it is Chromium-only and needs a persistent context, which drops `storageState` and the contexts a test makes itself. From outside, nothing of Piwi is in the test's page while it acts. |
+| D2 | Playwright's debugger is the pause: `context.debugger`, in place of the hold the locator proxy does today. | Public since 1.59 and in every Piwi user's Playwright. It pauses before navigations, key presses, mouse calls and assertions as well as locator actions, headless runs too; the test timeout is suspended by the runner and per-call budgets are untouched (spike A and the timeouts check). Every client sees one paused state. |
+| D3 | Breakpoints, Step and Finish stay Piwi's, as a policy the worker applies over the debugger: while breakpoints are set, the worker keeps the debugger stopping before every call and resumes at once unless the call is on a breakpoint line or a step was asked. | `runTo` takes one location; the IDE has several breakpoints and changes them during the run. Deciding in the worker costs no round trip per call: 120 calls took 2.16 s without the policy and 2.25 s with it, within the noise of the runs. |
+| D4 | One run channel per worker, to the process that started the run, named in the run's environment as `PIWI_RUN_CHANNEL`. The record channel's messages travel on it. | The editor service already opens a socket and names it in every run it builds; widening it from "at Record here" to "the whole run" gives every surface the run's live state. A second Playwright client attached to the worker's bound browser can pause and step it too (spike B), but does not know which test, attempt or project a context belongs to, needs a Playwright client of the project's version inside the service, and would put every breakpoint decision a round trip away. |
+| D5 | The hub is the process that started the run: the editor service for runs from the IDE, the desktop app's server for its own runs. A run started in a terminal finds an editor service of its workspace through a discovery file. | The starter holds the environment, the ref and the process, and knows the files. No new daemon. The discovery file is the one [`record-from-the-ide.md`](record-from-the-ide.md) Part 5 proposed for `page.pause()`, one per service. |
+| D6 | Every surface is a view of one session. Code is rendered by the editor service and written by the IDE client alone; Piwi Picker and the page send intents (pick this element, record, assert this), never code. | One generator and one writer, with the catalog, the test id attribute, `this.page` and a single undo step, as [`record-from-the-ide.md`](record-from-the-ide.md) D3 and D4. |
+| D7 | Nothing of Piwi is in the page while the test acts. The pause bar, the picker and the recorder appear only while the test is paused, and are gone before it goes on; a view of the page is a screencast or a screenshot, not a script in it. | The pause bar is a plain element: the test's own locators would find its buttons, screenshots and visual comparisons would include it, and an action's hit test could land on it. |
+| D8 | Control is local, paired and typed. The hub listens on a user-only socket or the loopback interface; every client is paired with a token; a WebSocket is accepted only from the extension's own origin; the commands are a closed set, with no way to evaluate code. | A page served from the machine itself reaches a loopback WebSocket (spike C). A paired client may pause a test and see the application's pages; it must not run code in them. Nothing goes to the instance. |
+| D9 | Every call Piwi makes for control is an internal call. | Spike A: a public call made right after a step is taken as the test's next call and paused; debugger calls made publicly appear as steps of the test in its trace and in reports. |
+| D10 | A run in which a test paused is interactive: each paused test carries its pauses, and the server leaves those calls out of the timing figures. | The trace counts the paused time in the paused call's duration (a navigation of 5,132 ms in the spike), while the runner leaves it out of the test's duration. The results still count; notifications already ignore editor runs ([`editor-local-runs.md`](../adr/editor-local-runs.md) D11). |
+| D11 | Work with Playwright's own tools rather than rebuild them: a run Piwi controls can be bound on request for `playwright-cli attach` and Playwright's dashboard. | Playwright 1.59 ships a generic live view, input into it and agent attach. Piwi's surfaces carry what those lack: breakpoints from both IDEs, the project's generator and catalog, the suite's history at the paused line, and the extension in the developer's own browser. |
+| D12 | Licenses stay on their side. The run channel's messages live in `@piwitests/core` (MIT) beside the record channel's; the worker's half is the reporter's (MIT); the hub, the IDE clients and the extension are FSL. Bundles the worker injects (`record-ide.js`) are loaded by a path the hub gives. | The rule of the root guide, and of [`record-from-the-ide.md`](record-from-the-ide.md) D8. |
+
+## Part 1: The pause is Playwright's debugger (reporter)
+
+### 1.1 What the capture fixtures do
+
+Each test's contexts are watched as they are made (the `page` fixture's context, and those the test makes with
+`browser.newContext()`, through the browser's `context` event). For each, the worker listens to
+`context.debugger`'s `pausedstatechanged` and applies one policy:
+
+1. **A pause asked from outside** (Pause): `requestPause()` on every context of the current test. The first call
+   made on any of them stops; the stops still armed on the others are resumed at once when they come, since there is
+   no public way to disarm one.
+2. **A breakpoint**: while the run has breakpoints, every context stops before every call (`requestPause`, then
+   `next()` at each stop), and the worker resumes at once (`next()` again) unless the call's place, from
+   `pausedDetails().location`, is on a breakpoint line. The place is the line in the user's code that made the call,
+   a page object's line included, as `PIWI_PAUSE_AT` matches it today.
+3. **Step**: `next()`, and the next stop is shown whatever its line.
+4. **Run to a line**: `runTo({ file, line })`, which Playwright matches by the file's name and the line; with
+   breakpoints set, the policy treats the line as one more breakpoint until it is reached.
+5. **Resume**: `next()` while breakpoints remain (the policy keeps stopping), `resume()` when none do.
+6. **Finish**: breakpoints off for the rest of this test's attempt, then as Resume.
+
+Each stop is reported on the run channel (Part 2) with the call's title and place, why it stopped (`breakpoint`,
+`step`, `pause`, `run-to`, `page-pause`, `failure`), the attempt, and, on request, a screenshot. While stopped, the
+worker draws the pause bar in a headed page (D7) and does what the session asks (Part 5), all through internal calls
+(D9). The bar is removed before the worker lets the call go on.
+
+`pauseBefore` keeps one job: it shows what is about to happen. The locator and its element are known to the proxy
+before the call (today's `PausePoint`); the bar highlights the element as it does now.
+
+The one stop that is not the debugger's comes after a failure: no call is left to stop before, so the page is held
+before its context closes, as the failure-time picker holds it today (`maybeOpenPicker`), with the test timeout lifted
+by Piwi (Part 5).
+
+### 1.2 What changes for the developer
+
+- **Any call pauses**: a breakpoint on `await page.goto('/checkout')`, `await page.keyboard.press('Tab')` or
+  `await expect(page).toHaveURL(…)` works; today they do nothing. A breakpoint on a line that makes no Playwright call
+  still does nothing, and the IDE says so on the line (Part 3).
+- **Pause takes effect at the next call.** A test inside a long call (a `waitForTimeout`, an assertion polling for
+  its timeout) shows **Pausing…** until that call returns.
+- **Headless runs pause** (spike A ran headless). The pause bar needs a window; a headless pause is shown in the IDE
+  and in Piwi Picker, with an image of the page (Part 6). Under CI, nothing pauses, as today.
+- **The test timeout and the per-call budgets** are the runner's business: a 5 s pause did not fail a test with a 4 s
+  timeout, and 3 s pauses did not spend 1 s `actionTimeout` and `expect.timeout` budgets. `rearmedTimeout` and the
+  timeout lift in `pauseHere` go.
+- **`page.pause()`**, in a run with a channel, stays Piwi's, as a stop at its line with the reason `page-pause`.
+
+### 1.3 Internal calls, and what they cost if missing
+
+Every call the worker makes for control, the debugger's own included, goes through `internalCall` (D9). Spike A shows
+both failures it prevents: the debugger's calls listed as steps of the test (`Pause on next call`, `Step to next
+call`, `Run to location`, `Resume`), and a public `page.evaluate` made right after `next()` stopped as if it were the
+test's next call (`fixtures.js:95 · Evaluate`). `_wrapApiCall` is private; Piwi already depends on it, feature-checked.
+Without it, the worker makes no call on a page between a step and the next stop.
+
+### 1.4 Interactive runs and their timings
+
+The worker adds a `piwi-pauses` attachment to each test that stopped: for each stop, the call's title and place, the
+reason and how long it lasted. The reporter marks the run interactive (D10). The server keeps the run's results and
+leaves the paused calls out of the step timings, the slow-step lists and the duration trends. A run with breakpoints
+that never stopped is not interactive.
+
+### 1.5 End the test
+
+[`record-from-the-ide.md`](record-from-the-ide.md) Part 5 wanted **End the test**: skip the rest once the steps are
+recorded. With the debugger, a stop is inside the paused call, which runs as soon as the stop ends; and the worker's
+channel is outside the test's own flow, where `testInfo.skip()` must be thrown. The locator proxy is in that flow: it
+awaits the call it delegated. So the proxy races each delegated call against an end signal of the test's; **End the
+test** fires the signal with the skip (`testInfo.skip(true, 'Ended from Piwi')`), the test is skipped, and the stopped
+call never runs, since the test's context closes under it. A spike did exactly this: stopped before a click, ended,
+the test was skipped and the page never left the sign-in page.
+
+Calls the capture fixtures do not delegate (`page.goto`, `page.keyboard`) cannot be ended this way. At a stop on one of
+them, **End the test** says that the call will run and the test end before its next locator call; **Stop the run**
+ends the process.
+
+## Part 2: The run channel (worker and hub)
+
+`PIWI_RUN_CHANNEL=<socket path>#<token>` replaces `PIWI_RECORD_CHANNEL` in the runs the editor service builds
+(`piwi/runArgs`, `piwi/runSelection`, the rerun of the failing tests); the hand-off messages of
+`@piwitests/core/ide-recorder` travel on it unchanged. A project whose reporter predates the run channel still gets
+`PIWI_RECORD_CHANNEL`: the service reads the reporter's version, as it does for breakpoints today. The protocol is
+`@piwitests/core/run-channel`: one JSON message per line, checked field by field on both sides, as the record
+channel's are.
+
+Each worker connects once, before its first test, and keeps the connection for its life. Its first line is an
+attach: the token, the worker and parallel indexes, the process id, the Playwright and reporter versions. Then:
+
+```ts
+/** What a worker sends the hub. */
+export type RunToHub =
+  | { type: 'attach'; token: string; workerIndex: number; parallelIndex: number; pid: number; playwright: string; reporter: string }
+  | { type: 'test-begin'; testId: string; title: string[]; file: string; line: number; project: string; retry: number }
+  | { type: 'stopped'; context: number; reason: StopReason; title: string; place: Place; locator: string | null }
+  | { type: 'running'; context: number }
+  | { type: 'test-end'; testId: string; status: string; pausedMs: number }
+  | { type: 'answer'; request: number; value: unknown } // to a `request` below
+  | { type: 'notice'; message: string }
+  | HandoffToEditor; // Record here, as today
+
+/** What the hub sends a worker. */
+export type HubToRun =
+  | { type: 'breakpoints'; places: Place[] }
+  | { type: 'control'; action: 'pause' | 'step' | 'resume' | 'finish' | 'end' }
+  | { type: 'run-to'; place: Place }
+  | { type: 'request'; request: number; what: PausedRequest } // Part 5 and Part 6, while stopped
+  | HandoffToTest;
+
+export type StopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure';
+/** A place in the user's code: a path relative to the run's working directory, 1-based line and column. */
+export interface Place { file: string; line: number; column?: number }
+```
+
+- **The worker never waits on the hub**, except while stopped. A hub that goes away while a test is stopped resumes
+  it; a channel that does not connect leaves the run as it is today, with `PIWI_PAUSE_AT` still honored.
+- **The breakpoints of the run** come with the command (`PIWI_PAUSE_AT`, as today) and change on the channel.
+- **What a stop carries** is small; an image of the page goes only when asked (`request`), so a run that stops before
+  every call for its breakpoints sends nothing until one of them is reached. A line holds 64 MB at most, as the record
+  channel's (`MAX_HANDOFF_LINE`).
+- **Several workers** each pause on their own. **Pause** pauses all of them, each at its next call, and each resumes
+  on its own. A run started for debugging (a breakpoint at the caret, **Debug in my editor**) runs with
+  `--workers=1`, as `--debug` does.
+- **A JavaScript debugger stopped in the worker** freezes its channel too: the hub shows the worker as not answering.
+
+## Part 3: The session in the editor service, and the IDE
+
+### 3.1 The session
+
+The service keeps a session per run it started, by its ref: the workers, the test each one runs, and its state
+(running, stopped at a place for a reason, between tests). Clients get it in a notification and act on it with
+requests:
+
+- `piwi/runSessionChanged` (notification): the session, sent at once when a worker stops or goes on, and at most
+  every 300 ms for a worker's last call, the pace of the live run's notifications today.
+- `piwi/runControl { ref, worker?, action, place? }`: `pause`, `step`, `resume`, `finish`, `end`, `run-to`, `stop`.
+  Without `worker`, `pause` and `stop` act on every worker, the others on the one stopped.
+- `piwi/setRunBreakpoints { ref, places }`: the IDE's line breakpoints, sent when they change during a run.
+- `piwi/pausedPage { ref, worker, what }`: an image of the paused page, its ARIA snapshot, or a locator's count and
+  outline (Part 5).
+
+Every protocol change lands with both clients, per the service's rule; the requests of Part 5 follow the same shape.
+
+### 3.2 The IDE
+
+- **Controls**: **Pause** and **Stop** while a run executes, in the status bar item that shows its progress (VS Code)
+  and the Run tool window's toolbar (JetBrains); **Resume**, **Step**, **Run to Cursor**, **Finish** while stopped,
+  in the same places, in an inlay above the paused line and as commands with keys. They are Piwi's own commands, never
+  the IDE's debug actions: no debug session exists.
+- **The execution point**: the paused line is highlighted with an arrow in the gutter, in the file it is in (a page
+  object's line included), opened if it is not, and the inlay says what is about to run:
+  `⏸ Paused · Fill "WELCOME10" getByLabel('Coupon') · attempt 2`.
+- **Breakpoints during the run**: VS Code's `vscode.debug.onDidChangeBreakpoints` and JetBrains'
+  `XBreakpointListener` send the new set; today's run reads them once, at its start. A breakpoint on a line that makes
+  no Playwright call is marked as never stopping.
+- **Run to Cursor** from the caret: `run-to` on the caret's line, in a spec or a page object.
+- **A run that is not stopped** keeps its live gutter ([`editor-local-runs.md`](../adr/editor-local-runs.md), Part 7).
+
+## Part 4: Piwi Picker as the remote control
+
+### 4.1 Where it lives
+
+A **Runs** page, `runs.html`, an extension page opened from the popup in a small window of its own
+(`chrome.windows.create({ type: 'popup' })`, `windows.create` in Firefox), so it stays beside the test's window. It
+needs no new permission. The side panel would need `sidePanel`, a new standing permission, and is Chromium only
+(Firefox has `sidebar_action`): see [Open questions](#open-questions). The popup shows a **Runs** tile, with the number
+of runs, while a paired hub answers.
+
+In Chrome and Edge, a global shortcut (`commands` with `"global": true`, suggested as Ctrl+Shift+5, which the user can
+remap) pauses and resumes the run while another window has focus, the test's included. ChromeOS has no global
+commands, and Firefox's commands work only while Firefox has focus.
+
+### 4.2 How it finds the hubs
+
+- **The editor**: through the pairing that exists. The editor's Send to editor endpoint answers
+  `GET /piwi/live` (VS Code's listener) or `GET /api/piwi/live` (the JetBrains built-in server), with the pairing's
+  token, with the hub's WebSocket address and a token of its own. Each editor service writes
+  `~/.piwi/editors/<pid>.json` (its address and token, readable by the user only, removed when it stops); the answer
+  lists every live one, so the one pairing reaches the runs of every IDE window, where today one VS Code window holds
+  the port.
+- **The desktop app**: through its pairing (the address and the token Piwi Picker keeps, the challenge first). Its
+  server answers the same WebSocket for its own runs (Part 7).
+
+### 4.3 The hub's WebSocket
+
+- On `127.0.0.1` only; the `Host` header must be the hub's own address.
+- **The origin is checked**: `chrome-extension://pakhnokpjboejcghgcmkjlpnogfjihhe` for the store's build, or the origin
+  that made the pairing's request, kept by the hub (Firefox gives each install its own `moz-extension://` origin). In
+  spike C, a page served from `127.0.0.1` reached the hub's WebSocket and only the origin check refused it; a page on a
+  public origin never reached it in Chromium 156, most likely through its local network access checks, which this plan
+  does not rely on.
+- **The token is the first message**, as the browser's WebSocket sends no header of the page's choosing.
+- **The commands are the session's** (`runControl`, the intents of Part 5, the view's input of Part 6), each checked
+  field by field. There is no way to evaluate code, read a file or reach the instance.
+
+### 4.4 What the page shows
+
+- Each run of each hub: the project and the command, then each worker's test (title, project, attempt) and its last
+  call, ticking while it runs (from the session, not from the instance).
+- A stopped worker: the place, the call about to run, an image of the page, **Resume**, **Step**, **Finish**, and the
+  code actions of Part 5. **Run to Cursor** stays in the IDE, which has the file.
+- The verdict when the run ends, with **Open in editor** (the IDE's open link) and, when the run reached an instance,
+  **Open the run**.
+
+The extension's rules hold: no network call from a content script (the Runs page is an extension page, not a content
+script); no secret in `chrome.storage.local` (the hub tokens go to the secret area beside the editor's); every text
+from the catalogs, in every shipped language; and what a hub sends, the images of the application's pages among it,
+stays in the Runs page.
+
+## Part 5: Code from a pause
+
+Every action below starts from the IDE, from the Runs page or from the pause bar, and ends the same way: the worker
+does the page's part through internal calls, the editor service renders the code, the IDE writes it at the paused
+place (D6). An action started where no IDE is paired (a desktop run with none) offers **Copy**.
+
+| Action | What is written | Where | Status |
+| --- | --- | --- | --- |
+| **Pick a locator** | The verified locator of the chosen element | Replaces the locator chain on the paused line (`piwi/applyPick`) | Exists from the bar; new from the IDE and the Runs page |
+| **Record** | The steps done in the page, through the editor's recorder | Above the paused line, without the opening navigation | Exists from the bar; new from the IDE and the Runs page |
+| **Assert** | The checks the recorder's **Check an element** offers for the chosen element (`toHaveText`, `toBeVisible`, `toHaveValue`, `toBeChecked`, `toHaveCount`…), through `record-ide.js` | Above the paused line | New |
+| **Assert a region** | `toMatchAriaSnapshot` with the region's ARIA snapshot read from the paused page (53 ms in the spike); a new matcher in `renderSpec` | Above the paused line | New |
+| **Mock a request** | `await page.route(…)` that answers as the server answered one of the requests the capture fixtures recorded since the test began, written by the extension's `mockCode` (credentials hidden, no header written), bundled into the editor service as the recorder is | Above the paused line | New |
+| **The locator at the caret** | Nothing: the locator's matches are outlined in the paused page, with their count in the editor | The caret's line, while a test is paused | New; [`record-from-the-ide.md`](record-from-the-ide.md) Part 4.3 for a recording browser |
+
+- **The place is Playwright's**: `pausedDetails().location`, the line and column of the call in the user's code, in a
+  spec or a page object; the service reads which page expression is in scope there (`this.page`, `adminPage`), as
+  [`record-from-the-ide.md`](record-from-the-ide.md) Part 8 does.
+- **The paused call still runs** when the test goes on, with the code it was started with: a pick changes the file,
+  not the running test. The editor says so once.
+- **A failure** in an interactive run holds the failing page before its context closes (Part 1.1): the same actions,
+  with **Pick** replacing the failing locator, the failure-time picker's job today, and **Record** writing the steps
+  that were missing above the failing line. The run reports the failure as it happened.
+
+## Part 6: Headless and remote runs
+
+A stopped page nobody sees still gets the code actions:
+
+- **An image at each stop**, on request (a screenshot through an internal call), shown in the Runs page and, in VS
+  Code and the JetBrains IDEs, in the Piwi view.
+- **A live view** while the Runs page shows a stopped worker: `page.screencast.start({ onFrame })`. Chromium sends a
+  frame when the page paints (one in a second on a still page in the spike), Firefox about 23 a second.
+- **Input on the view**: mouse and keys, as typed messages the worker plays with `page.mouse` and `page.keyboard`. The
+  picker and the recorder see them as they see a person's (trusted input), so **Pick** and **Record** work on a
+  headless page.
+- **Dev containers, Codespaces, WSL and JetBrains Gateway**: the editor service runs where the code is; the hub's
+  address is forwarded by the IDE (`vscode.env.asExternalUri`, Gateway's port forwarding) and the token is still
+  required. This answers, for runs, the remote development risk [`record-from-the-ide.md`](record-from-the-ide.md)
+  lists for recording.
+
+Images and frames go from the worker to the hub to the Runs page, on the developer's machine or their forwarded port,
+and nowhere else.
+
+## Part 7: The desktop app's runs
+
+The app's runner (`runner.rs`) adds `PIWI_RUN_CHANNEL` to the runs it starts, with its server as the hub. Its live run
+view gets Pause, Step and Resume, and the paired Piwi Picker sees those runs: **Reproduce** can stop at the failing
+line, a bisect step can be watched, a bug report's run can be stepped. Code from a desktop run goes to a paired editor
+when one is, and to the clipboard otherwise.
+
+## Part 8: From the team instance
+
+- **Debug in my editor**, on a failure: the IDE's open link (`vscode://piwitests.piwi/open`, `/api/piwi/open` on the
+  JetBrains built-in server) gains `debug=1`. The IDE opens the failing line, then offers to run that test headed, one
+  worker, with a breakpoint on the line; the run stops there, with the healing panel's best candidate outlined on the
+  page when the instance has one.
+- **The run page** says that a worker of a live run is paused, from the reporter's step stream; it never steers one
+  (D8).
+
+## Part 9: Agents and Playwright's own tools
+
+- **Bind on request**: the session's **Share with Playwright tools** has the worker call
+  `browser.bind('piwi-<ref>-w<n>', { workspaceDir })`, so `playwright-cli attach` and Playwright's dashboard join the
+  stopped run, and an agent can explore the page while the developer watches (spike B attached a second client in
+  44 ms). Off by default: a bound browser is open to any process of the user.
+- **Agents in the IDE** reach the instance through `piwi/mcp` today. Run control as MCP tools is an
+  [open question](#open-questions): Playwright's `--debug=cli` already lets an agent attach and step.
+
+## With or without the rest
+
+| Setup | What run control gets |
+| --- | --- |
+| The IDE plugin alone | Pause, Step, Run to Cursor, Resume and Finish; breakpoints that change during the run, on any Playwright call; the execution point; the code actions of Part 5 from the IDE and the pause bar; a headless pause shown as an image. |
+| With Piwi Picker paired | The Runs window beside the test's window; the global shortcut in Chrome and Edge; the code actions from there; the live view and its input for headless and remote runs. |
+| With a team instance | The history at the paused line (the locator's past failures, the healing panel's candidate), **Debug in my editor** from a failure page, the catalog in recorded code. |
+| With the desktop app | Its own runs paused and stepped from its window and from Piwi Picker. |
+
+## Delivery
+
+Each PR is usable on its own; sizes are relative (S, M, L).
+
+| PR | Content | Size |
+| --- | --- | --- |
+| 1 | The debugger as the pause (Part 1): the policy, breakpoints on any call, internal calls, the `piwi-pauses` attachment, interactive runs and their timings on the server. The pause bar works as today, in headed runs. | M |
+| 2 | The run channel (Part 2), the record channel folded in; the session, `piwi/runSessionChanged`, `piwi/runControl`, `piwi/setRunBreakpoints`; both IDE clients: Pause, Step, Run to Cursor, Resume, Finish, the execution point, breakpoints during the run, a headless stop shown as an image. | L |
+| 3 | Piwi Picker's Runs page: the live address through the pairings, `~/.piwi/editors/`, the hub's WebSocket rules, runs and stops with an image, the controls, Pick and Record in the test's window; the global shortcut. | M |
+| 4 | Code from a pause (Part 5): Assert, Assert a region, Mock a request, the locator at the caret; a failure that stops in an interactive run. | M |
+| 5 | Headless and remote runs (Part 6): the live view, input on the view, Pick and Record through it, forwarded addresses. | L |
+| 6 | The desktop app's runs (Part 7). | M |
+| 7 | **Debug in my editor** (Part 8), runs started in a terminal (D5), **End the test** (Part 1.5), bind on request (Part 9). | M |
+
+PRs 1 and 2 are the first usable release. PR 3 is the one the question asked for.
+
+## Verification
+
+- **Core**: the run channel's parsing, both ways, field by field, with the refusals; the stop policy as a pure
+  function (stops, breakpoints, commands in; actions out), including several contexts and the stale stop of 1.1.
+- **Reporter**: an integration test runs real Playwright tests under a fake hub, the spikes made tests: where a pause,
+  a step and a run to a line stop; a 5 s pause in a 4 s timeout; per-call budgets; no Piwi call among the test's
+  steps; the `piwi-pauses` attachment. Chromium in every run, Firefox where the job installs it.
+- **Editor service**: sessions driven by a fake worker on the channel; `piwi/runControl`; breakpoints sent during the
+  run; a worker that disconnects while stopped.
+- **VS Code**: the integration suite runs a session against a stub and checks the commands and the execution point.
+  **JetBrains**: a platform test for the highlighter, the inlay and the breakpoint listener; the arithmetic in
+  `Glue.kt`.
+- **Extension**: an e2e spec loads the real extension, pairs it with a stub hub, pauses, steps and resumes from the
+  Runs page (spike C made a test), and checks that a page served from `127.0.0.1` is refused.
+- **By hand**: WebStorm and VS Code on the sample app, headed and headless, with Piwi Picker paired in Chrome and in
+  Firefox.
+
+## Risks
+
+- **A young API.** `context.debugger` arrived in 1.59. What stops (each call's `pause` flag in Playwright's protocol
+  metadata) and how `runTo` matches a place may move. The reporter requires 1.64.1; the integration test runs on every
+  Playwright update.
+- **Private internal calls.** D9 rests on `_wrapApiCall`. Piwi depends on it already, feature-checked; without it, the
+  worker makes no page call between a step and the next stop, and its calls show as steps.
+- **No way to disarm a requested pause.** A context armed by Pause that does not make the next call stops later; the
+  policy resumes such a stop at once (1.1).
+- **What the paused call does next.** The call runs as soon as the test goes on, with its original code: a pick is in
+  the file, not in the run. The pause bar and the IDE say so.
+- **The trace's durations.** A paused call's duration includes the pause. Interactive runs are marked (D10); a
+  consumer that reads raw traces outside Piwi (Playwright's own trace viewer) still sees the long call.
+- **Exposure on the machine.** A paired client sees the application's pages, images included, and can pause any run of
+  the hub. The pairing, the origin and the token are the boundary (D8); the image data never leaves the machine or the
+  developer's forwarded port.
+- **Several workers.** A run with several stops at once is harder to follow; runs started for debugging use one
+  worker, and **Pause** pauses all.
+- **WebKit is unverified.** The spikes ran Chromium and Firefox; WebKit could not start in the spikes' container.
+- **The JetBrains execution point** borrows nothing from the debugger platform (no debug session exists), so its look
+  is Piwi's own, drawn like a debugger's.
+
+## Open questions
+
+1. **A window or the side panel** for the Runs page? Recommendation: the window, which needs no new permission and works
+   in Firefox; the side panel when users ask for it.
+2. **Runs started in a terminal**: connect to the workspace's editor service whenever one runs, or only when asked?
+   Recommendation: headed runs connect, and a setting turns it off.
+3. **Runs without the capture fixtures**: bind them (`PLAYWRIGHT_DASHBOARD=1`) and attach from the hub for Pause, Step
+   and Resume alone, or offer `piwi init`? Recommendation: offer `piwi init`; the code actions need the fixtures.
+4. **End the test** at a stop on `page.goto` or `page.keyboard` (Part 1.5): have the capture fixtures delegate those
+   calls too, so the race covers them, or keep the wording that the call runs first? Recommendation: keep the wording;
+   wrapping more of `page` widens what the fixtures change in a suite.
+5. **Run control for agents**: MCP tools in the editor service, or leave agents to `--debug=cli` and bind on request?
+   Recommendation: bind on request first.
+6. **Stop at every failure of an interactive run**, or only with a setting? Recommendation: at every failure of a run
+   with a viewer (a headed window, the Runs page or the IDE's view), since the run was started to be watched.
+
+## Not in this plan
+
+- **Piwi Picker inside the test's browser** (D1).
+- **Stepping through the test's JavaScript**: the IDE's debugger does that. Piwi's pause holds Playwright calls; the
+  two can run together, and a debugger stopped in the worker freezes Piwi's channel.
+- **Going back**: a call that ran cannot be undone. **Debug in my editor** and **Run to Cursor** in a new run are the
+  way to reach a place again.
+- **Control from the team instance** (D8).
+- **The developer's own browser as the test's browser**: Piwi Picker holds the `debugger` permission and could relay a
+  tab to a local Playwright client (`connectOverCDP` with `noDefaults`), as the Playwright Extension does for
+  `playwright-cli attach --extension`. It would hand a process on the machine full control of a signed-in everyday
+  browser. A separate design, if asked for.
+- **AI-written steps**: the generator stays deterministic ([`record-from-the-ide.md`](record-from-the-ide.md)).
+- **Other languages' Playwright**.
+
+## Appendix: the spikes
+
+Scripts run with this repository's `node_modules` (`@playwright/test` 1.64.1, Chromium 156, headless) and a test of
+eight calls on a three-page shop served by `context.route`, with a 4 s test timeout. None is in the repository.
+
+```ts
+test('checkout flow', async ({ page }) => {
+  await page.goto('http://app.test/');                                     // line 4
+  await page.getByLabel('Email').fill('dev@example.com');                  // line 5
+  await page.getByRole('button', { name: 'Continue' }).click();            // line 6
+  await expect(page.getByRole('heading')).toHaveText('Cart');              // line 7
+  await page.keyboard.press('Tab');                                        // line 8
+  await expect(page).toHaveURL(/cart/);                                    // line 9
+  await page.getByRole('button', { name: 'Pay' }).click();                 // line 10
+  await expect(page.getByText('Paid')).toBeVisible();                      // line 11
+});
+```
+
+### A. The worker steered over a socket
+
+An auto fixture opened a socket to a controller process for the whole test and turned its commands into
+`context.debugger` calls; it reported each `pausedstatechanged` with `pausedDetails()`.
+
+```
+[hub +1369ms] pause → reply in 6 ms
+[hub +1410ms] PAUSED 1 at flow.spec.js:5 · Fill "dev@example.com" getByLabel('Email')
+[hub +1421ms] overlay → 10 ms (an internal evaluate drew a bar in the paused page)
+[hub +1456ms] count(button) → 1 in 34 ms
+[hub +1456ms] holding the pause for 5000 ms; the test timeout is 4000 ms
+[hub +6510ms] PAUSED 2 at flow.spec.js:6 · Click getByRole('button', { name: 'Continue' })
+[hub +6514ms] public evaluate while paused → "Sign in" in 3 ms
+[hub +6585ms] PAUSED 3 at flow.spec.js:7 · Expect "toHaveText" getByRole('heading')
+[hub +7590ms] screencast 1 s while paused → 1 frame (3,979 bytes)
+[hub +7644ms] aria snapshot in 53 ms: heading "Cart", paragraph "Red shoes", button "Pay"
+[hub +7690ms] PAUSED 4 at flow.spec.js:10 · Click getByRole('button', { name: 'Pay' })   ← runTo line 10
+[hub +7737ms] PAUSED 5 at fixtures.js:95 · Evaluate   ← the controller's own call, made right after next()
+[hub +8054ms] TEST END passed; the runner reported 546 ms for the test
+```
+
+What it showed:
+
+- A pause asked from outside stops before the next call, whatever it is; when the request arrived before the
+  navigation, in another run, the stop was `flow.spec.js:4 · Navigate app.test/`.
+- A pause longer than the test timeout does not fail the test, and the test's reported duration leaves it out.
+- `runTo` skipped a key press and a page assertion and stopped on line 10.
+- Internal calls work while paused. A public call made right after `next()` is taken as the test's next call.
+- Firefox gave the same stops, the same timeout behavior and the same race, and its screencast sent 23 frames in the
+  second. WebKit could not start in the container (missing system libraries).
+
+Two checks followed. With `actionTimeout` and `expect.timeout` at 1 s, four 3 s pauses (a fill, a click, an assertion,
+a key press) let the test pass in 706 ms. In the trace, the controller's public calls appeared as steps of the test
+(`Pause on next call`, `Step to next call`, `Run to location`, `Resume`, `Evaluate`) and its internal ones did not; the
+paused calls' durations included the pauses (`Navigate` 5,132 ms, `Click` 1,102 ms).
+
+The same run through Piwi's capture fixtures (`base.extend(piwiFixtures)`, the locator proxy delegating every locator
+action and assertion) stopped at the same places: the stops named the spec's lines (`flow.spec.js:5`, `:6`, `:7`,
+`:10`), not the proxy's, and `runTo` matched them. Breakpoints and **Run to Cursor** can rely on the place Playwright
+gives.
+
+**End the test** (Part 1.5) was checked on its own: the test raced its click, the call the proxy would delegate,
+against an end signal the fixture held. Stopped before the click (`end.spec.js:9 · Click getByRole('button', { name:
+'Continue' })`), the controller chose End; the fixture threw `testInfo.skip()` into the signal. The test was reported
+skipped, and the page was still on `http://app.test/` when the test ended: the click never ran.
+
+A last check measured the breakpoint policy (D3) on a test of 120 calls: the debugger stopped before each (121 stops)
+and the worker resumed every one at once. Three runs took 2,073, 2,260 and 2,152 ms without the policy, 2,306, 2,183
+and 2,252 ms with it.
+
+### B. A second client attached to the worker's browser
+
+The fixture called `browser.bind('piwi-spike-w0', { workspaceDir })` and sent the endpoint; a controller connected with
+`chromium.connect(endpoint)` and used the test's context's debugger itself.
+
+```
+[ctl +1391ms] worker bound its browser at /tmp/pw-7505d64a/browser/browser-1553a0.sock
+[ctl +1436ms] connected in 44 ms; contexts: 1
+[ctl +1459ms] PAUSED at flow.spec.js:5 · Fill "dev@example.com" getByLabel('Email')
+[ctl +1603ms] screenshot of the paused page from the second client: 8517 bytes
+[ctl +6188ms] PAUSED at flow.spec.js:6 · Click getByRole('button', { name: 'Continue' })
+[ctl +6313ms] PAUSED at flow.spec.js:10 · Click getByRole('button', { name: 'Pay' })
+[ctl +6318ms] PAUSED at hub-b.js:59 · Evaluate   ← the second client's call, made right after next()
+[ctl +6664ms] TEST END passed (700 ms reported, after a 4.5 s pause)
+```
+
+The registry file named the browser by its title, with its endpoint, `workspaceDir`, launch options and Playwright
+version. The debugger is one per context: it takes any client's call, the second client's included.
+
+### C. An extension in another browser
+
+A second Chromium stood for the developer's own browser, with a small extension loaded in it: one page that opens a
+WebSocket to a hub, sends the pairing token first, shows the run's state and an image of the paused page, and sends
+Pause, Step and Resume. The hub accepted the extension's origin alone, attached to the worker's bound browser as in B,
+and relayed. Playwright played the person's clicks in the extension's page; the test ran with `slowMo` 250 ms.
+
+```
+[hub +16701ms] a web page's WebSocket to the hub: error
+[hub +16984ms] the extension's panel is paired
+[hub +19979ms] command from the extension: pause (1 ms after the click)
+[hub +20160ms] PAUSED at flow.spec.js:5 · Fill "dev@example.com" getByLabel('Email')
+[hub +20179ms] the panel says: Paused at flow.spec.js:5 · Fill "dev@example.com" getByLabel('Email')
+[hub +20252ms] the panel shows the paused page, image width 1280
+[hub +24780ms] command from the extension: step (0 ms after the click)
+[hub +25109ms] PAUSED at flow.spec.js:6 · Click getByRole('button', { name: 'Continue' })
+[hub +25593ms] command from the extension: resume (0 ms after the click)
+[hub +26909ms] the panel says: Ended: passed
+```
+
+A separate check found who refuses a page's WebSocket: from a page on a public origin (`http://public.test`, served
+by a route), Chromium 156 failed the connection before the hub saw it; from a page on `http://127.0.0.1:<port>`, the
+connection reached the hub, whose origin check refused it. A persistent context's options have no `storageState`, and
+its `browser()` is set in 1.64.
