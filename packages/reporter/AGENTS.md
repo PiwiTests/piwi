@@ -31,7 +31,14 @@ per-directory responsibilities.
    pause bar's **Record here** (and `page.pause()` in a headed run, patched by the capture fixtures) hands the page to
    the editor's recorder (`internal/capture/record-handoff.ts`): it relays each call of the recorder's binding over that
    local socket, as `@piwitests/core/ide-recorder` frames it, and loads the bundle the editor names. The recorder's host
-   stays in the editor service: this package carries the relay alone.
+   stays in the editor service: this package carries the relay alone. With `PIWI_RUN_CHANNEL` (the same socket) and
+   `PIWI_ORIGIN_REF`, each worker keeps a run connection to the editor from its worker fixture's setup to its end
+   (`internal/capture/run-channel.ts`, framed by `@piwitests/core/run-channel`): it says which test it runs and where
+   it stops, takes the editor's Pause, Step, Resume, Finish, Run to a line and breakpoints (in place of
+   `PIWI_PAUSE_AT`) through the same stop policy, and answers a request for an image of the stopped page with a JPEG
+   screenshot taken through an internal call. While it is open a headless run stops too, held until the editor
+   answers; a headed stop shows the bar as well, and the first answer wins. A stop no bar shows goes on when the
+   connection closes, and one stop shows at a time in a worker.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.

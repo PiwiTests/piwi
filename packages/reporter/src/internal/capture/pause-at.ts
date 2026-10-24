@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
+import type { Place, StopReason } from '@piwitests/core/run-channel';
 import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
 import { isCi } from './inspect-on-failure.js';
 import { pickLocator, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
@@ -19,8 +20,9 @@ import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
  * the line it was picked at.
  *
  * Local-only, like the failure-time overlay (`inspect-on-failure.ts`): a
- * headed browser, never under CI, never under Playwright's own debugger
- * (`PWDEBUG`, `--debug`). Every attempt pauses.
+ * headed browser, or any browser while the worker's run connection to the
+ * editor is open (`run-channel.ts`), never under CI, never under Playwright's
+ * own debugger (`PWDEBUG`, `--debug`). Every attempt pauses.
  */
 
 /** The lines a run pauses at, keyed the way `captureCallerLocation` writes a call site, without its column. */
@@ -97,12 +99,42 @@ export function parsePauseAt(value: string | undefined, cwd: string = process.cw
 }
 
 let parsed: { value: string | undefined; set: PauseSet } | null = null;
+/** The breakpoints the editor sent on the run connection, in place of `PIWI_PAUSE_AT`; null until it sends some. */
+let sent: PauseSet | null = null;
 
-/** The lines this process pauses at, read again only when `PIWI_PAUSE_AT` changes. */
+/** The lines this process pauses at: the editor's latest, else `PIWI_PAUSE_AT`, read again only when it changes. */
 export function currentPauseSet(): PauseSet {
+  if (sent) return sent;
   const value = process.env[PIWI_LOCAL_DEBUG_ENV.pauseAt];
   if (!parsed || parsed.value !== value) parsed = { value, set: parsePauseAt(value) };
   return parsed.set;
+}
+
+/**
+ * The breakpoints of the editor's places (relative to `cwd`), the lines this process pauses at from now on; null
+ * goes back to `PIWI_PAUSE_AT`.
+ */
+export function replacePauseSet(places: readonly Place[] | null, cwd: string = process.cwd()): PauseSet {
+  if (!places) {
+    sent = null;
+    return currentPauseSet();
+  }
+  const lines = new Set(places.map((place) => placeLine(place, cwd)));
+  sent = lines.size ? new PauseSet(lines) : NO_BREAKPOINTS;
+  return sent;
+}
+
+/** A call site (`file:line:col`, relative to the working directory) as a place of the run channel. */
+export function callSitePlace(callSite: string): Place | null {
+  const m = /^(.+):(\d+):(\d+)$/.exec(callSite);
+  if (!m || Number(m[2]) < 1) return null;
+  const column = Number(m[3]);
+  return column > 0 ? { file: m[1]!, line: Number(m[2]), column } : { file: m[1]!, line: Number(m[2]) };
+}
+
+/** A place of the run channel (relative to `cwd`) as the key a call site's line matches: `file:line`. */
+export function placeLine(place: Place, cwd: string = process.cwd()): string {
+  return `${callSiteFile(place.file, cwd)}:${place.line}`;
 }
 
 /** Everything the pause gate reads, as plain values. */
@@ -115,6 +147,8 @@ export interface PauseGate {
   pwdebug?: string | undefined;
   /** The run's `--debug` mode (`inspector`, `cli`), as the runner hands it to the worker; unset without `--debug`. */
   debug?: unknown;
+  /** The worker's run connection to the editor is open: a headless stop is shown there. */
+  channel?: boolean;
 }
 
 type ConfigInternal = { _configInternal?: { configCLIOverrides?: { debug?: unknown } } };
@@ -129,7 +163,7 @@ export function pauseGateFromTestInfo(testInfo: TestInfo): PauseGate {
 /** Why a run with breakpoints does not pause; null when it does. */
 export function pauseSkipReason(gate: PauseGate): string | null {
   if (isCi(gate.ci)) return 'running under CI — breakpoints pause local runs only';
-  if (gate.headless !== false)
+  if (gate.headless !== false && !gate.channel)
     return 'the browser is headless — re-run with --headed (or set use: { headless: false })';
   if (gate.pwdebug && !['0', 'false', 'console'].includes(gate.pwdebug))
     return "Playwright's Inspector runs the test (PWDEBUG) — run without --debug";
@@ -138,8 +172,7 @@ export function pauseSkipReason(gate: PauseGate): string | null {
   return null;
 }
 
-/** Why the pause bar shows at a stop: a breakpoint's line, the first call after Step, or `page.pause()`. */
-export type StopReason = 'breakpoint' | 'step' | 'page-pause';
+export type { StopReason };
 
 /** How the debugger goes on from a stop: `next` stops again before the next call, `resume` runs on freely. */
 export type GoOn = 'next' | 'resume';
@@ -147,38 +180,71 @@ export type GoOn = 'next' | 'resume';
 /** The answers that end a stop. */
 export type PauseAnswer = Exclude<PauseChoice, 'pick' | 'record'>;
 
-/** What an attempt pauses at: the run's breakpoints, a Step asked at the last stop, and Finish. */
+/**
+ * What an attempt stops at: the run's breakpoints, Finish (no breakpoint more), and the stops asked once: Step at the
+ * last stop, Pause from the editor, and the line the editor runs the test to (`file:line`, as `callSiteLine` keys it).
+ */
 export interface PauseState {
   set: PauseSet;
   /** The next stop in the user's code shows, whatever its line. */
   step: boolean;
-  /** No stop shows any more in this attempt, but at `page.pause()`. */
+  /** No breakpoint shows any more in this attempt. */
   finished: boolean;
+  /** The next stop in the user's code shows: a pause asked from outside. */
+  pause: boolean;
+  /** The first stop on this line shows. */
+  runTo: string | null;
+}
+
+/** A fresh attempt's state, with `set` as its breakpoints. */
+export function pauseState(set: PauseSet, pause = false): PauseState {
+  return { set, step: false, finished: false, pause, runTo: null };
+}
+
+/** Whether the attempt's contexts stop before every call: for a breakpoint, or a stop asked once. */
+export function wantsStops(state: PauseState): boolean {
+  return state.step || state.pause || state.runTo !== null || (!state.finished && state.set.size > 0);
 }
 
 /**
- * What the worker does at a debugger stop on `callSite` (null outside the user's code): show the bar, at a
- * breakpoint's line or the first stop after Step (which that stop uses up), or let the call go on at once.
+ * What the worker does at a debugger stop on `callSite` (null outside the user's code): show the stop, at the first
+ * stop after Step or Pause, on the line it runs to, or on a breakpoint's line while the attempt did not finish, or let
+ * the call go on at once. A stop that shows uses up every stop asked once.
  */
 export function atStop(state: PauseState, callSite: string | null): { show: StopReason } | { go: GoOn } {
-  if (callSite && !state.finished) {
-    if (state.step) {
-      state.step = false;
-      return { show: 'step' };
+  if (callSite) {
+    const reason: StopReason | null = state.step
+      ? 'step'
+      : state.pause
+        ? 'pause'
+        : state.runTo !== null && callSiteLine(callSite) === state.runTo
+          ? 'run-to'
+          : !state.finished && state.set.matches(callSite)
+            ? 'breakpoint'
+            : null;
+    if (reason) {
+      stopShown(state);
+      return { show: reason };
     }
-    if (state.set.matches(callSite)) return { show: 'breakpoint' };
   }
   return { go: goOn(state) };
 }
 
+/** A stop shows: it uses up Step, Pause and the line run to. */
+export function stopShown(state: PauseState): void {
+  state.step = false;
+  state.pause = false;
+  state.runTo = null;
+}
+
 /**
- * How the debugger goes on from a stop, once the bar's `answer` applies: it keeps stopping before every call while
- * breakpoints remain or a Step waits, so the next breakpoint's line is seen; it runs on freely otherwise.
+ * How the debugger goes on from a stop, once its `answer` applies: it keeps stopping before every call while
+ * breakpoints remain or a stop is asked, so the next one is seen; it runs on freely otherwise.
  */
 export function goOn(state: PauseState, answer?: PauseAnswer): GoOn {
   if (answer === 'step') state.step = true;
   else if (answer === 'finish') state.finished = true;
-  return !state.finished && (state.step || state.set.size > 0) ? 'next' : 'resume';
+  return wantsStops(state) ? 'next' : 'resume';
 }
 
 /** One stop the bar showed, as the `piwi-pauses` attachment lists it. */

@@ -102,7 +102,8 @@ export const PIWI_ENV_KEYS = {
  * Set by an editor on the test run it starts, beside the two failure-time aids
  * (`inspectOnFailure`, `pickLocatorOnFailure`) the workers read. Not options:
  * the breakpoints change with every run, so the editor writes them and the
- * capture fixtures read them directly. Headed local runs only, never under CI:
+ * capture fixtures read them directly. Local runs only, never under CI, headed
+ * unless the run connection below is open:
  *  - `pauseAt` lists the lines to pause at before a call that acts on, reads or
  *    checks the page (a navigation, an action, a key press, an assertion, a
  *    read such as `textContent`),
@@ -113,7 +114,10 @@ export const PIWI_ENV_KEYS = {
  *    the line it was picked at.
  * Beside them, `PIWI_RECORD_CHANNEL` (`@piwitests/core/ide-recorder`) names the
  * local socket of the editor service that built the command, over which the
- * pause bar's Record here hands the page to the editor's recorder.
+ * pause bar's Record here hands the page to the editor's recorder, and
+ * `PIWI_RUN_CHANNEL` (`@piwitests/core/run-channel`) the same socket, which each
+ * worker keeps a run connection to (`internal/capture/run-channel.ts`) when
+ * `PIWI_ORIGIN_REF` names the run.
  */
 export const PIWI_LOCAL_DEBUG_ENV = {
   pauseAt: 'PIWI_PAUSE_AT',
