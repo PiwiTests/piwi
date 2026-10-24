@@ -3107,12 +3107,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { servers };
   });
 
-  connection.onRequest(
-    RUN_ID_REQUEST,
-    (params: RunIdParams): RunIdResult => ({
-      runId: typeof params?.text === 'string' ? runIdOf(params.text) : null,
-    }),
-  );
+  connection.onRequest(RUN_ID_REQUEST, (params: RunIdParams): RunIdResult => ({
+    runId: typeof params?.text === 'string' ? runIdOf(params.text) : null,
+  }));
 
   connection.onRequest(RENDER_STEPS_REQUEST, async (params: RenderStepsParams): Promise<RenderStepsResult> => {
     const parsed = parseSteps(params.steps);
@@ -3258,9 +3255,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return desktopJobs.start({ client: found.context.client }, found.failure, params.kind);
   });
 
-  connection.onRequest(
-    SHARE_DESKTOP_JOB_REQUEST,
-    (params: ShareDesktopJobParams): Promise<ShareDesktopJobResult> => desktopJobs.share(params.jobId),
+  connection.onRequest(SHARE_DESKTOP_JOB_REQUEST, (params: ShareDesktopJobParams): Promise<ShareDesktopJobResult> =>
+    desktopJobs.share(params.jobId),
   );
 
   connection.onNotification(SET_BASELINE_NOTIFICATION, async (params: SetBaselineParams) => {

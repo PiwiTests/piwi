@@ -35,9 +35,11 @@ describe('html tagged template', () => {
 
   it('renders arrays by concatenating each escaped item', () => {
     expect(
-      tight(html`<ul>
-        ${['a<', 'b>'].map((t) => html`<li>${t}</li>`)}
-      </ul>`),
+      tight(
+        html`<ul>
+          ${['a<', 'b>'].map((t) => html`<li>${t}</li>`)}
+        </ul>`,
+      ),
     ).toBe('<ul><li>a&lt;</li><li>b&gt;</li></ul>');
   });
 

@@ -365,12 +365,10 @@ type OAIUsage = {
 function openAiUserContent(opts: AiCallOptions, attempt: OpenAiAttempt): string | OAIPart[] {
   return attempt.withImages && opts.images?.length
     ? [
-        ...opts.images.map(
-          (img): OAIPart => ({
-            type: 'image_url',
-            image_url: { url: `data:${img.mediaType};base64,${img.data}` },
-          }),
-        ),
+        ...opts.images.map((img): OAIPart => ({
+          type: 'image_url',
+          image_url: { url: `data:${img.mediaType};base64,${img.data}` },
+        })),
         { type: 'text', text: opts.user },
       ]
     : opts.user;

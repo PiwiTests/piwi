@@ -808,27 +808,26 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const sorted = cursor != null ? items.filter((t: any) => t.score < cursor) : items.slice();
     sorted.sort((a: any, b: any) => b.score - a.score || a.testCaseId - b.testCaseId);
 
-    const mapped = sorted.slice(0, pageSize + 1).map(
-      (t: any): Partial<McpFlakyTestItem> =>
-        dropNulls({
-          testCaseId: t.testCaseId,
-          title: t.title,
-          externalId: t.externalId,
-          filePath: t.filePath,
-          flakyScore: t.score,
-          failureRate: t.failureRate ?? null,
-          runCount: t.totalRuns,
-          failCount: t.failedRuns || null,
-          retryPassCount: t.retryPassRuns || null,
-          alternationCount: t.alternations || null,
-          rootCause: t.rootCause || null,
-          tags: t.tags?.length ? t.tags : null,
-          owner: t.owner || null,
-          priority: t.priority || null,
-          impact: t.impact || null,
-          wastedCiMinutes: t.wastedCiMinutes || null,
-          avgFailedDurationMs: t.avgFailedDurationMs || null,
-        }),
+    const mapped = sorted.slice(0, pageSize + 1).map((t: any): Partial<McpFlakyTestItem> =>
+      dropNulls({
+        testCaseId: t.testCaseId,
+        title: t.title,
+        externalId: t.externalId,
+        filePath: t.filePath,
+        flakyScore: t.score,
+        failureRate: t.failureRate ?? null,
+        runCount: t.totalRuns,
+        failCount: t.failedRuns || null,
+        retryPassCount: t.retryPassRuns || null,
+        alternationCount: t.alternations || null,
+        rootCause: t.rootCause || null,
+        tags: t.tags?.length ? t.tags : null,
+        owner: t.owner || null,
+        priority: t.priority || null,
+        impact: t.impact || null,
+        wastedCiMinutes: t.wastedCiMinutes || null,
+        avgFailedDurationMs: t.avgFailedDurationMs || null,
+      }),
     );
 
     return paginatedItems(mapped, pageSize, (r: any) => String(r.flakyScore));
@@ -1025,15 +1024,14 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             summary: cluster.diagnosis.summary,
           })
         : null,
-      affectedTestCases: cluster.affectedTestCases?.slice(0, 20).map(
-        (t: any): Partial<McpAffectedTestCase> =>
-          dropNulls({
-            testCaseId: t.testCaseId,
-            title: t.title,
-            filePath: t.filePath,
-            runCount: t.runCount,
-            executionId: t.recentTestRunsCaseId,
-          }),
+      affectedTestCases: cluster.affectedTestCases?.slice(0, 20).map((t: any): Partial<McpAffectedTestCase> =>
+        dropNulls({
+          testCaseId: t.testCaseId,
+          title: t.title,
+          filePath: t.filePath,
+          runCount: t.runCount,
+          executionId: t.recentTestRunsCaseId,
+        }),
       ),
       locatorHealing: healingResults.length > 0 ? healingResults : null,
       issue: knownIssue ? dropNulls({ key: knownIssue.key, url: knownIssue.url, status: knownIssue.status }) : null,
