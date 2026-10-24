@@ -45,17 +45,6 @@ const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.pro
 const latestRunStatus = computed(() => latestRunInfo.value?.status ?? testRun.value?.project?.latestRunStatus ?? null);
 const isLatestRunActive = computed(() => latestRunStatus.value === 'running' || latestRunStatus.value === 'finalizing');
 
-useHead(
-  computed(() => {
-    // The tab title names the run and its project (display label first); on
-    // the page the breadcrumb carries the project.
-    const project = testRun.value?.project?.label || testRun.value?.project?.name;
-    return {
-      title: `Test run #${runId}${project ? ` — ${project}` : ''} — Piwi Dashboard`,
-    };
-  }),
-);
-
 const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
 const isKeepOpen = ref(false);
@@ -489,6 +478,32 @@ const displayProgress = computed(() => {
     flakyTests: testRun.value.flakyTests ?? 0,
   };
 });
+
+// While the run is in flight the browser tab shows its progress, from the same
+// counts as the header: a badge on the favicon and the progress ahead of the title.
+const tabIndicator = useTabRunIndicator(() => {
+  const run = testRun.value;
+  const p = displayProgress.value;
+  if (!run || !p) return null;
+  return {
+    live: isLive.value,
+    status: run.status,
+    done: p.passedTests + p.failedTests + p.skippedTests + p.didNotRunTests,
+    total: p.totalTests ?? 0,
+    failed: p.failedTests,
+  };
+});
+
+useHead(
+  computed(() => {
+    // The tab title names the run and its project (display label first); on
+    // the page the breadcrumb carries the project.
+    const project = testRun.value?.project?.label || testRun.value?.project?.name;
+    return {
+      title: tabRunTitle(`Test run #${runId}${project ? ` — ${project}` : ''} — Piwi Dashboard`, tabIndicator.value),
+    };
+  }),
+);
 
 const runToDelete = computed(() => [{ id: Number(runId), keptAt: testRun.value?.keptAt ?? null }]);
 

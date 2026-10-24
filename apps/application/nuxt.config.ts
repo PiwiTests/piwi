@@ -168,7 +168,8 @@ export default defineNuxtConfig({
             // 404 redirect), so each names the entry page as the one URL to index.
             { rel: 'canonical', href: 'https://piwitests.dev/demo/' },
             { rel: 'icon', href: '/demo/favicon.ico', sizes: 'any' },
-            { rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
+            // Keyed like app.vue's icon link, so the app's (and a run's progress badge) replaces it.
+            { key: 'favicon', rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
           ],
         },
       }
