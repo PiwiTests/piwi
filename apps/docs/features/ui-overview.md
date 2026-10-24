@@ -81,8 +81,9 @@ chain in the locator index, per branch. See [Who uses a locator](./locator-usage
 `/test-runs/:id`: one run. The header carries the status, the primary action (**Copy retry command** on a red run,
 the HTML report on a green one) and one facts line, and a **count bar** filters the tests by status. While it runs,
 results stream in live, and the tab's icon and title show its progress. When ingest left something out or rebuilt
-it, the facts line counts **ingest notes** and **Details** lists them: steps and console entries over the [ingest caps](/reference/configuration#ingest-limits), traces not stored,
-evidence rebuilt from a trace, and the fallback the reporter took to send the run. The tabs:
+it, the facts line counts **ingest notes** and **Details** lists them: steps and console entries over the
+[ingest caps](/reference/configuration#ingest-limits), traces not stored, evidence rebuilt from a trace, and the
+fallback the reporter took to send the run. The tabs:
 
 - **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default on a red run),
   file, describe block or [lock](/reference/test-metadata#test-locks), with the same

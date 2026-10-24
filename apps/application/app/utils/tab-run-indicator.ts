@@ -28,7 +28,8 @@ export interface TabRunCounts {
 
 /** The indicator of a run in flight: blue while it goes well, the failed color once a test has failed. */
 export function liveRunTabIndicator(counts: TabRunCounts): TabRunIndicator {
-  const progress = aggregateRunProgress([{ status: 'running', ...counts }]);
+  const { done, total, failed } = counts;
+  const progress = aggregateRunProgress([{ status: 'running', done, total, failed }]);
   return {
     status: progress.failing ? 'failed' : 'running',
     fraction: progress.fraction,
