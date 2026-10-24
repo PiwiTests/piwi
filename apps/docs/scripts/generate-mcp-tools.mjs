@@ -19,23 +19,12 @@ const repoRoot = join(here, '..', '..');
 const require = createRequire(import.meta.url);
 const jiti = createJiti(import.meta.url, { alias: { zod: dirname(require.resolve('zod/package.json')) } });
 
-const { MCP_TOOL_DEFS } = await jiti.import(join(repoRoot, 'application/shared/mcp-tools.ts'));
+const { MCP_TOOL_DEFS, toolSummary } = await jiti.import(join(repoRoot, 'application/shared/mcp-tools.ts'));
 const { CAPABILITY_BY_ID, CAPABILITY_MODULES, CAPABILITY_PRESETS } = await jiti.import(
   join(repoRoot, 'application/shared/capabilities.ts'),
 );
 
 const MODULE_TITLES = { core: 'Core', workflow: 'Workflow', healing: 'Healing', agents: 'Agents' };
-
-/**
- * The first sentence of a tool's description: the catalog text is written for
- * an agent and runs long (one tool embeds a whole extraction prompt), so the
- * page keeps the summary and the `/mcp` page in the dashboard shows the rest.
- */
-function summary(description) {
-  const text = description.split(/\n\s*\n/)[0].replace(/\s+/g, ' ').trim();
-  const match = /^(.+?[.?!])(?=\s+[A-Z`"(]|$)/.exec(text.replace(/\b(e\.g|i\.e|etc|vs)\./g, '$1\u0000'));
-  return (match ? match[1] : text).replace(/\u0000/g, '.');
-}
 
 // The docs write no em dash; the catalog text uses them for asides.
 const cell = (text) =>
@@ -54,7 +43,7 @@ function capabilityCell(id) {
 }
 
 const toolRow = ({ name, description, capability }) =>
-  `| <code id="${name}">${name}</code> | ${cell(summary(description))} | ${capabilityCell(capability)} |`;
+  `| <code id="${name}">${name}</code> | ${cell(toolSummary(description))} | ${capabilityCell(capability)} |`;
 
 function moduleSection(module) {
   const tools = MCP_TOOL_DEFS.filter((tool) => tool.module === module);
@@ -95,8 +84,9 @@ Setup page asks about, and \`?modules=\` on the MCP URL narrows the list to some
 **capability** leaves \`tools/list\` and \`tools/call\` when an administrator declines that capability for the
 instance; a tool without one is always served.
 
-Each description here is the first sentence of the one the server sends to the agent. The **MCP server** page of the
-dashboard (\`/mcp\`) lists the same catalog, with the tools of declined capabilities left out.
+Each entry here is the summary line of the description the server sends to the agent. The **MCP server** page of the
+dashboard (\`/mcp\`) lists the same catalog with each tool's whole description and parameters, and leaves out the
+tools of declined capabilities.
 
 ${CAPABILITY_MODULES.map(moduleSection).filter(Boolean).join('\n')}
 ## Related

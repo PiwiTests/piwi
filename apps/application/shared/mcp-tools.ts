@@ -13,7 +13,7 @@
  */
 import type { CapabilityId, CapabilityModule } from '#shared/capabilities';
 import type { Permission } from '#shared/permissions';
-import { EXTRACT_SYSTEM_PROMPT } from './test-function-extract-prompt';
+import { EXTRACT_RULES } from './test-function-extract-prompt';
 import { DESCRIBE_PIWI_TOPICS } from '#shared/piwi-ecosystem';
 import { REPORT_LANGUAGES } from './reports/languages';
 
@@ -53,6 +53,71 @@ export function toolPermissions(tool: Pick<McpToolDef, 'permission'>): readonly 
   return typeof tool.permission === 'string' ? [tool.permission] : tool.permission;
 }
 
+/**
+ * A tool description in Markdown, one block per argument: a string is a
+ * paragraph, a list of strings a bulleted list under the paragraph before it.
+ * The first paragraph is the tool's one-sentence summary (`toolSummary`).
+ */
+function md(...blocks: readonly (string | readonly string[])[]): string {
+  return blocks
+    .map((block, i) => {
+      if (typeof block === 'string') return i === 0 ? block : `\n\n${block}`;
+      return `\n${block.map((item) => `- ${item}`).join('\n')}`;
+    })
+    .join('')
+    .trim();
+}
+
+/** The first paragraph of a tool's description: its one-sentence summary. */
+export function toolSummary(description: string): string {
+  return description.split('\n\n')[0]!.trim();
+}
+
+/** A tool's description after its summary, in Markdown; empty when the summary is all of it. */
+export function toolDetails(description: string): string {
+  const at = description.indexOf('\n\n');
+  return at === -1 ? '' : description.slice(at + 2).trim();
+}
+
+/** One top-level argument of a tool, as the `/mcp` page lists it. */
+export interface McpToolParameter {
+  name: string;
+  /** The JSON Schema type, e.g. `number`, `string or null`, `number[]`. */
+  type: string;
+  required: boolean;
+  description: string;
+  /** The values an `enum` (or an array's item `enum`) allows. */
+  values: readonly string[];
+}
+
+interface SchemaProperty {
+  type?: string | readonly string[];
+  description?: string;
+  enum?: readonly unknown[];
+  items?: { type?: string | readonly string[]; enum?: readonly unknown[] };
+}
+
+function schemaType(type: string | readonly string[] | undefined): string {
+  if (type === undefined) return 'any';
+  return typeof type === 'string' ? type : type.join(' or ');
+}
+
+/** A tool's top-level arguments, in the order its input schema declares them. */
+export function toolParameters(tool: Pick<McpToolDef, 'inputSchema'>): McpToolParameter[] {
+  const required = new Set(tool.inputSchema.required ?? []);
+  return Object.entries(tool.inputSchema.properties).map(([name, raw]) => {
+    const property = raw as SchemaProperty;
+    const type = property.type === 'array' ? `${schemaType(property.items?.type)}[]` : schemaType(property.type);
+    return {
+      name,
+      type,
+      required: required.has(name),
+      description: property.description ?? '',
+      values: (property.enum ?? property.items?.enum ?? []).map(String),
+    };
+  });
+}
+
 /** The analytics scope, as the report and metric tools take it (the analytics page's URL keys). */
 const ANALYTICS_SCOPE_PROPERTIES = {
   projectIds: {
@@ -89,15 +154,16 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_projects',
     module: 'core',
-    description:
-      'List all projects with stats: total runs, test cases, latest run status and branch. Use this first to discover available projects and their IDs.',
+    description: md(
+      'List the projects you can read, with their run and test-case counts and their latest run.',
+      'Start here: most tools take a project’s `id` as `projectId`.',
+    ),
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'get_project',
     module: 'core',
-    description:
-      'Get project details and its recent test runs with pass/fail counts. Results are paginated — use pageSize and cursor for the runs list.',
+    description: 'Get one project with its recent runs and their pass and fail counts, newest first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -111,7 +177,7 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_runs',
     module: 'core',
-    description: 'List test runs for a project with filters.',
+    description: 'List a project’s test runs, newest first, optionally filtered by status or branch.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -131,8 +197,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_run',
     module: 'core',
-    description:
-      'Get a test run summary plus its test cases (paginated), with status, truncated error text, and failure cluster IDs. Filter by status and page with pageSize/cursor.',
+    description: md(
+      'Get a test run’s summary and its test cases (by default only the failed ones), each with its status, truncated error and failure cluster.',
+      'A case’s `executionId` is what `explain_failure` and the other execution tools take.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -153,7 +221,7 @@ export const MCP_TOOL_DEFS = [
     name: 'list_failed_cases',
     module: 'core',
     description:
-      'List failed and timed-out test cases across recent runs for a project. Each item carries a one-line headline explaining the failure ahead of the truncated error.',
+      'List a project’s failed and timed-out executions across recent runs, each with a one-line headline ahead of its truncated error.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -168,8 +236,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_flaky_tests',
     module: 'core',
-    description:
-      'List flaky tests for a project with flakiness scores. A test whose Flake Lab verify experiment held is left out until it retry-passes again.',
+    description: md(
+      'List a project’s flaky tests, highest flakiness score first.',
+      'A test whose Flake Lab verify experiment held is left out until it passes on retry again.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -187,8 +257,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_test_case',
     module: 'core',
-    description:
-      'Get test case details including aggregated pass/fail stats, flakiness metrics, and recent executions (paginated). Use testCaseId (stable identity), not the per-run caseId.',
+    description: md(
+      'Get a test case with its pass and fail stats, its flakiness metrics and its recent executions.',
+      'Takes the stable `testCaseId`, not a per-run `executionId`.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -208,7 +280,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_clusters',
     module: 'core',
-    description: 'List failure clusters for a project. Each cluster groups similar failures by error fingerprint.',
+    description: md(
+      'List a project’s failure clusters, each grouping the failures that share an error fingerprint.',
+      'For the cross-project triage queue, use `list_open_clusters`.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -227,8 +302,11 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_cluster',
     module: 'core',
-    description:
-      'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. `mergeSuggestions` lists the pending suggestions to merge it with another cluster (suggestionId, otherClusterId), to decide with decide_merge_suggestion. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
+    description: md(
+      'Get a failure cluster with its affected tests, a short diagnosis summary and the locator fixes of up to five of its failures.',
+      'Each locator fix names the failing locator, the recommended replacement and how many alternatives exist. `mergeSuggestions` lists the pending suggestions to merge it with another cluster (`suggestionId`, `otherClusterId`), decided with `decide_merge_suggestion`.',
+      'To fix the cluster, `get_fix_plan` has everything in one answer; `get_cluster_diagnosis` has the full diagnosis and `get_cluster_context` the raw evidence.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -240,8 +318,20 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_fix_plan',
     module: 'core',
-    description:
-      'Everything needed to fix one failure cluster, in a single answer: the diagnosis and its validated patch, ranked locator replacements each with the exact file and line and a ready-to-apply `edit` (the rewritten line plus a unified diff `git apply` accepts), the failing tests, the owning team, `suspectLines` (the changed lines since the last green run that the failing tests executed, the top five with their files, line ranges and scores, so you know where to look first; `available: false` with a `reason` when the tests recorded no coverage or the diff could not be read), the command that verifies the work, a `reproduce` recipe (checkout, pinned install, browser install and the exact test command as `{ bash, powershell }` steps), and a `bisect` script (`git bisect` between the last green and the failing commit, or `available: false` with a reason). `verify.expectation` states what the dashboard records once those tests pass, so you can confirm the fix landed rather than guessing. It also carries the `story`, the `situation` (since when, whether a newer execution failed again or passed, the cluster and its owner) and the computed `nextStep` for the cluster. Prefer this over assembling get_cluster + get_cluster_diagnosis + get_locator_healing yourself.',
+    description: md(
+      'Get everything needed to fix one failure cluster, in one answer.',
+      'Prefer it over assembling `get_cluster`, `get_cluster_diagnosis` and `get_locator_healing` yourself. It carries:',
+      [
+        'the diagnosis and its validated patch',
+        'ranked locator replacements, each with its file and line and a ready-to-apply `edit`: the rewritten line plus a unified diff `git apply` accepts',
+        'the failing tests and the owning team',
+        '`suspectLines`: the top five changed lines since the last green run that the failing tests executed, with their files, line ranges and scores, so you know where to look first (`available: false` with a `reason` when the tests recorded no coverage or the diff could not be read)',
+        '`verify`: the `command` that runs exactly the failing tests, the `expectation` (what the dashboard records once they pass, so you can confirm the fix landed) and the `commitTrailer` to put in your commit message',
+        '`reproduce`: checkout, pinned install, browser install and the exact test command, as `{ bash, powershell }` steps',
+        '`bisect`: a `git bisect` script between the last green and the failing commit (`available: false` with a `reason` when there is none)',
+        '`story`, `situation` (since when, whether a newer execution failed again or passed, the cluster and its owner) and the computed `nextStep`',
+      ],
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -253,8 +343,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_cluster_diagnosis',
     module: 'agents',
-    description:
-      "Get the stored diagnosis of a failure cluster, written by Piwi's AI (run_cluster_diagnosis) or by an agent (record_diagnosis). Returns category, confidence, root cause, evidence, and suggested fix. Returns null if the cluster has no diagnosis yet.",
+    description: md(
+      'Get the stored diagnosis of a failure cluster: category, confidence, root cause, evidence and suggested fix.',
+      'Piwi’s AI writes it (`run_cluster_diagnosis`), or an agent does (`record_diagnosis`). Returns null when the cluster has no diagnosis yet.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -266,8 +358,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_execution_diagnosis',
     module: 'agents',
-    description:
-      "Get the stored diagnosis of one failing execution (a failure), written by Piwi's AI (run_execution_diagnosis) or by an agent (record_diagnosis with executionId), in the shape get_cluster_diagnosis returns. Returns null when the execution has none; a failure in a cluster usually shares the cluster's diagnosis (get_cluster_diagnosis).",
+    description: md(
+      'Get the stored diagnosis of one failing execution, in the shape `get_cluster_diagnosis` returns.',
+      'Piwi’s AI writes it (`run_execution_diagnosis`), or an agent does (`record_diagnosis` with `executionId`). Returns null when the execution has none: a failure in a cluster usually shares the cluster’s diagnosis (`get_cluster_diagnosis`).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -279,8 +373,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_test_case_context',
     module: 'core',
-    description:
-      'Get the AI evidence context for a specific test-run-case (execution scope). Use this when debugging a single test failure — it provides the execution-scoped evidence including steps, console, network, and SCM diff.',
+    description: md(
+      'Get the evidence Piwi’s AI reads for one failing execution: steps, console, network, backend logs and the source-control diff.',
+      'Use it when debugging a single failure. For a failure in no cluster, it returns the stored evidence instead (`rawExecution`).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -292,8 +388,11 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_case_screenshots',
     module: 'core',
-    description:
-      "Get screenshots for a test-run-case, the page the test failed on first and flagged atFailure when it is known: the capture fixtures' screenshot of the page the test last acted on, or the only screenshot. Playwright takes one per page still open at the failure and one per page of each context the test closed before, so among several none is flagged without the fixtures. By default returns metadata only (file name, media type, size) for every screenshot. Set content=true to include base64-encoded image data for the first 3 (capped at ~100 KB each). Call metadata-only first to discover what exists, then request content for the ones you need.",
+    description: md(
+      'List an execution’s screenshots, the page the test failed on first, and return the image data of the first three on request.',
+      'By default it returns metadata only (file name, media type, size) for every screenshot. Call it that way first, then set `content: true` to get the first three only, with their base64 image data (each capped at about 100 KB).',
+      'The screenshot of the page the test failed on comes first, flagged `atFailure`, when it is known: the capture fixtures’ screenshot of the page the test last acted on, or the only screenshot. Without the fixtures, Playwright takes one per page still open at the failure and one per page of each context the test closed before, so none of several is flagged.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -306,8 +405,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_cluster_context',
     module: 'core',
-    description:
-      'Get the full AI evidence context for a failure cluster — the same data sent to the diagnosis AI. Includes error samples, stack traces, test steps, console logs, network failures, ARIA snapshots, SCM diff (changed files since last green run), and a per-section breakdown with char counts and truncation flags. This is the richest available evidence for debugging a failure.',
+    description: md(
+      'Get the full evidence of a failure cluster, the same the diagnosis AI reads: the richest evidence there is for debugging a failure.',
+      'It holds error samples, stack traces, test steps, console logs, network failures, ARIA snapshots and the source-control diff (the files changed since the last green run), with a block saying which sections are present, truncated or absent. `coverage` says what the diff covers (commit range, files, patches left out).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -328,8 +429,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'search_test_cases',
     module: 'core',
-    description:
-      "Search test cases by title or file path within a project, or by the external ID they have in the team's test management tool (whole value). Accepts a free-text query and returns matching test cases with basic stats. Use this to find a test case when you don't know its ID.",
+    description: md(
+      'Find a project’s test cases by title, file path or external ID, when you don’t know their `testCaseId`.',
+      'An external ID, the one a test has in the team’s test management tool, matches whole. Each match has its `id` (the `testCaseId`), title, file path, external ID, tags and locks.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -347,15 +450,16 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_test_run_case',
     module: 'core',
-    description:
-      'Get a single test-run-case execution record with a one-line failure headline, the full (untruncated) error text plus steps, console logs, web vitals, and ARIA snapshot. Use include to fetch only the blobs you need. The ID is the executionId from get_run.cases or testRunsCaseId from get_cluster.affectedTestCases.',
+    description: md(
+      'Get one execution in full: a one-line failure headline, the untruncated error, steps, console logs, web vitals and the ARIA snapshot.',
+      '`include` fetches only the heavy parts you need; the error, status and summary always come back. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
         executionId: {
           type: 'number',
-          description:
-            'Test run case ID (executionId from get_run.cases or testRunsCaseId from get_cluster.affectedTestCases)',
+          description: 'Test run case ID (executionId from get_run.cases or get_cluster.affectedTestCases)',
         },
         include: {
           type: 'array',
@@ -370,8 +474,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_recent_activity',
     module: 'core',
-    description:
-      'List the most recent test runs across all projects. No projectId required — returns a cross-project view of recent CI activity. Paginated by startTime descending.',
+    description: md(
+      'List the most recent test runs across every project you can read, newest first.',
+      'Takes no `projectId`: it is the cross-project view of recent CI activity.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -384,8 +490,10 @@ export const MCP_TOOL_DEFS = [
     name: 'get_repo_commits',
     module: 'core',
     capability: 'scm',
-    description:
-      "List recent commits for a project's repository. Requires SCM token configuration (per-project or global). Returns commit details (SHA, message, author, date).",
+    description: md(
+      'List the recent commits of a project’s repository, with their SHA, message, author and date.',
+      'Needs a source-control token, set on the project or for the instance.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -400,8 +508,10 @@ export const MCP_TOOL_DEFS = [
     name: 'get_repo_diff',
     module: 'core',
     capability: 'scm',
-    description:
-      "Get the diff (changed files with patches) for a single commit in a project's repository. Requires SCM token configuration (per-project or global). Useful for inspecting what code changed in a specific commit suspected of causing a failure.",
+    description: md(
+      'Get the changed files and patches of one commit in a project’s repository.',
+      'Use it on a commit suspected of causing a failure. Needs a source-control token, set on the project or for the instance.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -414,8 +524,11 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_run_insights',
     module: 'core',
-    description:
-      'Compare a run to its baseline: pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, biggest perf improvements/regressions, worker imbalance, and newly opened clusters. The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any; when no earlier full run passed, the last failed run, found the same way. `baseline` names why it was chosen. Use this to answer "what changed?" and "did my fix work?".',
+    description: md(
+      'Compare a run with its baseline, to answer what changed and whether a fix worked.',
+      'It returns the pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, the biggest performance improvements and regressions, worker imbalance and newly opened clusters.',
+      'The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any branch; when no earlier full run passed, it is the last failed run, found the same way. `baseline` says why it was chosen.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -432,8 +545,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_spec_health',
     module: 'core',
-    description:
-      'Per-spec-file health for a project: pass rate, flaky rate, failure count, execution count (`testCount`), and average duration grouped by spec-file prefix over the last N days. Use to find which areas of the suite are unhealthy.',
+    description: md(
+      'Get the health of each area of a project’s suite over the last N days, grouped by spec-file prefix.',
+      'Each area has its pass rate, flaky rate, failure count, execution count (`testCount`) and average duration. Use it to find the unhealthy parts of a suite.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -447,8 +562,10 @@ export const MCP_TOOL_DEFS = [
     name: 'get_slow_tests',
     module: 'core',
     capability: 'fixtures',
-    description:
-      'Slowest test cases in a project by average duration, with max/min and trend direction across recent runs. Use to target performance work.',
+    description: md(
+      'List a project’s slowest tests by average duration, with their maximum, minimum and trend across recent runs.',
+      'Use it to target performance work.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -462,8 +579,10 @@ export const MCP_TOOL_DEFS = [
     name: 'get_performance_trend',
     module: 'core',
     capability: 'fixtures',
-    description:
-      'Time series of run duration, average test duration, and p90 test duration for a project. Use to answer "is the suite getting slower?".',
+    description: md(
+      'Get a project’s run duration, average test duration and p90 test duration over its recent runs.',
+      'Use it to answer whether the suite is getting slower.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -476,8 +595,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_test_stability_trend',
     module: 'core',
-    description:
-      'Time-series stability for a single test case: flaky rate, pass rate, and average duration in UTC time buckets (about 31 of them) over the last N days. Use to answer "is this test getting flakier?".',
+    description: md(
+      'Get one test’s flaky rate, pass rate and average duration over the last N days, in about 31 UTC time buckets.',
+      'Use it to answer whether a test is getting flakier.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -491,8 +612,18 @@ export const MCP_TOOL_DEFS = [
     name: 'get_flake_profile',
     module: 'workflow',
     capability: 'flake-lab',
-    description:
-      'The suspects of a flaky test, read from its last 30 days (at most 200 attempts): the slow or failed routes, the tests running alongside or just before it on the same worker, the load and the browser project its failures share and its passes do not. Each suspect has its raw counts (failuresWith of failures, passesWith of passes), its lift and the condition that would test it (delay a route, fail it, throttle the CPU, run another test alongside or first, pin a project); at most 5, a suspect needs 3 failures and a lift of 2. Alongside suspects list the paths both tests write and say when the overlap crossed shards (approximate). `context` holds factors with no condition (first attempt, UTC hour, another run on the environment). `experiments` lists the test’s latest finished `piwi flake` experiments (at most 10, newest first): kind (reproduce or verify), verdict, the commit it ran and the commit of the failures, and each arm with its conditions, runs, matching failures (same error as history), other failures, p-value against the control and verdict; each suspect also carries `lab`, its latest arm result. Use it before changing a flaky test, to know what to reproduce and whether a fix was verified.',
+    description: md(
+      'Get the suspects of a flaky test from its last 30 days (at most 200 attempts), and the Flake Lab experiments run on it.',
+      'Use it before changing a flaky test, to know what to reproduce and whether a fix was verified.',
+      'A suspect is something its failures share and its passes do not: a slow or failed route, a test running alongside it or just before it on the same worker, the load, or the browser project. There are at most five; each needs 3 failures and a lift of 2, and has:',
+      [
+        'its raw counts (`failuresWith` of the failures, `passesWith` of the passes) and its lift',
+        'the condition that would test it: delay or fail a route, throttle the CPU, run another test alongside or first, pin a project',
+        '`lab`: its latest arm result',
+        'for a test running alongside: the paths both tests write, and whether the overlap crossed shards (approximate)',
+      ],
+      '`context` holds the factors no condition tests (first attempt, UTC hour, another run on the environment). `experiments` lists the test’s latest finished `piwi flake` experiments, at most 10, newest first: kind (reproduce or verify), verdict, the commit it ran and the commit of the failures, and each arm with its conditions, runs, matching failures (same error as history), other failures, p-value against the control and verdict.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -505,8 +636,18 @@ export const MCP_TOOL_DEFS = [
     name: 'plan_flake_experiment',
     module: 'workflow',
     capability: 'flake-lab',
-    description:
-      'The Flake Lab plan for a flaky test, for an agent that runs the lab itself: the `piwi flake` and `piwi flake verify` commands to run from the project root, the control arm and one arm per suspect (most likely first) with the conditions each applies (delay or fail a route, throttle the CPU, run another test alongside or first, pin a project), the runs and the early stop, the error signatures a failure must match, and an estimate from the test’s median duration. Records nothing: the command records the experiment when it runs. `plan` is the full plan, which `piwi flake --plan <file>` also accepts to run without the dashboard. After a fix, run the verify command: exit 0 means the fix held under the condition that reproduced the failure.',
+    description: md(
+      'Get the Flake Lab plan for a flaky test, for an agent that runs the lab itself.',
+      'It records nothing: the command records the experiment when it runs. The plan has:',
+      [
+        'the `piwi flake` and `piwi flake verify` commands, to run from the project root',
+        'the control arm and one arm per suspect, most likely first, with the conditions each applies (delay or fail a route, throttle the CPU, run another test alongside or first, pin a project)',
+        'the runs, the early stop and the error signatures a failure must match',
+        'an estimate from the test’s median duration',
+        '`plan`: the full plan, which `piwi flake --plan <file>` also runs without the dashboard',
+      ],
+      'After a fix, run the verify command: exit code 0 means the fix held under the condition that reproduced the failure.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -519,8 +660,10 @@ export const MCP_TOOL_DEFS = [
     name: 'get_network_requests',
     module: 'core',
     capability: 'fixtures',
-    description:
-      "A run's network requests aggregated by method + normalized route, sorted by average duration: request count, average, p90 and max duration, error rate, and the tests that made them. Use to pin a UI failure on a slow or failing endpoint; the backend logs of one failing test are in explain_failure and get_test_case_context.",
+    description: md(
+      'Get a run’s network requests grouped by method and normalized route, slowest first.',
+      'Each route has its request count, average, p90 and maximum duration, error rate and the tests that called it. Use it to pin a UI failure on a slow or failing endpoint; the backend logs of one failing test are in `explain_failure` and `get_test_case_context`.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { runId: { type: 'number', description: 'Test run ID' } },
@@ -531,8 +674,18 @@ export const MCP_TOOL_DEFS = [
     name: 'list_resource_findings',
     module: 'workflow',
     capability: 'resources',
-    description:
-      'A project’s resource findings across runs, the most recently seen first: browsers, contexts, pages and API contexts left open past the test or describe block that opened them (leaked), pages opened and never used (idle), pages, listeners or route handlers growing on a long-lived page (piling), Node servers or file watchers a test left running in its worker (handle), and leaks counted from steps without the capture fixtures (probable). Each has where it was opened (`site` is the `file:line` to edit), the run it was first and last seen in, how many runs showed it, and its status: `open`, or `fixed` once five full runs of the default branch came without it (`cleanRuns` counts them; `reopenedRunId` is set when a fixed one came back). `last` is what it held the last time it showed: objects, tests, how long it stayed open, page CPU after its test. Use it before touching a suite’s fixtures or teardown, or to check a leak fix held.',
+    description: md(
+      'List what a project’s tests leave open or let grow, across runs, most recently seen first.',
+      'Use it before touching a suite’s fixtures or teardown, or to check that a leak fix held. Each finding has a verdict:',
+      [
+        '`leaked`: a browser, context, page or API context left open past the test or describe block that opened it',
+        '`idle`: a page opened and never used',
+        '`piling`: pages, listeners or route handlers growing on a long-lived page',
+        '`handle`: a Node server or file watcher a test left running in its worker',
+        '`probable`: a leak counted from steps, without the capture fixtures',
+      ],
+      'Each finding also has `site` (the `file:line` that opened it, the line to edit), the runs it was first and last seen in, how many runs showed it, and `last`: what it held the last time (objects, tests, how long it stayed open, page CPU after its test). Its status is `open`, or `fixed` once five full runs of the default branch came without it (`cleanRuns` counts them; `reopenedRunId` is set when a fixed one came back).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -552,8 +705,17 @@ export const MCP_TOOL_DEFS = [
     name: 'get_resource_profile',
     module: 'workflow',
     capability: 'resources',
-    description:
-      'What one run cost and left open, from its reporters’ resource reports (one per shard): the findings, each with whether its base branch (the pull request’s target, else the default branch) had shown it before (`isNew`); the machine each shard ran on (cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk); the busiest open pages per worker; and the costliest tests by the CPU of their worker and browser processes, with the pages each found already open. Null fields were not measured on that platform. Use it to explain a slow or timing-out run, or to find which tests a leak slows down.',
+    description: md(
+      'Get what one run cost and left open, from its reporters’ resource reports (one per shard).',
+      'Use it to explain a slow or timing-out run, or to find which tests a leak slows down. It returns:',
+      [
+        'the findings, each with `isNew`: true when its base branch (the pull request’s target, else the default branch) had not shown it before',
+        'each shard’s machine: cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk',
+        'the busiest open pages per worker',
+        'the costliest tests by the CPU of their worker and browser processes, with the pages each found already open',
+      ],
+      'A null field was not measured on that platform.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { runId: { type: 'number', description: 'Test run ID' } },
@@ -563,8 +725,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_failure_groups',
     module: 'core',
-    description:
-      "One run's failures grouped by failure cluster, with per-group affected cases and worker correlation. Run-scoped counterpart to list_clusters.",
+    description: md(
+      'Get one run’s failures grouped by failure cluster, with each group’s affected tests and worker correlation.',
+      'The run-scoped counterpart of `list_clusters`.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { runId: { type: 'number', description: 'Test run ID' } },
@@ -575,8 +739,11 @@ export const MCP_TOOL_DEFS = [
     name: 'get_locator_healing',
     module: 'healing',
     capability: 'locator-healing',
-    description:
-      'Ranked alternative locators for a failing test-run-case: the failing locator, the recommended durable fix, and the full alternative lists (from prior success, element match, and ARIA snapshot). Includes `location` (file:line:col), the failing `sourceLine`, and a ready-to-apply `edit` — the rewritten line plus a unified diff `git apply` accepts. Returns `{ applicable: false, reason }` when the locator resolved and the failure came after (or the error is a navigation error) — do not rewrite the selector then. Use when fixing a broken selector.',
+    description: md(
+      'Get ranked replacements for a failing execution’s broken locator, with a ready-to-apply edit.',
+      'Use it when fixing a broken selector. It returns the failing locator, the recommended durable fix and up to eight alternatives from each source (a rename in the source diff, a prior success, an element match, the ARIA snapshot), with `location` (`file:line:col`), the failing `sourceLine` and `edit`: the rewritten line plus a unified diff `git apply` accepts.',
+      'It returns `{ applicable: false, reason }` when the locator resolved and the failure came after it, or the error is a navigation error: do not rewrite the selector then.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { executionId: { type: 'number', description: 'Test run case ID (executionId)' } },
@@ -586,8 +753,15 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'predict_locator_breaks',
     module: 'healing',
-    description:
-      "Which of the project's test locators a change breaks, before any test runs. Send your own working diff (the output of `git diff`, unified format): the strings it removes or renames (attribute values such as aria-label, placeholder or a test id, text between tags, quoted strings, translation values) are matched against every locator chain the project's tests used, under Playwright's text rules (case-insensitive substring unless exact, regex as written). Each break carries its confidence (`likely` for an attribute, tag text or translation; `possible` for a bare string), the tests and call sites (`file:line:col`, relative to where the reporter ran), and for a one-to-one rename the `rewrite` (the same chain with the new string) plus `edits`: replace each `before` string literal with `after` at the call sites. Run it after a UI change, apply the edits, then run the tests it names. Test files in the diff are ignored. `branch` picks the locator index to compare with (default: the project's default branch).",
+    description: md(
+      'Predict which of a project’s test locators a change breaks, before any test runs.',
+      'Run it after a UI change, apply its edits, then run the tests it names. Send your working diff (`git diff` output): the strings it removes or renames (attribute values such as an `aria-label`, a placeholder or a test id, text between tags, quoted strings, translation values) are matched against every locator chain the project’s tests used, under Playwright’s text rules (case-insensitive substring unless exact, regex as written). Test files in the diff are ignored. Each break has:',
+      [
+        'its confidence: `likely` for an attribute, tag text or translation, `possible` for a bare string',
+        'the tests and their call sites (`file:line:col`, relative to where the reporter ran)',
+        'for a one-to-one rename, `rewrite` (the same chain with the new string) and `edits`: replace each `before` string literal with `after` at the call sites',
+      ],
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -604,8 +778,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'search',
     module: 'core',
-    description:
-      'Global search across all in-scope projects, runs (by label or numeric id), test cases (by title) and failure clusters (by title, signature, `#id`, or the key of a linked issue such as PROJ-123). Use to find a run by its label, the cluster a ticket tracks, or an entity across projects.',
+    description: md(
+      'Search every project you can read for projects, runs, test cases and failure clusters.',
+      'Projects match by name or label, runs by label or numeric id, test cases by title, and clusters by title, signature, `#id` or the key of a linked issue such as PROJ-123. Use it to find a run by its label, the cluster a ticket tracks, or an entity whose project you don’t know.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { q: { type: 'string', description: 'Search query (min 2 chars)' } },
@@ -615,8 +791,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_case_traces',
     module: 'core',
-    description:
-      'List Playwright trace files for a test-run-case, with a download path for each. Fetch the bytes via GET /api/files/<path>.',
+    description: md(
+      'List an execution’s Playwright trace files, each with its download path.',
+      'Fetch a trace’s bytes with `GET /api/files/<path>`.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { executionId: { type: 'number', description: 'Test run case ID (executionId)' } },
@@ -628,7 +806,7 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'integrations',
     description:
-      'List external entity links (Jira, GitHub PR/issue, etc.) attached to a run, test-run-case, test case, or failure cluster, with provider and unfurled status.',
+      'List the tickets and pull requests linked to a run, an execution, a test case or a failure cluster, with their provider and unfurled status.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -647,8 +825,12 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'integrations',
     permission: 'issue:create',
-    description:
-      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type); the binding's field defaults fill the fields the project requires. Requires `issue:create` (Contributor and above on the project).",
+    description: md(
+      'File a Jira issue for a failure cluster, a failing execution or a bug report, with the fix plan as its body.',
+      'It is the ticket the dashboard’s **Create issue** button files. Issues are deduplicated by cluster: a second call for the same cluster returns the existing one rather than filing another. Returns the issue (`key`, `url`) and the `existing` issues that already track the cluster (a pinned link, a matching label or a fixed-before match), so you can link one instead of filing again.',
+      'Needs a Jira connection and a project binding (project key and issue type). The binding’s field defaults fill the fields the Jira project requires, and `fields` sets the others.',
+      'Requires `issue:create` (Contributor and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -685,14 +867,19 @@ export const MCP_TOOL_DEFS = [
     name: 'list_tags',
     module: 'core',
     capability: 'tags',
-    description: 'List every tag defined on this instance (id, text, color). Tags are instance-wide, not per-project.',
+    description: md(
+      'List every tag defined on this instance, with its id, text and color.',
+      'Tags are instance-wide, not per project.',
+    ),
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'get_project_test_catalog',
     module: 'workflow',
-    description:
-      'The full test-case catalog for a project with aggregated pass/fail/flaky counts, average duration, and last status per test. Offset-paginated bulk companion to get_test_case.',
+    description: md(
+      'List a project’s whole test catalog, with each test’s pass, fail and flaky counts, average duration and last status.',
+      'The bulk companion of `get_test_case`; it pages by `offset`, not by cursor.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -725,8 +912,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_selections',
     module: 'workflow',
-    description:
-      "A project's saved test selections plus the built-in ones (failed, quarantine-free). A selection is a named, declarative subset of the suite resolved from run history. Use resolve_selection to turn one into the tests to run.",
+    description: md(
+      'List a project’s saved test selections and the built-in ones (`failed`, `quarantine-free`).',
+      'A selection is a named, declarative subset of the suite, resolved from run history. `resolve_selection` turns one into the tests to run.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { projectId: { type: 'number', description: 'Project ID from list_projects' } },
@@ -736,8 +925,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'resolve_selection',
     module: 'workflow',
-    description:
-      'Resolve a saved (or built-in) selection to the tests it currently matches and a ready-to-run `playwright test` command. Just landed a fix? Resolve the relevant selection to get the exact command that verifies it.',
+    description: md(
+      'Resolve a saved or built-in selection to the tests it matches now, with a ready-to-run `playwright test` command.',
+      'After a fix, resolve the selection that covers it for the exact command that verifies it.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -756,8 +947,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'preview_selection',
     module: 'workflow',
-    description:
-      'Resolve an ad-hoc selection definition without saving it — the dry-run behind the builder. Supply a definition (include/exclude predicate groups, pins, budget, limit) and get back the matching tests, an estimate, warnings and a command. An unknown predicate is an error, not ignored.',
+    description: md(
+      'Resolve a selection definition without saving it, the dry run behind the selection builder.',
+      'Send a definition (include and exclude predicate groups, pins, budget, limit) to get the matching tests, an estimate, warnings and a command. An unknown predicate is an error, never ignored.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -779,8 +972,16 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'suggest_selections',
     module: 'workflow',
-    description:
-      'Suggest tags and a smoke suite for a project from observed history (suggest-only, with evidence). Returns `slow` tags for duration outliers, `feature` tags from the route families tests hit, and a mined smoke suite — a budgeted set cover over observed routes, each pick buying fewer new routes than the last. The smoke suite lists any `splitLocks` (locks held by more than one pick), which plain `playwright test --shard` could split across shards — run it with `piwi run --shard` (lock-aware) instead. `budgetMs` caps the smoke suite (default 5 min).',
+    description: md(
+      'Suggest tags and a smoke suite for a project from its run history, each with its evidence; nothing is saved.',
+      'It returns:',
+      [
+        '`slow` tags for duration outliers',
+        '`feature` tags from the route families tests hit',
+        'a mined smoke suite: a set cover over observed routes within `budgetMs` (default 5 minutes), each pick adding fewer new routes than the one before',
+      ],
+      'The smoke suite lists its `splitLocks` (locks held by more than one pick), which plain `playwright test --shard` could split across shards: run it with the lock-aware `piwi run --shard` instead.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -793,8 +994,11 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'analyze_selections',
     module: 'workflow',
-    description:
-      'Health and drift for a project\'s selections. For each: what it resolves to now (count, quarantined members, duration, warnings — including a `split-lock` warning when a lock is shared by more than one test, which Playwright\'s own `--shard` could split across shards) and whether that differs from what its most recent stamped run recorded — a silent drift a green build can hide. Plus coverage: how many tests are matched by no stored selection (the "unselected" gap), with a sample. Read-only.',
+    description: md(
+      'Check the health and drift of a project’s selections, read-only.',
+      'For each selection: what it resolves to now (count, quarantined members, duration, warnings) and whether that differs from what its last stamped run recorded, a drift a green build can hide. A `split-lock` warning means a lock is shared by more than one test, which Playwright’s own `--shard` could split across shards.',
+      'It also counts the tests no stored selection matches (the unselected gap), with a sample.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { projectId: { type: 'number', description: 'Project ID' } },
@@ -804,8 +1008,18 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_impacted_tests',
     module: 'workflow',
-    description:
-      "The tests a change impacts, the ones to run and the first to check for updates, before any test runs. Send your working diff (`git diff --full-index <base>`, unified format, where the base is the commit the change starts from): each changed file selects the tests defined in it (`test-file`), those that failed inside it (`frames`), those that called a route it handles (`route`) and those whose coverage reaches it. With recorded coverage of the file's base version, a modified file's coverage-reached tests narrow to those that ran a changed line (`lines`) or a function around one (`functions`); a test its coverage cannot rule out stays (`file`: another version, no ranges, an incomplete capture, or a change outside every function, listed in `fileLevelLines`). Each file gives its `level` (`lines`, `file` or `none`), its tests with how and the changed lines they ran (1-based, `12-15,20`), `ruledOut` (tests that reach it and ran none of the changed lines) and `notRun` (changed lines inside functions no test ran: the lines a new test should cover, see write-the-missing-test). A changed file that maps to no test widens the selection to the whole suite (`widened`, with a warning), never silently skipping it. Returns a ready `playwright test` command. Pass `changedFiles` instead of `diff` for file-level impact only.",
+    description: md(
+      'Get the tests a change impacts, the ones to run and the first to check for updates, before any test runs, with a ready `playwright test` command.',
+      'Send your working diff (`git diff --full-index <base>`, where the base is the commit the change starts from), or `changedFiles` for file-level impact only. Each changed file selects:',
+      [
+        'the tests defined in it (`test-file`)',
+        'the tests that failed inside it (`frames`)',
+        'the tests that called a route it handles (`route`)',
+        'the tests whose coverage reaches it',
+      ],
+      'With recorded coverage of a modified file’s base version, its coverage-reached tests narrow to those that ran a changed line (`lines`) or a function around one (`functions`). A test its coverage cannot rule out stays (`file`): another version, no ranges, an incomplete capture, or a change outside every function, listed in `fileLevelLines`.',
+      'Each file gives its `level` (`lines`, `file` or `none`), its tests with how they were selected and the changed lines they ran (1-based, `12-15,20`), `ruledOut` (how many tests reach it and ran none of the changed lines) and `notRun` (changed lines inside functions no test ran: what a new test should cover, see the `write_the_missing_test` prompt). A changed file that maps to no test widens the selection to the whole suite (`widened`, with a warning) rather than skipping it.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -832,8 +1046,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_open_clusters',
     module: 'core',
-    description:
-      'Open failure clusters across all in-scope projects, ranked by occurrences — a cross-project triage queue, the same one the dashboard failure inbox shows. Filter by status, or by an inbox `queue` to focus (regressions on the default branch, fixes that did not hold, quarantines ready for release, merge suggestions awaiting a decision, the ones needing a ticket, or the ones assigned to you). A `queue` filter implies open clusters and excludes snoozed ones. Paginate with pageSize/cursor.',
+    description: md(
+      'List the failure clusters of every project you can read, open ones by default, most occurrences first: a cross-project triage queue.',
+      '`queue` focuses one queue of the failure inbox: `regressions` on the default branch, `fix-didnt-hold`, `quarantine-ready`, `merge-suggestions` awaiting a decision, `needs-ticket`, or `mine` (assigned to you or owned by you). A queue keeps open, non-snoozed clusters and overrides `status`; without one, snoozed clusters are listed too.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -852,15 +1068,30 @@ export const MCP_TOOL_DEFS = [
     name: 'get_instance_stats',
     module: 'core',
     permission: 'storage:manage',
-    description:
-      'Instance-wide counts (projects, runs, test cases, executions, files) and total storage size. Requires `storage:manage` (administrators only).',
+    description: md(
+      'Get instance-wide counts (projects, runs, test cases, executions, files) and the total storage size.',
+      'Requires `storage:manage` (administrators only).',
+    ),
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'explain_failure',
     module: 'core',
-    description:
-      "One-call evidence bundle for a single failing execution: a one-line headline (for a test that passed on retry, its failed attempt's, named in `failedAttempt` by its executionId and retry index, 0 for the first attempt, to call this tool on), the error, steps, console, ARIA snapshot, the recommended locator fix, the structural page diff against the last green sample, a screenshot count, and the AI diagnosis context. It also carries the `story` (the clues chained into one sentence when a known combination matches), the `situation` (since when, on which commit, whether a newer execution of the test failed again or passed, in how many tests, who owns it), `didNotRun` (why a test that did not run never started, in one sentence), `latest` (whether this is the latest execution of the test in its Playwright project, else the executionId, runId and status of the newest one) and the computed `nextStep`. Prefer this over chaining get_test_run_case + get_locator_healing + get_test_case_context.",
+    description: md(
+      'Explain one failing execution in one call: its evidence, its situation and the next step.',
+      'Prefer it over chaining `get_test_run_case`, `get_locator_healing` and `get_test_case_context`. It carries:',
+      [
+        'a one-line headline; for a test that passed on retry, the headline of its failed attempt, named in `failedAttempt` by its `executionId` and retry index (0 for the first attempt) to call this tool on',
+        'the error, steps, console and ARIA snapshot',
+        'the recommended locator fix, the structural page diff against the last green sample and a screenshot count',
+        'the AI diagnosis context',
+        '`story`: the clues chained into one sentence, when a known combination matches',
+        '`situation`: since when, on which commit, whether a newer execution of the test failed again or passed, in how many tests, and who owns it',
+        '`didNotRun`: why a test that did not run never started, in one sentence',
+        '`latest`: whether this is the test’s latest execution in its Playwright project, else the `executionId`, `runId` and status of the newest one',
+        '`nextStep`: the computed next step',
+      ],
+    ),
     inputSchema: {
       type: 'object',
       properties: { executionId: { type: 'number', description: 'Test run case ID (executionId)' } },
@@ -871,8 +1102,11 @@ export const MCP_TOOL_DEFS = [
     name: 'set_cluster_status',
     module: 'core',
     permission: 'triage:write',
-    description:
-      'Triage a failure cluster: set its status to open, resolved, or ignored with an optional note. Requires `triage:write` (Maintainer and above on the project). Use after fixing the underlying issue.',
+    description: md(
+      'Set a failure cluster’s triage status to open, resolved or ignored, with an optional note.',
+      'Use it after fixing the underlying issue; `triage_cluster` triages several clusters at once.',
+      'Requires `triage:write` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -890,8 +1124,11 @@ export const MCP_TOOL_DEFS = [
     name: 'set_cluster_base_commit',
     module: 'core',
     permission: 'triage:write',
-    description:
-      'Pin the baseline commit SHA a cluster uses for its SCM-diff diagnosis context, so "what changed since green" is accurate. Requires `triage:write` (Maintainer and above on the project).',
+    description: md(
+      'Pin the baseline commit of a failure cluster’s source-control diff, so its evidence of what changed since green is accurate.',
+      'An empty `commit` clears it.',
+      'Requires `triage:write` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -906,8 +1143,11 @@ export const MCP_TOOL_DEFS = [
     module: 'agents',
     capability: 'ai',
     permission: 'project:read',
-    description:
-      'Record thumbs up/down feedback on a stored diagnosis, with an optional note. Requires `project:read` (any role on the project).',
+    description: md(
+      'Rate a stored diagnosis thumbs up or down, with an optional note.',
+      'Omit `feedback` to clear the rating.',
+      'Requires `project:read` (any role on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -923,8 +1163,11 @@ export const MCP_TOOL_DEFS = [
     module: 'agents',
     capability: 'ai',
     permission: 'ai:run',
-    description:
-      'Trigger an AI diagnosis for a failure cluster and return the result (category, confidence, root cause, suggested fix). Returns the existing completed diagnosis unless force is set. Requires `ai:run` (Maintainer and above on the project) and a configured AI provider.',
+    description: md(
+      'Run Piwi’s AI diagnosis of a failure cluster and return it: category, confidence, root cause and suggested fix.',
+      'Returns the existing completed diagnosis unless `force` is set. Needs an AI provider configured on this instance.',
+      'Requires `ai:run` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -940,8 +1183,11 @@ export const MCP_TOOL_DEFS = [
     module: 'agents',
     capability: 'ai',
     permission: 'ai:run',
-    description:
-      "Trigger an AI diagnosis for one failing execution (a failure), as the failure page's Diagnose does, and return the result (category, confidence, root cause, suggested fix). The execution's cluster, when it has one, grounds the diagnosis in the cluster's evidence; use run_cluster_diagnosis for the root cause a whole cluster shares. Returns the existing completed diagnosis unless force is set; refused for an execution that did not fail. Requires `ai:run` (Maintainer and above on the project) and a configured AI provider.",
+    description: md(
+      'Run Piwi’s AI diagnosis of one failing execution and return it: category, confidence, root cause and suggested fix.',
+      'It is the failure page’s **Diagnose**. When the execution is in a cluster, the cluster’s evidence grounds the diagnosis; use `run_cluster_diagnosis` for the root cause a whole cluster shares. Returns the existing completed diagnosis unless `force` is set, and refuses an execution that did not fail. Needs an AI provider configured on this instance.',
+      'Requires `ai:run` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -957,8 +1203,18 @@ export const MCP_TOOL_DEFS = [
     name: 'triage_cluster',
     module: 'core',
     permission: ['triage:write', 'quarantine:write'],
-    description:
-      "Triage one or more failure clusters at once, as the failure inbox does: set their status (open, resolved, ignored) with an optional note, assign them, snooze or unsnooze them, quarantine every test in them or release those tests from quarantine. Clusters you cannot reach or that do not exist are skipped and listed in `skippedIds`. `quarantine` and `release` report how many of the clusters' tests changed and, when their project records coverage, `uniqueCoverage`: the code only those tests run among the other non-quarantined tests. Use list_open_clusters (queue quarantine-ready, mine, regressions…) to pick them. Requires `triage:write`, or `quarantine:write` for quarantine and release (Maintainer and above on the project).",
+    description: md(
+      'Triage one or more failure clusters at once, as the failure inbox does.',
+      '`action` applies to every cluster:',
+      [
+        '`status`: set open, resolved or ignored, with an optional `note`',
+        '`assign`: to `assignee` (empty to unassign)',
+        '`snooze`: hide them from the inbox (omit `snooze` to unsnooze)',
+        '`quarantine`, `release`: quarantine every test in them, or release those tests, with a `reason`',
+      ],
+      'Clusters you cannot reach or that do not exist are skipped and listed in `skippedIds`. `quarantine` and `release` report how many tests changed and, when the project records coverage, `uniqueCoverage`: the code only those tests run among the other non-quarantined tests. Pick the clusters with `list_open_clusters` (queues `quarantine-ready`, `mine`, `regressions`, …).',
+      'Requires `triage:write`, or `quarantine:write` for `quarantine` and `release` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -990,8 +1246,17 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'test-map',
     permission: 'triage:write',
-    description:
-      'Give a verdict on a scenario gap, as the gap inbox does: `accept` (queue its draft, optionally for someone), `snooze` (1-day, 1-week, or until the node changes), `dismiss` with a reason (not-worth-testing, covered-elsewhere with the covering test, wrong), or `covered-by` (record the test that covers it without dismissing). A verdict counts for or against the detector that raised the gap. Pass the gap id from list_scenario_gaps. Returns the gap’s new status. Requires `triage:write` (Maintainer and above on the project).',
+    description: md(
+      'Give a verdict on a scenario gap, as the gap inbox does, and return its new status.',
+      'Pass the gap id from `list_scenario_gaps`. A verdict counts for or against the detector that raised the gap. `verb` is:',
+      [
+        '`accept`: queue its draft, optionally for `assignedTo`',
+        '`snooze`: for `1-day`, `1-week` or `until-node-changes`',
+        '`dismiss`: with a `reason`, `not-worth-testing`, `covered-elsewhere` (with the covering test) or `wrong`',
+        '`covered-by`: record the test that covers it, without dismissing it',
+      ],
+      'Requires `triage:write` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1021,8 +1286,12 @@ export const MCP_TOOL_DEFS = [
     name: 'decide_merge_suggestion',
     module: 'core',
     permission: 'triage:write',
-    description:
-      'Approve or reject a suggestion to merge two failure clusters that look like one root cause. Approving merges them (the lower id survives, keeps its triage state and takes the other’s executions, diagnoses and occurrences; the other is deleted); rejecting leaves both as they are. Pass the clusterId of a cluster in the merge-suggestions queue of list_open_clusters, or a suggestionId from get_cluster’s mergeSuggestions; when a cluster has more than one pending suggestion, pass suggestionId. Requires `triage:write` (Maintainer and above on the project).',
+    description: md(
+      'Approve or reject a suggestion to merge two failure clusters that look like one root cause.',
+      'Approving merges them: the lower id survives, keeps its triage state and takes the other’s executions, diagnoses and occurrences, and the other is deleted. Rejecting leaves both as they are.',
+      'Pass the `clusterId` of a cluster in the `merge-suggestions` queue of `list_open_clusters`, or a `suggestionId` from `get_cluster`’s `mergeSuggestions`; pass `suggestionId` when a cluster has more than one pending suggestion.',
+      'Requires `triage:write` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1041,8 +1310,12 @@ export const MCP_TOOL_DEFS = [
     name: 'move_tests_to_new_cluster',
     module: 'core',
     permission: 'triage:write',
-    description:
-      "Move some tests out of a failure cluster into a new cluster, as the cluster page's Move to a new cluster does: for a cluster that groups failures with different root causes. The tests' executions in the cluster move to the new cluster, which gets your optional triage note; their later failures with the same error join the new cluster, and the two clusters are never merged automatically. The source cluster's triage note gains a line naming the move. Pass the testCaseIds of get_cluster's affectedTestCases. Returns the new clusterId, absent when none of the tests failed in the cluster. Requires `triage:write` (Maintainer and above on the project).",
+    description: md(
+      'Move some tests out of a failure cluster into a new one, for a cluster that groups failures with different root causes.',
+      'It is the cluster page’s **Move to a new cluster**. Pass `testCaseIds` from `get_cluster`’s `affectedTestCases`. Their executions in the cluster move to the new cluster, which gets your optional `triageNote`; their later failures with the same error join it, and the two clusters are never merged automatically. The source cluster’s triage note gains a line naming the move.',
+      'Returns the new `clusterId`, absent when none of the tests failed in the cluster.',
+      'Requires `triage:write` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1058,8 +1331,16 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'quarantine',
     permission: 'quarantine:write',
-    description:
-      'Dismiss what Piwi proposed for a test, as the dashboard’s Dismiss does: the proposal to quarantine it, or the proposed release of it from quarantine. `quarantine` applies to a quarantine candidate (one of the costliest flaky tests, by the CI minutes their flakiness wastes, which the flaky list marks proposed); `release` to a quarantined test whose passing streak or verified fix earned its way out (list_open_clusters with queue quarantine-ready finds their clusters). Records the proposal as rejected, with your optional reason; nothing else changes, so the test stays out of, or in, quarantine. Dismissing the same proposal again records nothing more; a dismissed quarantine proposal counts again once a newer run arrives. Fails when the test has no such proposal. Requires `quarantine:write` (Maintainer and above on the project).',
+    description: md(
+      'Dismiss Piwi’s proposal to quarantine a test, or to release it from quarantine.',
+      'It is the dashboard’s **Dismiss**. `proposal` is:',
+      [
+        '`quarantine`: for a quarantine candidate, one of the costliest flaky tests by the CI minutes their flakiness wastes, which the flaky list marks proposed',
+        '`release`: for a quarantined test whose passing streak or verified fix earned its way out (`list_open_clusters` with queue `quarantine-ready` finds their clusters)',
+      ],
+      'It records the proposal as rejected, with your optional `reason`; nothing else changes, so the test stays out of quarantine, or in it. Dismissing the same proposal again records nothing more, and a dismissed quarantine proposal counts again once a newer run arrives. Fails when the test has no such proposal.',
+      'Requires `quarantine:write` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1080,8 +1361,12 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'quarantine',
     permission: 'quarantine:write',
-    description:
-      "Quarantine one test, or release it from quarantine, as the dashboard's Quarantine and Release do. A quarantined test keeps running and reporting: quarantine only removes it from the CI gate's verdict, so its passing streak can earn it a release. Pass `quarantined: true` with an optional `reason`, or `quarantined: false` to release it (the quarantine is kept in its history). Quarantining a test already in quarantine changes nothing and keeps its streak; releasing a test not in quarantine fails. When the project records coverage, `uniqueCoverage` summarizes the code only this test runs among the other non-quarantined tests: what its quarantine leaves uncovered, or its release covers again (get_coverage_loss lists it all). Use triage_cluster to quarantine every test of a cluster. Requires `quarantine:write` (Maintainer and above on the project).",
+    description: md(
+      'Quarantine one test, or release it from quarantine.',
+      'It is the dashboard’s **Quarantine** and **Release**. A quarantined test keeps running and reporting: quarantine only removes it from the CI gate’s verdict, so its passing streak can earn its release. Pass `quarantined: true` with an optional `reason`, or `quarantined: false` to release it (the quarantine stays in its history). Quarantining a test already in quarantine changes nothing and keeps its streak; releasing a test not in quarantine fails.',
+      'When the project records coverage, `uniqueCoverage` summarizes the code only this test runs among the other non-quarantined tests: what quarantining it leaves uncovered, or what releasing it covers again (`get_coverage_loss` lists it all). To quarantine every test of a cluster, use `triage_cluster`.',
+      'Requires `quarantine:write` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1097,8 +1382,11 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'bug-reports',
     permission: 'bug-report:write',
-    description:
-      'Set a bug report’s status by hand: `dismissed` (not a bug, or not worth a test), `open` (reopen it) or `closed`. The other statuses (test-committed, looks-fixed) follow the runs of the test that names the report. Requires `bug-report:write` (Contributor and above on the project).',
+    description: md(
+      'Set a bug report’s status by hand: `dismissed` (not a bug, or not worth a test), `open` (reopen it) or `closed`.',
+      'The other statuses, `test-committed` and `looks-fixed`, follow the runs of the test that names the report.',
+      'Requires `bug-report:write` (Contributor and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1113,8 +1401,11 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     capability: 'scm',
     permission: 'run:control',
-    description:
-      "Re-run exactly a failure cluster's affected tests in CI, as the cluster page's Re-run in CI button does: dispatches the project's configured workflow or pipeline with the project's SCM token. Returns the provider and the URL to watch the runs (the re-run's own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository. Requires `run:control` (Maintainer and above on the project).",
+    description: md(
+      'Re-run exactly a failure cluster’s affected tests in CI.',
+      'It is the cluster page’s **Re-run in CI**: it dispatches the project’s configured workflow or pipeline with the project’s source-control token, and returns the provider and the URL to watch the runs (the re-run’s own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository.',
+      'Requires `run:control` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: { clusterId: { type: 'number', description: 'Cluster ID' } },
@@ -1125,8 +1416,11 @@ export const MCP_TOOL_DEFS = [
     name: 'set_cluster_bisect',
     module: 'core',
     permission: 'run:control',
-    description:
-      'Record the first bad commit a `git bisect` found for a failure cluster, as the desktop app does when its bisect ends: the commit then shows in the fix plan (get_fix_plan) next to the regression window. Pass the SHA (7 to 40 hex characters) and, when known, its subject, author and ISO date. Requires `run:control` (Maintainer and above on the project).',
+    description: md(
+      'Record the first bad commit a `git bisect` found for a failure cluster, as the desktop app does when its bisect ends.',
+      'The commit then shows in the fix plan (`get_fix_plan`) next to the regression window. Pass the SHA (7 to 40 hex characters) and, when known, its subject, author and ISO date.',
+      'Requires `run:control` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1144,8 +1438,21 @@ export const MCP_TOOL_DEFS = [
     module: 'agents',
     capability: 'agent-diagnoses',
     permission: 'ai:run',
-    description:
-      'Record the diagnosis you wrote as the current diagnosis of a failure cluster (`clusterId`) or of one failing execution (`executionId`, a failure: use it when the failure is in no cluster, or when its cause is its own), written by an agent: pass the `model` you run on and the `diagnosis` in the JSON schema Piwi asks a model for (summary; confidenceScore 0-100; severity blocker|high|medium|low; affectedArea or null; hypotheses, ranked, each with category app-bug|test-bug|flaky-test|infrastructure|environment|unknown, rootCause, likelihood 0-100 and evidence; suggestedFix with description, file, code and patch, each null when unknown; investigationSteps; preventionTips). The previous diagnosis is kept in the history. Your patch (a unified diff) is validated against the source at the commit the failure happened at when source control is connected; the answer says whether it applies. Works without an AI provider on this instance. Refused for an execution that did not fail. Returns the diagnosisId to pass to report_fix_attempt, with the clusterId of the cluster, or of the cluster the failure is in. Requires `ai:run` (Maintainer and above on the project).',
+    description: md(
+      'Record a diagnosis you wrote as the current diagnosis of a failure cluster or of one failing execution.',
+      'Pass `clusterId`, or `executionId` for a failure in no cluster or whose cause is its own (refused for an execution that did not fail). It works without an AI provider on this instance, and the previous diagnosis stays in the history. Pass the `model` you run on and the `diagnosis` in the JSON schema Piwi asks a model for:',
+      [
+        '`summary`',
+        '`confidenceScore`: 0-100',
+        '`severity`: blocker, high, medium or low',
+        '`affectedArea`, or null',
+        '`hypotheses`, ranked, each with `category` (app-bug, test-bug, flaky-test, infrastructure, environment or unknown), `rootCause`, `likelihood` (0-100) and `evidence`',
+        '`suggestedFix`: `description`, then `file`, `code` and `patch`, each null when unknown',
+        '`investigationSteps` and `preventionTips`',
+      ],
+      'When source control is connected, your patch (a unified diff) is checked against the source at the commit the failure happened at, and the answer says whether it applies. Returns the `diagnosisId` to pass to `report_fix_attempt`, with the `clusterId` or `executionId` it was recorded on.',
+      'Requires `ai:run` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1164,8 +1471,19 @@ export const MCP_TOOL_DEFS = [
     name: 'report_fix_attempt',
     module: 'core',
     permission: 'run:control',
-    description:
-      "Record that you changed the code to fix a failure cluster, after making the change: `kind` is patch, locator-edit or fix-plan; pass the `commit` (7 to 40 hex characters) or the `branch` the change is on, the `patch` you applied (stored as its hash) or its `patchHash`, the `edit` for a locator edit (filePath, line, from, to), and the `diagnosisId` you followed (from get_fix_plan or record_diagnosis: the cluster's diagnosis or the diagnosis of one of its failures). It is recorded as applied; when the cluster's tests pass on a later commit, Piwi records it verified (tied by the commit, a `Piwi-Cluster: <clusterId>` trailer in the commit message, or the branch) and shows it on the cluster's timeline; a later failure records it regressed. Add the trailer get_fix_plan suggests (verify.commitTrailer) to your commit message. Reporting the same change twice records it once. Requires `run:control` (Maintainer and above on the project).",
+    description: md(
+      'Record that you changed the code to fix a failure cluster, once the change is made, so Piwi can verify it.',
+      'Pass:',
+      [
+        '`kind`: `patch`, `locator-edit` or `fix-plan`',
+        '`commit` (7 to 40 hex characters), or the `branch` the change is on',
+        'the `patch` you applied (stored as its hash), or its `patchHash`',
+        'for a locator edit, `edit`: `filePath`, `line`, `from`, `to`',
+        '`diagnosisId`: the diagnosis you followed, from `get_fix_plan` or `record_diagnosis` (the cluster’s, or one of its failures’)',
+      ],
+      'It is recorded as applied. When the cluster’s tests pass on a later commit, Piwi records it verified (tied by the commit, by a `Piwi-Cluster: <clusterId>` trailer in the commit message, or by the branch) and shows it on the cluster’s timeline; a later failure records it regressed. Add the trailer `get_fix_plan` suggests (`verify.commitTrailer`) to your commit message. Reporting the same change twice records it once.',
+      'Requires `run:control` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1196,8 +1514,11 @@ export const MCP_TOOL_DEFS = [
     name: 'set_run_incident',
     module: 'core',
     permission: ['run:submit', 'run:control'],
-    description:
-      'Mark a test run as an environment incident (its failures come from the environment under test being down, not from the tests or the code), or clear the flag, as the run page does. A flagged run is left out of baselines, fix verification, flaky scores and auto-heal, and the gate answers inconclusive for it. Pass `incident: true` with an optional `reason`, or `incident: false` to clear it. Requires `run:submit` or `run:control` (Uploader, Maintainer and above on the project).',
+    description: md(
+      'Mark a test run as an environment incident, or clear the flag, as the run page does.',
+      'An incident run’s failures come from the environment under test being down, not from the tests or the code. A flagged run is left out of baselines, fix verification, flaky scores and auto-heal, and the gate answers inconclusive for it. Pass `incident: true` with an optional `reason`, or `incident: false` to clear it.',
+      'Requires `run:submit` or `run:control` (Uploader, Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1213,8 +1534,11 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'integrations',
     permission: 'link:write',
-    description:
-      'Link an existing ticket or pull request (any http(s) URL) to a failure cluster, an execution, a test case, a run or a bug report, as the Links panel does. A URL from a connected tracker is matched to its connection and shows its live status. Use create_issue to file a new Jira issue instead. Returns the stored link. Requires `link:write` (Contributor and above on the project).',
+    description: md(
+      'Link an existing ticket or pull request to a failure cluster, an execution, a test case, a run or a bug report.',
+      'It is the **Links** panel’s action. Any http or https URL works; one from a connected tracker is matched to its connection and shows its live status. Returns the stored link. To file a new Jira issue, use `create_issue`.',
+      'Requires `link:write` (Contributor and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1235,8 +1559,11 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     capability: 'integrations',
     permission: 'link:write',
-    description:
-      'Remove a ticket or pull request link from a failure cluster, an execution, a test case, a run or a bug report, as the Links panel does: pass the entity and the URL link_issue took (list_links shows them). Every link of that entity to that URL is removed; the ticket itself is untouched. Fails when the entity has no link to the URL. Returns how many links were removed. Requires `link:write` (Contributor and above on the project).',
+    description: md(
+      'Remove a ticket or pull request link from a failure cluster, an execution, a test case, a run or a bug report.',
+      'It is the **Links** panel’s action. Pass the entity and the URL `link_issue` took (`list_links` shows them). Every link of that entity to that URL is removed; the ticket itself is untouched. Fails when the entity has no link to the URL. Returns how many links were removed.',
+      'Requires `link:write` (Contributor and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1255,7 +1582,13 @@ export const MCP_TOOL_DEFS = [
     name: 'create_test_function',
     module: 'workflow',
     permission: 'test-assets:write',
-    description: `Register a page-object method or helper in a project's test-function catalog, so the Piwi Picker browser extension (and its recorder) can match a live page or a recorded session against it and substitute a call to your own code instead of raw locator lines. This tool does not call an AI itself — you (the calling agent) read the function's real source in your own context and fill in these fields directly; the tool only validates the shape and persists it. Follow these extraction rules when deciding the field values:\n\n${EXTRACT_SYSTEM_PROMPT}\n\nThe fields below map onto that guidance one-for-one, plus "module" and "urlPattern", which no amount of code-reading can infer — supply them from where the function actually lives and, optionally, which page it applies to. Requires \`test-assets:write\` (Maintainer and above on the project).`,
+    description: md(
+      'Register a page-object method or helper in a project’s test-function catalog, so Piwi Picker and its recorder write a call to your code instead of raw locator lines.',
+      'This tool calls no AI: read the function’s source yourself and fill in the fields; the tool validates their shape and stores them. Two fields cannot be read from the code: `module` (the import specifier of the file it lives in) and the optional `urlPattern` (the pages it applies to). The other fields follow these extraction rules:',
+      EXTRACT_RULES,
+      'The `notes` the rules describe have no field here: say what the steps could not represent in your answer instead.',
+      'Requires `test-assets:write` (Maintainer and above on the project).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1331,6 +1664,10 @@ export const MCP_TOOL_DEFS = [
             required: ['action', 'target'],
           },
         },
+        confidence: {
+          type: 'number',
+          description: 'Your 0-1 confidence that the steps represent what the code does',
+        },
         paramSources: {
           type: 'array',
           description: "Maps a step's argument back to a function parameter, when that argument IS the parameter",
@@ -1356,8 +1693,20 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'describe_piwi',
     module: 'core',
-    description:
-      'Piwi itself, from its own documentation: what it is and is not, every piece of its ecosystem, how to set it up and configure it, which option fits which need, what this instance has switched on, and where to report a bug or suggest an improvement. Call it before answering a question about Piwi rather than about test results. With no arguments it returns an overview and the list of topics: `ecosystem` (every piece — the server, desktop app, reporter and `piwi` CLI, capture fixtures, AI steps, backend instrumentation, browser and editor extensions, MCP server, agent skills, REST API, metrics export — what each is, how to get it, when you need it), `choices` (the setup decisions and their options), `features`, `configuration` (every PIWI_* variable), `mcp`, `feedback` and `docs` (the page index). The documentation ships with this server, so it matches the running version: `page` reads a page or one section ("guide/ci", "guide/ci#sharding"), and `query` searches every page and variable. What changed between versions is get_release_notes.',
+    description: md(
+      'Answer a question about Piwi itself from its own documentation, which ships with this server and matches the running version.',
+      'Call it before answering a question about Piwi rather than about test results: what it is and is not, its pieces, how to set it up and configure it, what this instance has switched on, and where to report a bug. With no arguments it returns an overview and these topics:',
+      [
+        '`ecosystem`: every piece (server, desktop app, reporter and `piwi` CLI, capture fixtures, AI steps, backend instrumentation, browser and editor extensions, MCP server, agent skills, REST API, metrics export), what it is, how to get it, when you need it',
+        '`choices`: the setup decisions and their options',
+        '`features`: what each feature needs and where it lives',
+        '`configuration`: every `PIWI_*` variable',
+        '`mcp`: this server’s modules, tools, prompts and skills',
+        '`feedback`: where bugs, ideas and questions go',
+        '`docs`: the page index',
+      ],
+      '`page` reads a page or one section (`guide/ci`, `guide/ci#sharding`); `query` searches every page and variable. What changed between versions is `get_release_notes`.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1383,8 +1732,17 @@ export const MCP_TOOL_DEFS = [
     name: 'get_change_coverage',
     module: 'core',
     capability: 'scm',
-    description:
-      "Uncovered changes of a pull request: the files a change touched joined to the tests that observably reach them, grouped by ticket. Pass a run id to diff it against its baseline, or an explicit base and head commit. Each file has one `reach`: `reached` (a test of this run reached it, or a suite of the head commit's coverage ran one of its changed lines, named in `suites`), `reached-earlier` (only a test of the project's last `windowRuns` runs did: a narrowed run, not a missing test), `unreached` (an uncovered change, the file that needs a scenario), or, not counted, `not-observable` (nothing maps the file to a test), `out-of-scope` (the project's coverage scope leaves it out) and `deleted`; `notCounted` totals the last three. When the head commit has combined coverage (uploaded suites and its complete runs), each file it counts carries `lines`: its changed lines, those that ran, those undetermined, and the `notRun` ranges no suite ran, reached files included; `patchCoverage` sums them, in total, by unit suites and by the end-to-end suite. Returns an empty result when no SCM token or diff is available.",
+    description: md(
+      'Find a pull request’s uncovered changes: the files it touched, joined to the tests that observably reach them, grouped by ticket.',
+      'Pass a `run` to diff it against its baseline, or explicit `base` and `head` commits. Returns an empty result when no source-control token or diff is available. Each file has one `reach`:',
+      [
+        '`reached`: a test of this run reached it, or a suite of the head commit’s coverage ran one of its changed lines (named in `suites`)',
+        '`reached-earlier`: only a test of the project’s last `windowRuns` runs did, so the run was narrowed and no test is missing',
+        '`unreached`: an uncovered change, the file that needs a scenario',
+        'not counted, and totaled in `notCounted`: `not-observable` (nothing maps the file to a test), `out-of-scope` (the project’s coverage scope leaves it out) and `deleted`',
+      ],
+      'When the head commit has combined coverage (uploaded suites and its complete runs), each file it counts carries `lines`: its changed lines, those that ran, those undetermined, and the `notRun` ranges no suite ran, reached files included. `patchCoverage` sums them, in total, by unit suite and for the end-to-end suite.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1400,8 +1758,15 @@ export const MCP_TOOL_DEFS = [
     name: 'get_coverage',
     module: 'core',
     capability: 'coverage',
-    description:
-      'Read coverage: which code ran and which tests run it (lines 1-based, ranges like `12-15,20`). With `projectId` and `file`: the file’s versions on a branch, each with its executable lines and its executed ranges grouped by the tests that ran them (positions in `tests`); add `lines` for the test running most of the function around them, the one to copy. With an execution (`executionId`, or `testCaseId` for its latest execution with coverage, or `projectId` + `testFile` + `testTitle`): its files; with `file`, that file’s ranges; with `file` and `lines`, which target lines ran, did not run or cannot be told (an incomplete capture never says "did not run"), the target lines that cannot run, and the nearest test when one did not run. Use it after running a new test with server coverage to check it reaches its target.',
+    description: md(
+      'Read coverage: which code ran, and which tests run it.',
+      'Use it after running a new test with server coverage, to check it reaches its target. Lines are 1-based, with ranges written like `12-15,20`. It reads one of two views:',
+      [
+        '**a file**, with `projectId` and `file`: its versions on a branch, each with its executable lines and its executed ranges grouped by the tests that ran them (positions in `tests`); add `lines` for the test running most of the function around them, the one to copy',
+        '**an execution**, with `executionId`, `testCaseId` (its latest execution with coverage) or `projectId`, `testFile` and `testTitle`: its files; with `file`, that file’s ranges; with `file` and `lines`, which target lines ran, did not run or cannot be told, the target lines that cannot run, and the nearest test when one did not run',
+      ],
+      'An incomplete capture never says a line did not run.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1426,8 +1791,15 @@ export const MCP_TOOL_DEFS = [
     name: 'compare_coverage',
     module: 'core',
     capability: 'coverage',
-    description:
-      'Compare the code a test ran across executions. `executionId` (a failure): the files, lines and functions it ran that the test’s last passing execution with coverage did not, and the reverse, with the baseline used (execution, run, branch, commit); a file at another version is marked changed, not compared. `testCaseId`: how its coverage varies across its last 30 executions, the code that ran in some only, and the earlier test whose having run before (in the same run, or on the same worker) predicts it, with the agreement and counts; `orderDependent` when its failures follow that code, a sign it depends on state another test leaves. Incomplete captures never yield "did not run" claims.',
+    description: md(
+      'Compare the code a test ran across its executions.',
+      'Pass one of:',
+      [
+        '`executionId`, a failure: the files, lines and functions it ran that the test’s last passing execution with coverage did not, and the reverse, with the baseline used (execution, run, branch, commit); a file at another version is marked changed, not compared',
+        '`testCaseId`: how its coverage varies across its last 30 executions, the code that ran in only some of them, and the earlier test whose having run before it (in the same run, or on the same worker) predicts that code, with the agreement and counts; `orderDependent` is set when its failures follow that code, a sign it depends on state another test leaves',
+      ],
+      'An incomplete capture never yields a “did not run” claim.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1440,8 +1812,10 @@ export const MCP_TOOL_DEFS = [
     name: 'get_coverage_loss',
     module: 'core',
     capability: 'coverage',
-    description:
-      'What quarantining, skipping or deleting tests would leave uncovered: from the latest coverage on the default branch, per file, the lines and functions no other trusted (not quarantined) test runs, those only flaky tests run besides them, and files no other test reaches. A file other tests ran only at another version is `uncertain`, never claimed. Use it before quarantining or deleting a test.',
+    description: md(
+      'Find what quarantining, skipping or deleting tests would leave uncovered.',
+      'Use it before quarantining or deleting a test. From the latest coverage on the default branch, it returns per file the lines and functions no other trusted (non-quarantined) test runs, those only flaky tests run besides them, and the files no other test reaches. A file other tests ran only at another version is `uncertain`, never claimed.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1455,8 +1829,20 @@ export const MCP_TOOL_DEFS = [
     name: 'get_coverage_summary',
     module: 'core',
     capability: 'coverage',
-    description:
-      'Combined coverage of a commit: every suite that ran the code (the unit-test reports uploaded with `piwi coverage upload`, and `e2e`, the run coverage of the commit’s complete Playwright runs), counted on one set of executable lines per file version. Gives the totals and each suite’s lines (`executedLines` of `executableLines`, with `linePercent`), functions, `undeterminedLines` (unrun lines inside functions the browser suite ran, never counted as run), the lines only unit tests or only end-to-end tests run, the files without coverage data, each named area of the code (`areas`, e.g. front and back, with each suite’s share), one `folder`’s breakdown (kept to one `area` when given), its least-covered files (`leastCovered`, the most lines no suite ran first: where a test is most missing), and with `file` which suites ran each of its lines. `notes` says what the numbers leave out or take from elsewhere: a suite `carried` from an earlier commit, an `incomplete` report, a `missing-suite`, `no-inventory`, totals under an earlier scope (`scope-changed`), `runs-not-counted`, `runs-incomplete` (counted runs whose backend restarted or was unreachable: their server coverage misses what the backend ran outside a request); on a branch, a commit a newer one superseded keeps only its totals (`detailRemoved`, `supersededBy`), with no folder breakdown or file lines. Without `commit`, the newest commit with coverage on `branch` (default branch when absent).',
+    description: md(
+      'Get a commit’s combined coverage: every suite that ran the code, counted on one set of executable lines per file version.',
+      'The suites are the unit-test reports uploaded with `piwi coverage upload`, and `e2e`, the coverage of the commit’s complete Playwright runs. Without `commit`, it reads the newest commit with coverage on `branch` (the default branch when absent). It returns:',
+      [
+        'the totals and each suite’s lines (`executedLines` of `executableLines`, with `linePercent`) and functions',
+        '`undeterminedLines`: unrun lines inside functions the browser suite ran, never counted as run',
+        'the lines only unit tests run, and those only end-to-end tests run',
+        'the files without coverage data',
+        '`areas`: each named area of the code (such as front and back), with each suite’s share',
+        'one `folder`’s breakdown (kept to one `area` when given), with its least-covered files first in `leastCovered`: where a test is most missing',
+        'with `file`, which suites ran each of its lines',
+      ],
+      '`notes` says what the numbers leave out or take from elsewhere: a suite `carried` from an earlier commit, an `incomplete` report, a `missing-suite`, `no-inventory`, totals under an earlier scope (`scope-changed`), `runs-not-counted`, and `runs-incomplete` (counted runs whose backend restarted or was unreachable, so their server coverage misses what the backend ran outside a request). On a branch, a commit a newer one superseded keeps only its totals (`detailRemoved`, `supersededBy`), with no folder breakdown or file lines.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1480,8 +1866,10 @@ export const MCP_TOOL_DEFS = [
     name: 'list_scenario_gaps',
     module: 'workflow',
     capability: 'test-map',
-    description:
-      'Ranked scenario gaps for a project: tests that do not exist yet, each with its class (blind-spot, false-comfort, fragile), evidence lines and exposure score. Filter by class, feature, a minimum score, or a pull-request number. Every line is observed reach, never instrumented coverage. Pair with draft_scenario to turn a gap into a test skeleton.',
+    description: md(
+      'List a project’s scenario gaps, ranked: the tests that do not exist yet, each with its class, evidence lines and exposure score.',
+      'Every evidence line is observed reach, never instrumented coverage. `draft_scenario` turns a gap into a test skeleton.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1502,8 +1890,10 @@ export const MCP_TOOL_DEFS = [
     name: 'draft_scenario',
     module: 'workflow',
     capability: 'test-map',
-    description:
-      'A deterministic test skeleton for a scenario gap: a title from the gap, piwi: annotations from the nearest test, the graph path from a reached page to the gap as the step list, catalog page-object methods where they match, and a TODO assertion naming what to check. Delivered as text to paste or hand to an agent — nothing is committed. Pass the gap id from list_scenario_gaps.',
+    description: md(
+      'Draft a deterministic test skeleton for a scenario gap, as text to paste or hand to an agent; nothing is committed.',
+      'Pass the gap id from `list_scenario_gaps`. The skeleton has a title from the gap, `piwi:` annotations from the nearest test, the graph path from a reached page to the gap as its steps, the catalog’s page-object methods where they match, and a TODO assertion naming what to check.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1517,8 +1907,10 @@ export const MCP_TOOL_DEFS = [
     name: 'get_feature_graph',
     module: 'workflow',
     capability: 'test-map',
-    description:
-      'The feature-graph neighborhood around a node: walk the typed graph (tests, pages, controls, routes, handlers, dependencies) outward from `node` to `depth` hops (capped at six), returning each node with its gap class and the tests that reach it, and the edges between them. Use it to see the blast radius of a change or what a test protects. `node` is "kind:key", e.g. route:POST /api/orders.',
+    description: md(
+      'Walk the feature graph around a node: the tests, pages, controls, routes, handlers and dependencies within `depth` hops, and the edges between them.',
+      'Use it to see the blast radius of a change, or what a test protects. `node` is `kind:key`, such as `route:POST /api/orders` or `page:/checkout`, and `depth` is capped at six. Each node comes with its gap class and the tests that reach it.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1533,8 +1925,17 @@ export const MCP_TOOL_DEFS = [
     name: 'get_quality_report',
     module: 'workflow',
     capability: 'quality-reports',
-    description:
-      'A quality report as its bundle: a built-in dashboard (executive: a rule-based verdict, headline numbers, the pass-rate trend, what changed, what is being done and the risks; engineering adds flaky tests, clusters, CI time, detail and scenario gaps; team is engineering for one owner and needs `owners`; gaps-digest is the Test Map’s weekly digest; overview is the analytics page) rendered over a scope, every string already formatted. Use it to answer "how did the checkout suite do this week" or to post a summary. Numbers never come from a model: the verdict is built by rules.',
+    description: md(
+      'Get a quality report as its bundle: a built-in dashboard rendered over a scope, every string already formatted.',
+      'Use it to answer how a suite did this week, or to post a summary. No number comes from a model: the verdict is built by rules. `dashboard` is:',
+      [
+        '`executive`: a rule-based verdict, headline numbers, the pass-rate trend, what changed, what is being done and the risks',
+        '`engineering`: the executive report plus flaky tests, clusters, CI time, detail and scenario gaps',
+        '`team`: the engineering report for one owner, given in `owners`',
+        '`gaps-digest`: the Test Map’s weekly digest',
+        '`overview`: the analytics page',
+      ],
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1556,8 +1957,15 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_release_notes',
     module: 'core',
-    description:
-      'What changed in each Piwi release, from the changelog shipped with this server — so it ends at the running version; newer releases are on GitHub. With no arguments: the running version\'s notes and the ten most recent releases. `version` ("0.36.0", or "0.36" for every release of a minor) returns releases in full: highlights, breaking changes, features and fixes. `since` summarizes every release after a version with its breaking changes listed first — the upgrade question. `query` finds the entries that mention every term (which release added share links?), within `version` or `since` when given.',
+    description: md(
+      'Get what changed in each Piwi release, from the changelog shipped with this server.',
+      'It ends at the running version; newer releases are on GitHub. With no arguments it returns the running version’s notes and the ten most recent releases; otherwise:',
+      [
+        '`version` (`0.36.0`, or `0.36` for every release of a minor): those releases in full, with highlights, breaking changes, features and fixes',
+        '`since`: a summary of every release after a version, breaking changes first, for an upgrade',
+        '`query`: the entries that mention every term (which release added share links?), within `version` or `since` when given',
+      ],
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1570,8 +1978,11 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_metric_trend',
     module: 'core',
-    description:
-      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt, and the hand-back metrics heal-adoption, heal-pr-merge-rate, diagnosis-helpful-rate, diagnosis-verified-rate, gate-blocked-merges, gate-overrides, flakes-verified-fixed (a rate is null with a `sample` under its floor until enough items count; a metric whose capability is declined is refused).',
+    description: md(
+      'Get one metric over a scope: its value, its change against the comparison period, its definition and its series.',
+      'The series is bucketed over the period (`by`), with the comparison period aligned bucket for bucket. A rate is null, with its `sample`, until enough items count; a metric whose capability is declined is refused.',
+      'Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt, and the hand-back metrics heal-adoption, heal-pr-merge-rate, diagnosis-helpful-rate, diagnosis-verified-rate, gate-blocked-merges, gate-overrides, flakes-verified-fixed.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1589,15 +2000,20 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_dashboards',
     module: 'core',
-    description:
-      'Every dashboard you can open: the built-in ones (overview is the analytics page; executive, engineering and gaps-digest are the report dashboards) and the saved dashboards shared with everyone or yours, each with its id, name, description, owner, visibility and widget count. Pass an id to get_dashboard.',
+    description: md(
+      'List every dashboard you can open, built-in and saved, with its id, name, description, owner, visibility and widget count.',
+      'The built-in ones are `overview` (the analytics page) and the report dashboards `executive`, `engineering` and `gaps-digest`; the saved ones are those shared with everyone, and yours. Pass an id to `get_dashboard`.',
+    ),
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'get_dashboard',
     module: 'core',
-    description:
-      'One dashboard with every widget’s data, the JSON the page renders, band by band. Use it to answer "how did the checkout dashboard do this sprint". The scope is the dashboard’s own: a scope key you pass (period, projectIds, …) replaces that key only, and the others keep the dashboard’s values, so a period alone keeps its projects and filters; each widget’s own period or narrower filters still apply. A dashboard grants no access: widgets are computed for your projects only, and `hiddenProjects` counts the ones of its scope you cannot open.',
+    description: md(
+      'Get one dashboard with every widget’s data, band by band: the JSON its page renders.',
+      'Use it to answer how a dashboard did over a period. Its scope is the dashboard’s own: a scope key you pass (`period`, `projectIds`, …) replaces that key only, so a period alone keeps its projects and filters, and each widget’s own period or narrower filters still apply.',
+      'A dashboard grants no access: widgets are computed over your projects only, and `hiddenProjects` counts those of its scope you cannot open.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1618,8 +2034,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'compare_periods',
     module: 'core',
-    description:
-      'The headline metrics of one scope over two periods chosen freely, e.g. this sprint against the last one, or August against July: each metric over `a`, with `b` as its previous value and the change. `a` and `b` use the period syntax of the other tools (last-7d, last-month, 2026-08-01..2026-08-31, release-1, …).',
+    description: md(
+      'Compare a scope’s headline metrics over two periods you choose, such as this sprint against the last one.',
+      'Each metric is given over `a`, with its value over `b` as the previous value, and the change. `a` and `b` take the period syntax of the other tools (`last-7d`, `last-month`, `2026-08-01..2026-08-31`, `release-1`, …).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1639,8 +2057,10 @@ export const MCP_TOOL_DEFS = [
     name: 'list_bug_reports',
     module: 'workflow',
     capability: 'bug-reports',
-    description:
-      'A project’s bug reports, newest first: bugs reported from Piwi Picker with their steps, the expected result and evidence. Each item has its status (open, test-committed, looks-fixed, closed, dismissed), page, reporter, the test that reproduces it once committed (testCaseId) and how many reproductions were recorded. Use get_bug_report for the steps and evidence of one.',
+    description: md(
+      'List a project’s bug reports from Piwi Picker, newest first.',
+      'Each has its status (`open`, `test-committed`, `looks-fixed`, `closed`, `dismissed`), page, reporter, the test that reproduces it once committed (`testCaseId`) and how many reproductions were recorded. `get_bug_report` returns one report’s steps and evidence.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1660,8 +2080,10 @@ export const MCP_TOOL_DEFS = [
     name: 'get_bug_report',
     module: 'workflow',
     capability: 'bug-reports',
-    description:
-      'One bug report: its steps in words, each expected assertion with the value the page showed instead, the steps document itself (to replay or render), the evidence (console errors, failed requests with their status, the page outline), the reproductions recorded since, and the test that reproduces it. Use render_steps with its id to get the failing test to commit.',
+    description: md(
+      'Get one bug report with its steps, what each expected assertion found instead, its evidence and the test that reproduces it.',
+      'It holds the steps in words and the steps document itself (to replay or render), the evidence (console errors, failed requests with their status, the page outline) and the reproductions recorded since. `render_steps` with its id writes the failing test to commit.',
+    ),
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'number', description: 'Bug report id from list_bug_reports' } },
@@ -1672,8 +2094,14 @@ export const MCP_TOOL_DEFS = [
     name: 'render_steps',
     module: 'workflow',
     capability: 'bug-reports',
-    description:
-      'Render a steps document as a Playwright spec with the converter every Piwi surface uses. Pass `bugReportId` for a report’s spec with the project’s generated-spec settings, function catalog and suite locators (`mode` commit, the default: `test.fail()`, `@bug` and `piwi:bug`, to commit now; run: without `test.fail()`, to reproduce), or `steps` (a steps document, as Piwi Picker’s Download steps writes it) with converter options. Returns { code, path, warnings }.',
+    description: md(
+      'Render a steps document as a Playwright spec, with the converter every Piwi surface uses.',
+      'Returns `{ code, warnings }`, with the spec’s `path` for a bug report. Pass one of:',
+      [
+        '`bugReportId`: the report’s spec, with the project’s generated-spec settings, function catalog and suite locators; `mode` `commit` (the default) adds `test.fail()`, `@bug` and `piwi:bug`, to commit now, and `run` leaves `test.fail()` out, to reproduce',
+        '`steps`: a steps document, as Piwi Picker’s **Download steps** writes it, with converter `options`',
+      ],
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1717,8 +2145,11 @@ export const DESKTOP_MCP_TOOL_DEFS = [
     name: 'import_local_report',
     module: 'core',
     permission: 'storage:manage',
-    description:
-      'Desktop app only. Import a Playwright blob report or trace .zip straight from a path on THIS machine into a Piwi project — the local server reads the file itself, nothing is uploaded. Use after a local or CI run to pull its results in for analysis (a hosted Piwi cannot read your disk). Idempotent by content hash: re-importing the same archive is a no-op. Returns the created/updated run. Requires `storage:manage` (administrators only).',
+    description: md(
+      'Import a Playwright blob report or trace `.zip` from a path on this machine into a Piwi project.',
+      'Desktop app only: the local server reads the file itself and nothing is uploaded, which a hosted Piwi cannot do. Use it after a local or CI run to pull its results in. The project is created if it does not exist, and importing the same archive again changes nothing (it is matched by content hash). Returns the created or updated run.',
+      'Requires `storage:manage` (administrators only).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1733,8 +2164,10 @@ export const DESKTOP_MCP_TOOL_DEFS = [
   {
     name: 'read_local_source',
     module: 'core',
-    description:
-      'Desktop app only. Read a source file from THIS machine — the current on-disk code, not the snippet Piwi captured at failure time, so you can fix against the real file. Pass a line to get a window around it (default ±40 lines); omit it to read the whole file (capped at ~256 KB). Returns the path, the 1-based line range and the text.',
+    description: md(
+      'Read a source file on this machine as it is now, not the snippet Piwi captured at failure time, so you fix against the real file.',
+      'Desktop app only. Pass `line` for a window around it (40 lines on each side by default, set by `contextLines`), or omit it to read the whole file (up to about 256 KB). Returns the path, the 1-based line range and the text.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -1752,8 +2185,11 @@ export const DESKTOP_MCP_TOOL_DEFS = [
     name: 'apply_locator_fix',
     module: 'healing',
     capability: 'locator-healing',
-    description:
-      "Desktop app only. Apply Piwi's recommended locator fix for a failing execution to the file on THIS machine. Resolves the healing recommendation for executionId, finds the failing line under repoRoot, and rewrites just that one locator call. Previews by default (apply=false): returns the file, line, the old and new line, and a unified diff, changing nothing. Set apply=true to write it. Refuses when the on-disk line no longer matches what Piwi recorded (the file drifted) and hands back the diff so you can place it by hand.",
+    description: md(
+      'Apply Piwi’s recommended locator fix for a failing execution to the test file on this machine.',
+      'Desktop app only. It resolves the healing recommendation for `executionId`, finds the failing line under `repoRoot` and rewrites just that one locator call. It previews by default: without `apply: true` it returns the file, the line, the old and new line and a unified diff, changing nothing.',
+      'It refuses when the line on disk no longer matches what Piwi recorded (the file drifted), and hands back the diff to place by hand.',
+    ),
     inputSchema: {
       type: 'object',
       properties: {

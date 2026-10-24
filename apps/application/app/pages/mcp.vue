@@ -448,9 +448,9 @@ const windsurfSnippet = computed(() =>
           <SectionCard icon="i-lucide-bot" title="What it provides" help="mcp.tools" data-tour="mcp-tools">
             <div class="flex items-start justify-between gap-3 mb-4">
               <p class="text-sm text-gray-500 dark:text-gray-400">
-                Tools are grouped by module. Turn on <strong>Core tools only</strong> to connect a client with just the
-                core module — the URL and every snippet above narrow to
-                <code class="font-mono text-xs">?modules=core</code>.
+                Tools are grouped by module; open one for its full description and parameters. Turn on
+                <strong>Core tools only</strong> to connect a client with just the core module — the URL and every
+                snippet above narrow to <code class="font-mono text-xs">?modules=core</code>.
               </p>
               <USwitch v-model="coreOnly" label="Core tools only" class="shrink-0" />
             </div>
@@ -462,17 +462,7 @@ const windsurfSnippet = computed(() =>
                   <span class="text-xs text-muted">{{ group.tools.length }}</span>
                 </div>
                 <div class="flex flex-col gap-1.5">
-                  <div
-                    v-for="t in group.tools"
-                    :key="t.name"
-                    class="flex items-start gap-3 px-3 py-2.5 rounded-md bg-elevated/50 border border-default hover:bg-elevated transition-colors"
-                  >
-                    <UIcon name="i-lucide-wrench" class="size-4 mt-0.5 shrink-0 text-primary" />
-                    <div class="min-w-0">
-                      <p class="text-sm font-mono font-semibold text-foreground">{{ t.name }}</p>
-                      <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ t.description }}</p>
-                    </div>
-                  </div>
+                  <McpToolItem v-for="t in group.tools" :key="t.name" :tool="t" />
                 </div>
               </div>
             </div>
@@ -488,17 +478,7 @@ const windsurfSnippet = computed(() =>
                   reconsider on the Setup page.
                 </p>
                 <div class="flex flex-col gap-1.5 mt-3">
-                  <div
-                    v-for="t in notListedTools"
-                    :key="t.name"
-                    class="flex items-start gap-3 px-3 py-2 rounded-md border border-default"
-                  >
-                    <UIcon name="i-lucide-wrench" class="size-4 mt-0.5 shrink-0 text-muted" />
-                    <div class="min-w-0">
-                      <p class="text-sm font-mono text-muted">{{ t.name }}</p>
-                      <p class="text-xs text-muted mt-0.5">{{ t.description }}</p>
-                    </div>
-                  </div>
+                  <McpToolItem v-for="t in notListedTools" :key="t.name" :tool="t" muted />
                 </div>
               </details>
             </div>
@@ -510,17 +490,7 @@ const windsurfSnippet = computed(() =>
                 instance cannot do:
               </p>
               <div class="flex flex-col gap-1.5 mt-3">
-                <div
-                  v-for="t in listedDesktopTools"
-                  :key="t.name"
-                  class="flex items-start gap-3 px-3 py-2.5 rounded-md bg-elevated/50 border border-default hover:bg-elevated transition-colors"
-                >
-                  <UIcon name="i-lucide-hard-drive" class="size-4 mt-0.5 shrink-0 text-primary" />
-                  <div class="min-w-0">
-                    <p class="text-sm font-mono font-semibold text-foreground">{{ t.name }}</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ t.description }}</p>
-                  </div>
-                </div>
+                <McpToolItem v-for="t in listedDesktopTools" :key="t.name" :tool="t" />
               </div>
             </div>
           </SectionCard>
