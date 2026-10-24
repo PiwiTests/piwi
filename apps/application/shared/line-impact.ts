@@ -13,9 +13,11 @@
  *   that ran a function around it (a line that is not a statement, an
  *   insertion point, or coverage recorded at `functions`);
  * - **file**: a changed line outside every function known in the version
- *   (module code, a declaration, an attribute) selects every test that
- *   reaches the file, as does a test whose coverage of the file is of another
- *   version, has no ranges, or came from an incomplete capture.
+ *   (module code, a declaration, an attribute), or a change that crosses from
+ *   one function into the next (code inserted between two adjacent functions
+ *   runs at module level), selects every test that reaches the file, as does a
+ *   test whose coverage of the file is of another version, has no ranges, or
+ *   came from an incomplete capture.
  *
  * Insertions count by the base lines on both sides of the insertion point
  * (`hunkBaseLines`), so an added line selects the tests that ran the code
@@ -72,6 +74,12 @@ export interface LineImpactInput {
   versions: LineImpactVersion[];
   /** Tests whose recorded coverage came from an incomplete capture: never ruled out. */
   incomplete?: Set<number>;
+  /**
+   * The coverage of the file recorded by tests that reach it another way (their
+   * test file, failure frames, a route), which are never narrowed: the
+   * functions it names are known, and the lines it ran are not `notRun`.
+   */
+  others?: CoverageFile[];
 }
 
 export interface LineImpactResult {
@@ -79,9 +87,9 @@ export interface LineImpactResult {
   selected: Map<number, LineImpactDecision>;
   /** Tests the coverage rules out: they reach the file and ran none of its changed lines. */
   ruledOut: number[];
-  /** Changed lines outside every function known in the version, which select every test reaching the file. */
+  /** Changed lines outside every function known in the version, or crossing between two, which select every test reaching the file. */
   fileLevel: LineRange[];
-  /** Changed lines inside functions that no test reaching the file ran, the lines a new test would cover. */
+  /** Other changed lines, inside functions, that no test reaching the file ran: the lines a new test would cover. */
   notRun: LineRange[];
 }
 
@@ -92,10 +100,40 @@ interface RuntimeView {
   functions: LineRange[];
   /** Changed lines inside a known function that are executable, when the version's executable lines are known. */
   executable: LineRange[];
-  /** Changed lines inside a known function. */
+  /** Changed lines inside a known function, crossing into no other. */
   inFunctions: LineRange[];
-  /** Changed lines outside every known function. */
+  /** Changed lines outside every known function, or crossing from one function into another. */
   outside: LineRange[];
+}
+
+/**
+ * The pairs of adjacent changed lines no one function holds both of: where a
+ * change crosses from one function into the next, or into code outside them.
+ * Each function's range as recorded, unmerged.
+ */
+function crossings(changed: LineRange[], functions: LineRange[]): LineRange[] {
+  const sorted = [...functions].sort((a, b) => a[0] - b[0]);
+  // The furthest end among the functions starting at or before each position.
+  const reach: number[] = [];
+  for (const [i, [, end]] of sorted.entries()) reach.push(Math.max(end, i > 0 ? reach[i - 1]! : 0));
+  const heldTogether = (line: number) => {
+    let low = 0;
+    let high = sorted.length - 1;
+    let last = -1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (sorted[mid]![0] <= line) {
+        last = mid;
+        low = mid + 1;
+      } else high = mid - 1;
+    }
+    return last >= 0 && reach[last]! >= line + 1;
+  };
+  const out: LineRange[] = [];
+  for (const [start, end] of changed) {
+    for (let line = start; line < end; line++) if (!heldTogether(line)) out.push([line, line + 1]);
+  }
+  return normalizeLineRanges(out);
 }
 
 function runtimeView(
@@ -103,14 +141,16 @@ function runtimeView(
   matching: CoverageFile[],
   version: LineImpactVersion | undefined,
 ): RuntimeView {
-  const functions = unionLineRanges(version?.functions, ...matching.map((f) => f.functions));
-  const inFunctions = intersectLineRanges(changed, functions);
+  const listed = [...(version?.functions ?? []), ...matching.flatMap((f) => f.functions ?? [])];
+  const functions = normalizeLineRanges(listed);
+  const outside = unionLineRanges(subtractLineRanges(changed, functions), crossings(changed, listed));
+  const inFunctions = subtractLineRanges(changed, outside);
   const executable = version?.executable.length ? normalizeLineRanges(version.executable) : [];
   return {
     functions,
     executable: executable.length > 0 ? intersectLineRanges(inFunctions, executable) : [],
     inFunctions,
-    outside: subtractLineRanges(changed, functions),
+    outside,
   };
 }
 
@@ -161,10 +201,11 @@ export function lineImpact(input: LineImpactInput): LineImpactResult {
   const runtimes = new Set<CoverageRuntime>();
   for (const byRuntime of input.tests.values()) for (const runtime of byRuntime.keys()) runtimes.add(runtime);
 
+  const others = input.others ?? [];
   const views = new Map<CoverageRuntime, RuntimeView>();
   for (const runtime of runtimes) {
-    const matching = [...input.tests.values()]
-      .flatMap((byRuntime) => byRuntime.get(runtime) ?? [])
+    const matching = [...[...input.tests.values()].flatMap((byRuntime) => byRuntime.get(runtime) ?? []), ...others]
+      .filter((f) => f.runtime === runtime)
       .filter((f) => sameBlob(f.blob, input.blob));
     // Without a recorded version to read the changed lines against, every line is at file level.
     const version = input.versions.find((v) => v.runtime === runtime);
@@ -194,6 +235,11 @@ export function lineImpact(input: LineImpactInput): LineImpactResult {
     if (best) selected.set(testCaseId, best);
     else if (fileLevel) selected.set(testCaseId, { via: 'file' });
     else ruledOut.push(testCaseId);
+  }
+  for (const file of others) {
+    const view = views.get(file.runtime);
+    const result = view ? ranLines(view, [file], input.blob) : null;
+    if (result) ran.push(...result.all);
   }
 
   const inFunctions = unionLineRanges(...[...views.values()].map((v) => v.inFunctions));

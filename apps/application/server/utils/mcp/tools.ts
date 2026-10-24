@@ -209,7 +209,7 @@ import {
   compactCoverageJson,
   uniqueCoverageSummary,
 } from './coverage-tools';
-import { resolveImpact } from '../selection-impact';
+import { parseImpactChanges, resolveImpact } from '../selection-impact';
 import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
 import { diffImpactInput } from '@piwitests/core/suspect-lines';
 
@@ -2225,7 +2225,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     }
     const resolved = await resolveImpact(db, projectId, changedFiles, {
       format: selectionFormatParam(params.format),
-      changes: fromDiff.changes,
+      changes: parseImpactChanges(fromDiff.changes),
     });
     const known = new Map(resolved.tests.map((t) => [t.testCaseId, t]));
     const named = (testCaseId: number) => {
@@ -2236,7 +2236,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     return compactCoverageJson({
       matched: resolved.estimate.count,
       estimatedDurationMs: resolved.estimate.totalDurationMs,
-      command: resolved.materialization.command || null,
+      // A widened selection runs the whole suite, whose per-test command can be cut short.
+      command: impact.widened ? 'npx playwright test' : resolved.materialization.command || null,
       widened: impact.widened || null,
       warnings: resolved.warnings.map((w) => w.message),
       changedFiles: impact.changedFiles,
@@ -2255,7 +2256,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           lines: t.lines ?? null,
         })),
       })),
-      moreFiles: impact.files.length > MAX_IMPACT_FILES ? impact.files.length - MAX_IMPACT_FILES : null,
+      moreFiles: impact.changedFiles > MAX_IMPACT_FILES ? impact.changedFiles - MAX_IMPACT_FILES : null,
       // A widened selection runs the whole suite; the files name the tests the change reaches.
       tests: impact.widened
         ? null

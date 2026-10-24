@@ -526,7 +526,17 @@ export async function runPreflight(
   let files: DiffFile[];
   try {
     files = parseUnifiedDiff(
-      git(repoRoot, ['diff', '--full-index', '--unified=0', '--no-color', '--no-ext-diff', args.base, '--']),
+      git(repoRoot, [
+        'diff',
+        '--full-index',
+        '--unified=0',
+        '--no-color',
+        '--no-ext-diff',
+        '--src-prefix=a/',
+        '--dst-prefix=b/',
+        args.base,
+        '--',
+      ]),
     );
   } catch (e) {
     console.error(`piwi preflight: could not diff against ${args.base} — ${(e as Error).message.split('\n')[0]}`);

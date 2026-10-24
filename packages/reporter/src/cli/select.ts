@@ -259,7 +259,19 @@ function gitChange(base: string): { changedFiles: string[]; changes: BaseLineCha
   let fromDiff: { changedFiles: string[]; changes: BaseLineChange[] } = { changedFiles: [], changes: [] };
   try {
     fromDiff = diffImpactInput(
-      parseUnifiedDiff(git(['diff', '--full-index', '--unified=0', '--no-color', '--no-ext-diff', base, '--'])),
+      parseUnifiedDiff(
+        git([
+          'diff',
+          '--full-index',
+          '--unified=0',
+          '--no-color',
+          '--no-ext-diff',
+          '--src-prefix=a/',
+          '--dst-prefix=b/',
+          base,
+          '--',
+        ]),
+      ),
     );
   } catch {
     // Without the full diff, the changed files are mapped at file level.

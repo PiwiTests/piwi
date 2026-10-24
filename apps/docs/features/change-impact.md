@@ -36,11 +36,12 @@ version:
 | --- | --- |
 | is a statement, with server coverage at `lines` | ran that line |
 | sits inside a function: any other line, an insertion, or coverage at `functions` | ran that function |
-| sits outside every function: module code, a declaration, an attribute | reach the file at all |
+| sits outside every function (module code, a declaration, an attribute), or crosses from one function into the next | reach the file at all |
 
 An added line counts by the lines around it, so it selects the tests that ran the code it was added to. A test whose
 coverage cannot rule it out stays in: coverage of another version of the file, coverage with no line or function
-ranges, or an incomplete capture. A test file, failure frames and route reach are never narrowed. Added, deleted and
+ranges, or an incomplete capture, or coverage whose run was deleted. A test file, failure frames and route reach are
+never narrowed. Added, deleted and
 renamed files count as whole files.
 
 A changed line inside a function no test ran selects nothing from that file: no test can catch a mistake there. The

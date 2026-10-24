@@ -134,7 +134,9 @@ export interface ImpactChange {
 
 /**
  * The `changes` of an impact request: entries with a path, a hexadecimal blob
- * id of at least seven characters and line ranges; anything else is dropped.
+ * id of at least seven characters and well-formed line ranges, at most
+ * {@link MAX_COVERAGE_RANGES} of them. Anything else is dropped whole, which
+ * leaves its file at file level.
  */
 export function parseImpactChanges(raw: unknown): ImpactChange[] {
   if (!Array.isArray(raw)) return [];
@@ -144,8 +146,9 @@ export function parseImpactChanges(raw: unknown): ImpactChange[] {
     const { filePath, blob, lines } = entry as Record<string, unknown>;
     if (typeof filePath !== 'string' || !filePath.trim() || filePath.length > 500) continue;
     if (typeof blob !== 'string' || !/^[0-9a-f]{7,64}$/i.test(blob)) continue;
-    const ranges = normalizeLineRanges(Array.isArray(lines) ? lines.slice(0, MAX_COVERAGE_RANGES) : []);
-    if (ranges.length > 0) changes.push({ filePath, blob: blob.toLowerCase(), lines: ranges });
+    if (!Array.isArray(lines) || lines.length === 0 || lines.length > MAX_COVERAGE_RANGES) continue;
+    if (!lines.every((range) => normalizeLineRanges([range]).length === 1)) continue;
+    changes.push({ filePath, blob: blob.toLowerCase(), lines: normalizeLineRanges(lines) });
   }
   return changes;
 }
@@ -202,6 +205,12 @@ type Reach = 'test-file' | 'frames' | 'route' | CoverageRuntime;
 
 const VIA_ORDER: ImpactVia[] = ['test-file', 'lines', 'functions', 'frames', 'route', 'file'];
 
+/** Whether a test reaches a changed file through coverage alone, the only reach line level narrows. */
+function coverageOnly(reach: Set<Reach>): boolean {
+  for (const how of reach) if (how !== 'browser' && how !== 'server') return false;
+  return true;
+}
+
 /** The reach a test is selected by at file level: its finest edge. */
 function fileLevelVia(reach: Set<Reach>): ImpactVia {
   if (reach.has('test-file')) return 'test-file';
@@ -213,7 +222,8 @@ function fileLevelVia(reach: Set<Reach>): ImpactVia {
 /**
  * Narrow the tests reaching one changed file through coverage alone to those
  * whose recorded coverage of the base version ran its changed lines. Null when
- * no recorded coverage of the file names its base version.
+ * no test reaches the file through coverage alone, or no recorded coverage of
+ * the file names its base version.
  */
 async function narrowByLines(db: DrizzleDB, projectId: number, change: ImpactChange, reach: Map<number, Set<Reach>>) {
   const recorded = await getRecordedFragments(db, projectId, change.filePath, '');
@@ -221,20 +231,28 @@ async function narrowByLines(db: DrizzleDB, projectId: number, change: ImpactCha
 
   const tests = new Map<number, Map<CoverageRuntime, CoverageFile[]>>();
   const runs: Array<{ testCaseId: number; runId: number }> = [];
+  // Coverage whose run is deleted cannot say whether its capture was complete.
+  const unknownCapture = new Set<number>();
   for (const [testCaseId, how] of reach) {
+    if (!coverageOnly(how)) continue;
     const runtimes = [...how].filter((r): r is CoverageRuntime => r === 'browser' || r === 'server');
-    if (runtimes.length !== how.size) continue;
     const byRuntime = new Map<CoverageRuntime, CoverageFile[]>(runtimes.map((r) => [r, []]));
     for (const fragment of recorded) {
       const runId = fragment.tests.get(testCaseId);
       if (runId === undefined) continue;
       byRuntime.get(fragment.file.runtime)?.push(fragment.file);
-      if (runId != null) runs.push({ testCaseId, runId });
+      if (runId === null) unknownCapture.add(testCaseId);
+      else runs.push({ testCaseId, runId });
     }
     tests.set(testCaseId, byRuntime);
   }
+  if (tests.size === 0) return null;
 
   const atBase = recorded.filter((r) => sameBlob(r.file.blob, change.blob));
+  // The coverage of the tests reaching the file another way, which stay at file level.
+  const others = atBase
+    .filter((r) => [...r.tests.keys()].some((id) => reach.has(id) && !coverageOnly(reach.get(id)!)))
+    .map((r) => r.file);
   const stored = await getFileVersions(
     db,
     projectId,
@@ -246,7 +264,14 @@ async function narrowByLines(db: DrizzleDB, projectId: number, change: ImpactCha
     return [{ runtime, executable: own.flatMap((v) => v.lines), functions: own.flatMap((v) => v.functions) }];
   });
 
-  const first = lineImpact({ changed: change.lines, blob: change.blob, tests, versions });
+  const first = lineImpact({
+    changed: change.lines,
+    blob: change.blob,
+    tests,
+    versions,
+    incomplete: unknownCapture,
+    others,
+  });
   if (first.ruledOut.length === 0) return first;
   // A capture that was incomplete cannot say a line did not run.
   const ruledOut = new Set(first.ruledOut);
@@ -255,7 +280,8 @@ async function narrowByLines(db: DrizzleDB, projectId: number, change: ImpactCha
     runs.filter((r) => ruledOut.has(r.testCaseId)),
   );
   if (incomplete.size === 0) return first;
-  return lineImpact({ changed: change.lines, blob: change.blob, tests, versions, incomplete });
+  for (const testCaseId of unknownCapture) incomplete.add(testCaseId);
+  return lineImpact({ changed: change.lines, blob: change.blob, tests, versions, incomplete, others });
 }
 
 /**
@@ -343,8 +369,7 @@ export async function resolveImpact(
   let lineLevelReads = 0;
   for (const [changed, tests] of reachOf) {
     const change = changes.get(changed);
-    const readLines =
-      change && lineLevelReads < MAX_LINE_LEVEL_FILES && [...tests.values()].some((how) => !how.has('test-file'));
+    const readLines = change && lineLevelReads < MAX_LINE_LEVEL_FILES && [...tests.values()].some(coverageOnly);
     if (readLines) lineLevelReads++;
     const narrowed = readLines ? await narrowByLines(db, projectId, change, tests) : null;
     if (narrowed) lineLevelFiles++;

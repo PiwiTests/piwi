@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
+import { eq } from 'drizzle-orm';
+import { MAX_COVERAGE_RANGES } from '@piwitests/core/coverage';
 import * as schema from '../../server/database/schema.sqlite';
 
 vi.mock('../../server/storage', () => ({
@@ -20,7 +22,7 @@ vi.mock('../../server/storage', () => ({
 delete process.env.PIWI_DATABASE_URL;
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { storeRunCoverage } = await import('../../server/utils/coverage');
-const { resolveImpact } = await import('../../server/utils/selection-impact');
+const { parseImpactChanges, resolveImpact } = await import('../../server/utils/selection-impact');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
@@ -220,6 +222,16 @@ describe('get_impacted_tests', () => {
     expect(answer.command).toContain('playwright test');
   });
 
+  test('a widened answer gives the whole suite’s command', async () => {
+    const answer = (await tool.handler(
+      db as never,
+      { projectId: 1, diff, changedFiles: ['src/unmapped.ts'] },
+      ctx,
+    )) as Record<string, any>;
+    expect(answer.widened).toBe(true);
+    expect(answer.command).toBe('npx playwright test');
+  });
+
   test('changedFiles alone stays at file level', async () => {
     const answer = (await tool.handler(db as never, { projectId: 1, changedFiles: [BASKET] }, ctx)) as Record<
       string,
@@ -227,5 +239,74 @@ describe('get_impacted_tests', () => {
     >;
     expect(answer).toMatchObject({ matched: 4, lineLevelFiles: 0 });
     expect(answer.files[0].level).toBe('file');
+  });
+});
+
+describe('parseImpactChanges', () => {
+  test('keeps a well-formed change, normalized', () => {
+    expect(
+      parseImpactChanges([
+        {
+          filePath: BASKET,
+          blob: BASE.toUpperCase(),
+          lines: [
+            [5, 6],
+            [1, 2],
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        filePath: BASKET,
+        blob: BASE,
+        lines: [
+          [1, 2],
+          [5, 6],
+        ],
+      },
+    ]);
+  });
+
+  test('drops a change read in part: a malformed range, or more ranges than it reads', () => {
+    const tooMany = Array.from({ length: MAX_COVERAGE_RANGES + 1 }, (_, i): [number, number] => [2 * i + 1, 2 * i + 1]);
+    expect(
+      parseImpactChanges([
+        {
+          filePath: BASKET,
+          blob: BASE,
+          lines: [
+            [54, 54],
+            [0, 3],
+          ],
+        },
+        { filePath: BASKET, blob: BASE, lines: tooMany },
+        { filePath: BASKET, blob: 'abc', lines: [[54, 54]] },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('a test whose coverage run is deleted', () => {
+  test('is never ruled out: without the run, nothing says whether its capture was complete', async () => {
+    const empties = ids.get('empties')!;
+    await db
+      .update(schema.testCoverage)
+      .set({ lastSeenRunId: null })
+      .where(eq(schema.testCoverage.testCaseId, empties));
+    try {
+      const impact = await resolveImpact(db as never, 1, [BASKET], {
+        changes: [{ filePath: BASKET, blob: BASE, lines: [[54, 54]] }],
+      });
+      expect(titles(impact.tests.map((t) => t.testCaseId))).toEqual(['adds', 'empties', 'lists', 'restarts']);
+      expect(impact.impact.files[0]!.tests.find((t) => t.testCaseId === empties)).toEqual({
+        testCaseId: empties,
+        via: 'file',
+      });
+    } finally {
+      await db
+        .update(schema.testCoverage)
+        .set({ lastSeenRunId: 10 })
+        .where(eq(schema.testCoverage.testCaseId, empties));
+    }
   });
 });

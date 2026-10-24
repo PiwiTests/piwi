@@ -284,7 +284,15 @@ describe('runRun', () => {
         );
       }),
     );
-    expect(await runRun(['impact', '--base', 'HEAD', '--project', 'web'], env)).toBe(0);
+    // A git config that renames the diff's path prefixes changes no path.
+    vi.stubEnv('GIT_CONFIG_COUNT', '1');
+    vi.stubEnv('GIT_CONFIG_KEY_0', 'diff.mnemonicPrefix');
+    vi.stubEnv('GIT_CONFIG_VALUE_0', 'true');
+    try {
+      expect(await runRun(['impact', '--base', 'HEAD', '--project', 'web'], env)).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
     expect((bodies[0]!.changedFiles as string[]).sort()).toEqual(['cart.ts', 'new-name.ts', 'old-name.ts']);
     expect(bodies[0]!.changes).toEqual([{ filePath: 'cart.ts', blob: base, lines: [[3, 3]] }]);
     expect(stderr).toHaveBeenCalledWith(expect.stringContaining('1 file(s) narrowed by line coverage'));

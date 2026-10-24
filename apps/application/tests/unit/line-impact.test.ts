@@ -150,6 +150,89 @@ describe('lineImpact: what stays at file level', () => {
   });
 });
 
+describe('lineImpact: a change between functions', () => {
+  // Two functions with no line between them, the way a minifier-free module often ends one and opens the next.
+  const ADJACENT = {
+    runtime: 'browser' as const,
+    executable: [],
+    functions: [
+      [1, 5],
+      [6, 10],
+    ] as LineRange[],
+  };
+
+  test('an insertion between two adjacent functions runs at module level: file level', () => {
+    const tests = testsOf(
+      [1, 'browser', [browser({ functions: [[1, 5]] })]],
+      [2, 'browser', [browser({ functions: [[12, 20]] })]],
+    );
+    // hunkBaseLines gives an insertion after line 5 as the base lines 5 and 6.
+    const result = lineImpact({ changed: [[5, 6]], blob: BASE, tests, versions: [ADJACENT] });
+    expect(selection(result)).toEqual(['1 file', '2 file']);
+    expect(result.fileLevel).toEqual([[5, 6]]);
+    expect(result.notRun).toEqual([]);
+  });
+
+  test('an insertion between two closures of one function stays in that function', () => {
+    const tests = testsOf(
+      [
+        1,
+        'browser',
+        [
+          browser({
+            functions: [
+              [1, 20],
+              [3, 6],
+              [7, 9],
+            ],
+          }),
+        ],
+      ],
+      [2, 'browser', [browser({ functions: [[30, 40]] })]],
+    );
+    const result = lineImpact({
+      changed: [[6, 7]],
+      blob: BASE,
+      tests,
+      versions: [
+        {
+          runtime: 'browser',
+          executable: [],
+          functions: [
+            [1, 20],
+            [3, 6],
+            [7, 9],
+            [30, 40],
+          ],
+        },
+      ],
+    });
+    expect(selection(result)).toEqual(['1 functions 6-7']);
+    expect(result.ruledOut).toEqual([2]);
+  });
+});
+
+describe('lineImpact: tests reaching the file another way', () => {
+  test('what they ran is not a gap, and they are never narrowed', () => {
+    const tests = testsOf([1, 'server', [server({ functions: [METHOD], lines: [[12, 18]] })]]);
+    const others = [server({ functions: [METHOD], lines: [[25, 28]] })];
+    const result = lineImpact({ changed: [[26, 26]], blob: BASE, tests, versions: [VERSION], others });
+    expect(result.ruledOut).toEqual([1]);
+    expect(result.notRun).toEqual([]);
+    expect(result.selected.size).toBe(0);
+  });
+
+  test('the functions they ran are known functions of the version', () => {
+    const tests = testsOf([1, 'browser', [browser({ functions: [[3, 9]] })]]);
+    const others = [browser({ functions: [[22, 30]] })];
+    // Without the other test's coverage, line 25 sits in no known function: file level.
+    expect(selection(lineImpact({ changed: [[25, 25]], blob: BASE, tests, versions: [] }))).toEqual(['1 file']);
+    const result = lineImpact({ changed: [[25, 25]], blob: BASE, tests, versions: [], others });
+    expect(result.ruledOut).toEqual([1]);
+    expect(result.notRun).toEqual([]);
+  });
+});
+
 describe('lineImpact: function coverage', () => {
   test('browser coverage selects the tests that ran a function around the changed lines', () => {
     const tests = testsOf(

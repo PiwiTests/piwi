@@ -27,7 +27,8 @@ and returned by `get_change_coverage`, and the gate's line form is `--min-patch-
 flag. Line-level impact (part 4) is built on 2026-10-24: `piwi run impact` and `piwi preflight` send each modified
 file's base blob and changed base lines, and a test that reaches the file only through coverage is kept when its
 coverage of that version ran a changed statement or a function around a changed line; a change outside every known
-function, coverage of another version or with no ranges, and an incomplete capture stay at file level. The MCP tool
+function or crossing from one into the next, coverage of another version or with no ranges, and an incomplete or
+unknown capture stay at file level. The MCP tool
 `get_impacted_tests` takes a diff and returns the same answer per file, with the changed lines no test ran. Not built
 yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Each test's coverage is shown on the execution page and per file on a page of its own
 ([`test-coverage-view.md`](../adr/test-coverage-view.md)). The study's measurements came from
