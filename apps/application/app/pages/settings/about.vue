@@ -122,7 +122,7 @@ const dbBackendLabel = computed(() => {
         <DocLink to="">Documentation</DocLink>
         <ULink to="/docs" class="inline-flex items-center gap-1 text-primary hover:underline"> API reference </ULink>
         <ULink
-          to="https://github.com/piwitests/platform"
+          to="https://github.com/piwitests/piwi"
           target="_blank"
           rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-primary hover:underline"

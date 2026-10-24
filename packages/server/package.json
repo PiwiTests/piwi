@@ -20,11 +20,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/PiwiTests/platform"
+    "url": "https://github.com/PiwiTests/piwi"
   },
   "homepage": "https://piwitests.dev",
   "bugs": {
-    "url": "https://github.com/PiwiTests/platform/issues"
+    "url": "https://github.com/PiwiTests/piwi/issues"
   },
   "author": "piwitests",
   "license": "FSL-1.1-MIT",

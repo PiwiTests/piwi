@@ -204,7 +204,7 @@ The `commitlint` CI check lints **every commit in the PR range**, so one bad mes
 release-please generates `CHANGELOG.md` and creates each GitHub release with one raw entry per commit — so squash and
 cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/release-notes.yml`) keeps
 every release body non-empty and duplicate-free deterministically, and never overwrites hand-authored notes. For the
-polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0) style — a
+polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/piwi/releases/tag/v0.26.0) style — a
 narrative intro, `## ✨ Highlights`, thematic features), run the `release-notes` skill
 (`.claude/skills/release-notes/SKILL.md`); both it and the workflow share `scripts/release-notes.mjs` for
 de-duplication and publishing by tag.
@@ -230,6 +230,10 @@ other `curl` examples may stay bash-only. `.env` file contents are not shell com
   one that builds part of it updates its Status paragraph. When a proposal counts as shipped, and the steps of the
   move: [`adr/AGENTS.md`](adr/AGENTS.md#when-a-proposal-has-shipped).
 - User-facing docs live in `apps/docs/` (VitePress → GitHub Pages); `README.md` is the landing page.
+- **Repository links point at `https://github.com/PiwiTests/piwi`**: docs, package metadata (`repository`,
+  `RepositoryUrl`), app links, the desktop updater endpoints. Two names stay as they are: the container image
+  `ghcr.io/piwitests/platform`, which users pull by name, and the links release-please already wrote into
+  `CHANGELOG.md`.
 - The live demo's **guided tour** is maintained like the docs and the demo: a change to a screen a tour stop shows
   updates the stop, and its copy in every tour language, **in the same commit**. Rules: the Guided tour section of
   [`apps/application/AGENTS.md`](apps/application/AGENTS.md#guided-tour).

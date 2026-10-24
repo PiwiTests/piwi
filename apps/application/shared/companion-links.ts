@@ -11,7 +11,7 @@ export const PICKER_CHROME_URL =
 export const PICKER_FIREFOX_URL = 'https://addons.mozilla.org/firefox/addon/piwi-picker/';
 export const VSCODE_EXTENSION_URL = 'https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi';
 export const JETBRAINS_PLUGIN_URL = 'https://plugins.jetbrains.com/plugin/34674-piwi';
-export const DESKTOP_DOWNLOAD_URL = 'https://github.com/piwitests/platform/releases/latest';
+export const DESKTOP_DOWNLOAD_URL = 'https://github.com/piwitests/piwi/releases/latest';
 export const REPORTER_NPM_URL = 'https://www.npmjs.com/package/@piwitests/reporter';
 
 /** Where Piwi Picker installs from in one browser: the store's name and the listing. */

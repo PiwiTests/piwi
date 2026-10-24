@@ -66,7 +66,7 @@ project reaches, lists those tests, and marks the buttons, links and fields no t
 
 Piwi Picker speaks English, French, German, Spanish and Brazilian Portuguese, following the browser unless
 **Language**, in the settings, picks another. German, Spanish and Portuguese are unreviewed drafts:
-[suggest a correction](https://github.com/PiwiTests/platform/issues/new?template=translation.yml). A bug report is
+[suggest a correction](https://github.com/PiwiTests/piwi/issues/new?template=translation.yml). A bug report is
 written in the extension's language; locators, test ids and specs never are.
 
 ## Permissions, explained

@@ -7,8 +7,8 @@ Thanks for your interest in improving Piwi Dashboard! This file covers dev setup
 Prerequisites: **Node.js 24+**, npm, Git.
 
 ```bash
-git clone https://github.com/PiwiTests/platform.git
-cd platform/apps/application
+git clone https://github.com/PiwiTests/piwi.git
+cd piwi/apps/application
 npm install
 npm run app:dev      # dashboard at http://localhost:3000
 ```
@@ -45,8 +45,8 @@ If an E2E test creates a project, use a static name registered in `apps/applicat
 
 ## What to work on
 
-- Check [open issues](https://github.com/PiwiTests/platform/issues) and the [roadmap](ROADMAP.md).
-- For anything non-trivial, open an issue or a [Discussion](https://github.com/PiwiTests/platform/discussions) first so we can agree on the approach before you invest time.
+- Check [open issues](https://github.com/PiwiTests/piwi/issues) and the [roadmap](ROADMAP.md).
+- For anything non-trivial, open an issue or a [Discussion](https://github.com/PiwiTests/piwi/discussions) first so we can agree on the approach before you invest time.
 - Security problems: follow [SECURITY.md](SECURITY.md) — please don't open public issues for those.
 
 ## License of your contribution

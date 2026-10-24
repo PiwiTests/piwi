@@ -15,12 +15,12 @@ the [editors](./editor-coverage) and the [coverage insights](./coverage-insights
 ## Turn it on
 
 1. Add the `PiwiTests.Instrumentation.Coverage` package to every project whose code you want covered, as its
-   [README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#readme)
+   [README](https://github.com/PiwiTests/piwi/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#readme)
    shows, serve it with `app.UsePiwiTestLogs()` ([backend instrumentation](/guide/backend-logs)), and build the test
    environment with `-p:PiwiCoverage=true`. Never ship that build to production: its code runs slower, and its
    coverage endpoints expose source paths and line numbers. It refuses to start in the Production environment, and
    `PiwiCoverageForbidden` makes a build fail when coverage reaches it
-   ([README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#enabling-it)).
+   ([README](https://github.com/PiwiTests/piwi/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#enabling-it)).
 2. Set the reporter's `coverage.server` option, or `PIWI_COVERAGE_SERVER`, with the
    [capture fixtures](/guide/capture-fixtures) in place.
 
@@ -80,7 +80,7 @@ answers it is the one that served the run's first requests.
   [combined coverage](./combined-coverage) notes the run, and its `e2e` suite reads as incomplete unless a complete
   run of the commit counts beside it.
 - **Exclusions:** the coverage build leaves out what coverlet does, read from the project's coverlet settings
-  ([README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#what-it-leaves-out)):
+  ([README](https://github.com/PiwiTests/piwi/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#what-it-leaves-out)):
   an excluded member has no executable lines and no coverage.
 - C# and Visual Basic only.
 

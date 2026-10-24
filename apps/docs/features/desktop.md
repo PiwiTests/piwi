@@ -24,7 +24,7 @@ Everything binds to `127.0.0.1`, so nothing is exposed to the network.
 
 ## Where it is
 
-Download the installer from the [latest release](https://github.com/PiwiTests/platform/releases/latest):
+Download the installer from the [latest release](https://github.com/PiwiTests/piwi/releases/latest):
 
 | OS | Installer |
 |----|-----------|

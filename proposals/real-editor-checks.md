@@ -168,7 +168,7 @@ Verified on VS Code 1.143.0, the stable build `@vscode/test-electron` downloaded
   `.monaco-hover:not(.hidden)`. Notifications are cleared at the start of a scene, never while a menu is open: the
   palette's text would land in the editor.
 - **The Marketplace README.** `vsce` rewrites every relative image link to
-  `https://github.com/PiwiTests/platform/raw/HEAD/<path>` and ignores `repository.directory`, so a relative link
+  `https://github.com/PiwiTests/piwi/raw/HEAD/<path>` and ignores `repository.directory`, so a relative link
   from `apps/vscode/README.md` breaks on the Marketplace. The README links the images by their docs-site address,
   `https://piwitests.dev/screenshots/vscode-<scene>.png`, which the docs drift test checks resolve.
 - **Scenes.** *heal*: the page object, the Problems panel focused below, the caret at the failing line, the quick

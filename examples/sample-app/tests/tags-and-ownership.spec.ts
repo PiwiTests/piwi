@@ -37,7 +37,7 @@ test(
       { type: 'piwi:owner', description: '@platform-team' },
       { type: 'piwi:priority', description: 'high' },
       { type: 'piwi:feature', description: 'API' },
-      { type: 'piwi:link', description: 'https://github.com/PiwiTests/platform/issues' },
+      { type: 'piwi:link', description: 'https://github.com/PiwiTests/piwi/issues' },
     ],
   },
   async ({ page }) => {

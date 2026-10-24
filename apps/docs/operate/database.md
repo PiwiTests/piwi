@@ -78,4 +78,4 @@ about, or accept starting fresh. Your file storage is unaffected either way.
 - [Storage & retention](./storage) — where reports, traces and attachments go
 - [Deployment](./deployment) — Compose and Kubernetes, and [one-click deploy](./one-click-deploy) templates
 - Changing the schema is a contributor task, not an operator one:
-  [CONTRIBUTING.md](https://github.com/PiwiTests/platform/blob/main/CONTRIBUTING.md)
+  [CONTRIBUTING.md](https://github.com/PiwiTests/piwi/blob/main/CONTRIBUTING.md)

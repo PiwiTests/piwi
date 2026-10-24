@@ -2,7 +2,7 @@
 
 A proposal to let a test keep its history when it is renamed or moved, by matching it on the ID the team already
 gives it in its test management tool. It records the design agreed on
-[PiwiTests/platform#847](https://github.com/PiwiTests/platform/issues/847), the stages, and the questions left open.
+[PiwiTests/piwi#847](https://github.com/PiwiTests/piwi/issues/847), the stages, and the questions left open.
 
 **Status.** Built: stages 1 to 3, and stage 4 except the remaining screens: the server files that select
 `testCases.title` beyond the first screens (search, analytics, run insights, flake profiles…) still show the full

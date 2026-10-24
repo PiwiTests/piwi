@@ -16,7 +16,7 @@ export type Language = (typeof SHIPPED_LANGUAGES)[number]['code'];
 export const LANGUAGES: readonly Language[] = SHIPPED_LANGUAGES.map((language) => language.code);
 
 /** Where a reader suggests a correction to a translation: GitHub's form for translation fixes. */
-export const TRANSLATION_ISSUE_URL = 'https://github.com/PiwiTests/platform/issues/new?template=translation.yml';
+export const TRANSLATION_ISSUE_URL = 'https://github.com/PiwiTests/piwi/issues/new?template=translation.yml';
 
 /** Whether a shipped language, by its directory name (`pt_BR`) or its tag (`pt-BR`), is still a draft. */
 export function isDraftLanguage(code: string): boolean {

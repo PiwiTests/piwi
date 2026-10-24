@@ -12,7 +12,7 @@ what happens before you pull a new tag.
 
 ## The short version
 
-1. Read the [changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md) for the versions
+1. Read the [changelog](https://github.com/PiwiTests/piwi/blob/main/CHANGELOG.md) for the versions
    you're skipping, looking for **⚠ BREAKING CHANGES**.
 2. **Back up** the database and file storage ([how](./backup-restore)).
 3. Pull the new tag and restart.
@@ -162,7 +162,7 @@ progress bar.
 
 **The container is unhealthy after upgrading** (`/api/health` returns `503` and anything that reads data fails). Check
 the logs for `Migration error`. The schema is mid-flight or incompatible; restore your backup and open an
-[issue](https://github.com/PiwiTests/platform/issues) with the error. If the error starts with
+[issue](https://github.com/PiwiTests/piwi/issues) with the error. If the error starts with
 `Migration history repair failed`, the database ran another build and could not be brought in line
 automatically ([details](#a-database-that-ran-another-build)); it was left as it was.
 
@@ -182,4 +182,4 @@ share a root cause have merged. Triage state is carried across the merge.
 ## Related
 - [Backup & restore](./backup-restore) — what to back up and how
 - [Deployment → Available tags](./deployment#available-tags) — what to pin
-- [Changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md) — breaking changes per release
+- [Changelog](https://github.com/PiwiTests/piwi/blob/main/CHANGELOG.md) — breaking changes per release
