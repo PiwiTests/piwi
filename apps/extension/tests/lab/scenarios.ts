@@ -72,18 +72,18 @@ export const SCENARIOS: Scenario[] = [
     name: 'project-tests-search',
     start: '/',
     run: async (page) => {
-      await page.getByRole('link', { name: 'Piwi Dashboard', exact: true }).first().click();
+      await page
+        .getByRole('link', { name: /^E2E Checkout/ })
+        .first()
+        .click();
       await page.waitForURL(/\/projects\/1/);
       await pause(page, 2000);
       await page.getByRole('button', { name: /^Tests/ }).click();
       await pause(page, 1500);
-      await page.getByRole('textbox', { name: 'Search tests' }).click();
-      await type(page, 'locator');
+      await page.getByRole('combobox', { name: 'Search tests' }).click();
+      await type(page, 'cart');
       await pause(page, 1200);
-      await page
-        .getByRole('link', { name: /stability select lists the brittle/ })
-        .first()
-        .click();
+      await page.getByRole('link', { name: 'should remove item from cart' }).first().click();
       await page.waitForURL(/\/test-cases\//);
       await pause(page, 2000);
     },
@@ -92,15 +92,20 @@ export const SCENARIOS: Scenario[] = [
     name: 'run-search-filter-sort',
     start: '/test-runs/2',
     run: async (page) => {
-      await page.getByRole('textbox', { name: 'Search title, path, error…' }).click();
-      await type(page, 'timeout');
+      await page.getByRole('combobox', { name: 'Search tests' }).click();
+      await type(page, 'checkout');
       await pause(page, 1200);
+      // The search's suggestions cover the status buttons until they close.
+      await page.keyboard.press('Escape');
+      await pause(page, 600);
       await page.getByRole('button', { name: 'Failed', exact: true }).click();
       await pause(page);
-      await page.getByRole('textbox', { name: 'Search title, path, error…' }).click();
+      await page.getByRole('combobox', { name: 'Search tests' }).click();
       await page.keyboard.press('ControlOrMeta+A');
       await page.keyboard.press('Backspace');
       await pause(page);
+      await page.keyboard.press('Escape');
+      await pause(page, 600);
       await page.getByRole('combobox', { name: 'Group tests by' }).click();
       await pickInPopup(page, 0);
       await pause(page);
@@ -140,8 +145,8 @@ export const SCENARIOS: Scenario[] = [
     name: 'project-popovers',
     start: '/projects/1',
     run: async (page) => {
-      await page.getByRole('button', { name: 'Show popup' }).first().click();
-      await pickInPopup(page, 1);
+      await page.getByRole('button', { name: 'All branches' }).click();
+      await pickInPopup(page, 0);
       await page.keyboard.press('Escape');
       await pause(page);
       await page.getByRole('checkbox', { name: 'Full runs only' }).click();
@@ -152,9 +157,12 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'run-tag-filter',
-    start: '/test-runs/2',
+    start: '/test-runs/21',
     run: async (page) => {
-      await page.getByRole('button', { name: 'Filter by tag' }).click();
+      // A tag is a qualifier of the search: its suggestions list the run's tags.
+      await page.getByRole('combobox', { name: 'Search tests' }).click();
+      await type(page, 'tag:');
+      await pause(page, 600);
       await pickInPopup(page, 0);
       await page.keyboard.press('Escape');
       await pause(page);
@@ -179,15 +187,19 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'project-edit-form',
-    start: '/projects/1/edit',
+    start: '/projects/1?tab=settings',
     run: async (page) => {
       await retype(page, page.getByRole('textbox', { name: 'Description' }), 'Replay lab project');
+      await pause(page, 600);
+      await page.getByRole('button', { name: 'Source control' }).click();
       await pause(page, 600);
       await retype(page, page.getByRole('textbox', { name: 'Default branch' }), 'main');
       await pause(page, 600);
       await page.getByRole('switch', { name: 'CI re-run' }).click();
       await pause(page, 600);
       await page.getByRole('switch', { name: 'CI re-run' }).click();
+      await pause(page, 600);
+      await page.getByRole('button', { name: 'Capabilities' }).click();
       await pause(page, 600);
       await page.getByRole('combobox', { name: 'Capture fixtures for this project' }).click();
       await pickInPopup(page, 1);
@@ -274,11 +286,11 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'tag-search-keyboard',
-    start: '/test-runs/2',
+    start: '/test-runs/21',
     run: async (page) => {
-      await page.getByRole('button', { name: 'Filter by tag' }).click();
+      await page.getByRole('combobox', { name: 'Search tests' }).click();
       await pause(page, 600);
-      await type(page, 'crit');
+      await type(page, 'tag:reg');
       await pause(page, 600);
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
@@ -305,6 +317,7 @@ export const SCENARIOS: Scenario[] = [
   {
     name: 'add-user-dialog',
     start: '/settings/users',
+    secrets: ['not-a-real-password'],
     run: async (page) => {
       await page.getByRole('button', { name: 'Add user' }).click();
       await pause(page, 900);
@@ -324,6 +337,7 @@ export const SCENARIOS: Scenario[] = [
   {
     name: 'jira-connect-form',
     start: '/settings/integrations',
+    secrets: ['not-a-real-token'],
     run: async (page) => {
       await page.getByRole('button', { name: 'Connect Jira' }).click();
       await pause(page, 900);
@@ -390,10 +404,11 @@ export const SCENARIOS: Scenario[] = [
     hovers: 0,
     run: async (page) => {
       // Hovering a feature highlights it in the map (a script's state); the click lands on the feature itself.
+      // Playwright never finds the map's SVG group stable, though it stands still: a person's pointer goes there.
       const feature = page.getByRole('button', { name: /^Orders/ }).first();
-      await feature.hover();
+      await feature.hover({ force: true });
       await pause(page, 800);
-      await feature.click();
+      await feature.click({ force: true });
       await pause(page, 1500);
     },
   },
