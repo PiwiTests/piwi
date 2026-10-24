@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mouse over</title>
+    <style>
+      body {
+        font: 14px sans-serif;
+        margin: 40px;
+      }
+      a {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mouse over</h1>
+    <div>
+      <p>The link below is replaced by another as the pointer enters it, and only the other counts a click.</p>
+      <a class="idle" title="Click me">Click me</a>
+    </div>
+    <output id="out"></output>
+    <script>
+      let clicks = 0;
+      // As the pointer enters the link, the page swaps it for a clone that counts clicks, and back as it leaves.
+      function activate(link) {
+        const active = link.cloneNode(true);
+        active.className = 'active';
+        active.title = 'Active link';
+        active.addEventListener('click', () => {
+          clicks += 1;
+          document.getElementById('out').textContent = `Clicked ${clicks} time${clicks === 1 ? '' : 's'}`;
+        });
+        active.addEventListener('mouseleave', () => idle(active), { once: true });
+        link.replaceWith(active);
+      }
+      function idle(link) {
+        const back = link.cloneNode(true);
+        back.className = 'idle';
+        back.title = 'Click me';
+        back.addEventListener('mouseenter', () => activate(back), { once: true });
+        link.replaceWith(back);
+      }
+      const first = document.querySelector('a');
+      first.addEventListener('mouseenter', () => activate(first), { once: true });
+    </script>
+  </body>
+</html>

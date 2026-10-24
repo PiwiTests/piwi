@@ -483,6 +483,206 @@ test.describe('replay-panel.js', () => {
     await expect(hud.getByRole('status')).toContainText('1 step played by hand: 4.');
   });
 
+  test('finds an element with another of its recorded locators when the test’s finds nothing, and says so', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'fixed');
+    // Recorded as "Apply discount", the button reads "Apply coupon" here: its test id still finds it.
+    const renamed = {
+      ...target('add-to-cart', 'button', 'Apply discount'),
+      alternatives: [
+        { locator: "getByRole('button', { name: 'Apply discount' })", method: 'getByRole', score: 90 },
+        { locator: "getByTestId('add-to-cart')", method: 'getByTestId', score: 80 },
+      ],
+    };
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: REPORT.steps.map((step, i) => (i === 3 ? { ...step, target: renamed } : step)),
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    expect(await verdict(page)).toEqual({ kind: 'not-reproduced' });
+    const state = await replayState(page);
+    expect(state.results.map((r) => r.status)).toEqual(['done', 'done', 'done', 'done', 'passed']);
+    expect(state.results[3]!.detail).toBe(
+      "Found with getByTestId('add-to-cart'): getByRole('button', { name: 'Apply discount' }), the locator the test is written with, finds nothing here.",
+    );
+    await expect(page.locator('#piwi-replay-hud-host .note').filter({ hasText: 'Found with' })).toHaveCount(1);
+  });
+
+  test('takes the element most of its recorded locators agree on over the one the test’s finds', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        // The page swapped the buttons' texts since the recording, as one that makes them up on each load does.
+        body: `<!doctype html><html><body>
+          <a id="save" data-testid="save" class="button success" href="#saved" onclick="document.getElementById('out').textContent = 'saved'">bar</a>
+          <a id="drop" class="button alert" href="#dropped" onclick="document.getElementById('out').textContent = 'dropped'">foo</a>
+          <output id="out"></output>
+        </body></html>`,
+      }),
+    );
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: [
+        { action: 'goto', target: null, value: '/', redacted: false, pageUrl: '/', timestamp: 0 },
+        {
+          action: 'click',
+          target: {
+            tagName: 'a',
+            role: 'link',
+            accessibleName: 'foo',
+            testId: null,
+            text: 'foo',
+            alternatives: [
+              { locator: "getByRole('link', { name: 'foo' })", method: 'getByRole', score: 90 },
+              { locator: "getByTestId('save')", method: 'getByTestId', score: 80 },
+              { locator: "locator('#save')", method: 'locator', score: 65 },
+            ],
+          },
+          value: null,
+          redacted: false,
+          pageUrl: '/',
+          timestamp: 1,
+        },
+      ],
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/`);
+    await expect.poll(() => replayState(page).then((s) => s.status), { timeout: 30_000 }).toBe('done');
+    await expect(page.locator('#out')).toHaveText('saved');
+    expect((await replayState(page)).results[1]!.detail).toBe(
+      "Found with getByTestId('save'), which the other recorded locators agree on: getByRole('link', { name: 'foo' }), the locator the test is written with, finds another element.",
+    );
+  });
+
+  test('a key it sends with the page’s own events carries the key code older pages read', async ({ context }) => {
+    await openShadowRoots(context);
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        // As TodoMVC adds a todo: on a keydown whose keyCode is Enter's.
+        body: `<!doctype html><html><body>
+          <input aria-label="What needs to be done?" onkeydown="if (event.keyCode === 13 && event.which === 13) { document.getElementById('todos').textContent += this.value + ';'; this.value = ''; }" />
+          <input aria-label="Search" onkeypress="document.getElementById('typed').textContent = event.charCode + '/' + event.which" />
+          <output id="todos"></output><output id="typed"></output>
+        </body></html>`,
+      }),
+    );
+    const field = (name: string) => ({
+      tagName: 'input',
+      role: 'textbox',
+      accessibleName: name,
+      testId: null,
+      text: null,
+      alternatives: [{ locator: `getByRole('textbox', { name: '${name}' })`, method: 'getByRole', score: 90 }],
+    });
+    const at = (i: number) => ({ redacted: false, pageUrl: '/', timestamp: i });
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: [
+        { action: 'goto', target: null, value: '/', ...at(0) },
+        { action: 'fill', target: field('What needs to be done?'), value: 'buy milk', ...at(1) },
+        { action: 'press', target: field('What needs to be done?'), value: 'Enter', ...at(2) },
+        { action: 'press', target: field('Search'), value: 'q', ...at(3) },
+      ],
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/`);
+    await expect.poll(() => replayState(page).then((s) => s.status), { timeout: 30_000 }).toBe('done');
+    await expect(page.locator('#todos')).toHaveText('buy milk;');
+    await expect(page.locator('#typed')).toHaveText('113/113');
+  });
+
+  test('waits for the next view rather than taking the last one’s element another locator finds', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        // A wizard: Continue shows the next view a second later, with a Continue of its own.
+        body: `<!doctype html><html><body><div id="view"><button id="to-shipping">Continue</button></div>
+          <output id="out"></output>
+          <script>
+            const out = document.getElementById('out');
+            document.getElementById('to-shipping').onclick = () => {
+              out.textContent += 'shipping;';
+              setTimeout(() => {
+                document.getElementById('view').innerHTML = '<button id="confirm">Continue</button>';
+                document.getElementById('confirm').onclick = () => (out.textContent += 'confirmed;');
+              }, 1000);
+            };
+          </script></body></html>`,
+      }),
+    );
+    const button = (id: string) => ({
+      tagName: 'button',
+      role: 'button',
+      accessibleName: 'Continue',
+      testId: null,
+      text: 'Continue',
+      alternatives: [
+        { locator: `locator('#${id}')`, method: 'locator', score: 65 },
+        { locator: "getByRole('button', { name: 'Continue' })", method: 'getByRole', score: 60 },
+      ],
+    });
+    const at = (i: number) => ({ value: null, redacted: false, pageUrl: '/', timestamp: i });
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: [
+        { action: 'goto', target: null, ...at(0), value: '/' },
+        { action: 'click', target: button('to-shipping'), ...at(1) },
+        { action: 'click', target: button('confirm'), ...at(2) },
+      ],
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/`);
+    await expect.poll(() => replayState(page).then((s) => s.status), { timeout: 30_000 }).toBe('done');
+    await expect(page.locator('#out')).toHaveText('shipping;confirmed;');
+    expect((await replayState(page)).results[2]!.detail).toBeNull();
+  });
+
+  test('hands a password to the person, which a recording never keeps', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'fixed');
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: REPORT.steps.map((step, i) => (i === 1 ? { ...step, value: null, redacted: true } : step)),
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud).toContainText(
+      'Step 2 could not be played here. The report does not hold what was typed here: a recording never keeps a password or another secret, and whoever sent the report may have left the typed values out. Type it on the page, then continue.',
+      { timeout: 20_000 },
+    );
+    await page.getByLabel('Username').fill('alice');
+    await hud.getByRole('button', { name: 'I did it, continue' }).click();
+    expect(await verdict(page)).toEqual({ kind: 'not-reproduced' });
+    expect((await replayState(page)).results.map((r) => r.status)).toEqual([
+      'done',
+      'manual',
+      'done',
+      'done',
+      'passed',
+    ]);
+  });
+
   test('waits on the page the person’s own action loads, then goes on from the next step', async ({ context }) => {
     await openShadowRoots(context);
     // The login page has no Log in button: the person gets to the dashboard their own way.

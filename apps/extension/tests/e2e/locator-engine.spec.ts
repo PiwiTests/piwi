@@ -286,6 +286,71 @@ test.describe('locator engine matches Playwright', () => {
     });
   });
 
+  test('an element with a role and no name still gets a locator, kept by position', async ({ page }) => {
+    await servePages(page, ORIGIN, {
+      'unnamed.html': `<!doctype html><html><body>
+        <form id="checkboxes"><input type="checkbox" class="css-1a2b3c4d"> checkbox 1<br><input type="checkbox" class="css-1a2b3c4d" checked> checkbox 2</form>
+      </body></html>`,
+    });
+    await page.goto(`${ORIGIN}/unnamed.html`);
+    await tagElements(page);
+    await page.addScriptTag({ path: await engineBundle() });
+    const cases = [
+      { selector: 'input:first-of-type', role: 'checkbox', top: "getByRole('checkbox').first()" },
+      { selector: 'input:last-of-type', role: 'checkbox', top: "getByRole('checkbox').nth(1)" },
+    ];
+    for (const { selector, role, top } of cases) {
+      for (const withEngine of [true, false]) {
+        const ranked = await page.evaluate(
+          ([s, w]) =>
+            (
+              globalThis as unknown as {
+                __piwiRankTop: (s: string, w: boolean) => { role: string | null; locator: string | null };
+              }
+            ).__piwiRankTop(s, w),
+          [selector, withEngine] as const,
+        );
+        expect(ranked, `${selector}, counted by ${withEngine ? 'an engine' : 'the probe'}`).toEqual({
+          role,
+          locator: top,
+        });
+      }
+      expect(await playwrightOutcome(page, top)).toEqual({
+        ids: [await page.locator(selector).getAttribute('data-eid')],
+      });
+    }
+  });
+
+  test('an element named by a whole card is named by the start of its name', async ({ page }) => {
+    const card = (title: string) =>
+      `<a href="#${title.length}"><h1>${title}</h1><p>As practices evolve, video tutorials have emerged as the most efficient method for imparting knowledge.</p><span>Read more...</span></a>`;
+    await servePages(page, ORIGIN, {
+      'cards.html': `<!doctype html><html><body>
+        ${card('The value of pre-recorded video classes and the most efficient approach')}
+        ${card('The value of live classes')}
+      </body></html>`,
+    });
+    await page.goto(`${ORIGIN}/cards.html`);
+    await tagElements(page);
+    await page.addScriptTag({ path: await engineBundle() });
+    const top = "getByRole('link', { name: 'The value of pre-recorded video classes and the most' })";
+    for (const withEngine of [true, false]) {
+      const ranked = await page.evaluate(
+        (w) =>
+          (
+            globalThis as unknown as {
+              __piwiRankTop: (s: string, w: boolean) => { role: string | null; locator: string | null };
+            }
+          ).__piwiRankTop('a', w),
+        withEngine,
+      );
+      expect(ranked, `counted by ${withEngine ? 'an engine' : 'the probe'}`).toEqual({ role: 'link', locator: top });
+    }
+    expect(await playwrightOutcome(page, top)).toEqual({
+      ids: [await page.locator('a').first().getAttribute('data-eid')],
+    });
+  });
+
   test('a candidate is narrowed inside an ancestor carrying the configured test id attribute', async ({ page }) => {
     await servePages(page, ORIGIN, {
       'test-id-scopes.html': `<!doctype html><html><body><ul>
@@ -315,6 +380,32 @@ test.describe('locator engine matches Playwright', () => {
     } finally {
       selectors.setTestIdAttribute('data-testid');
     }
+  });
+
+  test('a candidate that also finds the parent of a repeated container is checked, not thrown on', async ({ page }) => {
+    // As the dashboard's tab bar: a class on the list and on each tab, each tab in a list item.
+    await servePages(page, ORIGIN, {
+      'tab-bar.html': `<!doctype html><html><body><ul class="flex">
+        <li class="item"><button type="button" class="flex" id="runs">Runs (16)</button></li>
+        <li class="item"><button type="button" class="flex" id="failures">Failures (6)</button></li>
+      </ul></body></html>`,
+    });
+    await page.goto(`${ORIGIN}/tab-bar.html`);
+    await tagElements(page);
+    await page.addScriptTag({ path: await engineBundle() });
+    const checked = await page.evaluate(
+      (candidates) =>
+        (
+          globalThis as unknown as {
+            __piwiCheckLocators: (s: string, l: string[]) => Array<{ locator: string; verdict: string }>;
+          }
+        ).__piwiCheckLocators('#failures', candidates),
+      ["locator('.flex')"],
+    );
+    expect(checked).toHaveLength(1);
+    expect(await playwrightOutcome(page, checked[0]!.locator)).toEqual({
+      ids: [await page.locator('#failures').getAttribute('data-eid')],
+    });
   });
 
   test('one engine answers the same expression identically, cached or not', async ({ page }) => {

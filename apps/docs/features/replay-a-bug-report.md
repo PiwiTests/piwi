@@ -29,8 +29,12 @@ a link that opens an order beside the list, takes the replay to that tab, as the
 
 ## The answer
 
-Each element is found with the locator the failing test uses, and waited for as Playwright waits: exactly one match,
-visible, enabled and still. The replay ends with one of three answers:
+Each element is looked for with every locator it was recorded with, the one the failing test uses first. When that
+one finds nothing for two seconds, finds several elements, or finds one the other locators disagree on, the element
+most of them agree on is used, and the step says which locator found it: a label that changed or an id made up on each load does not stop
+the replay. The element is then waited for as Playwright waits: visible, enabled and still, for as long as Playwright
+waits or, when you waited longer for it while recording (a reply that takes the server fifteen seconds), that long and
+a few seconds more, up to a minute. The replay ends with one of three answers:
 
 - **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 50", and the panel says
   whether that is the value reported.
@@ -59,6 +63,10 @@ choose:
   one in a new tab.
 - **Skip this step**: it goes on without it.
 - **Stop here**: it ends there, and says it could not reach the bug.
+
+A password, or a card number, its security code or a one-time code, is never in a report, nor what was typed when
+the sender left the typed values out: Replay hands that step to you to type it. A click or a key the page never got is handed to you too: a browser dialog in front of the tab, such as
+Chrome's warning about a password found in a data breach after a login, takes the input. Close it, then do the step. A hover recorded without any locator is skipped, since the next step points at its own element.
 
 Under the answer, the panel lists the steps played by hand.
 

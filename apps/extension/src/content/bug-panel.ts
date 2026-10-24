@@ -51,6 +51,7 @@ import {
   mountSurface,
   startReplayHere,
 } from './record-ui.js';
+import { cornerInset, hudCorner, moveHudButton } from './hud-corner.js';
 import { downloadBlob } from '../shared/download.js';
 import {
   addBugScreenshot,
@@ -933,7 +934,7 @@ export function renderBugHud(
   document.getElementById(HUD_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
-  host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
+  host.style.cssText = `all:initial;position:fixed;inset:${cornerInset(hudCorner())};z-index:2147483647;`;
   mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed', delegatesFocus: true });
   const style = document.createElement('style');
@@ -943,7 +944,10 @@ export function renderBugHud(
     ${BUTTON_CSS}
     ${STEP_CSS}
     .bar { display: flex; flex-direction: column; gap: 8px; background: #111827; color: #f9fafb; border-radius: 12px;
-      padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4); font-size: 12.5px; width: 360px; max-width: calc(100vw - 32px); }
+      padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4); font-size: 12.5px; width: 360px; max-width: calc(100vw - 32px);
+      position: relative; }
+    .bar > .move { position: absolute; top: 6px; right: 8px; }
+    .bar > .row:first-child { padding-right: 28px; }
     @media (prefers-color-scheme: light) {
       .bar { background: #ffffff; color: #111827; box-shadow: 0 8px 30px rgba(0,0,0,.2); border: 1px solid #e5e7eb; }
     }
@@ -1032,6 +1036,12 @@ export function renderBugHud(
   writeHudEvidence(lines, evidence);
   panelGlobals().__piwiBugHud = { host, root, ...lines };
 
+  // Last in the bar, so its actions come first from the keyboard; drawn in its top right corner.
+  const move = moveHudButton(host);
+  move.classList.add('move');
+  // Named as the actions are, so a redraw keeps the focus on it.
+  move.dataset.action = 'move';
+  bar.appendChild(move);
   root.append(style, bar);
   if (focusedAction) (root.querySelector<HTMLElement>(`[data-action="${focusedAction}"]`) ?? host).focus();
 }

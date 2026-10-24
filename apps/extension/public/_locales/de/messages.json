@@ -2227,6 +2227,9 @@
   "record_hudLabel": {
     "message": "Aufzeichnung"
   },
+  "record_hudMove": {
+    "message": "Diese Leiste in eine andere Ecke verschieben"
+  },
   "record_pause": {
     "message": "Pause"
   },
@@ -3322,6 +3325,72 @@
       }
     }
   },
+  "replay_reasonSecret": {
+    "message": "Der Bericht enthält nicht, was hier eingegeben wurde: Eine Aufzeichnung behält nie ein Passwort oder ein anderes Geheimnis, und wer den Bericht gesendet hat, kann die eingegebenen Werte weggelassen haben. Geben Sie es auf der Seite ein und fahren Sie dann fort."
+  },
+  "replay_hoverNoLocator": {
+    "message": "Übersprungen: Die Aufzeichnung hat keinen Locator für das überfahrene Element; der nächste Schritt zeigt auf sein eigenes Element."
+  },
+  "replay_foundWithNoMatch": {
+    "message": "Gefunden mit $locator$: $spec$, der Locator, mit dem der Test geschrieben ist, findet hier nichts.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithOther": {
+    "message": "Gefunden mit $locator$, worin sich die anderen aufgezeichneten Locators einig sind: $spec$, der Locator, mit dem der Test geschrieben ist, findet ein anderes Element.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_one": {
+    "message": "Gefunden mit $locator$: $spec$, der Locator, mit dem der Test geschrieben ist, findet hier $count$ Element.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_other": {
+    "message": "Gefunden mit $locator$: $spec$, der Locator, mit dem der Test geschrieben ist, findet hier $count$ Elemente.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
   "replay_reasonOtherPage": {
     "message": "Dieser Schritt fand auf $expected$ statt, und der Tab ist auf $actual$.",
     "placeholders": {
@@ -3368,6 +3437,9 @@
         "example": "div \"Loading\""
       }
     }
+  },
+  "replay_reasonInputBlocked": {
+    "message": "Die Seite hat diese Eingabe nicht erhalten: Etwas vor dem Tab hat sie abgefangen, etwa ein Dialog des Browsers zu einem Passwort. Schließen Sie ihn und führen Sie diesen Schritt dann auf der Seite aus."
   },
   "replay_reasonOffscreen": {
     "message": "$element$ bleibt außerhalb des sichtbaren Teils der Seite.",

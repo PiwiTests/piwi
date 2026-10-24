@@ -3,7 +3,8 @@ import { defineConfig } from '@playwright/test';
 /** The specs the lab wrote from its recordings, run by Playwright as a project would. */
 export default defineConfig({
   testDir: 'out/specs',
-  workers: 1,
+  workers: Number(process.env.LAB_WORKERS ?? 1),
+  fullyParallel: true,
   timeout: 3 * 60_000,
   expect: { timeout: 5_000 },
   reporter: [['list'], ['json', { outputFile: 'out/specs-report.json' }]],

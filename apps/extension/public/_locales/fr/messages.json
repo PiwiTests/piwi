@@ -2227,6 +2227,9 @@
   "record_hudLabel": {
     "message": "Enregistrement en cours"
   },
+  "record_hudMove": {
+    "message": "Déplacer cette barre dans un autre coin"
+  },
   "record_pause": {
     "message": "Pause"
   },
@@ -3322,6 +3325,72 @@
       }
     }
   },
+  "replay_reasonSecret": {
+    "message": "Le rapport ne contient pas ce qui a été saisi ici : un enregistrement ne garde jamais un mot de passe ni un autre secret, et la personne qui a envoyé le rapport a pu en retirer les valeurs saisies. Saisissez-le sur la page, puis continuez."
+  },
+  "replay_hoverNoLocator": {
+    "message": "Passée : l’enregistrement n’a aucun locator pour l’élément survolé ; l’étape suivante pointe sur son propre élément."
+  },
+  "replay_foundWithNoMatch": {
+    "message": "Trouvé avec $locator$ : $spec$, le locator avec lequel le test est écrit, ne trouve rien ici.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithOther": {
+    "message": "Trouvé avec $locator$, sur lequel s’accordent les autres locators enregistrés : $spec$, le locator avec lequel le test est écrit, trouve un autre élément.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_one": {
+    "message": "Trouvé avec $locator$ : $spec$, le locator avec lequel le test est écrit, trouve ici $count$ élément.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_other": {
+    "message": "Trouvé avec $locator$ : $spec$, le locator avec lequel le test est écrit, trouve ici $count$ éléments.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
   "replay_reasonOtherPage": {
     "message": "Cette étape a eu lieu sur $expected$, et l’onglet est sur $actual$.",
     "placeholders": {
@@ -3368,6 +3437,9 @@
         "example": "div \"Loading\""
       }
     }
+  },
+  "replay_reasonInputBlocked": {
+    "message": "La page n’a pas reçu cette saisie : quelque chose devant l’onglet l’a prise, comme une boîte de dialogue du navigateur à propos d’un mot de passe. Fermez-la, puis faites cette étape sur la page."
   },
   "replay_reasonOffscreen": {
     "message": "$element$ reste en dehors de la partie visible de la page.",

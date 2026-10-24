@@ -227,6 +227,12 @@ export interface RawCaptureEvent {
   viewport?: { width: number; height: number; zoom?: number };
   /** The page as the action began, in a bug recording; see {@link StepView}. */
   view?: StepView;
+  /**
+   * On a `navigate` event, a page the person reached on their own: through the
+   * history (Back, Forward) or by reloading it, with no action of theirs
+   * leading there. The steps go to it again.
+   */
+  navigation?: 'history' | 'reload';
 }
 
 /**
@@ -301,10 +307,11 @@ function isRecordedKey(key: string | null | undefined): key is string {
  *  - a `hover` event becomes a `hover` step: the recorder sends one only for
  *    the element whose hover revealed what the next click lands on; a second
  *    hover on the same element right after the first is dropped;
- *  - `navigate` events become `goto` steps only for the session's very first
- *    page — later navigations are implied by the click/press that caused
- *    them and are dropped (they still update `pageUrl` on later steps via
- *    the caller passing the current page's URL on each event).
+ *  - `navigate` events become `goto` steps for the session's very first page,
+ *    and for a page the person reached through the history or by reloading
+ *    (`navigation`) — other navigations are implied by the click/press that
+ *    caused them and are dropped (they still update `pageUrl` on later steps
+ *    via the caller passing the current page's URL on each event).
  *  - an `assert` event becomes an `assert` step where it was added, after
  *    committing any fill in progress; one without an assertion is dropped;
  *  - password-field values are never carried through — `redacted: true`,
@@ -344,7 +351,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
 
     if (ev.kind === 'navigate') {
       flushPendingFill();
-      if (!sawFirstGoto) {
+      if (!sawFirstGoto || ev.navigation) {
         sawFirstGoto = true;
         steps.push({
           action: 'goto',
@@ -697,7 +704,8 @@ function parseViewport(v: unknown): RawCaptureEvent['viewport'] | null {
  * alternatives that parse. Null when it has no known `kind`, no `pageUrl`
  * string, no finite `timestamp`, or an assertion without a known matcher. A
  * password field's value is never kept; a viewport out of bounds is left out,
- * and so is `view`.
+ * and so is `view`. A navigation's cause stays on a navigate event to the
+ * http(s) address the event was sent from only.
  */
 export function parseCaptureEvent(value: unknown): RawCaptureEvent | null {
   if (!isRecord(value)) return null;
@@ -724,5 +732,13 @@ export function parseCaptureEvent(value: unknown): RawCaptureEvent | null {
   if (value.dropTarget !== undefined) event.dropTarget = parseTarget(value.dropTarget);
   const viewport = parseViewport(value.viewport);
   if (viewport) event.viewport = viewport;
+  if (
+    kind === 'navigate' &&
+    (value.navigation === 'history' || value.navigation === 'reload') &&
+    event.value === event.pageUrl &&
+    /^https?:\/\//i.test(event.pageUrl)
+  ) {
+    event.navigation = value.navigation;
+  }
   return event;
 }

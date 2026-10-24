@@ -1,6 +1,8 @@
-import { stepLocator } from '@piwitests/core/codegen';
+import { safeLocator, stepLocator } from '@piwitests/core/codegen';
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
-import type { RecordedStep } from '@piwitests/core/recording';
+import { assessLocatorChain } from '@piwitests/core/locator-stability';
+import type { RecordedStep, RecordedTarget } from '@piwitests/core/recording';
+import { keyDefinition } from '../shared/cdp-input.js';
 import { t, tn } from '../shared/i18n.js';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
 import { LocatorEngineError } from './engine-selector.js';
@@ -8,18 +10,18 @@ import { endHoverEmulation, hoverElement } from './hover-emulation.js';
 import { parentOf } from './hover-reveal.js';
 import { isOwnHost } from './record-ui.js';
 import type { FakeCursor } from './replay-cursor.js';
-import { wait, type Observation } from './replay-core.js';
+import { chooseElement, wait, type Observation } from './replay-core.js';
 
 /**
  * How the replay finds each step's element and acts on it in the page.
  *
- * The element is found with the locator the generated spec would use
- * (`stepLocator`), resolved by the in-page engine, and waited for as
- * Playwright waits: exactly one match, visible, enabled, and still in place
- * across two frames. This file's actions are the page's own events, the
- * replay's fallback where trusted input (`replay-trusted.ts`) is not there:
- * Firefox, a browser that refused the debugging session, or a person who
- * cancelled its bar.
+ * The element is looked for with every locator it was recorded with, the one
+ * the generated spec would use (`stepLocator`) first, each resolved by the
+ * in-page engine; the element they agree on (`chooseElement`) is waited for as
+ * Playwright waits: visible, enabled, and still in place across two frames.
+ * This file's actions are the page's own events, the replay's fallback where
+ * trusted input (`replay-trusted.ts`) is not there: Firefox, a browser that
+ * refused the debugging session, or a person who cancelled its bar.
  */
 
 /** How long a step waits for its element, and an assertion for its result. */
@@ -98,10 +100,41 @@ export function locatorFor(step: RecordedStep): string | null {
   return stepLocator(step.target, { locators: 'stable' });
 }
 
-/** The locator of where a `dragTo` step drops. */
-export function dropLocatorFor(step: RecordedStep): string | null {
-  return step.dropTarget ? stepLocator(step.dropTarget, { locators: 'stable' }) : null;
+/**
+ * Every locator an element was recorded with, as the spec writes them: the
+ * spec's own first, then the others in their recorded rank.
+ */
+export function locatorsOf(target: RecordedTarget | null | undefined): string[] {
+  if (!target) return [];
+  const others = target.alternatives.flatMap((alt) => {
+    const safe = safeLocator(alt.locator);
+    return safe ? [safe.text] : [];
+  });
+  return [...new Set([stepLocator(target, { locators: 'stable' }), ...others])].filter((l): l is string => !!l);
 }
+
+/** What a locator's vote weighs: half for one the stability rules call brittle (a position, a CSS class). */
+function voteWeight(locator: string): number {
+  return assessLocatorChain(parseLocatorChain(locator)).level === 'brittle' ? 0.5 : 1;
+}
+
+/**
+ * Whether an element another locator finds may be the one recorded: no test
+ * id other than the recorded one, and the same tag or the same role.
+ */
+function fitsTarget(engine: LocatorEngine, element: Element, target: RecordedTarget): boolean {
+  const testId = engine.testIdAttributes.map((name) => element.getAttribute(name)).find((id) => id != null);
+  if (target.testId && testId != null && testId !== target.testId) return false;
+  if (element.tagName.toLowerCase() === target.tagName.toLowerCase()) return true;
+  return target.role != null && engine.model.role(element) === target.role;
+}
+
+/**
+ * How long the spec's own locator has to find a step's element before another
+ * recorded locator may: the page the step plays on may still be on its way,
+ * showing the last step's elements, which another locator could find.
+ */
+const FALLBACK_AFTER_MS = 2_000;
 
 /**
  * An engine over the page as it is now, blind to the extension's own surfaces.
@@ -122,49 +155,73 @@ export function findAll(locator: string, engine = pageEngine()): Element[] {
   }
 }
 
-export type Resolution = { ok: true; element: Element } | { ok: false; reason: string };
+/**
+ * The element a step acts on, the locator that found it (the spec's own, or
+ * another recorded one when the spec's finds nothing, more than one element,
+ * or one the others disagree with) and how many the spec's own found.
+ */
+export type Resolution =
+  | { ok: true; element: Element; locator: string; specCount: number }
+  | { ok: false; reason: string };
 
 function sameRect(a: DOMRect, b: DOMRect): boolean {
   return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height;
 }
 
 /**
- * Waits until the step's element can take the action, and answers it; or,
- * after `timeout`, why it could not.
+ * Waits until the step's element can take the action, and answers it with
+ * the locator that found it; or, after `timeout`, why it could not, in the
+ * words of the spec's own locator. `target` is the element looked for: the
+ * step's own, or where a `dragTo` step drops.
  */
 export async function resolveForAction(
   step: RecordedStep,
   timeout = ACTION_TIMEOUT_MS,
-  locator = locatorFor(step),
+  target: RecordedTarget | null = step.target,
 ): Promise<Resolution> {
-  if (!locator) return { ok: false, reason: t('replay_reasonNoLocator') };
-  const deadline = Date.now() + timeout;
+  const locators = locatorsOf(target);
+  const primary = locators[0];
+  if (!primary || !target) return { ok: false, reason: t('replay_reasonNoLocator') };
+  const weights = locators.map(voteWeight);
+  const began = Date.now();
+  const deadline = began + timeout;
   let reason = '';
   for (;;) {
     const engine = pageEngine({ strict: true });
-    let found: Element[] = [];
     let frames = 0;
-    try {
-      found = engine.queryAll(parseLocatorChain(locator));
-    } catch (e) {
-      frames = e instanceof LocatorEngineError ? (e.matched ?? 0) : 0;
-    }
+    const looks = locators.map((locator, rank) => {
+      const weight = weights[rank];
+      try {
+        return { locator, weight, found: engine.queryAll(parseLocatorChain(locator)) };
+      } catch (e) {
+        if (rank === 0) frames = e instanceof LocatorEngineError ? (e.matched ?? 0) : 0;
+        return { locator, weight, found: [] };
+      }
+    });
+    const chosen = chooseElement(looks, (element) => fitsTarget(engine, element, target));
+    const choice = chosen && (chosen.locator === primary || Date.now() - began >= FALLBACK_AFTER_MS) ? chosen : null;
     const model = engine.model;
-    if (frames > 1) reason = tn('replay_reasonManyMatches', frames, { locator });
-    else if (found.length === 0) reason = t('replay_reasonNoMatch', { locator });
-    else if (found.length > 1) reason = tn('replay_reasonManyMatches', found.length, { locator });
-    // A file field is often hidden behind a button of its own; Playwright sets its files all the same.
-    else if (step.action === 'setInputFiles') return { ok: true, element: found[0]! };
-    else if (!model.isVisible(found[0]!)) reason = t('replay_reasonHidden', { locator });
-    else if (step.action !== 'hover' && model.disabled(found[0]!)) reason = t('replay_reasonDisabled', { locator });
-    else {
-      const element = found[0]!;
-      element.scrollIntoView({ block: 'center', inline: 'nearest' });
-      const before = element.getBoundingClientRect();
-      await nextFrame();
-      await nextFrame();
-      if (element.isConnected && sameRect(before, element.getBoundingClientRect())) return { ok: true, element };
-      reason = t('replay_reasonMoving', { locator });
+    const spec = looks[0]!.found.length;
+    if (!choice) {
+      if (frames > 1) reason = tn('replay_reasonManyMatches', frames, { locator: primary });
+      else if (spec === 0) reason = t('replay_reasonNoMatch', { locator: primary });
+      else reason = tn('replay_reasonManyMatches', spec, { locator: primary });
+    } else {
+      const { element, locator } = choice;
+      // A file field is often hidden behind a button of its own; Playwright sets its files all the same.
+      if (step.action === 'setInputFiles') return { ok: true, element, locator, specCount: spec };
+      if (!model.isVisible(element)) reason = t('replay_reasonHidden', { locator });
+      else if (step.action !== 'hover' && model.disabled(element)) reason = t('replay_reasonDisabled', { locator });
+      else {
+        element.scrollIntoView({ block: 'center', inline: 'nearest' });
+        const before = element.getBoundingClientRect();
+        await nextFrame();
+        await nextFrame();
+        if (element.isConnected && sameRect(before, element.getBoundingClientRect())) {
+          return { ok: true, element, locator, specCount: spec };
+        }
+        reason = t('replay_reasonMoving', { locator });
+      }
     }
     if (Date.now() >= deadline) return { ok: false, reason };
     await wait(POLL_MS);
@@ -473,23 +530,20 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 
 /**
  * The events for a key as Playwright writes it: `Enter`, `?`, or a shortcut
- * such as `ControlOrMeta+K` (Ctrl, or ⌘ on a Mac) or `Shift+Tab`.
+ * such as `ControlOrMeta+K` (Ctrl, or ⌘ on a Mac) or `Shift+Tab`, with the
+ * legacy `keyCode` and `which` a browser gives the key (13 for Enter): pages
+ * still read them, and an event a script makes has 0 otherwise.
  */
 function keyboardInit(combo: string): KeyboardEventInit {
   const parts = combo.length > 1 ? combo.split(/\+(?=.)/) : [combo];
   const name = parts.pop()!;
   const held = new Set(parts);
-  const key = name === 'Space' ? ' ' : name;
-  const code = /^[a-z]$/i.test(key)
-    ? `Key${key.toUpperCase()}`
-    : /^\d$/.test(key)
-      ? `Digit${key}`
-      : key === ' '
-        ? 'Space'
-        : key;
+  const { key, code, keyCode } = keyDefinition(name);
   return {
     key,
     code,
+    keyCode,
+    which: keyCode,
     ctrlKey: held.has('Control') || (held.has('ControlOrMeta') && !IS_MAC),
     metaKey: held.has('Meta') || (held.has('ControlOrMeta') && IS_MAC),
     altKey: held.has('Alt'),
@@ -498,6 +552,12 @@ function keyboardInit(combo: string): KeyboardEventInit {
     cancelable: true,
     composed: true,
   };
+}
+
+/** A `keypress` carries the character the key types, as its `charCode`, `keyCode` and `which`. */
+function keypressInit(init: KeyboardEventInit): KeyboardEventInit {
+  const charCode = init.key === 'Enter' ? 13 : ((init.key ?? '').codePointAt(0) ?? 0);
+  return { ...init, charCode, keyCode: charCode, which: charCode };
 }
 
 /**
@@ -521,7 +581,7 @@ export async function performPress(
   target.dispatchEvent(down);
   // Enter, and a character typed without Ctrl or ⌘, also send the older `keypress` some pages still listen to.
   if (key === 'Enter' || ([...init.key!].length === 1 && !init.ctrlKey && !init.metaKey)) {
-    target.dispatchEvent(new KeyboardEvent('keypress', init));
+    target.dispatchEvent(new KeyboardEvent('keypress', keypressInit(init)));
   }
   target.dispatchEvent(new KeyboardEvent('keyup', init));
   if (key === 'Enter' && !down.defaultPrevented && target instanceof HTMLInputElement && target.form) {

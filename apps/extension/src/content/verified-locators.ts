@@ -227,14 +227,41 @@ export function rankElement(el: Element, options: RankOptions = {}): RankedEleme
   // As Playwright's own generator: no role candidate for a presentational element.
   const modelRole = model.role(el);
   const role = modelRole === 'none' || modelRole === 'presentation' ? null : modelRole;
-  const structure = engine
-    ? engineStructure(el, attrs, role, headingLevel({ ...attrs, accessibleName }, role), engine)
-    : probedStructure(attrs, role);
+  const level = headingLevel({ ...attrs, accessibleName }, role);
+  const structure = engine ? engineStructure(el, attrs, role, level, engine) : probedStructure(attrs, role);
   const ranked = generateAlternatives(
-    { ...attrs, ...structure, selectorCounts: undefined, accessibleName },
+    { ...attrs, ...structure, selectorCounts: undefined, accessibleName: shortName(accessibleName) },
     { role, testIdAttribute },
   );
+  // An element with a role and no name (an unlabelled checkbox) still gets a candidate, ranked by its score among
+  // the others, which `checkLocators` narrows or keeps by position.
+  const bare = role && !accessibleName ? renderLocatorChain({ calls: [byRole(role, level)] }) : null;
+  if (bare && !ranked.some((r) => r.locator === bare)) {
+    ranked.push({ locator: bare, method: 'getByRole', args: level != null ? { role, level } : { role }, score: 12 });
+    ranked.sort((a, b) => b.score - a.score);
+  }
   return { attrs, accessibleName, role, ranked };
+}
+
+/** A name longer than this is a whole card's (a link around a title, a summary and tags): its start names it. */
+const LONG_NAME = 80;
+/** The most characters the start of a long name keeps. */
+const NAME_START = 60;
+
+/**
+ * The name a candidate names an element by: its whole name, or the words a
+ * long one starts with, which Playwright finds as well, matching a name as a
+ * substring; `checkLocators` checks it finds the element alone.
+ */
+function shortName(name: string | null): string | null {
+  if (!name || name.length <= LONG_NAME) return name;
+  let start = '';
+  for (const word of name.split(' ')) {
+    const next = start ? `${start} ${word}` : word;
+    if (next.length > NAME_START) break;
+    start = next;
+  }
+  return start || name.slice(0, NAME_START);
 }
 
 /**
