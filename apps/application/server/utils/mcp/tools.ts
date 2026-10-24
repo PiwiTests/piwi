@@ -138,8 +138,11 @@ import { getLocatorHealingBatch, getLocatorHealing } from '../locator-healing';
 import { predictDiffBreaks, toRunLocatorBreak } from '#shared/handlers/locator-breaks';
 import { getLocatorIndex } from '../locator-usages';
 
-/** The largest diff `predict_locator_breaks` reads, in characters. */
-const MAX_PREDICT_DIFF_CHARS = 2_000_000;
+/** The largest diff `predict_locator_breaks` and `get_impacted_tests` read, in characters. */
+const MAX_DIFF_CHARS = 2_000_000;
+/** Changed files `get_impacted_tests` lists, and tests per file. */
+const MAX_IMPACT_FILES = 50;
+const MAX_IMPACT_FILE_TESTS = 20;
 /** Breaks `predict_locator_breaks` returns, likely first. */
 const MAX_PREDICTED_BREAKS = 50;
 import { getPageDiff } from '../page-diff';
@@ -200,7 +203,15 @@ import { resolveMaxUploadBytes } from '../upload-limits';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { dropNulls } from './json';
 import { describePiwi, getReleaseNotes } from './about-piwi';
-import { COVERAGE_TOOL_HANDLERS, clusterTestsUniqueCoverage, uniqueCoverageSummary } from './coverage-tools';
+import {
+  COVERAGE_TOOL_HANDLERS,
+  clusterTestsUniqueCoverage,
+  compactCoverageJson,
+  uniqueCoverageSummary,
+} from './coverage-tools';
+import { parseImpactChanges, resolveImpact } from '../selection-impact';
+import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
+import { diffImpactInput } from '@piwitests/core/suspect-lines';
 
 // ── Token-optimization helpers ───────────────────────────────────────────────
 
@@ -1837,7 +1848,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     assertProject(ctx, projectId);
     const diff = typeof params.diff === 'string' ? params.diff : '';
     if (!diff.trim()) throw new Error('diff is required: the output of `git diff` for the change');
-    if (diff.length > MAX_PREDICT_DIFF_CHARS) throw new Error(`diff is over ${MAX_PREDICT_DIFF_CHARS} characters`);
+    if (diff.length > MAX_DIFF_CHARS) throw new Error(`diff is over ${MAX_DIFF_CHARS} characters`);
     const branch = typeof params.branch === 'string' && params.branch.trim() ? params.branch.trim() : null;
     const index = await getLocatorIndex(db, projectId, { branch });
     if (!index) return null;
@@ -2196,6 +2207,64 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         unselectedSample: analytics.coverage.unselectedSample,
       },
     };
+  },
+
+  // ── get_impacted_tests ──────────────────────────────────────────────────────
+  async get_impacted_tests(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const diff = typeof params.diff === 'string' ? params.diff : '';
+    if (diff.length > MAX_DIFF_CHARS) throw new Error(`diff is over ${MAX_DIFF_CHARS} characters`);
+    const listed = Array.isArray(params.changedFiles)
+      ? params.changedFiles.filter((f): f is string => typeof f === 'string')
+      : [];
+    const fromDiff = diff.trim() ? diffImpactInput(parseUnifiedDiff(diff)) : { changedFiles: [], changes: [] };
+    const changedFiles = [...new Set([...fromDiff.changedFiles, ...listed])];
+    if (changedFiles.length === 0) {
+      throw new Error('Pass diff (the output of `git diff --full-index <base>`) or changedFiles');
+    }
+    const resolved = await resolveImpact(db, projectId, changedFiles, {
+      format: selectionFormatParam(params.format),
+      changes: parseImpactChanges(fromDiff.changes),
+    });
+    const known = new Map(resolved.tests.map((t) => [t.testCaseId, t]));
+    const named = (testCaseId: number) => {
+      const test = known.get(testCaseId);
+      return test ? { title: test.title, filePath: test.filePath, line: test.line } : {};
+    };
+    const { impact } = resolved;
+    return compactCoverageJson({
+      matched: resolved.estimate.count,
+      estimatedDurationMs: resolved.estimate.totalDurationMs,
+      // A widened selection runs the whole suite, whose per-test command can be cut short.
+      command: impact.widened ? 'npx playwright test' : resolved.materialization.command || null,
+      widened: impact.widened || null,
+      warnings: resolved.warnings.map((w) => w.message),
+      changedFiles: impact.changedFiles,
+      lineLevelFiles: impact.lineLevelFiles,
+      files: impact.files.slice(0, MAX_IMPACT_FILES).map((f) => ({
+        filePath: f.filePath,
+        level: f.level,
+        testCount: f.testCount,
+        ruledOut: f.ruledOut ?? null,
+        fileLevelLines: f.fileLevelLines ?? null,
+        notRun: f.notRun ?? null,
+        tests: f.tests.slice(0, MAX_IMPACT_FILE_TESTS).map((t) => ({
+          testCaseId: t.testCaseId,
+          ...named(t.testCaseId),
+          via: t.via,
+          lines: t.lines ?? null,
+        })),
+      })),
+      moreFiles: impact.changedFiles > MAX_IMPACT_FILES ? impact.changedFiles - MAX_IMPACT_FILES : null,
+      // A widened selection runs the whole suite; the files name the tests the change reaches.
+      tests: impact.widened
+        ? null
+        : resolved.tests
+            .slice(0, 100)
+            .map((t) => ({ testCaseId: t.testCaseId, title: t.title, filePath: t.filePath, line: t.line })),
+      truncated: !impact.widened && resolved.tests.length > 100 ? resolved.tests.length - 100 : null,
+    });
   },
 
   // ── list_open_clusters ─────────────────────────────────────────────────────

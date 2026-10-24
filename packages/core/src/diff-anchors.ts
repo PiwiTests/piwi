@@ -41,11 +41,21 @@ export interface DiffFile {
   oldPath?: string;
   status: 'added' | 'deleted' | 'modified' | 'renamed';
   hunks: DiffHunk[];
+  /** The git blob id of the file before the change, as the `index` line gives it (abbreviated without `--full-index`). */
+  oldBlob?: string;
+  /** The git blob id of the file after the change, as the `index` line gives it. */
+  newBlob?: string;
 }
 
 const RENAME_FROM = `rename from `;
 const RENAME_TO = 'rename to ';
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+const INDEX_LINE = /^index ([0-9a-f]+)\.\.([0-9a-f]+)(?: |$)/i;
+
+/** A blob id of an `index` line, none for the all-zero id of a side that does not exist. */
+function blobOf(id: string): string | undefined {
+  return /^0+$/.test(id) ? undefined : id.toLowerCase();
+}
 
 function stripPrefix(path: string): string {
   const unquoted = path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path;
@@ -116,7 +126,14 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
       current().oldPath = line.slice(RENAME_FROM.length);
       current().status = 'renamed';
     } else if (line.startsWith(RENAME_TO)) current().path = line.slice(RENAME_TO.length);
-    else if (line.startsWith('new file mode')) current().status = 'added';
+    else if (INDEX_LINE.test(line)) {
+      const [, oldId, newId] = INDEX_LINE.exec(line)!;
+      const f = current();
+      const oldBlob = blobOf(oldId!);
+      const newBlob = blobOf(newId!);
+      if (oldBlob) f.oldBlob = oldBlob;
+      if (newBlob) f.newBlob = newBlob;
+    } else if (line.startsWith('new file mode')) current().status = 'added';
     else if (line.startsWith('deleted file mode')) current().status = 'deleted';
   }
   return files.filter((f) => f.path);

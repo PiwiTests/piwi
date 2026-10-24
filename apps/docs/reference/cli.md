@@ -180,7 +180,7 @@ is sent without its blob.
 
 ## `select` / `run` {#select-run}
 
-Resolve a saved [test selection](/features/test-selection) to the tests it matches. `select` prints the Playwright args (so you can compose them yourself); `run` executes `playwright test` with them. `run impact --base <ref>` runs the tests your working-tree diff impacts.
+Resolve a saved [test selection](/features/test-selection) to the tests it matches. `select` prints the Playwright args (so you can compose them yourself); `run` executes `playwright test` with them. `run impact --base <ref>` runs the tests your working-tree diff impacts, down to the tests that ran the changed lines when tests record coverage ([line level](/features/change-impact#line-level)).
 
 ```bash
 npx @piwitests/reporter select smoke

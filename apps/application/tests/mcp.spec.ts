@@ -126,6 +126,7 @@ test.describe.serial('MCP server', () => {
     expect(names).toContain('create_test_function');
     expect(names).toContain('create_issue');
     expect(names).toContain('analyze_selections');
+    expect(names).toContain('get_impacted_tests');
     // Every tool has a description and inputSchema
     for (const t of tools) {
       expect(t).toHaveProperty('description');

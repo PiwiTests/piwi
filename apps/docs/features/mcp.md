@@ -20,7 +20,10 @@ fix plan; [MCP tools](/reference/mcp-tools) lists every one. Two answer question
 `describe_piwi` reads the documentation bundled with the server, and `get_release_notes` the changelog up to the
 running version. Three read the [coverage](/features/coverage-insights) tests record: `get_coverage` (a file's lines
 and the tests behind them, or which target lines a test ran), `compare_coverage` (a failure against its last pass, or a
-test's runs against each other) and `get_coverage_loss` (what quarantining or deleting tests leaves uncovered). They return compact JSON, list tools page with `{ items, nextCursor }` (`get_project_test_catalog`
+test's runs against each other) and `get_coverage_loss` (what quarantining or deleting tests leaves uncovered).
+`get_impacted_tests` takes your working diff and returns the tests it impacts, narrowed to the tests that ran the
+changed lines where coverage was recorded ([line level](/features/change-impact#line-level)), with a command to run
+them. They return compact JSON, list tools page with `{ items, nextCursor }` (`get_project_test_catalog`
 with `offset`/`nextOffset`), and a tool that fails returns a normal result with `isError: true` and a readable
 message (one whose SCM or AI provider is not configured returns `{ error }`).
 
