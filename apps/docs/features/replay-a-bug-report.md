@@ -65,7 +65,8 @@ choose:
 - **Stop here**: it ends there, and says it could not reach the bug.
 
 A password, or a card number, its security code or a one-time code, is never in a report: Replay hands that step to
-you to type it. A hover recorded without any locator is skipped, since the next step points at its own element.
+you to type it. A click or a key the page never got is handed to you too: a browser dialog in front of the tab, such as
+Chrome's warning about a password found in a data breach after a login, takes the input. Close it, then do the step. A hover recorded without any locator is skipped, since the next step points at its own element.
 
 Under the answer, the panel lists the steps played by hand.
 

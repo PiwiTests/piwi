@@ -2667,6 +2667,10 @@
     "message": "Recording",
     "description": "Recorder bar shown on the page while a recording runs: its accessible name, read by screen readers, not shown."
   },
+  "record_hudMove": {
+    "message": "Move this bar to another corner",
+    "description": "The recording bar's icon button (its name and tooltip): moves the bar to the next corner of the page, when it covers something to click."
+  },
   "record_pause": {
     "message": "Pause",
     "description": "Recorder bar, while a recording runs: button that pauses the recording, so nothing done in the page is recorded until Resume. Short."
@@ -4098,6 +4102,10 @@
         "example": "div \"Loading\""
       }
     }
+  },
+  "replay_reasonInputBlocked": {
+    "message": "The page did not get this input: something in front of the tab took it, such as a browser dialog about a password. Close it, then do this step on the page.",
+    "description": "Why a replay step was handed to the person: the click or key sent with trusted input never reached the page, as when a browser dialog (a warning about a leaked password) is in front of the tab."
   },
   "replay_reasonOffscreen": {
     "message": "$element$ stays outside the visible part of the page.",

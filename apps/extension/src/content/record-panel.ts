@@ -17,6 +17,7 @@ import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { STEP_CSS, stepView } from '../shared/step-view.js';
 import { relayEvidence } from '../shared/bug-relay.js';
 import { classifyInputKind, isActionKind, lastActionOf, ownNavigation } from './record-capture.js';
+import { cornerInset, hudCorner, loadHudCorner, moveHudButton } from './hud-corner.js';
 import { isSensitiveField, rememberChangedFields } from './sensitive-fields.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
 import { parentElementOrShadowHost } from './engine-aria.js';
@@ -499,7 +500,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
 
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
-  host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
+  host.style.cssText = `all:initial;position:fixed;inset:${cornerInset(hudCorner())};z-index:2147483647;`;
   mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
 
@@ -579,7 +580,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     },
   );
   pauseBtn.setAttribute('aria-pressed', String(recordingPaused));
-  topRow.append(dot, title, pauseBtn, stopBtn);
+  topRow.append(dot, title, pauseBtn, stopBtn, moveHudButton(host));
   bar.appendChild(topRow);
 
   if (recordingPaused) {
@@ -1761,6 +1762,7 @@ async function initRecordPanel(restored: boolean): Promise<void> {
     ensureSessionAccess().then(getRecordingState),
     initI18n(),
     loadRecorderSettings(),
+    loadHudCorner(),
   ]);
   recordingPaused = state.paused === true;
   recordingStartedAt = state.startedAt;

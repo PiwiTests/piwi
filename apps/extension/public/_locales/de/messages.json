@@ -2227,6 +2227,9 @@
   "record_hudLabel": {
     "message": "Aufzeichnung"
   },
+  "record_hudMove": {
+    "message": "Diese Leiste in eine andere Ecke verschieben"
+  },
   "record_pause": {
     "message": "Pause"
   },
@@ -3434,6 +3437,9 @@
         "example": "div \"Loading\""
       }
     }
+  },
+  "replay_reasonInputBlocked": {
+    "message": "Die Seite hat diese Eingabe nicht erhalten: Etwas vor dem Tab hat sie abgefangen, etwa ein Dialog des Browsers zu einem Passwort. Schließen Sie ihn und führen Sie diesen Schritt dann auf der Seite aus."
   },
   "replay_reasonOffscreen": {
     "message": "$element$ bleibt außerhalb des sichtbaren Teils der Seite.",

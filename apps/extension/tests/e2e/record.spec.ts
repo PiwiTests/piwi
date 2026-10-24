@@ -832,6 +832,31 @@ test.describe('record-panel.js', () => {
     expect(await dotAnimation()).toBe('none');
   });
 
+  test('the bar moves to another corner when it covers the page, and stays there on the next page', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    const page = await recordingInProgress(context);
+    const hud = page.locator('#piwi-record-hud-host');
+    const corner = () =>
+      hud.evaluate((host) => {
+        const r = host.getBoundingClientRect();
+        return `${r.top < innerHeight / 2 ? 'top' : 'bottom'}-${r.left < innerWidth / 2 ? 'left' : 'right'}`;
+      });
+    expect(await corner()).toBe('bottom-right');
+    const move = hud.getByRole('button', { name: 'Move this bar to another corner' });
+    await move.click();
+    expect(await corner()).toBe('bottom-left');
+    await move.click();
+    expect(await corner()).toBe('top-left');
+    // Moving it is no step of the recording.
+    expect(normalizeSteps(await readStoredEvents(page)).map((s) => s.action)).toEqual(['goto']);
+    await page.reload();
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    expect(await corner()).toBe('top-left');
+  });
+
   test('a page restored from the back/forward cache records that the flow came back to it', async ({ context }) => {
     const page = await recordingInProgress(context);
     const navigations = async () => (await readStoredEvents(page)).filter((e) => e.kind === 'navigate').length;

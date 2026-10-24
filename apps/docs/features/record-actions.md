@@ -14,7 +14,9 @@ hover shows, and the browser's **Back**, **Forward** and reload as a step to the
 element is recorded with up to five locators that find it alone, ranked, so a replay has others to try when one no
 longer holds. **Check an element** and **Check the address** add an `expect(…)` of what the page shows
 now. **Pause** stops capturing without ending the recording, on every page and tab of it, so signing in or closing a
-banner stays out of the spec, until **Resume**. **Stop** opens the review: the **Test title**, filled with the first
+banner stays out of the spec, until **Resume**. The bar sits in a corner of the page; when it covers something you
+need to click, its four-arrow button (**Move this bar to another corner**) moves it to the next corner, where it
+stays on every page. **Stop** opens the review: the **Test title**, filled with the first
 page's own title (or, left empty, the first step in words), names the spec's test and the steps file; **Copy as
 TypeScript** for a runnable spec that waits for each page it opens,
 **Download steps** for a [steps file](/reference/steps-format) to share or render with

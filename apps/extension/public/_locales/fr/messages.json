@@ -2227,6 +2227,9 @@
   "record_hudLabel": {
     "message": "Enregistrement en cours"
   },
+  "record_hudMove": {
+    "message": "Déplacer cette barre dans un autre coin"
+  },
   "record_pause": {
     "message": "Pause"
   },
@@ -3434,6 +3437,9 @@
         "example": "div \"Loading\""
       }
     }
+  },
+  "replay_reasonInputBlocked": {
+    "message": "La page n’a pas reçu cette saisie : quelque chose devant l’onglet l’a prise, comme une boîte de dialogue du navigateur à propos d’un mot de passe. Fermez-la, puis faites cette étape sur la page."
   },
   "replay_reasonOffscreen": {
     "message": "$element$ reste en dehors de la partie visible de la page.",

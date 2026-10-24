@@ -170,6 +170,36 @@ function sendAside(ops: InputOp[]): Promise<void> {
   return withOwnSurfacesAside(() => send(ops));
 }
 
+/** How long a press sent through the debugging protocol may take to reach the page before the step says it did not. */
+const INPUT_REACH_MS = 1_000;
+
+/**
+ * Sends `ops` aside of the extension's surfaces, and checks the page heard
+ * them: one of `types` reaches the window of `element`'s document. While a
+ * browser dialog is in front of the tab (Chrome's warning about a password
+ * found in a data breach, after a login), the tab takes no input, and the
+ * step would pass without anything done.
+ */
+async function sendHeard(element: Element, ops: InputOp[], types: readonly string[]): Promise<void> {
+  const view = element.ownerDocument.defaultView ?? window;
+  let heard = false;
+  const hear = (e: Event) => {
+    if (e.isTrusted) heard = true;
+  };
+  for (const type of types) view.addEventListener(type, hear, { capture: true });
+  try {
+    await sendAside(ops);
+    const deadline = Date.now() + INPUT_REACH_MS;
+    while (!heard && Date.now() < deadline) await wait(20);
+  } finally {
+    for (const type of types) view.removeEventListener(type, hear, { capture: true });
+  }
+  if (!heard) throw new NotActionable(t('replay_reasonInputBlocked'));
+}
+
+const POINTER_HEARD = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+const KEY_HEARD = ['keydown', 'keyup'];
+
 /**
  * The fake cursor glides to the point in the top viewport, where the real
  * pointer then goes; with `press`, it shows its press there before the point
@@ -211,7 +241,7 @@ export async function trustedClick(
 ): Promise<void> {
   const point = await glide(element, cursor, caption, true, true);
   cursor.outline(null);
-  await sendAside([{ op: 'click', ...point, count }]);
+  await sendHeard(element, [{ op: 'click', ...point, count }], POINTER_HEARD);
 }
 
 export async function trustedCheck(
@@ -296,7 +326,28 @@ export async function trustedPress(
       element.focus({ preventScroll: true });
     }
   }
-  await send([{ op: 'press', combo: key }]);
+  const ops: InputOp[] = [{ op: 'press', combo: key }];
+  const heardIn = element ?? focusedElement();
+  // Focus in a frame of another origin: the key goes there, where this script cannot hear it.
+  if (heardIn) await sendHeard(heardIn, ops, KEY_HEARD);
+  else await send(ops);
+}
+
+/** The element a key with no element goes to, through the frames of this origin; null in a frame of another. */
+function focusedElement(): Element | null {
+  let focused: Element | null = document.activeElement ?? document.documentElement;
+  // By tag: a frame's elements come from its own window, which `instanceof` does not know.
+  while (focused && (focused.tagName === 'IFRAME' || focused.tagName === 'FRAME')) {
+    let inner: Document | null = null;
+    try {
+      inner = (focused as HTMLIFrameElement).contentDocument;
+    } catch {
+      inner = null;
+    }
+    if (!inner) return null;
+    focused = inner.activeElement ?? inner.documentElement;
+  }
+  return focused;
 }
 
 /** A `<select>`: the pointer goes over it, and the option is chosen as Playwright's `selectOption` chooses it. */

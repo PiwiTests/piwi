@@ -2227,6 +2227,9 @@
   "record_hudLabel": {
     "message": "Grabación"
   },
+  "record_hudMove": {
+    "message": "Mover esta barra a otra esquina"
+  },
   "record_pause": {
     "message": "Pausa"
   },
@@ -3434,6 +3437,9 @@
         "example": "div \"Loading\""
       }
     }
+  },
+  "replay_reasonInputBlocked": {
+    "message": "La página no recibió esta entrada: algo delante de la pestaña la tomó, como un cuadro de diálogo del navegador sobre una contraseña. Ciérrelo y luego haga este paso en la página."
   },
   "replay_reasonOffscreen": {
     "message": "$element$ queda fuera de la parte visible de la página.",

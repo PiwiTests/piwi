@@ -219,7 +219,12 @@ value set as Playwright sets them. The replay's panel lets the pointer through w
 pointer and focus events from the page (a click on Next leaves the page's focus and its open menu as they are); a key
 press with no element goes to the page's element that last had focus. Input lost before it reached the page (the bar
 cancelled, a command refused) replays the step with the page's own events (`replay-actions.ts`); lost after part of it did (the button
-went down, not up), the step fails with `replay_reasonInputInterrupted` rather than being done twice; each step result keeps its `driver`, and
+went down, not up), the step fails with `replay_reasonInputInterrupted` rather than being done twice. A click or a key
+the browser sent but the page never heard (`sendHeard`: none of its pointer, mouse or key events reached the window of
+the element's document within `INPUT_REACH_MS`) goes to the person (`replay_reasonInputBlocked`): a tab-modal browser
+dialog, such as Chrome's warning about a password found in a data breach after a login, makes the tab ignore input,
+and the step would otherwise pass with nothing done. `trusted-replay.spec.ts` stands one in with
+`Input.setIgnoreInputEvents`; each step result keeps its `driver`, and
 the panels show it. A file step asks the developer for the file in the replay's panel (a report names files, never
 carries them, and `DOM.setFileInputFiles` needs a path on disk), or lets them skip it (`skipped`); the file chooser a
 click opens is intercepted while a replay holds the tab (`Page.setInterceptFileChooserDialog`).
@@ -656,6 +661,15 @@ content, which never leaves the page; a trusted `dblclick` replaces the two clic
 HTML drag and drop is recorded from `dragstart` and `drop` as `dragTo`, with the element dropped on as `dropTarget`. A
 drag done with pointer events alone (a sortable list, a slider) is not recorded as a drag.
 `record.spec.ts` checks all three, and that a file's content is not stored.
+
+## The recording bar's corner
+
+Both bars (a test recording's, `renderHud` in `record-panel.ts`, and a bug report's, `renderBugHud`) sit in a corner
+of the viewport, bottom right by default, over the page: a checkout bar or a form's last button can be under it. Its
+**Move** button (`moveHudButton`, `hud-corner.ts`; `data-piwi-control="hud-move"`) moves it to the next corner, kept
+in `chrome.storage.local` (`piwiHudCorner`) for every page and later recording, read as the recorder attaches
+(`loadHudCorner`). The bug bar has it last in its DOM, drawn in its top right corner, so its actions come first from
+the keyboard (`bug-report.spec.ts` reaches them by Tab).
 
 ## What a click lands on, and pages reached without one
 
