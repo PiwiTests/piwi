@@ -81,7 +81,14 @@ describe('installSkills', () => {
   });
 
   it('is idempotent: an unchanged reinstall reports already, a divergent one is skipped without --force', () => {
-    const opts = { templatesDir: TEMPLATES, root, skillsDir: '.claude/skills', slugs: [SETUP_SKILL], force: false, dryRun: false };
+    const opts = {
+      templatesDir: TEMPLATES,
+      root,
+      skillsDir: '.claude/skills',
+      slugs: [SETUP_SKILL],
+      force: false,
+      dryRun: false,
+    };
     installSkills(opts);
     expect(installSkills(opts)[0].status).toBe('already');
 

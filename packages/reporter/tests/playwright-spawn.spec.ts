@@ -32,7 +32,7 @@ describe('playwrightInvocation', () => {
     });
   });
 
-  it("starts npx through its JavaScript entry on Windows, and nothing it cannot start without a shell", () => {
+  it('starts npx through its JavaScript entry on Windows, and nothing it cannot start without a shell', () => {
     const cwd = tempDir();
     const npx = resolveNpmEntry('npx');
     expect(playwrightInvocation(['x'], { cwd, platform: 'win32' })).toEqual(

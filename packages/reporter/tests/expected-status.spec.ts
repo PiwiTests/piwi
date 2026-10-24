@@ -1,6 +1,15 @@
 import { describe, it, afterEach, expect } from 'vitest';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
-import { startServer, jsonRes, textRes, fakeConfig, fakeSuite, fakeTestCase, fakeResult, type FakeServer } from './_helpers.js';
+import {
+  startServer,
+  jsonRes,
+  textRes,
+  fakeConfig,
+  fakeSuite,
+  fakeTestCase,
+  fakeResult,
+  type FakeServer,
+} from './_helpers.js';
 
 describe('expectedStatus on the wire', () => {
   let server: FakeServer | undefined;

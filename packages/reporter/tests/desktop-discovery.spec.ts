@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
 import {
   applyOptionsToEnv,
@@ -22,6 +23,9 @@ const CI_ENV = [
   'TRAVIS',
   'TF_BUILD',
   'BITBUCKET_BUILD_NUMBER',
+  'TEAMCITY_VERSION',
+  'CODEBUILD_BUILD_ID',
+  'bamboo_buildKey',
 ];
 const TOUCHED_ENV = [
   'PIWI_DESKTOP_CONFIG',
@@ -79,6 +83,15 @@ describe('desktop discovery', () => {
       expect(readDesktopConfig(configPath)).toBe(null);
 
       publishDesktopConfig({ url: '', token: DESKTOP_TOKEN });
+      expect(readDesktopConfig(configPath)).toBe(null);
+    });
+
+    it('reads a file whose app is running, and ignores one a crash left behind', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN, pid: process.pid });
+      expect(readDesktopConfig(configPath)).toEqual({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+
+      const exited = spawnSync(process.execPath, ['-e', '']).pid;
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN, pid: exited });
       expect(readDesktopConfig(configPath)).toBe(null);
     });
 
@@ -194,9 +207,9 @@ describe('desktop discovery', () => {
       expect(usedDesktopDiscovery()).toBe(false);
     });
 
-    it('reads CI=false as a local run', () => {
+    it.each(['false', 'False', '0'])('reads CI=%s as a local run', (value) => {
       publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
-      process.env.CI = 'false';
+      process.env.CI = value;
       expect(resolveOptions({ serverUrl: TEAM_URL, desktopApp: 'prefer' }).serverUrl).toBe(DESKTOP_URL);
     });
 

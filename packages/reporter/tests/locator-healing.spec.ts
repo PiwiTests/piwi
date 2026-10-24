@@ -837,12 +837,17 @@ describe('suggestLocatorsFromAria', () => {
 });
 
 describe('suggestLocatorsFromAria — heading level narrowing', () => {
-  const aria = ['- heading "Overview" [level=1]', '- heading "Pricing" [level=2]', '- heading "Contact" [level=2]'].join(
-    '\n',
-  );
+  const aria = [
+    '- heading "Overview" [level=1]',
+    '- heading "Pricing" [level=2]',
+    '- heading "Contact" [level=2]',
+  ].join('\n');
 
   it('a totally renamed lone h1 among h2s is suggested via its level', () => {
-    const s = suggestLocatorsFromAria({ method: 'getByRole', args: ['heading', { name: 'Dashboard', level: 1 }] }, aria);
+    const s = suggestLocatorsFromAria(
+      { method: 'getByRole', args: ['heading', { name: 'Dashboard', level: 1 }] },
+      aria,
+    );
     expect(s).not.toBeNull();
     expect(s!.suggestions[0]).toBe("getByRole('heading', { name: 'Overview', level: 1 })");
   });

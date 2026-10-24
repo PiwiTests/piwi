@@ -195,7 +195,14 @@ export function fakeResult(opts: {
 
 /** A fake Playwright `FullConfig`. */
 export function fakeConfig(
-  opts: { version?: string; shard?: any; workers?: number; projects?: any[]; configFile?: string; rootDir?: string } = {},
+  opts: {
+    version?: string;
+    shard?: any;
+    workers?: number;
+    projects?: any[];
+    configFile?: string;
+    rootDir?: string;
+  } = {},
 ): any {
   return {
     configFile: opts.configFile,

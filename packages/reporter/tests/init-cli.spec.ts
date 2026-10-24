@@ -102,22 +102,54 @@ describe('runInit', () => {
     const config = plan.steps.find((step: { step: string }) => step.step === 'config');
     expect(config.status).toBe('manual');
     expect(config.detail).toContain("desktopApp: 'prefer'");
+
+    // A config already set to another mode still needs the change.
+    const configPath = path.join(root, 'playwright.config.ts');
+    fs.writeFileSync(
+      configPath,
+      fs.readFileSync(configPath, 'utf-8').replace('projectName:', "desktopApp: 'off',\n    projectName:"),
+    );
+    log.mockClear();
+    await runInit(['--no-install', '--no-skills', '--desktop-app', 'prefer', '--json'], EMPTY_ENV, root);
+    const again = JSON.parse(String(log.mock.calls[0]?.[0])).steps.find(
+      (step: { step: string }) => step.step === 'config',
+    );
+    expect(again.status).toBe('manual');
   });
 
-  it('writes no server URL with --no-server-url, so the reporter finds the desktop app', async () => {
+  it('writes no server URL and no key with --no-server-url, so the reporter finds the desktop app', async () => {
     scaffoldProject();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    const env = { PIWI_DASHBOARD_URL: 'https://piwi.example.com' } as NodeJS.ProcessEnv;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const env = { PIWI_DASHBOARD_URL: 'https://piwi.example.com', PIWI_API_KEY: 'pd_team' } as NodeJS.ProcessEnv;
     await runInit(['--no-install', '--no-skills', '--no-server-url', '--api-key', 'pd_secret'], env, root);
     const config = fs.readFileSync(path.join(root, 'playwright.config.ts'), 'utf-8');
     expect(config).toContain('wrapConfig(');
     expect(config).not.toContain('serverUrl');
-    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toBe('PIWI_API_KEY=pd_secret\n');
+    // A key with no URL would keep the reporter from adopting the desktop app.
+    expect(fs.existsSync(path.join(root, '.env'))).toBe(false);
+    expect(log.mock.calls.flat().join('\n')).not.toContain('create an API key');
   });
 
-  it('refuses an unknown --desktop-app mode', async () => {
+  it('keeps the chosen options in the manual step for a config it cannot wrap', async () => {
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'app' }));
+    fs.writeFileSync(path.join(root, 'playwright.config.ts'), 'module.exports = { testDir: "./tests" }\n');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runInit(
+      ['--no-install', '--no-skills', '--server-url', 'https://piwi.example.com', '--desktop-app', 'prefer', '--json'],
+      EMPTY_ENV,
+      root,
+    );
+    const plan = JSON.parse(String(log.mock.calls[0]?.[0]));
+    const config = plan.steps.find((step: { step: string }) => step.step === 'config');
+    expect(config.status).toBe('manual');
+    expect(config.detail).toContain("serverUrl: 'https://piwi.example.com'");
+    expect(config.detail).toContain("desktopApp: 'prefer'");
+  });
+
+  it('refuses an unknown or missing --desktop-app mode', async () => {
     scaffoldProject();
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await runInit(['--no-install', '--desktop-app', '--json'], EMPTY_ENV, root)).toBe(1);
     expect(await runInit(['--no-install', '--desktop-app', 'always'], EMPTY_ENV, root)).toBe(1);
     const config = fs.readFileSync(path.join(root, 'playwright.config.ts'), 'utf-8');
     expect(config).not.toContain('wrapConfig');

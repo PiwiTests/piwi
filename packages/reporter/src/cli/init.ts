@@ -112,8 +112,9 @@ export function parseInitArgs(argv: string[], env: NodeJS.ProcessEnv, cwd: strin
       ? ''
       : (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? DEFAULT_SERVER_URL).replace(/\/$/, ''),
     projectName: readOption(argv, '--project') ?? detected.suggestedProjectName,
-    desktopApp: readOption(argv, '--desktop-app') ?? null,
-    apiKey: readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null,
+    desktopApp: argv.includes('--desktop-app') ? (readOption(argv, '--desktop-app') ?? '') : null,
+    // The desktop app needs no key, and a key with no URL keeps the reporter from finding it.
+    apiKey: argv.includes('--no-server-url') ? null : (readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null),
     skillsDir: readOption(argv, '--skills-dir') ?? DEFAULT_SKILLS_DIR,
     skillSlugs: resolveSkillSlugs(readOption(argv, '--skills')),
     install: !argv.includes('--no-install'),
@@ -188,7 +189,11 @@ function stepConfig(project: ProjectShape, opts: InitOptions): StepResult {
     desktopApp,
   });
   if (edit.status === 'updated' && !opts.dryRun) fs.writeFileSync(project.configPath, edit.text);
-  if (edit.status === 'already' && desktopApp && !/\bdesktopApp\s*:/.test(source)) {
+  if (
+    edit.status === 'already' &&
+    desktopApp &&
+    !new RegExp(`\\bdesktopApp\\s*:\\s*['"\`]${desktopApp}['"\`]`).test(source)
+  ) {
     return {
       step,
       file: rel,
@@ -278,7 +283,7 @@ function stepEnv(project: ProjectShape, opts: InitOptions): StepResult[] {
 /** Guidance the user acts on after the mechanical steps, tailored to what happened. */
 function nextSteps(opts: InitOptions, steps: StepResult[]): string[] {
   const out: string[] = [];
-  if (!opts.apiKey) {
+  if (!opts.apiKey && opts.serverUrl) {
     out.push(
       'If your dashboard has authentication on, create an API key (Settings → Account → API keys), ' +
         'put it in .env as PIWI_API_KEY, and keep .env out of git.',

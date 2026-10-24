@@ -1,6 +1,7 @@
 /**
  * True when the environment is a CI job: one of the providers `collectCiInfo`
- * names, or any system that sets `CI`.
+ * names, a provider that sets no `CI` (TeamCity, AWS CodeBuild, Bamboo), or any
+ * system that sets `CI` to anything but `false` or `0`.
  */
 export function detectCi(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
   return Boolean(
@@ -11,7 +12,10 @@ export function detectCi(env: NodeJS.ProcessEnv | Record<string, string | undefi
     env.TRAVIS ||
     env.TF_BUILD ||
     env.BITBUCKET_BUILD_NUMBER ||
-    (env.CI && env.CI !== 'false' && env.CI !== '0'),
+    env.TEAMCITY_VERSION ||
+    env.CODEBUILD_BUILD_ID ||
+    env.bamboo_buildKey ||
+    (env.CI && env.CI.toLowerCase() !== 'false' && env.CI !== '0'),
   );
 }
 

@@ -1,2 +1,91 @@
-function e(e){let t=document.createElement(`h1`);t.textContent=`Shop`,e.prepend(t)}function t(e){return`$${e.toFixed(2)}`}function n(e){let n=document.createElement(`p`);n.id=`total`,n.textContent=`Cart ${t(4.5)}`,e.append(n)}var r=Date.now();function i(e){return[e,Date.now()-r]}globalThis.piwiTrack=i;var a=(function(){let e=typeof document<`u`&&document.createElement(`link`).relList;return e&&e.supports&&e.supports(`modulepreload`)?`modulepreload`:`preload`})(),o=function(e){return`/vite/`+e},s={},c=function(e,t,n){let r=Promise.resolve();if(t&&t.length>0){let e=document.getElementsByTagName(`link`),i=document.querySelector(`meta[property=csp-nonce]`),c=i?.nonce||i?.getAttribute(`nonce`);function l(e){return Promise.all(e.map(e=>Promise.resolve(e).then(e=>({status:`fulfilled`,value:e}),e=>({status:`rejected`,reason:e}))))}function u(e){return import.meta.resolve?import.meta.resolve(e):new URL(e,import.meta.url).href}r=l(t.map(t=>{if(t=o(t,n),t=u(t),t in s)return;s[t]=!0;let r=t.endsWith(`.css`);for(let n=e.length-1;n>=0;n--){let i=e[n];if(i.href===t&&(!r||i.rel===`stylesheet`))return}let i=document.createElement(`link`);if(i.rel=r?`stylesheet`:a,r||(i.as=`script`),i.crossOrigin=``,i.href=t,c&&i.setAttribute(`nonce`,c),document.head.appendChild(i),r)return new Promise((e,n)=>{i.addEventListener(`load`,e),i.addEventListener(`error`,()=>n(Error(`Unable to preload CSS for ${t}`)))})}).filter(e=>e!==void 0))}function i(e){let t=new Event(`vite:preloadError`,{cancelable:!0});if(t.payload=e,window.dispatchEvent(t),!t.defaultPrevented)throw e}return r.then(t=>{for(let e of t||[])e.status===`rejected`&&i(e.reason);return e().catch(i)})};e(document.body),document.querySelector(`#cart`).addEventListener(`click`,()=>n(document.body)),document.querySelector(`#reports`).addEventListener(`click`,async()=>{let{renderReports:e}=await c(async()=>{let{renderReports:e}=await import(`./reports-CJNx162S.js`);return{renderReports:e}},[]);e(document.body)});export{t};
+function e(e) {
+  let t = document.createElement(`h1`);
+  ((t.textContent = `Shop`), e.prepend(t));
+}
+function t(e) {
+  return `$${e.toFixed(2)}`;
+}
+function n(e) {
+  let n = document.createElement(`p`);
+  ((n.id = `total`), (n.textContent = `Cart ${t(4.5)}`), e.append(n));
+}
+var r = Date.now();
+function i(e) {
+  return [e, Date.now() - r];
+}
+globalThis.piwiTrack = i;
+var a = (function () {
+    let e = typeof document < `u` && document.createElement(`link`).relList;
+    return e && e.supports && e.supports(`modulepreload`) ? `modulepreload` : `preload`;
+  })(),
+  o = function (e) {
+    return `/vite/` + e;
+  },
+  s = {},
+  c = function (e, t, n) {
+    let r = Promise.resolve();
+    if (t && t.length > 0) {
+      let e = document.getElementsByTagName(`link`),
+        i = document.querySelector(`meta[property=csp-nonce]`),
+        c = i?.nonce || i?.getAttribute(`nonce`);
+      function l(e) {
+        return Promise.all(
+          e.map((e) =>
+            Promise.resolve(e).then(
+              (e) => ({ status: `fulfilled`, value: e }),
+              (e) => ({ status: `rejected`, reason: e }),
+            ),
+          ),
+        );
+      }
+      function u(e) {
+        return import.meta.resolve ? import.meta.resolve(e) : new URL(e, import.meta.url).href;
+      }
+      r = l(
+        t
+          .map((t) => {
+            if (((t = o(t, n)), (t = u(t)), t in s)) return;
+            s[t] = !0;
+            let r = t.endsWith(`.css`);
+            for (let n = e.length - 1; n >= 0; n--) {
+              let i = e[n];
+              if (i.href === t && (!r || i.rel === `stylesheet`)) return;
+            }
+            let i = document.createElement(`link`);
+            if (
+              ((i.rel = r ? `stylesheet` : a),
+              r || (i.as = `script`),
+              (i.crossOrigin = ``),
+              (i.href = t),
+              c && i.setAttribute(`nonce`, c),
+              document.head.appendChild(i),
+              r)
+            )
+              return new Promise((e, n) => {
+                (i.addEventListener(`load`, e),
+                  i.addEventListener(`error`, () => n(Error(`Unable to preload CSS for ${t}`))));
+              });
+          })
+          .filter((e) => e !== void 0),
+      );
+    }
+    function i(e) {
+      let t = new Event(`vite:preloadError`, { cancelable: !0 });
+      if (((t.payload = e), window.dispatchEvent(t), !t.defaultPrevented)) throw e;
+    }
+    return r.then((t) => {
+      for (let e of t || []) e.status === `rejected` && i(e.reason);
+      return e().catch(i);
+    });
+  };
+(e(document.body),
+  document.querySelector(`#cart`).addEventListener(`click`, () => n(document.body)),
+  document.querySelector(`#reports`).addEventListener(`click`, async () => {
+    let { renderReports: e } = await c(async () => {
+      let { renderReports: e } = await import(`./reports-CJNx162S.js`);
+      return { renderReports: e };
+    }, []);
+    e(document.body);
+  }));
+export { t };
 //# sourceMappingURL=index-V9kYtUO2.js.map

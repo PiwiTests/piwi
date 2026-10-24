@@ -279,11 +279,15 @@ describe('the run origin', () => {
   it('is local outside CI, with nothing set', () => {
     expect(resolveRunOrigin({})).toEqual({ kind: 'local' });
     expect(detectCi({ CI: 'false' })).toBe(false);
+    expect(detectCi({ CI: 'False' })).toBe(false);
   });
 
   it('is ci when a CI provider is detected', () => {
     expect(resolveRunOrigin({ GITHUB_ACTIONS: 'true' })).toEqual({ kind: 'ci' });
     expect(resolveRunOrigin({ BITBUCKET_BUILD_NUMBER: '3' })).toEqual({ kind: 'ci' });
+    expect(resolveRunOrigin({ TEAMCITY_VERSION: '2026.1' })).toEqual({ kind: 'ci' });
+    expect(resolveRunOrigin({ CODEBUILD_BUILD_ID: 'build:1' })).toEqual({ kind: 'ci' });
+    expect(resolveRunOrigin({ bamboo_buildKey: 'PROJ-PLAN-JOB1' })).toEqual({ kind: 'ci' });
     expect(resolveRunOrigin({ CI: 'true' })).toEqual({ kind: 'ci' });
   });
 

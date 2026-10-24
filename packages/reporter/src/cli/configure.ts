@@ -27,10 +27,15 @@ export interface ConfigEdit {
 
 const REPORTER_IMPORT = "import { wrapConfig } from '@piwitests/reporter'";
 
-const MANUAL_HINT =
-  'Could not find `export default defineConfig(...)`. Wrap your exported config by hand: ' +
-  "import { wrapConfig } from '@piwitests/reporter', then " +
-  'export default wrapConfig(defineConfig({ ... }), { serverUrl, projectName }).';
+/** The manual step for a config `wrapPlaywrightConfig` cannot rewrite, with the options it would have written. */
+function manualHint(opts: WrapOptions): string {
+  const options = optionsLiteral(opts).replace(/\s+/g, ' ');
+  return (
+    'Could not find `export default defineConfig(...)`. Wrap your exported config by hand: ' +
+    "import { wrapConfig } from '@piwitests/reporter', then " +
+    `export default wrapConfig(defineConfig({ ... }), ${options}).`
+  );
+}
 
 /** Single-quote a value for embedding in a config literal. */
 const quote = quoteJsString;
@@ -114,12 +119,12 @@ export function wrapPlaywrightConfig(source: string, opts: WrapOptions): ConfigE
   }
 
   const match = /export\s+default\s+defineConfig\s*\(/.exec(source);
-  if (!match) return { text: source, status: 'manual', detail: MANUAL_HINT };
+  if (!match) return { text: source, status: 'manual', detail: manualHint(opts) };
 
   const openParen = match.index + match[0].length - 1;
   const closeParen = matchClosingParen(source, openParen);
   const callStart = source.indexOf('defineConfig', match.index);
-  if (closeParen === -1 || callStart === -1) return { text: source, status: 'manual', detail: MANUAL_HINT };
+  if (closeParen === -1 || callStart === -1) return { text: source, status: 'manual', detail: manualHint(opts) };
 
   const callExpr = source.slice(callStart, closeParen + 1);
   let before = withReporterImport(source.slice(0, match.index));

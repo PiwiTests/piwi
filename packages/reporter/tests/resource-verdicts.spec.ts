@@ -59,11 +59,22 @@ describe('buildResourceReport', () => {
       censuses: [
         census(1000, test('t1'), {
           born: [birth(1, 'context'), birth(2, 'page', { parent: 1, site: `${SPEC}:5` })],
-          open: [{ id: 1, pages: 1 }, { id: 2, used: true }],
+          open: [
+            { id: 1, pages: 1 },
+            { id: 2, used: true },
+          ],
         }),
-        census(4000, test('t2'), { open: [{ id: 1, pages: 1 }, { id: 2, used: true }] }),
+        census(4000, test('t2'), {
+          open: [
+            { id: 1, pages: 1 },
+            { id: 2, used: true },
+          ],
+        }),
         census(5000, null, {
-          closed: [close(2, { at: 5000, phase: 'worker', test: null, used: true }), close(1, { at: 5000, phase: 'worker', test: null })],
+          closed: [
+            close(2, { at: 5000, phase: 'worker', test: null, used: true }),
+            close(1, { at: 5000, phase: 'worker', test: null }),
+          ],
         }),
       ],
     });
@@ -85,10 +96,17 @@ describe('buildResourceReport', () => {
   it('does not judge what a failed test left open, nor the pages it never got to use', () => {
     const report = buildResourceReport({
       censuses: [
-        census(1000, { ...test('t1'), failed: true }, {
-          born: [birth(1, 'context'), birth(2, 'page', { parent: 1 })],
-          open: [{ id: 1, pages: 1 }, { id: 2, used: false }],
-        }),
+        census(
+          1000,
+          { ...test('t1'), failed: true },
+          {
+            born: [birth(1, 'context'), birth(2, 'page', { parent: 1 })],
+            open: [
+              { id: 1, pages: 1 },
+              { id: 2, used: false },
+            ],
+          },
+        ),
         census(1100, null, {
           closed: [close(2, { at: 1100, phase: 'worker', used: false }), close(1, { at: 1100, phase: 'worker' })],
         }),
@@ -102,15 +120,28 @@ describe('buildResourceReport', () => {
       censuses: [
         census(1000, test('t1'), {
           born: [birth(1, 'context'), birth(2, 'page', { parent: 1 })],
-          open: [{ id: 1, pages: 1 }, { id: 2, used: true, main: { cpuMs: 40, heapMb: 2, nodes: 10, listeners: 0 } }],
+          open: [
+            { id: 1, pages: 1 },
+            { id: 2, used: true, main: { cpuMs: 40, heapMb: 2, nodes: 10, listeners: 0 } },
+          ],
         }),
         census(3000, test('t2'), {
-          open: [{ id: 1, pages: 1 }, { id: 2, used: true, main: { cpuMs: 1540, heapMb: 2, nodes: 10, listeners: 0 } }],
+          open: [
+            { id: 1, pages: 1 },
+            { id: 2, used: true, main: { cpuMs: 1540, heapMb: 2, nodes: 10, listeners: 0 } },
+          ],
         }),
-        census(3100, null, { closed: [close(2, { at: 3100, phase: 'worker', test: null }), close(1, { at: 3100, phase: 'worker', test: null })] }),
+        census(3100, null, {
+          closed: [
+            close(2, { at: 3100, phase: 'worker', test: null }),
+            close(1, { at: 3100, phase: 'worker', test: null }),
+          ],
+        }),
       ],
     });
-    expect(leaks(report.findings)).toEqual([expect.objectContaining({ kind: 'context', pages: 1, afterTestCpuMs: 1500 })]);
+    expect(leaks(report.findings)).toEqual([
+      expect.objectContaining({ kind: 'context', pages: 1, afterTestCpuMs: 1500 }),
+    ]);
     expect(formatResourceSummary(report, 'report')[1]).toContain('· 1.5 s of page CPU after its test');
   });
 
@@ -276,10 +307,23 @@ describe('buildResourceReport', () => {
         census(1000, test('t2', OTHER_SPEC), {
           worker: 1,
           born: [
-            birth(1, 'context', { site: `${OTHER_SPEC}:3`, test: test('t2', OTHER_SPEC), fixture: { title: 'ctx', location: null, worker: true } }),
-            birth(2, 'page', { parent: 1, site: `${OTHER_SPEC}:7`, test: test('t2', OTHER_SPEC), opener: 9, trigger: 'locator.click' }),
+            birth(1, 'context', {
+              site: `${OTHER_SPEC}:3`,
+              test: test('t2', OTHER_SPEC),
+              fixture: { title: 'ctx', location: null, worker: true },
+            }),
+            birth(2, 'page', {
+              parent: 1,
+              site: `${OTHER_SPEC}:7`,
+              test: test('t2', OTHER_SPEC),
+              opener: 9,
+              trigger: 'locator.click',
+            }),
           ],
-          open: [{ id: 1, pages: 1 }, { id: 2, used: true }],
+          open: [
+            { id: 1, pages: 1 },
+            { id: 2, used: true },
+          ],
         }),
         census(2000, null, { worker: 0 }),
         census(2000, null, { worker: 1 }),
@@ -297,7 +341,10 @@ describe('buildResourceReport', () => {
         census(1000, test('t1'), { born: [birth(1, 'context')], open: [{ id: 1, pages: 0 }] }),
         census(2000, test('t2'), {
           born: [birth(2, 'context', { test: test('t2') })],
-          open: [{ id: 1, pages: 0 }, { id: 2, pages: 0 }],
+          open: [
+            { id: 1, pages: 0 },
+            { id: 2, pages: 0 },
+          ],
         }),
         census(9000, null, {}),
       ],
@@ -357,12 +404,33 @@ describe('buildResourceReport', () => {
     const report = buildResourceReport({
       censuses: [
         census(1000, test('t1'), {
-          born: [birth(1, 'context', { fixture: shared, site: 'tests/fixtures.ts:31' }), birth(2, 'context', { fixture: shared })],
-          open: [{ id: 1, pages: 1 }, { id: 2, pages: 1 }],
+          born: [
+            birth(1, 'context', { fixture: shared, site: 'tests/fixtures.ts:31' }),
+            birth(2, 'context', { fixture: shared }),
+          ],
+          open: [
+            { id: 1, pages: 1 },
+            { id: 2, pages: 1 },
+          ],
         }),
-        census(2000, test('t2'), { open: [{ id: 1, pages: 2 }, { id: 2, pages: 2 }] }),
-        census(3000, test('t3'), { open: [{ id: 1, pages: 3 }, { id: 2, pages: 1 }] }),
-        census(4000, test('t4'), { open: [{ id: 1, pages: 4 }, { id: 2, pages: 2 }] }),
+        census(2000, test('t2'), {
+          open: [
+            { id: 1, pages: 2 },
+            { id: 2, pages: 2 },
+          ],
+        }),
+        census(3000, test('t3'), {
+          open: [
+            { id: 1, pages: 3 },
+            { id: 2, pages: 1 },
+          ],
+        }),
+        census(4000, test('t4'), {
+          open: [
+            { id: 1, pages: 4 },
+            { id: 2, pages: 2 },
+          ],
+        }),
       ],
     });
     expect(report.findings.filter((f) => f.verdict === 'piling')).toEqual([
@@ -392,7 +460,11 @@ describe('buildResourceReport', () => {
       tallies: [
         { file: SPEC, opened: [{ kind: 'context', site: `${SPEC}:4` }], closed: { context: 0, browser: 0 } },
         { file: SPEC, opened: [{ kind: 'context', site: `${SPEC}:4` }], closed: { context: 0, browser: 0 } },
-        { file: OTHER_SPEC, opened: [{ kind: 'context', site: `${OTHER_SPEC}:3` }], closed: { context: 1, browser: 0 } },
+        {
+          file: OTHER_SPEC,
+          opened: [{ kind: 'context', site: `${OTHER_SPEC}:3` }],
+          closed: { context: 1, browser: 0 },
+        },
       ],
     });
     expect(report.findings).toEqual([
@@ -418,7 +490,10 @@ describe('tallyLifecycleSteps', () => {
         step('beforeAll hook', 'hook', [step('Launch browser', 'pw:api', [], 7)]),
       ]),
       step('Create context', 'pw:api', [], 12),
-      step('After Hooks', 'hook', [step('Fixture "context"', 'fixture', [step('Close context', 'pw:api')]), step('Close browser', 'pw:api')]),
+      step('After Hooks', 'hook', [
+        step('Fixture "context"', 'fixture', [step('Close context', 'pw:api')]),
+        step('Close browser', 'pw:api'),
+      ]),
     ]);
     expect(tally).toEqual({
       file: SPEC,
@@ -434,7 +509,12 @@ describe('tallyLifecycleSteps', () => {
 describe('userFixturesOf', () => {
   it('lists the fixtures a test set up from its own files, not Playwright’s or Piwi’s', () => {
     const fixture = (title: string, file?: string) =>
-      ({ title, category: 'fixture', steps: [], location: file ? { file: path.resolve(file), line: 12, column: 1 } : undefined }) as unknown as TestStep;
+      ({
+        title,
+        category: 'fixture',
+        steps: [],
+        location: file ? { file: path.resolve(file), line: 12, column: 1 } : undefined,
+      }) as unknown as TestStep;
     expect(
       userFixturesOf([
         fixture('Fixture "page"'),
@@ -475,7 +555,12 @@ describe('formatResourceSummary', () => {
   };
 
   it('says nothing when nothing was found', () => {
-    expect(formatResourceSummary({ findings: [], counts: { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 } }, 'report')).toEqual([]);
+    expect(
+      formatResourceSummary(
+        { findings: [], counts: { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 } },
+        'report',
+      ),
+    ).toEqual([]);
   });
 
   it('heads with the counts, lists each finding, and hints at the strict modes', () => {
@@ -488,12 +573,21 @@ describe('formatResourceSummary', () => {
       `  leaked   context     ${SPEC}:4 · 2 contexts · with 1 page · 2 tests · open until the worker shut down (4.8 s past its test)`,
     );
     expect(lines[2]).toMatch(/PIWI_LEAK_CHECK=fail/);
-    expect(formatResourceSummary({ findings: [leak], counts: { leaked: 1, idle: 0, piling: 0, handle: 0, probable: 0 } }, 'fail')).toHaveLength(2);
+    expect(
+      formatResourceSummary(
+        { findings: [leak], counts: { leaked: 1, idle: 0, piling: 0, handle: 0, probable: 0 } },
+        'fail',
+      ),
+    ).toHaveLength(2);
   });
 
   it('lists at most the given number of findings and counts the rest', () => {
     const findings = Array.from({ length: 13 }, () => leak);
-    const lines = formatResourceSummary({ findings, counts: { leaked: 13, idle: 0, piling: 0, handle: 0, probable: 0 } }, 'fail', 10);
+    const lines = formatResourceSummary(
+      { findings, counts: { leaked: 13, idle: 0, piling: 0, handle: 0, probable: 0 } },
+      'fail',
+      10,
+    );
     expect(lines).toHaveLength(12);
     expect(lines[11]).toBe('  … and 3 more findings');
   });

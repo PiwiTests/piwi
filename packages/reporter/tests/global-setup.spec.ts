@@ -108,7 +108,9 @@ describe('createGlobalSetup', () => {
   });
 
   it('does not fetch the sample set when sampleAriaOnPass is off', async () => {
-    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 5, setupToken: 't' }));
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 5, setupToken: 't' }),
+    );
     cleanupNames.push('sampling-off');
     try {
       const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'sampling-off', sampleAriaOnPass: false });
@@ -145,9 +147,7 @@ describe('createGlobalSetup', () => {
       const patterns = uploads.map((r) => JSON.parse(r.body).manifest.routes[0].pattern).sort();
       expect(patterns).toEqual(['/cart', '/users']);
     } finally {
-      await Promise.all(
-        [server, shop.server, admin.server].map((s) => new Promise<void>((r) => s.close(() => r()))),
-      );
+      await Promise.all([server, shop.server, admin.server].map((s) => new Promise<void>((r) => s.close(() => r()))));
     }
   });
 

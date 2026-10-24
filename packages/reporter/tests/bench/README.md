@@ -2,10 +2,10 @@
 
 What the capture fixtures cost a suite that uses them. Two harnesses, because the question has two halves:
 
-| Harness | Command | Answers |
-|---|---|---|
-| End-to-end | `npm run reporter:bench` | "how much slower is my suite" — real browser, real protocol round trips |
-| Micro | `npm run reporter:bench:micro` | "where does the worker's CPU go" — no browser, low variance |
+| Harness    | Command                        | Answers                                                                 |
+| ---------- | ------------------------------ | ----------------------------------------------------------------------- |
+| End-to-end | `npm run reporter:bench`       | "how much slower is my suite" — real browser, real protocol round trips |
+| Micro      | `npm run reporter:bench:micro` | "where does the worker's CPU go" — no browser, low variance             |
 
 Both live here rather than in the Vitest unit suite or the integration project: `vitest.config.ts` excludes
 `tests/bench/**` from `reporter:test`, and points `benchmark.include` at the `.bench.ts` file.
@@ -16,13 +16,13 @@ Both live here rather than in the Vitest unit suite or the integration project: 
 assertions — run under a ladder of capture configurations. Each rung adds one layer, so the gap between neighbors is
 the cost of that layer alone:
 
-| Variant | What it adds |
-|---|---|
-| `baseline` | plain `@playwright/test`, no Piwi fixtures registered |
-| `fixtures` | console/network listeners, web vitals, the teardown flush |
-| `page-state` | the end-of-test page/storage/cookie read |
-| `full` | locator healing capture |
-| `resources` | the resource ledger and the per-test worker reads (`PIWI_CAPTURE_RESOURCES`) — the shipped default |
+| Variant      | What it adds                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| `baseline`   | plain `@playwright/test`, no Piwi fixtures registered                                                  |
+| `fixtures`   | console/network listeners, web vitals, the teardown flush                                              |
+| `page-state` | the end-of-test page/storage/cookie read                                                               |
+| `full`       | locator healing capture                                                                                |
+| `resources`  | the resource ledger and the per-test worker reads (`PIWI_CAPTURE_RESOURCES`) — the shipped default     |
 | `code-reach` | Chromium JavaScript coverage for code reach (`PIWI_CAPTURE_CODE_REACH`), opt-in, on top of `resources` |
 
 Variants are selected through the same `PIWI_*` env vars users set (`PIWI_CAPTURE_LOCATORS`,
@@ -39,16 +39,16 @@ node tests/bench/run.mjs --only baseline,full --target roleless  # isolate the A
 node tests/bench/run.mjs --json results.json                     # machine-readable
 ```
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `--rounds` | 3 | measured rounds (plus one discarded warm-up) |
-| `--rows` | 200 | table rows on the fixture page — the DOM-size axis |
-| `--tests` | 12 | test cases per run |
-| `--actions` / `--assertions` | 10 / 10 | captured operations per test |
-| `--target` | `role` | `role` (buttons) or `roleless` (plain spans) |
-| `--sites` | `distinct` | `distinct` (one line per operation) or `shared` (one line, run repeatedly) |
-| `--only` | all | comma-separated variant keys |
-| `--json` | — | write the aggregated rows to a file |
+| Flag                         | Default    | Meaning                                                                    |
+| ---------------------------- | ---------- | -------------------------------------------------------------------------- |
+| `--rounds`                   | 3          | measured rounds (plus one discarded warm-up)                               |
+| `--rows`                     | 200        | table rows on the fixture page — the DOM-size axis                         |
+| `--tests`                    | 12         | test cases per run                                                         |
+| `--actions` / `--assertions` | 10 / 10    | captured operations per test                                               |
+| `--target`                   | `role`     | `role` (buttons) or `roleless` (plain spans)                               |
+| `--sites`                    | `distinct` | `distinct` (one line per operation) or `shared` (one line, run repeatedly) |
+| `--only`                     | all        | comma-separated variant keys                                               |
+| `--json`                     | —          | write the aggregated rows to a file                                        |
 
 ### Three things worth knowing before reading the output
 
@@ -88,10 +88,10 @@ Chromium. Treat them as shape, not as a spec; re-run on your own hardware for ab
 
 End-to-end, 12 tests × (10 actions + 10 assertions) on a 200-row page, median per test:
 
-| Call sites | baseline | + fixtures | + page state | + locator healing |
-|---|---|---|---|---|
-| `distinct` | 798 ms | — | — | **+29.4%** (11.7 ms/op) |
-| `shared` | 803 ms | −0.7% | +0.6% | **+14.0%** (5.6 ms/op) |
+| Call sites | baseline | + fixtures | + page state | + locator healing       |
+| ---------- | -------- | ---------- | ------------ | ----------------------- |
+| `distinct` | 798 ms   | —          | —            | **+29.4%** (11.7 ms/op) |
+| `shared`   | 803 ms   | −0.7%      | +0.6%        | **+14.0%** (5.6 ms/op)  |
 
 Everything except locator healing sits within run-to-run noise. Locator healing dominates, and its cost scales with
 page weight: on the same workload the locator layer runs roughly 2× cheaper at 50 rows and 2–3× dearer at 800.
@@ -112,23 +112,23 @@ On a script-heavy page (Vue's development build and 400 ES modules), function co
 The pieces of one capture, timed directly against a single page (medians over tens of alternating samples, which is
 how to measure anything this small — see above):
 
-| | 200 rows | 800 rows |
-|---|---|---|
-| DOM read, probe source shipped with the call | 12.4 ms | 16.4 ms |
-| DOM read, seeded probe called by name | 11.0 ms | 14.9 ms |
-| extra `ariaSnapshot()`, when the name isn't already settled | 2.0 ms | 3.7 ms |
+|                                                             | 200 rows | 800 rows |
+| ----------------------------------------------------------- | -------- | -------- |
+| DOM read, probe source shipped with the call                | 12.4 ms  | 16.4 ms  |
+| DOM read, seeded probe called by name                       | 11.0 ms  | 14.9 ms  |
+| extra `ariaSnapshot()`, when the name isn't already settled | 2.0 ms   | 3.7 ms   |
 
 Micro, per captured operation:
 
-| | mean |
-|---|---|
-| `captureCallerLocation()` | 55 µs |
-| └ `new Error().stack` (capture half) | 38 µs |
-| └ walking the stack (parse half) | 4.9 µs |
-| `generateAlternatives()` | 2.4 µs |
-| `JSON.stringify` of the origin args | 0.3 µs |
-| dedupe + serialize 40 snapshots (per test, at teardown) | 68 µs |
-| locator property read, bare → through the proxy | 0.09 µs → 0.16 µs |
+|                                                         | mean              |
+| ------------------------------------------------------- | ----------------- |
+| `captureCallerLocation()`                               | 55 µs             |
+| └ `new Error().stack` (capture half)                    | 38 µs             |
+| └ walking the stack (parse half)                        | 4.9 µs            |
+| `generateAlternatives()`                                | 2.4 µs            |
+| `JSON.stringify` of the origin args                     | 0.3 µs            |
+| dedupe + serialize 40 snapshots (per test, at teardown) | 68 µs             |
+| locator property read, bare → through the proxy         | 0.09 µs → 0.16 µs |
 
 The Node-side total is ~60 µs per operation — three orders of magnitude below the browser round trips above, so it
 never shows up in the end-to-end numbers. Within it, materializing the stack for the call-site location is ~85% of the

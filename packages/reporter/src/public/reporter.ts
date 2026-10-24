@@ -149,6 +149,8 @@ export class PiwiDashboardReporter {
   private readonly listMode: boolean;
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
+  /** The configured server `desktopApp: 'prefer'` set aside for the desktop app, if any. */
+  private desktopReplaced: string | null;
   private isFullRun = true;
   private filterDetails: FilterDetails | null = null;
   /** Configured `maxFailures` (0 = unlimited) — disambiguates an interrupted run's unrun reason. */
@@ -196,6 +198,7 @@ export class PiwiDashboardReporter {
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
+    this.desktopReplaced = desktopReplacedServer();
     this.coverageSettings = coverageSettings(this.options);
 
     const logger = new Logger(this.options.verbose ?? false);
@@ -255,13 +258,10 @@ export class PiwiDashboardReporter {
     // Nothing in the config pointed at a server, so results are going to the
     // desktop app found on this machine — say so rather than uploading silently.
     if (this.viaDesktopApp) {
-      const replaced = desktopReplacedServer();
       this.logger.info(
-        replaced
-          ? `Using the desktop app running at ${this.options.serverUrl} instead of ${replaced} (desktopApp: 'prefer', not on CI).`
-          : this.options.desktopApp === 'prefer'
-            ? `Using the desktop app running at ${this.options.serverUrl} (desktopApp: 'prefer', not on CI).`
-            : `Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`,
+        this.desktopReplaced
+          ? `Using the desktop app running at ${this.options.serverUrl} instead of ${this.desktopReplaced} (desktopApp: 'prefer', not on CI).`
+          : `Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`,
       );
     }
     this.startTime = new Date().toISOString();
