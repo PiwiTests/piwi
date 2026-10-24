@@ -40,6 +40,11 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 5
+    ignore:
+      # Kotlin 2.4 no longer compiles language version 1.9, which the oldest supported platform (2024.1) bundles:
+      # it moves with pluginSinceBuild.
+      - dependency-name: "org.jetbrains.kotlin.jvm"
+        versions: [">= 2.4.0"]
     groups:
       minor-and-patch:
         update-types:
