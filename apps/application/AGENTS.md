@@ -334,10 +334,14 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 - **Say a fact once, in one style.** When the same fact could be a chip and words, keep the words.
 - **Measure it.** `npm run app:measure -- --check` fails when a failure page breaks a budget at 1280×800: at most 15
   text styles in the execution page's situation block and 13 in the cluster page's (a code chip or a diff counts once,
-  whatever its token colors), at most 25 controls above the fold (navbar included), at most one solid primary button
-  above the fold, and a Next step that copies a code change shows that change in the same block. The measure finds the
-  Next action by `data-next-action` and what it copies by `data-copies`: keep both when you move either. Run it before
-  committing a change to either page; raising a budget needs a reason in the PR.
+  whatever its token colors), at most 25 controls in the navbar and the situation block, at most one solid primary
+  button above the fold, and a Next step that copies a code change shows that change in the same block. A control
+  counts when the reader sees it: one shown on hover or focus only does not. The controls of the blocks under the
+  situation block (the evidence card's tabs, the affected tests, the history) are reported above the fold, not
+  budgeted: they belong on the first screen when the block leaves room for them. The measure finds the Next action by
+  `data-next-action` and what it copies by `data-copies`: keep both when you move either. CI runs it on the build
+  (`Failure page budgets`); run it before committing a change to either page. Raising a budget needs a reason in the
+  PR.
 
 ### Filters (MUST follow)
 

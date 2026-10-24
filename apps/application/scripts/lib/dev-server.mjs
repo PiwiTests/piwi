@@ -194,10 +194,54 @@ export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} 
     detached: process.platform !== 'win32',
     shell: process.platform === 'win32',
   });
+  return superviseServer(child, port, `dev server${serverMode.label}`);
+}
+
+/**
+ * The settings a production build keeps from the machine that built it
+ * (`runtimeConfig` in `nuxt.config.ts`), under the `NUXT_` names a built server
+ * reads at startup: no authentication, no AI provider, the default locale and
+ * time zone, as `THROWAWAY_SERVER_SETTINGS` gives a dev server.
+ */
+const BUILT_SERVER_SETTINGS = {
+  NUXT_AUTH_ENABLED: 'false',
+  NUXT_PUBLIC_AUTH_ENABLED: 'false',
+  NUXT_AI_PROVIDER: '',
+  NUXT_AI_API_KEY: '',
+  NUXT_PUBLIC_DATE_LOCALE: '',
+  NUXT_PUBLIC_DATE_TIME_ZONE: '',
+};
+
+/**
+ * Boot the production build in `outputDir` (`.output`) on `port`; returns
+ * { base, stop } as `startServer` does. `env` is added to the server's
+ * environment and must name its database (`seedThrowawayDb` returns one). It
+ * refuses a port something already listens on, for the reason `startServer`
+ * does.
+ */
+export async function startBuiltServer({ outputDir, port = DEFAULT_PORT, env = {} }) {
+  const entry = join(outputDir, 'server', 'index.mjs');
+  if (!existsSync(entry)) throw new Error(`no build at ${entry}; run \`npm run app:build\` first`);
+  if (await portInUse(port)) throw new Error(`port ${port} is already in use; stop the server on it first`);
+  const child = spawn(process.execPath, [entry], {
+    cwd: APP_DIR,
+    env: { ...process.env, ...BUILT_SERVER_SETTINGS, ...env, NITRO_PORT: String(port) },
+    stdio: 'ignore',
+    detached: process.platform !== 'win32',
+  });
+  return superviseServer(child, port, `the build in ${outputDir}`);
+}
+
+/**
+ * Wait for a server process to answer its health check on `port`; returns
+ * { base, stop }. It is stopped when the check times out or the script is
+ * interrupted.
+ */
+async function superviseServer(child, port, name) {
   const stop = () => {
-    // Negative pid kills the whole nuxt process group where supported. On
-    // Windows child.kill() only terminates the cmd wrapper — the nuxt node
-    // process survives and keeps the port bound, so kill the tree explicitly.
+    // Negative pid kills the whole process group where supported. On Windows
+    // child.kill() only terminates the cmd wrapper — the nuxt node process
+    // survives and keeps the port bound, so kill the tree explicitly.
     try {
       if (process.platform === 'win32') {
         execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' });
@@ -213,7 +257,7 @@ export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} 
     process.exit(130);
   });
   const base = `http://localhost:${port}`;
-  console.error(`Starting dev server at ${base}${serverMode.label}…`);
+  console.error(`Starting ${name} at ${base}…`);
   try {
     await waitForHealth(base);
   } catch (err) {

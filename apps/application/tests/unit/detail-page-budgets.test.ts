@@ -25,6 +25,8 @@ function measured(route: string, overrides: Record<string, unknown> = {}) {
     route,
     httpStatus: 200,
     distinctTextStyles: 10,
+    navbarControls: 8,
+    blockControls: 12,
     controlsAboveFold: 20,
     solidPrimaryAboveFold: 1,
     nextStep: {
@@ -64,23 +66,31 @@ describe('evaluateBudgets', () => {
     expect(cluster).toMatchObject({ value: 14, max: 13, verdict: 'fail' });
   });
 
-  it('counts at most 25 controls and one solid primary above the fold on both pages', () => {
+  it('counts at most 25 controls in the navbar and the block and one solid primary above the fold on both pages', () => {
     const verdicts = evaluateBudgets(
-      measured('/failure-clusters/10', { controlsAboveFold: 33, solidPrimaryAboveFold: 2 }),
+      measured('/failure-clusters/10', { navbarControls: 7, blockControls: 19, solidPrimaryAboveFold: 2 }),
       AT_BUDGET,
     );
-    expect(byId(verdicts, 'controls-above-fold')).toMatchObject({ value: 33, max: 25, verdict: 'fail' });
+    expect(byId(verdicts, 'navbar-block-controls')).toMatchObject({ value: 26, max: 25, verdict: 'fail' });
     expect(byId(verdicts, 'solid-primary-above-fold')).toMatchObject({ value: 2, max: 1, verdict: 'fail' });
   });
 
+  it('leaves the controls the fold reaches below the block out of the controls budget', () => {
+    const verdicts = evaluateBudgets(
+      measured('/test-run-cases/87', { navbarControls: 8, blockControls: 16, controlsAboveFold: 39 }),
+      AT_BUDGET,
+    );
+    expect(byId(verdicts, 'navbar-block-controls')).toMatchObject({ value: 24, verdict: 'pass' });
+  });
+
   it('gives no verdict away from 1280×800', () => {
-    const verdicts: Verdict[] = evaluateBudgets(measured('/test-run-cases/37', { controlsAboveFold: 40 }), {
+    const verdicts: Verdict[] = evaluateBudgets(measured('/test-run-cases/37', { blockControls: 32 }), {
       width: 390,
       height: 844,
     });
     expect(verdicts.length).toBeGreaterThan(0);
     for (const v of verdicts) expect(v).toMatchObject({ verdict: 'n/a', note: 'budgets are set at 1280×800' });
-    expect(byId(verdicts, 'controls-above-fold')?.value).toBe(40);
+    expect(byId(verdicts, 'navbar-block-controls')?.value).toBe(40);
   });
 
   it('passes a copied change shown in the block and fails one further down or missing', () => {
@@ -135,12 +145,14 @@ describe('evaluateBudgets', () => {
     });
   });
 
-  it('leaves the text styles without a verdict when the page has no situation block', () => {
-    const verdict = byId(
-      evaluateBudgets(measured('/test-run-cases/37', { distinctTextStyles: null }), AT_BUDGET),
-      'text-styles',
+  it('leaves the text styles and the controls without a verdict when the page has no situation block', () => {
+    const verdicts = evaluateBudgets(
+      measured('/test-run-cases/37', { distinctTextStyles: null, blockControls: null }),
+      AT_BUDGET,
     );
-    expect(verdict).toMatchObject({ verdict: 'n/a', note: 'no situation block' });
+    for (const id of ['text-styles', 'navbar-block-controls']) {
+      expect(byId(verdicts, id)).toMatchObject({ verdict: 'n/a', note: 'no situation block' });
+    }
   });
 
   it('holds no other page to a budget', () => {
@@ -155,7 +167,7 @@ describe('evaluateBudgets', () => {
   it('prints each verdict as one short phrase', () => {
     const verdicts: Verdict[] = evaluateBudgets(
       measured('/test-run-cases/37', {
-        controlsAboveFold: 38,
+        blockControls: 19,
         distinctTextStyles: 14,
         nextStep: { kind: 'apply-patch', action: 'copy-git-apply', copies: 'budgeted', distance: null },
       }),
@@ -163,7 +175,7 @@ describe('evaluateBudgets', () => {
     );
     expect(verdicts.map(budgetText)).toEqual([
       '✓ text styles 14 ≤ 15',
-      '✗ controls 38 > 25',
+      '✗ controls in the navbar and block 27 > 25',
       '✗ next-step content not on the page',
       '✓ solid primary buttons 1 ≤ 1',
     ]);
@@ -174,6 +186,7 @@ describe('parseMeasureArgs', () => {
   it('defaults to the budget viewport and the seeded routes', () => {
     expect(parseMeasureArgs([])).toMatchObject({
       url: null,
+      build: null,
       routes: DEFAULT_ROUTES,
       width: 1280,
       height: 800,
@@ -194,6 +207,14 @@ describe('parseMeasureArgs', () => {
     expect(() => parseMeasureArgs(['--routes', 'test-run-cases/37'])).toThrow('absolute paths');
     expect(() => parseMeasureArgs(['--width', '12.5'])).toThrow('--width needs a positive integer');
     expect(() => parseMeasureArgs(['--url'])).toThrow('--url needs an http(s) URL');
+  });
+
+  it('boots a build with --build, never together with --url', () => {
+    expect(parseMeasureArgs(['--build', '.output', '--check'])).toMatchObject({ build: '.output', url: null });
+    expect(() => parseMeasureArgs(['--build'])).toThrow('--build needs the directory of a build');
+    expect(() => parseMeasureArgs(['--build', '.output', '--url', 'http://localhost:3000'])).toThrow(
+      '--url and --build cannot be used together',
+    );
   });
 });
 

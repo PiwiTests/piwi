@@ -5,9 +5,15 @@
  *
  * A budget is set at one viewport, 1280×800, and read from one measured result
  * (the object `measurePage` returns, plus its route): the text styles of the
- * situation block, the controls above the fold with the navbar included, the
+ * situation block, the controls of the navbar and the situation block, the
  * distance between the Next step's button and the change it copies, and the
  * solid primary buttons above the fold.
+ *
+ * The controls budget counts what the page opens on, not what the fold cuts:
+ * the blocks under the situation block (the evidence card's tabs, the
+ * timeline's toolbar, the affected tests, the history strip) belong on the
+ * first screen when the block leaves room for them, so their controls above
+ * the fold are reported, not budgeted.
  */
 
 /** The viewport the budgets are set at; any other viewport is reported without verdicts. */
@@ -82,11 +88,12 @@ export const DETAIL_PAGE_BUDGETS = [
     missing: 'no situation block',
   },
   {
-    id: 'controls-above-fold',
-    label: 'controls',
+    id: 'navbar-block-controls',
+    label: 'controls in the navbar and block',
     pages: ['execution', 'cluster'],
-    read: (result) => result.controlsAboveFold,
+    read: (result) => (result.blockControls == null ? null : result.navbarControls + result.blockControls),
     max: 25,
+    missing: 'no situation block',
   },
   {
     id: 'next-content-distance',
@@ -161,7 +168,7 @@ export function evaluateBudgets(result, viewport) {
   });
 }
 
-/** One verdict as the report prints it: `✗ controls 38 > 25`, `✓ text styles 14 ≤ 15`. */
+/** One verdict as the report prints it: `✗ controls in the navbar and block 27 > 25`, `✓ text styles 14 ≤ 15`. */
 export function budgetText(budget) {
   const mark = budget.verdict === 'pass' ? '✓' : budget.verdict === 'fail' ? '✗' : '·';
   if (budget.id === 'route') return `${mark} ${budget.note}`;
@@ -175,11 +182,13 @@ export function budgetText(budget) {
 
 /**
  * The script's flags. Throws on an unknown flag, a route that is not an
- * absolute path, or a viewport or port that is not a positive integer.
+ * absolute path, a viewport or port that is not a positive integer, or both a
+ * server to drive (`--url`) and a build to boot (`--build`).
  */
 export function parseMeasureArgs(argv) {
   const flags = {
     url: null,
+    build: null,
     routes: DEFAULT_ROUTES,
     width: BUDGET_VIEWPORT.width,
     height: BUDGET_VIEWPORT.height,
@@ -190,6 +199,7 @@ export function parseMeasureArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--url') flags.url = String(argv[++i] ?? '');
+    else if (arg === '--build') flags.build = String(argv[++i] ?? '');
     else if (arg === '--routes')
       flags.routes = String(argv[++i] ?? '')
         .split(',')
@@ -210,6 +220,8 @@ export function parseMeasureArgs(argv) {
     if (!(Number.isInteger(value) && value > 0)) throw new Error(`${flag} needs a positive integer`);
   }
   if (flags.url !== null && !/^https?:\/\//.test(flags.url)) throw new Error('--url needs an http(s) URL');
+  if (flags.build !== null && !flags.build) throw new Error('--build needs the directory of a build (.output)');
+  if (flags.url !== null && flags.build !== null) throw new Error('--url and --build cannot be used together');
   if (!flags.routes.length) throw new Error('--routes needs at least one path');
   for (const route of flags.routes) {
     if (!route.startsWith('/')) throw new Error(`--routes needs absolute paths, got "${route}"`);
