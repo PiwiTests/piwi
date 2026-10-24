@@ -198,24 +198,8 @@ describe('matchProbeItem', () => {
   const plan: ProbePlan = {
     budget: 50,
     items: [
-      {
-        testCaseId: 1,
-        testTitle: 'checkout › happy path',
-        filePath: 'tests/checkout.spec.ts',
-        suitePath: [],
-        routeKey: 'POST /api/orders',
-        fault: 'status-500',
-        nth: 1,
-      },
-      {
-        testCaseId: 2,
-        testTitle: 'cart › coupon',
-        filePath: 'tests/cart.spec.ts',
-        suitePath: [],
-        routeKey: 'POST /api/coupons',
-        fault: 'empty-body',
-        nth: 1,
-      },
+      { testCaseId: 1, testTitle: 'checkout › happy path', filePath: 'tests/checkout.spec.ts', suitePath: [], routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
+      { testCaseId: 2, testTitle: 'cart › coupon', filePath: 'tests/cart.spec.ts', suitePath: [], routeKey: 'POST /api/coupons', fault: 'empty-body', nth: 1 },
     ],
   };
 
@@ -229,24 +213,8 @@ describe('matchProbeItem', () => {
     const shared: ProbePlan = {
       budget: 50,
       items: [
-        {
-          testCaseId: 10,
-          testTitle: 'loads',
-          filePath: 'tests/orders.spec.ts',
-          suitePath: [],
-          routeKey: 'GET /api/orders',
-          fault: 'status-500',
-          nth: 1,
-        },
-        {
-          testCaseId: 20,
-          testTitle: 'loads',
-          filePath: 'tests/invoices.spec.ts',
-          suitePath: [],
-          routeKey: 'GET /api/invoices',
-          fault: 'status-500',
-          nth: 1,
-        },
+        { testCaseId: 10, testTitle: 'loads', filePath: 'tests/orders.spec.ts', suitePath: [], routeKey: 'GET /api/orders', fault: 'status-500', nth: 1 },
+        { testCaseId: 20, testTitle: 'loads', filePath: 'tests/invoices.spec.ts', suitePath: [], routeKey: 'GET /api/invoices', fault: 'status-500', nth: 1 },
       ],
     };
     expect(matchProbeItem(shared, { title: 'loads', filePath: 'tests/orders.spec.ts' })?.testCaseId).toBe(10);
@@ -259,29 +227,11 @@ describe('matchProbeItem', () => {
     const tie: ProbePlan = {
       budget: 50,
       items: [
-        {
-          testCaseId: 30,
-          testTitle: 'saves',
-          filePath: 'tests/app.spec.ts',
-          suitePath: ['Orders'],
-          routeKey: 'POST /api/orders',
-          fault: 'status-500',
-          nth: 1,
-        },
-        {
-          testCaseId: 40,
-          testTitle: 'saves',
-          filePath: 'tests/app.spec.ts',
-          suitePath: ['Invoices'],
-          routeKey: 'POST /api/invoices',
-          fault: 'status-500',
-          nth: 1,
-        },
+        { testCaseId: 30, testTitle: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Orders'], routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
+        { testCaseId: 40, testTitle: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'], routeKey: 'POST /api/invoices', fault: 'status-500', nth: 1 },
       ],
     };
-    expect(
-      matchProbeItem(tie, { title: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'] })?.testCaseId,
-    ).toBe(40);
+    expect(matchProbeItem(tie, { title: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'] })?.testCaseId).toBe(40);
   });
 
   it('returns null when nothing matches', () => {

@@ -346,10 +346,9 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       liveFileUploads: false,
     });
     await runOneTest(failing, 'lost-run-test');
-    expect(
-      fs.existsSync(recoveryFilePath(server.url, projectName)),
-      'expected a recovery file after the failed run',
-    ).toBe(true);
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'expected a recovery file after the failed run').toBe(
+      true,
+    );
     const mode = fs.statSync(recoveryFilePath(server.url, projectName)).mode & 0o777;
     if (process.platform !== 'win32') expect(mode, 'readable by its owner only').toBe(0o600);
 
@@ -372,9 +371,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     // A run delivered by its usual rung names no fallback.
     expect(second.metadata.ingestHealth).toBeUndefined();
     expect(titles, `submits: ${titles.join(', ')}`).toContain('second-run-test');
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'recovery file is cleared after the retry').toBe(
-      false,
-    );
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'recovery file is cleared after the retry').toBe(false);
   });
 
   it('buffer overflow drops results → skips /finish and re-sends the full run via /submit', async () => {

@@ -50,9 +50,7 @@ describe('entry paths', () => {
       testTitle: 'pays by card',
       template: 'the submit button',
     });
-    expect(file).toMatch(
-      /\/repo\/tests\/__piwi__\/checkout\.spec\.ts\/pays-by-card\.the-submit-button\.[0-9a-f]{8}\.json$/,
-    );
+    expect(file).toMatch(/\/repo\/tests\/__piwi__\/checkout\.spec\.ts\/pays-by-card\.the-submit-button\.[0-9a-f]{8}\.json$/);
   });
 
   it('keys per test — same template in two tests yields different files', () => {

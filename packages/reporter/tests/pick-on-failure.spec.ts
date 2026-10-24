@@ -148,10 +148,7 @@ describe('parseLeafLocatorExpression', () => {
   });
 
   it('unescapes quotes inside string args', () => {
-    expect(parseLeafLocatorExpression(`getByText('It\\'s here')`)).toEqual({
-      method: 'getByText',
-      args: ["It's here"],
-    });
+    expect(parseLeafLocatorExpression(`getByText('It\\'s here')`)).toEqual({ method: 'getByText', args: ["It's here"] });
   });
 
   it('returns null for non-locator text', () => {

@@ -8,23 +8,13 @@ describe('rankedToStructured', () => {
       args: ['Email'],
     });
     expect(
-      rankedToStructured({
-        locator: '',
-        method: 'getByRole',
-        args: { role: 'heading', name: 'Hi', level: 2 },
-        score: 90,
-      }),
+      rankedToStructured({ locator: '', method: 'getByRole', args: { role: 'heading', name: 'Hi', level: 2 }, score: 90 }),
     ).toEqual({ method: 'getByRole', args: ['heading', { name: 'Hi', level: 2 }] });
   });
 
   it('declines anchored-chain candidates (flattened in a later phase)', () => {
     expect(
-      rankedToStructured({
-        locator: '',
-        method: 'getByRole',
-        args: { role: 'button', anchorTestId: 'bar' },
-        score: 70,
-      }),
+      rankedToStructured({ locator: '', method: 'getByRole', args: { role: 'button', anchorTestId: 'bar' }, score: 70 }),
     ).toBeNull();
   });
 });

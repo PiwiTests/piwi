@@ -74,7 +74,9 @@ afterEach(() => {
 
 describe('Uploader.uploadJSON', () => {
   it('POSTs the serialized run (with test cases) to /api/test-runs/submit', async () => {
-    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 7, projectId: 3 }));
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 7, projectId: 3 }),
+    );
     try {
       const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
       const payload = makePayload([{ type: 'complete', title: 't', location: 'l', status: 'passed' } as any]);
@@ -147,7 +149,9 @@ describe('Uploader.uploadWithFiles', () => {
     const traceFile = path.join(tmpDir, 'trace.zip');
     fs.writeFileSync(traceFile, 'TRACE-BYTES');
 
-    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 1, projectId: 2 }));
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 1, projectId: 2 }),
+    );
     try {
       const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
       const testCase: CollectedTestCase = {

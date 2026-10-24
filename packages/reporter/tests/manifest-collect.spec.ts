@@ -58,12 +58,7 @@ describe('fetchInstrumentationManifest', () => {
   it('fetches /__piwi/manifest only when the base response is instrumented', async () => {
     const fetchImpl: FetchLike = async (url) => {
       if (url.endsWith('/__piwi/manifest')) {
-        return {
-          ok: true,
-          status: 200,
-          headers: {},
-          text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }),
-        };
+        return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
       }
       return { ok: true, status: 200, headers: { 'x-piwi-trace': 'abc' }, text: async () => '' };
     };
@@ -81,12 +76,7 @@ describe('fetchInstrumentationManifest', () => {
     const fetchImpl: FetchLike = async (url, init) => {
       signals.push(init?.signal);
       if (url.endsWith('/__piwi/manifest')) {
-        return {
-          ok: true,
-          status: 200,
-          headers: {},
-          text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }),
-        };
+        return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
       }
       return { ok: true, status: 200, headers: { 'x-piwi-trace': 'abc' }, text: async () => '' };
     };
@@ -116,22 +106,13 @@ describe('fetchInstrumentationManifest', () => {
         return { ok: true, status: 200, headers: {}, text: async () => '<!doctype html><title>Shop</title>' };
       }
       if (url === 'https://app.test/__piwi/manifest') {
-        return {
-          ok: true,
-          status: 200,
-          headers: {},
-          text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }),
-        };
+        return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
       }
       return { ok: true, status: 200, headers: { 'x-piwi-logs': 'abc' }, text: async () => '' };
     };
     const manifest = await fetchInstrumentationManifest('https://app.test/shop/', fetchImpl);
     expect(manifest?.routes?.[0]?.pattern).toBe('/api/cart');
-    expect(requested).toEqual([
-      'https://app.test/shop/',
-      'https://app.test/shop/__piwi/manifest',
-      'https://app.test/__piwi/manifest',
-    ]);
+    expect(requested).toEqual(['https://app.test/shop/', 'https://app.test/shop/__piwi/manifest', 'https://app.test/__piwi/manifest']);
   });
 
   it('returns null when a request rejects (e.g. an aborted timeout)', async () => {
@@ -147,12 +128,7 @@ describe('fetchOriginManifest', () => {
     const requested: string[] = [];
     const fetchImpl: FetchLike = async (url) => {
       requested.push(url);
-      return {
-        ok: true,
-        status: 200,
-        headers: {},
-        text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }),
-      };
+      return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
     };
     const manifest = await fetchOriginManifest('http://localhost:5282', fetchImpl);
     expect(manifest?.routes?.[0]?.pattern).toBe('/api/cart');
@@ -180,9 +156,7 @@ describe('backendManifestFetch', () => {
 
   it('fetches an origin manifest by default', async () => {
     origin = await startServer((req, res) =>
-      req.url === '/__piwi/manifest'
-        ? jsonRes(res, 200, { routes: [{ method: 'GET', pattern: '/Commande' }] })
-        : textRes(res, 404, ''),
+      req.url === '/__piwi/manifest' ? jsonRes(res, 200, { routes: [{ method: 'GET', pattern: '/Commande' }] }) : textRes(res, 404, ''),
     );
     const manifest = await fetchOriginManifest(origin.url);
     expect(manifest?.routes?.[0]?.pattern).toBe('/Commande');
@@ -200,10 +174,7 @@ describe('backendManifestFetch', () => {
   });
 
   it('reads no answer past its size cap', async () => {
-    const routes = Array.from({ length: 100_000 }, (_, i) => ({
-      method: 'GET',
-      pattern: `/route/${i}/with/a/long/path`,
-    }));
+    const routes = Array.from({ length: 100_000 }, (_, i) => ({ method: 'GET', pattern: `/route/${i}/with/a/long/path` }));
     origin = await startServer((_req, res) => jsonRes(res, 200, { routes }));
     expect(await fetchOriginManifest(origin.url, backendManifestFetch(false))).toBeNull();
   });

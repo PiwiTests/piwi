@@ -151,10 +151,7 @@ function fakePlaywright() {
 /** A test info Playwright would hold, with what it is running. */
 function info(
   id: string,
-  runnable: {
-    type?: string;
-    fixture?: { title: string; location?: { file: string; line: number }; slot?: unknown };
-  } = {},
+  runnable: { type?: string; fixture?: { title: string; location?: { file: string; line: number }; slot?: unknown } } = {},
   suite: string[] = [],
 ): TestInfoLike {
   return {
@@ -166,10 +163,7 @@ function info(
   };
 }
 
-function ledgerFor(
-  fake: ReturnType<typeof fakePlaywright>,
-  options: { leakCheck?: 'report' | 'fail' | 'close'; resultsFile?: string } = {},
-) {
+function ledgerFor(fake: ReturnType<typeof fakePlaywright>, options: { leakCheck?: 'report' | 'fail' | 'close'; resultsFile?: string } = {}) {
   let current: TestInfoLike | null = null;
   const ledger = new ResourceLedger(
     fake.playwright,
@@ -207,12 +201,7 @@ describe('ResourceLedger', () => {
     running(info('t1', { type: 'beforeAll' }, ['block']));
     const browser = await fake.playwright.chromium.launch();
     const context = await browser.newContext();
-    running(
-      info('t1', {
-        type: 'test',
-        fixture: { title: 'shared', location: { file: path.resolve('tests/fixtures.ts'), line: 9 }, slot: {} },
-      }),
-    );
+    running(info('t1', { type: 'test', fixture: { title: 'shared', location: { file: path.resolve('tests/fixtures.ts'), line: 9 }, slot: {} } }));
     await (await browser.newContext()).newPage();
     running(null);
     await browser.newContext();
@@ -355,12 +344,7 @@ describe('ResourceLedger', () => {
     const { census } = await ledger.testEnded(info('t1'));
     expect((context as unknown as { closed: boolean }).closed).toBe(true);
     expect(api.dispose).toHaveBeenCalled();
-    expect(
-      census.closed
-        .filter((c) => c.byPiwi)
-        .map((c) => c.id)
-        .sort(),
-    ).toEqual([2, 4]);
+    expect(census.closed.filter((c) => c.byPiwi).map((c) => c.id).sort()).toEqual([2, 4]);
     expect(census.open.map((o) => o.id)).toEqual([1]);
   });
 
@@ -507,10 +491,7 @@ describe('the worker ledger and the capture fixture', () => {
     await browser.newContext();
 
     await expect(recordResourceCensus(testInfo(attach))).rejects.toThrow(/^Piwi: this test left one object open:/);
-    expect(attach).toHaveBeenCalledWith(
-      ATTACHMENT_NAMES.resources,
-      expect.objectContaining({ contentType: 'application/json' }),
-    );
+    expect(attach).toHaveBeenCalledWith(ATTACHMENT_NAMES.resources, expect.objectContaining({ contentType: 'application/json' }));
     const census = JSON.parse(String(attach.mock.calls[0]![1].body)) as ResourceCensus;
     expect(census.born.map((b) => b.kind)).toEqual(['browser', 'context']);
   });

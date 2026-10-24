@@ -178,17 +178,12 @@ describe('emitRunOutputs — GitHub Actions', () => {
 });
 
 describe('emitResourceSummary', () => {
-  const lines = [
-    'Resources: 1 leak',
-    '  leaked   context     tests/cart.spec.ts:4 · 1 test · open 2.0 s past its test',
-  ];
+  const lines = ['Resources: 1 leak', '  leaked   context     tests/cart.spec.ts:4 · 1 test · open 2.0 s past its test'];
 
   it('adds the resource summary to the GitHub job summary as preformatted text', () => {
     const summaryFile = path.join(tmpDir, 'gh-summary');
     emitResourceSummary(lines, silentLogger, { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summaryFile });
-    expect(fs.readFileSync(summaryFile, 'utf8')).toBe(
-      ['### Piwi resources', '', '```text', ...lines, '```', '', ''].join('\n'),
-    );
+    expect(fs.readFileSync(summaryFile, 'utf8')).toBe(['### Piwi resources', '', '```text', ...lines, '```', '', ''].join('\n'));
   });
 
   it('writes nothing outside GitHub Actions, or with nothing to report', () => {

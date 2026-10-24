@@ -327,9 +327,7 @@ describe('withoutCredentials', () => {
       'https://gitlab.example.com/group/app.git',
     );
     expect(withoutCredentials('https://ghp_secret@github.com/acme/app')).toBe('https://github.com/acme/app');
-    expect(withoutCredentials('ssh://git:secret@host.example.com/acme/app.git')).toBe(
-      'ssh://host.example.com/acme/app.git',
-    );
+    expect(withoutCredentials('ssh://git:secret@host.example.com/acme/app.git')).toBe('ssh://host.example.com/acme/app.git');
   });
 
   it('keeps a remote without credentials, an scp-like remote and a local path as they are', () => {
@@ -349,7 +347,7 @@ describe('resolveScmBranch — branch fallback chain', () => {
     expect(resolveScmBranch({})).toBeUndefined();
   });
 
-  it("treats git's literal HEAD (detached checkout) as unknown", () => {
+  it('treats git\'s literal HEAD (detached checkout) as unknown', () => {
     expect(resolveScmBranch({}, 'HEAD')).toBeUndefined();
   });
 
@@ -426,7 +424,7 @@ describe('resolveScmPrNumber — pull-request number capture', () => {
     expect(resolveScmPrNumber({})).toBeUndefined();
   });
 
-  it("parses the PR number out of GitHub's refs/pull/N/merge ref", () => {
+  it('parses the PR number out of GitHub\'s refs/pull/N/merge ref', () => {
     expect(resolveScmPrNumber({ GITHUB_ACTIONS: 'true', GITHUB_REF: 'refs/pull/42/merge' })).toBe('42');
     expect(resolveScmPrNumber({ GITHUB_ACTIONS: 'true', GITHUB_REF: 'refs/pull/7/head' })).toBe('7');
   });
@@ -454,9 +452,7 @@ describe('resolveScmBaseBranch — pull-request target branch capture', () => {
   it('returns undefined outside a pull-request build', () => {
     expect(resolveScmBaseBranch({})).toBeUndefined();
     expect(resolveScmBaseBranch({ GITHUB_ACTIONS: 'true', GITHUB_REF_NAME: 'main' })).toBeUndefined();
-    expect(
-      resolveScmBaseBranch({ TRAVIS: 'true', TRAVIS_PULL_REQUEST: 'false', TRAVIS_BRANCH: 'main' }),
-    ).toBeUndefined();
+    expect(resolveScmBaseBranch({ TRAVIS: 'true', TRAVIS_PULL_REQUEST: 'false', TRAVIS_BRANCH: 'main' })).toBeUndefined();
   });
 
   it('PIWI_BASE_BRANCH overrides the provider variable', () => {
@@ -484,9 +480,7 @@ describe('resolveScmBaseBranch — pull-request target branch capture', () => {
 
   it('Jenkins and Bitbucket read their destination variables', () => {
     expect(resolveScmBaseBranch({ JENKINS_URL: 'x', CHANGE_TARGET: 'main' })).toBe('main');
-    expect(resolveScmBaseBranch({ BITBUCKET_BUILD_NUMBER: '9', BITBUCKET_PR_DESTINATION_BRANCH: 'trunk' })).toBe(
-      'trunk',
-    );
+    expect(resolveScmBaseBranch({ BITBUCKET_BUILD_NUMBER: '9', BITBUCKET_PR_DESTINATION_BRANCH: 'trunk' })).toBe('trunk');
   });
 });
 
@@ -520,7 +514,7 @@ describe('MetadataCollector.collect — passthrough options and config metadata'
     expect((metadata.htmlReport as any).projects[0]).toMatchObject({ name: 'chromium', testDir: 'tests' });
   });
 
-  it("records each project's baseURL and testIdAttribute", () => {
+  it('records each project\'s baseURL and testIdAttribute', () => {
     const mc = new MetadataCollector();
     const config = {
       projects: [

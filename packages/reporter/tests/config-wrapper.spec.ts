@@ -125,7 +125,9 @@ describe('wrapConfig capture defaults (Playwright < 1.63)', () => {
     expect(config.use?.trace).toBe('retain-on-failure');
     // The original use option is preserved.
     expect(config.use?.headless).toBe(true);
-    expect(process.env[PIWI_DEFAULTED_CAPTURE_ENV]).toBe("screenshot: 'only-on-failure', trace: 'retain-on-failure'");
+    expect(process.env[PIWI_DEFAULTED_CAPTURE_ENV]).toBe(
+      "screenshot: 'only-on-failure', trace: 'retain-on-failure'",
+    );
   });
 
   it('defaults trace but keeps an explicit screenshot (only fills the unset one)', () => {

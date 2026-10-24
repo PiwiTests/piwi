@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { ensureGitignoreEntry, fixturesContents, upsertEnvKeys, wrapPlaywrightConfig } from '../src/cli/configure.js';
+import {
+  ensureGitignoreEntry,
+  fixturesContents,
+  upsertEnvKeys,
+  wrapPlaywrightConfig,
+} from '../src/cli/configure.js';
 
 const CLEAN_CONFIG = `import { defineConfig } from '@playwright/test'
 

@@ -19,29 +19,10 @@ describe('parseReportArgs', () => {
 
   it('reads the scope, the format and the output', () => {
     const args = parseReportArgs(
-      [
-        '--project',
-        'checkout,7',
-        '--period',
-        '7d',
-        '--format',
-        'pdf',
-        '--output',
-        'r.pdf',
-        '--lang',
-        'fr',
-        '--branch=main',
-      ],
+      ['--project', 'checkout,7', '--period', '7d', '--format', 'pdf', '--output', 'r.pdf', '--lang', 'fr', '--branch=main'],
       env,
     );
-    expect(args).toMatchObject({
-      projects: ['checkout', '7'],
-      period: 'last-7d',
-      format: 'pdf',
-      output: 'r.pdf',
-      lang: 'fr',
-      branches: 'main',
-    });
+    expect(args).toMatchObject({ projects: ['checkout', '7'], period: 'last-7d', format: 'pdf', output: 'r.pdf', lang: 'fr', branches: 'main' });
   });
 
   it('refuses what it cannot send', () => {
