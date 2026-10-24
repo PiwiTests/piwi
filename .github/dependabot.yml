@@ -34,6 +34,11 @@ updates:
       vueuse:
         patterns:
           - "@vueuse/*"
+      # One OpenTelemetry release line: an exporter from another line installs a second SDK tree under it, and the
+      # API refuses a global tracer provider registered through an older minor of itself.
+      opentelemetry:
+        patterns:
+          - "@opentelemetry/*"
       minor-and-patch:
         update-types:
           - minor
