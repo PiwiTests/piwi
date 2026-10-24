@@ -10,7 +10,7 @@ import type {
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
-import { useRunStream } from '~/composables/useRunStream';
+import { useRunEvents, useRunStream } from '~/composables/useRunStream';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 
 const route = useRoute();
@@ -44,17 +44,6 @@ const quarantinedCaseIds = computed(() => new Set((quarantineData.value?.entries
 const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.project?.latestRunId ?? null);
 const latestRunStatus = computed(() => latestRunInfo.value?.status ?? testRun.value?.project?.latestRunStatus ?? null);
 const isLatestRunActive = computed(() => latestRunStatus.value === 'running' || latestRunStatus.value === 'finalizing');
-
-useHead(
-  computed(() => {
-    // The tab title names the run and its project (display label first); on
-    // the page the breadcrumb carries the project.
-    const project = testRun.value?.project?.label || testRun.value?.project?.name;
-    return {
-      title: `Test run #${runId}${project ? ` — ${project}` : ''} — Piwi Dashboard`,
-    };
-  }),
-);
 
 const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
@@ -124,6 +113,10 @@ function seedLiveFromPersisted(cases: TestCaseResult[]) {
   displayTestCases.value = [...liveTestCases.value];
 }
 
+// The planned suite size as the run's stream last reported it: it grows as each
+// shard of a sharded run starts, after the page loaded. Feeds the tab's progress.
+const plannedTotal = ref<number | null>(null);
+
 // Debounced batch processing of SSE events to avoid cascading re-renders
 let pendingEvents: Record<string, unknown>[] = [];
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -136,8 +129,10 @@ function flushPendingEvents() {
     const data = parsed.data as Record<string, unknown>;
     // 'init' and 'run-progress' carry the server's running counters; the header
     // and bar are derived from the de-duplicated case list instead (see
-    // displayProgress), so those snapshots are not applied here.
-    if (parsed.type === 'test-begin') {
+    // displayProgress), so only their planned suite size is kept.
+    if (parsed.type === 'init' || parsed.type === 'run-progress') {
+      if (typeof data?.totalTests === 'number') plannedTotal.value = data.totalTests;
+    } else if (parsed.type === 'test-begin') {
       const d = data as {
         title: string;
         filePath?: string;
@@ -489,6 +484,46 @@ const displayProgress = computed(() => {
     flakyTests: testRun.value.flakyTests ?? 0,
   };
 });
+
+// While the run is in flight the browser tab shows its progress: a badge on the
+// favicon and the progress ahead of the title. Done and failed are the header's
+// counts; the total is the planned suite size only, so a run that has not
+// reported one shows as running without a share done.
+const tabIndicator = useTabRunIndicator(() => {
+  const run = testRun.value;
+  const p = displayProgress.value;
+  if (!run || !p) return null;
+  return {
+    live: isLive.value,
+    status: run.status,
+    done: p.passedTests + p.failedTests + p.skippedTests + p.didNotRunTests,
+    total: plannedTotal.value ?? run.totalTests ?? 0,
+    failed: p.failedTests,
+  };
+});
+
+// A cancelled run (a new run from the same reporter instance replaced it) is
+// announced on the global stream only, never on its own, so refetch on it to
+// leave the live state. The global stream is closed while the tab is hidden, so
+// a live run is also refetched when the tab comes back.
+useRunEvents((event) => {
+  if (event.type === 'run-cancelled' && event.runId === Number(runId) && isLive.value) refresh();
+});
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (state === 'visible' && isLive.value) refresh();
+});
+
+useHead(
+  computed(() => {
+    // The tab title names the run and its project (display label first); on
+    // the page the breadcrumb carries the project.
+    const project = testRun.value?.project?.label || testRun.value?.project?.name;
+    return {
+      title: tabRunTitle(`Test run #${runId}${project ? ` — ${project}` : ''} — Piwi Dashboard`, tabIndicator.value),
+    };
+  }),
+);
 
 const runToDelete = computed(() => [{ id: Number(runId), keptAt: testRun.value?.keptAt ?? null }]);
 

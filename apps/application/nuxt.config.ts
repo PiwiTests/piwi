@@ -167,8 +167,11 @@ export default defineNuxtConfig({
             // Every demo route serves this same shell (a prerendered copy, or the site's
             // 404 redirect), so each names the entry page as the one URL to index.
             { rel: 'canonical', href: 'https://piwitests.dev/demo/' },
-            { rel: 'icon', href: '/demo/favicon.ico', sizes: 'any' },
-            { rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
+            // The ICO for browsers without SVG icons; declared at a fixed size (not `any`), so
+            // Chrome takes the SVG. The SVG link shares app.vue's `favicon` key: the app's link
+            // replaces it, and a page watching a run swaps in its progress badge.
+            { rel: 'icon', href: '/demo/favicon.ico', sizes: '32x32' },
+            { key: 'favicon', rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
           ],
         },
       }

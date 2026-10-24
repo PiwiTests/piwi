@@ -306,7 +306,8 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
 ### Composables & utils
 
 `app/composables/` covers cross-component state and behaviour — auth and dashboard shell, run streaming
-(`useRunStream`, `useNotificationStream`), diagnosis (`useClusterDiagnosis`, `useStreamingDiagnosis`,
+(`useRunStream`, `useNotificationStream`, and `useTabRunIndicator`, a watched run's progress on the browser tab's
+favicon and title), diagnosis (`useClusterDiagnosis`, `useStreamingDiagnosis`,
 `useDiagnosisNotification`), timeline (`useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline`, an
 execution's failure timeline under one key for its Timeline and Network tabs), fold/tree state
 (`useFoldedState`, `useFoldableSummary`, `useTreeViewCookie`), a page's view state (`useViewState` — search,
