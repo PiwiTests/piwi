@@ -48,7 +48,7 @@ async function startEditor(reply: (message: HandoffToEditor, send: (m: HandoffTo
 }
 
 /** A page and its context, as the relay uses them: the binding it exposes, the scripts it loads, what it evaluates. */
-function fakePage() {
+function fakePage(url = 'http://localhost:3000/cart') {
   const listeners = new Map<string, () => void>();
   const evaluated: unknown[] = [];
   let binding: ((source: unknown, payload: unknown) => unknown) | null = null;
@@ -66,11 +66,14 @@ function fakePage() {
     context: () => context,
     mainFrame: () => mainFrame,
     evaluate: vi.fn(async (fn: unknown, arg?: unknown) => void evaluated.push(arg ?? fn)),
+    url: () => url,
     once: (event: string, fn: () => void) => void listeners.set(event, fn),
     off: (event: string) => void listeners.delete(event),
   };
   const call = (payload: unknown, frame: unknown = mainFrame) => binding!({ page, frame }, payload);
-  return { page, context, evaluated, call };
+  /** The page closes, or crashes. */
+  const emit = (event: 'close' | 'crash') => listeners.get(event)?.();
+  return { page, context, evaluated, call, emit };
 }
 
 const testInfo = { project: { use: { testIdAttribute: 'data-qa', baseURL: 'http://localhost:3000' } } };
@@ -183,6 +186,51 @@ describe('recording from a paused test', () => {
       expect(context.addInitScript).toHaveBeenCalledTimes(2);
       expect(dispose).toHaveBeenCalledTimes(2);
       expect(context.exposeBinding).toHaveBeenCalledOnce();
+    } finally {
+      await editor.close();
+    }
+  });
+
+  it('records http(s) pages only, and says so to the editor before it gives the page back', async () => {
+    const { page, context } = fakePage('about:blank');
+    const editor = await startEditor((message, send) => {
+      if (message.type === 'attach') send({ type: 'load', bundle });
+    });
+    try {
+      const said = await recordFromHere({
+        page: page as never,
+        testInfo: testInfo as never,
+        location: 'tests/cart.spec.ts:12:5',
+        reason: 'pause',
+        channel: editor.channel,
+      });
+      expect(said).toBe('the recorder records http(s) pages only, and this page is about:blank.');
+      await vi.waitFor(() => expect(editor.heard.map((m) => m.type)).toEqual(['attach', 'notice']));
+      expect(editor.heard[1]).toEqual({
+        type: 'notice',
+        message: 'Nothing can be recorded here: the recorder records http(s) pages only, and this page is about:blank.',
+      });
+      expect(context.exposeBinding).not.toHaveBeenCalled();
+    } finally {
+      await editor.close();
+    }
+  });
+
+  it('ends at once when the page closes before the editor takes the recording', async () => {
+    const { page, emit } = fakePage();
+    const editor = await startEditor((message) => {
+      if (message.type === 'attach') emit('close');
+    });
+    try {
+      const said = await recordFromHere({
+        page: page as never,
+        testInfo: testInfo as never,
+        location: 'tests/cart.spec.ts:12:5',
+        reason: 'breakpoint',
+        channel: editor.channel,
+      });
+      expect(said).toBe('the page closed.');
+      await vi.waitFor(() => expect(editor.heard.map((m) => m.type)).toEqual(['attach', 'closed']));
     } finally {
       await editor.close();
     }

@@ -181,10 +181,14 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   (`liveRunName`) showing `liveTests` as they come, ended once the run was read, after which nothing is published
   again for it. **Run with Piwi** and **Verify ×3 with Piwi** (run profiles) run the picked tests through `runTests`
   (`testRunsOf`: one run per config, by id when every test has one, else by location), queued in their test run, which
-  takes the editor's own run in progress of that config as it starts and ends once each command's task ended
-  (`taskEnded`, from `tasks.onDidEndTaskProcess`) and its run was read, or 15 s after that with none followed: a test
-  no run gave a result for passes when every command exited with 0, else is an error (`unfollowedOutcome`). Cancel
-  terminates the commands' tasks. While it lists the tests, the gutter's own icons give way to the Testing view's and
+  is followed from its first command on (a command that ends while the next starts is kept in `endedEarly`), takes
+  each command's run in progress by its ref (`LiveRun.ref`; by its config when the service no longer keeps the
+  command), and ends once each command's task ended (`taskEnded`, from `tasks.onDidEndTaskProcess`, or at once for a
+  task VS Code could not start) and its run was read; a run that ended before it was followed is read from
+  `piwi/runEnded` by its ref, and 15 s after a task's end with neither, a test no run gave a result for passes when
+  every command exited with 0, else is an error (`unfollowedOutcome`). Cancel terminates the commands' tasks and ends
+  the test run, the tests it showed no result for skipped. The spec URIs the service answers are spelled as VS Code
+  spells a document's (`asEditorUris`), and a read that made items anew publishes the results again. While it lists the tests, the gutter's own icons give way to the Testing view's and
   a test's line keeps the hover (`testHover`). The API `activate` returns gives what it shows (`testExplorer`).
 - `src/glue.ts` is the pure half (the status bar item, the failures view's nodes, the MCP configuration to paste, the
   file an open link names, the recorded block's text and writes with the service's import edit, and following them through a change: `writeBlock`,

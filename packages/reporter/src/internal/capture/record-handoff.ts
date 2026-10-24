@@ -97,6 +97,7 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
     socket.setEncoding('utf8');
     const answers = new Map<number, (value: unknown) => void>();
     let calls = 0;
+    let attached = false;
     let recording = false;
     let settled = false;
     /** The recorder's init script, while this recording runs. */
@@ -105,26 +106,35 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
       if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
     };
     const onPage = () => send({ type: 'notice', message: NEW_TAB_NOTICE });
-    const onClose = () => {
-      send({ type: 'closed' });
-      finish(null);
+    /** The page closed or crashed, before the recorder loaded or while it recorded. */
+    const onGone = () => {
+      if (attached) send({ type: 'closed' });
+      finish('the page closed.');
     };
+    page.once('close', onGone);
+    page.once('crash', onGone);
     const startWait = setTimeout(() => finish('the editor did not start the recording.'), START_WAIT_MS);
+    /** The context relays to no recording of this one's, and the documents it loads from now on are its own again. */
+    const release = () => {
+      const relay = relays.get(context);
+      if (relay && relay.recording === relayed) relay.recording = null;
+      // Where Playwright can remove the script.
+      void Promise.resolve(initScript?.dispose?.()).catch(() => undefined);
+      initScript = undefined;
+    };
     /** The recording is over, however it ended: the page is answered as outside one from now on. */
     const finish = (said: string | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(startWait);
-      const relay = relays.get(context);
-      if (relay && relay.recording === relayed) relay.recording = null;
+      release();
       for (const [call, answer] of answers) {
         answers.delete(call);
         answer(null);
       }
       context.off('page', onPage);
-      page.off('close', onClose);
-      // The documents the test loads from now on are its own again, where Playwright can remove the script.
-      void Promise.resolve(initScript?.dispose?.()).catch(() => undefined);
+      page.off('close', onGone);
+      page.off('crash', onGone);
       socket.end();
       resolve(recording ? null : said);
     };
@@ -135,33 +145,45 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
         const outside = source.page !== page || source.frame !== page.mainFrame();
         send({ type: 'binding', call, outside, payload });
       });
-    /** Load the recorder into the page, its binding relaying to the editor service. */
+    /**
+     * Load the recorder into the page, its binding relaying to the editor service. A recording that ended meanwhile
+     * (the editor stopped it, the page closed) leaves nothing behind.
+     */
     const load = async (bundle: string) => {
+      // The recorder records the top document of an http(s) page, as the browser extension does.
+      if (!/^https?:/i.test(page.url())) {
+        const why = `the recorder records http(s) pages only, and this page is ${page.url() || 'blank'}.`;
+        send({ type: 'notice', message: `Nothing can be recorded here: ${why}` });
+        finish(why);
+        return;
+      }
       let relay = relays.get(context);
       if (!relay) {
         const created: { recording: Handler | null; lingering: boolean } = { recording: null, lingering: false };
-        relays.set(context, created);
-        relay = created;
         await context.exposeBinding(IDE_RECORDER_BINDING, (source, payload: unknown) =>
           created.recording ? created.recording(source, payload) : idleAnswer(payload),
         );
+        relays.set(context, created);
+        relay = created;
       }
+      if (settled) return;
       relay.recording = relayed;
       // Removed when the recording ends, where Playwright can; added once per context where it cannot.
       if (!relay.lingering) {
         initScript = (await context.addInitScript({ path: bundle })) as Removable;
         if (typeof initScript?.dispose !== 'function') relay.lingering = true;
-        else if (settled) void Promise.resolve(initScript.dispose()).catch(() => undefined);
       }
+      if (settled) return release();
       // The init script loads it into the next documents; this one gets it now.
       await page.evaluate(fs.readFileSync(bundle, 'utf-8'));
+      if (settled) return release();
       recording = true;
       clearTimeout(startWait);
       context.on('page', onPage);
-      page.once('close', onClose);
       send({ type: 'loaded' });
     };
-    socket.on('connect', () =>
+    socket.on('connect', () => {
+      attached = true;
       send({
         type: 'attach',
         token: channel.token,
@@ -170,8 +192,8 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
         reason: options.reason,
         testIdAttribute: typeof use.testIdAttribute === 'string' ? use.testIdAttribute : null,
         baseURL: typeof use.baseURL === 'string' ? use.baseURL : null,
-      }),
-    );
+      });
+    });
     socket.on(
       'data',
       lineReader(

@@ -68,6 +68,8 @@ at once that the new steps fit what follows.
 in place of Playwright's Inspector, with **Record here** among its buttons, and Piwi adds `--headed` to a run whose
 spec holds a `page.pause()` call. The `page.pause()` line stays, so the next run can record from there again; remove
 it when the test is done. In a run Piwi did not start, and in a headless one, `page.pause()` is Playwright's own.
+**Record here** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
+so and nothing is recorded.
 
 The test reaches the editor through a socket on your machine that the editor service opens, readable by you only,
 named in the run's environment as `PIWI_RECORD_CHANNEL`. A recording the editor does not start within 30 seconds is

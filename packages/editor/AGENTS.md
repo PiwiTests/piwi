@@ -253,7 +253,9 @@ clients stay thin and both editors give the same answers.
   (`RecordChannel.open`), which every test run it builds names in its environment as `PIWI_RECORD_CHANNEL`
   (`withRecording` in `src/server.ts`, which also adds `--headed` when a spec the run names holds a `page.pause()` call,
   `PAGE_PAUSE`). A test paused there with Piwi's bar (a breakpoint, or `page.pause()` in a headed run) that asks to
-  record attaches with the channel's token, its file, line and project's `testIdAttribute` and `baseURL`
+  record attaches with the channel's token, its file (as the run's folder spells it, `commandFolder`: the service
+  names it to the editor as its workspace does, a folder opened through a link), line and project's `testIdAttribute`
+  and `baseURL`
   (`@piwitests/core/ide-recorder`, one line of JSON a message); the client hears it as `piwi/recordRequested`, and
   starts it with `piwi/record` naming the `handoff` (`RecordParams.handoff`), which takes it out of the waiting ones;
   one not taken in 30 s (`HANDOFF_WAIT_MS`), one the client declines (`piwi/declineRecord`: the file is being
@@ -261,7 +263,8 @@ clients stay thin and both editors give the same answers.
   `page.pause()` outside a comment (`withoutComments`) runs headed with `RunCommand.pauses`, for which the client
   names its Send to editor pairing as for breakpoints. The session (`attach` in
   `sessions.ts`) writes the block on a new line above the paused statement (`placementBefore` in
-  `page-candidates.ts`: the line it starts on, a chain broken over lines included), renders it with `continuePage`
+  `page-candidates.ts`: the line it starts on, a chain broken over lines or a statement broken after an operator, as
+  an assignment after its `=`, included), renders it with `continuePage`
   (no opening `goto`, viewport size, nor first navigation, which only says where the recording began) on the page
   expression in scope there, with the config's Piwi options when read within 10 s, and drives the test's page through
   `handoffLauncher`: the test loads the bundle the service names into its page, relays every call of the recorder's

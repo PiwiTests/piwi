@@ -208,6 +208,11 @@ export interface PausePoint {
   target: { highlight?: () => Promise<unknown> } | null;
 }
 
+/** What Playwright says when a navigation took away the document a call ran in. */
+const NAVIGATED = /Execution context was destroyed|Cannot find context with specified id/;
+/** How many navigations in a row the pause bar is shown again after. */
+const MAX_NAVIGATED = 10;
+
 /** How long the highlight may take before the bar shows without it. */
 const HIGHLIGHT_MS = 2000;
 
@@ -255,18 +260,27 @@ export async function pauseHere(
       `[piwi] Paused at ${point.location} before ${point.locator ? `${point.action} · ${point.locator}` : point.action}` +
         `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''} or Finish in the browser (Esc resumes).`,
     );
+    // A navigation that lands while the bar is drawn or read takes its document away: the bar comes back in the next
+    // one, a few times in a row at most. A closed page, or anything else, resumes.
+    let navigated = 0;
     for (;;) {
-      await page.evaluate(showPauseBar, arg);
-      await page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 });
-      const choice = (await page.evaluate(takePauseState)) as PauseChoice | null;
-      if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
-      if (choice === 'record' && onRecord) {
-        await onRecord().catch(() => undefined);
-        continue;
+      try {
+        await page.evaluate(showPauseBar, arg);
+        await page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 });
+        const choice = (await page.evaluate(takePauseState)) as PauseChoice | null;
+        navigated = 0;
+        if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
+        if (choice === 'record' && onRecord) {
+          await onRecord().catch(() => undefined);
+          continue;
+        }
+        if (choice !== 'pick') continue;
+        const picked = await pickLocator(page, probe, null).catch(() => null);
+        if (picked) await onPick(picked);
+      } catch (error) {
+        if (page.isClosed() || !NAVIGATED.test(String(error)) || ++navigated > MAX_NAVIGATED) throw error;
+        await page.waitForLoadState('domcontentloaded').catch(() => undefined);
       }
-      if (choice !== 'pick') continue;
-      const picked = await pickLocator(page, probe, null).catch(() => null);
-      if (picked) await onPick(picked);
     }
   } catch {
     return 'resume';

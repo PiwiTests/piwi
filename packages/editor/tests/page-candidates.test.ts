@@ -687,4 +687,24 @@ describe('placementBefore', () => {
     // A line inside the brackets of a multi-line `expect(`.
     expect(placementBefore(text, 6)).toEqual({ line: 5, newLine: true, indent: '  ' });
   });
+
+  test('goes above an assignment or an expression broken after an operator, not above the statement before', () => {
+    const broken = [
+      "test('reads', async ({ page }) => {",
+      "  await page.goto('/cart');",
+      '  const total =',
+      "    await page.getByTestId('total').textContent();",
+      '  const paid = ready &&',
+      "    (await page.getByRole('button', { name: 'Pay' }).isEnabled());",
+      '  count--',
+      "  await page.getByRole('button', { name: 'Pay' }).click();",
+      '  // note: paid by card',
+      "  await page.getByText('Paid').waitFor();",
+      '});',
+    ].join('\n');
+    expect(placementBefore(broken, 3)).toEqual({ line: 2, newLine: true, indent: '  ' });
+    expect(placementBefore(broken, 5)).toEqual({ line: 4, newLine: true, indent: '  ' });
+    expect(placementBefore(broken, 7)).toEqual({ line: 7, newLine: true, indent: '  ' });
+    expect(placementBefore(broken, 9)).toEqual({ line: 9, newLine: true, indent: '  ' });
+  });
 });

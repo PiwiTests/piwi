@@ -11,6 +11,7 @@ import {
   type LiveRun,
   type LiveTestStatus,
   type RunCommand,
+  type RunEnded,
   type RunStatusResult,
   type RunTestsArgs,
   type TestItemsParams,
@@ -202,6 +203,34 @@ export class TestExplorer implements vscode.Disposable {
     }
   }
 
+  /**
+   * A run the editor started ended (`piwi/runEnded`). One the profile run that started it never followed (it ended
+   * before the service saw it run) settles from the tests as read once it ended, not from its command's exit code.
+   */
+  runEnded(ended: RunEnded): void {
+    if (!ended.ref) return;
+    for (const profile of this.profiles) {
+      const part = profile.parts.find((p) => p.ref === ended.ref && p.liveRunId === null && !p.settled);
+      if (!part) continue;
+      part.liveRunId = ended.runId;
+      if (part.timer) clearTimeout(part.timer);
+      part.timer = null;
+      void this.read().then(() => {
+        for (const [item, picked] of profile.tests) {
+          if (picked.root !== part.root || profile.shown.has(item)) continue;
+          const test = this.testOf.get(item);
+          const outcome = test ? testOutcome(test.status, test.failure) : null;
+          if (!outcome || outcome.state === 'started') continue;
+          this.show(profile.run, item, outcome);
+          profile.shown.add(item);
+        }
+        part.settled = true;
+        this.finishProfile(profile);
+      });
+      return;
+    }
+  }
+
   /** The tests the Testing view lists, with the result last shown for each. */
   shown(): ShownTest[] {
     return [...this.testOf].map(([item, test]) => ({
@@ -245,7 +274,9 @@ export class TestExplorer implements vscode.Disposable {
     const next = this.chain
       .then(async () => {
         const answer = await this.ask({ uris: [uri], catalog: false });
-        if (answer) this.draw(withSpec(this.answer, uri, answer));
+        if (!answer) return;
+        // Items made anew (the tree gained a config's level, say) have no result until they are published.
+        if (this.draw(withSpec(this.answer, uri, answer))) this.publish();
       })
       .catch(drawFailed);
     this.chain = next;
@@ -262,21 +293,28 @@ export class TestExplorer implements vscode.Disposable {
     return this.answer.contexts.some((c) => c.specs.some((s) => s.uri === uri));
   }
 
-  /** Make the tree the answer's, keeping the items that stay, with their results. */
-  private draw(answer: TestItemsResult): void {
-    if (this.disposed) return;
+  /**
+   * Make the tree the answer's, keeping the items that stay, with their results; whether it made an item anew for a
+   * test with a result to show.
+   */
+  private draw(answer: TestItemsResult): boolean {
+    if (this.disposed) return false;
     this.answer = answer;
     this.testOf.clear();
     this.byCase = new Map();
-    this.sync(this.controller.items, testTree(answer));
+    const made = { result: false };
+    this.sync(this.controller.items, testTree(answer), made);
+    return made.result;
   }
 
-  private sync(collection: vscode.TestItemCollection, nodes: readonly TestNode[]): void {
+  private sync(collection: vscode.TestItemCollection, nodes: readonly TestNode[], made: { result: boolean }): void {
     const items = nodes.map((node) => {
       const uri = node.uri ? vscode.Uri.parse(node.uri) : undefined;
       let item = collection.get(node.id);
-      if (!item || item.uri?.toString() !== uri?.toString())
+      if (!item || item.uri?.toString() !== uri?.toString()) {
         item = this.controller.createTestItem(node.id, node.label, uri);
+        if (node.test && testOutcome(node.test.status, node.test.failure)) made.result = true;
+      }
       item.label = node.label;
       item.sortText = node.sortText;
       // To the end of the call's last line, so the cursor anywhere in the test is in it.
@@ -287,7 +325,7 @@ export class TestExplorer implements vscode.Disposable {
           this.byCase.set(node.test.testCaseId, [...(this.byCase.get(node.test.testCaseId) ?? []), item]);
         }
       }
-      this.sync(item.children, node.children);
+      this.sync(item.children, node.children, made);
       return item;
     });
     collection.replace(items);
@@ -333,7 +371,10 @@ export class TestExplorer implements vscode.Disposable {
     let profile: ProfileRun | null = null;
     if (live.own) {
       for (const p of this.profiles) {
-        const part = p.parts.find((x) => x.root === root && x.liveRunId === null && !x.settled);
+        // The command's own run, by its ref; by the config when the service no longer keeps the command.
+        const part = p.parts.find(
+          (x) => x.liveRunId === null && !x.settled && (live.ref ? x.ref === live.ref : x.root === root),
+        );
         if (!part) continue;
         part.liveRunId = live.runId;
         if (part.timer) clearTimeout(part.timer);
@@ -430,7 +471,9 @@ export class TestExplorer implements vscode.Disposable {
     const profile: ProfileRun = { run, tests: picked, shown: new Set(), parts: [], starting: true };
     // Followed from the start: a command's run, or its end, may come while the next command starts.
     this.profiles.add(profile);
+    token.onCancellationRequested(() => this.cancelProfile(profile));
     for (const args of testRunsOf([...picked.values()], repeat)) {
+      if (token.isCancellationRequested) break;
       const part: ProfilePart = {
         root: args.root!,
         ref: null,
@@ -443,6 +486,8 @@ export class TestExplorer implements vscode.Disposable {
       const command = await this.runTests(args).catch(() => null);
       if (command?.ref) {
         part.ref = command.ref;
+        // Started as the run was cancelled: it stops too.
+        if (token.isCancellationRequested) this.terminate([command.ref]);
         if (this.endedEarly.has(command.ref)) {
           const exitCode = this.endedEarly.get(command.ref)!;
           this.endedEarly.delete(command.ref);
@@ -467,14 +512,28 @@ export class TestExplorer implements vscode.Disposable {
       return;
     }
     this.finishProfile(profile);
-    token.onCancellationRequested(() => {
-      for (const execution of vscode.tasks.taskExecutions) {
-        const definition = execution.task.definition;
-        if (definition.type === RUN_TASK_TYPE && profile.parts.some((p) => p.ref === definition.ref)) {
-          execution.terminate();
-        }
-      }
-    });
+  }
+
+  /**
+   * Stop a profile run: its commands' tasks are terminated, and it ends at once, each test it did not show a result
+   * for skipped. A run its command started may go on reaching the instance; the published results show it.
+   */
+  private cancelProfile(profile: ProfileRun): void {
+    if (!this.profiles.has(profile)) return;
+    this.terminate(profile.parts.flatMap((p) => (p.ref ? [p.ref] : [])));
+    this.profiles.delete(profile);
+    for (const part of profile.parts) if (part.timer) clearTimeout(part.timer);
+    for (const followed of this.followed.values()) if (followed.profile === profile) followed.profile = null;
+    for (const item of profile.tests.keys()) if (!profile.shown.has(item)) profile.run.skipped(item);
+    profile.run.end();
+  }
+
+  /** Terminate the tasks of these commands. */
+  private terminate(refs: readonly string[]): void {
+    for (const execution of vscode.tasks.taskExecutions) {
+      const definition = execution.task.definition;
+      if (definition.type === RUN_TASK_TYPE && refs.includes(definition.ref)) execution.terminate();
+    }
   }
 }
 

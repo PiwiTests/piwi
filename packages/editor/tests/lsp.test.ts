@@ -2279,6 +2279,7 @@ describe('runs as they happen', () => {
       failed: 0,
       startedAt: startTime,
       own: true,
+      ref: command.ref,
     });
 
     // A test's end, then the counts of its batch.
@@ -2344,9 +2345,12 @@ describe('runs as they happen', () => {
     const live = await waitFor(
       () => statuses.slice(seen).find((s) => s.contexts[0]?.live?.runId === 48)?.contexts[0]?.live ?? undefined,
     );
-    expect(live).toMatchObject({ runId: 48, status: 'running', own: true });
+    // It is the second command's run: the client knows it by the ref that command was built with.
+    expect(live).toMatchObject({ runId: 48, status: 'running', own: true, ref: second.ref });
     const { message } = await endRun(48, startTime);
     expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #48)");
+    await waitFor(() => (verdicts.some((v) => v.runId === 48) ? true : undefined));
+    expect(verdicts.find((v) => v.runId === 48)?.ref).toBe(second.ref);
     // The instance was never asked for the ref the second command was built with.
     expect(refLookups.get(second.ref!)).toBeUndefined();
   });
@@ -2814,6 +2818,29 @@ describe('the folder a command runs in', () => {
       })) as RunCommand;
       expect(command.cwd).toBe(fs.realpathSync.native(dir));
       expect(command.env).toMatchObject({ PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3' });
+
+      // A test of that run, paused, names its file as the run's folder spells it: the editor hears its own spelling.
+      const channel = parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)!;
+      const requested = new Promise<RecordRequested>((resolve) => {
+        const listener = linkedClient.onNotification('piwi/recordRequested', (params: RecordRequested) => {
+          listener.dispose();
+          resolve(params);
+        });
+      });
+      const socket = net.connect(channel.path);
+      socket.write(
+        `${JSON.stringify({
+          type: 'attach',
+          token: channel.token,
+          file: path.join(fs.realpathSync.native(dir), 'tests/checkout.spec.ts'),
+          line: 3,
+          reason: 'breakpoint',
+          testIdAttribute: null,
+          baseURL: null,
+        })}\n`,
+      );
+      expect((await requested).uri).toBe(spec);
+      socket.destroy();
     } finally {
       stopLinked();
       linkedClient.dispose();

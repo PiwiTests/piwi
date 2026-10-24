@@ -40,8 +40,9 @@ jobs:
         working-directory: apps/vscode
         run: xvfb-run -a -s "-screen 0 1920x1200x24" npm run vscode:test:e2e
 
+      # A job stopped by its timeout counts as cancelled: a hang leaves its report too.
       - name: Upload the report
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vscode-nightly-report

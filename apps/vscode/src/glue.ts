@@ -1388,8 +1388,9 @@ export function testTree(result: TestItemsResult): TestNode[] {
           const key = test.suite.slice(0, i + 1).join('\x1f');
           let suite = suites.get(key);
           if (!suite) {
+            // `\x1e`, not `\x1f`: a describe block and a test of the same title side by side are two items.
             suite = {
-              id: `${spec.uri}\x1f${key}`,
+              id: `${spec.uri}\x1e${key}`,
               label: test.suite[i]!,
               kind: 'suite',
               uri: spec.uri,

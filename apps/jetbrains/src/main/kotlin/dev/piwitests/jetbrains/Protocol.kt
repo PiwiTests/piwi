@@ -225,7 +225,7 @@ data class RunInfo(
 
 /**
  * A run in progress: `status` is `running`, `initializing` or `finalizing`, `done` the tests that ended out of
- * `total`, `startedAt` ISO 8601, and `own` whether the editor started it.
+ * `total`, `startedAt` ISO 8601, `own` whether the editor started it, and `ref` the ref of its command on an own run.
  */
 data class LiveRun(
     val runId: Int = 0,
@@ -235,6 +235,7 @@ data class LiveRun(
     val failed: Int = 0,
     val startedAt: String? = null,
     val own: Boolean = false,
+    val ref: String? = null,
 )
 
 /** A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`. */

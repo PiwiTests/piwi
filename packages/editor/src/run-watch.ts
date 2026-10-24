@@ -66,13 +66,14 @@ function countsOf(data: Record<string, unknown>): Pick<LiveRun, 'done' | 'total'
   return { done, total: Math.max(n('totalTests'), done), failed: n('failedTests') };
 }
 
-function liveOf(run: RunDetails, own: boolean): LiveRun {
+function liveOf(run: RunDetails, own: boolean, ref: string | null = null): LiveRun {
   return {
     runId: run.id,
     status: run.status,
     ...(countsOf(run as unknown as Record<string, unknown>) ?? { done: 0, total: 0, failed: 0 }),
     startedAt: run.startTime,
     own,
+    ...(ref ? { ref } : {}),
   };
 }
 
@@ -251,6 +252,11 @@ interface RefWatch {
   timer: ReturnType<typeof setTimeout> | null;
   /** How many times the command runs each test; null for once. */
   repeat: number | null;
+  /**
+   * The command last sent to the terminal whose environment holds `ref`, when it was built with another ref
+   * (`commandStarted`): its runs carry `ref`, and are that command's.
+   */
+  commandRef: string | null;
 }
 
 /** The results of a repeated run that its stream brought, counted once each. */
@@ -354,6 +360,7 @@ export class RunWatch {
       until: Date.now() + OWN_RUN_WATCH_MS,
       timer: null,
       repeat,
+      commandRef: null,
     };
     this.watches.set(ref, w);
     for (const [oldest, dropped] of this.watches) {
@@ -381,6 +388,7 @@ export class RunWatch {
     }
     const terminal = this.watches.get(terminalRef);
     if (terminal) {
+      terminal.commandRef = ref;
       this.watches.delete(terminalRef);
       this.watches.set(terminalRef, terminal);
     }
@@ -438,7 +446,7 @@ export class RunWatch {
     const run = await client.runDetails(live.runId).catch(() => null);
     if (!run || context.live?.runId !== live.runId) return false;
     if (!ACTIVE.has(run.status)) return true;
-    context.live = liveOf(run, live.own);
+    context.live = liveOf(run, live.own, live.ref ?? null);
     this.progress();
     return false;
   }
@@ -518,7 +526,7 @@ export class RunWatch {
       return;
     }
     if (context.live?.own && !own && context.live.runId !== run.id) return;
-    context.live = liveOf(run, own);
+    context.live = liveOf(run, own, own ? this.refOf(context, run.id) : null);
     if (this.followed.get(context)?.runId !== run.id) this.followStream(context, run.id);
     this.progress();
   }
@@ -714,7 +722,7 @@ export class RunWatch {
   private refOf(context: PiwiContext, runId: number): string | null {
     const serverUrl = context.client?.connection.serverUrl;
     for (const w of this.watches.values()) {
-      if (w.serverUrl === serverUrl && w.carried.has(runId)) return w.ref;
+      if (w.serverUrl === serverUrl && w.carried.has(runId)) return w.commandRef ?? w.ref;
     }
     return null;
   }

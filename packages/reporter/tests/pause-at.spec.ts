@@ -175,15 +175,23 @@ describe('postPickToEditor', () => {
  * picks an element the probe reads as `pick` and the first locator offered is confirmed; the overlay's own reads and
  * cleanups run on Node's `globalThis`.
  */
-function fakePausePage(answers: Array<string | null>, opts: { breakAt?: number; pick?: Record<string, unknown> } = {}) {
+function fakePausePage(
+  answers: Array<string | null>,
+  opts: { breakAt?: number; navigateAt?: number; pick?: Record<string, unknown> } = {},
+) {
   const shown: unknown[] = [];
   let takes = 0;
+  let navigated = false;
   const g = globalThis as Record<string, unknown>;
   const page = {
     evaluate: vi.fn(async (fn: unknown, arg?: unknown) => {
       if (fn === showPauseBar) shown.push(arg);
       else if (fn === takePauseState) {
         if (opts.breakAt !== undefined && takes === opts.breakAt) throw new Error('Target page has been closed');
+        if (opts.navigateAt === takes && !navigated) {
+          navigated = true;
+          throw new Error('page.evaluate: Execution context was destroyed, most likely because of a navigation');
+        }
         return takes < answers.length ? answers[takes++] : 'resume';
       } else if (fn === installPickerOverlay) g.__piwiPickState = opts.pick ? 'picked' : 'skipped';
       else if (fn === showPickerChoices) g.__piwiPickChoice = 0;
@@ -192,6 +200,8 @@ function fakePausePage(answers: Array<string | null>, opts: { breakAt?: number; 
     }),
     evaluateHandle: vi.fn(async () => ({ evaluate: async () => opts.pick, dispose: async () => {} })),
     waitForFunction: vi.fn(async (_predicate: unknown) => {}),
+    waitForLoadState: vi.fn(async () => {}),
+    isClosed: () => opts.breakAt !== undefined && takes >= opts.breakAt,
   };
   return { page, shown };
 }
@@ -249,6 +259,15 @@ describe('pauseHere', () => {
     expect(page.waitForFunction.mock.calls.filter((c) => c[0] === pauseAnswered)).toHaveLength(3);
     // The fake page has no picker to answer: the pick yields nothing, and the pause goes on.
     expect(picks).toEqual([]);
+  });
+
+  it('shows the bar again when a navigation lands as it is read, and resumes once the page closed', async () => {
+    const { page, shown } = fakePausePage(['step'], { navigateAt: 0 });
+    expect(await pauseHere(page as never, fakeTestInfo() as never, POINT, PROBE, () => {})).toBe('step');
+    expect(shown).toHaveLength(2);
+    expect(page.waitForLoadState).toHaveBeenCalledOnce();
+    const closed = fakePausePage(['step'], { breakAt: 0 });
+    expect(await pauseHere(closed.page as never, fakeTestInfo() as never, POINT, PROBE, () => {})).toBe('resume');
   });
 
   it('offers Record here when the editor can record, and shows the bar again once the recording ended', async () => {

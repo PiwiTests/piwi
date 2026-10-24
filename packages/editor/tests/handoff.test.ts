@@ -182,7 +182,7 @@ describe('recording from a paused test', () => {
     }
   });
 
-  test('a test that closes before its session started ends the session as a closed page', async () => {
+  test('the launcher of a hand-off whose test closed before it was read hears the page closed first', async () => {
     const socket = new net.Socket();
     const handoff: Handoff = {
       id: 'h',

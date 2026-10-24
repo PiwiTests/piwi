@@ -694,6 +694,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     } catch (err) {
       pendingStarts.delete(command.ref);
       void vscode.window.showErrorMessage(`Piwi: could not run the tests: ${(err as Error).message}`);
+      // No task ran, so none will end: the Testing view's run hears it now.
+      explorer?.taskEnded(command.ref, null);
     }
   };
   /** The ref of a test run's task; null for another task. */
@@ -1219,6 +1221,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // A run started here ended and was read: what it changed, as `piwi.runNotifications` allows.
     lc.onNotification(RUN_ENDED_NOTIFICATION, async (ended: RunEnded) => {
+      explorer?.runEnded(ended);
       const setting = vscode.workspace.getConfiguration('piwi').get<RunNotifications>('runNotifications');
       const verdict = runVerdict(ended, setting);
       if (!verdict) return;

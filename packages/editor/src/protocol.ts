@@ -610,6 +610,8 @@ export interface LiveRun {
   startedAt: string;
   /** Whether the editor started it: a command of `piwi/runArgs` or `piwi/runSelection`. */
   own: boolean;
+  /** The ref of the command that started it (`RunCommand.ref`), on an own run the service keeps the command of. */
+  ref?: string;
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */

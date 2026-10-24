@@ -1779,6 +1779,21 @@ describe('the Testing view', () => {
     ]);
   });
 
+  test('tells a describe block from a test of the same title beside it', () => {
+    const spec = {
+      uri: 'file:///w/tests/login.spec.ts',
+      file: 'tests/login.spec.ts',
+      tests: [
+        test1({ title: 'login', suite: [], line: 2 }),
+        test1({ title: 'with SSO', suite: ['login'], line: 6, testCaseId: 2 }),
+      ],
+    };
+    const [node] = testTree({ contexts: [{ root: '/w', label: 'shop', specs: [spec] }] });
+    const children = node!.children[0]!.children;
+    expect(children.map((n) => n.kind)).toEqual(['test', 'suite']);
+    expect(new Set(children.map((n) => n.id)).size).toBe(2);
+  });
+
   test('puts each Playwright config at the top when there are several', () => {
     const two: TestItemsResult = {
       contexts: [answer.contexts[0]!, { root: '/w/e2e', label: 'e2e', specs: [] }],

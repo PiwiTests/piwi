@@ -1040,9 +1040,17 @@ export function recordingPlacement(
 }
 
 /**
+ * A line a statement goes on from, at its end: an operator (`=`, `=>`, `&&`, `+`…), a comma, or a keyword that takes
+ * an expression after it (`await`, `return`…). Not `++`/`--`, which end one, nor `:`, which also ends a `case`.
+ */
+const GOES_ON =
+  /(?:=>|(?<![+])\+|(?<![-])-|[=*%&|^<>?,]|\b(?:await|return|throw|yield|new|typeof|void|delete|in|of|instanceof))\s*$/;
+
+/**
  * Where a block written before the statement holding a line goes, the statement a test is paused before: a new line
  * above the line that statement starts on (the line opening the brackets the line is in, and the line above it while
- * the line goes on with `.`: a chain broken over lines), indented as that line is.
+ * the line goes on with `.`, a chain broken over lines, or while the line above goes on, as an assignment broken after
+ * its `=`), indented as that line is.
  */
 export function placementBefore(text: string, line: number): RecordingPlacement {
   const model = new FileModel(text);
@@ -1057,7 +1065,10 @@ export function placementBefore(text: string, line: number): RecordingPlacement 
     }
     let above = at - 1;
     while (above >= 0 && !model.lines[above]!.trim()) above--;
-    if (above < 0 || !/^(?:\?\.|\.(?!\.))/.test(here.trim())) break;
+    if (above < 0) break;
+    const before = model.lines[above]!.trim();
+    const comment = /^(?:\/\/|\/\*|\*)/.test(before);
+    if (!/^(?:\?\.|\.(?!\.))/.test(here.trim()) && (comment || !GOES_ON.test(before))) break;
     at = above;
   }
   return { line: at, newLine: true, indent: leadingSpace(model.lines[at]!) };

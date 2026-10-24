@@ -60,8 +60,11 @@ export interface RecordChannel {
   token: string;
 }
 
-/** The longest line either side reads; a line past it ends the channel. */
-export const MAX_HANDOFF_LINE = 4_000_000;
+/**
+ * The longest line either side reads; a line past it ends the channel. An answer to the recorder carries the whole
+ * recording (up to its 5,000 events, a typed field's value in each), which this leaves room for.
+ */
+export const MAX_HANDOFF_LINE = 64_000_000;
 
 /** The value of `PIWI_RECORD_CHANNEL`. */
 export function formatRecordChannel(channel: RecordChannel): string {

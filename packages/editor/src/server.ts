@@ -1613,11 +1613,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * on a machine that refuses the socket.
    */
   let recordChannel: RecordChannel | null = null;
+  /** The client asked the service to shut down: a channel that opens after it is closed at once. */
+  let shutDown = false;
   const recordRequested = (handoff: Handoff) => {
-    if (!contextFor(handoff.file)) {
+    // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
+    // and the editor as its workspace does (a folder opened through a link).
+    const spelled = (c: PiwiContext): string | null => {
+      if (relativeTo(c.root, handoff.file) !== null) return handoff.file;
+      const relative = relativeTo(commandFolder(c), handoff.file);
+      return relative === null ? null : path.join(c.root, relative);
+    };
+    const file =
+      contexts.map(spelled).find((f): f is string => f !== null && !!contextFor(f)) ??
+      (contextFor(handoff.file) ? handoff.file : null);
+    if (!file) {
       recordChannel?.refuse(handoff.id, `no Playwright config of this editor's workspace holds ${handoff.file}.`);
       return;
     }
+    handoff.file = file;
     void connection.sendNotification(RECORD_REQUESTED_NOTIFICATION, {
       handoff: handoff.id,
       uri: pathToFileURL(handoff.file).href,
@@ -2000,7 +2013,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
     void watchRepositories();
     void RecordChannel.open({ onAttach: recordRequested }).then((channel) => {
-      if (stopped) channel?.close();
+      if (stopped || shutDown) channel?.close();
       else recordChannel = channel;
     });
   });
@@ -3267,7 +3280,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void refreshAll();
   });
 
-  connection.onShutdown(() => recordings.dispose());
+  /** The record channel goes with the service: its socket's folder is removed, and a waiting test hears why. */
+  const closeRecordChannel = () => {
+    shutDown = true;
+    recordChannel?.close();
+    recordChannel = null;
+  };
+  connection.onShutdown(() => {
+    recordings.dispose();
+    closeRecordChannel();
+  });
+  connection.onExit(closeRecordChannel);
 
   documents.listen(connection);
   connection.listen();
@@ -3275,7 +3298,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     stopped = true;
     runWatch.dispose();
     recordings.dispose();
-    recordChannel?.close();
+    closeRecordChannel();
     desktopJobs.dispose();
     if (refreshTimer) clearInterval(refreshTimer);
     if (retryTimer) clearTimeout(retryTimer);
