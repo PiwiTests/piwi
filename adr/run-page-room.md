@@ -44,5 +44,6 @@ again on top of the dashboard panel's own padding.
   segments that is about 2.5:1, below WCAG AA for small text; the accessible name and the tooltip carry every count
   and label. Fixme keeps dark text in dark mode, where its grey is light. The text color is `onBg` in
   `STATUS_PALETTE` (`app/utils/status-palette.ts`).
-- **More fits above the fold**, so the execution and failure cluster pages count more controls there
-  (`npm run app:measure`). That budget was already exceeded on six of those pages before this change.
+- **More fits above the fold**, so the execution and failure cluster pages show more of the blocks under their
+  situation block on the first screen. Their budget (`npm run app:measure -- --check`) counts the controls of the
+  navbar and the situation block, which the gutter does not change, and every page holds it.
