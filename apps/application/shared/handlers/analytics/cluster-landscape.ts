@@ -58,21 +58,19 @@ export async function getAnalyticsClusterLandscape(
   const clusters = open
     .sort((a, b) => (b.occurrences ?? 0) - (a.occurrences ?? 0))
     .slice(0, TOP_CLUSTERS)
-    .map(
-      (cluster): AnalyticsClusterRow => ({
-        id: cluster.id,
-        projectId: cluster.projectId,
-        projectName: projectById.get(cluster.projectId)?.name ?? `Project ${cluster.projectId}`,
-        projectLabel: projectById.get(cluster.projectId)?.label ?? null,
-        title: cluster.title,
-        signature: cluster.signature,
-        errorType: cluster.errorType,
-        selector: cluster.selector ?? null,
-        occurrences: cluster.occurrences ?? 0,
-        ageDays: Math.max(0, Math.floor((now - new Date(cluster.createdAt).getTime()) / DAY_MS)),
-        firstSeenAt: cluster.createdAt,
-      }),
-    );
+    .map((cluster): AnalyticsClusterRow => ({
+      id: cluster.id,
+      projectId: cluster.projectId,
+      projectName: projectById.get(cluster.projectId)?.name ?? `Project ${cluster.projectId}`,
+      projectLabel: projectById.get(cluster.projectId)?.label ?? null,
+      title: cluster.title,
+      signature: cluster.signature,
+      errorType: cluster.errorType,
+      selector: cluster.selector ?? null,
+      occurrences: cluster.occurrences ?? 0,
+      ageDays: Math.max(0, Math.floor((now - new Date(cluster.createdAt).getTime()) / DAY_MS)),
+      firstSeenAt: cluster.createdAt,
+    }));
 
   return {
     totalOpen: open.length,

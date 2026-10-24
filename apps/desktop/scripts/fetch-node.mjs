@@ -31,7 +31,7 @@ function defaultHostTriple() {
   return 'x86_64-unknown-linux-gnu';
 }
 
-const NODE_VERSION = arg('node', process.env.PIWI_NODE_VERSION || '24.22.0').replace(/^v/, '');
+const NODE_VERSION = arg('node', process.env.PIWI_NODE_VERSION || '24.22.1').replace(/^v/, '');
 const target = arg('target', defaultHostTriple());
 const base = `https://nodejs.org/dist/v${NODE_VERSION}`;
 

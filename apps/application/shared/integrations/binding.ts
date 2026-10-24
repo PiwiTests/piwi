@@ -29,7 +29,7 @@ import {
 import type { OwnerRoute } from './owner-routes';
 
 export { normalizeOwner, pickOwnerRoute, type OwnerRoute } from './owner-routes';
-export { DEFAULT_AUTO_CREATE, type AutoCreatePolicy, type AutoCreateRule } from './automation';
+export { type AutoCreatePolicy } from './automation';
 
 /**
  * The write-back policies — each off by default, plus the transitions and their

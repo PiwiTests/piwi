@@ -9,7 +9,7 @@ import { locatorCallValues, parseLeafLocatorCall } from '#shared/locator-chain';
 
 // The recommended-fix ladder lives in `@piwitests/core`, shared with the browser
 // extension; re-exported so app/server code keeps importing it from here.
-export { CONVENTION_STABILITY_FLOOR, LOCATOR_FAMILY, recommendLocatorFix } from '@piwitests/core/locator-fix';
+export { CONVENTION_STABILITY_FLOOR, recommendLocatorFix } from '@piwitests/core/locator-fix';
 
 /** The fields of a healing answer that say whether it has replacement locators. */
 type HealingLists = Pick<

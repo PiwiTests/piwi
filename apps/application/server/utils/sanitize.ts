@@ -200,13 +200,11 @@ export function sanitizeAiUsage(usage: unknown): { entries: string[]; intents?: 
             ((i as Record<string, unknown>).kind === 'locator' || (i as Record<string, unknown>).kind === 'run'),
         )
         .slice(0, 100)
-        .map(
-          (i): AiUsageIntent => ({
-            template: (i.template as string).slice(0, 300),
-            locator: (i.locator as string).slice(0, 400),
-            kind: i.kind as AiUsageIntent['kind'],
-          }),
-        )
+        .map((i): AiUsageIntent => ({
+          template: (i.template as string).slice(0, 300),
+          locator: (i.locator as string).slice(0, 400),
+          kind: i.kind as AiUsageIntent['kind'],
+        }))
     : [];
 
   return intents.length > 0 ? { entries, intents } : { entries };

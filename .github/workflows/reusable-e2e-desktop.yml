@@ -22,7 +22,7 @@ permissions:
 
 env:
   # Match the runtime the app bundles (apps/application/engines / reusable-publish-desktop.yml).
-  PIWI_NODE_VERSION: 24.22.0
+  PIWI_NODE_VERSION: 24.22.1
 
 jobs:
   e2e:

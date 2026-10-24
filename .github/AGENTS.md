@@ -53,7 +53,7 @@ every comparison is made on one machine; a `report` job joins their results into
   same commit: the latest run of a check is the one branch protection reads. `pr-lint.yml` runs every job on every
   event for this reason.
 - **Node through `setup-workspace`.** The version comes from the root `.node-version`; a job names another only to test
-  a floor (`engines`, Node 22) or a bundled runtime (the desktop's `24.22.0`). `npm ci` runs with
+  a floor (`engines`, Node 22) or a bundled runtime (the desktop's `24.22.1`). `npm ci` runs with
   `--prefer-offline --no-audit --fund=false`.
 - **Playwright's headless shell is cached by Playwright version** (`playwright: shell`). The full Chromium build
   (`playwright: full`) is installed on every run: its workflows run on pull requests only, where a cache serves its own

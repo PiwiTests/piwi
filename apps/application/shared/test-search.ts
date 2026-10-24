@@ -582,9 +582,12 @@ export function completeTestSearch(options: {
   const defs = TEST_SEARCH_FIELD_DEFS.filter((def) => fields.includes(def.field));
   const keyMatches = defs
     .filter((def) => !typed || def.key.startsWith(typed) || def.aliases.some((alias) => alias.startsWith(typed)))
-    .map(
-      (def): TestSearchSuggestion => ({ kind: 'field', field: def.field, key: def.key, description: def.description }),
-    );
+    .map((def): TestSearchSuggestion => ({
+      kind: 'field',
+      field: def.field,
+      key: def.key,
+      description: def.description,
+    }));
   if (!typed) return { ...base, suggestions: keyMatches };
 
   // A bare word also offers the values of every field that contain it, a few per field.

@@ -759,29 +759,25 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
   if (!parsed.ok) throw new Error(`The steps made from the execution do not check: ${parsed.errors.join('; ')}`);
 
   const evidence = emptyBugEvidence();
-  const consoleEntries = (input.console ?? []).map(
-    (entry): BugConsoleEntry => ({
-      level: entry.level,
-      source: 'console',
-      message: entry.message.slice(0, BUG_EVIDENCE_LIMITS.messageLength),
-      page: '',
-      time: entry.time ?? 0,
-    }),
-  );
+  const consoleEntries = (input.console ?? []).map((entry): BugConsoleEntry => ({
+    level: entry.level,
+    source: 'console',
+    message: entry.message.slice(0, BUG_EVIDENCE_LIMITS.messageLength),
+    page: '',
+    time: entry.time ?? 0,
+  }));
   evidence.console = consoleEntries.slice(0, BUG_EVIDENCE_LIMITS.console);
   evidence.consoleDropped = consoleEntries.length - evidence.console.length;
   const pageUrl = origin ? `${origin}/` : 'http://localhost/';
   const requests = (input.requests ?? [])
     .filter((r) => r.status === 0 || r.status >= 400)
-    .map(
-      (r): BugFailedRequest => ({
-        method: r.method.toUpperCase(),
-        url: reportedRequestUrl(r.url, pageUrl),
-        status: r.status,
-        page: '',
-        time: r.time ?? 0,
-      }),
-    );
+    .map((r): BugFailedRequest => ({
+      method: r.method.toUpperCase(),
+      url: reportedRequestUrl(r.url, pageUrl),
+      status: r.status,
+      page: '',
+      time: r.time ?? 0,
+    }));
   evidence.requests = requests.slice(0, BUG_EVIDENCE_LIMITS.requests);
   evidence.requestsDropped = requests.length - evidence.requests.length;
   if (input.screenshot) {

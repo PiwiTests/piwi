@@ -139,8 +139,9 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
       let streamedBytes = 0;
 
       bb.on('file', (field: string, stream: NodeJS.ReadableStream, info: busboy.FileInfo) => {
+        const { filename } = info;
         // A part with no filename is not a file upload — drain it so busboy can proceed.
-        if (!info.filename) {
+        if (!filename) {
           stream.resume();
           return;
         }
@@ -172,7 +173,7 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
           }
           files[index] = {
             field,
-            filename: info.filename,
+            filename,
             path: tmpPath,
             size: ws.bytesWritten,
             mimeType: info.mimeType,

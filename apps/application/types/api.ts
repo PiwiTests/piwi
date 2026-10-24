@@ -1300,29 +1300,6 @@ export interface CreateApiKeyResponse {
 }
 
 // ============================================================================
-// Access management types (users, groups, the permission grid, project members)
-// ============================================================================
-
-// The request and response shapes live in `#shared/project-access`, shared with
-// the server routes and the demo mirror.
-export type {
-  GroupListItem,
-  GroupsListResponse,
-  GroupView,
-  GroupWriteResponse,
-  ProjectAccessResponse,
-  ProjectAccessUpdateResponse,
-  ProjectMembersResponse,
-  ProjectMembersUpdateResponse,
-  ProjectMemberView,
-  UserListItem,
-  UserProjectRolesResponse,
-  UsersListResponse,
-  UserSummary,
-  UserWriteResponse,
-} from '#shared/project-access';
-
-// ============================================================================
 // Admin types
 // ============================================================================
 
@@ -1618,35 +1595,9 @@ export interface DiagnosisContextCoverage {
   notApplicable?: Record<string, string>;
 }
 
-// Coverage insights: `GET /api/test-run-cases/:id/coverage-divergence`, `GET /api/test-cases/:id/path-variation`,
-// `GET /api/projects/:id/coverage-loss` and `GET /api/test-cases/:id/coverage-reach`. The shapes live in
-// `#shared/coverage-insights`, shared with the server, the demo mirror, the MCP tools and the AI context.
-export type {
-  CoverageBaseline,
-  CoverageDivergenceAnswer,
-  CoverageDivergenceReason,
-  CoverageLossAnswer,
-  CoverageReachAnswer,
-  DivergedFile,
-  FailuresFollow,
-  LossFile,
-  LossTest,
-  NearestTest,
-  PathExplanation,
-  PathVariationAnswer,
-  VaryingCode,
-  VaryingFile,
-} from '#shared/coverage-insights';
-
 // Suspect lines: `GET /api/test-run-cases/:id/suspect-lines` and `GET /api/failure-clusters/:id/suspect-lines`.
 // The shapes live in `#shared/suspect-lines`, shared with the server, the demo mirror and the fix plan.
-export type {
-  ClusterSuspectLinesAnswer,
-  SuspectLine,
-  SuspectLinesAnswer,
-  SuspectLinesReason,
-  SuspectLinesSummary,
-} from '#shared/suspect-lines';
+export type { ClusterSuspectLinesAnswer } from '#shared/suspect-lines';
 
 /**
  * A commit as returned by the failure-cluster commit-list endpoints and rendered
