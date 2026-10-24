@@ -22,7 +22,10 @@ per-directory responsibilities.
    for this package's `dist/` in each worker, the proxy every API request context is handed out behind
    (`internal/capture/api-requests.ts`: the `request` fixture's, any `playwright.request.newContext()`'s and
    `page.request`), and the editor's breakpoints (`internal/capture/pause-at.ts`): a headed local run with
-   `PIWI_PAUSE_AT` pauses before an action on those lines, and posts a locator picked meanwhile to the editor's
+   `PIWI_PAUSE_AT` steers each context's `context.debugger` to stop before every call it can stop at, shows the pause
+   bar at a call on those lines, sets `PW_CODEGEN_NO_INSPECTOR` in the worker so Playwright's Inspector stays closed
+   at those stops, attaches a test's stops as `piwi-pauses` (the reporter takes their time out of the steps'
+   durations), and posts a locator picked meanwhile to the editor's
    `PIWI_EDITOR_SEND` address with the line, as `@piwitests/core/editor-send` reads it; with `PIWI_RECORD_CHANNEL`, the
    pause bar's **Record here** (and `page.pause()` in a headed run, patched by the capture fixtures) hands the page to
    the editor's recorder (`internal/capture/record-handoff.ts`): it relays each call of the recorder's binding over that

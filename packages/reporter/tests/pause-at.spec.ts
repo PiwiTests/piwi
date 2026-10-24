@@ -8,16 +8,20 @@ import {
   takePauseState,
 } from '@piwitests/picker-dom';
 import {
-  assertionLabel,
+  atStop,
+  goOn,
   parsePauseAt,
   pauseHere,
   pausePlace,
   pauseSkipReason,
   pickPayload,
   postPickToEditor,
-  rearmedTimeout,
   resetPauseLogs,
+  stopCallSite,
+  withTestTimeoutHeld,
   type PausePoint,
+  type PauseRecord,
+  type PauseState,
 } from '../src/internal/capture/pause-at.js';
 import { piwiFixtures, probeElementAttrs, CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
 import { ATTACHMENT_NAMES } from '../src/internal/capture/attachments.js';
@@ -77,27 +81,98 @@ describe('parsePauseAt', () => {
   });
 });
 
+describe('stopCallSite', () => {
+  const cwd = path.resolve('/work/shop');
+
+  it('writes a stop’s place as the call site its breakpoint matches', () => {
+    const at = stopCallSite({ file: path.join(cwd, 'tests', 'login.spec.ts'), line: 42, column: 9 }, cwd);
+    expect(at).toBe('tests/login.spec.ts:42:9');
+    expect(parsePauseAt('tests/login.spec.ts:42', cwd).matches(at)).toBe(true);
+    expect(parsePauseAt(`${path.join(cwd, 'tests', 'login.spec.ts')}:42`, cwd).matches(at)).toBe(true);
+    expect(stopCallSite({ file: path.resolve('/work/shared/c.ts'), line: 5 }, cwd)).toBe('../shared/c.ts:5:0');
+  });
+
+  it('has none for a place outside the user’s code', () => {
+    expect(stopCallSite({ file: '<unknown>' }, cwd)).toBeNull();
+  });
+});
+
 describe('the pause gate', () => {
-  it('pauses a headed local run only', () => {
+  it('pauses a headed local run only, outside Playwright’s Inspector', () => {
     expect(pauseSkipReason({ ci: undefined, headless: false })).toBeNull();
     expect(pauseSkipReason({ ci: 'false', headless: false })).toBeNull();
     expect(pauseSkipReason({ ci: 'true', headless: false })).toMatch(/running under CI/);
     expect(pauseSkipReason({ ci: undefined, headless: true })).toMatch(/headless/);
     expect(pauseSkipReason({ ci: undefined, headless: undefined })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug: '1' })).toMatch(/PWDEBUG/);
+    for (const pwdebug of ['', '0', 'false', 'console']) {
+      expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug })).toBeNull();
+    }
+  });
+});
+
+describe('the stop policy', () => {
+  const state = (lines: string, finished = false): PauseState => ({
+    set: parsePauseAt(lines, path.resolve('/work/shop')),
+    step: false,
+    finished,
+  });
+
+  it('shows a breakpoint’s line and lets every other call go on, stopping again before the next', () => {
+    const s = state('tests/a.spec.ts:5;tests/pages/cart.page.ts:9');
+    expect(atStop(s, 'tests/a.spec.ts:4:3')).toEqual({ go: 'next' });
+    expect(atStop(s, 'tests/a.spec.ts:5:11')).toEqual({ show: 'breakpoint' });
+    expect(goOn(s, 'resume')).toBe('next');
+    expect(atStop(s, 'tests/pages/cart.page.ts:9:7')).toEqual({ show: 'breakpoint' });
+    expect(atStop(s, null)).toEqual({ go: 'next' });
+  });
+
+  it('shows the next call in the user’s code after Step, whatever its line, once', () => {
+    const s = state('tests/a.spec.ts:5');
+    expect(goOn(s, 'step')).toBe('next');
+    expect(atStop(s, null)).toEqual({ go: 'next' });
+    expect(atStop(s, 'tests/a.spec.ts:6:3')).toEqual({ show: 'step' });
+    expect(goOn(s, 'resume')).toBe('next');
+    expect(atStop(s, 'tests/a.spec.ts:7:3')).toEqual({ go: 'next' });
+  });
+
+  it('shows nothing more after Finish, and runs on freely', () => {
+    const s = state('tests/a.spec.ts:5');
+    expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ show: 'breakpoint' });
+    expect(goOn(s, 'finish')).toBe('resume');
+    expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ go: 'resume' });
+    expect(goOn(s, 'step')).toBe('resume');
+  });
+
+  it('runs on freely from a stop with no breakpoint and no Step waiting', () => {
+    const s = state('');
+    expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ go: 'resume' });
+    expect(goOn(s, 'resume')).toBe('resume');
+    expect(goOn(s, 'step')).toBe('next');
+  });
+});
+
+describe('withTestTimeoutHeld', () => {
+  it('holds the test timeout through the runner’s counter while it runs, failing or not', async () => {
+    const counter = vi.fn();
+    const testInfo = { _setIgnoreTimeouts: counter };
+    expect(await withTestTimeoutHeld(testInfo as never, async () => 'answer')).toBe('answer');
+    await expect(
+      withTestTimeoutHeld(testInfo as never, async () => {
+        throw new Error('page closed');
+      }),
+    ).rejects.toThrow('page closed');
+    expect(counter.mock.calls).toEqual([[true], [false], [true], [false]]);
+  });
+
+  it('runs without it on a runner that has none', async () => {
+    expect(await withTestTimeoutHeld({} as never, async () => 'answer')).toBe('answer');
   });
 });
 
 describe('what the pause says', () => {
-  it('gives the test back the time it had left once the pause ends', () => {
-    expect(rearmedTimeout(30_000, 12_345)).toBe(42_345);
-    expect(rearmedTimeout(0, 12_345)).toBe(0);
-    expect(rearmedTimeout(30_000, -5)).toBe(30_000);
-  });
-
-  it('names the place, the assertion and the pick’s line', () => {
+  it('names the place and the pick’s line', () => {
     expect(pausePlace('tests/login.spec.ts:42:5')).toBe('login.spec.ts:42');
-    expect(assertionLabel('to.be.visible', false)).toBe('toBeVisible');
-    expect(assertionLabel('to.have.text', true)).toBe('not.toHaveText');
     expect(pickPayload("getByRole('button')", 'tests/login.spec.ts:42:5')).toEqual({
       kind: 'locator',
       text: "getByRole('button')",
@@ -206,15 +281,10 @@ function fakePausePage(
   return { page, shown };
 }
 
-function fakeTestInfo(timeout = 30_000, retry = 0) {
-  const info = { timeout, retry, setTimeout: vi.fn((t: number) => (info.timeout = t)) };
-  return info;
-}
-
 const POINT: PausePoint = {
   location: 'tests/login.spec.ts:42:5',
-  action: 'click',
-  locator: "getByRole('button', { name: 'Pay' })",
+  call: "Click getByRole('button', { name: 'Pay' })",
+  attempt: 2,
   target: null,
 };
 
@@ -225,12 +295,11 @@ describe('pauseHere', () => {
   });
   afterEach(() => log.mockRestore());
 
-  it('highlights the element, shows the bar, and gives the timeout back on Resume', async () => {
+  it('highlights the element, shows the bar with the call about to run, and hides the highlight on Resume', async () => {
     const { page, shown } = fakePausePage(['resume']);
-    const info = fakeTestInfo(30_000, 1);
     const hide = vi.fn(async () => {});
     const target = { highlight: vi.fn(async () => ({ dispose: hide })) };
-    const choice = await pauseHere(page as never, info as never, { ...POINT, target }, PROBE, () => {});
+    const choice = await pauseHere(page as never, { ...POINT, target }, PROBE, () => {});
     expect(choice).toBe('resume');
     expect(target.highlight).toHaveBeenCalledOnce();
     expect(hide).toHaveBeenCalledOnce();
@@ -238,22 +307,17 @@ describe('pauseHere', () => {
       {
         place: 'login.spec.ts:42',
         attempt: 2,
-        action: 'click',
-        locator: "getByRole('button', { name: 'Pay' })",
+        action: "Click getByRole('button', { name: 'Pay' })",
+        locator: null,
         record: false,
       },
     ]);
-    expect(info.setTimeout.mock.calls[0]).toEqual([0]);
-    const rearmed = info.setTimeout.mock.calls[1]![0] as number;
-    expect(rearmed).toBeGreaterThanOrEqual(30_000);
-    expect(rearmed).toBeLessThan(31_000);
   });
 
   it('shows the bar again after a pick, and after a navigation took it away', async () => {
     const { page, shown } = fakePausePage([null, 'pick', 'step']);
-    const info = fakeTestInfo();
     const picks: unknown[] = [];
-    const choice = await pauseHere(page as never, info as never, POINT, PROBE, (p) => void picks.push(p));
+    const choice = await pauseHere(page as never, POINT, PROBE, (p) => void picks.push(p));
     expect(choice).toBe('step');
     expect(shown).toHaveLength(3);
     expect(page.waitForFunction.mock.calls.filter((c) => c[0] === pauseAnswered)).toHaveLength(3);
@@ -263,27 +327,20 @@ describe('pauseHere', () => {
 
   it('shows the bar again when a navigation lands as it is read, and resumes once the page closed', async () => {
     const { page, shown } = fakePausePage(['step'], { navigateAt: 0 });
-    expect(await pauseHere(page as never, fakeTestInfo() as never, POINT, PROBE, () => {})).toBe('step');
+    expect(await pauseHere(page as never, POINT, PROBE, () => {})).toBe('step');
     expect(shown).toHaveLength(2);
     expect(page.waitForLoadState).toHaveBeenCalledOnce();
     const closed = fakePausePage(['step'], { breakAt: 0 });
-    expect(await pauseHere(closed.page as never, fakeTestInfo() as never, POINT, PROBE, () => {})).toBe('resume');
+    expect(await pauseHere(closed.page as never, POINT, PROBE, () => {})).toBe('resume');
   });
 
   it('offers Record here when the editor can record, and shows the bar again once the recording ended', async () => {
     const { page, shown } = fakePausePage(['record', 'resume']);
     const recorded = vi.fn(async () => {});
-    const choice = await pauseHere(page as never, fakeTestInfo() as never, POINT, PROBE, () => {}, recorded);
+    const choice = await pauseHere(page as never, POINT, PROBE, () => {}, recorded);
     expect(choice).toBe('resume');
     expect(recorded).toHaveBeenCalledOnce();
     expect(shown).toEqual([expect.objectContaining({ record: true }), expect.objectContaining({ record: true })]);
-  });
-
-  it('resumes when the page breaks, and leaves no timeout when the test had none', async () => {
-    const { page } = fakePausePage([], { breakAt: 0 });
-    const info = fakeTestInfo(0);
-    expect(await pauseHere(page as never, info as never, POINT, PROBE, () => {})).toBe('resume');
-    expect(info.setTimeout.mock.calls).toEqual([[0], [0]]);
   });
 });
 
@@ -293,11 +350,78 @@ function thisLine(): number {
   return Number(/:(\d+):\d+\)?$/.exec(frame)![1]);
 }
 
+/** The line this file's test bodies start at, past the fakes: the calls they make are the ones the fake debugger stops. */
+let bodiesFrom = Number.POSITIVE_INFINITY;
+
+/** Where the test body made the call the fake debugger stops, the way Playwright names the user's line. */
+function callerPlace(): { file: string; line?: number; column?: number } {
+  for (const line of new Error().stack!.split('\n')) {
+    const m = /\(?([^\s()]+):(\d+):(\d+)\)?$/.exec(line.trim());
+    if (m?.[1] === __filename && Number(m[2]) > bodiesFrom) {
+      return { file: m[1], line: Number(m[2]), column: Number(m[3]) };
+    }
+  }
+  return { file: '<unknown>' };
+}
+
+/**
+ * A browser context whose debugger stops the fake page's calls as Playwright's does: once armed (a pause asked, or
+ * `next()` from a stop), the next call stops before it runs and waits until `next()` or `resume()`; a `page.pause()`
+ * call stops whenever the debugger was ever steered. `steered` lists the commands it got.
+ */
+function fakeDebuggerContext() {
+  const listeners: Array<() => void> = [];
+  let armed = false;
+  let enabled = false;
+  let paused: { location: ReturnType<typeof callerPlace>; title: string } | null = null;
+  let release: (() => void) | null = null;
+  const steered: string[] = [];
+  const goOnFromStop = () => {
+    paused = null;
+    const go = release;
+    release = null;
+    for (const listener of listeners) listener();
+    go?.();
+  };
+  const debuggerApi = {
+    on: (_event: string, listener: () => void) => void listeners.push(listener),
+    pausedDetails: () => paused,
+    requestPause: async () => {
+      if (paused) throw new Error('Debugger is already paused');
+      steered.push('pause');
+      armed = enabled = true;
+    },
+    next: async () => {
+      if (!paused) throw new Error('Debugger is not paused');
+      steered.push('next');
+      armed = true;
+      goOnFromStop();
+    },
+    resume: async () => {
+      if (!paused) throw new Error('Debugger is not paused');
+      steered.push('resume');
+      goOnFromStop();
+    },
+  };
+  /** A call the debugger can stop before it runs. */
+  const call = async (title: string, pauseCall = false) => {
+    if (!armed && !(pauseCall && enabled)) return;
+    armed = false;
+    paused = { location: callerPlace(), title };
+    const done = new Promise<void>((resolve) => (release = resolve));
+    for (const listener of listeners) listener();
+    await done;
+  };
+  return { debuggerApi, call, steered };
+}
+
 describe('breakpoints in the capture fixtures', () => {
   const env = { ...process.env };
   let log: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     delete process.env.CI;
+    delete process.env.PWDEBUG;
+    delete process.env.PIWI_RECORD_CHANNEL;
     resetPauseLogs();
     log = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
@@ -308,18 +432,25 @@ describe('breakpoints in the capture fixtures', () => {
 
   const here = path.relative(process.cwd(), __filename).split(path.sep).join('/');
 
-  /** Run `body` through the real fixtures on a fake page whose pause bar answers `answers` in turn. */
+  /**
+   * Run `body` through the real fixtures on a fake page in a context whose debugger stops its calls, and whose pause
+   * bar answers `answers` in turn.
+   */
   async function runWithBreakpoints(
-    pauseAt: (line: number) => string,
+    pauseAt: string,
     answers: string[],
-    body: (page: Record<string, (...a: unknown[]) => any>, line: () => number) => Promise<void>,
+    body: (page: Record<string, (...a: unknown[]) => any>) => Promise<void>,
     headless: unknown = false,
     pick?: Record<string, unknown>,
   ) {
     const { page: pausePage, shown } = fakePausePage(answers, { pick });
-    const clicks: string[] = [];
+    const stops = fakeDebuggerContext();
+    const calls: string[] = [];
     const fakeLocator = {
-      click: vi.fn(async () => void clicks.push('click')),
+      click: vi.fn(async () => {
+        await stops.call("Click getByText('Pay')");
+        calls.push('click');
+      }),
       highlight: vi.fn(async () => {}),
       evaluate: vi.fn(async () => ({
         tagName: 'div',
@@ -329,10 +460,13 @@ describe('breakpoints in the capture fixtures', () => {
         hasLabel: false,
         selectorCounts: {},
       })),
-      _expect: vi.fn(async () => ({ matches: true })),
+      _expect: vi.fn(async (expression: string) => {
+        await stops.call(`Expect "${expression}"`);
+        return { matches: true };
+      }),
     };
     const factory = () => fakeLocator;
-    const fakePage = {
+    const fakePage: Record<string, unknown> = {
       getByRole: factory,
       getByTestId: factory,
       getByText: factory,
@@ -342,20 +476,35 @@ describe('breakpoints in the capture fixtures', () => {
       getByTitle: factory,
       locator: factory,
       on: () => {},
-      pause: vi.fn(async () => void clicks.push('playwright pause')),
+      goto: async () => {
+        await stops.call('Navigate');
+        calls.push('goto');
+      },
+      pause: vi.fn(async (options?: unknown) => {
+        calls.push(`pause ${JSON.stringify(options ?? null)}`);
+        await stops.call('Pause', true);
+      }),
       evaluate: pausePage.evaluate,
       evaluateHandle: pausePage.evaluateHandle,
       waitForFunction: pausePage.waitForFunction,
+      isClosed: () => false,
     };
-    const attached: LocatorSnapshot[] = [];
+    const fakeContext = {
+      debugger: stops.debuggerApi,
+      newPage: async () => fakePage,
+      close: async () => {},
+      on: () => {},
+      pages: () => [fakePage],
+    };
+    fakePage.context = () => fakeContext;
+    const attached: Record<string, unknown[]> = {};
     const testInfo = {
       status: 'passed',
       retry: 0,
       timeout: 30_000,
-      setTimeout: vi.fn(),
       project: { use: { headless } },
       attach: vi.fn(async (name: string, b: { body: Buffer }) => {
-        if (name === ATTACHMENT_NAMES.locators) attached.push(...JSON.parse(String(b.body)));
+        attached[name] = JSON.parse(String(b.body)) as unknown[];
       }),
       annotations: [],
     };
@@ -366,81 +515,86 @@ describe('breakpoints in the capture fixtures', () => {
     const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
       (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
     ];
-    let line = 0;
-    const lineOf = () => line;
-    process.env.PIWI_PAUSE_AT = pauseAt(0);
-    await captureFixture(
-      {},
-      () =>
-        pageFixture({ page: fakePage }, async (page) => {
-          await body(page as never, lineOf);
-        }),
-      testInfo,
-    );
-    line = 0;
-    return { shown, clicks, attached, fakeLocator };
+    process.env.PIWI_PAUSE_AT = pauseAt;
+    await captureFixture({}, () => pageFixture({ page: fakePage }, (page) => body(page as never)), testInfo);
+    return {
+      shown,
+      calls,
+      steered: stops.steered,
+      call: stops.call,
+      locators: (attached[ATTACHMENT_NAMES.locators] ?? []) as LocatorSnapshot[],
+      pauses: (attached[ATTACHMENT_NAMES.pauses] ?? []) as PauseRecord[],
+    };
   }
 
-  it('pauses before the action on a breakpoint’s line, and not on another', async () => {
+  const place = (shown: unknown) => (shown as { place: string }).place;
+  bodiesFrom = thisLine();
+
+  it('stops at the call on a breakpoint’s line, a navigation included, and lets the others go on at once', async () => {
     const start = thisLine();
-    const { shown, clicks } = await runWithBreakpoints(
-      () => `${here}:${start + 5}`,
-      ['resume'],
+    const run = await runWithBreakpoints(
+      `${here}:${start + 6};${here}:${start + 8}`,
+      ['resume', 'resume'],
       async (page) => {
         await page.getByText!('Pay').click();
+        await page.goto!('/cart');
         await page.getByText!('Pay').click();
-        await page.getByText!('Pay').click();
+        await page.goto!('/pay');
       },
     );
-    expect(shown).toHaveLength(1);
-    expect((shown[0] as { place: string }).place).toBe(`pause-at.spec.ts:${start + 5}`);
-    expect(clicks).toEqual(['click', 'click', 'click']);
+    expect(run.shown.map(place)).toEqual([`pause-at.spec.ts:${start + 6}`, `pause-at.spec.ts:${start + 8}`]);
+    expect(run.shown.map((s) => (s as { action: string }).action)).toEqual(['Navigate', 'Navigate']);
+    expect(run.calls).toEqual(['click', 'goto', 'click', 'goto']);
+    expect(run.steered).toEqual(['pause', 'next', 'next', 'next', 'next']);
+    expect(run.pauses).toEqual([
+      expect.objectContaining({
+        title: 'Navigate',
+        location: expect.stringMatching(`^${here}:${start + 6}:`),
+        reason: 'breakpoint',
+      }),
+      expect.objectContaining({
+        title: 'Navigate',
+        location: expect.stringMatching(`^${here}:${start + 8}:`),
+        reason: 'breakpoint',
+      }),
+    ]);
   });
 
-  it('pauses at every action after Step, and at none after Finish', async () => {
+  it('stops at the next call after Step, and at none after Finish', async () => {
     const start = thisLine();
-    const stepped = await runWithBreakpoints(
-      () => `${here}:${start + 5}`,
-      ['step', 'resume'],
-      async (page) => {
-        await page.getByText!('Pay').click();
-        await page.getByText!('Pay').click();
-        await page.getByText!('Pay').click();
-      },
-    );
-    expect(stepped.shown.map((s) => (s as { place: string }).place)).toEqual([
-      `pause-at.spec.ts:${start + 5}`,
-      `pause-at.spec.ts:${start + 6}`,
-    ]);
+    const stepped = await runWithBreakpoints(`${here}:${start + 3}`, ['step', 'resume'], async (page) => {
+      await page.getByText!('Pay').click();
+      await page.getByText!('Pay').click();
+      await page.goto!('/cart');
+      await page.getByText!('Pay').click();
+    });
+    expect(stepped.shown.map(place)).toEqual([`pause-at.spec.ts:${start + 3}`, `pause-at.spec.ts:${start + 4}`]);
+    expect(stepped.pauses.map((p) => p.reason)).toEqual(['breakpoint', 'step']);
 
     const again = thisLine();
-    const finished = await runWithBreakpoints(
-      () => `${here}:${again + 6};${here}:${again + 7}`,
-      ['finish'],
-      async (page) => {
-        for (let i = 0; i < 2; i++) {
-          await page.getByText!('Pay').click();
-          await page.getByText!('Pay').click();
-        }
-      },
-    );
+    const finished = await runWithBreakpoints(`${here}:${again + 3};${here}:${again + 4}`, ['finish'], async (page) => {
+      for (let i = 0; i < 2; i++) {
+        await page.getByText!('Pay').click();
+        await page.goto!('/cart');
+      }
+    });
     expect(finished.shown).toHaveLength(1);
+    expect(finished.calls).toEqual(['click', 'goto', 'click', 'goto']);
+    expect(finished.steered).toEqual(['pause', 'resume']);
   });
 
-  it('pauses before an assertion, named by its matcher', async () => {
+  it('stops before an assertion, named as Playwright titles it', async () => {
     const start = thisLine();
-    const { shown } = await runWithBreakpoints(
-      () => `${here}:${start + 6}`,
-      ['resume'],
-      async (page) => {
-        const locator = page.getByText!('Pay') as { _expect: (...a: unknown[]) => Promise<unknown> };
-        await locator._expect('to.be.visible', { isNot: false, timeout: 5000 });
-      },
-    );
-    expect(shown).toEqual([expect.objectContaining({ place: `pause-at.spec.ts:${start + 6}`, action: 'toBeVisible' })]);
+    const { shown } = await runWithBreakpoints(`${here}:${start + 3}`, ['resume'], async (page) => {
+      const locator = page.getByText!('Pay') as { _expect: (...a: unknown[]) => Promise<unknown> };
+      await locator._expect('to.be.visible', { isNot: false, timeout: 5000 });
+    });
+    expect(shown).toEqual([
+      expect.objectContaining({ place: `pause-at.spec.ts:${start + 3}`, action: 'Expect "to.be.visible"' }),
+    ]);
   });
 
-  it('folds a locator picked while paused into the call site’s snapshot, and posts it to the editor', async () => {
+  it('folds a locator picked at a stop into the call site’s snapshot, and posts it to the editor', async () => {
     const posts: unknown[] = [];
     const editor = await startServer((req, res) => {
       posts.push(JSON.parse(req.body));
@@ -458,8 +612,8 @@ describe('breakpoints in the capture fixtures', () => {
     };
     try {
       const start = thisLine();
-      const { attached, clicks } = await runWithBreakpoints(
-        () => `${here}:${start + 5}`,
+      const { locators, calls } = await runWithBreakpoints(
+        `${here}:${start + 5}`,
         ['pick', 'resume'],
         async (page) => {
           await page.getByText!('Pay').click();
@@ -467,12 +621,12 @@ describe('breakpoints in the capture fixtures', () => {
         false,
         pick,
       );
-      expect(clicks).toEqual(['click']);
-      expect(attached).toHaveLength(1);
-      expect(attached[0]!.location).toMatch(new RegExp(`^${here.replace(/\./g, '\\.')}:${start + 5}:\\d+$`));
-      expect(attached[0]!.used.method).toBe('getByText');
-      expect(attached[0]!.element?.attributes['data-testid']).toBe('pay-now');
-      expect(attached[0]!.alternatives[0]).toMatchObject({ locator: "getByTestId('pay-now')", pickedByUser: true });
+      expect(calls).toEqual(['click']);
+      expect(locators).toHaveLength(1);
+      expect(locators[0]!.location).toMatch(new RegExp(`^${here.replace(/\./g, '\\.')}:${start + 5}:\\d+$`));
+      expect(locators[0]!.used.method).toBe('getByText');
+      expect(locators[0]!.element?.attributes['data-testid']).toBe('pay-now');
+      expect(locators[0]!.alternatives[0]).toMatchObject({ locator: "getByTestId('pay-now')", pickedByUser: true });
       expect(posts).toEqual([{ kind: 'locator', text: "getByTestId('pay-now')", at: { file: here, line: start + 5 } }]);
       expect(log.mock.calls.map((c: unknown[]) => String(c[0]))).toContain(
         `[piwi] Locator picked at ${here}:${start + 5}: getByTestId('pay-now')`,
@@ -482,60 +636,79 @@ describe('breakpoints in the capture fixtures', () => {
     }
   });
 
-  it('pauses at page.pause() with Piwi’s bar in a run the editor started, with Record here', async () => {
+  it('stops at page.pause() with Piwi’s bar in a run the editor started, with Record here, the test timeout the runner’s', async () => {
     process.env.PIWI_RECORD_CHANNEL = `/tmp/piwi-no-such.sock#${'t'.repeat(20)}`;
     const start = thisLine();
-    const { shown, clicks } = await runWithBreakpoints(
-      () => '',
-      ['step', 'resume'],
-      async (page) => {
-        await page.pause!();
-        await page.getByText!('Pay').click();
-      },
-    );
-    expect(shown).toEqual([
-      expect.objectContaining({ place: `pause-at.spec.ts:${start + 5}`, action: 'page.pause()', record: true }),
-      // Step pauses at the next action.
-      expect.objectContaining({ place: `pause-at.spec.ts:${start + 6}`, action: 'click', record: true }),
+    const run = await runWithBreakpoints('', ['step', 'resume'], async (page) => {
+      await page.pause!();
+      await page.getByText!('Pay').click();
+    });
+    expect(run.shown).toEqual([
+      expect.objectContaining({ place: `pause-at.spec.ts:${start + 2}`, action: 'Pause', record: true }),
+      // Step stops at the next call.
+      expect.objectContaining({
+        place: `pause-at.spec.ts:${start + 3}`,
+        action: "Click getByText('Pay')",
+        record: true,
+      }),
     ]);
-    expect(clicks).toEqual(['click']);
+    expect(run.calls).toEqual(['pause {"__testHookKeepTestTimeout":true}', 'click']);
+    expect(run.pauses.map((p) => p.reason)).toEqual(['page-pause', 'step']);
+    expect(run.steered).toEqual(['pause', 'next', 'resume']);
+  });
+
+  it('stops at page.pause() in a run with breakpoints the editor did not start', async () => {
+    const start = thisLine();
+    const run = await runWithBreakpoints(`${here}:${start + 9}`, ['resume'], async (page) => {
+      await page.pause!();
+    });
+    expect(run.shown).toEqual([
+      expect.objectContaining({ place: `pause-at.spec.ts:${start + 2}`, action: 'Pause', record: false }),
+    ]);
   });
 
   it('leaves page.pause() to Playwright in a run no editor started, or a headless one', async () => {
-    delete process.env.PIWI_RECORD_CHANNEL;
-    const unpaired = await runWithBreakpoints(
-      () => '',
-      [],
-      async (page) => {
-        await page.pause!();
-      },
-    );
+    const unpaired = await runWithBreakpoints('', [], async (page) => {
+      await page.pause!();
+    });
     expect(unpaired.shown).toEqual([]);
-    expect(unpaired.clicks).toEqual(['playwright pause']);
+    expect(unpaired.calls).toEqual(['pause null']);
+    expect(unpaired.steered).toEqual([]);
     process.env.PIWI_RECORD_CHANNEL = `/tmp/piwi-no-such.sock#${'t'.repeat(20)}`;
     const headless = await runWithBreakpoints(
-      () => '',
+      '',
       [],
       async (page) => {
         await page.pause!();
       },
       true,
     );
-    expect(headless.clicks).toEqual(['playwright pause']);
+    expect(headless.calls).toEqual(['pause null']);
+  });
+
+  it('resumes at once a stop armed before the test ended', async () => {
+    const start = thisLine();
+    const run = await runWithBreakpoints(`${here}:${start + 3}`, [], async (page) => {
+      await page.getByText!('Nope').click();
+    });
+    expect(run.steered).toEqual(['pause', 'next']);
+    await run.call('Close context');
+    expect(run.steered).toEqual(['pause', 'next', 'resume']);
   });
 
   it('never pauses a headless run, and says why once', async () => {
     const start = thisLine();
-    const { shown, clicks } = await runWithBreakpoints(
-      () => `${here}:${start + 5}`,
+    const run = await runWithBreakpoints(
+      `${here}:${start + 5}`,
       [],
       async (page) => {
         await page.getByText!('Pay').click();
       },
       true,
     );
-    expect(shown).toEqual([]);
-    expect(clicks).toEqual(['click']);
+    expect(run.shown).toEqual([]);
+    expect(run.calls).toEqual(['click']);
+    expect(run.steered).toEqual([]);
     expect(
       log.mock.calls.map((c: unknown[]) => String(c[0])).filter((l: string) => l.includes('PIWI_PAUSE_AT')),
     ).toEqual([

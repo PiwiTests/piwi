@@ -132,12 +132,11 @@ same picker ships as the [Piwi Picker browser extension](/features/extension), f
 
 With `PIWI_PAUSE_AT=tests/login.spec.ts:42` (semicolon-separated `file:line`, relative to the working directory or
 absolute: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`; an entry without a line is skipped, and the output
-says so), a locator action or assertion on a listed line waits before it runs: its element is highlighted and a bar at
-the top of the page offers **Resume**, **Step** (pause at the next action), **Pick a locator** (the picker above) and
-**Finish** (no more pauses in this test); <kbd>Esc</kbd> resumes. A pick is recorded and printed like the failure-time
-one, and posted to `PIWI_EDITOR_SEND`, an editor's pairing address, with its line. Headed and never under CI, like the
-options above; every attempt pauses. The editor extensions set both from your
-[breakpoints](./editor-breakpoints).
+says so), a call on a listed line that acts on or checks the page (a navigation, an action, an assertion) waits before
+it runs, with a bar at the top of the page: **Resume**, **Step** (pause at the next call), **Pick a locator** (the
+picker above) and **Finish** (no more pauses); <kbd>Esc</kbd> resumes. A pick is recorded and printed like the
+failure-time one, and posted to `PIWI_EDITOR_SEND`, an editor's pairing address, with its line. Headed and never under
+CI, like the options above. The editor extensions set both from your [breakpoints](./editor-breakpoints).
 
 ## Limits
 

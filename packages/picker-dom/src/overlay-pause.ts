@@ -4,17 +4,17 @@ export interface PauseBarArg {
   place: string;
   /** The attempt, 1-based, when the test is retried; null on the first attempt. */
   attempt: number | null;
-  /** The action about to run, as `click` or `toBeVisible`. */
+  /** The call about to run, as `click`, or as Playwright titles it: `Click getByRole('button', { name: 'Pay' })`. */
   action: string;
-  /** The locator the action runs on, as source; null when unknown. */
+  /** The locator the call runs on, as source; null when unknown or already in `action`. */
   locator: string | null;
   /** Whether the editor that started the run can record from here: the bar then offers Record here. */
   record?: boolean;
 }
 
 /**
- * What the pause bar answers in `__piwiPauseState`: `resume` runs on to the next breakpoint, `step` pauses at the next
- * action, `pick` opens the element picker and shows the bar again after it, `record` records steps in the page for the
+ * What the pause bar answers in `__piwiPauseState`: `resume` runs on to the next breakpoint, `step` pauses before the
+ * next call, `pick` opens the element picker and shows the bar again after it, `record` records steps in the page for the
  * editor to write before the paused line, and shows the bar again once the recording stops, `finish` pauses no more in
  * this test.
  */
@@ -22,8 +22,8 @@ export type PauseChoice = 'resume' | 'step' | 'pick' | 'record' | 'finish';
 
 /**
  * Runs inside the browser via `evaluate()` — shows a bar fixed at the top of
- * the page while a test is paused before an action: where it is paused, the
- * attempt, the action and its locator, and its buttons (Record here when the editor can record). The choice lands in
+ * the page while a test is paused before a call: where it is paused, the
+ * attempt, the call and its locator, and its buttons (Record here when the editor can record). The choice lands in
  * `__piwiPauseState` (see `PauseChoice`), polled from Node; Esc resumes. The
  * page under the bar stays live. Must stay fully self-contained.
  */
@@ -77,7 +77,7 @@ export function showPauseBar(arg: PauseBarArg): void {
 
   const buttons: Array<[label: string, choice: string, hint: string, primary: boolean]> = [
     ['Resume', 'resume', 'Run on to the next breakpoint (Esc)', true],
-    ['Step', 'step', 'Pause again at the next action', false],
+    ['Step', 'step', 'Pause again before the next call', false],
     ['Pick a locator', 'pick', 'Pick an element on the page and confirm a locator for it', false],
     ...(arg.record
       ? [

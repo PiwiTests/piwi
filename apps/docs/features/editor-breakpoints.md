@@ -1,6 +1,6 @@
 ---
 title: Breakpoints in the browser
-description: "Set a breakpoint in VS Code or a JetBrains IDE and the next test run Piwi starts pauses there in a headed browser, with a bar to resume, step, pick a locator that replaces the one on that line, or record the steps that come next."
+description: "Set a breakpoint in VS Code or a JetBrains IDE and the next test run Piwi starts pauses there in a headed browser, before a navigation, an action, a key press or an assertion, with a bar to resume, step, pick a locator that replaces the one on that line, or record the steps that come next."
 lang: en-US
 ---
 
@@ -9,23 +9,26 @@ lang: en-US
 <Needs reporter fixtures />
 
 A breakpoint you set with the editor's own gutter click pauses the next test run the [editor extensions](./editors)
-start, in the browser, right before the locator action or assertion on its line. Piwi's bar at the top of the page lets
-you look at the page, step through the actions, or pick a better locator, which lands back on that line in the editor.
-It is not Playwright's inspector, and no debugger attaches: the test waits in the browser.
+start, in the browser, right before the call on its line that acts on or checks the page: a navigation, a click, a key
+press, an assertion. Piwi's bar at the top of the page lets you look at the page, step through the calls, or pick a
+better locator, which lands back on that line in the editor. The stop is Playwright's own debugger
+(`context.debugger`) without its Inspector: Piwi's bar answers it, and no JavaScript debugger attaches.
 
 ## Pause a run
 
-1. Set a line breakpoint on a line that calls a locator, in a spec or a page object:
-   `await page.getByText('Pay now').click();`.
+1. Set a line breakpoint on a line with a Playwright call, in a spec or a page object:
+   `await page.getByText('Pay now').click();`, `await page.goto('/checkout');`, `await page.keyboard.press('Tab');`
+   or `await expect(page).toHaveURL(/cart/);`.
 2. Run the test from Piwi: **Run this test**, the lines above a locator, **Piwi: Run the tests that reach this file**,
    **Piwi: Run selection…** or **Re-run the failing tests** ([Runs from the editor](./editor-runs#run-tests)).
-3. The run opens a headed browser. Before the action on your line runs, its element is highlighted and the pause bar
-   appears: `Paused at login.spec.ts:42 · click · getByText('Pay now')`.
+3. The run opens a headed browser. Before the call on your line runs, the pause bar appears with the call as
+   Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a locator call's element is
+   highlighted.
 
 | Button | What it does |
 |---|---|
 | **Resume** (<kbd>Esc</kbd>) | Runs on to the next breakpoint |
-| **Step** | Pauses again before the next locator action or assertion, breakpoint or not |
+| **Step** | Pauses again before the next call that acts on or checks the page, breakpoint or not |
 | **Pick a locator** | Opens Piwi's [element picker](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs): pick the element, choose stable parents, confirm a ranked locator; the bar comes back after |
 | **Record here** | Records what you do in the page into the editor, above the paused line: [Record from a pause](#record-from-a-pause) |
 | **Finish** | Runs on without pausing again in this test |
@@ -36,7 +39,9 @@ It is not Playwright's inspector, and no debugger attaches: the test waits in th
 </figure>
 
 The page under the bar stays live: scroll it, open the browser's developer tools, or click through it before you
-resume. The test timeout stops while the test is paused, and the test has the time it had left once it resumes.
+resume. The test timeout stops while the test is paused, and so do the call's own budgets (`actionTimeout`,
+`expect.timeout`). The time paused counts neither in the test's duration nor in its steps' on the dashboard: the run's
+results count as any other's, and its slow steps are the test's own.
 
 ## Where the pick lands
 
@@ -64,10 +69,11 @@ starts recording without asking anything. Pause and Stop are in the recorder's b
 you stop, the pause bar comes back, and **Resume** runs the rest of the test from the page as you left it, which checks
 at once that the new steps fit what follows.
 
-`await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts, it shows Piwi's pause bar there
-in place of Playwright's Inspector, with **Record here** among its buttons, and Piwi adds `--headed` to a run whose
-spec holds a `page.pause()` call. The `page.pause()` line stays, so the next run can record from there again; remove
-it when the test is done. In a run Piwi did not start, and in a headless one, `page.pause()` is Playwright's own.
+`await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts, or any headed run with
+breakpoints, it shows Piwi's pause bar there in place of Playwright's Inspector, with **Record here** among its
+buttons in a run Piwi starts, and Piwi adds `--headed` to a run whose spec holds a `page.pause()` call. The
+`page.pause()` line stays, so the next run can record from there again; remove it when the test is done. In a headless
+run, and in one without breakpoints Piwi did not start, `page.pause()` is Playwright's own.
 **Record here** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
 so and nothing is recorded.
 
@@ -86,7 +92,7 @@ With the setting off, a run started from Piwi ignores the editor's breakpoints.
 - **`@piwitests/reporter` 0.48.0 or later**, with the [capture fixtures](/guide/capture-fixtures) in your tests: the
   pause runs in them. The status bar's tooltip names the reporter version the project installs. With an older one,
   the run starts anyway and the editor warns once: `Breakpoints need @piwitests/reporter 0.48.0 or later; this project
-  has 0.46.0.`
+  has 0.46.0.` A reporter of 0.59.0 or older pauses before locator actions and assertions only.
 - **A run started from Piwi.** The editor passes the breakpoints under the Playwright config's folder to the run as
   `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`, relative to that folder, separated by
   semicolons), with its pairing address as
@@ -95,11 +101,16 @@ With the setting off, a run started from Piwi ignores the editor's breakpoints.
 
 ## Limits
 
-- **Headed and local only.** Under CI (`CI` set to anything but empty or `false`) or in a headless browser, the run
-  ignores the breakpoints and says why once in its output.
-- **Only locator actions and assertions pause**: `click()`, `fill()`, `expect(locator).toBeVisible()` and the like. A
-  breakpoint on `page.goto`, on a helper call or on a line with no locator call does nothing. A breakpoint on the line
-  of a page object method that runs an action pauses every test that calls the method.
+- **Headed and local only.** Under CI (`CI` set to anything but empty or `false`), in a headless browser, or under
+  Playwright's Inspector (`--debug`, `PWDEBUG`), the run ignores the breakpoints and says why once in its output.
+- **Only calls that act on or check the page pause**: navigations, actions, key presses and mouse moves, assertions,
+  `evaluate`. Waits and reads (`waitForTimeout`, `waitForSelector`, `title()`) never do, so a breakpoint on such a
+  line, on a helper call or on a line with no Playwright call does nothing. A breakpoint on the line of a page object
+  method pauses every test that calls the method.
+- **A run with breakpoints stops before every call** and lets those off your lines go on at once, which costs about a
+  millisecond a call.
+- **The trace keeps the pause.** In Playwright's trace and its HTML report, the paused call lasts as long as you
+  looked at the page; the dashboard's step durations leave it out.
 - **Every attempt pauses.** With retries, a test pauses again on its retry, and the bar says `attempt 2`.
 - **Each worker pauses its own browser.** When several tests reach a breakpoint, run them with `--workers=1` to pause
   one at a time.

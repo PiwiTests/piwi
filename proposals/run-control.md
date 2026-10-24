@@ -11,9 +11,19 @@ paused a running test from an extension page in a second browser, held it for 4.
 stepped it and let it pass. The same session reaches the dashboard, as a live view to watch, and coding agents, as
 tools that follow the run, read the stopped page as its accessibility tree and act on it.
 
-**Status.** Proposed 2026-10-24. Nothing is built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
-for the feasibility claims; they are not part of the repository. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
-The contracts it would add are entry D60 of [`1.0-stabilization.md`](1.0-stabilization.md).
+**Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
+(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 to 9 are not. The build differs from the
+text in four ways. A headed browser opens Playwright's Inspector at every stop of `context.debugger`, so the worker sets
+`PW_CODEGEN_NO_INSPECTOR`, and a run under the Inspector (`--debug`, `PWDEBUG`) ignores the breakpoints. The runner
+suspends the test timeout only for a context the running test made: at a stop in one made before it (a `beforeAll`
+page), the worker holds the timeout through the runner's own counter (`_setIgnoreTimeouts`, feature-checked). The
+reporter takes the time each stop held out of the steps' durations, from the `piwi-pauses` attachment, before they are
+sent, so the server is unchanged and the run is not marked interactive yet; D10's rule on notifications waits for the
+runs that can pause outside the editor. `page.pause()` is a stop of the debugger at its line (`page-pause`), taken over
+in any headed run with breakpoints as well as in one the editor started. The spikes in the
+[appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
+Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
+[`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** Piwi already pauses a run the editor starts at the editor's breakpoints, with a bar in the page that picks
 a locator for that line or records the steps that come next ([`editor-local-runs.md`](../adr/editor-local-runs.md),

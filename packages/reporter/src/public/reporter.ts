@@ -22,6 +22,7 @@ import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
+import { readPauses, withoutPausedTime } from '../internal/collect/paused-steps.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
@@ -622,9 +623,12 @@ export class PiwiDashboardReporter {
     }
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
-      testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors);
-      const stepEvents = extractTestStepEvents(result.steps, result.startTime);
-      const waitEvents = extractWaitEvents(result.steps);
+      // The time the test stood stopped at Piwi's pause bar is not the test's own.
+      const pauses = readPauses(result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.pauses)?.body);
+      const steps = withoutPausedTime(result.steps, pauses);
+      testCase.performanceMetrics = collectStepMetrics(steps, result.errors);
+      const stepEvents = extractTestStepEvents(steps, result.startTime);
+      const waitEvents = extractWaitEvents(steps);
       const allEvents = [...stepEvents, ...waitEvents];
       if (allEvents.length > 0) testCase.stepEvents = allEvents;
     }
