@@ -1078,7 +1078,7 @@ enough to write to it.
 tool also needs, extract it to a shared handler and call it from both. Never duplicate.
 
 **Field naming** — `id` only for the top-level entity; `testCaseId` for stable test-case identity; `executionId` for a
-per-run execution record (`testRunsCases.id`), spelled `testRunsCaseId` inside `affectedTestCases` / `locatorHealing`;
+per-run execution record (`testRunsCases.id`), in sub-lists too (`affectedTestCases`, `locatorHealing`);
 `runId` for run references in sub-entities; always `filePath` (never `file`) and `startedAt` (never `start`/`runStart`).
 
 **Response shape** — list tools and paginated sub-lists return `{ items, nextCursor }` (`PaginatedResponse<T>` in
