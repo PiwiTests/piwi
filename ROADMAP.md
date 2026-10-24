@@ -1,6 +1,6 @@
 # Roadmap
 
-Piwi Dashboard is under active development (pre-1.0). This page shows direction, not promises — priorities shift with feedback, and the best way to influence them is a [GitHub Discussion](https://github.com/PiwiTests/platform/discussions).
+Piwi Dashboard is under active development (pre-1.0). This page shows direction, not promises — priorities shift with feedback, and the best way to influence them is a [GitHub Discussion](https://github.com/PiwiTests/piwi/discussions).
 
 ## What Piwi is for
 

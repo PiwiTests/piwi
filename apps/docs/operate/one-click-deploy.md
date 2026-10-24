@@ -33,8 +33,8 @@ point it isn't one click. [Deploy it](./deployment) to a machine with Docker ins
 
 Railway publishes templates from its own dashboard rather than from a file in this repository, so the
 template's exact contents live in
-[`deploy/railway/template.md`](https://github.com/PiwiTests/platform/blob/main/deploy/railway/template.md)
-and the repo ships a [`railway.json`](https://github.com/PiwiTests/platform/blob/main/railway.json) pinning
+[`deploy/railway/template.md`](https://github.com/PiwiTests/piwi/blob/main/deploy/railway/template.md)
+and the repo ships a [`railway.json`](https://github.com/PiwiTests/piwi/blob/main/railway.json) pinning
 the health check to `/api/health` and the replica count to 1.
 
 <!-- Replace with the published template URL once the template is live on Railway. -->
@@ -46,10 +46,10 @@ Railway injects `PORT`, which the image honors.
 
 ## Render
 
-Render reads [`render.yaml`](https://github.com/PiwiTests/platform/blob/main/render.yaml) straight from the
+Render reads [`render.yaml`](https://github.com/PiwiTests/piwi/blob/main/render.yaml) straight from the
 repository, so the button is genuinely one click:
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/PiwiTests/platform)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/PiwiTests/piwi)
 
 The blueprint asks for a **paid instance type**, deliberately: Render's free web services have no disk, and
 without one the database and every stored trace are discarded on each redeploy. It also sets
@@ -60,7 +60,7 @@ point at the right origin.
 
 ## Fly.io
 
-Fly has no browser button, but [`fly.toml`](https://github.com/PiwiTests/platform/blob/main/fly.toml) makes
+Fly has no browser button, but [`fly.toml`](https://github.com/PiwiTests/piwi/blob/main/fly.toml) makes
 it one command plus the secrets:
 
 ::: code-group
@@ -107,12 +107,12 @@ Koyeb carries the whole service definition in the URL, so nothing needs to be in
 Set `PIWI_SECRET_KEY`, `PIWI_AUTH_SECRET`, `PIWI_SETUP_TOKEN` and `PIWI_SITE_URL` in the Koyeb console after the first deploy,
 because the URL can't generate secrets. With authentication on, the service refuses to start until
 `PIWI_AUTH_SECRET` is set. The full command list is kept in
-[`deploy/koyeb-deploy-url.txt`](https://github.com/PiwiTests/platform/blob/main/deploy/koyeb-deploy-url.txt).
+[`deploy/koyeb-deploy-url.txt`](https://github.com/PiwiTests/piwi/blob/main/deploy/koyeb-deploy-url.txt).
 
 ## Coolify / Dokploy
 
 Both consume a Compose file, so one stack covers them. In Coolify: **Add a new resource → Service →**
-paste [`deploy/coolify/docker-compose.yml`](https://github.com/PiwiTests/platform/blob/main/deploy/coolify/docker-compose.yml).
+paste [`deploy/coolify/docker-compose.yml`](https://github.com/PiwiTests/piwi/blob/main/deploy/coolify/docker-compose.yml).
 It uses Coolify's magic variables, so the domain and the secrets are generated for you and Traefik routing
 and TLS are wired up automatically.
 

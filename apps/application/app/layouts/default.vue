@@ -313,7 +313,7 @@ const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => (
 // The matched page's component file, which the build records on its route
 // (`sourceFile`, from the `pages:extend` hook); the pages directory otherwise.
 const pageSourceUrl = computed(() => {
-  const repository = 'https://github.com/piwitests/platform';
+  const repository = 'https://github.com/piwitests/piwi';
   const file = route.matched.at(-1)?.meta.sourceFile;
   return typeof file === 'string'
     ? `${repository}/blob/main/apps/application/app/pages/${file}`

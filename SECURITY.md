@@ -6,7 +6,7 @@ Piwi Dashboard is a self-hosted application that can store sensitive material on
 
 **Please do not open a public issue for security problems.**
 
-Report vulnerabilities privately via [GitHub Security Advisories](https://github.com/PiwiTests/platform/security/advisories/new) ("Report a vulnerability" on the repository's Security tab). You'll get an acknowledgment as soon as the report is seen — normally within a few days — and we'll keep you informed as the fix progresses.
+Report vulnerabilities privately via [GitHub Security Advisories](https://github.com/PiwiTests/piwi/security/advisories/new) ("Report a vulnerability" on the repository's Security tab). You'll get an acknowledgment as soon as the report is seen — normally within a few days — and we'll keep you informed as the fix progresses.
 
 Please include, where possible:
 

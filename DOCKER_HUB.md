@@ -2,7 +2,7 @@
 
 **Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.
 
-📖 [Documentation](https://piwitests.dev) · 🎮 [Live demo](https://piwitests.dev/demo/) · 🚀 [Deployment guide](https://piwitests.dev/operate/deployment) · 💬 [Source and releases on GitHub](https://github.com/PiwiTests/platform)
+📖 [Documentation](https://piwitests.dev) · 🎮 [Live demo](https://piwitests.dev/demo/) · 🚀 [Deployment guide](https://piwitests.dev/operate/deployment) · 💬 [Source and releases on GitHub](https://github.com/PiwiTests/piwi)
 
 ![The Piwi dashboard, light and dark: every project's health, the failing ones first, and the live activity across them](https://piwitests.dev/screenshots/home.png)
 
@@ -40,7 +40,7 @@ npx playwright test
 
 `init` installs the reporter, wraps your `playwright.config` and adds the capture fixtures; the run streams into the dashboard while it executes. [Getting started](https://piwitests.dev/guide/getting-started) covers the rest, [Reporter](https://piwitests.dev/guide/reporter) the manual setup.
 
-With Compose, the same thing is the [`docker-compose.yml`](https://github.com/PiwiTests/platform/blob/main/docker-compose.yml) of the repository, with the PostgreSQL variant commented in place:
+With Compose, the same thing is the [`docker-compose.yml`](https://github.com/PiwiTests/piwi/blob/main/docker-compose.yml) of the repository, with the PostgreSQL variant commented in place:
 
 ```yaml
 services:
@@ -115,4 +115,4 @@ Pin a version tag and keep a backup of `.data/`. Migrations run automatically on
 
 ## License
 
-FSL-1.1-MIT (fair source): free to use, self-host and modify, at work too; each release becomes MIT two years after it is published. See [License](https://piwitests.dev/guide/license) · [source code on GitHub](https://github.com/PiwiTests/platform)
+FSL-1.1-MIT (fair source): free to use, self-host and modify, at work too; each release becomes MIT two years after it is published. See [License](https://piwitests.dev/guide/license) · [source code on GitHub](https://github.com/PiwiTests/piwi)

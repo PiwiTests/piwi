@@ -9,12 +9,12 @@
   "icon": "icon.png",
   "homepage": "https://piwitests.dev",
   "bugs": {
-    "url": "https://github.com/PiwiTests/platform/issues"
+    "url": "https://github.com/PiwiTests/piwi/issues"
   },
-  "qna": "https://github.com/PiwiTests/platform/issues",
+  "qna": "https://github.com/PiwiTests/piwi/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PiwiTests/platform",
+    "url": "https://github.com/PiwiTests/piwi",
     "directory": "apps/vscode"
   },
   "engines": {

@@ -2,14 +2,14 @@
   "name": "@piwitests/reporter",
   "version": "0.59.0",
   "description": "Playwright reporter that streams results, traces and HTML reports to a Piwi Dashboard instance",
-  "url": "https://github.com/PiwiTests/platform",
+  "url": "https://github.com/PiwiTests/piwi",
   "homepage": "https://piwitests.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PiwiTests/platform"
+    "url": "https://github.com/PiwiTests/piwi"
   },
   "bugs": {
-    "url": "https://github.com/PiwiTests/platform/issues"
+    "url": "https://github.com/PiwiTests/piwi/issues"
   },
   "type": "commonjs",
   "main": "dist/index.js",

@@ -18,7 +18,7 @@ hero:
       link: https://piwitests.dev/demo/
     - theme: alt
       text: GitHub
-      link: https://github.com/PiwiTests/platform
+      link: https://github.com/PiwiTests/piwi
 
 # The cards under the hero are the feature catalog's groups, one card each,
 # filled in by transformPageData in .vitepress/config.mts.

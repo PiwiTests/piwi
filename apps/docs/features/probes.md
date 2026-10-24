@@ -71,7 +71,7 @@ Once a probe on that route is noticed, the gap closes itself.
 
 **Experimental.** Server probes are off by default. The rule for when to turn them on (client probes reporting
 *not noticed* on one probed pair in ten) has not been measured yet. The design is in the
-[scenario gaps design record](https://github.com/PiwiTests/platform/blob/main/adr/scenario-gaps.md#level-two--server-probes-m3-on-an-entry-condition).
+[scenario gaps design record](https://github.com/PiwiTests/piwi/blob/main/adr/scenario-gaps.md#level-two--server-probes-m3-on-an-entry-condition).
 
 A client probe rewrites the response in the browser, so the server never runs its error path. A server probe signs a
 fault onto one request (`X-Piwi-Probe`, an HMAC signature made with `PIWI_PROBE_SECRET`), and the

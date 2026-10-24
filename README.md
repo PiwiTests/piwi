@@ -16,14 +16,14 @@
   <a href="https://piwitests.dev">Documentation</a> ·
   <a href="https://piwitests.dev/guide/getting-started">Getting started</a> ·
   <a href="./ROADMAP.md">Roadmap</a> ·
-  <a href="https://github.com/PiwiTests/platform/discussions">Discussions</a>
+  <a href="https://github.com/PiwiTests/piwi/discussions">Discussions</a>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@piwitests/reporter"><img src="https://img.shields.io/npm/v/@piwitests/reporter?logo=npm&label=reporter&labelColor=0d1d47&color=7c3aed" alt="npm reporter"></a>
   <a href="https://www.npmjs.com/package/@piwitests/server"><img src="https://img.shields.io/npm/v/@piwitests/server?logo=npm&label=server&labelColor=0d1d47&color=7c3aed" alt="npm server"></a>
   <a href="https://hub.docker.com/r/phenx/piwitests-server"><img src="https://img.shields.io/docker/v/phenx/piwitests-server?logo=docker&labelColor=0d1d47&color=7c3aed" alt="Docker"></a>
-  <a href="https://github.com/PiwiTests/platform/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/PiwiTests/platform/ci.yml?branch=main&logo=githubactions&logoColor=white&labelColor=0d1d47&label=CI" alt="CI status"></a>
+  <a href="https://github.com/PiwiTests/piwi/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/PiwiTests/piwi/ci.yml?branch=main&logo=githubactions&logoColor=white&labelColor=0d1d47&label=CI" alt="CI status"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--MIT-23c9a0?labelColor=0d1d47" alt="FSL-1.1-MIT license"></a>
 </p>
 
@@ -203,8 +203,8 @@ Everything below is built and published from this repository on each release.
 | [`@piwitests/reporter`](https://www.npmjs.com/package/@piwitests/reporter) | npm | The Playwright reporter: add it to `playwright.config.ts` |
 | [`@piwitests/server`](https://www.npmjs.com/package/@piwitests/server) | npm | The dashboard server, runnable with `npx @piwitests/server` |
 | [`phenx/piwitests-server`](https://hub.docker.com/r/phenx/piwitests-server) | Docker Hub | The server container (`linux/amd64`, `linux/arm64`) |
-| [`ghcr.io/piwitests/platform`](https://github.com/PiwiTests/platform/pkgs/container/platform) | GHCR | The same container, mirrored, plus an `edge` tag built from `main` |
-| Desktop app (`.msi`/`.exe`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/platform/releases/latest) | The server bundled in a native window: no Docker, no Node |
+| [`ghcr.io/piwitests/platform`](https://github.com/PiwiTests/piwi/pkgs/container/platform) | GHCR | The same container, mirrored, plus an `edge` tag built from `main` |
+| Desktop app (`.msi`/`.exe`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/piwi/releases/latest) | The server bundled in a native window: no Docker, no Node |
 | [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) | Chrome Web Store | The browser extension, for Chrome, Edge and the other Chromium browsers |
 | [Piwi Picker](https://addons.mozilla.org/firefox/addon/piwi-picker/) | Firefox Add-ons | The same extension, for Firefox |
 | [Piwi for VS Code](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi) | Visual Studio Marketplace, [Open VSX](https://open-vsx.org/extension/piwitests/piwi) | The VS Code extension (Cursor and VSCodium too) |
@@ -248,8 +248,8 @@ spec, with no external CDN, so they work offline.
 
 ## Community & support
 
-- 💬 [Discussions](https://github.com/PiwiTests/platform/discussions): questions, ideas, show & tell
-- 🐛 [Issues](https://github.com/PiwiTests/platform/issues): bugs and feature requests
+- 💬 [Discussions](https://github.com/PiwiTests/piwi/discussions): questions, ideas, show & tell
+- 🐛 [Issues](https://github.com/PiwiTests/piwi/issues): bugs and feature requests
 - 🔐 [Security policy](./SECURITY.md): how to report a vulnerability
 
 ## Contributing

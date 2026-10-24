@@ -48,4 +48,4 @@ The defaults are conservative, so the checklist above is short. Without any extr
 - [Backup & restore](./backup-restore) — what to copy, and how to restore it
 - [Privacy & data flow](/guide/privacy) — what is stored, and secrets at rest
 - [Configuration reference](/reference/configuration) — every `PIWI_*` variable
-- [Security policy](https://github.com/PiwiTests/platform/blob/main/SECURITY.md) — reporting a vulnerability
+- [Security policy](https://github.com/PiwiTests/piwi/blob/main/SECURITY.md) — reporting a vulnerability

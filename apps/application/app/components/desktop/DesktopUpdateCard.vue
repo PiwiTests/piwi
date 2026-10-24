@@ -147,7 +147,7 @@ const progressPercent = computed(() => {
           This build has no update channel — dev builds and releases made without the update signing key cannot
           self-update. Grab new versions from the
           <ULink
-            to="https://github.com/piwitests/platform/releases/latest"
+            to="https://github.com/piwitests/piwi/releases/latest"
             target="_blank"
             rel="noopener noreferrer"
             class="text-primary hover:underline"
