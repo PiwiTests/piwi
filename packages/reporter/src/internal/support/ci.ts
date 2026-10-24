@@ -1,3 +1,20 @@
+/**
+ * True when the environment is a CI job: one of the providers `collectCiInfo`
+ * names, or any system that sets `CI`.
+ */
+export function detectCi(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
+  return Boolean(
+    env.JENKINS_URL ||
+    env.GITHUB_ACTIONS ||
+    env.GITLAB_CI ||
+    env.CIRCLECI ||
+    env.TRAVIS ||
+    env.TF_BUILD ||
+    env.BITBUCKET_BUILD_NUMBER ||
+    (env.CI && env.CI !== 'false' && env.CI !== '0'),
+  );
+}
+
 /** A CI provider's id for the current pipeline and, where it exposes one, for the current job. */
 interface CiIds {
   run: string;

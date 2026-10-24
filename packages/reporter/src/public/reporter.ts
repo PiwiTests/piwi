@@ -5,6 +5,7 @@ import type { FullConfig, Suite, TestCase, TestResult, FullResult, TestStep } fr
 import {
   resolveOptions,
   usedDesktopDiscovery,
+  desktopReplacedServer,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
   PIWI_RESOURCES_RESULTS_ENV,
@@ -254,7 +255,14 @@ export class PiwiDashboardReporter {
     // Nothing in the config pointed at a server, so results are going to the
     // desktop app found on this machine — say so rather than uploading silently.
     if (this.viaDesktopApp) {
-      this.logger.info(`Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`);
+      const replaced = desktopReplacedServer();
+      this.logger.info(
+        replaced
+          ? `Using the desktop app running at ${this.options.serverUrl} instead of ${replaced} (desktopApp: 'prefer', not on CI).`
+          : this.options.desktopApp === 'prefer'
+            ? `Using the desktop app running at ${this.options.serverUrl} (desktopApp: 'prefer', not on CI).`
+            : `Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`,
+      );
     }
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);

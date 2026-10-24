@@ -13,6 +13,9 @@ Find out two things (ask the user only if you cannot infer them):
 
 - **Dashboard URL** — e.g. `http://localhost:3000` for a local server, or a deployed URL. Defaults to `http://localhost:3000`.
 - **Project name** — the label runs are grouped under. Defaults to the package or folder name.
+- **Where local runs go** — when developers run the Piwi desktop app and CI reports to a shared server, add
+  `--desktop-app prefer`: a local run lands in the app while it is running, and CI runs go to `--server-url`. When the
+  desktop app is the only dashboard, pass `--no-server-url` instead of a URL: the reporter finds the running app itself.
 
 Confirm this is a Playwright project: there should be a `playwright.config.ts|js` and `@playwright/test` in `package.json`. If there is no Playwright at all, set that up first.
 

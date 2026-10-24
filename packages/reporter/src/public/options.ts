@@ -25,6 +25,18 @@ export interface PiwiDashboardOptions {
   enabled?: boolean;
   /** URL of the Piwi Dashboard server */
   serverUrl?: string;
+  /**
+   * When results go to the Piwi desktop app running on this machine instead.
+   * `'fallback'` uses the app only when nothing sets a server: no `serverUrl`,
+   * no `apiKey`, and neither `PIWI_DASHBOARD_URL` nor `PIWI_API_KEY`.
+   * `'prefer'` uses it whenever it is running and the run is not on CI, even
+   * with `serverUrl` set, so local runs land in the app while CI runs, and
+   * local runs with the app closed, go to `serverUrl` with its credentials.
+   * `'off'` never uses it. Defaults to `'fallback'`. `PIWI_DESKTOP_APP`
+   * overrides this option, so setting it to `off` for one run sends that
+   * local run to `serverUrl`.
+   */
+  desktopApp?: 'prefer' | 'fallback' | 'off';
   /** Name of the project to report results under. Defaults to `'default-project'`. */
   projectName?: string;
   /** Optional description of the project */

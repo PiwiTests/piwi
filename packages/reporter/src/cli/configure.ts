@@ -15,6 +15,8 @@ export interface WrapOptions {
   /** Written into the config; omitted when empty so the reporter reads the env instead. */
   serverUrl?: string;
   projectName: string;
+  /** Written into the config when set: when results go to the desktop app instead of `serverUrl`. */
+  desktopApp?: 'prefer' | 'fallback' | 'off';
 }
 
 export interface ConfigEdit {
@@ -77,6 +79,7 @@ function optionsLiteral(opts: WrapOptions): string {
   const lines: string[] = [];
   if (opts.serverUrl) lines.push(`    serverUrl: ${quote(opts.serverUrl)},`);
   lines.push(`    projectName: ${quote(opts.projectName)},`);
+  if (opts.desktopApp) lines.push(`    desktopApp: ${quote(opts.desktopApp)},`);
   return `{\n${lines.join('\n')}\n  }`;
 }
 

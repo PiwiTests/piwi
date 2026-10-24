@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  ensureGitignoreEntry,
-  fixturesContents,
-  upsertEnvKeys,
-  wrapPlaywrightConfig,
-} from '../src/cli/configure.js';
+import { ensureGitignoreEntry, fixturesContents, upsertEnvKeys, wrapPlaywrightConfig } from '../src/cli/configure.js';
 
 const CLEAN_CONFIG = `import { defineConfig } from '@playwright/test'
 
@@ -49,6 +44,18 @@ export default defineConfig({
     const closes = (edit.text.match(/\)/g) ?? []).length;
     expect(opens).toBe(closes);
     expect(edit.text).toContain('wrapConfig(');
+  });
+
+  it('writes desktopApp when it is given', () => {
+    const edit = wrapPlaywrightConfig(CLEAN_CONFIG, {
+      serverUrl: 'https://piwi.example.com',
+      projectName: 'checkout',
+      desktopApp: 'prefer',
+    });
+    expect(edit.text).toContain(
+      "serverUrl: 'https://piwi.example.com',\n    projectName: 'checkout',\n    desktopApp: 'prefer',",
+    );
+    expect(wrapPlaywrightConfig(CLEAN_CONFIG, { projectName: 'checkout' }).text).not.toContain('desktopApp');
   });
 
   it('omits serverUrl from the literal when it is not provided', () => {

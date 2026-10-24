@@ -2,12 +2,36 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import { resolveOptions, usedDesktopDiscovery } from '../src/internal/config/env.js';
+import {
+  applyOptionsToEnv,
+  desktopReplacedServer,
+  resolveOptions,
+  usedDesktopDiscovery,
+} from '../src/internal/config/env.js';
 import { defaultDesktopConfigPath, readDesktopConfig } from '../src/internal/config/desktop.js';
 
 const DESKTOP_URL = 'http://127.0.0.1:3000';
 const DESKTOP_TOKEN = `pd_${'a'.repeat(64)}`;
-const TOUCHED_ENV = ['PIWI_DESKTOP_CONFIG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY'];
+const TEAM_URL = 'https://piwi.example.com';
+const CI_ENV = [
+  'CI',
+  'JENKINS_URL',
+  'GITHUB_ACTIONS',
+  'GITLAB_CI',
+  'CIRCLECI',
+  'TRAVIS',
+  'TF_BUILD',
+  'BITBUCKET_BUILD_NUMBER',
+];
+const TOUCHED_ENV = [
+  'PIWI_DESKTOP_CONFIG',
+  'PIWI_DASHBOARD_URL',
+  'PIWI_API_KEY',
+  'PIWI_USERNAME',
+  'PIWI_PASSWORD',
+  'PIWI_DESKTOP_APP',
+  ...CI_ENV,
+];
 
 let tmpDir: string;
 let configPath: string;
@@ -117,12 +141,104 @@ describe('desktop discovery', () => {
       expect(opts.serverUrl).toBe(DESKTOP_URL);
     });
 
+    it('never adopts the app with desktopApp: off', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      const opts = resolveOptions({ desktopApp: 'off' });
+      expect(opts.serverUrl).toBe(undefined);
+      expect(usedDesktopDiscovery()).toBe(false);
+    });
+
     it('keeps other options and defaults intact', () => {
       publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
       const opts = resolveOptions({ projectName: 'mine' });
       expect(opts.projectName).toBe('mine');
       expect(opts.streaming).toBe(true);
       expect(opts.serverUrl).toBe(DESKTOP_URL);
+    });
+  });
+
+  describe("desktopApp: 'prefer'", () => {
+    it('sends a local run to the running app instead of the configured server', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      const opts = resolveOptions({ serverUrl: TEAM_URL, apiKey: 'pk_team', desktopApp: 'prefer' });
+      expect(opts.serverUrl).toBe(DESKTOP_URL);
+      expect(opts.apiKey).toBe(DESKTOP_TOKEN);
+      expect(usedDesktopDiscovery()).toBe(true);
+      expect(desktopReplacedServer()).toBe(TEAM_URL);
+    });
+
+    it('never pairs the app with the team credentials', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      process.env.PIWI_USERNAME = 'ci-bot';
+      process.env.PIWI_PASSWORD = 'secret';
+      const opts = resolveOptions({ serverUrl: TEAM_URL, desktopApp: 'prefer' });
+      expect(opts.apiKey).toBe(DESKTOP_TOKEN);
+      expect(opts.username).toBe(null);
+      expect(opts.password).toBe(null);
+    });
+
+    it('keeps the configured server when the app is not running', () => {
+      const opts = resolveOptions({ serverUrl: TEAM_URL, apiKey: 'pk_team', desktopApp: 'prefer' });
+      expect(opts.serverUrl).toBe(TEAM_URL);
+      expect(opts.apiKey).toBe('pk_team');
+      expect(usedDesktopDiscovery()).toBe(false);
+      expect(desktopReplacedServer()).toBe(null);
+    });
+
+    it.each(CI_ENV)('keeps the configured server on CI (%s)', (key) => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      process.env[key] = key === 'CI' ? 'true' : '1';
+      const opts = resolveOptions({ serverUrl: TEAM_URL, apiKey: 'pk_team', desktopApp: 'prefer' });
+      expect(opts.serverUrl).toBe(TEAM_URL);
+      expect(opts.apiKey).toBe('pk_team');
+      expect(usedDesktopDiscovery()).toBe(false);
+    });
+
+    it('reads CI=false as a local run', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      process.env.CI = 'false';
+      expect(resolveOptions({ serverUrl: TEAM_URL, desktopApp: 'prefer' }).serverUrl).toBe(DESKTOP_URL);
+    });
+
+    it('also sets aside PIWI_DASHBOARD_URL and PIWI_API_KEY', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      process.env.PIWI_DASHBOARD_URL = TEAM_URL;
+      process.env.PIWI_API_KEY = 'pk_team';
+      const opts = resolveOptions({ desktopApp: 'prefer' });
+      expect(opts.serverUrl).toBe(DESKTOP_URL);
+      expect(opts.apiKey).toBe(DESKTOP_TOKEN);
+    });
+
+    it('is set by PIWI_DESKTOP_APP, which overrides the option', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      process.env.PIWI_DESKTOP_APP = 'prefer';
+      expect(resolveOptions({ serverUrl: TEAM_URL }).serverUrl).toBe(DESKTOP_URL);
+
+      process.env.PIWI_DESKTOP_APP = 'off';
+      const opts = resolveOptions({ serverUrl: TEAM_URL, desktopApp: 'prefer' });
+      expect(opts.serverUrl).toBe(TEAM_URL);
+      expect(opts.desktopApp).toBe('off');
+      expect(usedDesktopDiscovery()).toBe(false);
+    });
+
+    it('reads an unknown mode as fallback', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      process.env.PIWI_DESKTOP_APP = 'always';
+      const opts = resolveOptions({ serverUrl: TEAM_URL });
+      expect(opts.serverUrl).toBe(TEAM_URL);
+      expect(opts.desktopApp).toBe('fallback');
+    });
+
+    it('reaches the global setup through the environment, without masking PIWI_DESKTOP_APP', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      applyOptionsToEnv({ serverUrl: TEAM_URL, desktopApp: 'prefer' });
+      expect(process.env.PIWI_DESKTOP_APP).toBe('prefer');
+      expect(resolveOptions({}).serverUrl).toBe(DESKTOP_URL);
+
+      process.env.PIWI_DESKTOP_APP = 'off';
+      applyOptionsToEnv({ serverUrl: TEAM_URL, desktopApp: 'prefer' });
+      expect(process.env.PIWI_DESKTOP_APP).toBe('off');
+      expect(resolveOptions({}).serverUrl).toBe(TEAM_URL);
     });
   });
 });
