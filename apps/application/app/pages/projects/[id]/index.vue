@@ -440,6 +440,18 @@ if (initialTab && !tabHidden(initialTab)) {
     failureSegment.value = ALIAS_SEGMENT[route.query.tab]!;
 }
 
+// A link to this project from the page itself (the command palette's project
+// tabs, an assistant answer) changes only the query, so the tab follows it:
+// the tab it names, else Runs.
+watch(
+  () => route.query.tab,
+  (raw) => {
+    const tab = resolveTab(raw);
+    activeTab.value = tab && !tabHidden(tab) ? tab : 'runs';
+    if (typeof raw === 'string' && ALIAS_SEGMENT[raw]) failureSegment.value = ALIAS_SEGMENT[raw]!;
+  },
+);
+
 // Reflect the active tab in the URL (replace, so tab switches don't stack history).
 // A tab's own keys leave with it: the Settings section, the Gaps tab's graph node.
 const TAB_QUERY_KEYS: Partial<Record<TabValue, string[]>> = { settings: ['section'], gaps: ['node'] };

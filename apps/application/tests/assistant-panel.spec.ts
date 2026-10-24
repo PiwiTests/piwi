@@ -6,8 +6,9 @@
  * proposal card each. With the ask route answered by a fixed event stream,
  * every kind of block renders, a question is answered with the reply the
  * contract describes, a checklist tick reaches its route and **Show me** plays
- * a guide on a registry anchor. At phone width the panel fills the screen
- * without scrolling sideways.
+ * a guide on a registry anchor, and a link to another tab of the page the
+ * question was asked on opens that tab. At phone width the panel fills the
+ * screen without scrolling sideways.
  */
 import { test, expect } from './fixtures';
 import type { APIRequestContext, Page, Request } from '@playwright/test';
@@ -228,8 +229,8 @@ async function openPanel(page: Page) {
   return panel;
 }
 
-/** Answers every assistant route in the browser: the status, a conversation, the fixture's answers. */
-async function routeAssistant(page: Page) {
+/** Answers every assistant route in the browser: the status, a conversation, the fixture's answers or `answer`. */
+async function routeAssistant(page: Page, answer: AssistantEvent[] = fixture.answer) {
   const asks: Request[] = [];
   const ticks: Request[] = [];
   /** Answers each tick with the block the server would return, in order, when the test says. */
@@ -249,7 +250,7 @@ async function routeAssistant(page: Page) {
       return route.fulfill({
         status: 200,
         headers: { 'Content-Type': 'text/event-stream' },
-        body: eventStream(asks.length === 1 ? fixture.answer : fixture.replyAnswer),
+        body: eventStream(asks.length === 1 ? answer : fixture.replyAnswer),
       });
     }
     if (pathname.endsWith('/checklist')) {
@@ -510,6 +511,8 @@ test.describe.serial('Assistant panel with a model', () => {
 });
 
 test.describe('Assistant panel blocks', () => {
+  let runId: number;
+
   test.beforeAll(async ({ request }) => {
     // Project health, the guide's anchor on Home, renders once the instance has a project.
     const submitted = await request.post('/api/test-runs/submit', {
@@ -526,6 +529,7 @@ test.describe('Assistant panel blocks', () => {
       },
     });
     expect(submitted.ok()).toBeTruthy();
+    ({ runId } = (await submitted.json()) as { runId: number });
   });
 
   test('renders every block, answers a question, ticks a step and plays a guide', async ({ page }) => {
@@ -652,6 +656,29 @@ test.describe('Assistant panel blocks', () => {
     await expect(popover).toBeHidden();
     await openPanel(page);
     await expect(page.getByRole('dialog', { name: 'Ask Piwi' }).getByText('Then start with')).toBeVisible();
+  });
+
+  test('a link to another tab of the page it was asked on opens that tab', async ({ page }) => {
+    const done = fixture.replyAnswer.find((e) => e.event === 'done')!;
+    const label = 'Open the run’s Changes tab';
+    await routeAssistant(page, [
+      {
+        event: 'block',
+        data: { block: { kind: 'navigate', id: 'open-changes', route: `/test-runs/${runId}?tab=changes`, label } },
+      },
+      done,
+    ]);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await expect(page.getByRole('button', { name: /^Tests/ })).toHaveAttribute('aria-current', 'true');
+
+    const panel = await openPanel(page);
+    await panel.getByLabel('Your question').fill('What changed since the baseline?');
+    await panel.getByRole('button', { name: 'Ask', exact: true }).click();
+    await panel.getByRole('link', { name: label }).click();
+    await expect(page).toHaveURL(new RegExp(`/test-runs/${runId}\\?tab=changes$`));
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Changes', exact: true })).toHaveAttribute('aria-current', 'true');
   });
 
   test('the command palette asks its text in the panel', async ({ page }) => {
