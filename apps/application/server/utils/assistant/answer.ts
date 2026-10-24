@@ -56,8 +56,6 @@ export function turnTimeoutError(turnTimeoutMs: number): NonNullable<AssistantTu
   };
 }
 
-export type AssistantAnswer = ReturnType<typeof createAssistantAnswer>;
-
 export function createAssistantAnswer(opts: {
   toolbox: AssistantToolbox;
   maxToolCalls: number;

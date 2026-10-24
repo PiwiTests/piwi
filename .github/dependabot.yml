@@ -30,6 +30,10 @@ updates:
       - dependency-name: "@libsql/client"
         versions: [">= 0.18.0"]
     groups:
+      # @vueuse/nuxt pins the @vueuse/core it auto-imports: the two move together, majors included.
+      vueuse:
+        patterns:
+          - "@vueuse/*"
       minor-and-patch:
         update-types:
           - minor

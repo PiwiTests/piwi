@@ -11,9 +11,6 @@ import { helpEnvVars } from '~/utils/help-content';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import type { RoleForm } from '~/utils/ai-settings-form';
 
-// Re-exported for existing importers; the canonical definition lives in the util.
-export type { RoleForm };
-
 interface RoleMeta {
   key: AiModelRole;
   title: string;

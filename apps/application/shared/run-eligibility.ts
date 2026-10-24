@@ -28,17 +28,11 @@
 
 import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { FLAKE_LAB_RUN_METADATA_KEY } from '@piwitests/core/flake-plan';
-import {
-  parseRunOrigin,
-  RUN_ORIGIN_KINDS,
-  RUN_ORIGIN_METADATA_KEY,
-  type RunOrigin,
-  type RunOriginKind,
-} from '@piwitests/core/wire';
+import { parseRunOrigin, RUN_ORIGIN_KINDS, RUN_ORIGIN_METADATA_KEY, type RunOriginKind } from '@piwitests/core/wire';
 import { testRuns } from '../server/database/schema';
 import { INCIDENT_RUN_METADATA_KEY } from './run-incident';
 
-export { RUN_ORIGIN_KINDS, RUN_ORIGIN_METADATA_KEY, FLAKE_LAB_RUN_METADATA_KEY, type RunOrigin, type RunOriginKind };
+export { RUN_ORIGIN_KINDS, RUN_ORIGIN_METADATA_KEY, FLAKE_LAB_RUN_METADATA_KEY, type RunOriginKind };
 
 /** The run-metadata flag that stamps a run as a probe run (never a real run). */
 export const PROBE_RUN_METADATA_KEY = 'piwiProbe';

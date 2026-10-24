@@ -30,13 +30,12 @@ import {
   maskSelector,
   maskVolatile,
   type ErrorSignature,
-  type ErrorType,
 } from '@piwitests/core/error-signature';
 import { sha256Hex } from './utils/hash';
 
 export { extractLeafSelector, extractMessageHead, extractSelector, extractTopFrameFile, stripAnsi };
 export { extractErrorSignature, maskSelector, maskVolatile };
-export type { ErrorSignature, ErrorType };
+export type { ErrorSignature };
 
 /**
  * Bump when the normalization algorithm changes. The version is part of the

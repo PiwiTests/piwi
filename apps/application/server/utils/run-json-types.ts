@@ -38,18 +38,6 @@ export interface ConsoleLogEntry {
   location?: string | null;
 }
 
-export interface NetworkRequestEntry {
-  method: string;
-  url: string;
-  status: number;
-  duration?: number;
-  resourceType?: string;
-  contentType?: string;
-  startTime?: number;
-  serverLogs?: ServerLogEntry[];
-  serverTraces?: ServerSpanEntry[];
-}
-
 export interface WebVitals {
   navigation?: { domContentLoaded?: number | null; loadComplete?: number | null } | null;
   paint?: { firstPaint?: number | null; firstContentfulPaint?: number | null } | null;
